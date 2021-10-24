@@ -13,10 +13,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     @PluginMethod
     public void echo(PluginCall call) {
-        String value = call.getString("value");
+        String url = call.getString("url");
 
         JSObject ret = new JSObject();
-        ret.put("value", implementation.echo(value));
+        ret.put("done", implementation.updateApp(url));
         call.resolve(ret);
     }
 }

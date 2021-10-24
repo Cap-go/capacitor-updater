@@ -4,8 +4,8 @@ import android.util.Log;
 
 public class CapacitorUpdater {
 
-    public String echo(String value) {
-        Log.i("Echo", value);
-        return value;
+    public String updateApp(String url) {
+        Log.i("updateApp", url);
+        return false;
     }
 }

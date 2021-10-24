@@ -9,10 +9,10 @@ import Capacitor
 public class CapacitorUpdaterPlugin: CAPPlugin {
     private let implementation = CapacitorUpdater()
 
-    @objc func echo(_ call: CAPPluginCall) {
-        let value = call.getString("value") ?? ""
+    @objc func updateApp(_ call: CAPPluginCall) {
+        let url = call.getString("url") ?? ""
         call.resolve([
-            "value": implementation.echo(value)
+            "done": implementation.updateApp(url)
         ])
     }
 }
