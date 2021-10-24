@@ -18,8 +18,8 @@ class CapacitorUpdaterTests: XCTestCase {
 
         let implementation = CapacitorUpdater()
         let value = "Hello, World!"
-        let result = implementation.echo(value)
+        let result = implementation.updateApp(value)
 
-        XCTAssertEqual(value, result)
+        XCTAssertEqual(true, result)
     }
 }
