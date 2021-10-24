@@ -2,7 +2,15 @@
 
 Download app update from url
 
-WIP
+WIP, the project need help to be working
+Android:
+- unzip downloaded file in background
+- restart app
+
+Apple:
+- unzip downloaded file in background
+- copy new file in public folder
+- restart app
 
 ## Install
 
@@ -18,9 +26,27 @@ updateApp('URL_TO_S3_OR ANY_PLACE')
 
 ## API
 
-<docgen-index></docgen-index>
+<docgen-index>
+
+* [`updateApp(...)`](#updateapp)
+
+</docgen-index>
 
 <docgen-api>
-<!-- run docgen to generate docs from the source -->
-<!-- More info: https://github.com/ionic-team/capacitor-docgen -->
+<!--Update the source file JSDoc comments and rerun docgen to update the docs below-->
+
+### updateApp(...)
+
+```typescript
+updateApp(options: { url: string; }) => any
+```
+
+| Param         | Type                          |
+| ------------- | ----------------------------- |
+| **`options`** | <code>{ url: string; }</code> |
+
+**Returns:** <code>any</code>
+
+--------------------
+
 </docgen-api>
