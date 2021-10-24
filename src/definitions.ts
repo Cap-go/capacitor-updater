@@ -1,3 +1,3 @@
 export interface CapacitorUpdaterPlugin {
-  echo(options: { value: string }): Promise<{ value: string }>;
+  updateApp(options: { url: string }): Promise<{ done: boolean }>;
 }

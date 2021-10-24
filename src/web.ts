@@ -5,8 +5,8 @@ import type { CapacitorUpdaterPlugin } from './definitions';
 export class CapacitorUpdaterWeb
   extends WebPlugin
   implements CapacitorUpdaterPlugin {
-  async echo(options: { value: string }): Promise<{ value: string }> {
-    console.log('ECHO', options);
-    return options;
+  async updateApp(options: { url: string }): Promise<{ done: boolean }> {
+    console.log('Cannot updateApp in web', options);
+    return { done: false};
   }
 }
