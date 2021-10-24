@@ -50,3 +50,9 @@ updateApp(options: { url: string; }) => any
 --------------------
 
 </docgen-api>
+
+
+### Inspiraton
+
+- [cordova-plugin-ionic](https://github.com/ionic-team/cordova-plugin-ionic)
+- [capacitor-codepush](https://github.dev/mapiacompany/capacitor-codepush)
