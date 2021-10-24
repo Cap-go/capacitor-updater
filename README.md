@@ -2,11 +2,18 @@
 
 Download app update from url
 
+WIP
+
 ## Install
 
 ```bash
 npm install capacitor-updater
 npx cap sync
+```
+
+```
+import { updateApp } from 'capacitor-updater'
+updateApp('URL_TO_S3_OR ANY_PLACE')
 ```
 
 ## API
