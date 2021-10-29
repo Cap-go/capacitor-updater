@@ -103,57 +103,39 @@ public class CapacitorUpdater {
         return true;
     }
 
-    // Use thread to copy assets to a temporary directory in background
-    // public class DownloadandCopy extends AsyncTask<Void, Void, String>   {
-    //     @Override protected String doInBackground(Void... params) {
-    //         this.downloadFile(url, folderName)
-    //     }
-    //     @Override protected void onPostExecute(String result) {
-    //         this.copyAssets(source, 'public')
-    //     }
-    // }
 
-
-    private void unzip(final PluginCall call) {
-        new AsyncTask<Void, Void, Void>() {
-            @Override
-            protected Void doInBackground(Void... params) {
+    private void unzip(String source, String dest) {
+        File zipFile = new File(source);
+        File targetDirectory = new File(dest);
+        ZipInputStream zis = new ZipInputStream(
+        new BufferedInputStream(new FileInputStream(zipFile)));
+        try {
+            ZipEntry ze;
+            int count;
+            byte[] buffer = new byte[8192];
+            while ((ze = zis.getNextEntry()) != null) {
+                File file = new File(targetDirectory, ze.getName());
+                File dir = ze.isDirectory() ? file : file.getParentFile();
+                if (!dir.isDirectory() && !dir.mkdirs())
+                    throw new FileNotFoundException("Failed to ensure directory: " +
+                            dir.getAbsolutePath());
+                if (ze.isDirectory())
+                    continue;
+                FileOutputStream fout = new FileOutputStream(file);
                 try {
-                    File zipFile = new File(new URI(call.getString("zipFile")));
-                    File targetDirectory = new File(new URI(call.getString("targetDirectory")));
-                    ZipInputStream zis = new ZipInputStream(
-                    new BufferedInputStream(new FileInputStream(zipFile)));
-                    try {
-                        ZipEntry ze;
-                        int count;
-                        byte[] buffer = new byte[8192];
-                        while ((ze = zis.getNextEntry()) != null) {
-                            File file = new File(targetDirectory, ze.getName());
-                            File dir = ze.isDirectory() ? file : file.getParentFile();
-                            if (!dir.isDirectory() && !dir.mkdirs())
-                                throw new FileNotFoundException("Failed to ensure directory: " +
-                                        dir.getAbsolutePath());
-                            if (ze.isDirectory())
-                                continue;
-                            FileOutputStream fout = new FileOutputStream(file);
-                            try {
-                                while ((count = zis.read(buffer)) != -1)
-                                    fout.write(buffer, 0, count);
-                            } finally {
-                                fout.close();
-                            }
-                        }
-                    } finally {
-                        zis.close();
-                        call.resolve();
-                    }
-                } catch (Exception e) {
-                    call.reject("An error occurred when trying to unzip package. " + e.getMessage());
+                    while ((count = zis.read(buffer)) != -1)
+                        fout.write(buffer, 0, count);
+                } finally {
+                    fout.close();
                 }
-
-                return null;
             }
-        }.execute();
+        } catch (Exception e) {
+            Log.e(TAG, "unzip error", e);
+            return false;
+        } finally {
+            zis.close();
+            return true;
+        }
     }
 
     private Boolean downloadFile(String url, String dest) throws JSONException {
@@ -183,9 +165,12 @@ public class CapacitorUpdater {
     public Boolean updateApp(String url) {
         Log.i("updateApp", url);
         try {
+            String folderNameZip = this.generateFolderName();
             String folderName = this.generateFolderName();
             Boolean downloaded = this.downloadFile(url, folderName);
             if(!downloaded) return false;
+            Boolean unziped = this.unzip(folderNameZip, folderName);
+            if(!unziped) return false;
             Boolean copied = this.copyAssets(source, "public");
             if(!copied) return false;
             return true;

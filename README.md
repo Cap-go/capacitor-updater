@@ -8,7 +8,7 @@ Android:
 - restart app
 
 Apple:
-- unzip downloaded file in background
+- unzip downloaded file in background with `SSZipArchive`
 - copy new file in public folder
 - restart app
 
