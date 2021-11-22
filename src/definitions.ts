@@ -1,3 +1,5 @@
 export interface CapacitorUpdaterPlugin {
-  updateApp(options: { url: string }): Promise<{ done: boolean }>;
+  download(options: { url: string }): Promise<{ version: string }>;
+  setVersion(options: { version: string }): Promise<void>;
+  load(): Promise<void>;
 }

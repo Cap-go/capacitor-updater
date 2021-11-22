@@ -10,14 +10,16 @@ extension URL {
 
 @objc public class CapacitorUpdater: NSObject {
     
+    private var lastPath = ""
+
     @objc private func randomString(length: Int) -> String {
         let letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
         return String((0..<length).map{ _ in letters.randomElement()! })
     }
     
-    @objc public func updateApp(url: URL) -> URL? {
-        print(url)
-        let documentsUrl =  FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+    @objc public func download(url: URL) -> String? {
+        print("URL " + url)
+        let documentsUrl = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         let destZip = documentsUrl.appendingPathComponent(randomString(length: 10))
         let dest = documentsUrl.appendingPathComponent(randomString(length: 10))
         let index = dest.appendingPathComponent("index.html")
@@ -29,9 +31,7 @@ extension URL {
                 do {
                     let files = try FileManager.default.contentsOfDirectory(atPath: dest.path)
                     if (files.count == 1 && dest.appendingPathComponent(files[0]).isDirectory && !FileManager.default.fileExists(atPath: index.path)) {
-                        return dest.appendingPathComponent(files[0])
-                    } else if (FileManager.default.fileExists(atPath: index.path)) {
-                        return dest
+                        return files[0]
                     }
                 } catch {
                     print("FILE NOT AVAILABLE" + index.path)
@@ -51,5 +51,18 @@ extension URL {
             print("Error downloading zip file", r.error)
         }
         return nil
+    }
+
+    @objc public func setVersion(version: String) -> Bool {
+        let documentsUrl = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let destFolder = documentsUrl.appendingPathComponent(version)
+        if (destFolder.isDirectory) {
+            lastPath = destFolder.path
+            return true
+        }
+        return false
+    }
+    @objc public func getLastPath() -> String {
+        return lastPath
     }
 }

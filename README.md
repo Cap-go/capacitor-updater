@@ -28,22 +28,50 @@ updateApp('URL_TO_S3_OR ANY_PLACE')
 
 <docgen-index>
 
-* [`updateApp(...)`](#updateapp)
+* [`download(...)`](#download)
+* [`setVersion(...)`](#setversion)
+* [`load()`](#load)
 
 </docgen-index>
 
 <docgen-api>
 <!--Update the source file JSDoc comments and rerun docgen to update the docs below-->
 
-### updateApp(...)
+### download(...)
 
 ```typescript
-updateApp(options: { url: string; }) => any
+download(options: { url: string; }) => any
 ```
 
 | Param         | Type                          |
 | ------------- | ----------------------------- |
 | **`options`** | <code>{ url: string; }</code> |
+
+**Returns:** <code>any</code>
+
+--------------------
+
+
+### setVersion(...)
+
+```typescript
+setVersion(options: { version: string; }) => any
+```
+
+| Param         | Type                              |
+| ------------- | --------------------------------- |
+| **`options`** | <code>{ version: string; }</code> |
+
+**Returns:** <code>any</code>
+
+--------------------
+
+
+### load()
+
+```typescript
+load() => any
+```
 
 **Returns:** <code>any</code>
 

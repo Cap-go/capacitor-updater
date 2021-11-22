@@ -8,22 +8,40 @@ import Capacitor
 @objc(CapacitorUpdaterPlugin)
 public class CapacitorUpdaterPlugin: CAPPlugin {
     private let implementation = CapacitorUpdater()
+    private var lastPath = ""
 
-    @objc func updateApp(_ call: CAPPluginCall) {
+
+    @objc func download(_ call: CAPPluginCall) {
+        guard let bridge = self.bridge else { return }
         let url = URL(string: call.getString("url") ?? "")
 
-        let res = implementation.updateApp(url: url!)
+        let res = implementation.download(url: url!)
         if ((res) != nil) {
-            print("PATH " + res!.path)
-            DispatchQueue.main.async {
-                let vc = self.bridge?.viewController as! CAPBridgeViewController
-                vc.setServerBasePath(path: res!.path)
-                vc.persistServerBasePath()
-            }
             call.resolve([
-                "done": res!.path
+                "version": res
             ])
+        } else {
+            call.reject("download failed")
         }
-        call.reject("error")
+    }
+
+    @objc func setVersion(_ call: CAPPluginCall) {
+        guard let bridge = self.bridge else { return }
+        let version = URL(string: call.getString("version") ?? "")
+        let res = implementation.setVersion(version: version)
+        if (res) {
+            call.resolve()
+        } else {
+            call.reject("update failed, version don't exist")
+        }
+    }
+
+    @objc func load(_ call: CAPPluginCall) {
+        guard let bridge = self.bridge else { return }
+
+        if let vc = bridge.viewController as? CAPBridgeViewController {
+            vc.setServerBasePath(path: implementation.getLastPath())
+        }
+        call.resolve()
     }
 }
