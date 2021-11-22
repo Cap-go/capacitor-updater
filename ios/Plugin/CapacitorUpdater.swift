@@ -2,18 +2,9 @@ import Foundation
 import SSZipArchive
 import Just
 
-extension FileManager {
-    open func secureCopyItem(at srcURL: URL, to dstURL: URL) -> Bool {
-        do {
-            if FileManager.default.fileExists(atPath: dstURL.path) {
-                try FileManager.default.removeItem(at: dstURL)
-            }
-            try FileManager.default.copyItem(at: srcURL, to: dstURL)
-        } catch (let error) {
-            print("Cannot copy item at \(srcURL) to \(dstURL): \(error)")
-            return false
-        }
-        return true
+extension URL {
+    var isDirectory: Bool {
+       (try? resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
     }
 }
 
@@ -24,12 +15,12 @@ extension FileManager {
         return String((0..<length).map{ _ in letters.randomElement()! })
     }
     
-    @objc public func updateApp(url: URL) -> Bool {
+    @objc public func updateApp(url: URL) -> URL? {
         print(url)
         let documentsUrl =  FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         let destZip = documentsUrl.appendingPathComponent(randomString(length: 10))
         let dest = documentsUrl.appendingPathComponent(randomString(length: 10))
-        let publicFolder = documentsUrl.appendingPathComponent("public")
+        let index = dest.appendingPathComponent("index.html")
         let r = Just.get(url)
         if r.ok {
             if (FileManager.default.createFile(atPath: destZip.path, contents: r.content, attributes: nil)) {
@@ -37,22 +28,28 @@ extension FileManager {
                 SSZipArchive.unzipFile(atPath: destZip.path, toDestination: dest.path)
                 do {
                     let files = try FileManager.default.contentsOfDirectory(atPath: dest.path)
-                    print(files)
-                    for file in files {
-                        let urlFile = URL.init(string: file)!
-                        FileManager.default.secureCopyItem(at: urlFile, to: publicFolder)
+                    if (files.count == 1 && dest.appendingPathComponent(files[0]).isDirectory && !FileManager.default.fileExists(atPath: index.path)) {
+                        return dest.appendingPathComponent(files[0])
+                    } else if (FileManager.default.fileExists(atPath: index.path)) {
+                        return dest
                     }
                 } catch {
-                    print("Error getting zip files")
-                    return false
+                    print("FILE NOT AVAILABLE" + index.path)
+                    return nil
                 }
-                return true
+                do {
+                    try FileManager.default.removeItem(atPath: dest.path)
+                } catch {
+                    print("File not removed.")
+                    return nil
+                }
+                return dest
             } else {
                 print("File not created.")
             }
         } else {
             print("Error downloading zip file", r.error)
         }
-        return false
+        return nil
     }
 }

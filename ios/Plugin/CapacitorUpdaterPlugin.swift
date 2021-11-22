@@ -13,12 +13,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         let url = URL(string: call.getString("url") ?? "")
 
         let res = implementation.updateApp(url: url!)
-        if (res) {
+        if ((res) != nil) {
+            print("PATH " + res!.path)
             DispatchQueue.main.async {
-                self.bridge?.viewController?.viewDidLoad()
+                let vc = self.bridge?.viewController as! CAPBridgeViewController
+                vc.setServerBasePath(path: res!.path)
             }
             call.resolve([
-                "done": res
+                "done": res!.path
             ])
         }
         call.reject("error")
