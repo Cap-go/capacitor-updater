@@ -40,7 +40,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         guard let bridge = self.bridge else { return }
 
         if let vc = bridge.viewController as? CAPBridgeViewController {
-            vc.setServerBasePath(path: implementation.getLastPath())
+            let path = implementation.getLastPath()
+            if (path != "") {
+                vc.setServerBasePath(path: implementation.getLastPath())
+            }
         }
         call.resolve()
     }
