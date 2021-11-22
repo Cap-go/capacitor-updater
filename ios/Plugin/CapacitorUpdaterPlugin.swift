@@ -18,6 +18,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             DispatchQueue.main.async {
                 let vc = self.bridge?.viewController as! CAPBridgeViewController
                 vc.setServerBasePath(path: res!.path)
+                vc.persistServerBasePath()
             }
             call.resolve([
                 "done": res!.path
