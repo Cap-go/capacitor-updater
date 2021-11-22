@@ -3,15 +3,13 @@
 Download app update from url
 
 WIP, the project need help to be working
+
 Android:
 - unzip downloaded file in background
 - restart app
 
 Apple:
-- unzip downloaded file in background with `SSZipArchive`
-- copy new file in public folder
-- restart app
-
+- persist downloaded version between app launches
 ## Install
 
 ```bash
