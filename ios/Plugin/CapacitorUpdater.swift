@@ -32,11 +32,11 @@ extension FileManager {
         let publicFolder = documentsUrl.appendingPathComponent("public")
         let r = Just.get(url)
         if r.ok {
-            if (FileManager.default.createFile(atPath: destZip.absoluteString, contents: r.content, attributes: nil)) {
-                print("File created successfully.", destZip.absoluteString)
-                SSZipArchive.unzipFile(atPath: destZip.absoluteString, toDestination: dest.absoluteString)
+            if (FileManager.default.createFile(atPath: destZip.path, contents: r.content, attributes: nil)) {
+                print("File created successfully.", destZip.path)
+                SSZipArchive.unzipFile(atPath: destZip.path, toDestination: dest.path)
                 do {
-                    let files = try FileManager.default.contentsOfDirectory(atPath: dest.absoluteString)
+                    let files = try FileManager.default.contentsOfDirectory(atPath: dest.path)
                     print(files)
                     for file in files {
                         let urlFile = URL.init(string: file)!
