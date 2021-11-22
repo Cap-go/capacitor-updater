@@ -6,13 +6,20 @@ export class CapacitorUpdaterWeb
   extends WebPlugin
   implements CapacitorUpdaterPlugin {
   async download(options: { url: string }): Promise<{ version: string }> {
-    console.log('Cannot download in web', options);
+    console.log('Cannot download version in web', options);
     return { version: ""};
   }
-  async setVersion(options: { version: string }): Promise<void> {
-    console.log('Cannot setVersion in web', options);
+  async set(options: { version: string }): Promise<void> {
+    console.log('Cannot set version in web', options);
+  }
+  async delete(options: { version: string }): Promise<void> {
+    console.log('Cannot delete version in web', options);
+  }
+  async list(): Promise<{ versions: string[] }> {
+    console.log('Cannot list version in web');
+    return { versions: []};
   }
   async load(): Promise<void> {
-    console.log('Cannot load in web');
+    console.log('Cannot load version in web');
   }
 }

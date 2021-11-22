@@ -18,32 +18,23 @@ extension URL {
     }
     
     @objc public func download(url: URL) -> String? {
-        print("URL " + url)
+        print("URL " + url.path)
         let documentsUrl = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         let destZip = documentsUrl.appendingPathComponent(randomString(length: 10))
-        let dest = documentsUrl.appendingPathComponent(randomString(length: 10))
-        let index = dest.appendingPathComponent("index.html")
+        let version = randomString(length: 10)
+        let dest = documentsUrl.appendingPathComponent("versions").appendingPathComponent(version)
         let r = Just.get(url)
         if r.ok {
             if (FileManager.default.createFile(atPath: destZip.path, contents: r.content, attributes: nil)) {
                 print("File created successfully.", destZip.path)
                 SSZipArchive.unzipFile(atPath: destZip.path, toDestination: dest.path)
                 do {
-                    let files = try FileManager.default.contentsOfDirectory(atPath: dest.path)
-                    if (files.count == 1 && dest.appendingPathComponent(files[0]).isDirectory && !FileManager.default.fileExists(atPath: index.path)) {
-                        return files[0]
-                    }
-                } catch {
-                    print("FILE NOT AVAILABLE" + index.path)
-                    return nil
-                }
-                do {
-                    try FileManager.default.removeItem(atPath: dest.path)
+                    try FileManager.default.removeItem(atPath: destZip.path)
                 } catch {
                     print("File not removed.")
                     return nil
                 }
-                return dest
+                return version
             } else {
                 print("File not created.")
             }
@@ -53,11 +44,46 @@ extension URL {
         return nil
     }
 
-    @objc public func setVersion(version: String) -> Bool {
+    @objc public func list() -> [String] {
         let documentsUrl = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        let destFolder = documentsUrl.appendingPathComponent(version)
-        if (destFolder.isDirectory) {
-            lastPath = destFolder.path
+        let dest = documentsUrl.appendingPathComponent("versions")
+        do {
+            let files = try FileManager.default.contentsOfDirectory(atPath: dest.path)
+            return files
+        } catch {
+            print("NO version available" + dest.path)
+            return []
+        } 
+    }
+    
+    @objc public func delete(version: String) -> Bool {
+        let documentsUrl = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let dest = documentsUrl.appendingPathComponent("versions").appendingPathComponent(version)
+        do {
+            try FileManager.default.removeItem(atPath: dest.path)
+        } catch {
+            print("File not removed.")
+            return false
+        }
+        return true
+    }
+
+    @objc public func set(version: String) -> Bool {
+        let documentsUrl = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let dest = documentsUrl.appendingPathComponent("versions").appendingPathComponent(version)
+        let index = dest.appendingPathComponent("index.html")
+        if (dest.isDirectory) {
+            do {
+                let files = try FileManager.default.contentsOfDirectory(atPath: dest.path)
+                if (files.count == 1 && dest.appendingPathComponent(files[0]).isDirectory && !FileManager.default.fileExists(atPath: index.path)) {
+                    lastPath = dest.appendingPathComponent(files[0]).path
+                } else {
+                    lastPath = dest.path
+                }
+            } catch {
+                print("FILE NOT AVAILABLE" + dest.path)
+                return false
+            }
             return true
         }
         return false

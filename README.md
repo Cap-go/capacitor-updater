@@ -29,7 +29,9 @@ updateApp('URL_TO_S3_OR ANY_PLACE')
 <docgen-index>
 
 * [`download(...)`](#download)
-* [`setVersion(...)`](#setversion)
+* [`set(...)`](#set)
+* [`delete(...)`](#delete)
+* [`list()`](#list)
 * [`load()`](#load)
 
 </docgen-index>
@@ -43,6 +45,8 @@ updateApp('URL_TO_S3_OR ANY_PLACE')
 download(options: { url: string; }) => any
 ```
 
+download new version from url
+
 | Param         | Type                          |
 | ------------- | ----------------------------- |
 | **`options`** | <code>{ url: string; }</code> |
@@ -52,15 +56,47 @@ download(options: { url: string; }) => any
 --------------------
 
 
-### setVersion(...)
+### set(...)
 
 ```typescript
-setVersion(options: { version: string; }) => any
+set(options: { version: string; }) => any
 ```
+
+set version as current version
 
 | Param         | Type                              |
 | ------------- | --------------------------------- |
 | **`options`** | <code>{ version: string; }</code> |
+
+**Returns:** <code>any</code>
+
+--------------------
+
+
+### delete(...)
+
+```typescript
+delete(options: { version: string; }) => any
+```
+
+delete version in storage
+
+| Param         | Type                              |
+| ------------- | --------------------------------- |
+| **`options`** | <code>{ version: string; }</code> |
+
+**Returns:** <code>any</code>
+
+--------------------
+
+
+### list()
+
+```typescript
+list() => any
+```
+
+get all avaible verisions
 
 **Returns:** <code>any</code>
 
@@ -72,6 +108,8 @@ setVersion(options: { version: string; }) => any
 ```typescript
 load() => any
 ```
+
+load current version
 
 **Returns:** <code>any</code>
 
