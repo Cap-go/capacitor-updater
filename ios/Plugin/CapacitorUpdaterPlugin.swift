@@ -10,9 +10,17 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     private let implementation = CapacitorUpdater()
 
     @objc func updateApp(_ call: CAPPluginCall) {
-        let url = call.getString("url") ?? ""
-        call.resolve([
-            "done": implementation.updateApp(url)
-        ])
+        let url = URL(string: call.getString("url") ?? "")
+
+        let res = implementation.updateApp(url: url!)
+        if (res) {
+            DispatchQueue.main.async {
+                self.bridge?.viewController?.viewDidLoad()
+            }
+            call.resolve([
+                "done": res
+            ])
+        }
+        call.reject("error")
     }
 }
