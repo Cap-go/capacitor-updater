@@ -102,3 +102,8 @@ get all avaible verisions
 
 - [cordova-plugin-ionic](https://github.com/ionic-team/cordova-plugin-ionic)
 - [capacitor-codepush](https://github.dev/mapiacompany/capacitor-codepush)
+
+
+### Contributer
+
+[jamesyoung1337](https://github.com/jamesyoung1337) Thanks a lot for your guidance and support, it was impossible to make this plugin work without you.
