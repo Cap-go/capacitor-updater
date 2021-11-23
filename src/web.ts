@@ -19,7 +19,4 @@ export class CapacitorUpdaterWeb
     console.log('Cannot list version in web');
     return { versions: []};
   }
-  async load(): Promise<void> {
-    console.log('Cannot load version in web');
-  }
 }

@@ -6,7 +6,7 @@
 CAP_PLUGIN(CapacitorUpdaterPlugin, "CapacitorUpdater",
            CAP_PLUGIN_METHOD(download, CAPPluginReturnPromise);
            CAP_PLUGIN_METHOD(set, CAPPluginReturnNone);
-           CAP_PLUGIN_METHOD(list, CAPPluginReturnNone);
+           CAP_PLUGIN_METHOD(list, CAPPluginReturnPromise);
            CAP_PLUGIN_METHOD(delete, CAPPluginReturnNone);
            CAP_PLUGIN_METHOD(load, CAPPluginReturnNone);
 )

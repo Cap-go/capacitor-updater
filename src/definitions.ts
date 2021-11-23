@@ -22,9 +22,4 @@ export interface CapacitorUpdaterPlugin {
    * @returns {Promise<{version: string[]}>} an Promise witht the version list
    */
   list(): Promise<{ versions: string[] }>;
-    /**
-   * load current version
-   * @returns {Promise<void>} an empty Promise
-   */
-  load(): Promise<void>;
 }

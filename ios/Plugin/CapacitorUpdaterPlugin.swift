@@ -29,20 +29,23 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         let res = implementation.set(version: version)
         
         if (res) {
-//            guard let bridge = self.bridge else { return call.reject("bridge missing") }
-//
-//            if let vc = bridge.viewController as? CAPBridgeViewController {
-//                let path = implementation.getLastPath()
-//                if (path != "") {
-//                    vc.setServerBasePath(path: path)
-//                    let defaults = UserDefaults.standard
-//                    defaults.set(path, forKey: "serverBasePath")
-//                    call.resolve()
-//                }
-//            }
+            guard let bridge = self.bridge else { return call.reject("bridge missing") }
+
+            if let vc = bridge.viewController as? CAPBridgeViewController {
+                let pathHot = implementation.getLastPathHot()
+                let pathPersist = implementation.getLastPathPersist()
+                if (pathHot != "") {
+                    vc.setServerBasePath(path: pathHot)
+                }
+                if (pathPersist != "") {
+                    let defaults = UserDefaults.standard
+                    defaults.set(String(pathPersist.suffix(10)), forKey: "serverBasePath")
+                }
+                call.resolve()
+            }
             call.resolve()
         } else {
-            call.reject("update failed, version don't exist")
+            call.reject("Update failed, version don't exist")
         }
     }
 
@@ -52,7 +55,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         if (res) {
             call.resolve()
         } else {
-            call.reject("delete failed, version don't exist")
+            call.reject("Delete failed, version don't exist")
         }
     }
 
@@ -63,15 +66,4 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         ])
     }
 
-    @objc func load(_ call: CAPPluginCall) {
-        guard let bridge = self.bridge else { return }
-
-        if let vc = bridge.viewController as? CAPBridgeViewController {
-            let path = implementation.getLastPath()
-            if (path != "") {
-                vc.setServerBasePath(path: implementation.getLastPath())
-            }
-        }
-        call.resolve()
-    }
 }
