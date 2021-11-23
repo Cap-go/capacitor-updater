@@ -1,114 +1,57 @@
 package ee.forgr.capacitor_updater;
 
-import android.content.res.AssetManager;
-import org.apache.commons.io.FileUtils;
+import android.content.Context;
 import android.util.Log;
-import org.json.JSONException;
-import android.os.AsyncTask;
 
+import org.json.JSONException;
+
+import java.io.BufferedInputStream;
 import java.io.DataInputStream;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.URL;
+import java.security.SecureRandom;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+import java.util.ArrayList;
 
 public class CapacitorUpdater {
+    String TAG = "CapacitorUpdater";
+    private Context context;
+    private String lastPathHot = "";
+    private String basePathHot = "versions";
 
-    private String generateFolderName() {
-        byte[] array = new byte[10];
-        new Random().nextBytes(array);
-        String generatedString = new String(array, Charset.forName("UTF-8"));
-        return generatedString;
+    static final String AB = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    static SecureRandom rnd = new SecureRandom();
+
+    private String randomString(int len){
+        StringBuilder sb = new StringBuilder(len);
+        for(int i = 0; i < len; i++)
+            sb.append(AB.charAt(rnd.nextInt(AB.length())));
+        return sb.toString();
     }
 
-    private void copyFile(InputStream in, OutputStream out) throws IOException {
-        byte[] buffer = new byte[1024];
-        int read;
-        while((read = in.read(buffer)) != -1){
-            out.write(buffer, 0, read);
-        }
+    CapacitorUpdater (Context context) {
+        this.context = context;
     }
 
-    private Boolean copyAssets(String assetPath, String targetDir) throws IOException {
-        String[] files = null;
+    private Boolean unzip(String source, String dest) {
+        File zipFile = new File(this.context.getFilesDir()  + "/" + source);
+        File targetDirectory = new File(this.context.getFilesDir()  + "/" + dest);
+        Log.i(TAG, "unzip " + zipFile.getPath() + " " + targetDirectory.getPath());
+
+        ZipInputStream zis = null;
         try {
-            assetManager = cordova.getContext().getAssets();
-            files = assetManager.list(assetPath);
-        } catch (IOException e) {
-            Log.e("tag", "Failed to get asset file list.", e);
-        }
-        if (files != null) for (String filename : files) {
-            InputStream in = null;
-            OutputStream out = null;
-            try {
-                if (assetManager.list(assetPath + "/" + filename).length > 0) {
-                    File newDir = new File(targetDir, filename);
-                    newDir.mkdir();
-                    copyAssets(assetPath + "/" + filename, newDir.getPath());
-                    continue;
-                }
-                in = assetManager.open(assetPath + "/" + filename);
-                File destDir = new File(targetDir);
-                if (!destDir.exists()) {
-                    destDir.mkdirs();
-                }
-                File outFile = new File(targetDir, filename);
-                out = new FileOutputStream(outFile);
-                copyFile(in, out);
-            } catch(IOException e) {
-                Log.e("tag", "Failed to copy asset file: " + filename, e);
-                return false;
-            }
-            finally {
-                if (in != null) {
-                    try {
-                        in.close();
-                    } catch (IOException e) {
-                        // NOOP
-                    }
-                }
-                if (out != null) {
-                    try {
-                        out.close();
-                    } catch (IOException e) {
-                        // NOOP
-                    }
-                }
-                return true;
-            }
-        }
-    }
-
-    /**
-    * recursively remove a directory or a file
-    *
-    */
-    public Boolean remove(String target) throws JSONException {
-        Log.i("recursiveRemove called with " + target);
-        File dest = new File(target);
-        final PluginResult result;
-
-        if (!dest.exists()) {
-            Log.i("file or directory does not exist " + target);
+            zis = new ZipInputStream(
+                    new BufferedInputStream(new FileInputStream(zipFile)));
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
             return false;
         }
-        try {
-            FileUtils.forceDelete(dest);
-        } catch (IOException e) {
-            Log.i("Cannot delete file or directory " + target, e.getMessage());
-            return false;
-        }
-        return true;
-    }
-
-
-    private void unzip(String source, String dest) {
-        File zipFile = new File(source);
-        File targetDirectory = new File(dest);
-        ZipInputStream zis = new ZipInputStream(
-        new BufferedInputStream(new FileInputStream(zipFile)));
         try {
             ZipEntry ze;
             int count;
@@ -130,27 +73,48 @@ public class CapacitorUpdater {
                 }
             }
         } catch (Exception e) {
-            Log.e(TAG, "unzip error", e);
+            Log.i(TAG, "unzip error", e);
             return false;
         } finally {
-            zis.close();
+            try {
+                zis.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+                return false;
+            }
             return true;
         }
     }
+    private void flattenAssets(String source, String dest) {
+        File current = new File(this.context.getFilesDir()  + "/" + source);
+        File fDest = new File(this.context.getFilesDir()  + "/" + dest);
+        fDest.getParentFile().mkdirs();
+        String[] pathsName = current.list();
+        if (pathsName.length == 1 && pathsName[0] != "index.html") {
+            File newFlat =  new File(current.getPath() + "/" + pathsName[0]);
+            newFlat.renameTo(fDest);
+        } else {
+            current.renameTo(fDest);
+        }
+        current.delete();
+    }
 
     private Boolean downloadFile(String url, String dest) throws JSONException {
-        Log.i("downloadFile called with " + url);
+        Log.i(TAG, "downloadFile called with " + url);
 
         try {
             URL u = new URL(url);
             InputStream is = u.openStream();
+            Log.i(TAG, "URL openStream");
             DataInputStream dis = new DataInputStream(is);
             byte[] buffer = new byte[1024];
             int length;
-            File downFile = new File(dest);
+            File downFile = new File(this.context.getFilesDir()  + "/" + dest);
 
+            Log.i(TAG, "mkdirs " + downFile.getPath());
             downFile.getParentFile().mkdirs();
             downFile.createNewFile();
+            Log.i(TAG, "createNewFile ");
             FileOutputStream fos = new FileOutputStream(downFile);
             while ((length = dis.read(buffer))>0) {
                 fos.write(buffer, 0, length);
@@ -162,21 +126,62 @@ public class CapacitorUpdater {
         return true;
     }
 
-    public Boolean updateApp(String url) {
-        Log.i("updateApp", url);
+    public String download(String url) {
+        Log.i("CapacitorUpdater", "URL: " + url);
         try {
-            String folderNameZip = this.generateFolderName();
-            String folderName = this.generateFolderName();
-            Boolean downloaded = this.downloadFile(url, folderName);
-            if(!downloaded) return false;
-            Boolean unziped = this.unzip(folderNameZip, folderName);
-            if(!unziped) return false;
-            Boolean copied = this.copyAssets(source, "public");
-            if(!copied) return false;
-            return true;
+            String folderNameZip = this.randomString(10);
+            File fileZip = new File(this.context.getFilesDir()  + "/" + folderNameZip);
+            String folderNameUnZip = this.randomString(10);
+            String version = this.randomString(10);
+            String folderName = basePathHot + "/" + version;
+            Boolean downloaded = this.downloadFile(url, folderNameZip);
+            if(!downloaded) return null;
+            Boolean unzipped = this.unzip(folderNameZip, folderNameUnZip);
+            if(!unzipped) return null;
+            fileZip.delete();
+            this.flattenAssets(folderNameUnZip, folderName);
+            return version;
         } catch (Exception e) {
-            Log.e(TAG, "updateApp error", e);
-            return false;
+            Log.e("TAG", "updateApp error", e);
+            return null;
         }
+    }
+
+    public ArrayList<String> list() {
+        ArrayList<String> res = new ArrayList<String>();
+        File destHot = new File(this.context.getFilesDir()  + "/" + basePathHot);
+        Log.i(TAG, "list File : " + destHot.getPath());
+        if (destHot.exists()) {
+            for (File i : destHot.listFiles()) {
+                res.add(i.getPath());
+            }
+        } else {
+            Log.i(TAG, "NO version available" + destHot);
+        }
+        return res;
+    }
+
+    public Boolean delete(String version) {
+        File destHot = new File(this.context.getFilesDir()  + "/" + basePathHot + "/" + version);
+        Log.i(TAG, "delete File : " + destHot.getPath());
+        if (destHot.exists()) {
+            destHot.delete();
+            return true;
+        }
+        Log.i(TAG, "File not removed.");
+        return false;
+    }
+
+    public Boolean set(String version) {
+        File destHot = new File(this.context.getFilesDir()  + "/" + basePathHot + "/" + version);
+        Log.i(TAG, "set File : " + destHot.getPath());
+        if (destHot.exists()) {
+            lastPathHot = destHot.getPath();
+            return true;
+        }
+        return false;
+    }
+    public String getLastPathHot() {
+        return lastPathHot;
     }
 }
