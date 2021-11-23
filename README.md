@@ -39,7 +39,7 @@ updateApp('URL_TO_S3_OR ANY_PLACE')
 ### download(...)
 
 ```typescript
-download(options: { url: string; }) => any
+download(options: { url: string; }) => Promise<{ version: string; }>
 ```
 
 download new version from url
@@ -48,7 +48,7 @@ download new version from url
 | ------------- | ----------------------------- |
 | **`options`** | <code>{ url: string; }</code> |
 
-**Returns:** <code>any</code>
+**Returns:** <code>Promise&lt;{ version: string; }&gt;</code>
 
 --------------------
 
@@ -56,7 +56,7 @@ download new version from url
 ### set(...)
 
 ```typescript
-set(options: { version: string; }) => any
+set(options: { version: string; }) => Promise<void>
 ```
 
 set version as current version
@@ -65,15 +65,13 @@ set version as current version
 | ------------- | --------------------------------- |
 | **`options`** | <code>{ version: string; }</code> |
 
-**Returns:** <code>any</code>
-
 --------------------
 
 
 ### delete(...)
 
 ```typescript
-delete(options: { version: string; }) => any
+delete(options: { version: string; }) => Promise<void>
 ```
 
 delete version in storage
@@ -82,20 +80,18 @@ delete version in storage
 | ------------- | --------------------------------- |
 | **`options`** | <code>{ version: string; }</code> |
 
-**Returns:** <code>any</code>
-
 --------------------
 
 
 ### list()
 
 ```typescript
-list() => any
+list() => Promise<{ versions: string[]; }>
 ```
 
 get all avaible verisions
 
-**Returns:** <code>any</code>
+**Returns:** <code>Promise&lt;{ versions: string[]; }&gt;</code>
 
 --------------------
 

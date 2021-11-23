@@ -134,7 +134,6 @@ extension String {
     @objc public func set(version: String) -> Bool {
         let destHot = documentsUrl.appendingPathComponent(basePathHot).appendingPathComponent(version)
         let destHotPersist = libraryUrl.appendingPathComponent(basePathPersist).appendingPathComponent(version)
-//        if (destHot.isDirectory) {
         if (destHot.isDirectory && destHotPersist.isDirectory) {
             lastPathHot = destHot.path
             lastPathPersist = destHotPersist.path
