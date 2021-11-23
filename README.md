@@ -30,7 +30,6 @@ updateApp('URL_TO_S3_OR ANY_PLACE')
 * [`set(...)`](#set)
 * [`delete(...)`](#delete)
 * [`list()`](#list)
-* [`load()`](#load)
 
 </docgen-index>
 
@@ -95,19 +94,6 @@ list() => any
 ```
 
 get all avaible verisions
-
-**Returns:** <code>any</code>
-
---------------------
-
-
-### load()
-
-```typescript
-load() => any
-```
-
-load current version
 
 **Returns:** <code>any</code>
 
