@@ -1,6 +1,8 @@
 package ee.forgr.capacitor_updater;
 
+import android.app.Activity;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.util.Log;
 
 import org.json.JSONException;
@@ -24,6 +26,8 @@ public class CapacitorUpdater {
     private Context context;
     private String lastPathHot = "";
     private String basePathHot = "versions";
+    private SharedPreferences prefs;
+    private SharedPreferences.Editor editor;
 
     static final String AB = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
     static SecureRandom rnd = new SecureRandom();
@@ -37,6 +41,8 @@ public class CapacitorUpdater {
 
     CapacitorUpdater (Context context) {
         this.context = context;
+        this.prefs = context.getSharedPreferences("CapWebViewSettings", Activity.MODE_PRIVATE);
+        this.editor = prefs.edit();
     }
 
     private Boolean unzip(String source, String dest) {
@@ -177,6 +183,8 @@ public class CapacitorUpdater {
         Log.i(TAG, "set File : " + destHot.getPath());
         if (destHot.exists()) {
             lastPathHot = destHot.getPath();
+            editor.putString("serverBasePath", lastPathHot);
+            editor.commit();
             return true;
         }
         return false;
