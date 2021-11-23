@@ -1,6 +1,6 @@
 {
   "name": "capacitor-updater",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Download app update from url",
   "main": "dist/plugin.cjs.js",
   "module": "dist/esm/index.js",
