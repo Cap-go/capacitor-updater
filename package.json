@@ -1,6 +1,7 @@
 {
   "name": "capacitor-updater",
   "version": "1.0.8",
+  "license": "AGPL-3.0-only",
   "description": "Download app update from url",
   "main": "dist/plugin.cjs.js",
   "module": "dist/esm/index.js",
@@ -14,7 +15,6 @@
     "CapacitorUpdater.podspec"
   ],
   "author": "Martin Donadieu",
-  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/riderx/capacitor-updater.git"
