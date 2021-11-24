@@ -20,10 +20,12 @@ npx cap sync
   // Do the update when user leave app
   App.addListener('appStateChange', async(state) => {
       if (!state.isActive) {
+        SplashScreen.show()
         const version = await CapacitorUpdater.download({
         url: 'https://github.com/Forgr-ee/Mimesis/releases/download/0.0.1/dist.zip',
         })
         await CapacitorUpdater.set(version)
+        SplashScreen.hide() // in case the set fail, otherwise the new app will have to hide it
       }
   })
 
@@ -35,8 +37,11 @@ npx cap sync
     // show the splashscreen to let the update happen
     SplashScreen.show()
     await CapacitorUpdater.set(version)
+    SplashScreen.hide() // in case the set fail, otherwise the new app will have to hide it
   }
 ```
+
+*Be extra carufull for your update* if you send a broken update, the app will crash until the user uninstall it.
 
 ## API
 
