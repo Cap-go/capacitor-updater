@@ -1,15 +1,10 @@
 # capacitor-updater
 
-Download app update from url
+Download app update from url and install it.
 
-WIP, the project need help to be working
+And reload the view.
 
-Android:
-- unzip downloaded file in background
-- restart app
-
-Apple:
-- persist downloaded version between app launches
+You can list the version and manage it with the command below.
 ## Install
 
 ```bash
@@ -18,8 +13,29 @@ npx cap sync
 ```
 
 ```
-import { updateApp } from 'capacitor-updater'
-updateApp('URL_TO_S3_OR ANY_PLACE')
+  import { CapacitorUpdater } from 'capacitor-updater'
+  import { SplashScreen } from '@capacitor/splash-screen'
+  import { App } from '@capacitor/app'
+
+  // Do the update when user leave app
+  App.addListener('appStateChange', async(state) => {
+      if (!state.isActive) {
+        const version = await CapacitorUpdater.download({
+        url: 'https://github.com/Forgr-ee/Mimesis/releases/download/0.0.1/dist.zip',
+        })
+        await CapacitorUpdater.set(version)
+      }
+  })
+
+  // or do it when click on button
+  const updateNow = async () => {
+    const version = await CapacitorUpdater.download({
+      url: 'https://github.com/Forgr-ee/Mimesis/releases/download/0.0.1/dist.zip',
+    })
+    // show the splashscreen to let the update happen
+    SplashScreen.show()
+    await CapacitorUpdater.set(version)
+  }
 ```
 
 ## API
