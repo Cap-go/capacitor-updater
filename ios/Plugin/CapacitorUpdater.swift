@@ -6,11 +6,9 @@ extension URL {
     var isDirectory: Bool {
        (try? resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
     }
-}
-extension String {
-   var fileExists: Bool {
-      return FileManager().fileExists(atPath: self)
-   }
+    var exist: Bool {
+        return FileManager().fileExists(atPath: self.path)
+    }
 }
 
 @objc public class CapacitorUpdater: NSObject {
@@ -136,7 +134,7 @@ extension String {
         let indexHot = destHot.appendingPathComponent("index.html")
         let destHotPersist = libraryUrl.appendingPathComponent(basePathPersist).appendingPathComponent(version)
         let indexPersist = destHot.appendingPathComponent("index.html")
-        if (destHot.isDirectory && destHotPersist.isDirectory && index.isFile && indexPersist.isFile) {
+        if (destHot.isDirectory && destHotPersist.isDirectory && indexHot.exist && indexPersist.exist) {
             lastPathHot = destHot.path
             lastPathPersist = destHotPersist.path
             return true
