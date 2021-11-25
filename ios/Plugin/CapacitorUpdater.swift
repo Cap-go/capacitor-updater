@@ -147,7 +147,7 @@ extension URL {
     @objc public func getLastPathPersist() -> String {
         return lastPathPersist
     }
-    @objc public func reser() {
+    @objc public func reset() {
         lastPathHot = ""
         lastPathPersist = ""
     }
