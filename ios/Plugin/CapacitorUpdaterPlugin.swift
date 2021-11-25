@@ -41,9 +41,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                     let defaults = UserDefaults.standard
                     defaults.set(String(pathPersist.suffix(10)), forKey: "serverBasePath")
                 }
-                call.resolve()
+                return call.resolve()
             }
-            call.resolve()
+            call.reject("Update failed, viewController missing")
         } else {
             call.reject("Update failed, version don't exist")
         }
@@ -64,6 +64,18 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         call.resolve([
             "versions": res
         ])
+    }
+    @objc func reset(_ call: CAPPluginCall) {
+        guard let bridge = self.bridge else { return call.reject("bridge missing") }
+
+        if let vc = bridge.viewController as? CAPBridgeViewController {
+            implementation.reset()
+            vc.setServerBasePath(path: "")
+            let defaults = UserDefaults.standard
+            defaults.set(String(""), forKey: "serverBasePath")
+            return call.resolve()
+        }
+        call.reject("Update failed, viewController missing")
     }
 
 }

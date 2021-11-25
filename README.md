@@ -51,6 +51,7 @@ npx cap sync
 * [`set(...)`](#set)
 * [`delete(...)`](#delete)
 * [`list()`](#list)
+* [`reset()`](#reset)
 
 </docgen-index>
 
@@ -63,7 +64,7 @@ npx cap sync
 download(options: { url: string; }) => Promise<{ version: string; }>
 ```
 
-download new version from url
+download new version from url, it should be a zip file, with files inside or with a unique folder inside with all your files
 
 | Param         | Type                          |
 | ------------- | ----------------------------- |
@@ -80,7 +81,7 @@ download new version from url
 set(options: { version: string; }) => Promise<void>
 ```
 
-set version as current version
+set version as current version, set will return error if there are no index.html file inside the version folder
 
 | Param         | Type                              |
 | ------------- | --------------------------------- |
@@ -110,9 +111,20 @@ delete version in storage
 list() => Promise<{ versions: string[]; }>
 ```
 
-get all avaible verisions
+get all avaible versions
 
 **Returns:** <code>Promise&lt;{ versions: string[]; }&gt;</code>
+
+--------------------
+
+
+### reset()
+
+```typescript
+reset() => Promise<void>
+```
+
+set the original version (the one sent to Apple store / Google play store ) as current version
 
 --------------------
 

@@ -69,4 +69,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
         ret.put("versions", res);
         call.resolve(ret);
     }
+
+    @PluginMethod
+    public void reset(PluginCall call) {
+        implementation.reset();
+        call.resolve();
+    }
 }

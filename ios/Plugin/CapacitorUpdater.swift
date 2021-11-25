@@ -133,8 +133,10 @@ extension String {
 
     @objc public func set(version: String) -> Bool {
         let destHot = documentsUrl.appendingPathComponent(basePathHot).appendingPathComponent(version)
+        let indexHot = destHot.appendingPathComponent("index.html")
         let destHotPersist = libraryUrl.appendingPathComponent(basePathPersist).appendingPathComponent(version)
-        if (destHot.isDirectory && destHotPersist.isDirectory) {
+        let indexPersist = destHot.appendingPathComponent("index.html")
+        if (destHot.isDirectory && destHotPersist.isDirectory && index.isFile && indexPersist.isFile) {
             lastPathHot = destHot.path
             lastPathPersist = destHotPersist.path
             return true
@@ -146,5 +148,9 @@ extension String {
     }
     @objc public func getLastPathPersist() -> String {
         return lastPathPersist
+    }
+    @objc public func reser() {
+        lastPathHot = ""
+        lastPathPersist = ""
     }
 }

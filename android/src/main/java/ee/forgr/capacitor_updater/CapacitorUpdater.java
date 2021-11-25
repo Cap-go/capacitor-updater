@@ -180,8 +180,9 @@ public class CapacitorUpdater {
 
     public Boolean set(String version) {
         File destHot = new File(this.context.getFilesDir()  + "/" + basePathHot + "/" + version);
+        File destIndex = new File(destHot.getPath()  + "/index.html");
         Log.i(TAG, "set File : " + destHot.getPath());
-        if (destHot.exists()) {
+        if (destHot.exists() && destIndex.exists()) {
             lastPathHot = destHot.getPath();
             editor.putString("serverBasePath", lastPathHot);
             editor.commit();
@@ -191,5 +192,8 @@ public class CapacitorUpdater {
     }
     public String getLastPathHot() {
         return lastPathHot;
+    }
+    public Void reset() {
+        lastPathHot = "";
     }
 }
