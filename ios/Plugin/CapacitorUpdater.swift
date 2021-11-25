@@ -4,7 +4,7 @@ import Just
 
 extension URL {
     var isDirectory: Bool {
-       (try? resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+        (try? resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
     }
     var exist: Bool {
         return FileManager().fileExists(atPath: self.path)
@@ -27,6 +27,7 @@ extension URL {
     
     // Persistent path /var/mobile/Containers/Data/Application/8C0C07BE-0FD3-4FD4-B7DF-90A88E12B8C3/Library/NoCloud/ionic_built_snapshots/FOLDER
     // Hot Reload path /var/mobile/Containers/Data/Application/8C0C07BE-0FD3-4FD4-B7DF-90A88E12B8C3/Documents/FOLDER
+    // Normal /private/var/containers/Bundle/Application/8C0C07BE-0FD3-4FD4-B7DF-90A88E12B8C3/App.app/public
     
     private func prepareFolder(source: URL) {
         if (!FileManager.default.fileExists(atPath: source.path)) {
@@ -100,7 +101,7 @@ extension URL {
             saveDownloadedPersist(content: r.content, version: version)
             return version
         } else {
-            print("Error downloading zip file", r.error)
+            print("Error downloading zip file", r.error ?? "unknow")
         }
         return nil
     }
@@ -135,20 +136,23 @@ extension URL {
         let destHotPersist = libraryUrl.appendingPathComponent(basePathPersist).appendingPathComponent(version)
         let indexPersist = destHot.appendingPathComponent("index.html")
         if (destHot.isDirectory && destHotPersist.isDirectory && indexHot.exist && indexPersist.exist) {
-            lastPathHot = destHot.path
-            lastPathPersist = destHotPersist.path
+            UserDefaults.standard.set(destHot.path, forKey: "lastPathHot")
+            UserDefaults.standard.set(destHotPersist.path, forKey: "lastPathPersist")
             return true
         }
         return false
     }
+    
     @objc public func getLastPathHot() -> String {
-        return lastPathHot
+        return UserDefaults.standard.string(forKey: "lastPathHot") ?? ""
     }
+    
     @objc public func getLastPathPersist() -> String {
-        return lastPathPersist
+        return UserDefaults.standard.string(forKey: "lastPathPersist") ?? ""
     }
+    
     @objc public func reset() {
-        lastPathHot = ""
-        lastPathPersist = ""
+        UserDefaults.standard.set("", forKey: "lastPathHot")
+        UserDefaults.standard.set("", forKey: "lastPathPersist")
     }
 }

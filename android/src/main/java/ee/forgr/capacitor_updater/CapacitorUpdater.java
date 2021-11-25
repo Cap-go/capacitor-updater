@@ -24,7 +24,6 @@ import java.util.ArrayList;
 public class CapacitorUpdater {
     String TAG = "CapacitorUpdater";
     private Context context;
-    private String lastPathHot = "";
     private String basePathHot = "versions";
     private SharedPreferences prefs;
     private SharedPreferences.Editor editor;
@@ -183,7 +182,7 @@ public class CapacitorUpdater {
         File destIndex = new File(destHot.getPath()  + "/index.html");
         Log.i(TAG, "set File : " + destHot.getPath());
         if (destHot.exists() && destIndex.exists()) {
-            lastPathHot = destHot.getPath();
+            String lastPathHot = editor.getString("lastPathHot", "");
             editor.putString("serverBasePath", lastPathHot);
             editor.commit();
             return true;
@@ -191,9 +190,11 @@ public class CapacitorUpdater {
         return false;
     }
     public String getLastPathHot() {
-        return lastPathHot;
+        return editor.getString("lastPathHot", "");
     }
     public Void reset() {
-        lastPathHot = "";
+        editor.putString("lastPathHot", "");
+        editor.putString("serverBasePath", "");
+        editor.commit();
     }
 }
