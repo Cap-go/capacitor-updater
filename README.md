@@ -17,15 +17,22 @@ npx cap sync
   import { SplashScreen } from '@capacitor/splash-screen'
   import { App } from '@capacitor/app'
 
-  // Do the update when user leave app
+  let version = ""
   App.addListener('appStateChange', async(state) => {
-      if (!state.isActive) {
-        SplashScreen.show()
-        const version = await CapacitorUpdater.download({
+      if (state.isActive) {
+        // Do the download during user active app time to prevent failed download
+        version = await CapacitorUpdater.download({
         url: 'https://github.com/Forgr-ee/Mimesis/releases/download/0.0.1/dist.zip',
         })
-        await CapacitorUpdater.set(version)
-        SplashScreen.hide() // in case the set fail, otherwise the new app will have to hide it
+      }
+      if (!state.isActive && version !== "") {
+        // Do the switch when user leave app
+        SplashScreen.show()
+        try {
+          await CapacitorUpdater.set(version)
+        } catch () {
+          SplashScreen.hide() // in case the set fail, otherwise the new app will have to hide it
+        }
       }
   })
 
@@ -52,6 +59,7 @@ npx cap sync
 * [`delete(...)`](#delete)
 * [`list()`](#list)
 * [`reset()`](#reset)
+* [`current()`](#current)
 
 </docgen-index>
 
@@ -125,6 +133,19 @@ reset() => Promise<void>
 ```
 
 set the original version (the one sent to Apple store / Google play store ) as current version
+
+--------------------
+
+
+### current()
+
+```typescript
+current() => Promise<{ current: string; }>
+```
+
+get the curent version, if none are set it return 'default'
+
+**Returns:** <code>Promise&lt;{ current: string; }&gt;</code>
 
 --------------------
 

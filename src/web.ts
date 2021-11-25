@@ -22,4 +22,8 @@ export class CapacitorUpdaterWeb
   async reset(): Promise<void> {
     console.log('Cannot reset version in web');
   }
+  async current(): Promise<{ current: string }> {
+    console.log('Cannot get current version in web');
+    return { current: 'default'};
+  }
 }

@@ -75,4 +75,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
         implementation.reset();
         call.resolve();
     }
+
+    @PluginMethod
+    public void current(PluginCall call) {
+        String pathHot = implementation.getLastPathHot();
+        JSObject ret = new JSObject();
+        String current = pathHot.length() >= 10 ? pathHot.substring(pathHot.length() - 10)) : 'default';
+        ret.put("current", current);
+        call.resolve(ret);
+    }
 }

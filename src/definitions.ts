@@ -27,4 +27,9 @@ export interface CapacitorUpdaterPlugin {
    * @returns {Promise<void>} an empty Promise
    */
   reset(): Promise<void>;
+    /**
+   * get the curent version, if none are set it return 'default'
+   * @returns {Promise<{ current: string }>} an Promise with the current version name
+   */
+  current(): Promise<{ current: string }>;
 }
