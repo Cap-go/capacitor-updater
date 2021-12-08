@@ -17,10 +17,10 @@
   "author": "Martin Donadieu",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/riderx/capacitor-updater.git"
+    "url": "git+https://github.com/HarrisCarney/capacitor-updater.git"
   },
   "bugs": {
-    "url": "https://github.com/riderx/capacitor-updater/issues"
+    "url": "https://github.com/HarrisCarney/capacitor-updater/issues"
   },
   "keywords": [
     "capacitor",
