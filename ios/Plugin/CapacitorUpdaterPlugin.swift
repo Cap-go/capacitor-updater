@@ -34,9 +34,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 let pathHot = implementation.getLastPathHot()
                 let pathPersist = implementation.getLastPathPersist()
                 if (pathHot != "" && pathPersist != "") {
-                    if (defaults.string(forKey: "serverBasePathOriginal") == nil) {
-                        defaults.set(vc.getServerBasePath(), forKey: "serverBasePathOriginal")
-                    }
                     defaults.set(String(pathPersist.suffix(10)), forKey: "serverBasePath")
                     vc.setServerBasePath(path: pathHot)
                     return call.resolve()
@@ -72,11 +69,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
        if let vc = bridge.viewController as? CAPBridgeViewController {
            let defaults = UserDefaults.standard
-           let serverBasePathOriginal = defaults.string(forKey: "serverBasePathOriginal") ?? ""
-           print("RESET", serverBasePathOriginal, implementation.getLastPathHot())
            implementation.reset()
-           vc.setServerBasePath(path: serverBasePathOriginal)
-           defaults.set(serverBasePathOriginal, forKey: "serverBasePath")
+           let pathPersist = implementation.getLastPathPersist()
+           vc.setServerBasePath(path: pathPersist)
+           defaults.set(pathPersist, forKey: "serverBasePath")
            DispatchQueue.main.async {
                bridge.webView?.reload()
            }
