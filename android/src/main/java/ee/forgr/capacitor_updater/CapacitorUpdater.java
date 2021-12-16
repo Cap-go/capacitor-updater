@@ -192,7 +192,7 @@ public class CapacitorUpdater {
     public String getLastPathHot() {
         return prefs.getString("lastPathHot", "");
     }
-    public Void reset() {
+    public void reset() {
         editor.putString("lastPathHot", "");
         editor.putString("serverBasePath", "");
         editor.commit();
