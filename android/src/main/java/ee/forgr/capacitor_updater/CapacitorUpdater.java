@@ -196,6 +196,5 @@ public class CapacitorUpdater {
         editor.putString("lastPathHot", "");
         editor.putString("serverBasePath", "");
         editor.commit();
-        return null;
     }
 }
