@@ -68,20 +68,20 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func reset(_ call: CAPPluginCall) {
-//        guard let bridge = self.bridge else { return call.reject("bridge missing") }
-//
-//        if let vc = bridge.viewController as? CAPBridgeViewController {
-//            let defaults = UserDefaults.standard
-//            let serverBasePathOriginal = defaults.string(forKey: "serverBasePathOriginal") ?? ""
-//            print("RESET", serverBasePathOriginal, implementation.getLastPathHot())
-//            implementation.reset()
-//            vc.setServerBasePath(path: serverBasePathOriginal)
-//            defaults.set(serverBasePathOriginal, forKey: "serverBasePath")
-//            DispatchQueue.main.async {
-//                bridge.webView?.reload()
-//            }
-//            return call.resolve()
-//        }
+       guard let bridge = self.bridge else { return call.reject("bridge missing") }
+
+       if let vc = bridge.viewController as? CAPBridgeViewController {
+           let defaults = UserDefaults.standard
+           let serverBasePathOriginal = defaults.string(forKey: "serverBasePathOriginal") ?? ""
+           print("RESET", serverBasePathOriginal, implementation.getLastPathHot())
+           implementation.reset()
+           vc.setServerBasePath(path: serverBasePathOriginal)
+           defaults.set(serverBasePathOriginal, forKey: "serverBasePath")
+           DispatchQueue.main.async {
+               bridge.webView?.reload()
+           }
+           return call.resolve()
+       }
         call.reject("Reset failed, not implemented")
     }
 

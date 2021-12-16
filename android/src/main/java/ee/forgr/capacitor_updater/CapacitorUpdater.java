@@ -182,8 +182,8 @@ public class CapacitorUpdater {
         File destIndex = new File(destHot.getPath()  + "/index.html");
         Log.i(TAG, "set File : " + destHot.getPath());
         if (destHot.exists() && destIndex.exists()) {
-            String lastPathHot = prefs.getString("lastPathHot", "");
-            editor.putString("serverBasePath", lastPathHot);
+            editor.putString("lastPathHot", destHot.getPath());
+            editor.putString("serverBasePath", destHot.getPath());
             editor.commit();
             return true;
         }
@@ -196,5 +196,6 @@ public class CapacitorUpdater {
         editor.putString("lastPathHot", "");
         editor.putString("serverBasePath", "");
         editor.commit();
+        return null;
     }
 }
