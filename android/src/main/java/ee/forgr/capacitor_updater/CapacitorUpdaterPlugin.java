@@ -74,7 +74,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     public void reset(PluginCall call) {
         implementation.reset();
         String pathHot = implementation.getLastPathHot();
-        this.bridge.setServerBasePath(pathHot);
+        this.bridge.setServerAssetPath(pathHot);
         call.resolve();
     }
 
