@@ -1,6 +1,6 @@
 {
   "name": "capacitor-updater",
-  "version": "1.0.22",
+  "version": "1.0.23",
   "license": "AGPL-3.0-only",
   "description": "Download app update from url",
   "main": "dist/plugin.cjs.js",

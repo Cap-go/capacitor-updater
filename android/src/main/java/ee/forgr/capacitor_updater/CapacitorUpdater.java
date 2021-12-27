@@ -131,6 +131,20 @@ public class CapacitorUpdater {
         return true;
     }
 
+    private void deleteDirectory(File file) throws IOException {
+        if (file.isDirectory()) {
+            File[] entries = file.listFiles();
+            if (entries != null) {
+                for (File entry : entries) {
+                    deleteDirectory(entry);
+                }
+            }
+        }
+        if (!file.delete()) {
+            throw new IOException("Failed to delete " + file);
+        }
+    }
+
     public String download(String url) {
         Log.i("CapacitorUpdater", "URL: " + url);
         try {
@@ -147,7 +161,7 @@ public class CapacitorUpdater {
             this.flattenAssets(folderNameUnZip, folderName);
             return version;
         } catch (Exception e) {
-            Log.e("TAG", "updateApp error", e);
+            Log.e(TAG, "updateApp error", e);
             return null;
         }
     }
@@ -166,14 +180,14 @@ public class CapacitorUpdater {
         return res;
     }
 
-    public Boolean delete(String version) {
+    public Boolean delete(String version) throws IOException {
         File destHot = new File(this.context.getFilesDir()  + "/" + basePathHot + "/" + version);
         Log.i(TAG, "delete File : " + destHot.getPath());
         if (destHot.exists()) {
-            destHot.delete();
+            deleteDirectory(destHot);
             return true;
         }
-        Log.i(TAG, "File not removed.");
+        Log.i(TAG, "Directory not removed.");
         return false;
     }
 
