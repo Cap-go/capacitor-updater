@@ -152,7 +152,8 @@ extension URL {
     }
     
     @objc public func reset() {
-        UserDefaults.standard.set("capacitor://localhost", forKey: "lastPathHot")
-        UserDefaults.standard.set("capacitor://localhost", forKey: "lastPathPersist")
+        UserDefaults.standard.set("", forKey: "lastPathHot")
+        UserDefaults.standard.set("", forKey: "lastPathPersist")
+        UserDefaults.standard.synchronize()
     }
 }
