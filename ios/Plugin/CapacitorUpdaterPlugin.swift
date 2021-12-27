@@ -66,15 +66,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
     @objc func reset(_ call: CAPPluginCall) {
        guard let bridge = self.bridge else { return call.reject("bridge missing") }
-
        if let vc = bridge.viewController as? CAPBridgeViewController {
            let defaults = UserDefaults.standard
            implementation.reset()
            let pathPersist = implementation.getLastPathPersist()
            vc.setServerBasePath(path: pathPersist)
-           defaults.set(pathPersist, forKey: "serverBasePath")
+           defaults.set("", forKey: "serverBasePath")
            DispatchQueue.main.async {
-               bridge.webView?.reload()
+               vc.loadView()
+               vc.viewDidLoad()
            }
            return call.resolve()
        }
