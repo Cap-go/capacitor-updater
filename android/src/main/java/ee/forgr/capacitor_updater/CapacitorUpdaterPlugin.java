@@ -2,12 +2,14 @@ package ee.forgr.capacitor_updater;
 
 import android.util.Log;
 
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
+import java.io.IOException;
 import java.util.ArrayList;
 
 @CapacitorPlugin(name = "CapacitorUpdater")
@@ -53,12 +55,17 @@ public class CapacitorUpdaterPlugin extends Plugin {
     @PluginMethod
     public void delete(PluginCall call) {
         String version = call.getString("version");
-        Boolean res = implementation.delete(version);
+        try {
+            Boolean res = implementation.delete(version);
 
-        if (res) {
-            call.resolve();
-        } else {
-            call.reject("Delete failed, version don't exist");
+            if (res) {
+                call.resolve();
+            } else {
+                call.reject("Delete failed, version don't exist");
+            }
+        } catch(IOException ex) {
+            Log.e("CapacitorUpdater", "An unexpected error occurred during deletion of folder. Message: " + ex.getMessage());
+            call.reject("An unexpected error occurred during deletion of folder.");
         }
     }
 
@@ -66,7 +73,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     public void list(PluginCall call) {
         ArrayList<String> res = implementation.list();
         JSObject ret = new JSObject();
-        ret.put("versions", res);
+        ret.put("versions", new JSArray(res));
         call.resolve(ret);
     }
 
