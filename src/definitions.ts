@@ -10,7 +10,7 @@ export interface CapacitorUpdaterPlugin {
    * @returns {Promise<void>} an empty Promise when the version is set, if there are no index.html or no version folder throw an error
    * @param version The version name to set as current version
    */
-  set(options: { version: string, versionName }): Promise<void>;
+  set(options: { version: string, versionName?: string }): Promise<void>;
     /**
    * delete version in storage
    * @returns {Promise<void>} an empty Promise when the version is delete, otherwise throw an error

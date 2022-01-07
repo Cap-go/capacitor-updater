@@ -9,7 +9,7 @@ export class CapacitorUpdaterWeb
     console.log('Cannot download version in web', options);
     return { version: ""};
   }
-  async set(options: { version: string }): Promise<void> {
+  async set(options: { version: string, versionName?: string }): Promise<void> {
     console.log('Cannot set version in web', options);
   }
   async delete(options: { version: string }): Promise<void> {
@@ -25,5 +25,13 @@ export class CapacitorUpdaterWeb
   async current(): Promise<{ current: string }> {
     console.log('Cannot get current version in web');
     return { current: 'default'};
+  }
+  async reload(): Promise<void> {
+    console.log('Cannot reload current version in web');
+    return;
+  }
+  async versionName(): Promise<{ versionName: string }> {
+    console.log('Cannot get current versionName in web');
+    return { versionName: 'default'};
   }
 }

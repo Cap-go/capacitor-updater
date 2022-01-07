@@ -88,14 +88,14 @@ download new version from url, it should be a zip file, with files inside or wit
 ### set(...)
 
 ```typescript
-set(options: { version: string; versionName; }) => Promise<void>
+set(options: { version: string; versionName?: string; }) => Promise<void>
 ```
 
 set version as current version, set will return error if there are no index.html file inside the version folder, versionName is optional and it's a custom value who will be saved for you
 
-| Param         | Type                                                |
-| ------------- | --------------------------------------------------- |
-| **`options`** | <code>{ version: string; versionName: any; }</code> |
+| Param         | Type                                                    |
+| ------------- | ------------------------------------------------------- |
+| **`options`** | <code>{ version: string; versionName?: string; }</code> |
 
 --------------------
 
