@@ -60,6 +60,8 @@ npx cap sync
 * [`list()`](#list)
 * [`reset()`](#reset)
 * [`current()`](#current)
+* [`reload()`](#reload)
+* [`versionName()`](#versionname)
 
 </docgen-index>
 
@@ -86,14 +88,14 @@ download new version from url, it should be a zip file, with files inside or wit
 ### set(...)
 
 ```typescript
-set(options: { version: string; }) => Promise<void>
+set(options: { version: string; versionName; }) => Promise<void>
 ```
 
-set version as current version, set will return error if there are no index.html file inside the version folder
+set version as current version, set will return error if there are no index.html file inside the version folder, versionName is optional and it's a custom value who will be saved for you
 
-| Param         | Type                              |
-| ------------- | --------------------------------- |
-| **`options`** | <code>{ version: string; }</code> |
+| Param         | Type                                                |
+| ------------- | --------------------------------------------------- |
+| **`options`** | <code>{ version: string; versionName: any; }</code> |
 
 --------------------
 
@@ -146,6 +148,30 @@ current() => Promise<{ current: string; }>
 get the curent version, if none are set it return 'default'
 
 **Returns:** <code>Promise&lt;{ current: string; }&gt;</code>
+
+--------------------
+
+
+### reload()
+
+```typescript
+reload() => Promise<void>
+```
+
+reload the view
+
+--------------------
+
+
+### versionName()
+
+```typescript
+versionName() => Promise<{ versionName: string; }>
+```
+
+Get the version name, if it was set during the set phase
+
+**Returns:** <code>Promise&lt;{ versionName: string; }&gt;</code>
 
 --------------------
 
