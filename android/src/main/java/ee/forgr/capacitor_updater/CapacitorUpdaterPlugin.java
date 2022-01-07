@@ -13,15 +13,26 @@ import java.io.IOException;
 import java.util.ArrayList;
 
 @CapacitorPlugin(name = "CapacitorUpdater")
-public class CapacitorUpdaterPlugin extends Plugin {
+public class CapacitorUpdaterPlugin extends Plugin{
+// public class CapacitorUpdaterPlugin extends Plugin, Application.ActivityLifecycleCallbacks {
     private CapacitorUpdater implementation;
 
     @Override
     public void load() {
         super.load();
         implementation = new CapacitorUpdater(this.getContext());
+        // registerActivityLifecycleCallbacks(AppLifecycleTracker());
     }
 //    private CapacitorUpdater implementation = new CapacitorUpdater(this.getContext());
+
+    // override fun onActivityStarted(activity: Activity?) {
+    //     Log.i("CapacitorUpdater", "on foreground");
+    // }
+
+    // override fun onActivityStopped(activity: Activity?) {
+    //     Log.i("CapacitorUpdater", "oN  background");
+
+    // }
 
     @PluginMethod
     public void download(PluginCall call) {
@@ -37,10 +48,25 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
+    private boolean _reload() {
+        String pathHot = implementation.getLastPathHot();
+        Log.i("CapacitorUpdater", "getLastPathHot : " + pathHot);
+        this.bridge.setServerBasePath(pathHot);
+        return true;
+    }
+    @PluginMethod
+    public void reload(PluginCall call) {
+        if (this._reload()) {
+            call.resolve();
+        } else {
+            call.reject("reload failed");
+        }
+    }
     @PluginMethod
     public void set(PluginCall call) {
         String version = call.getString("version");
-        Boolean res = implementation.set(version);
+        String versionName = call.getString("versionName", version);
+        Boolean res = implementation.set(version, versionName);
 
         if (!res) {
             call.reject("Update failed, version don't exist");
@@ -91,6 +117,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
         JSObject ret = new JSObject();
         String current = pathHot.length() >= 10 ? pathHot.substring(pathHot.length() - 10) : "default";
         ret.put("current", current);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void versionName(PluginCall call) {
+        String name = implementation.getVersionName();
+        JSObject ret = new JSObject();
+        ret.put("versionName", name);
         call.resolve(ret);
     }
 }

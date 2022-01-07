@@ -10,6 +10,10 @@ extension URL {
         return FileManager().fileExists(atPath: self.path)
     }
 }
+public class AppVersion: NSObject {
+    var version: String = ""
+    var url: String = ""
+}
 
 @objc public class CapacitorUpdater: NSObject {
     
@@ -92,6 +96,19 @@ extension URL {
         }
     }
 
+    @objc public func getLatest(url: URL) -> AppVersion? {
+        print("URL " + url.path)
+        let r = Just.get(url)
+        if r.ok {
+            let latest = r.json as? AppVersion
+            //        { version: version.name, url: res.signedURL }
+            return latest
+        } else {
+            print("Error get Latest", r.error ?? "unknow")
+        }
+        return nil
+    }
+    
     @objc public func download(url: URL) -> String? {
         print("URL " + url.path)
         let r = Just.get(url)
@@ -130,7 +147,7 @@ extension URL {
         return true
     }
 
-    @objc public func set(version: String) -> Bool {
+    @objc public func set(version: String, versionName: String) -> Bool {
         let destHot = documentsUrl.appendingPathComponent(basePathHot).appendingPathComponent(version)
         let indexHot = destHot.appendingPathComponent("index.html")
         let destHotPersist = libraryUrl.appendingPathComponent(basePathPersist).appendingPathComponent(version)
@@ -138,6 +155,7 @@ extension URL {
         if (destHot.isDirectory && destHotPersist.isDirectory && indexHot.exist && indexPersist.exist) {
             UserDefaults.standard.set(destHot.path, forKey: "lastPathHot")
             UserDefaults.standard.set(destHotPersist.path, forKey: "lastPathPersist")
+            UserDefaults.standard.set(versionName, forKey: "versionName")
             return true
         }
         return false
@@ -145,6 +163,10 @@ extension URL {
     
     @objc public func getLastPathHot() -> String {
         return UserDefaults.standard.string(forKey: "lastPathHot") ?? ""
+    }
+    
+    @objc public func getVersionName() -> String {
+        return UserDefaults.standard.string(forKey: "versionName") ?? ""
     }
     
     @objc public func getLastPathPersist() -> String {

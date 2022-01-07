@@ -191,13 +191,14 @@ public class CapacitorUpdater {
         return false;
     }
 
-    public Boolean set(String version) {
+    public Boolean set(String version, String versionName) {
         File destHot = new File(this.context.getFilesDir()  + "/" + basePathHot + "/" + version);
         File destIndex = new File(destHot.getPath()  + "/index.html");
         Log.i(TAG, "set File : " + destHot.getPath());
         if (destHot.exists() && destIndex.exists()) {
             editor.putString("lastPathHot", destHot.getPath());
             editor.putString("serverBasePath", destHot.getPath());
+            editor.putString("versionName", versionName);
             editor.commit();
             return true;
         }
@@ -205,6 +206,9 @@ public class CapacitorUpdater {
     }
     public String getLastPathHot() {
         return prefs.getString("lastPathHot", "");
+    }
+    public String getVersionName() {
+        return prefs.getString("versionName", "");
     }
     public void reset() {
         editor.putString("lastPathHot", "public");

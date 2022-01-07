@@ -6,11 +6,11 @@ export interface CapacitorUpdaterPlugin {
    */
   download(options: { url: string }): Promise<{ version: string }>;
     /**
-   * set version as current version, set will return error if there are no index.html file inside the version folder
+   * set version as current version, set will return error if there are no index.html file inside the version folder, versionName is optional and it's a custom value who will be saved for you
    * @returns {Promise<void>} an empty Promise when the version is set, if there are no index.html or no version folder throw an error
    * @param version The version name to set as current version
    */
-  set(options: { version: string }): Promise<void>;
+  set(options: { version: string, versionName }): Promise<void>;
     /**
    * delete version in storage
    * @returns {Promise<void>} an empty Promise when the version is delete, otherwise throw an error
@@ -32,4 +32,15 @@ export interface CapacitorUpdaterPlugin {
    * @returns {Promise<{ current: string }>} an Promise with the current version name
    */
   current(): Promise<{ current: string }>;
+    /**
+   * reload the view
+   * @returns {Promise<void>} an Promise resolved when the view is reloaded
+   */
+  reload(): Promise<void>;
+    /**
+   * Get the version name, if it was set during the set phase
+   * @returns {Promise<{ versionName: string }>} an Promise witht the current versionName
+   */
+  versionName(): Promise<{ versionName: string }>;
+  
 }
