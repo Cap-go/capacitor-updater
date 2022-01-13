@@ -38,7 +38,7 @@ public class CapacitorUpdater {
         return sb.toString();
     }
 
-    CapacitorUpdater (Context context) {
+    public CapacitorUpdater (Context context) {
         this.context = context;
         this.prefs = context.getSharedPreferences("CapWebViewSettings", Activity.MODE_PRIVATE);
         this.editor = prefs.edit();
@@ -204,12 +204,31 @@ public class CapacitorUpdater {
         }
         return false;
     }
+
+    // public JSObject getLatest(url: URL) {
+    //     Log.i(TAG, "Get Latest ,URL: " + url.path);
+    //     JSObject ret = new JSObject();
+    //     // get json by url 
+    //     // let r = Just.get(url) // ios version
+    //     if r.ok {
+    //         // ret.put("url", r.json.url);
+    //         // ret.put("version", res.json.url);
+    //         //        { version: version.name, url: res.signedURL }
+    //         return ret
+    //     } else {
+    //         Log.e(TAG, "Error get Latest");
+    //     }
+    //     return  ret
+    // }
+
     public String getLastPathHot() {
         return prefs.getString("lastPathHot", "");
     }
+ 
     public String getVersionName() {
         return prefs.getString("versionName", "");
     }
+
     public void reset() {
         editor.putString("lastPathHot", "public");
         editor.putString("serverBasePath", "public");

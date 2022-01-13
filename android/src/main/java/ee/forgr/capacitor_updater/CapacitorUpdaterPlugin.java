@@ -16,22 +16,52 @@ import java.util.ArrayList;
 public class CapacitorUpdaterPlugin extends Plugin{
 // public class CapacitorUpdaterPlugin extends Plugin, Application.ActivityLifecycleCallbacks {
     private CapacitorUpdater implementation;
+    // private SharedPreferences.Editor editor;
+    // private var autoUpdateUrl = ""
+    // private var autoUpdate = false
 
     @Override
     public void load() {
         super.load();
+        // this.editor = prefs.edit();
         implementation = new CapacitorUpdater(this.getContext());
+        // this.autoUpdateUrl = getConfigValue("autoUpdateUrl") || "";
+        // if (this.autoUpdateUrl != "") {
+        //     this.autoUpdate = true
         // registerActivityLifecycleCallbacks(AppLifecycleTracker());
+        // }
     }
-//    private CapacitorUpdater implementation = new CapacitorUpdater(this.getContext());
 
     // override fun onActivityStarted(activity: Activity?) {
     //     Log.i("CapacitorUpdater", "on foreground");
+    //     URL u = new URL(autoUpdateUrl);
+    //     JSObject res = implementation.getLatest(u);
+    //     if (!res.url) {
+    //         return;
+    //     }
+    //     String name = implementation.getVersionName();
+    //     if (res?.version != name) {
+    //         String dl = implementation.download(url: downloadUrl);
+    //         editor.putString("nextVersion", dl);
+    //         editor.putString("nextVersionName", res?.version);
+    //     }
     // }
 
     // override fun onActivityStopped(activity: Activity?) {
-    //     Log.i("CapacitorUpdater", "oN  background");
+    //     Log.i("CapacitorUpdater", "on  background");
+    //     String nextVersion = prefs.getString("nextVersion", "");
+    //     String nextVersionName = prefs.getString("nextVersionName", "");
+    //     if (nextVersion != "" && nextVersionName != "") {
+    //         String res = implementation.set(version: nextVersion, versionName: nextVersionName)
+    //         if (res) {
+    //             if (this._reload()) {
+    //                 Log.i("CapacitorUpdater", "Auto update to VersionName: " + nextVersionName + ", Version: " + nextVersion);
+    //             }
+    //             editor.putString("nextVersion", "");
+    //             editor.putString("nextVersionName", "");
+    //         }
 
+    //     }
     // }
 
     @PluginMethod
