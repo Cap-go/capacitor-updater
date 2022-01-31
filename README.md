@@ -5,6 +5,10 @@ Download app update from url and install it.
 And reload the view.
 
 You can list the version and manage it with the command below.
+
+## Community
+Join the discord to get help : https://discord.gg/VnYRvBfgA6
+
 ## Install
 
 ```bash
