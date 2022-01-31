@@ -5,7 +5,14 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.util.Log;
 
+import com.android.volley.RequestQueue;
+import com.android.volley.Response;
+import com.android.volley.VolleyError;
+import com.android.volley.toolbox.StringRequest;
+import com.android.volley.toolbox.Volley;
+
 import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.io.BufferedInputStream;
 import java.io.DataInputStream;
@@ -20,6 +27,10 @@ import java.security.SecureRandom;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.ArrayList;
+
+interface Callback {
+    void callback(JSONObject jsonObject);
+}
 
 public class CapacitorUpdater {
     String TAG = "CapacitorUpdater";
@@ -95,7 +106,7 @@ public class CapacitorUpdater {
         File fDest = new File(this.context.getFilesDir()  + "/" + dest);
         fDest.getParentFile().mkdirs();
         String[] pathsName = current.list();
-        if (pathsName.length == 1 && pathsName[0] != "index.html") {
+        if (pathsName.length == 1 && !pathsName[0].equals("index.html")) {
             File newFlat =  new File(current.getPath() + "/" + pathsName[0]);
             newFlat.renameTo(fDest);
         } else {
@@ -205,21 +216,28 @@ public class CapacitorUpdater {
         return false;
     }
 
-    // public JSObject getLatest(url: URL) {
-    //     Log.i(TAG, "Get Latest ,URL: " + url.path);
-    //     JSObject ret = new JSObject();
-    //     // get json by url 
-    //     // let r = Just.get(url) // ios version
-    //     if r.ok {
-    //         // ret.put("url", r.json.url);
-    //         // ret.put("version", res.json.url);
-    //         //        { version: version.name, url: res.signedURL }
-    //         return ret
-    //     } else {
-    //         Log.e(TAG, "Error get Latest");
-    //     }
-    //     return  ret
-    // }
+    public void getLatest(String url, Callback callback) {
+        Log.i(TAG, "Get Latest, URL: " + url);
+        StringRequest stringRequest = new StringRequest(url, new Response.Listener<String>() {
+            @Override
+            public void onResponse(String response) {
+                try {
+                    JSONObject jsonObject = new JSONObject(response);
+                    callback.callback(jsonObject);
+                } catch (JSONException e) {
+                    e.printStackTrace();
+                }
+            }
+        }, new Response.ErrorListener() {
+            @Override
+            public void onErrorResponse(VolleyError error) {
+                // Anything you want
+                Log.e(TAG, "Error get Latest");
+            }
+        });
+        RequestQueue requestQueue = Volley.newRequestQueue(this.context);
+        requestQueue.add(stringRequest);
+    }
 
     public String getLastPathHot() {
         return prefs.getString("lastPathHot", "");

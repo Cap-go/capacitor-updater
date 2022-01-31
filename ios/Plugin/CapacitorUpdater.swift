@@ -10,6 +10,10 @@ extension URL {
         return FileManager().fileExists(atPath: self.path)
     }
 }
+struct AppVersionDec: Decodable {
+    let version: String
+    let url: String
+}
 public class AppVersion: NSObject {
     var version: String = ""
     var url: String = ""
@@ -97,14 +101,21 @@ public class AppVersion: NSObject {
     }
 
     @objc public func getLatest(url: URL) -> AppVersion? {
-        print("URL " + url.path)
         let r = Just.get(url)
         if r.ok {
-            let latest = r.json as? AppVersion
-            //        { version: version.name, url: res.signedURL }
-            return latest
+            let resp = try? JSONDecoder().decode(AppVersionDec.self, from: r.content!)
+            let latest = AppVersion()
+            if resp?.url != nil && resp?.version != nil {
+                latest.url = resp!.url
+                latest.version = resp!.version
+                //        { version: version.name, url: res.signedURL }
+                return latest
+            } else {
+                return nil
+            }
+
         } else {
-            print("Error get Latest", r.error ?? "unknow")
+            print("Error get Latest", url, r.error ?? "unknow")
         }
         return nil
     }

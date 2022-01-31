@@ -18,6 +18,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             let nc = NotificationCenter.default
             nc.addObserver(self, selector: #selector(appMovedToBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
             nc.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
+            appMovedToForeground() // check for update on startup
         }
     }
     
@@ -42,6 +43,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         print("appMovedToForeground")
         let url = URL(string: autoUpdateUrl)!
         let res = implementation.getLatest(url: url)
+        if (res == nil) {
+            return
+        }
         guard let downloadUrl = URL(string: res?.url ?? "") else {
             return
         }

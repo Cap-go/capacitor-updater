@@ -1,6 +1,13 @@
 package ee.forgr.capacitor_updater;
 
+import android.app.Activity;
+import android.app.Application;
+import android.content.SharedPreferences;
+import android.os.Bundle;
 import android.util.Log;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -9,73 +16,47 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
+import org.json.JSONException;
+
 import java.io.IOException;
 import java.util.ArrayList;
 
 @CapacitorPlugin(name = "CapacitorUpdater")
-public class CapacitorUpdaterPlugin extends Plugin{
-// public class CapacitorUpdaterPlugin extends Plugin, Application.ActivityLifecycleCallbacks {
+ public class CapacitorUpdaterPlugin extends Plugin implements Application.ActivityLifecycleCallbacks {
     private CapacitorUpdater implementation;
-    // private SharedPreferences.Editor editor;
-    // private var autoUpdateUrl = ""
-    // private var autoUpdate = false
+    private SharedPreferences prefs;
+    private SharedPreferences.Editor editor;
+    private String autoUpdateUrl = null;
 
     @Override
     public void load() {
         super.load();
-        // this.editor = prefs.edit();
+        this.prefs = this.getContext().getSharedPreferences("CapWebViewSettings", Activity.MODE_PRIVATE);
+        this.editor = prefs.edit();
         implementation = new CapacitorUpdater(this.getContext());
-        // this.autoUpdateUrl = getConfigValue("autoUpdateUrl") || "";
-        // if (this.autoUpdateUrl != "") {
-        //     this.autoUpdate = true
-        // registerActivityLifecycleCallbacks(AppLifecycleTracker());
-        // }
+        this.autoUpdateUrl = getConfig().getString("autoUpdateUrl");
+        if (this.autoUpdateUrl == null || this.autoUpdateUrl.equals("")) return;
+        Application application = (Application) this.getContext().getApplicationContext();
+        application.registerActivityLifecycleCallbacks(this);
+        onActivityStarted(this.getActivity());
     }
-
-    // override fun onActivityStarted(activity: Activity?) {
-    //     Log.i("CapacitorUpdater", "on foreground");
-    //     URL u = new URL(autoUpdateUrl);
-    //     JSObject res = implementation.getLatest(u);
-    //     if (!res.url) {
-    //         return;
-    //     }
-    //     String name = implementation.getVersionName();
-    //     if (res?.version != name) {
-    //         String dl = implementation.download(url: downloadUrl);
-    //         editor.putString("nextVersion", dl);
-    //         editor.putString("nextVersionName", res?.version);
-    //     }
-    // }
-
-    // override fun onActivityStopped(activity: Activity?) {
-    //     Log.i("CapacitorUpdater", "on  background");
-    //     String nextVersion = prefs.getString("nextVersion", "");
-    //     String nextVersionName = prefs.getString("nextVersionName", "");
-    //     if (nextVersion != "" && nextVersionName != "") {
-    //         String res = implementation.set(version: nextVersion, versionName: nextVersionName)
-    //         if (res) {
-    //             if (this._reload()) {
-    //                 Log.i("CapacitorUpdater", "Auto update to VersionName: " + nextVersionName + ", Version: " + nextVersion);
-    //             }
-    //             editor.putString("nextVersion", "");
-    //             editor.putString("nextVersionName", "");
-    //         }
-
-    //     }
-    // }
 
     @PluginMethod
     public void download(PluginCall call) {
-        String url = call.getString("url");
-
-        String res = implementation.download(url);
-        if ((res) != null) {
-            JSObject ret = new JSObject();
-            ret.put("version", res);
-            call.resolve(ret);
-        } else {
-            call.reject("download failed");
-        }
+        new Thread(new Runnable(){
+            @Override
+            public void run() {
+                String url = call.getString("url");
+                String res = implementation.download(url);
+                if ((res) != null) {
+                    JSObject ret = new JSObject();
+                    ret.put("version", res);
+                    call.resolve(ret);
+                } else {
+                    call.reject("download failed");
+                }
+            }
+        }).start();
     }
 
     private boolean _reload() {
@@ -156,5 +137,78 @@ public class CapacitorUpdaterPlugin extends Plugin{
         JSObject ret = new JSObject();
         ret.put("versionName", name);
         call.resolve(ret);
+    }
+
+    @Override
+    public void onActivityStarted(@NonNull Activity activity) {
+        Log.i("CapacitorUpdater", "on foreground");
+        if (autoUpdateUrl == null || autoUpdateUrl.equals("")) return;
+        implementation.getLatest(autoUpdateUrl, (res) -> {
+            try {
+                String name = implementation.getVersionName();
+                String newVersion = (String) res.get("version");
+                if (!newVersion.equals(name)) {
+                    new Thread(new Runnable(){
+                        @Override
+                        public void run() {
+                            // Do network action in this function
+                            try {
+                                String dl = implementation.download((String) res.get("url"));
+                                editor.putString("nextVersion", dl);
+                                editor.putString("nextVersionName", (String) res.get("version"));
+                                editor.commit();
+                            } catch (JSONException e) {
+                                e.printStackTrace();
+                            }
+                        }
+                    }).start();
+                }
+            } catch (JSONException e) {
+                e.printStackTrace();
+            }
+        });
+
+    }
+
+    @Override
+    public void onActivityStopped(@NonNull Activity activity) {
+        Log.i("CapacitorUpdater", "on  background");
+        String nextVersion = prefs.getString("nextVersion", "");
+        String nextVersionName = prefs.getString("nextVersionName", "");
+        if (nextVersion.equals("") || nextVersionName.equals("")) return;
+        Log.i("CapacitorUpdater", "set: " + nextVersion + " " + nextVersionName);
+        Boolean res = implementation.set(nextVersion, nextVersionName);
+        if (res) {
+            if (this._reload()) {
+                Log.i("CapacitorUpdater", "Auto update to VersionName: " + nextVersionName + ", Version: " + nextVersion);
+            }
+            editor.putString("nextVersion", "");
+            editor.putString("nextVersionName", "");
+            editor.commit();
+        }
+    }
+
+    @Override
+    public void onActivityResumed(@NonNull Activity activity) {
+
+    }
+
+    @Override
+    public void onActivityPaused(@NonNull Activity activity) {
+
+    }
+    @Override
+    public void onActivityCreated(@NonNull Activity activity, @Nullable Bundle savedInstanceState) {
+
+    }
+
+    @Override
+    public void onActivitySaveInstanceState(@NonNull Activity activity, @NonNull Bundle outState) {
+
+    }
+
+    @Override
+    public void onActivityDestroyed(@NonNull Activity activity) {
+
     }
 }
