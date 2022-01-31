@@ -5,6 +5,10 @@ Download app update from url and install it.
 And reload the view.
 
 You can list the version and manage it with the command below.
+
+## Community
+Join the discord to get help : https://discord.gg/VnYRvBfgA6
+
 ## Install
 
 ```bash
@@ -49,6 +53,12 @@ npx cap sync
 ```
 
 *Be extra carufull for your update* if you send a broken update, the app will crash until the user uninstall it.
+
+## Packaging `dist.zip`
+
+Whatever you choose to name the file you download from your release/update server URL, the zip file should contain the full contents of your production Capacitor build output folder, usually `{project directory}/dist/`. This is where `index.html` will be located, and it should also contain all bundled JavaScript, CSS, and web resources necessary for your app to run.
+
+Do not password encrypt this file, or it will fail to unpack.
 
 ## API
 
