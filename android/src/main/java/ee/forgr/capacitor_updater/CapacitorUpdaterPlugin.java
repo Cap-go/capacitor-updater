@@ -117,7 +117,9 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
 
     private boolean _reset() {
         implementation.reset();
-        return this._reload();
+        String pathHot = implementation.getLastPathHot();
+        this.bridge.setServerAssetPath(pathHot);
+        return true;
     }
     @PluginMethod
     public void reset(PluginCall call) {

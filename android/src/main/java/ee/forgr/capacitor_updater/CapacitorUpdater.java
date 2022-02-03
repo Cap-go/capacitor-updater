@@ -116,21 +116,15 @@ public class CapacitorUpdater {
     }
 
     private Boolean downloadFile(String url, String dest) throws JSONException {
-        Log.i(TAG, "downloadFile called with " + url);
-
         try {
             URL u = new URL(url);
             InputStream is = u.openStream();
-            Log.i(TAG, "URL openStream");
             DataInputStream dis = new DataInputStream(is);
             byte[] buffer = new byte[1024];
             int length;
             File downFile = new File(this.context.getFilesDir()  + "/" + dest);
-
-            Log.i(TAG, "mkdirs " + downFile.getPath());
             downFile.getParentFile().mkdirs();
             downFile.createNewFile();
-            Log.i(TAG, "createNewFile ");
             FileOutputStream fos = new FileOutputStream(downFile);
             while ((length = dis.read(buffer))>0) {
                 fos.write(buffer, 0, length);
@@ -157,7 +151,6 @@ public class CapacitorUpdater {
     }
 
     public String download(String url) {
-        Log.i("CapacitorUpdater", "URL: " + url);
         try {
             String folderNameZip = this.randomString(10);
             File fileZip = new File(this.context.getFilesDir()  + "/" + folderNameZip);
@@ -249,6 +242,7 @@ public class CapacitorUpdater {
     public void reset() {
         editor.putString("lastPathHot", "public");
         editor.putString("serverBasePath", "public");
+        editor.putString("versionName", "");
         editor.commit();
     }
 }
