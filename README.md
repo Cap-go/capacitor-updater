@@ -72,6 +72,7 @@ Do not password encrypt this file, or it will fail to unpack.
 * [`current()`](#current)
 * [`reload()`](#reload)
 * [`versionName()`](#versionname)
+* [`notifyAppReady()`](#notifyappready)
 
 </docgen-index>
 
@@ -182,6 +183,17 @@ versionName() => Promise<{ versionName: string; }>
 Get the version name, if it was set during the set phase
 
 **Returns:** <code>Promise&lt;{ versionName: string; }&gt;</code>
+
+--------------------
+
+
+### notifyAppReady()
+
+```typescript
+notifyAppReady() => Promise<void>
+```
+
+notify native plugin that the update is working
 
 --------------------
 

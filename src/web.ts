@@ -34,8 +34,8 @@ export class CapacitorUpdaterWeb
     console.log('Cannot get current versionName in web');
     return { versionName: 'default'};
   }
-  async notifyAppReady(): Promise<{ versionName: string }> {
+  async notifyAppReady(): Promise<void> {
     console.log('Cannot get current versionName in web');
-    return { versionName: 'default'};
+    return;
   }
 }
