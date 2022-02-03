@@ -22,7 +22,8 @@ import java.io.IOException;
 import java.util.ArrayList;
 
 @CapacitorPlugin(name = "CapacitorUpdater")
- public class CapacitorUpdaterPlugin extends Plugin implements Application.ActivityLifecycleCallbacks {
+public class CapacitorUpdaterPlugin extends Plugin implements Application.ActivityLifecycleCallbacks {
+    String TAG = "Capacitor-updater";
     private CapacitorUpdater implementation;
     private SharedPreferences prefs;
     private SharedPreferences.Editor editor;
@@ -61,7 +62,7 @@ import java.util.ArrayList;
 
     private boolean _reload() {
         String pathHot = implementation.getLastPathHot();
-        Log.i("CapacitorUpdater", "getLastPathHot : " + pathHot);
+        Log.i(TAG, "getLastPathHot : " + pathHot);
         this.bridge.setServerBasePath(pathHot);
         return true;
     }
@@ -83,7 +84,7 @@ import java.util.ArrayList;
             call.reject("Update failed, version don't exist");
         } else {
             String pathHot = implementation.getLastPathHot();
-            Log.i("CapacitorUpdater", "getLastPathHot : " + pathHot);
+            Log.i(TAG, "getLastPathHot : " + pathHot);
             this.bridge.setServerBasePath(pathHot);
             call.resolve();
         }
@@ -114,11 +115,13 @@ import java.util.ArrayList;
         call.resolve(ret);
     }
 
+    private boolean _reset() {
+        implementation.reset();
+        return this._reload();
+    }
     @PluginMethod
     public void reset(PluginCall call) {
-        implementation.reset();
-        String pathHot = implementation.getLastPathHot();
-        this.bridge.setServerAssetPath(pathHot);
+        this._reset();
         call.resolve();
     }
 
@@ -138,22 +141,31 @@ import java.util.ArrayList;
         ret.put("versionName", name);
         call.resolve(ret);
     }
+    @PluginMethod
+    public void notifyAppReady(PluginCall call) {
+        editor.putBoolean("notifyAppReady", true);
+        editor.commit();
+        call.resolve();
+    }
 
     @Override
     public void onActivityStarted(@NonNull Activity activity) {
-        Log.i("CapacitorUpdater", "on foreground");
+        Log.i(TAG, "Check for update in the server");
         if (autoUpdateUrl == null || autoUpdateUrl.equals("")) return;
         implementation.getLatest(autoUpdateUrl, (res) -> {
             try {
-                String name = implementation.getVersionName();
+                String currentVersion = implementation.getVersionName();
                 String newVersion = (String) res.get("version");
-                if (!newVersion.equals(name)) {
+                String failingVersion = prefs.getString("failingVersion", "");
+                Log.i(TAG, "currentVersion " + currentVersion + ", newVersion " + newVersion + ", failingVersion " + failingVersion + ".");
+                if (!newVersion.equals(currentVersion) && !newVersion.equals(failingVersion)) {
                     new Thread(new Runnable(){
                         @Override
                         public void run() {
                             // Do network action in this function
                             try {
                                 String dl = implementation.download((String) res.get("url"));
+                                Log.i(TAG, "New version: " + newVersion + " found. Current is " + (currentVersion == "" ? "builtin" : currentVersion) + ", next backgrounding will trigger update.");
                                 editor.putString("nextVersion", dl);
                                 editor.putString("nextVersionName", (String) res.get("version"));
                                 editor.commit();
@@ -172,20 +184,76 @@ import java.util.ArrayList;
 
     @Override
     public void onActivityStopped(@NonNull Activity activity) {
-        Log.i("CapacitorUpdater", "on  background");
+        String pathHot = implementation.getLastPathHot();
+        Log.i(TAG, "Check for waiting update");
         String nextVersion = prefs.getString("nextVersion", "");
         String nextVersionName = prefs.getString("nextVersionName", "");
-        if (nextVersion.equals("") || nextVersionName.equals("")) return;
-        Log.i("CapacitorUpdater", "set: " + nextVersion + " " + nextVersionName);
-        Boolean res = implementation.set(nextVersion, nextVersionName);
-        if (res) {
-            if (this._reload()) {
-                Log.i("CapacitorUpdater", "Auto update to VersionName: " + nextVersionName + ", Version: " + nextVersion);
+        String pastVersion = prefs.getString("pastVersion", "");
+        String pastVersionName = prefs.getString("pastVersionName", "");
+        Boolean notifyAppReady = prefs.getBoolean("notifyAppReady", false);
+        String tmpCurVersion = implementation.getLastPathHot();
+        String curVersion = tmpCurVersion.substring(tmpCurVersion.lastIndexOf('/') +1);
+        String curVersionName = implementation.getVersionName();
+
+        Log.i(TAG, "next version: " + nextVersionName + ", past version: " + pastVersionName);
+        if (!nextVersion.equals("") && !nextVersionName.equals("")) {
+            Boolean res = implementation.set(nextVersion, nextVersionName);
+            if (res) {
+                if (this._reload()) {
+                    Log.i(TAG, "Auto update to version: " + nextVersionName);
+                }
+                editor.putString("nextVersion", "");
+                editor.putString("nextVersionName", "");
+                editor.putString("pastVersion", curVersion);
+                editor.putString("pastVersionName", curVersionName);
+                editor.putBoolean("notifyAppReady", false);
+                editor.commit();
             }
-            editor.putString("nextVersion", "");
-            editor.putString("nextVersionName", "");
+        } else if (!notifyAppReady && !pathHot.equals("public")) {
+            Log.i(TAG, "notifyAppReady never trigger");
+            Log.i(TAG, "Version: " + curVersionName + ", is considered broken");
+            Log.i(TAG, "Will downgraded to " + pastVersionName + " for next start");
+            Log.i(TAG, "Don't forget to trigger 'notifyAppReady()' in js code to validate a version.");
+            if (!pastVersion.equals("") && !pastVersionName.equals("")) {
+                Boolean res = implementation.set(pastVersion, pastVersionName);
+                if (res) {
+                    if (this._reload()) {
+                        Log.i(TAG, "Revert update to version: " + pastVersionName);
+                    }
+                    editor.putString("pastVersion", "");
+                    editor.putString("pastVersionName", "");
+                    editor.commit();
+                }
+            } else {
+                if (this._reset()) {
+                    Log.i(TAG, "Auto reset done");
+                }
+            }
+            editor.putString("failingVersion", curVersionName);
+            editor.commit();
+            try {
+                Boolean res = implementation.delete(curVersion);
+                if (res) {
+                    Log.i(TAG, "Delete failing version: " + curVersionName);
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        } else if (!pastVersion.equals("")) {
+            Log.i(TAG, "Validated version: " + curVersionName);
+            try {
+                Boolean res = implementation.delete(pastVersion);
+                if (res) {
+                    Log.i(TAG, "Delete past version: " + pastVersionName);
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            editor.putString("pastVersion", "");
+            editor.putString("pastVersionName", "");
             editor.commit();
         }
+
     }
 
     @Override

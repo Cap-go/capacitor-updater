@@ -33,7 +33,7 @@ interface Callback {
 }
 
 public class CapacitorUpdater {
-    String TAG = "CapacitorUpdater";
+    String TAG = "Capacitor-updater";
     private Context context;
     private String basePathHot = "versions";
     private SharedPreferences prefs;
@@ -193,12 +193,11 @@ public class CapacitorUpdater {
 
     public Boolean delete(String version) throws IOException {
         File destHot = new File(this.context.getFilesDir()  + "/" + basePathHot + "/" + version);
-        Log.i(TAG, "delete File : " + destHot.getPath());
         if (destHot.exists()) {
             deleteDirectory(destHot);
             return true;
         }
-        Log.i(TAG, "Directory not removed.");
+        Log.i(TAG, "Directory not removed: " + destHot.getPath());
         return false;
     }
 
@@ -242,7 +241,7 @@ public class CapacitorUpdater {
     public String getLastPathHot() {
         return prefs.getString("lastPathHot", "");
     }
- 
+
     public String getVersionName() {
         return prefs.getString("versionName", "");
     }

@@ -42,7 +42,7 @@ public class AppVersion: NSObject {
             do {
                 try FileManager.default.createDirectory(atPath: source.path, withIntermediateDirectories: true, attributes: nil)
             } catch {
-                print("Cannot createDirectory " + source.path)
+                print("✨  Capacitor-updater: Cannot createDirectory " + source.path)
             }
         }
     }
@@ -52,7 +52,7 @@ public class AppVersion: NSObject {
             try FileManager.default.removeItem(atPath: source.path)
             try FileManager.default.removeItem(atPath: dest.path)
         } catch {
-            print("File not removed.")
+            print("✨  Capacitor-updater: File not removed.")
         }
     }
     
@@ -66,7 +66,7 @@ public class AppVersion: NSObject {
                 try FileManager.default.moveItem(at: source, to: dest)
             }
         } catch {
-            print("File not moved.")
+            print("✨  Capacitor-updater: File not moved.")
         }
     }
     
@@ -81,7 +81,7 @@ public class AppVersion: NSObject {
             moveFolder(source: destUnZip, dest: destHot)
             deleteFolder(source: destUnZip, dest: destZip)
         } else {
-            print("File not created.")
+            print("✨  Capacitor-updater: File not created.")
         }
     }
     
@@ -96,7 +96,7 @@ public class AppVersion: NSObject {
             moveFolder(source: destUnZip, dest: destPersist)
             deleteFolder(source: destUnZip, dest: destZip)
         } else {
-            print("File Persist not created.")
+            print("✨  Capacitor-updater: File Persist not created.")
         }
     }
 
@@ -115,7 +115,7 @@ public class AppVersion: NSObject {
             }
 
         } else {
-            print("Error get Latest", url, r.error ?? "unknow")
+            print("✨  Capacitor-updater: Error get Latest", url, r.error ?? "unknow")
         }
         return nil
     }
@@ -129,7 +129,7 @@ public class AppVersion: NSObject {
             saveDownloadedPersist(content: r.content, version: version)
             return version
         } else {
-            print("Error downloading zip file", r.error ?? "unknow")
+            print("✨  Capacitor-updater: Error downloading zip file", r.error ?? "unknow")
         }
         return nil
     }
@@ -140,7 +140,7 @@ public class AppVersion: NSObject {
             let files = try FileManager.default.contentsOfDirectory(atPath: dest.path)
             return files
         } catch {
-            print("NO version available" + dest.path)
+            print("✨  Capacitor-updater: No version available" + dest.path)
             return []
         } 
     }
@@ -150,9 +150,13 @@ public class AppVersion: NSObject {
         let destPersist = documentsUrl.appendingPathComponent(basePathPersist).appendingPathComponent(version)
         do {
             try FileManager.default.removeItem(atPath: destHot.path)
+        } catch {
+            print("✨  Capacitor-updater: Hot Folder " + destHot.path + ", not removed.")
+        }
+        do {
             try FileManager.default.removeItem(atPath: destPersist.path)
         } catch {
-            print("File not removed.")
+            print("✨  Capacitor-updater: Folder " + destPersist.path + ", not removed.")
             return false
         }
         return true

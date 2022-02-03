@@ -42,5 +42,9 @@ export interface CapacitorUpdaterPlugin {
    * @returns {Promise<{ versionName: string }>} an Promise witht the current versionName
    */
   versionName(): Promise<{ versionName: string }>;
-  
+  /**
+   * notify native plugin that the update is working
+   * @returns {Promise<void>} an Promise resolved directly
+   */
+  notifyAppReady(): Promise<void>;
 }
