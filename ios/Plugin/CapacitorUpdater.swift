@@ -191,6 +191,7 @@ public class AppVersion: NSObject {
     @objc public func reset() {
         UserDefaults.standard.set("", forKey: "lastPathHot")
         UserDefaults.standard.set("", forKey: "lastPathPersist")
+        UserDefaults.standard.set("", forKey: "versionName")
         UserDefaults.standard.synchronize()
     }
 }
