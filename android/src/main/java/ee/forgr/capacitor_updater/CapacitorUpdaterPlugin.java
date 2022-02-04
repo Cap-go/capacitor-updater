@@ -42,7 +42,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         new Thread(new Runnable(){
             @Override
             public void run() {
-                onActivityStarted(this.getActivity());
+                onActivityStarted(getActivity());
             }
         }).start();
     }
