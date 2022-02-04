@@ -19,7 +19,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             nc.addObserver(self, selector: #selector(appMovedToBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
             nc.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
             DispatchQueue.main.async {
-                appMovedToForeground() // check for update on startup
+                self.appMovedToForeground() // check for update on startup
             }
         }
     }
