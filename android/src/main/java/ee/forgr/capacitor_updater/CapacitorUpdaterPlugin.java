@@ -39,7 +39,12 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         if (this.autoUpdateUrl == null || this.autoUpdateUrl.equals("")) return;
         Application application = (Application) this.getContext().getApplicationContext();
         application.registerActivityLifecycleCallbacks(this);
-        onActivityStarted(this.getActivity());
+        new Thread(new Runnable(){
+            @Override
+            public void run() {
+                onActivityStarted(this.getActivity());
+            }
+        }).start();
     }
 
     @PluginMethod
