@@ -83,19 +83,19 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     @objc func appMovedToForeground() {
         DispatchQueue.main.async {
             print("✨  Capacitor-updater: Check for update in the server")
-            let url = URL(string: autoUpdateUrl)!
-            let res = implementation.getLatest(url: url)
+            let url = URL(string: self.autoUpdateUrl)!
+            let res = self.implementation.getLatest(url: url)
             if (res == nil) {
                 return
             }
             guard let downloadUrl = URL(string: res?.url ?? "") else {
                 return
             }
-            let currentVersion = implementation.getVersionName()
+            let currentVersion = self.implementation.getVersionName()
             let failingVersion = UserDefaults.standard.string(forKey: "failingVersion") ?? ""
             let newVersion = res?.version ?? ""
             if (newVersion != "" && newVersion != currentVersion && newVersion != failingVersion) {
-                let dl = implementation.download(url: downloadUrl)
+                let dl = self.implementation.download(url: downloadUrl)
                 print("✨  Capacitor-updater: New version: " + newVersion + " found. Current is " + (currentVersion == "" ? "builtin" : currentVersion) + ", next backgrounding will trigger update.")
                 UserDefaults.standard.set(dl, forKey: "nextVersion")
                 UserDefaults.standard.set(newVersion, forKey: "nextVersionName")
