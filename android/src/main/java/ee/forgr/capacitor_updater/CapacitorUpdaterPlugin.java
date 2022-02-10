@@ -39,12 +39,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         if (this.autoUpdateUrl == null || this.autoUpdateUrl.equals("")) return;
         Application application = (Application) this.getContext().getApplicationContext();
         application.registerActivityLifecycleCallbacks(this);
-        new Thread(new Runnable(){
-            @Override
-            public void run() {
-                onActivityStarted(getActivity());
-            }
-        }).start();
+        onActivityStarted(getActivity());
     }
 
     @PluginMethod
@@ -159,34 +154,38 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     public void onActivityStarted(@NonNull Activity activity) {
         Log.i(TAG, "Check for update in the server");
         if (autoUpdateUrl == null || autoUpdateUrl.equals("")) return;
-        implementation.getLatest(autoUpdateUrl, (res) -> {
-            try {
-                String currentVersion = implementation.getVersionName();
-                String newVersion = (String) res.get("version");
-                String failingVersion = prefs.getString("failingVersion", "");
-                Log.i(TAG, "currentVersion " + currentVersion + ", newVersion " + newVersion + ", failingVersion " + failingVersion + ".");
-                if (!newVersion.equals(currentVersion) && !newVersion.equals(failingVersion)) {
-                    new Thread(new Runnable(){
-                        @Override
-                        public void run() {
-                            // Do network action in this function
-                            try {
-                                String dl = implementation.download((String) res.get("url"));
-                                Log.i(TAG, "New version: " + newVersion + " found. Current is " + (currentVersion == "" ? "builtin" : currentVersion) + ", next backgrounding will trigger update.");
-                                editor.putString("nextVersion", dl);
-                                editor.putString("nextVersionName", (String) res.get("version"));
-                                editor.commit();
-                            } catch (JSONException e) {
-                                e.printStackTrace();
-                            }
+        new Thread(new Runnable(){
+            @Override
+            public void run() {
+                implementation.getLatest(autoUpdateUrl, (res) -> {
+                    try {
+                        String currentVersion = implementation.getVersionName();
+                        String newVersion = (String) res.get("version");
+                        String failingVersion = prefs.getString("failingVersion", "");
+                        Log.i(TAG, "currentVersion " + currentVersion + ", newVersion " + newVersion + ", failingVersion " + failingVersion + ".");
+                        if (!newVersion.equals(currentVersion) && !newVersion.equals(failingVersion)) {
+                            new Thread(new Runnable(){
+                                @Override
+                                public void run() {
+                                    // Do network action in this function
+                                    try {
+                                        String dl = implementation.download((String) res.get("url"));
+                                        Log.i(TAG, "New version: " + newVersion + " found. Current is " + (currentVersion == "" ? "builtin" : currentVersion) + ", next backgrounding will trigger update.");
+                                        editor.putString("nextVersion", dl);
+                                        editor.putString("nextVersionName", (String) res.get("version"));
+                                        editor.commit();
+                                    } catch (JSONException e) {
+                                        e.printStackTrace();
+                                    }
+                                }
+                            }).start();
                         }
-                    }).start();
-                }
-            } catch (JSONException e) {
-                e.printStackTrace();
+                    } catch (JSONException e) {
+                        e.printStackTrace();
+                    }
+                });
             }
-        });
-
+        }).start();
     }
 
     @Override

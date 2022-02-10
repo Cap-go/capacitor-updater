@@ -18,9 +18,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             let nc = NotificationCenter.default
             nc.addObserver(self, selector: #selector(appMovedToBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
             nc.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
-            DispatchQueue.main.async {
-                self.appMovedToForeground() // check for update on startup
-            }
+            self.appMovedToForeground()
         }
     }
     
@@ -83,25 +81,27 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func appMovedToForeground() {
-        print("✨  Capacitor-updater: Check for update in the server")
-        let url = URL(string: autoUpdateUrl)!
-        let res = implementation.getLatest(url: url)
-        if (res == nil) {
-            return
-        }
-        guard let downloadUrl = URL(string: res?.url ?? "") else {
-            return
-        }
-        let currentVersion = implementation.getVersionName()
-        let failingVersion = UserDefaults.standard.string(forKey: "failingVersion") ?? ""
-        let newVersion = res?.version ?? ""
-        if (newVersion != "" && newVersion != currentVersion && newVersion != failingVersion) {
-            let dl = implementation.download(url: downloadUrl)
-            print("✨  Capacitor-updater: New version: " + newVersion + " found. Current is " + (currentVersion == "" ? "builtin" : currentVersion) + ", next backgrounding will trigger update.")
-            UserDefaults.standard.set(dl, forKey: "nextVersion")
-            UserDefaults.standard.set(newVersion, forKey: "nextVersionName")
-        } else {
-            print("✨  Capacitor-updater: No need to update, " + currentVersion + " is the latest")
+        DispatchQueue.main.async {
+            print("✨  Capacitor-updater: Check for update in the server")
+            let url = URL(string: autoUpdateUrl)!
+            let res = implementation.getLatest(url: url)
+            if (res == nil) {
+                return
+            }
+            guard let downloadUrl = URL(string: res?.url ?? "") else {
+                return
+            }
+            let currentVersion = implementation.getVersionName()
+            let failingVersion = UserDefaults.standard.string(forKey: "failingVersion") ?? ""
+            let newVersion = res?.version ?? ""
+            if (newVersion != "" && newVersion != currentVersion && newVersion != failingVersion) {
+                let dl = implementation.download(url: downloadUrl)
+                print("✨  Capacitor-updater: New version: " + newVersion + " found. Current is " + (currentVersion == "" ? "builtin" : currentVersion) + ", next backgrounding will trigger update.")
+                UserDefaults.standard.set(dl, forKey: "nextVersion")
+                UserDefaults.standard.set(newVersion, forKey: "nextVersionName")
+            } else {
+                print("✨  Capacitor-updater: No need to update, " + currentVersion + " is the latest")
+            }
         }
     }
     
