@@ -35,7 +35,11 @@ export class CapacitorUpdaterWeb
     return { versionName: 'default'};
   }
   async notifyAppReady(): Promise<void> {
-    console.log('Cannot get current versionName in web');
+    console.log('Cannot notify App Ready in web');
+    return;
+  }
+  async delayUpdate(): Promise<void> {
+    console.log('Cannot delay update in web');
     return;
   }
 }

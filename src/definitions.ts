@@ -47,4 +47,9 @@ export interface CapacitorUpdaterPlugin {
    * @returns {Promise<void>} an Promise resolved directly
    */
   notifyAppReady(): Promise<void>;
+  /**
+   * skip update in the next app backgrounding
+   * @returns {Promise<void>} an Promise resolved directly
+   */
+  delayUpdate(): Promise<void>;
 }
