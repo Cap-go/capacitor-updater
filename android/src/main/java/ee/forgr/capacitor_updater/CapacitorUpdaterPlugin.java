@@ -157,13 +157,6 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         call.resolve();
     }
 
-    @PluginMethod
-    public void cancelDelay(PluginCall call) {
-        editor.putBoolean("delayUpdate", false);
-        editor.commit();
-        call.resolve();
-    }
-
     @Override
     public void onActivityStarted(@NonNull Activity activity) {
         Log.i(TAG, "Check for update in the server");
@@ -207,7 +200,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         String pathHot = implementation.getLastPathHot();
         Log.i(TAG, "Check for waiting update");
         String nextVersion = prefs.getString("nextVersion", "");
-        String delayUpdate = prefs.getSgetBooleantring("delayUpdate", false);
+        Boolean delayUpdate = prefs.getBoolean("delayUpdate", false);
         editor.putBoolean("delayUpdate", false);
         editor.commit();
         if (delayUpdate) {
