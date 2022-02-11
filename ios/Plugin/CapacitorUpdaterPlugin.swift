@@ -24,7 +24,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     
     @objc func appMovedToBackground() {
         print("✨  Capacitor-updater: Check for waiting update")
-        let delayUpdate = UserDefaults.standard.bool(forKey: "delayUpdate") ?? false
+        let delayUpdate = UserDefaults.standard.bool(forKey: "delayUpdate")
         UserDefaults.standard.set(false, forKey: "delayUpdate")
         if (delayUpdate) {
             print("✨  Capacitor-updater: Update delayed to next backgrounding")
@@ -226,8 +226,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         UserDefaults.standard.set(true, forKey: "notifyAppReady")
         call.resolve()
     }
+    
     @objc func delayUpdate(_ call: CAPPluginCall) {
         UserDefaults.standard.set(true, forKey: "delayUpdate")
+        call.resolve()
+    }
+    
+    @objc func cancelDelay(_ call: CAPPluginCall) {
+        UserDefaults.standard.set(false, forKey: "delayUpdate")
         call.resolve()
     }
 }

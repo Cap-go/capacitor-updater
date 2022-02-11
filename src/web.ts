@@ -42,4 +42,8 @@ export class CapacitorUpdaterWeb
     console.log('Cannot delay update in web');
     return;
   }
+  async cancelDelay(): Promise<void> {
+    console.log('Cannot cancel delay update in web');
+    return;
+  }
 }
