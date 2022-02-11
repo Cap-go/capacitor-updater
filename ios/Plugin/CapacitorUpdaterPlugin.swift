@@ -7,19 +7,19 @@ import Capacitor
  */
 @objc(CapacitorUpdaterPlugin)
 public class CapacitorUpdaterPlugin: CAPPlugin {
-    private let implementation = CapacitorUpdater()
-    private var autoUpdate = false
+    private var implementation = CapacitorUpdater()
     private var autoUpdateUrl = ""
+    private var statsUrl = ""
     
     override public func load() {
         autoUpdateUrl = getConfigValue("autoUpdateUrl") as? String ?? ""
-        if autoUpdateUrl != "" {
-            autoUpdate = true
-            let nc = NotificationCenter.default
-            nc.addObserver(self, selector: #selector(appMovedToBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
-            nc.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
-            self.appMovedToForeground()
-        }
+        let statsUrl = getConfigValue("statsUrl") as? String ?? ""
+        implementation = CapacitorUpdater(statsUrl: statsUrl)
+        if (autoUpdateUrl == "") { return }
+        let nc = NotificationCenter.default
+        nc.addObserver(self, selector: #selector(appMovedToBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
+        nc.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
+        self.appMovedToForeground()
     }
     
     @objc func appMovedToBackground() {
@@ -56,6 +56,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             print("✨  Capacitor-updater: Version:" + curVersionName + ", is considered broken")
             print("✨  Capacitor-updater: Will downgraded to " + pastVersionName + " for next start")
             print("✨  Capacitor-updater: Don't forget to trigger 'notifyAppReady()' in js code to validate a version.")
+            implementation.sendStats(action: "revert", version: curVersionName)
             if (pastVersion != "" && pastVersionName != "") {
                 let res = implementation.set(version: pastVersion, versionName: pastVersionName)
                 if (res) {
@@ -71,13 +72,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 }
             }
             UserDefaults.standard.set(curVersionName, forKey: "failingVersion")
-            let res = implementation.delete(version: curVersion)
+            let res = implementation.delete(version: curVersion, versionName: curVersionName)
             if (res) {
                 print("✨  Capacitor-updater: Delete failing version: " + curVersionName)
             }
         } else if (pastVersion != "") {
             print("✨  Capacitor-updater: Validated version: ", curVersionName)
-            let res = implementation.delete(version: pastVersion)
+            let res = implementation.delete(version: pastVersion, versionName: curVersionName)
             if (res) {
                 print("✨  Capacitor-updater: Delete past version: " + pastVersionName)
             }
@@ -168,7 +169,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
     @objc func delete(_ call: CAPPluginCall) {
         let version = call.getString("version") ?? ""
-        let res = implementation.delete(version: version)
+        let res = implementation.delete(version: version, versionName: "")
         if (res) {
             call.resolve()
         } else {

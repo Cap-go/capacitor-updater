@@ -18,15 +18,29 @@ public class AppVersion: NSObject {
     var version: String = ""
     var url: String = ""
 }
+extension Bundle {
+    var releaseVersionNumber: String? {
+        return infoDictionary?["CFBundleShortVersionString"] as? String
+    }
+    var buildVersionNumber: String? {
+        return infoDictionary?["CFBundleVersion"] as? String
+    }
+}
 
 @objc public class CapacitorUpdater: NSObject {
     
+    private var statsUrl = ""
     private var lastPathHot = ""
     private var lastPathPersist = ""
     private let basePathHot = "versions"
     private let basePathPersist = "NoCloud/ionic_built_snapshots"
     private let documentsUrl = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
     private let libraryUrl = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+
+
+    init(statsUrl: String = "") {
+         self.statsUrl = statsUrl
+     }
 
     @objc private func randomString(length: Int) -> String {
         let letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -145,7 +159,7 @@ public class AppVersion: NSObject {
         } 
     }
     
-    @objc public func delete(version: String) -> Bool {
+    @objc public func delete(version: String, versionName: String) -> Bool {
         let destHot = documentsUrl.appendingPathComponent(basePathHot).appendingPathComponent(version)
         let destPersist = documentsUrl.appendingPathComponent(basePathPersist).appendingPathComponent(version)
         do {
@@ -159,6 +173,7 @@ public class AppVersion: NSObject {
             print("✨  Capacitor-updater: Folder " + destPersist.path + ", not removed.")
             return false
         }
+        sendStats(action: "delete", version: versionName)
         return true
     }
 
@@ -171,8 +186,10 @@ public class AppVersion: NSObject {
             UserDefaults.standard.set(destHot.path, forKey: "lastPathHot")
             UserDefaults.standard.set(destHotPersist.path, forKey: "lastPathPersist")
             UserDefaults.standard.set(versionName, forKey: "versionName")
+            sendStats(action: "set", version: versionName)
             return true
         }
+        sendStats(action: "set_fail", version: versionName)
         return false
     }
     
@@ -189,9 +206,30 @@ public class AppVersion: NSObject {
     }
     
     @objc public func reset() {
+        let version = UserDefaults.standard.string(forKey: "versionName") ?? ""
+        sendStats(action: "reset", version: version)
         UserDefaults.standard.set("", forKey: "lastPathHot")
         UserDefaults.standard.set("", forKey: "lastPathPersist")
         UserDefaults.standard.set("", forKey: "versionName")
         UserDefaults.standard.synchronize()
     }
+
+    @objc func sendStats(action: String, version: String) {
+        if (statsUrl == "") { return }
+        DispatchQueue.main.async {
+            let deviceID = UIDevice.current.identifierForVendor!.uuidString
+            let versionBuild = Bundle.main.buildVersionNumber ?? ""
+            let bundleIdentifier =  Bundle.main.bundleIdentifier ?? ""
+            _ = Just.post(self.statsUrl,
+                              data: [
+                                "action": action,
+                                "device_id": deviceID,
+                                "version": version,
+                                "versionBuild": versionBuild,
+                                "appid": bundleIdentifier
+                              ]
+            )
+        }
+    }
+    
 }
