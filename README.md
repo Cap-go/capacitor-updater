@@ -73,6 +73,7 @@ Do not password encrypt this file, or it will fail to unpack.
 * [`reload()`](#reload)
 * [`versionName()`](#versionname)
 * [`notifyAppReady()`](#notifyappready)
+* [`delayUpdate()`](#delayupdate)
 
 </docgen-index>
 
@@ -194,6 +195,17 @@ notifyAppReady() => Promise<void>
 ```
 
 notify native plugin that the update is working
+
+--------------------
+
+
+### delayUpdate()
+
+```typescript
+delayUpdate() => Promise<void>
+```
+
+skip update in the next app backgrounding
 
 --------------------
 
