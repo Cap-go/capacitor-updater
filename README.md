@@ -74,6 +74,7 @@ Do not password encrypt this file, or it will fail to unpack.
 * [`versionName()`](#versionname)
 * [`notifyAppReady()`](#notifyappready)
 * [`delayUpdate()`](#delayupdate)
+* [`cancelDelay()`](#canceldelay)
 
 </docgen-index>
 
@@ -86,7 +87,7 @@ Do not password encrypt this file, or it will fail to unpack.
 download(options: { url: string; }) => Promise<{ version: string; }>
 ```
 
-download new version from url, it should be a zip file, with files inside or with a unique folder inside with all your files
+Download new version from url, it should be a zip file, with files inside or with a unique folder inside with all your files
 
 | Param         | Type                          |
 | ------------- | ----------------------------- |
@@ -103,7 +104,7 @@ download new version from url, it should be a zip file, with files inside or wit
 set(options: { version: string; versionName?: string; }) => Promise<void>
 ```
 
-set version as current version, set will return error if there are no index.html file inside the version folder, versionName is optional and it's a custom value who will be saved for you
+Set version as current version, set will return error if there are no index.html file inside the version folder, versionName is optional and it's a custom value who will be saved for you
 
 | Param         | Type                                                    |
 | ------------- | ------------------------------------------------------- |
@@ -118,7 +119,7 @@ set version as current version, set will return error if there are no index.html
 delete(options: { version: string; }) => Promise<void>
 ```
 
-delete version in storage
+Delete version in storage
 
 | Param         | Type                              |
 | ------------- | --------------------------------- |
@@ -133,7 +134,7 @@ delete version in storage
 list() => Promise<{ versions: string[]; }>
 ```
 
-get all avaible versions
+Get all avaible versions
 
 **Returns:** <code>Promise&lt;{ versions: string[]; }&gt;</code>
 
@@ -146,7 +147,7 @@ get all avaible versions
 reset() => Promise<void>
 ```
 
-set the original version (the one sent to Apple store / Google play store ) as current version
+Set the original version (the one sent to Apple store / Google play store ) as current version
 
 --------------------
 
@@ -157,7 +158,7 @@ set the original version (the one sent to Apple store / Google play store ) as c
 current() => Promise<{ current: string; }>
 ```
 
-get the curent version, if none are set it return 'default'
+Get the curent version, if none are set it return 'default'
 
 **Returns:** <code>Promise&lt;{ current: string; }&gt;</code>
 
@@ -170,7 +171,7 @@ get the curent version, if none are set it return 'default'
 reload() => Promise<void>
 ```
 
-reload the view
+Reload the view
 
 --------------------
 
@@ -194,7 +195,7 @@ Get the version name, if it was set during the set phase
 notifyAppReady() => Promise<void>
 ```
 
-notify native plugin that the update is working
+Notify native plugin that the update is working
 
 --------------------
 
@@ -205,7 +206,18 @@ notify native plugin that the update is working
 delayUpdate() => Promise<void>
 ```
 
-skip update in the next app backgrounding
+Skip update in the next app backgrounding
+
+--------------------
+
+
+### cancelDelay()
+
+```typescript
+cancelDelay() => Promise<void>
+```
+
+Cancel skip update in the next app backgrounding
 
 --------------------
 

@@ -43,17 +43,17 @@ export interface CapacitorUpdaterPlugin {
    */
   versionName(): Promise<{ versionName: string }>;
   /**
-   * Notify native plugin that the update is working
+   * Notify native plugin that the update is working, only in auto update
    * @returns {Promise<void>} an Promise resolved directly
    */
   notifyAppReady(): Promise<void>;
   /**
-   * Skip update in the next app backgrounding
+   * Skip update in the next app backgrounding, only in auto update
    * @returns {Promise<void>} an Promise resolved directly
    */
   delayUpdate(): Promise<void>;
   /**
-   * Cancel skip update in the next app backgrounding
+   * allow update in the next app backgrounding, only in auto update
    * @returns {Promise<void>} an Promise resolved directly
    */
   cancelDelay(): Promise<void>;

@@ -222,6 +222,7 @@ extension Bundle {
             let bundleIdentifier =  Bundle.main.bundleIdentifier ?? ""
             _ = Just.post(self.statsUrl,
                               data: [
+                                "platform": "ios",
                                 "action": action,
                                 "device_id": deviceID,
                                 "version": version,
