@@ -17,13 +17,13 @@ import org.json.JSONObject;
 
 import java.io.BufferedInputStream;
 import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.SecureRandom;
@@ -190,13 +190,14 @@ public class CapacitorUpdater {
         return res;
     }
 
-    public Boolean delete(String version) throws IOException {
+    public Boolean delete(String version, String versionName) throws IOException {
         File destHot = new File(this.context.getFilesDir()  + "/" + basePathHot + "/" + version);
         if (destHot.exists()) {
             deleteDirectory(destHot);
             return true;
         }
         Log.i(TAG, "Directory not removed: " + destHot.getPath());
+        this.sendStats("delete", versionName);
         return false;
     }
 
@@ -254,36 +255,51 @@ public class CapacitorUpdater {
 
     public void sendStats(String action, String version) {
         if (statsUrl == "") { return; }
-
-        String statsUrl = this.statsUrl;
-        Context context = this.context;
+        URL url;
+        JSONObject json = new JSONObject();
+        String jsonString;
+        try {
+            url = new URL(statsUrl);
+            String android_id = Secure.getString(context.getContentResolver(), Secure.ANDROID_ID);
+            PackageInfo pInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
+            json.put("platform", "android");
+            json.put("action", action);
+            json.put("device_id", android_id);
+            json.put("version_name", version);
+            json.put("version_build", pInfo.versionName);
+            json.put("app_id", pInfo.packageName);
+            jsonString = json.toString();
+        } catch (Exception ex) {
+            Log.e(TAG, "Error get stats", ex);
+            return;
+        }
         new Thread(new Runnable(){
             @Override
             public void run() {
+                HttpURLConnection con = null;
                 try {
-                    URL url = new URL(statsUrl);
-                    HttpURLConnection con = (HttpURLConnection) url.openConnection();
+                    con = (HttpURLConnection) url.openConnection();
                     con.setRequestMethod("POST");
-                    con.setRequestProperty("Content-Type", "application/json; utf-8");
+                    con.setRequestProperty("Content-Type", "application/json");
                     con.setRequestProperty("Accept", "application/json");
+                    con.setRequestProperty("Content-Length", Integer.toString(jsonString.getBytes().length));
                     con.setDoOutput(true);
-                    JSONObject json = new JSONObject();
-                    String android_id = Secure.getString(context.getContentResolver(),
-                            Secure.ANDROID_ID);
-                    PackageInfo pInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
-                    json.put("platform", "android");
-                    json.put("action", action);
-                    json.put("device_id", android_id);
-                    json.put("version_name", version);
-                    json.put("version_build", pInfo.versionName);
-                    json.put("app_id", "");
                     con.setConnectTimeout(500);
-                    try(OutputStream os = con.getOutputStream()) {
-                        byte[] input = json.toString().getBytes("utf-8");
-                        os.write(input, 0, input.length);
+                    DataOutputStream wr = new DataOutputStream (con.getOutputStream());
+                    wr.writeBytes(jsonString);
+                    wr.close();
+                    int responseCode = con.getResponseCode();
+                    if (responseCode != 200) {
+                        Log.e(TAG, "stats responseCode: " + responseCode);
+                    } else {
+                        Log.i(TAG, "Stats send for \"" + action + "\", version " + version + " in " + statsUrl);
                     }
                 } catch (Exception ex) {
-                    Log.e(TAG, "Error post stats");
+                    Log.e(TAG, "Error post stats", ex);
+                } finally {
+                    if (con != null) {
+                        con.disconnect();
+                    }
                 }
             }
         }).start();

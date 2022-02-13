@@ -36,7 +36,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         this.editor = prefs.edit();
         implementation = new CapacitorUpdater(this.getContext());
         String statsUrl = getConfig().getString("statsUrl");
-        implementation.statsUrl = statsUrl == null ? statsUrl : "https://capgo.app/api/stats";
+        implementation.statsUrl = statsUrl != null ? statsUrl : "https://capgo.app/api/stats";
         this.autoUpdateUrl = getConfig().getString("autoUpdateUrl");
         if (this.autoUpdateUrl == null || this.autoUpdateUrl.equals("")) return;
         Application application = (Application) this.getContext().getApplicationContext();
@@ -246,7 +246,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             Log.i(TAG, "Version: " + curVersionName + ", is considered broken");
             Log.i(TAG, "Will downgraded to " + pastVersionName + " for next start");
             Log.i(TAG, "Don't forget to trigger 'notifyAppReady()' in js code to validate a version.");
-            implementation.sendStats("revert",curVersionName);
+            implementation.sendStats("revert", curVersionName);
             if (!pastVersion.equals("") && !pastVersionName.equals("")) {
                 Boolean res = implementation.set(pastVersion, pastVersionName);
                 if (res) {
