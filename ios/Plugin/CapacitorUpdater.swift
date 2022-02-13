@@ -29,7 +29,7 @@ extension Bundle {
 
 @objc public class CapacitorUpdater: NSObject {
     
-    private var statsUrl = ""
+    public var statsUrl = ""
     private var lastPathHot = ""
     private var lastPathPersist = ""
     private let basePathHot = "versions"
@@ -37,10 +37,6 @@ extension Bundle {
     private let documentsUrl = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
     private let libraryUrl = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
 
-
-    init(statsUrl: String = "") {
-         self.statsUrl = statsUrl
-     }
 
     @objc private func randomString(length: Int) -> String {
         let letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -156,7 +152,7 @@ extension Bundle {
         } catch {
             print("✨  Capacitor-updater: No version available" + dest.path)
             return []
-        } 
+        }
     }
     
     @objc public func delete(version: String, versionName: String) -> Bool {
@@ -221,15 +217,16 @@ extension Bundle {
             let versionBuild = Bundle.main.buildVersionNumber ?? ""
             let bundleIdentifier =  Bundle.main.bundleIdentifier ?? ""
             _ = Just.post(self.statsUrl,
-                              data: [
+                          json: [
                                 "platform": "ios",
                                 "action": action,
                                 "device_id": deviceID,
-                                "version": version,
-                                "versionBuild": versionBuild,
-                                "appid": bundleIdentifier
-                              ]
+                                "version_name": version,
+                                "version_build": versionBuild,
+                                "app_id": bundleIdentifier
+                        ]
             )
+            print("✨  Capacitor-updater: Stats send for " + action + ", version " + version)
         }
     }
     

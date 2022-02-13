@@ -13,8 +13,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     
     override public func load() {
         autoUpdateUrl = getConfigValue("autoUpdateUrl") as? String ?? ""
-        let statsUrl = getConfigValue("statsUrl") as? String ?? ""
-        implementation = CapacitorUpdater(statsUrl: statsUrl)
+        implementation.statsUrl = getConfigValue("statsUrl") as? String ?? "https://capgo.app/api/stats"
         if (autoUpdateUrl == "") { return }
         let nc = NotificationCenter.default
         nc.addObserver(self, selector: #selector(appMovedToBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)

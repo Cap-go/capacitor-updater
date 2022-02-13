@@ -3,6 +3,7 @@ package ee.forgr.capacitor_updater;
 import android.app.Activity;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.pm.PackageInfo;
 import android.util.Log;
 
 import com.android.volley.RequestQueue;
@@ -22,18 +23,23 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.SecureRandom;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.ArrayList;
+import android.provider.Settings.Secure;
 
 interface Callback {
     void callback(JSONObject jsonObject);
 }
 
 public class CapacitorUpdater {
-    String TAG = "Capacitor-updater";
+    private String TAG = "Capacitor-updater";
+    public String statsUrl = "";
+
     private Context context;
     private String basePathHot = "versions";
     private SharedPreferences prefs;
@@ -244,5 +250,42 @@ public class CapacitorUpdater {
         editor.putString("serverBasePath", "public");
         editor.putString("versionName", "");
         editor.commit();
+    }
+
+    public void sendStats(String action, String version) {
+        if (statsUrl == "") { return; }
+
+        String statsUrl = this.statsUrl;
+        Context context = this.context;
+        new Thread(new Runnable(){
+            @Override
+            public void run() {
+                try {
+                    URL url = new URL(statsUrl);
+                    HttpURLConnection con = (HttpURLConnection) url.openConnection();
+                    con.setRequestMethod("POST");
+                    con.setRequestProperty("Content-Type", "application/json; utf-8");
+                    con.setRequestProperty("Accept", "application/json");
+                    con.setDoOutput(true);
+                    JSONObject json = new JSONObject();
+                    String android_id = Secure.getString(context.getContentResolver(),
+                            Secure.ANDROID_ID);
+                    PackageInfo pInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
+                    json.put("platform", "android");
+                    json.put("action", action);
+                    json.put("device_id", android_id);
+                    json.put("version_name", version);
+                    json.put("version_build", pInfo.versionName);
+                    json.put("app_id", "");
+                    con.setConnectTimeout(500);
+                    try(OutputStream os = con.getOutputStream()) {
+                        byte[] input = json.toString().getBytes("utf-8");
+                        os.write(input, 0, input.length);
+                    }
+                } catch (Exception ex) {
+                    Log.e(TAG, "Error post stats");
+                }
+            }
+        }).start();
     }
 }

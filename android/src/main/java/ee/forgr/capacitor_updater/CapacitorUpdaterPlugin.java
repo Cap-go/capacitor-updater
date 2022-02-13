@@ -23,7 +23,7 @@ import java.util.ArrayList;
 
 @CapacitorPlugin(name = "CapacitorUpdater")
 public class CapacitorUpdaterPlugin extends Plugin implements Application.ActivityLifecycleCallbacks {
-    String TAG = "Capacitor-updater";
+    private String TAG = "Capacitor-updater";
     private CapacitorUpdater implementation;
     private SharedPreferences prefs;
     private SharedPreferences.Editor editor;
@@ -35,6 +35,8 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         this.prefs = this.getContext().getSharedPreferences("CapWebViewSettings", Activity.MODE_PRIVATE);
         this.editor = prefs.edit();
         implementation = new CapacitorUpdater(this.getContext());
+        String statsUrl = getConfig().getString("statsUrl");
+        implementation.statsUrl = statsUrl == null ? statsUrl : "https://capgo.app/api/stats";
         this.autoUpdateUrl = getConfig().getString("autoUpdateUrl");
         if (this.autoUpdateUrl == null || this.autoUpdateUrl.equals("")) return;
         Application application = (Application) this.getContext().getApplicationContext();
@@ -93,8 +95,9 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     @PluginMethod
     public void delete(PluginCall call) {
         String version = call.getString("version");
+        String versionName = implementation.getVersionName();
         try {
-            Boolean res = implementation.delete(version);
+            Boolean res = implementation.delete(version, versionName);
 
             if (res) {
                 call.resolve();
@@ -123,6 +126,8 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     }
     @PluginMethod
     public void reset(PluginCall call) {
+        String version = prefs.getString("versionName", "");
+        implementation.sendStats("reset", version);
         this._reset();
         call.resolve();
     }
@@ -161,6 +166,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     public void onActivityStarted(@NonNull Activity activity) {
         Log.i(TAG, "Check for update in the server");
         if (autoUpdateUrl == null || autoUpdateUrl.equals("")) return;
+        CapacitorUpdater implementation = this.implementation;
         new Thread(new Runnable(){
             @Override
             public void run() {
@@ -180,9 +186,15 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                         Log.i(TAG, "New version: " + newVersion + " found. Current is " + (currentVersion == "" ? "builtin" : currentVersion) + ", next backgrounding will trigger update.");
                                         editor.putString("nextVersion", dl);
                                         editor.putString("nextVersionName", (String) res.get("version"));
+                                        implementation.sendStats("set", (String) res.get("version"));
                                         editor.commit();
                                     } catch (JSONException e) {
                                         e.printStackTrace();
+                                        try {
+                                            implementation.sendStats("set_fail", (String) res.get("version"));
+                                        } catch (JSONException jsonException) {
+                                            jsonException.printStackTrace();
+                                        }
                                     }
                                 }
                             }).start();
@@ -234,6 +246,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             Log.i(TAG, "Version: " + curVersionName + ", is considered broken");
             Log.i(TAG, "Will downgraded to " + pastVersionName + " for next start");
             Log.i(TAG, "Don't forget to trigger 'notifyAppReady()' in js code to validate a version.");
+            implementation.sendStats("revert",curVersionName);
             if (!pastVersion.equals("") && !pastVersionName.equals("")) {
                 Boolean res = implementation.set(pastVersion, pastVersionName);
                 if (res) {
@@ -252,7 +265,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             editor.putString("failingVersion", curVersionName);
             editor.commit();
             try {
-                Boolean res = implementation.delete(curVersion);
+                Boolean res = implementation.delete(curVersion, curVersionName);
                 if (res) {
                     Log.i(TAG, "Delete failing version: " + curVersionName);
                 }
@@ -262,7 +275,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         } else if (!pastVersion.equals("")) {
             Log.i(TAG, "Validated version: " + curVersionName);
             try {
-                Boolean res = implementation.delete(pastVersion);
+                Boolean res = implementation.delete(pastVersion, curVersionName);
                 if (res) {
                     Log.i(TAG, "Delete past version: " + pastVersionName);
                 }
