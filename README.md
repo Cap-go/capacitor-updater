@@ -195,7 +195,7 @@ Get the version name, if it was set during the set phase
 notifyAppReady() => Promise<void>
 ```
 
-Notify native plugin that the update is working
+Notify native plugin that the update is working, only in auto update
 
 --------------------
 
@@ -206,7 +206,7 @@ Notify native plugin that the update is working
 delayUpdate() => Promise<void>
 ```
 
-Skip update in the next app backgrounding
+Skip update in the next app backgrounding, only in auto update
 
 --------------------
 
@@ -217,7 +217,7 @@ Skip update in the next app backgrounding
 cancelDelay() => Promise<void>
 ```
 
-Cancel skip update in the next app backgrounding
+allow update in the next app backgrounding, only in auto update
 
 --------------------
 
