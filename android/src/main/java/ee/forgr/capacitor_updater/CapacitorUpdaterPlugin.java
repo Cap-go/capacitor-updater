@@ -126,8 +126,6 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     }
     @PluginMethod
     public void reset(PluginCall call) {
-        String version = prefs.getString("versionName", "");
-        implementation.sendStats("reset", version);
         this._reset();
         call.resolve();
     }
@@ -186,15 +184,9 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                         Log.i(TAG, "New version: " + newVersion + " found. Current is " + (currentVersion == "" ? "builtin" : currentVersion) + ", next backgrounding will trigger update.");
                                         editor.putString("nextVersion", dl);
                                         editor.putString("nextVersionName", (String) res.get("version"));
-                                        implementation.sendStats("set", (String) res.get("version"));
                                         editor.commit();
                                     } catch (JSONException e) {
                                         e.printStackTrace();
-                                        try {
-                                            implementation.sendStats("set_fail", (String) res.get("version"));
-                                        } catch (JSONException jsonException) {
-                                            jsonException.printStackTrace();
-                                        }
                                     }
                                 }
                             }).start();

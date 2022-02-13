@@ -210,8 +210,10 @@ public class CapacitorUpdater {
             editor.putString("serverBasePath", destHot.getPath());
             editor.putString("versionName", versionName);
             editor.commit();
+            sendStats("set", versionName);
             return true;
         }
+        sendStats("set_fail", versionName);
         return false;
     }
 
@@ -246,7 +248,9 @@ public class CapacitorUpdater {
         return prefs.getString("versionName", "");
     }
 
-    public void reset() {
+    public void reset() {        
+        String version = prefs.getString("versionName", "");
+        implementation.sendStats("reset", version);
         editor.putString("lastPathHot", "public");
         editor.putString("serverBasePath", "public");
         editor.putString("versionName", "");
