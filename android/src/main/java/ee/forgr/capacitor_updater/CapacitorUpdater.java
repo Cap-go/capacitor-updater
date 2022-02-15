@@ -250,7 +250,7 @@ public class CapacitorUpdater {
 
     public void reset() {        
         String version = prefs.getString("versionName", "");
-        implementation.sendStats("reset", version);
+        this.sendStats("reset", version);
         editor.putString("lastPathHot", "public");
         editor.putString("serverBasePath", "public");
         editor.putString("versionName", "");
