@@ -107,11 +107,17 @@ public class CapacitorUpdater {
             return true;
         }
     }
-    private void flattenAssets(String source, String dest) {
+    private Boolean flattenAssets(String source, String dest) {
         File current = new File(this.context.getFilesDir()  + "/" + source);
+        if (!current.exists()) {
+            return false;
+        }
         File fDest = new File(this.context.getFilesDir()  + "/" + dest);
         fDest.getParentFile().mkdirs();
         String[] pathsName = current.list();
+        if (pathsName == null || pathsName.length == 0) {
+            return false;
+        }
         if (pathsName.length == 1 && !pathsName[0].equals("index.html")) {
             File newFlat =  new File(current.getPath() + "/" + pathsName[0]);
             newFlat.renameTo(fDest);
@@ -119,6 +125,7 @@ public class CapacitorUpdater {
             current.renameTo(fDest);
         }
         current.delete();
+        return true;
     }
 
     private Boolean downloadFile(String url, String dest) throws JSONException {
@@ -168,7 +175,8 @@ public class CapacitorUpdater {
             Boolean unzipped = this.unzip(folderNameZip, folderNameUnZip);
             if(!unzipped) return null;
             fileZip.delete();
-            this.flattenAssets(folderNameUnZip, folderName);
+            Boolean flatt = this.flattenAssets(folderNameUnZip, folderName);
+            if(!flatt) return null;
             return version;
         } catch (Exception e) {
             Log.e(TAG, "updateApp error", e);
