@@ -182,7 +182,7 @@ public class CapacitorUpdater {
         Log.i(TAG, "list File : " + destHot.getPath());
         if (destHot.exists()) {
             for (File i : destHot.listFiles()) {
-                res.add(i.getPath());
+                res.add(i.getName());
             }
         } else {
             Log.i(TAG, "NO version available" + destHot);
