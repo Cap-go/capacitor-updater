@@ -83,7 +83,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         Boolean res = implementation.set(version, versionName);
 
         if (!res) {
-            call.reject("Update failed, version don't exist");
+            call.reject("Update failed, version doesn't exist");
         } else {
             String pathHot = implementation.getLastPathHot();
             Log.i(TAG, "getLastPathHot : " + pathHot);
@@ -102,7 +102,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             if (res) {
                 call.resolve();
             } else {
-                call.reject("Delete failed, version don't exist");
+                call.reject("Delete failed, version doesn't exist");
             }
         } catch(IOException ex) {
             Log.e("CapacitorUpdater", "An unexpected error occurred during deletion of folder. Message: " + ex.getMessage());

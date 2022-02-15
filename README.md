@@ -1,10 +1,10 @@
 # capacitor-updater
 
-Download app update from url and install it.
+Download app update from a url and install it.
 
 And reload the view.
 
-You can list the version and manage it with the command below.
+You can list the versions and manage them with the command below.
 
 ## Community
 Join the discord to get help : https://discord.gg/VnYRvBfgA6
@@ -52,11 +52,11 @@ npx cap sync
   }
 ```
 
-*Be extra carufull for your update* if you send a broken update, the app will crash until the user uninstall it.
+*Be extra careful with your update* if you send a broken update, the app will crash until the user reinstalls it.
 
 ## Packaging `dist.zip`
 
-Whatever you choose to name the file you download from your release/update server URL, the zip file should contain the full contents of your production Capacitor build output folder, usually `{project directory}/dist/`. This is where `index.html` will be located, and it should also contain all bundled JavaScript, CSS, and web resources necessary for your app to run.
+Whatever you choose to name the file you download from your release/update server URL, the zip file should contain the full contents of your production Capacitor build output folder, usually `{project directory}/dist/` or `{project directory}/www/`. This is where `index.html` will be located, and it should also contain all bundled JavaScript, CSS, and web resources necessary for your app to run.
 
 Do not password encrypt this file, or it will fail to unpack.
 
@@ -87,7 +87,7 @@ Do not password encrypt this file, or it will fail to unpack.
 download(options: { url: string; }) => Promise<{ version: string; }>
 ```
 
-Download new version from url, it should be a zip file, with files inside or with a unique folder inside with all your files
+Download a new version from the provided url, it should be a zip file, with files inside or with a unique folder inside with all your files
 
 | Param         | Type                          |
 | ------------- | ----------------------------- |
@@ -104,7 +104,7 @@ Download new version from url, it should be a zip file, with files inside or wit
 set(options: { version: string; versionName?: string; }) => Promise<void>
 ```
 
-Set version as current version, set will return error if there are no index.html file inside the version folder, versionName is optional and it's a custom value who will be saved for you
+Set version as current version, set will return an error if there are is no index.html file inside the version folder. `versionName` is optional and it's a custom value that will be saved for you
 
 | Param         | Type                                                    |
 | ------------- | ------------------------------------------------------- |
@@ -134,7 +134,7 @@ Delete version in storage
 list() => Promise<{ versions: string[]; }>
 ```
 
-Get all avaible versions
+Get all available versions
 
 **Returns:** <code>Promise&lt;{ versions: string[]; }&gt;</code>
 
@@ -158,7 +158,7 @@ Set the original version (the one sent to Apple store / Google play store ) as c
 current() => Promise<{ current: string; }>
 ```
 
-Get the curent version, if none are set it return 'default'
+Get the current version, if none are set it returns 'default'
 
 **Returns:** <code>Promise&lt;{ current: string; }&gt;</code>
 
@@ -206,7 +206,7 @@ Notify native plugin that the update is working, only in auto update
 delayUpdate() => Promise<void>
 ```
 
-Skip update in the next app backgrounding, only in auto update
+Skip update in the next time the app goes into the background (only in auto update)
 
 --------------------
 
@@ -217,7 +217,7 @@ Skip update in the next app backgrounding, only in auto update
 cancelDelay() => Promise<void>
 ```
 
-allow update in the next app backgrounding, only in auto update
+Allow update the next time the app goes into the background (only in auto update)
 
 --------------------
 
