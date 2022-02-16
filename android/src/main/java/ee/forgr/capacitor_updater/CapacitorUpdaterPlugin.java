@@ -35,8 +35,8 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         this.prefs = this.getContext().getSharedPreferences("CapWebViewSettings", Activity.MODE_PRIVATE);
         this.editor = prefs.edit();
         implementation = new CapacitorUpdater(this.getContext());
-        String statsUrl = getConfig().getString("statsUrl");
-        implementation.statsUrl = statsUrl != null ? statsUrl : "https://capgo.app/api/stats";
+        implementation.statsUrl = getConfig().getString("statsUrl");
+        implementation.statsUrl = implementation.statsUrl == "" ? "https://capgo.app/api/stats" : implementation.statsUrl;
         this.autoUpdateUrl = getConfig().getString("autoUpdateUrl");
         if (this.autoUpdateUrl == null || this.autoUpdateUrl.equals("")) return;
         Application application = (Application) this.getContext().getApplicationContext();
@@ -95,10 +95,8 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     @PluginMethod
     public void delete(PluginCall call) {
         String version = call.getString("version");
-        String versionName = implementation.getVersionName();
         try {
-            Boolean res = implementation.delete(version, versionName);
-
+            Boolean res = implementation.delete(version, "");
             if (res) {
                 call.resolve();
             } else {
@@ -164,7 +162,6 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     public void onActivityStarted(@NonNull Activity activity) {
         Log.i(TAG, "Check for update in the server");
         if (autoUpdateUrl == null || autoUpdateUrl.equals("")) return;
-        CapacitorUpdater implementation = this.implementation;
         new Thread(new Runnable(){
             @Override
             public void run() {
@@ -238,7 +235,6 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             Log.i(TAG, "Version: " + curVersionName + ", is considered broken");
             Log.i(TAG, "Will downgraded to " + pastVersionName + " for next start");
             Log.i(TAG, "Don't forget to trigger 'notifyAppReady()' in js code to validate a version.");
-            implementation.sendStats("revert", curVersionName);
             if (!pastVersion.equals("") && !pastVersionName.equals("")) {
                 Boolean res = implementation.set(pastVersion, pastVersionName);
                 if (res) {
@@ -267,7 +263,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         } else if (!pastVersion.equals("")) {
             Log.i(TAG, "Validated version: " + curVersionName);
             try {
-                Boolean res = implementation.delete(pastVersion, curVersionName);
+                Boolean res = implementation.delete(pastVersion, pastVersionName);
                 if (res) {
                     Log.i(TAG, "Delete past version: " + pastVersionName);
                 }
