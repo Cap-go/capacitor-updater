@@ -1,17 +1,46 @@
 # capacitor-updater
 
-Download app update from url and install it.
+You have 2 ways possible :
+- use https://capgo.app  a full featured auto update system in 5 min Setup, to manage version, update, revert and see stats.
+- use manual methods to zip, upload, download, update or revert when you want.
 
-And reload the view.
-
-You can list the version and manage it with the command below.
+This project will be migrated soo with all others capgo toolling there :
+https://github.com/Cap-go
 
 ## Community
 Join the discord to get help : https://discord.gg/VnYRvBfgA6
 
-## Install
+## Install Auto update 
+Create account in https://capgo.app
+Download the CLI `npm i -g capgo`
+Add app from CLI `capgo add -a API_KEY`
+Upload app `capgo upload -a API_KEY`
+Edit your `capacitor.config.json` and add the url you got in https://capgo.app select your app with the right channel to get it.
 
-```bash
+```javascript
+// capacitor.config.json
+{
+	"appId": "**.***.**",
+	"appName": "Name",
+	"plugins": {
+		"CapacitorUpdater": {
+			"autoUpdateUrl": "https://capgo.app/api/latest?appid=**.****.***&channel=dev"
+		}
+	}
+}
+```
+Add to your code `CapacitorUpdater.notifyAppReady()` to let auto update know you app boot well.
+Do `npm run build && npx cap copy`
+Run the app and see app auto update after each backgrounding.
+If update fail it will roolback to previous version.
+
+
+## Install Manual
+
+Download app update from url when user enter the app
+install it when user background the app.
+
+```javascript
 npm install capacitor-updater
 npx cap sync
 ```
@@ -53,6 +82,9 @@ npx cap sync
 ```
 
 *Be extra carufull for your update* if you send a broken update, the app will crash until the user uninstall it.
+
+
+You can list the version and manage it with the command below.
 
 ## Packaging `dist.zip`
 
