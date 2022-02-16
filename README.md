@@ -10,6 +10,9 @@ https://github.com/Cap-go
 ## Community
 Join the discord to get help : https://discord.gg/VnYRvBfgA6
 
+## Documentation
+I maintain a more user friendly documentation :
+https://doc.capgo.app
 ## Install Auto update 
 Create account in https://capgo.app
 - Download the CLI `npm i -g capgo`
@@ -35,6 +38,9 @@ Create account in https://capgo.app
 - Run the app and see app auto update after each backgrounding.
 - If update fail it will roolback to previous version.
 
+See more there in the doc:
+
+https://doc.capgo.app/Auto-update-2cf9edda70484d7fa57111ab9c435d08
 
 ## Install Manual
 
