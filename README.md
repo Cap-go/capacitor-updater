@@ -12,10 +12,11 @@ Join the discord to get help : https://discord.gg/VnYRvBfgA6
 
 ## Install Auto update 
 Create account in https://capgo.app
-Download the CLI `npm i -g capgo`
-Add app from CLI `capgo add -a API_KEY`
-Upload app `capgo upload -a API_KEY`
-Edit your `capacitor.config.json` and add the url you got in https://capgo.app select your app with the right channel to get it.
+- Download the CLI `npm i -g capgo`
+- Add app from CLI `capgo add -a API_KEY`
+- Upload app `capgo upload -a API_KEY`
+- Edit your `capacitor.config.json` 
+- add the url you got in https://capgo.app select your app with the right channel to get it.
 
 ```javascript
 // capacitor.config.json
@@ -29,10 +30,10 @@ Edit your `capacitor.config.json` and add the url you got in https://capgo.app s
 	}
 }
 ```
-Add to your code `CapacitorUpdater.notifyAppReady()` to let auto update know you app boot well.
-Do `npm run build && npx cap copy`
-Run the app and see app auto update after each backgrounding.
-If update fail it will roolback to previous version.
+- Add to your code `CapacitorUpdater.notifyAppReady()` to let auto update know you app boot well.
+- Do `npm run build && npx cap copy`
+- Run the app and see app auto update after each backgrounding.
+- If update fail it will roolback to previous version.
 
 
 ## Install Manual
