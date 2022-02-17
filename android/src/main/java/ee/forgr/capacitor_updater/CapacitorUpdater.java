@@ -81,10 +81,11 @@ public class CapacitorUpdater {
             while ((ze = zis.getNextEntry()) != null) {
                 File file = new File(targetDirectory, ze.getName());
                 String canonicalPath = file.getCanonicalPath();
+                String canonicalDir = (new File(String.valueOf(targetDirectory))).getCanonicalPath();
                 File dir = ze.isDirectory() ? file : file.getParentFile();
-                if (!canonicalPath.startsWith(targetDirectory)) {
+                if (!canonicalPath.startsWith(canonicalDir)) {
                     throw new FileNotFoundException("SecurityException, Failed to ensure directory is the start path : " +
-                            targetDirectory + "of " + canonicalPath);
+                            canonicalDir + " of " + canonicalPath);
                 }
                 if (!dir.isDirectory() && !dir.mkdirs())
                     throw new FileNotFoundException("Failed to ensure directory: " +
