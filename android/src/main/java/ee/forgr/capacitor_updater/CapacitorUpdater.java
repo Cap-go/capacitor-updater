@@ -80,7 +80,12 @@ public class CapacitorUpdater {
             byte[] buffer = new byte[8192];
             while ((ze = zis.getNextEntry()) != null) {
                 File file = new File(targetDirectory, ze.getName());
+                String canonicalPath = file.getCanonicalPath();
                 File dir = ze.isDirectory() ? file : file.getParentFile();
+                if (!canonicalPath.startsWith(targetDirectory)) {
+                    throw new FileNotFoundException("SecurityException, Failed to ensure directory is the start path : " +
+                            targetDirectory + "of " + canonicalPath);
+                }
                 if (!dir.isDirectory() && !dir.mkdirs())
                     throw new FileNotFoundException("Failed to ensure directory: " +
                             dir.getAbsolutePath());
