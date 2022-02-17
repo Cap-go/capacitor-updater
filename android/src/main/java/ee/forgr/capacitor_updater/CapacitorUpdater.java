@@ -82,7 +82,7 @@ public class CapacitorUpdater {
                 File file = new File(targetDirectory, ze.getName());
                 String canonicalPath = file.getCanonicalPath();
                 File dir = ze.isDirectory() ? file : file.getParentFile();
-                if (!canonicalPath.startsWith(targetDirectory)) {
+                if (!canonicalPath.startsWith(String.valueOf(targetDirectory))) {
                     throw new FileNotFoundException("SecurityException, Failed to ensure directory is the start path : " +
                             targetDirectory + "of " + canonicalPath);
                 }
