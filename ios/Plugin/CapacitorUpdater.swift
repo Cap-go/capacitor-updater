@@ -30,6 +30,9 @@ extension Bundle {
 @objc public class CapacitorUpdater: NSObject {
     
     public var statsUrl = ""
+    public var appId = ""
+    private var versionBuild = Bundle.main.buildVersionNumber ?? ""
+    private var deviceID = UIDevice.current.identifierForVendor?.uuidString ?? ""
     private var lastPathHot = ""
     private var lastPathPersist = ""
     private let basePathHot = "versions"
@@ -213,17 +216,14 @@ extension Bundle {
     @objc func sendStats(action: String, version: String) {
         if (statsUrl == "") { return }
         DispatchQueue.main.async {
-            let deviceID = UIDevice.current.identifierForVendor!.uuidString
-            let versionBuild = Bundle.main.buildVersionNumber ?? ""
-            let bundleIdentifier =  Bundle.main.bundleIdentifier ?? ""
             _ = Just.post(self.statsUrl,
                           json: [
                                 "platform": "ios",
                                 "action": action,
-                                "device_id": deviceID,
+                                "device_id": self.deviceID,
                                 "version_name": version,
-                                "version_build": versionBuild,
-                                "app_id": bundleIdentifier
+                                "version_build": self.versionBuild,
+                                "app_id": self.appId
                         ]
             )
             print("✨  Capacitor-updater: Stats send for " + action + ", version " + version)

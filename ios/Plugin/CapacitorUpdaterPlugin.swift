@@ -13,6 +13,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     
     override public func load() {
         autoUpdateUrl = getConfigValue("autoUpdateUrl") as? String ?? ""
+        implementation.appId = Bundle.main.bundleIdentifier ?? ""
+        let config = (self.bridge?.viewController as? CAPBridgeViewController)?.instanceDescriptor().legacyConfig
+        if (config?["appId"] != nil) {
+            implementation.appId = config?["appId"] as! String
+        }
         implementation.statsUrl = getConfigValue("statsUrl") as? String ?? "https://capgo.app/api/stats"
         if (autoUpdateUrl == "") { return }
         let nc = NotificationCenter.default

@@ -39,6 +39,7 @@ interface Callback {
 public class CapacitorUpdater {
     private String TAG = "Capacitor-updater";
     public String statsUrl = "";
+    public String appId = "";
 
     private Context context;
     private String basePathHot = "versions";
@@ -285,7 +286,7 @@ public class CapacitorUpdater {
             json.put("device_id", android_id);
             json.put("version_name", version);
             json.put("version_build", pInfo.versionName);
-            json.put("app_id", pInfo.packageName);
+            json.put("app_id", this.appId);
             jsonString = json.toString();
         } catch (Exception ex) {
             Log.e(TAG, "Error get stats", ex);

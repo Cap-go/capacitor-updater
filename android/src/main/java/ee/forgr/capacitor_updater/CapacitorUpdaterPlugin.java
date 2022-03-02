@@ -9,12 +9,14 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.getcapacitor.CapConfig;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.getcapacitor.util.JSONUtils;
 
 import org.json.JSONException;
 
@@ -35,8 +37,9 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         this.prefs = this.getContext().getSharedPreferences("CapWebViewSettings", Activity.MODE_PRIVATE);
         this.editor = prefs.edit();
         implementation = new CapacitorUpdater(this.getContext());
-        implementation.statsUrl = getConfig().getString("statsUrl");
-        implementation.statsUrl = implementation.statsUrl == "" ? "https://capgo.app/api/stats" : implementation.statsUrl;
+        CapConfig config = CapConfig.loadDefault(getActivity());
+        implementation.appId = config.getString("appId", "");
+        implementation.statsUrl = getConfig().getString("statsUrl", "https://capgo.app/api/stats");
         this.autoUpdateUrl = getConfig().getString("autoUpdateUrl");
         if (this.autoUpdateUrl == null || this.autoUpdateUrl.equals("")) return;
         Application application = (Application) this.getContext().getApplicationContext();
