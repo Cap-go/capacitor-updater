@@ -46,7 +46,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         let notifyAppReady = UserDefaults.standard.bool(forKey: "notifyAppReady")
         let curVersion = implementation.getLastPathPersist().components(separatedBy: "/").last!
         let curVersionName = implementation.getVersionName()
-        print("✨  Capacitor-updater: next version: \(nextVersionName), past version: \(pastVersionName == "" ? "builtin" : pastVersionName)")
         print("✨  Capacitor-updater: notifyAppReady: \(notifyAppReady ? "true" :  "false"), current version: \(curVersionName  == "" ? "builtin" : curVersionName)")
         if (nextVersion != "" && nextVersionName != "") {
             let res = implementation.set(version: nextVersion, versionName: nextVersionName)
