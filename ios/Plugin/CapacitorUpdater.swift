@@ -1,6 +1,6 @@
 import Foundation
 import SSZipArchive
-import Just
+import Alamofire
 
 extension URL {
     var isDirectory: Bool {
@@ -31,6 +31,7 @@ extension Bundle {
     
     public var statsUrl = ""
     public var appId = ""
+    public var notifyDownload: (Int) -> Void = { _ in }
     private var versionBuild = Bundle.main.buildVersionNumber ?? ""
     private var deviceID = UIDevice.current.identifierForVendor?.uuidString ?? ""
     private var lastPathHot = ""
@@ -39,8 +40,11 @@ extension Bundle {
     private let basePathPersist = "NoCloud/ionic_built_snapshots"
     private let documentsUrl = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
     private let libraryUrl = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
-
-
+    
+    @objc private func calcTotalPercent(percent: Int, min: Int, max: Int) -> Int {
+        return (percent * (max - min)) / 100 + min;
+    }
+    
     @objc private func randomString(length: Int) -> String {
         let letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
         return String((0..<length).map{ _ in letters.randomElement()! })
@@ -55,17 +59,16 @@ extension Bundle {
             do {
                 try FileManager.default.createDirectory(atPath: source.path, withIntermediateDirectories: true, attributes: nil)
             } catch {
-                print("✨  Capacitor-updater: Cannot createDirectory " + source.path)
+                print("✨  Capacitor-updater: Cannot createDirectory \(source.path)")
             }
         }
     }
     
-    private func deleteFolder(source: URL, dest: URL) {
+    private func deleteFolder(source: URL) {
         do {
             try FileManager.default.removeItem(atPath: source.path)
-            try FileManager.default.removeItem(atPath: dest.path)
         } catch {
-            print("✨  Capacitor-updater: File not removed.")
+            print("✨  Capacitor-updater: File not removed. \(source.path)")
         }
     }
     
@@ -79,72 +82,73 @@ extension Bundle {
                 try FileManager.default.moveItem(at: source, to: dest)
             }
         } catch {
-            print("✨  Capacitor-updater: File not moved.")
+            print("✨  Capacitor-updater: File not moved. source: \(source.path) dest: \(dest.path)")
         }
     }
     
-    private func saveDownloaded(content: Data?, version: String) {
-        let base = documentsUrl.appendingPathComponent(basePathHot)
+    private func saveDownloaded(sourceZip: URL, version: String, base: URL) {
         prepareFolder(source: base)
-        let destZip = documentsUrl.appendingPathComponent(randomString(length: 10))
-        let destUnZip = documentsUrl.appendingPathComponent(randomString(length: 10))
         let destHot = base.appendingPathComponent(version)
-        if (FileManager.default.createFile(atPath: destZip.path, contents: content, attributes: nil)) {
-            SSZipArchive.unzipFile(atPath: destZip.path, toDestination: destUnZip.path)
-            moveFolder(source: destUnZip, dest: destHot)
-            deleteFolder(source: destUnZip, dest: destZip)
-        } else {
-            print("✨  Capacitor-updater: File not created.")
-        }
-    }
-    
-    private func saveDownloadedPersist(content: Data?, version: String) {
-        let base = libraryUrl.appendingPathComponent(basePathPersist)
-        prepareFolder(source: base)
-        let destZip = documentsUrl.appendingPathComponent(randomString(length: 10))
-        let destUnZip = documentsUrl.appendingPathComponent(randomString(length: 10))
-        let destPersist = base.appendingPathComponent(version)
-        if (FileManager.default.createFile(atPath: destZip.path, contents: content, attributes: nil)) {
-            SSZipArchive.unzipFile(atPath: destZip.path, toDestination: destUnZip.path)
-            moveFolder(source: destUnZip, dest: destPersist)
-            deleteFolder(source: destUnZip, dest: destZip)
-        } else {
-            print("✨  Capacitor-updater: File Persist not created.")
-        }
+        SSZipArchive.unzipFile(atPath: sourceZip.path, toDestination: destHot.path)
     }
 
     @objc public func getLatest(url: URL) -> AppVersion? {
-        let r = Just.get(url)
-        if r.ok {
-            let resp = try? JSONDecoder().decode(AppVersionDec.self, from: r.content!)
-            let latest = AppVersion()
-            if resp?.url != nil && resp?.version != nil {
-                latest.url = resp!.url
-                latest.version = resp!.version
-                //        { version: version.name, url: res.signedURL }
-                return latest
-            } else {
-                return nil
-            }
+        let semaphore = DispatchSemaphore(value: 0)
+        let request = AF.request(url)
+        let latest = AppVersion()
 
-        } else {
-            print("✨  Capacitor-updater: Error get Latest", url, r.error ?? "unknow")
+        request.validate().responseDecodable(of: AppVersionDec.self) { response in
+            switch response.result {
+                case .success:
+                    if let url = response.value?.url, let version = response.value?.version {
+                        latest.url = url
+                        latest.version = version
+                    }
+                case let .failure(error):
+                    print("✨  Capacitor-updater: Error get Latest \(url)", error )
+            }
+            semaphore.signal()
         }
-        return nil
+        semaphore.wait()
+        return latest.url != "" ? latest : nil
     }
     
     @objc public func download(url: URL) -> String? {
-        print("URL " + url.path)
-        let r = Just.get(url)
-        if r.ok {
-            let version = randomString(length: 10)
-            saveDownloaded(content: r.content, version: version)
-            saveDownloadedPersist(content: r.content, version: version)
-            return version
-        } else {
-            print("✨  Capacitor-updater: Error downloading zip file", r.error ?? "unknow")
+        let semaphore = DispatchSemaphore(value: 0)
+        var version: String? = nil
+        let destination: DownloadRequest.Destination = { _, _ in
+            let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let fileURL = documentsURL.appendingPathComponent(self.randomString(length: 10))
+
+            return (fileURL, [.removePreviousFile, .createIntermediateDirectories])
         }
-        return nil
+        let request = AF.download(url, to: destination)
+        
+        request.downloadProgress { progress in
+            let percent = self.calcTotalPercent(percent: Int(progress.fractionCompleted * 100), min: 10, max: 70)
+            self.notifyDownload(percent)
+        }
+        request.responseURL { (response) in
+            if let fileURL = response.fileURL {
+                switch response.result {
+                case .success:
+                    self.notifyDownload(71);
+                    version = self.randomString(length: 10)
+                    self.saveDownloaded(sourceZip: fileURL, version: version!, base: self.documentsUrl.appendingPathComponent(self.basePathHot))
+                    self.notifyDownload(85);
+                    self.saveDownloaded(sourceZip: fileURL, version: version!, base: self.libraryUrl.appendingPathComponent(self.basePathPersist))
+                    self.notifyDownload(100);
+                    self.deleteFolder(source: fileURL)
+                case let .failure(error):
+                    print("✨  Capacitor-updater: download error", error)
+                    version = nil
+                }
+            }
+            semaphore.signal()
+        }
+        self.notifyDownload(0);
+        semaphore.wait()
+        return version
     }
 
     @objc public func list() -> [String] {
@@ -153,7 +157,7 @@ extension Bundle {
             let files = try FileManager.default.contentsOfDirectory(atPath: dest.path)
             return files
         } catch {
-            print("✨  Capacitor-updater: No version available" + dest.path)
+            print("✨  Capacitor-updater: No version available \(dest.path)")
             return []
         }
     }
@@ -164,12 +168,12 @@ extension Bundle {
         do {
             try FileManager.default.removeItem(atPath: destHot.path)
         } catch {
-            print("✨  Capacitor-updater: Hot Folder " + destHot.path + ", not removed.")
+            print("✨  Capacitor-updater: Hot Folder \(destHot.path), not removed.")
         }
         do {
             try FileManager.default.removeItem(atPath: destPersist.path)
         } catch {
-            print("✨  Capacitor-updater: Folder " + destPersist.path + ", not removed.")
+            print("✨  Capacitor-updater: Folder \(destPersist.path), not removed.")
             return false
         }
         sendStats(action: "delete", version: versionName)
@@ -180,7 +184,7 @@ extension Bundle {
         let destHot = documentsUrl.appendingPathComponent(basePathHot).appendingPathComponent(version)
         let indexHot = destHot.appendingPathComponent("index.html")
         let destHotPersist = libraryUrl.appendingPathComponent(basePathPersist).appendingPathComponent(version)
-        let indexPersist = destHot.appendingPathComponent("index.html")
+        let indexPersist = destHotPersist.appendingPathComponent("index.html")
         if (destHot.isDirectory && destHotPersist.isDirectory && indexHot.exist && indexPersist.exist) {
             UserDefaults.standard.set(destHot.path, forKey: "lastPathHot")
             UserDefaults.standard.set(destHotPersist.path, forKey: "lastPathPersist")
@@ -215,18 +219,18 @@ extension Bundle {
 
     @objc func sendStats(action: String, version: String) {
         if (statsUrl == "") { return }
-        DispatchQueue.main.async {
-            _ = Just.post(self.statsUrl,
-                          json: [
-                                "platform": "ios",
-                                "action": action,
-                                "device_id": self.deviceID,
-                                "version_name": version,
-                                "version_build": self.versionBuild,
-                                "app_id": self.appId
-                        ]
-            )
-            print("✨  Capacitor-updater: Stats send for " + action + ", version " + version)
+        let parameters: [String: String] = [
+            "platform": "ios",
+            "action": action,
+            "device_id": self.deviceID,
+            "version_name": version,
+            "version_build": self.versionBuild,
+            "app_id": self.appId
+        ]
+
+        DispatchQueue.global(qos: .background).async {
+            let _ = AF.request(self.statsUrl, method: .post,parameters: parameters, encoder: JSONParameterEncoder.default)
+            print("✨  Capacitor-updater: Stats send for \(action), version \(version)")
         }
     }
     

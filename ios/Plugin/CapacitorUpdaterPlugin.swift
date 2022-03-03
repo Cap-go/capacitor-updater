@@ -14,6 +14,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     override public func load() {
         autoUpdateUrl = getConfigValue("autoUpdateUrl") as? String ?? ""
         implementation.appId = Bundle.main.bundleIdentifier ?? ""
+        implementation.notifyDownload = notifyDownload
         let config = (self.bridge?.viewController as? CAPBridgeViewController)?.instanceDescriptor().legacyConfig
         if (config?["appId"] != nil) {
             implementation.appId = config?["appId"] as! String
@@ -24,6 +25,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         nc.addObserver(self, selector: #selector(appMovedToBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
         nc.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
         self.appMovedToForeground()
+    }
+    
+    @objc func notifyDownload(percent: Int) {
+        self.notifyListeners("download", data: ["percent": percent])
     }
     
     @objc func appMovedToBackground() {
@@ -41,13 +46,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         let notifyAppReady = UserDefaults.standard.bool(forKey: "notifyAppReady")
         let curVersion = implementation.getLastPathPersist().components(separatedBy: "/").last!
         let curVersionName = implementation.getVersionName()
-        print("✨  Capacitor-updater: next version: " + nextVersionName + ", past version: " + pastVersionName)
-        print("✨  Capacitor-updater: notifyAppReady: " + (notifyAppReady ? "true" :  "false") + ", current version: " + curVersionName)
+        print("✨  Capacitor-updater: next version: \(nextVersionName), past version: \(pastVersionName == "" ? "builtin" : pastVersionName)")
+        print("✨  Capacitor-updater: notifyAppReady: \(notifyAppReady ? "true" :  "false"), current version: \(curVersionName  == "" ? "builtin" : curVersionName)")
         if (nextVersion != "" && nextVersionName != "") {
             let res = implementation.set(version: nextVersion, versionName: nextVersionName)
             if (res) {
                 if (self._reload()) {
-                    print("✨  Capacitor-updater: Auto update to version: " + nextVersionName)
+                    print("✨  Capacitor-updater: Auto update to version: \(nextVersionName)")
                 }
                 UserDefaults.standard.set("", forKey: "nextVersion")
                 UserDefaults.standard.set("", forKey: "nextVersionName")
@@ -57,15 +62,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             }
         } else if (!notifyAppReady) {
             print("✨  Capacitor-updater: notifyAppReady never trigger")
-            print("✨  Capacitor-updater: Version:" + curVersionName + ", is considered broken")
-            print("✨  Capacitor-updater: Will downgraded to " + pastVersionName + " for next start")
+            print("✨  Capacitor-updater: Version: \(curVersionName), is considered broken")
+            print("✨  Capacitor-updater: Will downgraded to \(pastVersionName) for next start")
             print("✨  Capacitor-updater: Don't forget to trigger 'notifyAppReady()' in js code to validate a version.")
             implementation.sendStats(action: "revert", version: curVersionName)
             if (pastVersion != "" && pastVersionName != "") {
                 let res = implementation.set(version: pastVersion, versionName: pastVersionName)
                 if (res) {
                     if (self._reload()) {
-                        print("✨  Capacitor-updater: Revert update to version: " + pastVersionName)
+                        print("✨  Capacitor-updater: Revert update to version: \(pastVersionName)")
                     }
                     UserDefaults.standard.set("", forKey: "pastVersion")
                     UserDefaults.standard.set("", forKey: "pastVersionName")
@@ -78,13 +83,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             UserDefaults.standard.set(curVersionName, forKey: "failingVersion")
             let res = implementation.delete(version: curVersion, versionName: curVersionName)
             if (res) {
-                print("✨  Capacitor-updater: Delete failing version: " + curVersionName)
+                print("✨  Capacitor-updater: Delete failing version: \(curVersionName)")
             }
         } else if (pastVersion != "") {
-            print("✨  Capacitor-updater: Validated version: ", curVersionName)
+            print("✨  Capacitor-updater: Validated version: \(curVersionName)")
             let res = implementation.delete(version: pastVersion, versionName: curVersionName)
             if (res) {
-                print("✨  Capacitor-updater: Delete past version: " + pastVersionName)
+                print("✨  Capacitor-updater: Delete past version: \(pastVersionName)")
             }
             UserDefaults.standard.set("", forKey: "pastVersion")
             UserDefaults.standard.set("", forKey: "pastVersionName")
@@ -92,7 +97,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func appMovedToForeground() {
-        DispatchQueue.main.async {
+        DispatchQueue.global(qos: .background).async {
             print("✨  Capacitor-updater: Check for update in the server")
             let url = URL(string: self.autoUpdateUrl)!
             let res = self.implementation.getLatest(url: url)
@@ -106,12 +111,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             let failingVersion = UserDefaults.standard.string(forKey: "failingVersion") ?? ""
             let newVersion = res?.version ?? ""
             if (newVersion != "" && newVersion != currentVersion && newVersion != failingVersion) {
-                let dl = self.implementation.download(url: downloadUrl)
-                print("✨  Capacitor-updater: New version: " + newVersion + " found. Current is " + (currentVersion == "" ? "builtin" : currentVersion) + ", next backgrounding will trigger update.")
-                UserDefaults.standard.set(dl, forKey: "nextVersion")
-                UserDefaults.standard.set(newVersion, forKey: "nextVersionName")
+                let dlOp = self.implementation.download(url: downloadUrl)
+                if let dl = dlOp {
+                    print("✨  Capacitor-updater: New version: \(newVersion) found. Current is \(currentVersion == "" ? "builtin" : currentVersion), next backgrounding will trigger update")
+                    UserDefaults.standard.set(dl, forKey: "nextVersion")
+                    UserDefaults.standard.set(newVersion, forKey: "nextVersionName")
+                } else {
+                    print("✨  Capacitor-updater: Download fail")
+                }
             } else {
-                print("✨  Capacitor-updater: No need to update, " + currentVersion + " is the latest")
+                print("✨  Capacitor-updater: No need to update, \(currentVersion) is the latest")
             }
         }
     }
@@ -161,13 +170,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         
         if (res) {
             if (self._reload()) {
-                print("✨  Capacitor-updater: Set to version: ", version, versionName)
+                print("✨  Capacitor-updater: Set to version: \(version) versionName: \(versionName)")
                 call.resolve()
             } else {
                 call.reject("Cannot reload")
             }
         } else {
-            call.reject("Update failed, version " + version + " don't exist")
+            call.reject("Update failed, version \(version) don't exist")
         }
     }
 
@@ -195,7 +204,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             let pathPersist = implementation.getLastPathPersist()
             vc.setServerBasePath(path: pathPersist)
             UserDefaults.standard.set("", forKey: "serverBasePath")
-            DispatchQueue.main.async {
+            DispatchQueue.global(qos: .background).async {
                 vc.loadView()
                 vc.viewDidLoad()
                 print("✨  Capacitor-updater: Reset to original version")

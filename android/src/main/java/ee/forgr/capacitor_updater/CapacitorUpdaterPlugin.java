@@ -16,7 +16,6 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
-import com.getcapacitor.util.JSONUtils;
 
 import org.json.JSONException;
 
@@ -36,7 +35,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         super.load();
         this.prefs = this.getContext().getSharedPreferences("CapWebViewSettings", Activity.MODE_PRIVATE);
         this.editor = prefs.edit();
-        implementation = new CapacitorUpdater(this.getContext());
+        implementation = new CapacitorUpdater(this.getContext(), this);
         CapConfig config = CapConfig.loadDefault(getActivity());
         implementation.appId = config.getString("appId", "");
         implementation.statsUrl = getConfig().getString("statsUrl", "https://capgo.app/api/stats");
@@ -79,6 +78,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             call.reject("reload failed");
         }
     }
+    
     @PluginMethod
     public void set(PluginCall call) {
         String version = call.getString("version");
@@ -93,6 +93,12 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             this.bridge.setServerBasePath(pathHot);
             call.resolve();
         }
+    }
+
+    public void notifyDownload(int percent) {
+        JSObject ret = new JSObject();
+        ret.put("percent", percent);
+        notifyListeners("download", ret);
     }
 
     @PluginMethod

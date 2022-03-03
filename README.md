@@ -268,6 +268,17 @@ allow update in the next app backgrounding, only in auto update
 
 </docgen-api>
 
+### Listen to download events
+
+```javascript
+  import { CapacitorUpdater } from 'capacitor-updater';
+
+CapacitorUpdater.addListener('download', (info: any) => {
+  console.log('download was fired', info.percent);
+});
+```
+
+On iOS, Apple don't allow you to show a message when the app is updated, so you can't show a progress bar.
 
 ### Inspiraton
 
