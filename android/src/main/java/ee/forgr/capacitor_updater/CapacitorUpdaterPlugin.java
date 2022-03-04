@@ -225,7 +225,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         String curVersion = tmpCurVersion.substring(tmpCurVersion.lastIndexOf('/') +1);
         String curVersionName = implementation.getVersionName();
 
-        Log.i(TAG, "next version: " + nextVersionName + ", past version: " + pastVersionName);
+        Log.i(TAG, "next version: " + nextVersionName + ", past version: " + (pastVersionName == "" ? "builtin" : pastVersionName));
         if (!nextVersion.equals("") && !nextVersionName.equals("")) {
             Boolean res = implementation.set(nextVersion, nextVersionName);
             if (res) {
@@ -242,13 +242,13 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         } else if (!notifyAppReady && !pathHot.equals("public")) {
             Log.i(TAG, "notifyAppReady never trigger");
             Log.i(TAG, "Version: " + curVersionName + ", is considered broken");
-            Log.i(TAG, "Will downgraded to " + pastVersionName + " for next start");
+            Log.i(TAG, "Will downgraded to " + (pastVersionName == "" ? "builtin" : pastVersionName) + " for next start");
             Log.i(TAG, "Don't forget to trigger 'notifyAppReady()' in js code to validate a version.");
             if (!pastVersion.equals("") && !pastVersionName.equals("")) {
                 Boolean res = implementation.set(pastVersion, pastVersionName);
                 if (res) {
                     if (this._reload()) {
-                        Log.i(TAG, "Revert update to version: " + pastVersionName);
+                        Log.i(TAG, "Revert update to version: " + (pastVersionName == "" ? "builtin" : pastVersionName));
                     }
                     editor.putString("pastVersion", "");
                     editor.putString("pastVersionName", "");
