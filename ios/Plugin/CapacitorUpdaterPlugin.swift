@@ -116,7 +116,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                     UserDefaults.standard.set(dl, forKey: "nextVersion")
                     UserDefaults.standard.set(newVersion, forKey: "nextVersionName")
                 } else {
-                    print("✨  Capacitor-updater: Download fail")
+                    print("✨  Capacitor-updater: Download version \(newVersion) fail")
                 }
             } else {
                 print("✨  Capacitor-updater: No need to update, \(currentVersion) is the latest")

@@ -179,7 +179,6 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                         String currentVersion = implementation.getVersionName();
                         String newVersion = (String) res.get("version");
                         String failingVersion = prefs.getString("failingVersion", "");
-                        Log.i(TAG, "currentVersion " + currentVersion + ", newVersion " + newVersion + (failingVersion.equals("") ? "" : ", failingVersion " + failingVersion));
                         if (!newVersion.equals(currentVersion) && !newVersion.equals(failingVersion)) {
                             new Thread(new Runnable(){
                                 @Override
@@ -191,7 +190,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                             Log.i(TAG, "Download version: " + newVersion + " failed");
                                             return;
                                         }
-                                        Log.i(TAG, "New version: " + newVersion + " found. Current is " + (currentVersion == "" ? "builtin" : currentVersion) + ", next backgrounding will trigger update.");
+                                        Log.i(TAG, "New version: " + newVersion + " found. Current is " + (currentVersion == "" ? "builtin" : currentVersion) + ", next backgrounding will trigger update");
                                         editor.putString("nextVersion", dl);
                                         editor.putString("nextVersionName", (String) res.get("version"));
                                         editor.commit();
@@ -200,6 +199,8 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                     }
                                 }
                             }).start();
+                        } else {
+                            Log.i(TAG, "No need to update, " + currentVersion + " is the latest");
                         }
                     } catch (JSONException e) {
                         e.printStackTrace();

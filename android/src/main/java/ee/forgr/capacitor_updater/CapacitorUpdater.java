@@ -269,7 +269,6 @@ public class CapacitorUpdater {
     }
 
     public void getLatest(String url, Callback callback) {
-        Log.i(TAG, "Get Latest, URL: " + url);
         StringRequest stringRequest = new StringRequest(url, new Response.Listener<String>() {
             @Override
             public void onResponse(String response) {
