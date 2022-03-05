@@ -46,33 +46,33 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         let notifyAppReady = UserDefaults.standard.bool(forKey: "notifyAppReady")
         let curVersion = implementation.getLastPathPersist().components(separatedBy: "/").last!
         let curVersionName = implementation.getVersionName()
-        print("✨  Capacitor-updater: notifyAppReady: \(notifyAppReady ? "true" :  "false"), current version: \(curVersionName  == "" ? "builtin" : curVersionName)")
+        print("✨  Capacitor-updater: Next version: \(nextVersionName), past version: \(pastVersionName == "" ? "builtin" : pastVersionName)");
         if (nextVersion != "" && nextVersionName != "") {
             let res = implementation.set(version: nextVersion, versionName: nextVersionName)
-            if (res) {
-                if (self._reload()) {
-                    print("✨  Capacitor-updater: Auto update to version: \(nextVersionName)")
-                }
+            if (res && self._reload()) {
+                print("✨  Capacitor-updater: Auto update to version: \(nextVersionName)")
                 UserDefaults.standard.set("", forKey: "nextVersion")
                 UserDefaults.standard.set("", forKey: "nextVersionName")
                 UserDefaults.standard.set(curVersion, forKey: "pastVersion")
                 UserDefaults.standard.set(curVersionName, forKey: "pastVersionName")
                 UserDefaults.standard.set(false, forKey: "notifyAppReady")
+            } else {
+                print("✨  Capacitor-updater: Auto update to version: \(nextVersionName) Failed");
             }
         } else if (!notifyAppReady) {
             print("✨  Capacitor-updater: notifyAppReady never trigger")
             print("✨  Capacitor-updater: Version: \(curVersionName), is considered broken")
-            print("✨  Capacitor-updater: Will downgraded to \(pastVersionName) for next start")
+            print("✨  Capacitor-updater: Will downgraded to version: \(pastVersionName == "" ? "builtin" : pastVersionName) for next start")
             print("✨  Capacitor-updater: Don't forget to trigger 'notifyAppReady()' in js code to validate a version.")
             implementation.sendStats(action: "revert", version: curVersionName)
             if (pastVersion != "" && pastVersionName != "") {
                 let res = implementation.set(version: pastVersion, versionName: pastVersionName)
-                if (res) {
-                    if (self._reload()) {
-                        print("✨  Capacitor-updater: Revert update to version: \(pastVersionName)")
-                    }
+                if (res && self._reload()) {
+                    print("✨  Capacitor-updater: Revert to version: \(pastVersionName == "" ? "builtin" : pastVersionName)")
                     UserDefaults.standard.set("", forKey: "pastVersion")
                     UserDefaults.standard.set("", forKey: "pastVersionName")
+                } else {
+                    print("✨  Capacitor-updater: Revert to version: \(pastVersionName == "" ? "builtin" : pastVersionName) Failed");
                 }
             } else {
                 if self._reset() {
@@ -167,15 +167,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         let versionName = call.getString("versionName") ?? version
         let res = implementation.set(version: version, versionName: versionName)
         
-        if (res) {
-            if (self._reload()) {
-                print("✨  Capacitor-updater: Set to version: \(version) versionName: \(versionName)")
-                call.resolve()
-            } else {
-                call.reject("Cannot reload")
-            }
+        if (res && self._reload()) {
+            print("✨  Capacitor-updater: Set to version: \(version) versionName: \(versionName)")
+            call.resolve()
         } else {
-            call.reject("Update failed, version \(version) don't exist")
+            call.reject("Cannot reload")
         }
     }
 

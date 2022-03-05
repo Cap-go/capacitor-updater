@@ -253,7 +253,6 @@ public class CapacitorUpdater {
     public Boolean set(String version, String versionName) {
         File destHot = new File(this.context.getFilesDir()  + "/" + basePathHot + "/" + version);
         File destIndex = new File(destHot.getPath()  + "/index.html");
-        Log.i(TAG, "set File : " + destHot.getPath());
         if (destHot.exists() && destIndex.exists()) {
             editor.putString("lastPathHot", destHot.getPath());
             editor.putString("serverBasePath", destHot.getPath());
@@ -342,9 +341,9 @@ public class CapacitorUpdater {
                     wr.close();
                     int responseCode = con.getResponseCode();
                     if (responseCode != 200) {
-                        Log.e(TAG, "stats responseCode: " + responseCode);
+                        Log.e(TAG, "Stats error responseCode: " + responseCode);
                     } else {
-                        Log.i(TAG, "Stats send for \"" + action + "\", version " + version + " in " + statsUrl);
+                        Log.i(TAG, "Stats send for \"" + action + "\", version " + version);
                     }
                 } catch (Exception ex) {
                     Log.e(TAG, "Error post stats", ex);

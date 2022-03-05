@@ -66,7 +66,6 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
 
     private boolean _reload() {
         String pathHot = implementation.getLastPathHot();
-        Log.i(TAG, "getLastPathHot : " + pathHot);
         this.bridge.setServerBasePath(pathHot);
         return true;
     }
@@ -190,7 +189,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                             Log.i(TAG, "Download version: " + newVersion + " failed");
                                             return;
                                         }
-                                        Log.i(TAG, "New version: " + newVersion + " found. Current is " + (currentVersion == "" ? "builtin" : currentVersion) + ", next backgrounding will trigger update");
+                                        Log.i(TAG, "New version: " + newVersion + " found. Current is " + (currentVersion.equals("") ? "builtin" : currentVersion) + ", next backgrounding will trigger update");
                                         editor.putString("nextVersion", dl);
                                         editor.putString("nextVersionName", (String) res.get("version"));
                                         editor.commit();
@@ -229,14 +228,11 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         String tmpCurVersion = implementation.getLastPathHot();
         String curVersion = tmpCurVersion.substring(tmpCurVersion.lastIndexOf('/') +1);
         String curVersionName = implementation.getVersionName();
-        Log.i(TAG, "next version: " + nextVersion + " name: " + nextVersionName + ", past version: " + (pastVersionName == "" ? "builtin" : pastVersionName));
+        Log.i(TAG, "Next version: " + nextVersionName + ", past version: " + (pastVersionName.equals("") ? "builtin" : pastVersionName));
         if (!nextVersion.equals("") && !nextVersionName.equals("")) {
-            Log.i(TAG, "set version: " + nextVersion + " " + nextVersionName);
             Boolean res = implementation.set(nextVersion, nextVersionName);
-            if (res) {
-                if (this._reload()) {
-                    Log.i(TAG, "Auto update to version: " + nextVersionName);
-                }
+            if (res && this._reload()) {
+                Log.i(TAG, "Auto update to version: " + nextVersionName);
                 editor.putString("nextVersion", "");
                 editor.putString("nextVersionName", "");
                 editor.putString("pastVersion", curVersion);
@@ -249,17 +245,17 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         } else if (!notifyAppReady && !pathHot.equals("public")) {
             Log.i(TAG, "notifyAppReady never trigger");
             Log.i(TAG, "Version: " + curVersionName + ", is considered broken");
-            Log.i(TAG, "Will downgraded to " + (pastVersionName == "" ? "builtin" : pastVersionName) + " for next start");
+            Log.i(TAG, "Will downgraded to version: " + (pastVersionName.equals("") ? "builtin" : pastVersionName) + " for next start");
             Log.i(TAG, "Don't forget to trigger 'notifyAppReady()' in js code to validate a version.");
             if (!pastVersion.equals("") && !pastVersionName.equals("")) {
                 Boolean res = implementation.set(pastVersion, pastVersionName);
-                if (res) {
-                    if (this._reload()) {
-                        Log.i(TAG, "Revert update to version: " + (pastVersionName == "" ? "builtin" : pastVersionName));
-                    }
+                if (res && this._reload()) {
+                    Log.i(TAG, "Revert to version: " + (pastVersionName.equals("") ? "builtin" : pastVersionName));
                     editor.putString("pastVersion", "");
                     editor.putString("pastVersionName", "");
                     editor.commit();
+                } else {
+                    Log.i(TAG, "Revert to version: " + (pastVersionName.equals("") ? "builtin" : pastVersionName) + "Failed");
                 }
             } else {
                 if (this._reset()) {
