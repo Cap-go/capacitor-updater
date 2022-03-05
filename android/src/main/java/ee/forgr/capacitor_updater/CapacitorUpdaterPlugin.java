@@ -53,7 +53,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             public void run() {
                 String url = call.getString("url");
                 String res = implementation.download(url);
-                if ((res) != null) {
+                if (!res.equals("")) {
                     JSObject ret = new JSObject();
                     ret.put("version", res);
                     call.resolve(ret);
@@ -78,7 +78,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             call.reject("reload failed");
         }
     }
-    
+
     @PluginMethod
     public void set(PluginCall call) {
         String version = call.getString("version");
@@ -187,6 +187,10 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                     // Do network action in this function
                                     try {
                                         String dl = implementation.download((String) res.get("url"));
+                                        if (dl.equals("")) {
+                                            Log.i(TAG, "Download version: " + newVersion + " failed");
+                                            return;
+                                        }
                                         Log.i(TAG, "New version: " + newVersion + " found. Current is " + (currentVersion == "" ? "builtin" : currentVersion) + ", next backgrounding will trigger update.");
                                         editor.putString("nextVersion", dl);
                                         editor.putString("nextVersionName", (String) res.get("version"));
@@ -224,9 +228,9 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         String tmpCurVersion = implementation.getLastPathHot();
         String curVersion = tmpCurVersion.substring(tmpCurVersion.lastIndexOf('/') +1);
         String curVersionName = implementation.getVersionName();
-
-        Log.i(TAG, "next version: " + nextVersionName + ", past version: " + (pastVersionName == "" ? "builtin" : pastVersionName));
+        Log.i(TAG, "next version: " + nextVersion + " name: " + nextVersionName + ", past version: " + (pastVersionName == "" ? "builtin" : pastVersionName));
         if (!nextVersion.equals("") && !nextVersionName.equals("")) {
+            Log.i(TAG, "set version: " + nextVersion + " " + nextVersionName);
             Boolean res = implementation.set(nextVersion, nextVersionName);
             if (res) {
                 if (this._reload()) {
@@ -238,6 +242,8 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                 editor.putString("pastVersionName", curVersionName);
                 editor.putBoolean("notifyAppReady", false);
                 editor.commit();
+            } else {
+                Log.i(TAG, "Auto update to version: " + nextVersionName + "Failed");
             }
         } else if (!notifyAppReady && !pathHot.equals("public")) {
             Log.i(TAG, "notifyAppReady never trigger");

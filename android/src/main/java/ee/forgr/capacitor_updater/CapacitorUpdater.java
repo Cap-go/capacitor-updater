@@ -26,6 +26,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLConnection;
 import java.security.SecureRandom;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -86,8 +87,9 @@ public class CapacitorUpdater {
             int count;
             int buffLength = 8192;
             byte[] buffer = new byte[buffLength];
-            int turn = 0;
             long totalLength = zipFile.length();
+            long readedLength = buffLength;
+            int percent = 0;
             this.plugin.notifyDownload(75);
             while ((ze = zis.getNextEntry()) != null) {
                 File file = new File(targetDirectory, ze.getName());
@@ -110,9 +112,12 @@ public class CapacitorUpdater {
                 } finally {
                     fout.close();
                 }
-                long percent = (turn * buffLength) / totalLength;
-                this.plugin.notifyDownload(calcTotalPercent((int)percent, 75, 90));
-                turn++;
+                int newPercent = (int)((readedLength * 100) / totalLength);
+                if (totalLength > 1 && newPercent != percent) {
+                    percent = newPercent;
+                    this.plugin.notifyDownload(calcTotalPercent((int)percent, 75, 90));
+                }
+                readedLength += ze.getSize();
             }
         } catch (Exception e) {
             Log.i(TAG, "unzip error", e);
@@ -152,9 +157,10 @@ public class CapacitorUpdater {
     private Boolean downloadFile(String url, String dest) throws JSONException {
         try {
             URL u = new URL(url);
+            URLConnection uc = u.openConnection();
             InputStream is = u.openStream();
             DataInputStream dis = new DataInputStream(is);
-            int totalLength = dis.readInt();
+            long totalLength = uc.getContentLength();
             int buffLength = 1024;
             byte[] buffer = new byte[buffLength];
             int length;
@@ -162,13 +168,17 @@ public class CapacitorUpdater {
             downFile.getParentFile().mkdirs();
             downFile.createNewFile();
             FileOutputStream fos = new FileOutputStream(downFile);
-            int turn = 1;
+            int readedLength = buffLength;
+            int percent = 0;
             this.plugin.notifyDownload(10);
             while ((length = dis.read(buffer))>0) {
                 fos.write(buffer, 0, length);
-                int percent = (turn * buffLength) / totalLength;
-                this.plugin.notifyDownload(calcTotalPercent(percent, 10, 70));
-                turn++;
+                int newPercent = (int)((readedLength * 100) / totalLength);
+                if (totalLength > 1 && newPercent != percent) {
+                    percent = newPercent;
+                    this.plugin.notifyDownload(calcTotalPercent(percent, 10, 70));
+                }
+                readedLength += length;
             }
         } catch (Exception e) {
             Log.e(TAG, "downloadFile error", e);
@@ -201,19 +211,19 @@ public class CapacitorUpdater {
             String folderName = basePathHot + "/" + version;
             this.plugin.notifyDownload(5);
             Boolean downloaded = this.downloadFile(url, folderNameZip);
-            if(!downloaded) return null;
+            if(!downloaded) return "";
             this.plugin.notifyDownload(71);
             Boolean unzipped = this.unzip(folderNameZip, folderNameUnZip);
-            if(!unzipped) return null;
+            if(!unzipped) return "";
             fileZip.delete();
             this.plugin.notifyDownload(91);
             Boolean flatt = this.flattenAssets(folderNameUnZip, folderName);
-            if(!flatt) return null;
+            if(!flatt) return "";
             this.plugin.notifyDownload(100);
             return version;
         } catch (Exception e) {
             Log.e(TAG, "updateApp error", e);
-            return null;
+            return "";
         }
     }
 
