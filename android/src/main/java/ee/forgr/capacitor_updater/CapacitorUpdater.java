@@ -72,8 +72,6 @@ public class CapacitorUpdater {
     private Boolean unzip(String source, String dest) {
         File zipFile = new File(this.context.getFilesDir()  + "/" + source);
         File targetDirectory = new File(this.context.getFilesDir()  + "/" + dest);
-        Log.i(TAG, "unzip " + zipFile.getPath() + " " + targetDirectory.getPath());
-
         ZipInputStream zis = null;
         try {
             zis = new ZipInputStream(
