@@ -179,7 +179,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                         String currentVersion = implementation.getVersionName();
                         String newVersion = (String) res.get("version");
                         String failingVersion = prefs.getString("failingVersion", "");
-                        Log.i(TAG, "currentVersion " + currentVersion + ", newVersion " + newVersion + ", failingVersion " + failingVersion + ".");
+                        Log.i(TAG, "currentVersion " + currentVersion + ", newVersion " + newVersion + (failingVersion.equals("") ? "" : ", failingVersion " + failingVersion));
                         if (!newVersion.equals(currentVersion) && !newVersion.equals(failingVersion)) {
                             new Thread(new Runnable(){
                                 @Override
