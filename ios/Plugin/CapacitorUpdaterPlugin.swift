@@ -237,7 +237,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                     print("✨  Capacitor-updater: Revert to version: \(pastVersionName == "" ? "builtin" : pastVersionName) Failed");
                 }
             } else {
-                if self._reset(false) {
+                if self._reset(toAutoUpdate: false) {
                     UserDefaults.standard.set("", forKey: "LatestVersionAutoUpdate")
                     UserDefaults.standard.set("", forKey: "LatestVersionNameAutoUpdate")
                     print("✨  Capacitor-updater: Auto reset done")
