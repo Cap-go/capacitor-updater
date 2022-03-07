@@ -123,8 +123,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func reset(_ call: CAPPluginCall) {
-        let toAutoUpdate = call.getBoolean("toAutoUpdate") ?? false
-        if (self._reset(toAutoUpdate)) {
+        let toAutoUpdate = call.getBool("toAutoUpdate") ?? false
+        if (self._reset(toAutoUpdate: toAutoUpdate)) {
             return call.resolve()
         }
         call.reject("✨  Capacitor-updater: Reset failed")
