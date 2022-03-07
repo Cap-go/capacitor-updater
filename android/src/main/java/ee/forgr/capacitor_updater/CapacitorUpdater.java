@@ -234,7 +234,7 @@ public class CapacitorUpdater {
                 res.add(i.getName());
             }
         } else {
-            Log.i(TAG, "NO version available" + destHot);
+            Log.i(TAG, "No version available" + destHot);
         }
         return res;
     }
@@ -279,8 +279,7 @@ public class CapacitorUpdater {
         }, new Response.ErrorListener() {
             @Override
             public void onErrorResponse(VolleyError error) {
-                // Anything you want
-                Log.e(TAG, "Error get Latest");
+                Log.e(TAG, "Error getting Latest" +  error);
             }
         });
         RequestQueue requestQueue = Volley.newRequestQueue(this.context);

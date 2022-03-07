@@ -105,7 +105,7 @@ extension Bundle {
                         latest.version = version
                     }
                 case let .failure(error):
-                    print("✨  Capacitor-updater: Error get Latest \(url)", error )
+                    print("✨  Capacitor-updater: Error getting Latest", error )
             }
             semaphore.signal()
         }

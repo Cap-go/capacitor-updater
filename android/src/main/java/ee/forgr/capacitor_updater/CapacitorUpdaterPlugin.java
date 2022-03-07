@@ -46,6 +46,12 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         onActivityStarted(getActivity());
     }
 
+    public void notifyDownload(int percent) {
+        JSObject ret = new JSObject();
+        ret.put("percent", percent);
+        notifyListeners("download", ret);
+    }
+    
     @PluginMethod
     public void download(PluginCall call) {
         new Thread(new Runnable(){
@@ -85,19 +91,13 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         Boolean res = implementation.set(version, versionName);
 
         if (!res) {
-            call.reject("Update failed, version don't exist");
+            call.reject("Update failed, version " + version + " doesn't exist");
         } else {
             String pathHot = implementation.getLastPathHot();
             Log.i(TAG, "getLastPathHot : " + pathHot);
             this.bridge.setServerBasePath(pathHot);
             call.resolve();
         }
-    }
-
-    public void notifyDownload(int percent) {
-        JSObject ret = new JSObject();
-        ret.put("percent", percent);
-        notifyListeners("download", ret);
     }
 
     @PluginMethod
@@ -108,7 +108,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             if (res) {
                 call.resolve();
             } else {
-                call.reject("Delete failed, version don't exist");
+                call.reject("Delete failed, version " + version + " doesn't exist");
             }
         } catch(IOException ex) {
             Log.e("CapacitorUpdater", "An unexpected error occurred during deletion of folder. Message: " + ex.getMessage());
@@ -147,6 +147,14 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     }
 
     @PluginMethod
+    public void versionName(PluginCall call) {
+        String name = implementation.getVersionName();
+        JSObject ret = new JSObject();
+        ret.put("versionName", name);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
     public void current(PluginCall call) {
         String pathHot = implementation.getLastPathHot();
         JSObject ret = new JSObject();
@@ -155,13 +163,6 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         call.resolve(ret);
     }
 
-    @PluginMethod
-    public void versionName(PluginCall call) {
-        String name = implementation.getVersionName();
-        JSObject ret = new JSObject();
-        ret.put("versionName", name);
-        call.resolve(ret);
-    }
     @PluginMethod
     public void notifyAppReady(PluginCall call) {
         editor.putBoolean("notifyAppReady", true);

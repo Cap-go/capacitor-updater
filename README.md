@@ -1,5 +1,7 @@
 # capacitor-updater
 
+Update capacitor app withtout store review.
+
 You have 2 ways possible :
 - use [capgo.app](https://capgo.app) a full featured auto update system in 5 min Setup, to manage version, update, revert and see stats.
 - use manual methods to zip, upload, download, update or revert when you want.
@@ -94,14 +96,14 @@ Add in your main code
   }
 ```
 
-*Be extra carufull for your update* if you send a broken update, the app will crash until the user uninstall it.
+*Be extra carufull for your update* if you send a broken update, the app will crash until the user reinstalls it.
 
 
 You can list the version and manage it with the command below.
 
 ## Packaging `dist.zip`
 
-Whatever you choose to name the file you download from your release/update server URL, the zip file should contain the full contents of your production Capacitor build output folder, usually `{project directory}/dist/`. This is where `index.html` will be located, and it should also contain all bundled JavaScript, CSS, and web resources necessary for your app to run.
+Whatever you choose to name the file you download from your release/update server URL, the zip file should contain the full contents of your production Capacitor build output folder, usually `{project directory}/dist/` or `{project directory}/www/`. This is where `index.html` will be located, and it should also contain all bundled JavaScript, CSS, and web resources necessary for your app to run.
 
 Do not password encrypt this file, or it will fail to unpack.
 
@@ -280,12 +282,12 @@ CapacitorUpdater.addListener('download', (info: any) => {
 
 On iOS, Apple don't allow you to show a message when the app is updated, so you can't show a progress bar.
 
-### Inspiraton
+### Inspiration
 
 - [cordova-plugin-ionic](https://github.com/ionic-team/cordova-plugin-ionic)
 - [capacitor-codepush](https://github.dev/mapiacompany/capacitor-codepush)
 
 
-### Contributer
+### Contributors
 
 [jamesyoung1337](https://github.com/jamesyoung1337) Thanks a lot for your guidance and support, it was impossible to make this plugin work without you.

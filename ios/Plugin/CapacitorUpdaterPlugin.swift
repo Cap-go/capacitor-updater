@@ -78,7 +78,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             print("✨  Capacitor-updater: Set to version: \(version) versionName: \(versionName)")
             call.resolve()
         } else {
-            call.reject("Cannot reload")
+            call.reject("Update failed, version \(version) doesn't exist")
         }
     }
 
@@ -88,7 +88,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         if (res) {
             call.resolve()
         } else {
-            call.reject("Delete failed, version don't exist")
+            call.reject("Delete failed, version \(version) doesn't exist")
         }
     }
 
