@@ -26,6 +26,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLConnection;
 import java.security.SecureRandom;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -37,8 +38,10 @@ interface Callback {
 }
 
 public class CapacitorUpdater {
+    private final CapacitorUpdaterPlugin plugin;
     private String TAG = "Capacitor-updater";
     public String statsUrl = "";
+    public String appId = "";
 
     private Context context;
     private String basePathHot = "versions";
@@ -48,6 +51,10 @@ public class CapacitorUpdater {
     static final String AB = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
     static SecureRandom rnd = new SecureRandom();
 
+    private int calcTotalPercent(int percent, int min, int max) {
+        return (percent * (max - min)) / 100 + min;
+    }
+
     private String randomString(int len){
         StringBuilder sb = new StringBuilder(len);
         for(int i = 0; i < len; i++)
@@ -55,8 +62,9 @@ public class CapacitorUpdater {
         return sb.toString();
     }
 
-    public CapacitorUpdater (Context context) {
+    public CapacitorUpdater (Context context, CapacitorUpdaterPlugin plugin) {
         this.context = context;
+        this.plugin = plugin;
         this.prefs = context.getSharedPreferences("CapWebViewSettings", Activity.MODE_PRIVATE);
         this.editor = prefs.edit();
     }
@@ -64,8 +72,6 @@ public class CapacitorUpdater {
     private Boolean unzip(String source, String dest) {
         File zipFile = new File(this.context.getFilesDir()  + "/" + source);
         File targetDirectory = new File(this.context.getFilesDir()  + "/" + dest);
-        Log.i(TAG, "unzip " + zipFile.getPath() + " " + targetDirectory.getPath());
-
         ZipInputStream zis = null;
         try {
             zis = new ZipInputStream(
@@ -77,10 +83,21 @@ public class CapacitorUpdater {
         try {
             ZipEntry ze;
             int count;
-            byte[] buffer = new byte[8192];
+            int buffLength = 8192;
+            byte[] buffer = new byte[buffLength];
+            long totalLength = zipFile.length();
+            long readedLength = buffLength;
+            int percent = 0;
+            this.plugin.notifyDownload(75);
             while ((ze = zis.getNextEntry()) != null) {
                 File file = new File(targetDirectory, ze.getName());
+                String canonicalPath = file.getCanonicalPath();
+                String canonicalDir = (new File(String.valueOf(targetDirectory))).getCanonicalPath();
                 File dir = ze.isDirectory() ? file : file.getParentFile();
+                if (!canonicalPath.startsWith(canonicalDir)) {
+                    throw new FileNotFoundException("SecurityException, Failed to ensure directory is the start path : " +
+                            canonicalDir + " of " + canonicalPath);
+                }
                 if (!dir.isDirectory() && !dir.mkdirs())
                     throw new FileNotFoundException("Failed to ensure directory: " +
                             dir.getAbsolutePath());
@@ -93,6 +110,12 @@ public class CapacitorUpdater {
                 } finally {
                     fout.close();
                 }
+                int newPercent = (int)((readedLength * 100) / totalLength);
+                if (totalLength > 1 && newPercent != percent) {
+                    percent = newPercent;
+                    this.plugin.notifyDownload(calcTotalPercent((int)percent, 75, 90));
+                }
+                readedLength += ze.getSize();
             }
         } catch (Exception e) {
             Log.i(TAG, "unzip error", e);
@@ -107,11 +130,18 @@ public class CapacitorUpdater {
             return true;
         }
     }
-    private void flattenAssets(String source, String dest) {
+
+    private Boolean flattenAssets(String source, String dest) {
         File current = new File(this.context.getFilesDir()  + "/" + source);
+        if (!current.exists()) {
+            return false;
+        }
         File fDest = new File(this.context.getFilesDir()  + "/" + dest);
         fDest.getParentFile().mkdirs();
         String[] pathsName = current.list();
+        if (pathsName == null || pathsName.length == 0) {
+            return false;
+        }
         if (pathsName.length == 1 && !pathsName[0].equals("index.html")) {
             File newFlat =  new File(current.getPath() + "/" + pathsName[0]);
             newFlat.renameTo(fDest);
@@ -119,21 +149,34 @@ public class CapacitorUpdater {
             current.renameTo(fDest);
         }
         current.delete();
+        return true;
     }
 
     private Boolean downloadFile(String url, String dest) throws JSONException {
         try {
             URL u = new URL(url);
+            URLConnection uc = u.openConnection();
             InputStream is = u.openStream();
             DataInputStream dis = new DataInputStream(is);
-            byte[] buffer = new byte[1024];
+            long totalLength = uc.getContentLength();
+            int buffLength = 1024;
+            byte[] buffer = new byte[buffLength];
             int length;
             File downFile = new File(this.context.getFilesDir()  + "/" + dest);
             downFile.getParentFile().mkdirs();
             downFile.createNewFile();
             FileOutputStream fos = new FileOutputStream(downFile);
+            int readedLength = buffLength;
+            int percent = 0;
+            this.plugin.notifyDownload(10);
             while ((length = dis.read(buffer))>0) {
                 fos.write(buffer, 0, length);
+                int newPercent = (int)((readedLength * 100) / totalLength);
+                if (totalLength > 1 && newPercent != percent) {
+                    percent = newPercent;
+                    this.plugin.notifyDownload(calcTotalPercent(percent, 10, 70));
+                }
+                readedLength += length;
             }
         } catch (Exception e) {
             Log.e(TAG, "downloadFile error", e);
@@ -158,21 +201,27 @@ public class CapacitorUpdater {
 
     public String download(String url) {
         try {
+            this.plugin.notifyDownload(0);
             String folderNameZip = this.randomString(10);
             File fileZip = new File(this.context.getFilesDir()  + "/" + folderNameZip);
             String folderNameUnZip = this.randomString(10);
             String version = this.randomString(10);
             String folderName = basePathHot + "/" + version;
+            this.plugin.notifyDownload(5);
             Boolean downloaded = this.downloadFile(url, folderNameZip);
-            if(!downloaded) return null;
+            if(!downloaded) return "";
+            this.plugin.notifyDownload(71);
             Boolean unzipped = this.unzip(folderNameZip, folderNameUnZip);
-            if(!unzipped) return null;
+            if(!unzipped) return "";
             fileZip.delete();
-            this.flattenAssets(folderNameUnZip, folderName);
+            this.plugin.notifyDownload(91);
+            Boolean flatt = this.flattenAssets(folderNameUnZip, folderName);
+            if(!flatt) return "";
+            this.plugin.notifyDownload(100);
             return version;
         } catch (Exception e) {
             Log.e(TAG, "updateApp error", e);
-            return null;
+            return "";
         }
     }
 
@@ -204,7 +253,6 @@ public class CapacitorUpdater {
     public Boolean set(String version, String versionName) {
         File destHot = new File(this.context.getFilesDir()  + "/" + basePathHot + "/" + version);
         File destIndex = new File(destHot.getPath()  + "/index.html");
-        Log.i(TAG, "set File : " + destHot.getPath());
         if (destHot.exists() && destIndex.exists()) {
             editor.putString("lastPathHot", destHot.getPath());
             editor.putString("serverBasePath", destHot.getPath());
@@ -218,7 +266,6 @@ public class CapacitorUpdater {
     }
 
     public void getLatest(String url, Callback callback) {
-        Log.i(TAG, "Get Latest, URL: " + url);
         StringRequest stringRequest = new StringRequest(url, new Response.Listener<String>() {
             @Override
             public void onResponse(String response) {
@@ -250,7 +297,7 @@ public class CapacitorUpdater {
 
     public void reset() {        
         String version = prefs.getString("versionName", "");
-        implementation.sendStats("reset", version);
+        this.sendStats("reset", version);
         editor.putString("lastPathHot", "public");
         editor.putString("serverBasePath", "public");
         editor.putString("versionName", "");
@@ -271,7 +318,7 @@ public class CapacitorUpdater {
             json.put("device_id", android_id);
             json.put("version_name", version);
             json.put("version_build", pInfo.versionName);
-            json.put("app_id", pInfo.packageName);
+            json.put("app_id", this.appId);
             jsonString = json.toString();
         } catch (Exception ex) {
             Log.e(TAG, "Error get stats", ex);
@@ -294,9 +341,9 @@ public class CapacitorUpdater {
                     wr.close();
                     int responseCode = con.getResponseCode();
                     if (responseCode != 200) {
-                        Log.e(TAG, "stats responseCode: " + responseCode);
+                        Log.e(TAG, "Stats error responseCode: " + responseCode);
                     } else {
-                        Log.i(TAG, "Stats send for \"" + action + "\", version " + version + " in " + statsUrl);
+                        Log.i(TAG, "Stats send for \"" + action + "\", version " + version);
                     }
                 } catch (Exception ex) {
                     Log.e(TAG, "Error post stats", ex);

@@ -1,22 +1,67 @@
 # capacitor-updater
 
-Download app update from a url and install it.
+Update capacitor app withtout store review
 
-And reload the view.
+You have 2 ways possible :
+- use [capgo.app](https://capgo.app) a full featured auto update system in 5 min Setup, to manage version, update, revert and see stats.
+- use manual methods to zip, upload, download, update or revert when you want.
 
-You can list the versions and manage them with the command below.
+
+This project will be migrated soo with all others capgo toolling there in our [organization](https://github.com/Cap-go).
+
 
 ## Community
-Join the discord to get help : https://discord.gg/VnYRvBfgA6
+Join the [discord](https://discord.gg/VnYRvBfgA6) to get help.
 
-## Install
+## Documentation
+I maintain a more user friendly [documentation](https://doc.capgo.app).
+## Install Auto update 
+Create account in [capgo.app](https://capgo.app)
+- Download the CLI `npm i -g capgo`
+- Add app from CLI `capgo add -a API_KEY`
+- Upload app `capgo upload -a API_KEY`
+- Edit your `capacitor.config.json` 
+- add the url you got in [capgo.app](https://capgo.app) select your app with the right channel to get it.
+
+```json
+// capacitor.config.json
+{
+	"appId": "**.***.**",
+	"appName": "Name",
+	"plugins": {
+		"CapacitorUpdater": {
+			"autoUpdateUrl": "https://capgo.app/api/latest?appid=**.****.***&channel=dev"
+		}
+	}
+}
+```
+- Add to your main code
+```javascript
+  import { CapacitorUpdater } from 'capacitor-updater'
+  CapacitorUpdater.notifyAppReady()
+  // To let auto update know you app boot well.
+```
+
+- Do `npm run build && npx cap copy` to copy the build to capacitor.
+- Run the app and see app auto update after each backgrounding.
+- If update fail it will roolback to previous version.
+
+See more there in the [Auto update](
+https://doc.capgo.app/Auto-update-2cf9edda70484d7fa57111ab9c435d08) documentation.
+
+
+## Install Manual
+
+Download app update from url when user enter the app
+install it when user background the app.
 
 ```bash
 npm install capacitor-updater
 npx cap sync
 ```
+Add in your main code 
 
-```
+```javascript
   import { CapacitorUpdater } from 'capacitor-updater'
   import { SplashScreen } from '@capacitor/splash-screen'
   import { App } from '@capacitor/app'
@@ -53,6 +98,9 @@ npx cap sync
 ```
 
 *Be extra careful with your update* if you send a broken update, the app will crash until the user reinstalls it.
+
+
+You can list the version and manage it with the command below.
 
 ## Packaging `dist.zip`
 
@@ -223,6 +271,17 @@ Allow update the next time the app goes into the background (only in auto update
 
 </docgen-api>
 
+### Listen to download events
+
+```javascript
+  import { CapacitorUpdater } from 'capacitor-updater';
+
+CapacitorUpdater.addListener('download', (info: any) => {
+  console.log('download was fired', info.percent);
+});
+```
+
+On iOS, Apple don't allow you to show a message when the app is updated, so you can't show a progress bar.
 
 ### Inspiraton
 
