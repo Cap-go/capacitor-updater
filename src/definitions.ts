@@ -23,12 +23,13 @@ export interface CapacitorUpdaterPlugin {
    */
   list(): Promise<{ versions: string[] }>;
     /**
-   * Set the original version (the one sent to Apple store / Google play store ) as current version
+   * Set the `builtin` version (the one sent to Apple store / Google play store ) as current version
    * @returns {Promise<void>} an empty Promise
+   * @param toAutoUpdate [false] if yes it reset to to the last AutoUpdate version instead of `builtin`
    */
-  reset(): Promise<void>;
+  reset({ toAutoUpdate: boolean }): Promise<void>;
     /**
-   * Get the current version, if none are set it returns 'default'
+   * Get the current version, if none are set it returns `builtin`
    * @returns {Promise<{ current: string }>} an Promise with the current version name
    */
   current(): Promise<{ current: string }>;

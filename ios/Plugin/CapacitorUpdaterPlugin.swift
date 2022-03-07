@@ -139,7 +139,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     
     @objc func current(_ call: CAPPluginCall) {
         let pathHot = implementation.getLastPathHot()
-        let current  = pathHot.count >= 10 ? pathHot.suffix(10) : "default"
+        let current  = pathHot.count >= 10 ? pathHot.suffix(10) : "builtin"
         call.resolve([
             "current": current
         ])
