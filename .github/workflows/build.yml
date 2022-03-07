@@ -18,9 +18,9 @@ jobs:
       - name: Install dependencies
         id: install_code
         run: npm i        
-      - name: Lint
-        id: lint_code
-        run: npm run lint
+      # - name: Lint
+      #   id: lint_code
+      #   run: npm run lint
       - name: Build
         id: build_code
         run: npm run build
