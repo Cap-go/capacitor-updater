@@ -115,7 +115,7 @@ Do not password encrypt this file, or it will fail to unpack.
 * [`set(...)`](#set)
 * [`delete(...)`](#delete)
 * [`list()`](#list)
-* [`reset()`](#reset)
+* [`reset(...)`](#reset)
 * [`current()`](#current)
 * [`reload()`](#reload)
 * [`versionName()`](#versionname)
@@ -134,7 +134,7 @@ Do not password encrypt this file, or it will fail to unpack.
 download(options: { url: string; }) => Promise<{ version: string; }>
 ```
 
-Download new version from url, it should be a zip file, with files inside or with a unique folder inside with all your files
+Download a new version from the provided URL, it should be a zip file, with files inside or with a unique folder inside with all your files
 
 | Param         | Type                          |
 | ------------- | ----------------------------- |
@@ -151,7 +151,7 @@ Download new version from url, it should be a zip file, with files inside or wit
 set(options: { version: string; versionName?: string; }) => Promise<void>
 ```
 
-Set version as current version, set will return error if there are no index.html file inside the version folder, versionName is optional and it's a custom value who will be saved for you
+Set version as current version, set will return an error if there are is no index.html file inside the version folder. `versionName` is optional and it's a custom value that will be saved for you
 
 | Param         | Type                                                    |
 | ------------- | ------------------------------------------------------- |
@@ -181,20 +181,24 @@ Delete version in storage
 list() => Promise<{ versions: string[]; }>
 ```
 
-Get all avaible versions
+Get all available versions
 
 **Returns:** <code>Promise&lt;{ versions: string[]; }&gt;</code>
 
 --------------------
 
 
-### reset()
+### reset(...)
 
 ```typescript
-reset() => Promise<void>
+reset(options: { toAutoUpdate?: boolean; }) => Promise<void>
 ```
 
-Set the original version (the one sent to Apple store / Google play store ) as current version
+Set the `builtin` version (the one sent to Apple store / Google play store ) as current version
+
+| Param         | Type                                     |
+| ------------- | ---------------------------------------- |
+| **`options`** | <code>{ toAutoUpdate?: boolean; }</code> |
 
 --------------------
 
@@ -205,7 +209,7 @@ Set the original version (the one sent to Apple store / Google play store ) as c
 current() => Promise<{ current: string; }>
 ```
 
-Get the curent version, if none are set it return 'default'
+Get the current version, if none are set it returns `builtin`
 
 **Returns:** <code>Promise&lt;{ current: string; }&gt;</code>
 
@@ -242,7 +246,7 @@ Get the version name, if it was set during the set phase
 notifyAppReady() => Promise<void>
 ```
 
-Notify native plugin that the update is working, only in auto update
+Notify native plugin that the update is working, only in auto-update
 
 --------------------
 
@@ -253,7 +257,7 @@ Notify native plugin that the update is working, only in auto update
 delayUpdate() => Promise<void>
 ```
 
-Skip update in the next app backgrounding, only in auto update
+Skip updates in the next time the app goes into the background, only in auto-update
 
 --------------------
 
@@ -264,7 +268,7 @@ Skip update in the next app backgrounding, only in auto update
 cancelDelay() => Promise<void>
 ```
 
-allow update in the next app backgrounding, only in auto update
+allow update in the next time the app goes into the background, only in auto-update
 
 --------------------
 
