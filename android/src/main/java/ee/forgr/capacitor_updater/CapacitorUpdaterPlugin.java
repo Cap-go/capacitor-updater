@@ -124,16 +124,26 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         call.resolve(ret);
     }
 
-    private boolean _reset() {
+    private boolean _reset(Bool toAutoUpdate) {
+        String version = prefs.getString("LatestVersionAutoUpdate", "");
+        String versionName = prefs.getString("LatestVersionNameAutoUpdate", "");
+        if (toAutoUpdate && !version.equals("") && !versionName.equals("")) {
+            Boolean res = implementation.set(version, versionName);
+            return res && this._reload();
+        }
         implementation.reset();
         String pathHot = implementation.getLastPathHot();
         this.bridge.setServerAssetPath(pathHot);
         return true;
     }
+
     @PluginMethod
     public void reset(PluginCall call) {
-        this._reset();
-        call.resolve();
+        Bool toAutoUpdate = call.getBoolean("toAutoUpdate");
+        if (this._reset(toAutoUpdate)) {
+            return call.resolve();
+        }
+        call.reject("✨  Capacitor-updater: Reset failed");
     }
 
     @PluginMethod
@@ -166,6 +176,13 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         call.resolve();
     }
 
+    @PluginMethod
+    public void cancelDelay(PluginCall call) {
+        editor.putBoolean("delayUpdate", false);
+        editor.commit();
+        call.resolve();
+    }
+
     @Override
     public void onActivityStarted(@NonNull Activity activity) {
         Log.i(TAG, "Check for update in the server");
@@ -182,7 +199,6 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                             new Thread(new Runnable(){
                                 @Override
                                 public void run() {
-                                    // Do network action in this function
                                     try {
                                         String dl = implementation.download((String) res.get("url"));
                                         if (dl.equals("")) {
@@ -233,6 +249,8 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             Boolean res = implementation.set(nextVersion, nextVersionName);
             if (res && this._reload()) {
                 Log.i(TAG, "Auto update to version: " + nextVersionName);
+                editor.putString("LatestVersionAutoUpdate", nextVersion);
+                editor.putString("LatestVersionNameAutoUpdate", nextVersionName);
                 editor.putString("nextVersion", "");
                 editor.putString("nextVersionName", "");
                 editor.putString("pastVersion", curVersion);
@@ -251,6 +269,8 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                 Boolean res = implementation.set(pastVersion, pastVersionName);
                 if (res && this._reload()) {
                     Log.i(TAG, "Revert to version: " + (pastVersionName.equals("") ? "builtin" : pastVersionName));
+                    editor.putString("LatestVersionAutoUpdate", pastVersion);
+                    editor.putString("LatestVersionNameAutoUpdate", pastVersionName);
                     editor.putString("pastVersion", "");
                     editor.putString("pastVersionName", "");
                     editor.commit();
@@ -259,6 +279,8 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                 }
             } else {
                 if (this._reset()) {
+                    editor.putString("LatestVersionAutoUpdate", "");
+                    editor.putString("LatestVersionNameAutoUpdate", "");
                     Log.i(TAG, "Auto reset done");
                 }
             }
@@ -286,30 +308,30 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             editor.putString("pastVersionName", "");
             editor.commit();
         }
-
     }
 
+    // not use but necessary here to remove warnings
     @Override
     public void onActivityResumed(@NonNull Activity activity) {
-
+        super.onActivityResumed();
     }
 
     @Override
     public void onActivityPaused(@NonNull Activity activity) {
-
+        super.onActivityPaused();
     }
     @Override
     public void onActivityCreated(@NonNull Activity activity, @Nullable Bundle savedInstanceState) {
-
+        super.onActivityCreated();
     }
 
     @Override
     public void onActivitySaveInstanceState(@NonNull Activity activity, @NonNull Bundle outState) {
-
+        super.onActivitySaveInstanceState();
     }
 
     @Override
     public void onActivityDestroyed(@NonNull Activity activity) {
-
+        super.onActivityDestroyed();
     }
 }

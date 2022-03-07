@@ -1,0 +1,31 @@
+name: Build source code and send to Capgo
+
+on:
+  push:
+    tags:
+      - '*'
+      
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: "Build code and release"
+    steps:
+      - name: Check out
+        uses: actions/checkout@v2
+      - uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+      - name: Install dependencies
+        id: install_code
+        run: npm i        
+      - name: Lint
+        id: lint_code
+        run: npm run lint
+      - name: Build
+        id: build_code
+        run: npm run build
+      - uses: JS-DevTools/npm-publish@v1
+        with:
+          token: ${{ secrets.NPM_TOKEN }}
+      
+
