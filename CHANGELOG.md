@@ -1,3 +1,9 @@
+## 2.0.0 (2022-03-07)
+
+### BREAKING CHANGE
+
+- change default to builtin as default value
+
 ## 1.5.1 (2022-03-07)
 
 ### Fix
