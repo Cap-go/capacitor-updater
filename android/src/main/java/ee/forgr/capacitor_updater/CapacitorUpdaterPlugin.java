@@ -280,7 +280,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                     Log.i(TAG, "Revert to version: " + (pastVersionName.equals("") ? "builtin" : pastVersionName) + "Failed");
                 }
             } else {
-                if (this._reset()) {
+                if (this._reset(false)) {
                     editor.putString("LatestVersionAutoUpdate", "");
                     editor.putString("LatestVersionNameAutoUpdate", "");
                     Log.i(TAG, "Auto reset done");
@@ -315,25 +315,20 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     // not use but necessary here to remove warnings
     @Override
     public void onActivityResumed(@NonNull Activity activity) {
-        super.onActivityResumed();
     }
 
     @Override
     public void onActivityPaused(@NonNull Activity activity) {
-        super.onActivityPaused();
     }
     @Override
     public void onActivityCreated(@NonNull Activity activity, @Nullable Bundle savedInstanceState) {
-        super.onActivityCreated();
     }
 
     @Override
     public void onActivitySaveInstanceState(@NonNull Activity activity, @NonNull Bundle outState) {
-        super.onActivitySaveInstanceState();
     }
 
     @Override
     public void onActivityDestroyed(@NonNull Activity activity) {
-        super.onActivityDestroyed();
     }
 }
