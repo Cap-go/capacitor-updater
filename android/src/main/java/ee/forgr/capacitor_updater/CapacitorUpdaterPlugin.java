@@ -124,7 +124,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         call.resolve(ret);
     }
 
-    private boolean _reset(Bool toAutoUpdate) {
+    private boolean _reset(Boolean toAutoUpdate) {
         String version = prefs.getString("LatestVersionAutoUpdate", "");
         String versionName = prefs.getString("LatestVersionNameAutoUpdate", "");
         if (toAutoUpdate && !version.equals("") && !versionName.equals("")) {
