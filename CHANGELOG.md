@@ -1,3 +1,10 @@
+## 2.0.7 (2022-03-09)
+
+### Fix
+
+- broken version system ios
+- background thread issue ios
+
 ## 2.0.6 (2022-03-08)
 
 ### Fix
