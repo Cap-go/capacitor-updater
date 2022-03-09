@@ -219,7 +219,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             } else {
                 print("✨  Capacitor-updater: Auto update to version: \(nextVersionName) Failed");
             }
-        } else if (!notifyAppReady) {
+        } else if (!notifyAppReady && curVersionName != "") {
             print("✨  Capacitor-updater: notifyAppReady never trigger")
             print("✨  Capacitor-updater: Version: \(curVersionName), is considered broken")
             print("✨  Capacitor-updater: Will downgraded to version: \(pastVersionName == "" ? "builtin" : pastVersionName) for next start")
