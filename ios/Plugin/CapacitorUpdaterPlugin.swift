@@ -112,7 +112,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             let pathPersist = implementation.getLastPathPersist()
             vc.setServerBasePath(path: pathPersist)
             UserDefaults.standard.set(pathPersist, forKey: "serverBasePath")
-            DispatchQueue.global(qos: .background).async {
+            DispatchQueue.main.async {
                 vc.loadView()
                 vc.viewDidLoad()
                 print("✨  Capacitor-updater: Reset to original version")
