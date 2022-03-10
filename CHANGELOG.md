@@ -1,3 +1,9 @@
+## 2.0.8 (2022-03-10)
+
+### Fix
+
+- remove duplicated code and allow init without plugin
+
 ## 2.0.7 (2022-03-09)
 
 ### Fix
