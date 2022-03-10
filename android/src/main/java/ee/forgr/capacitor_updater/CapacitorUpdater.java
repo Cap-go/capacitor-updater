@@ -62,6 +62,12 @@ public class CapacitorUpdater {
         return sb.toString();
     }
 
+    public CapacitorUpdater (Context context) {
+        this.context = context;
+        this.plugin = new CapacitorUpdaterPlugin();
+        this.prefs = context.getSharedPreferences("CapWebViewSettings", Activity.MODE_PRIVATE);
+        this.editor = prefs.edit();
+    }
     public CapacitorUpdater (Context context, CapacitorUpdaterPlugin plugin) {
         this.context = context;
         this.plugin = plugin;

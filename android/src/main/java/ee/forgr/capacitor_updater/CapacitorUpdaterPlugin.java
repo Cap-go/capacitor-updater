@@ -75,6 +75,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         this.bridge.setServerBasePath(pathHot);
         return true;
     }
+    
     @PluginMethod
     public void reload(PluginCall call) {
         if (this._reload()) {
@@ -93,10 +94,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         if (!res) {
             call.reject("Update failed, version " + version + " doesn't exist");
         } else {
-            String pathHot = implementation.getLastPathHot();
-            Log.i(TAG, "getLastPathHot : " + pathHot);
-            this.bridge.setServerBasePath(pathHot);
-            call.resolve();
+            this.reload(call);
         }
     }
 
