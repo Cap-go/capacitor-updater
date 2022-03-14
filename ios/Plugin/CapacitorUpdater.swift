@@ -89,7 +89,10 @@ extension Bundle {
     private func saveDownloaded(sourceZip: URL, version: String, base: URL) {
         prepareFolder(source: base)
         let destHot = base.appendingPathComponent(version)
-        SSZipArchive.unzipFile(atPath: sourceZip.path, toDestination: destHot.path)
+        let destUnZip = documentsUrl.appendingPathComponent(randomString(length: 10))
+        SSZipArchive.unzipFile(atPath: sourceZip.path, toDestination: destUnZip.path)
+        moveFolder(source: destUnZip, dest: destHot)
+        deleteFolder(source: destUnZip)
     }
 
     @objc public func getLatest(url: URL) -> AppVersion? {
