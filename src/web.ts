@@ -19,7 +19,7 @@ export class CapacitorUpdaterWeb
     console.log('Cannot list version in web');
     return { versions: []};
   }
-  async reset(options: { toAutoUpdate?: boolean }): Promise<void> {
+  async reset(options?: { toAutoUpdate?: boolean }): Promise<void> {
     console.log('Cannot reset version in web', options);
   }
   async current(): Promise<{ current: string }> {

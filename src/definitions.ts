@@ -27,7 +27,7 @@ export interface CapacitorUpdaterPlugin {
    * @returns {Promise<void>} an empty Promise
    * @param toAutoUpdate [false] if yes it reset to to the last AutoUpdate version instead of `builtin`
    */
-  reset(options:{ toAutoUpdate?: boolean }): Promise<void>;
+  reset(options?:{ toAutoUpdate?: boolean }): Promise<void>;
     /**
    * Get the current version, if none are set it returns `builtin`
    * @returns {Promise<{ current: string }>} an Promise with the current version name
