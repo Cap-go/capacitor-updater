@@ -25,6 +25,13 @@
   "keywords": [
     "capacitor",
     "plugin",
+    "OTA",
+    "manual update",
+    "live update",
+    "auto update",
+    "ionic",
+    "appflow alternative",
+    "capgo",
     "native"
   ],
   "scripts": {
