@@ -2,11 +2,10 @@
 
 Update capacitor app withtout store review.
 
-You have 2 ways possible :
+You have 3 ways possible :
 - use [capgo.app](https://capgo.app) a full featured auto update system in 5 min Setup, to manage version, update, revert and see stats.
-- use manual methods to zip, upload, download, update or revert when you want.
-
-This project will be migrated soo with all others capgo toolling there in our [organization](https://github.com/Cap-go).
+- use your own server update with auto update system
+- use manual methods to zip, upload, download, from JS to do it when you want.
 
 
 ## Community
