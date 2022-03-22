@@ -1,3 +1,15 @@
+import type { PluginListenerHandle } from '@capacitor/core';
+
+export interface DownloadEvent {
+  /**
+   * Current status of download, between 0 and 100.
+   *
+   * @since 2.0.11
+   */
+  percent: number;
+}
+
+export type DownloadChangeListener = (state: DownloadEvent) => void;
 export interface CapacitorUpdaterPlugin {
     /**
    * Download a new version from the provided URL, it should be a zip file, with files inside or with a unique folder inside with all your files
@@ -58,4 +70,14 @@ export interface CapacitorUpdaterPlugin {
    * @returns {Promise<void>} an Promise resolved directly
    */
   cancelDelay(): Promise<void>;
+
+  /**
+   * Listen for download event in the App, let you know when the download is started, loading and finished
+   *
+   * @since 2.0.11
+   */
+  addListener(
+    eventName: 'download',
+    listenerFunc: DownloadChangeListener,
+  ): Promise<PluginListenerHandle> & PluginListenerHandle;
 }
