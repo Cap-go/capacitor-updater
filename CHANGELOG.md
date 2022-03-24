@@ -1,3 +1,9 @@
+## 2.0.13 (2022-03-24)
+
+### Fix
+
+- better documentation for auto update
+
 ## 2.0.12 (2022-03-22)
 
 ### Fix
