@@ -26,7 +26,7 @@ Create account in [capgo.app](https://capgo.app)
 - Download the CLI `npm i -g capgo`
 - Add app from CLI `capgo add -a API_KEY`
 - Upload app `capgo upload -a API_KEY`
-- Upload app `capgo set -a API_KEY `
+- Upload app `capgo set -a API_KEY -s public`
 - Edit your `capacitor.config.json` like below, set `autoUpdateUrl` with the url printed in the previous step.
 ```json
 // capacitor.config.json
