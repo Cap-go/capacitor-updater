@@ -1,3 +1,9 @@
+## 2.0.12 (2022-03-22)
+
+### Fix
+
+- add definition for download event
+
 ## 2.0.11 (2022-03-16)
 
 ### Fix
