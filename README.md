@@ -13,14 +13,21 @@ Join the [discord](https://discord.gg/VnYRvBfgA6) to get help.
 
 ## Documentation
 I maintain a more user friendly [documentation](https://doc.capgo.app).
-## Install Auto update 
+
+## install plugin
+
+```bash
+npm install cordova-updater
+npx cap sync
+```
+
+### Auto update setup 
 Create account in [capgo.app](https://capgo.app)
 - Download the CLI `npm i -g capgo`
 - Add app from CLI `capgo add -a API_KEY`
 - Upload app `capgo upload -a API_KEY`
-- Edit your `capacitor.config.json` 
-- add the url you got in [capgo.app](https://capgo.app) select your app with the right channel to get it.
-
+- Upload app `capgo set -a API_KEY `
+- Edit your `capacitor.config.json` like below, set `autoUpdateUrl` with the url printed in the previous step.
 ```json
 // capacitor.config.json
 {
@@ -48,7 +55,7 @@ See more there in the [Auto update](
 https://doc.capgo.app/Auto-update-2cf9edda70484d7fa57111ab9c435d08) documentation.
 
 
-## Install Manual
+### Manual setup
 
 Download app update from url when user enter the app
 install it when user background the app.
