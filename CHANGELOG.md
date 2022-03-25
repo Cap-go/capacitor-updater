@@ -1,3 +1,9 @@
+## 2.0.16 (2022-03-25)
+
+### Fix
+
+- issue with download percent
+
 ## 2.0.15 (2022-03-24)
 
 ### Fix
