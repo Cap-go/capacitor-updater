@@ -121,7 +121,7 @@ public class CapacitorUpdater {
                     percent = newPercent;
                     this.plugin.notifyDownload(calcTotalPercent((int)percent, 75, 90));
                 }
-                readedLength += ze.getSize();
+                readedLength += ze.getCompressedSize();
             }
         } catch (Exception e) {
             Log.i(TAG, "unzip error", e);
