@@ -76,7 +76,7 @@ Add in your main code
       if (state.isActive) {
         // Do the download during user active app time to prevent failed download
         version = await CapacitorUpdater.download({
-        url: 'https://github.com/Forgr-ee/Mimesis/releases/download/0.0.1/dist.zip',
+        url: 'https://github.com/Cap-go/demo-app/releases/download/0.0.4/dist.zip',
         })
       }
       if (!state.isActive && version !== "") {
@@ -93,7 +93,7 @@ Add in your main code
   // or do it when click on button
   const updateNow = async () => {
     const version = await CapacitorUpdater.download({
-      url: 'https://github.com/Forgr-ee/Mimesis/releases/download/0.0.1/dist.zip',
+      url: 'https://github.com/Cap-go/demo-app/releases/download/0.0.4/dist.zip',
     })
     // show the splashscreen to let the update happen
     SplashScreen.show()
