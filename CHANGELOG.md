@@ -1,3 +1,9 @@
+## 2.1.0 (2022-03-26)
+
+### Feat
+
+- add disableAutoUpdateUnderNative and disableAutoUpdateToMajor capability
+
 ## 2.0.16 (2022-03-25)
 
 ### Fix
