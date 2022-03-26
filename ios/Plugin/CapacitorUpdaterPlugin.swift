@@ -1,5 +1,6 @@
 import Foundation
 import Capacitor
+import VersionCompare
 
 /**
  * Please read the Capacitor iOS Plugin Development Guide
@@ -10,6 +11,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     private var implementation = CapacitorUpdater()
     private var autoUpdateUrl = ""
     private var statsUrl = ""
+    private var disableAutoUpdateUnderNative = false;
+    private var disableAutoUpdateToMajor = false;
     
     override public func load() {
         autoUpdateUrl = getConfigValue("autoUpdateUrl") as? String ?? ""
@@ -21,6 +24,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         }
         implementation.statsUrl = getConfigValue("statsUrl") as? String ?? "https://capgo.app/api/stats"
         if (autoUpdateUrl == "") { return }
+        disableAutoUpdateUnderNative = getConfigValue("disableAutoUpdateUnderNative") as? Bool ?? false
+        disableAutoUpdateToMajor = getConfigValue("disableAutoUpdateBreaking") as? Bool ?? false
         let nc = NotificationCenter.default
         nc.addObserver(self, selector: #selector(appMovedToBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
         nc.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
@@ -173,8 +178,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             }
             let currentVersion = self.implementation.getVersionName()
             let failingVersion = UserDefaults.standard.string(forKey: "failingVersion") ?? ""
-            let newVersion = res?.version ?? ""
-            if (newVersion != "" && newVersion != currentVersion && newVersion != failingVersion) {
+            let newVersion: Version = res?.version ?? ""
+            let currentVersionNative: Version = Bundle.main.buildVersionNumber
+            if (newVersion < currentVersionNative) {
+                print("✨  Capacitor-updater: Cannot download revert, \(newVersion) is lest than native version \(currentVersionNative)")
+            }
+            else if () {
+                print("✨  Capacitor-updater: Cannot download Major, \(newVersion) is Breaking change from \(currentVersion)")
+            }
+            else if (newVersion != "" && newVersion != currentVersion && newVersion != failingVersion) {
                 let dlOp = self.implementation.download(url: downloadUrl)
                 if let dl = dlOp {
                     print("✨  Capacitor-updater: New version: \(newVersion) found. Current is \(currentVersion == "" ? "builtin" : currentVersion), next backgrounding will trigger update")

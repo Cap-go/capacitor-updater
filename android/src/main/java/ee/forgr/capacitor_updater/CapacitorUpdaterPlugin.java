@@ -3,6 +3,7 @@ package ee.forgr.capacitor_updater;
 import android.app.Activity;
 import android.app.Application;
 import android.content.SharedPreferences;
+import android.content.pm.PackageInfo;
 import android.os.Bundle;
 import android.util.Log;
 
@@ -16,6 +17,7 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import io.github.g00fy2.versioncompare.Version;
 
 import org.json.JSONException;
 
@@ -29,6 +31,9 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     private SharedPreferences prefs;
     private SharedPreferences.Editor editor;
     private String autoUpdateUrl = null;
+    private Boolean disableAutoUpdateUnderNative = false;
+    private Boolean disableAutoUpdateToMajor = false;
+
 
     @Override
     public void load() {
@@ -41,6 +46,8 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         implementation.statsUrl = getConfig().getString("statsUrl", "https://capgo.app/api/stats");
         this.autoUpdateUrl = getConfig().getString("autoUpdateUrl");
         if (this.autoUpdateUrl == null || this.autoUpdateUrl.equals("")) return;
+        disableAutoUpdateUnderNative = getConfig().getBoolean("disableAutoUpdateUnderNative", false);
+        disableAutoUpdateToMajor = getConfig().getBoolean("disableAutoUpdateBreaking", false);
         Application application = (Application) this.getContext().getApplicationContext();
         application.registerActivityLifecycleCallbacks(this);
         onActivityStarted(getActivity());
@@ -185,8 +192,18 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
 
     @Override
     public void onActivityStarted(@NonNull Activity activity) {
+//        disableRevert disableBreaking
+        String currentVersionNative = "";
+        try {
+            PackageInfo pInfo = this.getContext().getPackageManager().getPackageInfo(this.getContext().getPackageName(), 0);
+            currentVersionNative = pInfo.versionName;
+        } catch (Exception ex) {
+            Log.e(TAG, "Error get stats", ex);
+            return;
+        }
         Log.i(TAG, "Check for update in the server");
         if (autoUpdateUrl == null || autoUpdateUrl.equals("")) return;
+        String finalCurrentVersionNative = currentVersionNative;
         new Thread(new Runnable(){
             @Override
             public void run() {
@@ -195,7 +212,13 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                         String currentVersion = implementation.getVersionName();
                         String newVersion = (String) res.get("version");
                         String failingVersion = prefs.getString("failingVersion", "");
-                        if (!newVersion.equals(currentVersion) && !newVersion.equals(failingVersion)) {
+                        if (disableAutoUpdateUnderNative && new Version(newVersion).isHigherThan(finalCurrentVersionNative)) {
+                            Log.i(TAG, "Cannot download revert, " + newVersion + " is lest than native version " + finalCurrentVersionNative);
+                        }
+                        else if (disableAutoUpdateToMajor && new Version(newVersion).getMajor() > new Version(currentVersion).getMajor()) {
+                            Log.i(TAG, "Cannot download Major, " + newVersion + " is Breaking change from " + currentVersion);
+                        }
+                        else if (!newVersion.equals("") && !newVersion.equals(currentVersion) && !newVersion.equals(failingVersion)) {
                             new Thread(new Runnable(){
                                 @Override
                                 public void run() {

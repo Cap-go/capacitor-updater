@@ -15,5 +15,6 @@ Pod::Spec.new do |s|
   s.dependency 'Capacitor'
   s.dependency 'SSZipArchive'
   s.dependency 'Alamofire'
+  s.dependency 'VersionCompare'
   s.swift_version = '5.1'
 end
