@@ -1,3 +1,13 @@
+## 2.2.0 (2022-03-28)
+
+### Feat
+
+- add resetWhenUpdate system
+
+### Fix
+
+- error in ios missing code disableAutoUpdateUnderNative
+
 ## 2.1.1 (2022-03-26)
 
 ### Fix
