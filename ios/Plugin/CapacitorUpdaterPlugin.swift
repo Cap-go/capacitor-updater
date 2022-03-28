@@ -180,10 +180,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             let failingVersion = UserDefaults.standard.string(forKey: "failingVersion") ?? ""
             let newVersion: Version = res?.version ?? ""
             let currentVersionNative: Version = Bundle.main.buildVersionNumber
-            if (newVersion < currentVersionNative) {
+            if (disableAutoUpdateUnderNative && newVersion < currentVersionNative) {
                 print("✨  Capacitor-updater: Cannot download revert, \(newVersion) is lest than native version \(currentVersionNative)")
             }
-            else if () {
+            else if (disableAutoUpdateToMajor && newVersion.major > currentVersionNative.major) {
                 print("✨  Capacitor-updater: Cannot download Major, \(newVersion) is Breaking change from \(currentVersion)")
             }
             else if (newVersion != "" && newVersion != currentVersion && newVersion != failingVersion) {
