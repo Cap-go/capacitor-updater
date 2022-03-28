@@ -218,7 +218,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 if let dl = dlOp {
                     print("✨  Capacitor-updater: New version: \(newVersion) found. Current is \(currentVersion == "" ? "builtin" : currentVersion), next backgrounding will trigger update")
                     UserDefaults.standard.set(dl, forKey: "nextVersion")
-                    UserDefaults.standard.set(newVersion, forKey: "nextVersionName")
+                    UserDefaults.standard.set(newVersion.description, forKey: "nextVersionName")
                 } else {
                     print("✨  Capacitor-updater: Download version \(newVersion) fail")
                 }
