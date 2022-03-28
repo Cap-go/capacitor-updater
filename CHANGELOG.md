@@ -1,3 +1,10 @@
+## 2.2.3 (2022-03-28)
+
+### Fix
+
+- init value for version ios
+- build error ios
+
 ## 2.2.2 (2022-03-28)
 
 ### Fix
