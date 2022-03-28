@@ -32,9 +32,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         nc.addObserver(self, selector: #selector(appMovedToBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
         nc.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
         if (resetWhenUpdate) {
-            let LatestVersionNative = UserDefaults.standard.string(forKey: "LatestVersionNative") ?? ""
-            if (LatestVersionNative != "" && Bundle.main.buildVersionNumber.major > LatestVersionNative.major) {
-                self._reset(toAutoUpdate: false)
+            var LatestVersionNative: Version = ""
+            var currentVersionNative: Version = ""
+            do {
+                currentVersionNative = try Version(Bundle.main.buildVersionNumber ?? "")
+                LatestVersionNative = try Version(UserDefaults.standard.string(forKey: "LatestVersionNative") ?? "")
+            } catch {
+                print("✨  Capacitor-updater: Cannot get version native \(currentVersionNative)")
+            }
+            if (LatestVersionNative != "" && currentVersionNative.major > LatestVersionNative.major) {
+                _ = self._reset(toAutoUpdate: false)
                 UserDefaults.standard.set("", forKey: "LatestVersionAutoUpdate")
                 UserDefaults.standard.set("", forKey: "LatestVersionNameAutoUpdate")
             }
@@ -188,16 +195,25 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 return
             }
             let currentVersion = self.implementation.getVersionName()
-            let failingVersion = UserDefaults.standard.string(forKey: "failingVersion") ?? ""
-            let newVersion: Version = res?.version ?? ""
-            let currentVersionNative: Version = Bundle.main.buildVersionNumber
-            if (disableAutoUpdateUnderNative && newVersion < currentVersionNative) {
+            var failingVersion: Version = ""
+            var currentVersionForCompare: Version = ""
+            var newVersion: Version = ""
+            var currentVersionNative: Version = ""
+            do {
+                currentVersionForCompare = try Version(currentVersion)
+                newVersion = try Version(res?.version ?? "")
+                currentVersionNative = try Version(Bundle.main.buildVersionNumber ?? "")
+                failingVersion = try Version(UserDefaults.standard.string(forKey: "failingVersion") ?? "")
+            } catch {
+                print("✨  Capacitor-updater: Cannot get version \(failingVersion) \(currentVersionForCompare) \(newVersion) \(currentVersionNative)")
+            }
+            if (self.disableAutoUpdateUnderNative && newVersion < currentVersionNative) {
                 print("✨  Capacitor-updater: Cannot download revert, \(newVersion) is lest than native version \(currentVersionNative)")
             }
-            else if (disableAutoUpdateToMajor && newVersion.major > currentVersionNative.major) {
+            else if (self.disableAutoUpdateToMajor && newVersion.major > currentVersionNative.major) {
                 print("✨  Capacitor-updater: Cannot download Major, \(newVersion) is Breaking change from \(currentVersion)")
             }
-            else if (newVersion != "" && newVersion != currentVersion && newVersion != failingVersion) {
+            else if (newVersion != "" && newVersion != currentVersionForCompare && newVersion != failingVersion) {
                 let dlOp = self.implementation.download(url: downloadUrl)
                 if let dl = dlOp {
                     print("✨  Capacitor-updater: New version: \(newVersion) found. Current is \(currentVersion == "" ? "builtin" : currentVersion), next backgrounding will trigger update")
