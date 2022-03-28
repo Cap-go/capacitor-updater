@@ -32,15 +32,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         nc.addObserver(self, selector: #selector(appMovedToBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
         nc.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
         if (resetWhenUpdate) {
-            var LatestVersionNative: Version = ""
-            var currentVersionNative: Version = ""
+            var LatestVersionNative: Version = "0.0.0"
+            var currentVersionNative: Version = "0.0.0"
             do {
                 currentVersionNative = try Version(Bundle.main.buildVersionNumber ?? "")
                 LatestVersionNative = try Version(UserDefaults.standard.string(forKey: "LatestVersionNative") ?? "")
             } catch {
                 print("✨  Capacitor-updater: Cannot get version native \(currentVersionNative)")
             }
-            if (LatestVersionNative != "" && currentVersionNative.major > LatestVersionNative.major) {
+            if (LatestVersionNative != "0.0.0" && currentVersionNative.major > LatestVersionNative.major) {
                 _ = self._reset(toAutoUpdate: false)
                 UserDefaults.standard.set("", forKey: "LatestVersionAutoUpdate")
                 UserDefaults.standard.set("", forKey: "LatestVersionNameAutoUpdate")
@@ -195,10 +195,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 return
             }
             let currentVersion = self.implementation.getVersionName()
-            var failingVersion: Version = ""
-            var currentVersionForCompare: Version = ""
-            var newVersion: Version = ""
-            var currentVersionNative: Version = ""
+            var failingVersion: Version = "0.0.0"
+            var currentVersionForCompare: Version = "0.0.0"
+            var newVersion: Version = "0.0.0"
+            var currentVersionNative: Version = "0.0.0"
             do {
                 currentVersionForCompare = try Version(currentVersion)
                 newVersion = try Version(res?.version ?? "")
@@ -213,7 +213,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             else if (self.disableAutoUpdateToMajor && newVersion.major > currentVersionNative.major) {
                 print("✨  Capacitor-updater: Cannot download Major, \(newVersion) is Breaking change from \(currentVersion)")
             }
-            else if (newVersion != "" && newVersion != currentVersionForCompare && newVersion != failingVersion) {
+            else if (newVersion != "0.0.0" && newVersion != currentVersionForCompare && newVersion != failingVersion) {
                 let dlOp = self.implementation.download(url: downloadUrl)
                 if let dl = dlOp {
                     print("✨  Capacitor-updater: New version: \(newVersion) found. Current is \(currentVersion == "" ? "builtin" : currentVersion), next backgrounding will trigger update")
