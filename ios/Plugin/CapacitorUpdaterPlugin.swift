@@ -1,6 +1,6 @@
 import Foundation
 import Capacitor
-import VersionCompare
+import Version
 
 /**
  * Please read the Capacitor iOS Plugin Development Guide
