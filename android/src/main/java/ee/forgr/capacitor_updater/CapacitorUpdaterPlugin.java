@@ -33,6 +33,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     private String autoUpdateUrl = null;
     private Boolean disableAutoUpdateUnderNative = false;
     private Boolean disableAutoUpdateToMajor = false;
+    private Boolean resetWhenUpdate = false;
 
 
     @Override
@@ -48,8 +49,19 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         if (this.autoUpdateUrl == null || this.autoUpdateUrl.equals("")) return;
         disableAutoUpdateUnderNative = getConfig().getBoolean("disableAutoUpdateUnderNative", false);
         disableAutoUpdateToMajor = getConfig().getBoolean("disableAutoUpdateBreaking", false);
+        resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", false);
         Application application = (Application) this.getContext().getApplicationContext();
         application.registerActivityLifecycleCallbacks(this);
+        if (resetWhenUpdate) {
+            String LatestVersionNative = prefs.getString("LatestVersionNative", "");
+            if (!LatestVersionNative.equals("") && Bundle.main.buildVersionNumber.major > LatestVersionNative.major) {
+                this._reset(false);
+                editor.putString("LatestVersionAutoUpdate", "");
+                editor.putString("LatestVersionNameAutoUpdate", "");
+            }
+            editor.putString("LatestVersionNative", Bundle.main.buildVersionNumber);
+            editor.commit();
+        }
         onActivityStarted(getActivity());
     }
 

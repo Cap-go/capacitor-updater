@@ -13,6 +13,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     private var statsUrl = ""
     private var disableAutoUpdateUnderNative = false;
     private var disableAutoUpdateToMajor = false;
+    private var resetWhenUpdate = false;
     
     override public func load() {
         autoUpdateUrl = getConfigValue("autoUpdateUrl") as? String ?? ""
@@ -26,9 +27,19 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         if (autoUpdateUrl == "") { return }
         disableAutoUpdateUnderNative = getConfigValue("disableAutoUpdateUnderNative") as? Bool ?? false
         disableAutoUpdateToMajor = getConfigValue("disableAutoUpdateBreaking") as? Bool ?? false
+        resetWhenUpdate = getConfigValue("resetWhenUpdate") as? Bool ?? false
         let nc = NotificationCenter.default
         nc.addObserver(self, selector: #selector(appMovedToBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
         nc.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
+        if (resetWhenUpdate) {
+            let LatestVersionNative = UserDefaults.standard.string(forKey: "LatestVersionNative") ?? ""
+            if (LatestVersionNative != "" && Bundle.main.buildVersionNumber.major > LatestVersionNative.major) {
+                self._reset(toAutoUpdate: false)
+                UserDefaults.standard.set("", forKey: "LatestVersionAutoUpdate")
+                UserDefaults.standard.set("", forKey: "LatestVersionNameAutoUpdate")
+            }
+            UserDefaults.standard.set( Bundle.main.buildVersionNumber, forKey: "LatestVersionNative")
+        }
         self.appMovedToForeground()
     }
     

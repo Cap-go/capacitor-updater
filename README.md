@@ -12,12 +12,12 @@ You have 3 ways possible :
 Join the [discord](https://discord.gg/VnYRvBfgA6) to get help.
 
 ## Documentation
-I maintain a more user friendly [documentation](https://doc.capgo.app).
+I maintain a more user friendly and complete [documentation](https://doc.capgo.app) in notion site.
 
 ## install plugin
 
 ```bash
-npm install cordova-updater
+npm install capacitor-updater
 npx cap sync
 ```
 
