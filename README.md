@@ -21,7 +21,8 @@ npm install capacitor-updater
 npx cap sync
 ```
 
-### Auto update setup 
+## Auto update setup
+
 Create account in [capgo.app](https://capgo.app) and get your [API key](https://capgo.app/app/apikeys)
 - Download the CLI `npm i -g capgo`
 - Add app from CLI `capgo add -a API_KEY`
@@ -55,16 +56,12 @@ See more there in the [Auto update](
 https://doc.capgo.app/Auto-update-2cf9edda70484d7fa57111ab9c435d08) documentation.
 
 
-### Manual setup
+## Manual setup
 
 Download app update from url when user enter the app
 install it when user background the app.
 
-```bash
-npm install capacitor-updater
-npx cap sync
-```
-Add in your main code 
+In your main code :
 
 ```javascript
   import { CapacitorUpdater } from 'capacitor-updater'
@@ -104,10 +101,11 @@ Add in your main code
 
 *Be extra carufull for your update* if you send a broken update, the app will crash until the user reinstalls it.
 
+If you need more secure way to update your app, you can use Auto update system.
 
 You can list the version and manage it with the command below.
 
-## Packaging `dist.zip`
+### Packaging `dist.zip`
 
 Whatever you choose to name the file you download from your release/update server URL, the zip file should contain the full contents of your production Capacitor build output folder, usually `{project directory}/dist/` or `{project directory}/www/`. This is where `index.html` will be located, and it should also contain all bundled JavaScript, CSS, and web resources necessary for your app to run.
 
