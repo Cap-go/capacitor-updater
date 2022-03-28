@@ -1,3 +1,9 @@
+## 2.2.1 (2022-03-28)
+
+### Fix
+
+- issue with resetWhenUpdate
+
 ## 2.2.0 (2022-03-28)
 
 ### Feat
