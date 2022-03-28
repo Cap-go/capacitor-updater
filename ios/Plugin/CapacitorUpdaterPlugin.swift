@@ -35,8 +35,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             var LatestVersionNative: Version = "0.0.0"
             var currentVersionNative: Version = "0.0.0"
             do {
-                currentVersionNative = try Version(Bundle.main.buildVersionNumber ?? "")
-                LatestVersionNative = try Version(UserDefaults.standard.string(forKey: "LatestVersionNative") ?? "")
+                currentVersionNative = try Version(Bundle.main.buildVersionNumber ?? "0.0.0")
+                LatestVersionNative = try Version(UserDefaults.standard.string(forKey: "LatestVersionNative") ?? "0.0.0")
             } catch {
                 print("✨  Capacitor-updater: Cannot get version native \(currentVersionNative)")
             }
@@ -200,10 +200,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             var newVersion: Version = "0.0.0"
             var currentVersionNative: Version = "0.0.0"
             do {
-                currentVersionForCompare = try Version(currentVersion)
-                newVersion = try Version(res?.version ?? "")
-                currentVersionNative = try Version(Bundle.main.buildVersionNumber ?? "")
-                failingVersion = try Version(UserDefaults.standard.string(forKey: "failingVersion") ?? "")
+                currentVersionForCompare = try Version(currentVersion == "" ? "0.0.0" : currentVersion)
+                newVersion = try Version(res?.version ?? "0.0.0")
+                currentVersionNative = try Version(Bundle.main.buildVersionNumber ?? "0.0.0")
+                failingVersion = try Version(UserDefaults.standard.string(forKey: "failingVersion") ?? "0.0.0")
             } catch {
                 print("✨  Capacitor-updater: Cannot get version \(failingVersion) \(currentVersionForCompare) \(newVersion) \(currentVersionNative)")
             }
