@@ -53,14 +53,20 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         Application application = (Application) this.getContext().getApplicationContext();
         application.registerActivityLifecycleCallbacks(this);
         if (resetWhenUpdate) {
-            String LatestVersionNative = prefs.getString("LatestVersionNative", "");
-            if (!LatestVersionNative.equals("") && Bundle.main.buildVersionNumber.major > LatestVersionNative.major) {
-                this._reset(false);
-                editor.putString("LatestVersionAutoUpdate", "");
-                editor.putString("LatestVersionNameAutoUpdate", "");
+            Version LatestVersionNative = new Version(prefs.getString("LatestVersionNative", ""));
+            try {
+                PackageInfo pInfo = this.getContext().getPackageManager().getPackageInfo(this.getContext().getPackageName(), 0);
+                Version currentVersionNative = new Version(pInfo.versionName);
+                if (!LatestVersionNative.equals("") && currentVersionNative.getMajor() > LatestVersionNative.getMajor()) {
+                    this._reset(false);
+                    editor.putString("LatestVersionAutoUpdate", "");
+                    editor.putString("LatestVersionNameAutoUpdate", "");
+                }
+                editor.putString("LatestVersionNative", currentVersionNative.toString());
+                editor.commit();
+            } catch (Exception ex) {
+                Log.e("CapacitorUpdater", "Cannot get the current version" + ex.getMessage());
             }
-            editor.putString("LatestVersionNative", Bundle.main.buildVersionNumber);
-            editor.commit();
         }
         onActivityStarted(getActivity());
     }
