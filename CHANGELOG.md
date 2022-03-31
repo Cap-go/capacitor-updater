@@ -1,3 +1,9 @@
+## 2.3.0 (2022-03-31)
+
+### Feat
+
+- add majorAvailable event
+
 ## 2.2.6 (2022-03-28)
 
 ### Fix
