@@ -235,6 +235,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                         }
                         else if (disableAutoUpdateToMajor && new Version(newVersion).getMajor() > new Version(currentVersion).getMajor()) {
                             Log.i(TAG, "Cannot download Major, " + newVersion + " is Breaking change from " + currentVersion);
+                            notifyListeners("majorAvailable", newVersion);
                         }
                         else if (!newVersion.equals("") && !newVersion.equals(currentVersion) && !newVersion.equals(failingVersion)) {
                             new Thread(new Runnable(){

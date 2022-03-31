@@ -212,6 +212,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             }
             else if (self.disableAutoUpdateToMajor && newVersion.major > currentVersionNative.major) {
                 print("✨  Capacitor-updater: Cannot download Major, \(newVersion) is Breaking change from \(currentVersion)")
+                self.notifyListeners("majorAvailable", data: ["version": newVersion])
             }
             else if (newVersion != "0.0.0" && newVersion != currentVersionForCompare && newVersion != failingVersion) {
                 let dlOp = self.implementation.download(url: downloadUrl)

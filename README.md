@@ -126,6 +126,12 @@ Do not password encrypt this file, or it will fail to unpack.
 * [`notifyAppReady()`](#notifyappready)
 * [`delayUpdate()`](#delayupdate)
 * [`cancelDelay()`](#canceldelay)
+* [`addListener('download', ...)`](#addlistenerdownload)
+* [`addListener('majorAvailable', ...)`](#addlistenermajoravailable)
+* [`addListener(string, ...)`](#addlistenerstring)
+* [`removeAllListeners()`](#removealllisteners)
+* [Interfaces](#interfaces)
+* [Type Aliases](#type-aliases)
 
 </docgen-index>
 
@@ -195,7 +201,7 @@ Get all available versions
 ### reset(...)
 
 ```typescript
-reset(options: { toAutoUpdate?: boolean; }) => Promise<void>
+reset(options?: { toAutoUpdate?: boolean | undefined; } | undefined) => Promise<void>
 ```
 
 Set the `builtin` version (the one sent to Apple store / Google play store ) as current version
@@ -275,6 +281,108 @@ cancelDelay() => Promise<void>
 allow update in the next time the app goes into the background, only in auto-update
 
 --------------------
+
+
+### addListener('download', ...)
+
+```typescript
+addListener(eventName: 'download', listenerFunc: DownloadChangeListener) => Promise<PluginListenerHandle> & PluginListenerHandle
+```
+
+Listen for download event in the App, let you know when the download is started, loading and finished
+
+| Param              | Type                                                                      |
+| ------------------ | ------------------------------------------------------------------------- |
+| **`eventName`**    | <code>'download'</code>                                                   |
+| **`listenerFunc`** | <code><a href="#downloadchangelistener">DownloadChangeListener</a></code> |
+
+**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt; & <a href="#pluginlistenerhandle">PluginListenerHandle</a></code>
+
+**Since:** 2.0.11
+
+--------------------
+
+
+### addListener('majorAvailable', ...)
+
+```typescript
+addListener(eventName: 'majorAvailable', listenerFunc: MajorAvailableListener) => Promise<PluginListenerHandle> & PluginListenerHandle
+```
+
+Listen for Major update event in the App, let you know when major update is blocked by setting disableAutoUpdateBreaking
+
+| Param              | Type                                                                      |
+| ------------------ | ------------------------------------------------------------------------- |
+| **`eventName`**    | <code>'majorAvailable'</code>                                             |
+| **`listenerFunc`** | <code><a href="#majoravailablelistener">MajorAvailableListener</a></code> |
+
+**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt; & <a href="#pluginlistenerhandle">PluginListenerHandle</a></code>
+
+**Since:** 2.3.0
+
+--------------------
+
+
+### addListener(string, ...)
+
+```typescript
+addListener(eventName: string, listenerFunc: (...args: any[]) => any) => Promise<PluginListenerHandle>
+```
+
+| Param              | Type                                    |
+| ------------------ | --------------------------------------- |
+| **`eventName`**    | <code>string</code>                     |
+| **`listenerFunc`** | <code>(...args: any[]) =&gt; any</code> |
+
+**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
+
+--------------------
+
+
+### removeAllListeners()
+
+```typescript
+removeAllListeners() => Promise<void>
+```
+
+--------------------
+
+
+### Interfaces
+
+
+#### PluginListenerHandle
+
+| Prop         | Type                                      |
+| ------------ | ----------------------------------------- |
+| **`remove`** | <code>() =&gt; Promise&lt;void&gt;</code> |
+
+
+#### DownloadEvent
+
+| Prop          | Type                | Description                                    | Since  |
+| ------------- | ------------------- | ---------------------------------------------- | ------ |
+| **`percent`** | <code>number</code> | Current status of download, between 0 and 100. | 2.0.11 |
+
+
+#### MajorAvailableEvent
+
+| Prop          | Type                | Description                                    | Since |
+| ------------- | ------------------- | ---------------------------------------------- | ----- |
+| **`version`** | <code>string</code> | Current status of download, between 0 and 100. | 2.3.0 |
+
+
+### Type Aliases
+
+
+#### DownloadChangeListener
+
+<code>(state: <a href="#downloadevent">DownloadEvent</a>): void</code>
+
+
+#### MajorAvailableListener
+
+<code>(state: <a href="#majoravailableevent">MajorAvailableEvent</a>): void</code>
 
 </docgen-api>
 

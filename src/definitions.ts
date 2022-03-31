@@ -8,8 +8,17 @@ export interface DownloadEvent {
    */
   percent: number;
 }
+export interface MajorAvailableEvent {
+  /**
+   * Current status of download, between 0 and 100.
+   *
+   * @since 2.3.0
+   */
+  version: string;
+}
 
 export type DownloadChangeListener = (state: DownloadEvent) => void;
+export type MajorAvailableListener = (state: MajorAvailableEvent) => void;
 export interface CapacitorUpdaterPlugin {
     /**
    * Download a new version from the provided URL, it should be a zip file, with files inside or with a unique folder inside with all your files
@@ -79,5 +88,15 @@ export interface CapacitorUpdaterPlugin {
   addListener(
     eventName: 'download',
     listenerFunc: DownloadChangeListener,
+  ): Promise<PluginListenerHandle> & PluginListenerHandle;
+
+  /**
+   * Listen for Major update event in the App, let you know when major update is blocked by setting disableAutoUpdateBreaking
+   *
+   * @since 2.3.0
+   */
+  addListener(
+    eventName: 'majorAvailable',
+    listenerFunc: MajorAvailableListener,
   ): Promise<PluginListenerHandle> & PluginListenerHandle;
 }
