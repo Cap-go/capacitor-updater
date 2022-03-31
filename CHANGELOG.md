@@ -1,3 +1,9 @@
+## 2.3.2 (2022-03-31)
+
+### Fix
+
+- issue in android with new event
+
 ## 2.3.1 (2022-03-31)
 
 ### Fix
