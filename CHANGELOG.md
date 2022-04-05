@@ -1,3 +1,10 @@
+## 2.3.3 (2022-04-05)
+
+### Fix
+
+- persistent path issue during delete
+- persistent path issue during delete
+
 ## 2.3.2 (2022-03-31)
 
 ### Fix
