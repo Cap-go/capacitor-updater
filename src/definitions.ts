@@ -10,15 +10,24 @@ export interface DownloadEvent {
 }
 export interface MajorAvailableEvent {
   /**
-   * Current status of download, between 0 and 100.
+   * Emit when a new major version is available.
    *
    * @since 2.3.0
+   */
+  version: string;
+}
+export interface UpdateAvailableEvent {
+  /**
+   * Emit when a new update is available.
+   *
+   * @since 3.0.0
    */
   version: string;
 }
 
 export type DownloadChangeListener = (state: DownloadEvent) => void;
 export type MajorAvailableListener = (state: MajorAvailableEvent) => void;
+export type UpdateAvailableListener = (state: UpdateAvailableEvent) => void;
 export interface CapacitorUpdaterPlugin {
     /**
    * Download a new version from the provided URL, it should be a zip file, with files inside or with a unique folder inside with all your files
@@ -103,5 +112,14 @@ export interface CapacitorUpdaterPlugin {
   addListener(
     eventName: 'majorAvailable',
     listenerFunc: MajorAvailableListener,
+  ): Promise<PluginListenerHandle> & PluginListenerHandle;
+  /**
+   * Listen for update event in the App, let you know when update is ready to install at next app start
+   *
+   * @since 2.3.0
+   */
+  addListener(
+    eventName: 'updateAvailable',
+    listenerFunc: UpdateAvailableListener,
   ): Promise<PluginListenerHandle> & PluginListenerHandle;
 }

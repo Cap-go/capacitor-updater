@@ -242,14 +242,14 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                     try {
                         String currentVersion = implementation.getVersionName();
                         String newVersion = (String) res.get("version");
+                        JSObject ret = new JSObject();
+                        ret.put("newVersion", newVersion);
                         String failingVersion = prefs.getString("failingVersion", "");
                         if (disableAutoUpdateUnderNative && new Version(newVersion).isHigherThan(finalCurrentVersionNative)) {
                             Log.i(TAG, "Cannot download revert, " + newVersion + " is lest than native version " + finalCurrentVersionNative);
                         }
                         else if (disableAutoUpdateToMajor && new Version(newVersion).getMajor() > new Version(currentVersion).getMajor()) {
                             Log.i(TAG, "Cannot download Major, " + newVersion + " is Breaking change from " + currentVersion);
-                            JSObject ret = new JSObject();
-                            ret.put("newVersion", newVersion);
                             notifyListeners("majorAvailable", ret);
                         }
                         else if (!newVersion.equals("") && !newVersion.equals(currentVersion) && !newVersion.equals(failingVersion)) {
@@ -266,6 +266,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                         editor.putString("nextVersion", dl);
                                         editor.putString("nextVersionName", (String) res.get("version"));
                                         editor.commit();
+                                        notifyListeners("updateAvailable", ret);
                                     } catch (JSONException e) {
                                         e.printStackTrace();
                                     }
