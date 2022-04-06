@@ -30,7 +30,11 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     private CapacitorUpdater implementation;
     private SharedPreferences prefs;
     private SharedPreferences.Editor editor;
-    private String autoUpdateUrl = null;
+    private static final String autoUpdateUrlDefault = "https://capgo.app/api/auto_update";
+    private static final String statsUrlDefault = "https://capgo.app/api/stats";
+    private String autoUpdateUrl = "";
+    private String autoUpdateUrlChannel = "";
+    private Boolean autoUpdate = false;
     private Boolean disableAutoUpdateUnderNative = false;
     private Boolean disableAutoUpdateToMajor = false;
     private Boolean resetWhenUpdate = false;
@@ -44,9 +48,11 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         implementation = new CapacitorUpdater(this.getContext(), this);
         CapConfig config = CapConfig.loadDefault(getActivity());
         implementation.appId = config.getString("appId", "");
-        implementation.statsUrl = getConfig().getString("statsUrl", "https://capgo.app/api/stats");
-        this.autoUpdateUrl = getConfig().getString("autoUpdateUrl");
-        if (this.autoUpdateUrl == null || this.autoUpdateUrl.equals("")) return;
+        implementation.statsUrl = getConfig().getString("statsUrl", statsUrlDefault);
+        this.autoUpdateUrl = getConfig().getString("autoUpdateUrl", autoUpdateUrlDefault);
+        this.autoUpdateUrlChannel = getConfig().getString("autoUpdateUrlChannel", "");
+        this.autoUpdate = getConfig().getBoolean("autoUpdate", false);
+        if (!autoUpdate || this.autoUpdateUrl.equals("")) return;
         disableAutoUpdateUnderNative = getConfig().getBoolean("disableAutoUpdateUnderNative", false);
         disableAutoUpdateToMajor = getConfig().getBoolean("disableAutoUpdateBreaking", false);
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", false);
@@ -61,6 +67,8 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                     this._reset(false);
                     editor.putString("LatestVersionAutoUpdate", "");
                     editor.putString("LatestVersionNameAutoUpdate", "");
+                    ArrayList<String> res = implementation.list();
+                    res.forEach((version) -> implementation.delete(version, ""));
                 }
                 editor.putString("LatestVersionNative", currentVersionNative.toString());
                 editor.commit();
@@ -76,6 +84,12 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         ret.put("percent", percent);
         notifyListeners("download", ret);
     }
+
+    // @PluginMethod
+    // public void setChannel(PluginCall call) {
+    //     autoUpdateUrlChannel = call.getString("channel", autoUpdateUrlChannel);
+    //     call.resolve();
+    // }
 
     @PluginMethod
     public void download(PluginCall call) {
@@ -220,12 +234,12 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             return;
         }
         Log.i(TAG, "Check for update in the server");
-        if (autoUpdateUrl == null || autoUpdateUrl.equals("")) return;
+        if (autoUpdateUrl.equals("")) return;
         String finalCurrentVersionNative = currentVersionNative;
         new Thread(new Runnable(){
             @Override
             public void run() {
-                implementation.getLatest(autoUpdateUrl, (res) -> {
+                implementation.getLatest(autoUpdateUrl autoUpdateUrlChannel, (res) -> {
                     try {
                         String currentVersion = implementation.getVersionName();
                         String newVersion = (String) res.get("version");

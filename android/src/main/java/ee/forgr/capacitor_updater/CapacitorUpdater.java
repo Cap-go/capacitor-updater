@@ -279,7 +279,7 @@ public class CapacitorUpdater {
         return false;
     }
 
-    public void getLatest(String url, Callback callback) {
+    public void getLatest(String url, String channel, Callback callback) {
         StringRequest stringRequest = new StringRequest(Request.Method.GET, url,
         new Response.Listener<String>() {
             @Override
@@ -300,6 +300,7 @@ public class CapacitorUpdater {
             @Override
             public Map<String, String> getHeaders() throws AuthFailureError { 
                     Map<String, String>  params = new HashMap<String, String>();  
+                    params.put("cap_channel", channel);
                     params.put("cap_device_id", this.deviceID);
                     params.put("cap_app_id", this.appId);
                     params.put("cap_version_build", this.versionBuild);

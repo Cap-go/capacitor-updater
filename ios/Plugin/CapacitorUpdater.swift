@@ -95,10 +95,11 @@ extension Bundle {
         deleteFolder(source: destUnZip)
     }
 
-    @objc public func getLatest(url: URL) -> AppVersion? {
+    @objc public func getLatest(url: URL, channel: String) -> AppVersion? {
         let semaphore = DispatchSemaphore(value: 0)
         let latest = AppVersion()
         let headers = [
+            "cap_channel": channel,
             "cap_device_id": self.deviceID,
             "cap_app_id": self.appId,
             "cap_version_build": self.versionBuild,

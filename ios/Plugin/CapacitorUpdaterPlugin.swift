@@ -9,22 +9,28 @@ import Version
 @objc(CapacitorUpdaterPlugin)
 public class CapacitorUpdaterPlugin: CAPPlugin {
     private var implementation = CapacitorUpdater()
+    static let autoUpdateUrlDefault = "https://capgo.app/api/auto_update"
+    static let statsUrlDefault = "https://capgo.app/api/stats"
     private var autoUpdateUrl = ""
+    private var autoUpdate = false
+    private var autoUpdateUrlChannel = ""
     private var statsUrl = ""
     private var disableAutoUpdateUnderNative = false;
     private var disableAutoUpdateToMajor = false;
     private var resetWhenUpdate = false;
     
     override public func load() {
-        autoUpdateUrl = getConfigValue("autoUpdateUrl") as? String ?? ""
+        autoUpdateUrl = getConfigValue("autoUpdateUrl") as? String ?? autoUpdateUrlDefault
+        autoUpdateUrlChannel = getConfigValue("autoUpdateUrlChannel") as? String ?? ""
+        autoUpdate = getConfigValue("autoUpdate") as? Bool ?? false
         implementation.appId = Bundle.main.bundleIdentifier ?? ""
         implementation.notifyDownload = notifyDownload
         let config = (self.bridge?.viewController as? CAPBridgeViewController)?.instanceDescriptor().legacyConfig
         if (config?["appId"] != nil) {
             implementation.appId = config?["appId"] as! String
         }
-        implementation.statsUrl = getConfigValue("statsUrl") as? String ?? "https://capgo.app/api/stats"
-        if (autoUpdateUrl == "") { return }
+        implementation.statsUrl = getConfigValue("statsUrl") as? String ?? statsUrlDefault
+        if (!autoUpdate || autoUpdateUrl == "") { return }
         disableAutoUpdateUnderNative = getConfigValue("disableAutoUpdateUnderNative") as? Bool ?? false
         disableAutoUpdateToMajor = getConfigValue("disableAutoUpdateBreaking") as? Bool ?? false
         resetWhenUpdate = getConfigValue("resetWhenUpdate") as? Bool ?? false
@@ -44,6 +50,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 _ = self._reset(toAutoUpdate: false)
                 UserDefaults.standard.set("", forKey: "LatestVersionAutoUpdate")
                 UserDefaults.standard.set("", forKey: "LatestVersionNameAutoUpdate")
+                let res = implementation.list()
+                res.forEach { version in
+                    implementation.delete(version: version, versionName: "")
+                }
             }
             UserDefaults.standard.set( Bundle.main.buildVersionNumber, forKey: "LatestVersionNative")
         }
@@ -53,6 +63,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     @objc func notifyDownload(percent: Int) {
         self.notifyListeners("download", data: ["percent": percent])
     }
+
+    // @objc func setChannel(_ call: CAPPluginCall) {
+    //     autoUpdateUrlChannel = call.getString("channel") ?? autoUpdateUrlChannel
+    //     call.resolve()
+    // }
     
     @objc func download(_ call: CAPPluginCall) {
         let url = URL(string: call.getString("url") ?? "")
@@ -187,7 +202,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         DispatchQueue.global(qos: .background).async {
             print("✨  Capacitor-updater: Check for update in the server")
             let url = URL(string: self.autoUpdateUrl)!
-            let res = self.implementation.getLatest(url: url)
+            let res = self.implementation.getLatest(url: url, channel: self.autoUpdateUrlChannel)
             if (res == nil) {
                 return
             }
