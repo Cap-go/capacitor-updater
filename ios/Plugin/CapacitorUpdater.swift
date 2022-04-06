@@ -173,7 +173,7 @@ extension Bundle {
     
     @objc public func delete(version: String, versionName: String) -> Bool {
         let destHot = documentsUrl.appendingPathComponent(basePathHot).appendingPathComponent(version)
-        let destPersist = documentsUrl.appendingPathComponent(basePathPersist).appendingPathComponent(version)
+        let destPersist = libraryUrl.appendingPathComponent(basePathPersist).appendingPathComponent(version)
         do {
             try FileManager.default.removeItem(atPath: destHot.path)
         } catch {
