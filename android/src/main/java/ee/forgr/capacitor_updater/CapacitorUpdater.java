@@ -42,6 +42,8 @@ public class CapacitorUpdater {
     private String TAG = "Capacitor-updater";
     public String statsUrl = "";
     public String appId = "";
+    private String versionBuild = "";
+    public String deviceID = "";
 
     private Context context;
     private String basePathHot = "versions";
@@ -67,12 +69,18 @@ public class CapacitorUpdater {
         this.plugin = new CapacitorUpdaterPlugin();
         this.prefs = context.getSharedPreferences("CapWebViewSettings", Activity.MODE_PRIVATE);
         this.editor = prefs.edit();
+        this.deviceID = Secure.getString(context.getContentResolver(), Secure.ANDROID_ID);
+        PackageInfo pInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
+        this.versionBuild = pInfo.versionName;
     }
     public CapacitorUpdater (Context context, CapacitorUpdaterPlugin plugin) {
         this.context = context;
         this.plugin = plugin;
         this.prefs = context.getSharedPreferences("CapWebViewSettings", Activity.MODE_PRIVATE);
         this.editor = prefs.edit();
+        this.deviceID = Secure.getString(context.getContentResolver(), Secure.ANDROID_ID);
+        PackageInfo pInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
+        this.versionBuild = pInfo.versionName;
     }
 
     private Boolean unzip(String source, String dest) {
@@ -272,7 +280,8 @@ public class CapacitorUpdater {
     }
 
     public void getLatest(String url, Callback callback) {
-        StringRequest stringRequest = new StringRequest(url, new Response.Listener<String>() {
+        StringRequest stringRequest = new StringRequest(Request.Method.GET, url,
+        new Response.Listener<String>() {
             @Override
             public void onResponse(String response) {
                 try {
@@ -287,7 +296,17 @@ public class CapacitorUpdater {
             public void onErrorResponse(VolleyError error) {
                 Log.e(TAG, "Error getting Latest" +  error);
             }
-        });
+        }) {     
+            @Override
+            public Map<String, String> getHeaders() throws AuthFailureError { 
+                    Map<String, String>  params = new HashMap<String, String>();  
+                    params.put("cap_device_id", this.deviceID);
+                    params.put("cap_app_id", this.appId);
+                    params.put("cap_version_build", this.versionBuild);
+                    params.put("cap_version_name", this.getVersionName());
+                    return params;
+            }
+        };
         RequestQueue requestQueue = Volley.newRequestQueue(this.context);
         requestQueue.add(stringRequest);
     }
@@ -316,13 +335,11 @@ public class CapacitorUpdater {
         String jsonString;
         try {
             url = new URL(statsUrl);
-            String android_id = Secure.getString(context.getContentResolver(), Secure.ANDROID_ID);
-            PackageInfo pInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
             json.put("platform", "android");
             json.put("action", action);
-            json.put("device_id", android_id);
             json.put("version_name", version);
-            json.put("version_build", pInfo.versionName);
+            json.put("device_id", this.deviceID);
+            json.put("version_build", this.versionBuild);
             json.put("app_id", this.appId);
             jsonString = json.toString();
         } catch (Exception ex) {
