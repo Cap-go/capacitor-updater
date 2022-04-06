@@ -33,7 +33,6 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     private static final String autoUpdateUrlDefault = "https://capgo.app/api/auto_update";
     private static final String statsUrlDefault = "https://capgo.app/api/stats";
     private String autoUpdateUrl = "";
-    private String autoUpdateUrlChannel = "";
     private Boolean autoUpdate = false;
     private Boolean disableAutoUpdateUnderNative = false;
     private Boolean disableAutoUpdateToMajor = false;
@@ -50,7 +49,6 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         implementation.appId = config.getString("appId", "");
         implementation.statsUrl = getConfig().getString("statsUrl", statsUrlDefault);
         this.autoUpdateUrl = getConfig().getString("autoUpdateUrl", autoUpdateUrlDefault);
-        this.autoUpdateUrlChannel = getConfig().getString("autoUpdateUrlChannel", "");
         this.autoUpdate = getConfig().getBoolean("autoUpdate", false);
         if (!autoUpdate || this.autoUpdateUrl.equals("")) return;
         disableAutoUpdateUnderNative = getConfig().getBoolean("disableAutoUpdateUnderNative", false);
@@ -85,11 +83,12 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         notifyListeners("download", ret);
     }
 
-    // @PluginMethod
-    // public void setChannel(PluginCall call) {
-    //     autoUpdateUrlChannel = call.getString("channel", autoUpdateUrlChannel);
-    //     call.resolve();
-    // }
+    @PluginMethod
+    public void getId(PluginCall call) {
+        JSObject ret = new JSObject();
+        ret.put("id", implementation.deviceID);
+        call.resolve(ret);
+    }
 
     @PluginMethod
     public void download(PluginCall call) {
@@ -239,7 +238,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         new Thread(new Runnable(){
             @Override
             public void run() {
-                implementation.getLatest(autoUpdateUrl autoUpdateUrlChannel, (res) -> {
+                implementation.getLatest(autoUpdateUrl, (res) -> {
                     try {
                         String currentVersion = implementation.getVersionName();
                         String newVersion = (String) res.get("version");

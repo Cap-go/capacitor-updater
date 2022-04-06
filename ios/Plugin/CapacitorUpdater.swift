@@ -31,9 +31,9 @@ extension Bundle {
     
     public var statsUrl = ""
     public var appId = ""
+    public var deviceID = UIDevice.current.identifierForVendor?.uuidString ?? ""
     public var notifyDownload: (Int) -> Void = { _ in }
     private var versionBuild = Bundle.main.buildVersionNumber ?? ""
-    private var deviceID = UIDevice.current.identifierForVendor?.uuidString ?? ""
     private var lastPathHot = ""
     private var lastPathPersist = ""
     private let basePathHot = "versions"
@@ -95,11 +95,10 @@ extension Bundle {
         deleteFolder(source: destUnZip)
     }
 
-    @objc public func getLatest(url: URL, channel: String) -> AppVersion? {
+    @objc public func getLatest(url: URL) -> AppVersion? {
         let semaphore = DispatchSemaphore(value: 0)
         let latest = AppVersion()
         let headers = [
-            "cap_channel": channel,
             "cap_device_id": self.deviceID,
             "cap_app_id": self.appId,
             "cap_version_build": self.versionBuild,

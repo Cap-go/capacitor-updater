@@ -33,6 +33,11 @@ export interface CapacitorUpdaterPlugin {
    */
   set(options: { version: string, versionName?: string }): Promise<void>;
     /**
+   * Get unique ID used to identify device into auto update server
+   * @returns {Promise<{ id: string }>} an Promise with id for this device
+   */
+  getId(): Promise<{ id: string }>;
+    /**
    * Delete version in storage
    * @returns {Promise<void>} an empty Promise when the version is delete, otherwise throw an error
    * @param version The version name to delete

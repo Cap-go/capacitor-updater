@@ -13,7 +13,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     static let statsUrlDefault = "https://capgo.app/api/stats"
     private var autoUpdateUrl = ""
     private var autoUpdate = false
-    private var autoUpdateUrlChannel = ""
     private var statsUrl = ""
     private var disableAutoUpdateUnderNative = false;
     private var disableAutoUpdateToMajor = false;
@@ -21,7 +20,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     
     override public func load() {
         autoUpdateUrl = getConfigValue("autoUpdateUrl") as? String ?? autoUpdateUrlDefault
-        autoUpdateUrlChannel = getConfigValue("autoUpdateUrlChannel") as? String ?? ""
         autoUpdate = getConfigValue("autoUpdate") as? Bool ?? false
         implementation.appId = Bundle.main.bundleIdentifier ?? ""
         implementation.notifyDownload = notifyDownload
@@ -64,10 +62,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         self.notifyListeners("download", data: ["percent": percent])
     }
 
-    // @objc func setChannel(_ call: CAPPluginCall) {
-    //     autoUpdateUrlChannel = call.getString("channel") ?? autoUpdateUrlChannel
-    //     call.resolve()
-    // }
+    @objc func getId(_ call: CAPPluginCall) {
+        call.resolve(["id": implementation.deviceID])
+    }
     
     @objc func download(_ call: CAPPluginCall) {
         let url = URL(string: call.getString("url") ?? "")
@@ -202,7 +199,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         DispatchQueue.global(qos: .background).async {
             print("✨  Capacitor-updater: Check for update in the server")
             let url = URL(string: self.autoUpdateUrl)!
-            let res = self.implementation.getLatest(url: url, channel: self.autoUpdateUrlChannel)
+            let res = self.implementation.getLatest(url: url)
             if (res == nil) {
                 return
             }

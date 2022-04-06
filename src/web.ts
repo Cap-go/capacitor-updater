@@ -12,6 +12,10 @@ export class CapacitorUpdaterWeb
   async set(options: { version: string, versionName?: string }): Promise<void> {
     console.log('Cannot set version in web', options);
   }
+  async getId(): Promise<{ id: string }> {
+    console.log('Cannot get ID in web');
+    return { id: 'default'};
+  }
   async delete(options: { version: string }): Promise<void> {
     console.log('Cannot delete version in web', options);
   }

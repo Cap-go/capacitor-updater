@@ -117,6 +117,7 @@ Do not password encrypt this file, or it will fail to unpack.
 
 * [`download(...)`](#download)
 * [`set(...)`](#set)
+* [`getId()`](#getid)
 * [`delete(...)`](#delete)
 * [`list()`](#list)
 * [`reset(...)`](#reset)
@@ -166,6 +167,19 @@ Set version as current version, set will return an error if there are is no inde
 | Param         | Type                                                    |
 | ------------- | ------------------------------------------------------- |
 | **`options`** | <code>{ version: string; versionName?: string; }</code> |
+
+--------------------
+
+
+### getId()
+
+```typescript
+getId() => Promise<{ id: string; }>
+```
+
+Get unique ID used to identify device into auto update server
+
+**Returns:** <code>Promise&lt;{ id: string; }&gt;</code>
 
 --------------------
 
