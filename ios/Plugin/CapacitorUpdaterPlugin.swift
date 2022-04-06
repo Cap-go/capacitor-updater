@@ -175,8 +175,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     @objc func current(_ call: CAPPluginCall) {
         let pathHot = implementation.getLastPathHot()
         let current  = pathHot.count >= 10 ? pathHot.suffix(10) : "builtin"
+        let currentVersionNative = Bundle.main.buildVersionNumber ?? "0.0.0"
         call.resolve([
             "current": current
+            "currentNative": currentVersionNative
         ])
     }
 

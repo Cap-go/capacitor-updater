@@ -33,6 +33,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     private static final String autoUpdateUrlDefault = "https://capgo.app/api/auto_update";
     private static final String statsUrlDefault = "https://capgo.app/api/stats";
     private String autoUpdateUrl = "";
+    private String currentVersionNative = "";
     private Boolean autoUpdate = false;
     private Boolean disableAutoUpdateUnderNative = false;
     private Boolean disableAutoUpdateToMajor = false;
@@ -56,6 +57,13 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", false);
         Application application = (Application) this.getContext().getApplicationContext();
         application.registerActivityLifecycleCallbacks(this);
+        try {
+            PackageInfo pInfo = this.getContext().getPackageManager().getPackageInfo(this.getContext().getPackageName(), 0);
+            currentVersionNative = pInfo.versionName;
+        } catch (Exception ex) {
+            Log.e(TAG, "Error get currentVersionNative", ex);
+            return;
+        }
         if (resetWhenUpdate) {
             Version LatestVersionNative = new Version(prefs.getString("LatestVersionNative", ""));
             try {
@@ -197,6 +205,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         JSObject ret = new JSObject();
         String current = pathHot.length() >= 10 ? pathHot.substring(pathHot.length() - 10) : "builtin";
         ret.put("current", current);
+        ret.put("currentNative", currentVersionNative);
         call.resolve(ret);
     }
 

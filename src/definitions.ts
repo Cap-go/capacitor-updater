@@ -64,10 +64,10 @@ export interface CapacitorUpdaterPlugin {
    */
   reset(options?:{ toAutoUpdate?: boolean }): Promise<void>;
     /**
-   * Get the current version, if none are set it returns `builtin`
-   * @returns {Promise<{ current: string }>} an Promise with the current version name
+   * Get the current version, if none are set it returns `builtin`, currentNative is the original version install on the device
+   * @returns {Promise<{ current: string, currentNative: string }>} an Promise with the current version name
    */
-  current(): Promise<{ current: string }>;
+  current(): Promise<{ current: string, currentNative: string }>;
     /**
    * Reload the view
    * @returns {Promise<void>} an Promise resolved when the view is reloaded
