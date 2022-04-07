@@ -102,13 +102,13 @@ extension Bundle {
     @objc public func getLatest(url: URL) -> AppVersion? {
         let semaphore = DispatchSemaphore(value: 0)
         let latest = AppVersion()
-        let headers = [
+        let headers: HTTPHeaders = [
             "cap_device_id": self.deviceID,
             "cap_app_id": self.appId,
             "cap_version_build": self.versionBuild,
             "cap_version_name": self.getVersionName()
         ]
-        let request = AF.request(.GET, url, headers: headers)
+        let request = AF.request(url, headers: headers)
 
         request.validate().responseDecodable(of: AppVersionDec.self) { response in
             switch response.result {
