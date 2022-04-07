@@ -13,12 +13,14 @@ extension URL {
 struct AppVersionDec: Decodable {
     let version: String
     let url: String
-    let message: String
-    let major: Bool
+    let message: String?
+    let major: Bool?
 }
 public class AppVersion: NSObject {
     var version: String = ""
     var url: String = ""
+    var message: String?
+    var major: Bool?
 }
 extension Bundle {
     var releaseVersionNumber: String? {

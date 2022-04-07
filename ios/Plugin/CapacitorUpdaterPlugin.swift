@@ -19,7 +19,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     private var resetWhenUpdate = false;
     
     override public func load() {
-        autoUpdateUrl = getConfigValue("autoUpdateUrl") as? String ?? autoUpdateUrlDefault
+        autoUpdateUrl = getConfigValue("autoUpdateUrl") as? String ?? CapacitorUpdaterPlugin.autoUpdateUrlDefault
         autoUpdate = getConfigValue("autoUpdate") as? Bool ?? false
         implementation.appId = Bundle.main.bundleIdentifier ?? ""
         implementation.notifyDownload = notifyDownload
@@ -27,7 +27,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         if (config?["appId"] != nil) {
             implementation.appId = config?["appId"] as! String
         }
-        implementation.statsUrl = getConfigValue("statsUrl") as? String ?? statsUrlDefault
+        implementation.statsUrl = getConfigValue("statsUrl") as? String ?? CapacitorUpdaterPlugin.statsUrlDefault
         if (!autoUpdate || autoUpdateUrl == "") { return }
         disableAutoUpdateUnderNative = getConfigValue("disableAutoUpdateUnderNative") as? Bool ?? false
         disableAutoUpdateToMajor = getConfigValue("disableAutoUpdateBreaking") as? Bool ?? false
@@ -50,7 +50,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 UserDefaults.standard.set("", forKey: "LatestVersionNameAutoUpdate")
                 let res = implementation.list()
                 res.forEach { version in
-                    implementation.delete(version: version, versionName: "")
+                    _ = implementation.delete(version: version, versionName: "")
                 }
             }
             UserDefaults.standard.set( Bundle.main.buildVersionNumber, forKey: "LatestVersionNative")
@@ -177,7 +177,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         let current  = pathHot.count >= 10 ? pathHot.suffix(10) : "builtin"
         let currentVersionNative = Bundle.main.buildVersionNumber ?? "0.0.0"
         call.resolve([
-            "current": current
+            "current": current,
             "currentNative": currentVersionNative
         ])
     }
@@ -206,9 +206,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 return
             }
             guard let downloadUrl = URL(string: res?.url ?? "") else {
-                print("✨  Capacitor-updater: \(res?.message || "Unknow error")")
+                print("✨  Capacitor-updater: \(res?.message ?? "Unknow error")")
                 if (res?.major == true) {
-                    self.notifyListeners("majorAvailable", data: ["version": res?.version])
+                    self.notifyListeners("majorAvailable", data: ["version": res?.version ?? "0.0.0"])
                 }
                 return
             }
@@ -219,7 +219,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 newVersion = try Version(res?.version ?? "0.0.0")
                 failingVersion = try Version(UserDefaults.standard.string(forKey: "failingVersion") ?? "0.0.0")
             } catch {
-                print("✨  Capacitor-updater: Cannot get version \(failingVersion) \(currentVersionForCompare) \(newVersion) \(currentVersionNative)")
+                print("✨  Capacitor-updater: Cannot get version \(failingVersion) \(newVersion)")
             }
             if (newVersion != "0.0.0" && newVersion != failingVersion) {
                 let dlOp = self.implementation.download(url: downloadUrl)
