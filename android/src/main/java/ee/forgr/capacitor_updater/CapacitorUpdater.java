@@ -312,7 +312,7 @@ public class CapacitorUpdater {
                     params.put("cap_device_id", this.deviceID);
                     params.put("cap_app_id", this.appId);
                     params.put("cap_version_build", this.versionBuild);
-                    params.put("cap_version_name", this.getVersionName());
+                    params.put("cap_version_name",  prefs.getString("versionName", "builtin"));
                     return params;
             }
         };

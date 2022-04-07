@@ -107,7 +107,7 @@ extension Bundle {
             "cap_device_id": self.deviceID,
             "cap_app_id": self.appId,
             "cap_version_build": self.versionBuild,
-            "cap_version_name": self.getVersionName()
+            "cap_version_name": UserDefaults.standard.string(forKey: "versionName") ?? "builtin"
         ]
         let request = AF.request(url, headers: headers)
 
