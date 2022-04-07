@@ -231,12 +231,12 @@ Set the `builtin` version (the one sent to Apple store / Google play store ) as 
 ### current()
 
 ```typescript
-current() => Promise<{ current: string; }>
+current() => Promise<{ current: string; currentNative: string; }>
 ```
 
-Get the current version, if none are set it returns `builtin`
+Get the current version, if none are set it returns `builtin`, currentNative is the original version install on the device
 
-**Returns:** <code>Promise&lt;{ current: string; }&gt;</code>
+**Returns:** <code>Promise&lt;{ current: string; currentNative: string; }&gt;</code>
 
 --------------------
 

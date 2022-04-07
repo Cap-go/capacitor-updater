@@ -26,9 +26,9 @@ export class CapacitorUpdaterWeb
   async reset(options?: { toAutoUpdate?: boolean }): Promise<void> {
     console.log('Cannot reset version in web', options);
   }
-  async current(): Promise<{ current: string }> {
+  async current(): Promise<{ current: string, currentNative: string }> {
     console.log('Cannot get current version in web');
-    return { current: 'default'};
+    return { current: 'default', currentNative: '0.0.0'};
   }
   async reload(): Promise<void> {
     console.log('Cannot reload current version in web');
