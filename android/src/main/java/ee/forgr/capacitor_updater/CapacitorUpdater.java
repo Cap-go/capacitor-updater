@@ -307,7 +307,8 @@ public class CapacitorUpdater {
         }) {     
             @Override
             public Map<String, String> getHeaders() throws AuthFailureError { 
-                    Map<String, String>  params = new HashMap<String, String>();  
+                    Map<String, String>  params = new HashMap<String, String>();
+                    params.put("cap_platform", "android");
                     params.put("cap_device_id", this.deviceID);
                     params.put("cap_app_id", this.appId);
                     params.put("cap_version_build", this.versionBuild);

@@ -103,6 +103,7 @@ extension Bundle {
         let semaphore = DispatchSemaphore(value: 0)
         let latest = AppVersion()
         let headers: HTTPHeaders = [
+            "cap_platform": "ios",
             "cap_device_id": self.deviceID,
             "cap_app_id": self.appId,
             "cap_version_build": self.versionBuild,
