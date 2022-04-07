@@ -253,15 +253,15 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                         String newVersion = (String) res.get("version");
                         JSObject ret = new JSObject();
                         ret.put("newVersion", newVersion);
+                        if (res.get('message')) {
+                            Log.i(TAG, "Capacitor-updater: " + (res.get('message') || "Unknow error"));
+                            if (res.get('major') == true) {
+                                notifyListeners("majorAvailable", ret);
+                            }
+                            return
+                        }
                         String failingVersion = prefs.getString("failingVersion", "");
-                        if (disableAutoUpdateUnderNative && new Version(newVersion).isHigherThan(finalCurrentVersionNative)) {
-                            Log.i(TAG, "Cannot download revert, " + newVersion + " is lest than native version " + finalCurrentVersionNative);
-                        }
-                        else if (disableAutoUpdateToMajor && new Version(newVersion).getMajor() > new Version(currentVersion).getMajor()) {
-                            Log.i(TAG, "Cannot download Major, " + newVersion + " is Breaking change from " + currentVersion);
-                            notifyListeners("majorAvailable", ret);
-                        }
-                        else if (!newVersion.equals("") && !newVersion.equals(currentVersion) && !newVersion.equals(failingVersion)) {
+                        if (!newVersion.equals("") && !newVersion.equals(failingVersion)) {
                             new Thread(new Runnable(){
                                 @Override
                                 public void run() {

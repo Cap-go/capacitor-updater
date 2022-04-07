@@ -13,6 +13,8 @@ extension URL {
 struct AppVersionDec: Decodable {
     let version: String
     let url: String
+    let message: String
+    let major: Bool
 }
 public class AppVersion: NSObject {
     var version: String = ""
@@ -109,9 +111,17 @@ extension Bundle {
         request.validate().responseDecodable(of: AppVersionDec.self) { response in
             switch response.result {
                 case .success:
-                    if let url = response.value?.url, let version = response.value?.version {
+                    if let url = response.value?.url {
                         latest.url = url
+                    }
+                    if let version = response.value?.version {
                         latest.version = version
+                    }
+                    if let major = response.value?.major {
+                        latest.major = major
+                    }
+                    if let message = response.value?.message {
+                        latest.message = message
                     }
                 case let .failure(error):
                     print("✨  Capacitor-updater: Error getting Latest", error )
