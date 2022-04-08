@@ -14,9 +14,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     private var autoUpdateUrl = ""
     private var autoUpdate = false
     private var statsUrl = ""
-    private var disableAutoUpdateUnderNative = false;
-    private var disableAutoUpdateToMajor = false;
-    private var resetWhenUpdate = false;
+    private var resetWhenUpdate = true;
     
     override public func load() {
         autoUpdateUrl = getConfigValue("autoUpdateUrl") as? String ?? CapacitorUpdaterPlugin.autoUpdateUrlDefault
@@ -28,13 +26,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             implementation.appId = config?["appId"] as! String
         }
         implementation.statsUrl = getConfigValue("statsUrl") as? String ?? CapacitorUpdaterPlugin.statsUrlDefault
-        if (!autoUpdate || autoUpdateUrl == "") { return }
-        disableAutoUpdateUnderNative = getConfigValue("disableAutoUpdateUnderNative") as? Bool ?? false
-        disableAutoUpdateToMajor = getConfigValue("disableAutoUpdateBreaking") as? Bool ?? false
-        resetWhenUpdate = getConfigValue("resetWhenUpdate") as? Bool ?? false
-        let nc = NotificationCenter.default
-        nc.addObserver(self, selector: #selector(appMovedToBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
-        nc.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
         if (resetWhenUpdate) {
             var LatestVersionNative: Version = "0.0.0"
             var currentVersionNative: Version = "0.0.0"
@@ -55,6 +46,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             }
             UserDefaults.standard.set( Bundle.main.buildVersionNumber, forKey: "LatestVersionNative")
         }
+        if (!autoUpdate || autoUpdateUrl == "") { return }
+        resetWhenUpdate = getConfigValue("resetWhenUpdate") as? Bool ?? true
+        let nc = NotificationCenter.default
+        nc.addObserver(self, selector: #selector(appMovedToBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
+        nc.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
         self.appMovedToForeground()
     }
     

@@ -35,9 +35,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     private String autoUpdateUrl = "";
     private String currentVersionNative = "";
     private Boolean autoUpdate = false;
-    private Boolean disableAutoUpdateUnderNative = false;
-    private Boolean disableAutoUpdateToMajor = false;
-    private Boolean resetWhenUpdate = false;
+    private Boolean resetWhenUpdate = true;
 
 
     @Override
@@ -51,19 +49,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         implementation.statsUrl = getConfig().getString("statsUrl", statsUrlDefault);
         this.autoUpdateUrl = getConfig().getString("autoUpdateUrl", autoUpdateUrlDefault);
         this.autoUpdate = getConfig().getBoolean("autoUpdate", false);
-        if (!autoUpdate || this.autoUpdateUrl.equals("")) return;
-        disableAutoUpdateUnderNative = getConfig().getBoolean("disableAutoUpdateUnderNative", false);
-        disableAutoUpdateToMajor = getConfig().getBoolean("disableAutoUpdateBreaking", false);
-        resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", false);
-        Application application = (Application) this.getContext().getApplicationContext();
-        application.registerActivityLifecycleCallbacks(this);
-        try {
-            PackageInfo pInfo = this.getContext().getPackageManager().getPackageInfo(this.getContext().getPackageName(), 0);
-            currentVersionNative = pInfo.versionName;
-        } catch (Exception ex) {
-            Log.e(TAG, "Error get currentVersionNative", ex);
-            return;
-        }
+        resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true);
         if (resetWhenUpdate) {
             Version LatestVersionNative = new Version(prefs.getString("LatestVersionNative", ""));
             try {
@@ -81,6 +67,16 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             } catch (Exception ex) {
                 Log.e("CapacitorUpdater", "Cannot get the current version" + ex.getMessage());
             }
+        }
+        if (!autoUpdate || this.autoUpdateUrl.equals("")) return;
+        Application application = (Application) this.getContext().getApplicationContext();
+        application.registerActivityLifecycleCallbacks(this);
+        try {
+            PackageInfo pInfo = this.getContext().getPackageManager().getPackageInfo(this.getContext().getPackageName(), 0);
+            currentVersionNative = pInfo.versionName;
+        } catch (Exception ex) {
+            Log.e(TAG, "Error get currentVersionNative", ex);
+            return;
         }
         onActivityStarted(getActivity());
     }
