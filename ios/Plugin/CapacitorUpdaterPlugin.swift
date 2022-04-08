@@ -206,7 +206,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 return
             }
             guard let downloadUrl = URL(string: res?.url ?? "") else {
-                print("✨  Capacitor-updater: \(res?.message ?? "Unknow error")")
+                print("✨  Capacitor-updater: Error \(res?.message ?? "Unknow error")")
                 if (res?.major == true) {
                     self.notifyListeners("majorAvailable", data: ["version": res?.version ?? "0.0.0"])
                 }

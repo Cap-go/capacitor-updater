@@ -11,8 +11,8 @@ extension URL {
     }
 }
 struct AppVersionDec: Decodable {
-    let version: String
-    let url: String
+    let version: String?
+    let url: String?
     let message: String?
     let major: Bool?
 }
@@ -76,17 +76,20 @@ extension Bundle {
         }
     }
     
-    private func moveFolder(source: URL, dest: URL) {
+    private func unflatFolder(source: URL, dest: URL) -> Bool {
         let index = source.appendingPathComponent("index.html")
         do {
             let files = try FileManager.default.contentsOfDirectory(atPath: source.path)
             if (files.count == 1 && source.appendingPathComponent(files[0]).isDirectory && !FileManager.default.fileExists(atPath: index.path)) {
                 try FileManager.default.moveItem(at: source.appendingPathComponent(files[0]), to: dest)
+                return true
             } else {
                 try FileManager.default.moveItem(at: source, to: dest)
+                return false
             }
         } catch {
             print("✨  Capacitor-updater: File not moved. source: \(source.path) dest: \(dest.path)")
+            return true
         }
     }
     
@@ -95,8 +98,9 @@ extension Bundle {
         let destHot = base.appendingPathComponent(version)
         let destUnZip = documentsUrl.appendingPathComponent(randomString(length: 10))
         SSZipArchive.unzipFile(atPath: sourceZip.path, toDestination: destUnZip.path)
-        moveFolder(source: destUnZip, dest: destHot)
-        deleteFolder(source: destUnZip)
+        if (unflatFolder(source: destUnZip, dest: destHot)) {
+            deleteFolder(source: destUnZip)
+        }
     }
 
     @objc public func getLatest(url: URL) -> AppVersion? {
