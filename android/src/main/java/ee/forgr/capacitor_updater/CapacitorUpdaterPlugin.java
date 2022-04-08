@@ -4,11 +4,14 @@ import android.app.Activity;
 import android.app.Application;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.RequiresApi;
 
 import com.getcapacitor.CapConfig;
 import com.getcapacitor.JSArray;
@@ -43,7 +46,12 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         super.load();
         this.prefs = this.getContext().getSharedPreferences("CapWebViewSettings", Activity.MODE_PRIVATE);
         this.editor = prefs.edit();
-        implementation = new CapacitorUpdater(this.getContext(), this);
+        try {
+            implementation = new CapacitorUpdater(this.getContext(), this);
+        } catch (PackageManager.NameNotFoundException e) {
+            e.printStackTrace();
+            return;
+        }
         CapConfig config = CapConfig.loadDefault(getActivity());
         implementation.appId = config.getString("appId", "");
         implementation.statsUrl = getConfig().getString("statsUrl", statsUrlDefault);
@@ -60,7 +68,13 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                     editor.putString("LatestVersionAutoUpdate", "");
                     editor.putString("LatestVersionNameAutoUpdate", "");
                     ArrayList<String> res = implementation.list();
-                    res.forEach((version) -> implementation.delete(version, ""));
+                    for (int i = 0; i < res.size(); i++) {
+                        try {
+                            implementation.delete(res.get(i), "");
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+                    }
                 }
                 editor.putString("LatestVersionNative", currentVersionNative.toString());
                 editor.commit();
@@ -249,12 +263,12 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                         String newVersion = (String) res.get("version");
                         JSObject ret = new JSObject();
                         ret.put("newVersion", newVersion);
-                        if (res.get('message')) {
-                            Log.i(TAG, "Capacitor-updater: " + (res.get('message') || "Unknow error"));
-                            if (res.get('major') == true) {
+                        if (res.has("message")) {
+                            Log.i(TAG, "Capacitor-updater: " + res.get("message"));
+                            if (res.getBoolean("major")) {
                                 notifyListeners("majorAvailable", ret);
                             }
-                            return
+                            return;
                         }
                         String failingVersion = prefs.getString("failingVersion", "");
                         if (!newVersion.equals("") && !newVersion.equals(failingVersion)) {
