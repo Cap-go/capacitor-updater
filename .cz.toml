@@ -4,5 +4,8 @@ tag_format = "$major.$minor.$patch$prerelease"
 version = "2.3.3"
 version_files = [
     "package.json:version",
+    "CapacitorUpdater.swift",
+    "CapacitorUpdater.java",
+    "package.json:version",
     ".cz.toml"
 ]

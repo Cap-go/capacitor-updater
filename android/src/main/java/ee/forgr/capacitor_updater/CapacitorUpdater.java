@@ -47,6 +47,8 @@ public class CapacitorUpdater {
     public String statsUrl = "";
     public String appId = "";
     public String deviceID = "";
+    private String pluginVersion = "2.3.3";
+
 
     private FilenameFilter filter = new FilenameFilter() {
         @Override
@@ -295,6 +297,7 @@ public class CapacitorUpdater {
         String deviceID = this.deviceID;
         String appId = this.appId;
         String versionBuild = this.versionBuild;
+        String pluginVersion = this.pluginVersion;
         String versionName = getVersionName().equals("") ? "builtin" : getVersionName();
         StringRequest stringRequest = new StringRequest(Request.Method.GET, url,
         new Response.Listener<String>() {
@@ -321,6 +324,7 @@ public class CapacitorUpdater {
                     params.put("cap_app_id", appId);
                     params.put("cap_version_build", versionBuild);
                     params.put("cap_version_name", versionName);
+                    params.put("cap_plugin_version", pluginVersion);
                     return params;
             }
         };
@@ -329,7 +333,7 @@ public class CapacitorUpdater {
     }
 
     public String getLastPathHot() {
-        return prefs.getString("lastPathHot", "");
+        return prefs.getString("lastPathHot", "public");
     }
 
     public String getVersionName() {
@@ -357,6 +361,7 @@ public class CapacitorUpdater {
             json.put("version_name", version);
             json.put("device_id", this.deviceID);
             json.put("version_build", this.versionBuild);
+            json.put("plugin_version", this.pluginVersion);
             json.put("app_id", this.appId);
             jsonString = json.toString();
         } catch (Exception ex) {

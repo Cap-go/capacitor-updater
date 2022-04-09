@@ -36,7 +36,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     private static final String autoUpdateUrlDefault = "https://capgo.app/api/auto_update";
     private static final String statsUrlDefault = "https://capgo.app/api/stats";
     private String autoUpdateUrl = "";
-    private String currentVersionNative = "";
+    private Version currentVersionNative;
     private Boolean autoUpdate = false;
     private Boolean resetWhenUpdate = true;
 
@@ -48,8 +48,13 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         this.editor = prefs.edit();
         try {
             implementation = new CapacitorUpdater(this.getContext(), this);
+            PackageInfo pInfo = this.getContext().getPackageManager().getPackageInfo(this.getContext().getPackageName(), 0);
+            currentVersionNative = new Version(pInfo.versionName);
         } catch (PackageManager.NameNotFoundException e) {
             e.printStackTrace();
+            return;
+        } catch (Exception ex) {
+            Log.e(TAG, "Error get currentVersionNative", ex);
             return;
         }
         CapConfig config = CapConfig.loadDefault(getActivity());
@@ -61,8 +66,6 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         if (resetWhenUpdate) {
             Version LatestVersionNative = new Version(prefs.getString("LatestVersionNative", ""));
             try {
-                PackageInfo pInfo = this.getContext().getPackageManager().getPackageInfo(this.getContext().getPackageName(), 0);
-                Version currentVersionNative = new Version(pInfo.versionName);
                 if (!LatestVersionNative.equals("") && currentVersionNative.getMajor() > LatestVersionNative.getMajor()) {
                     this._reset(false);
                     editor.putString("LatestVersionAutoUpdate", "");
@@ -85,13 +88,6 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         if (!autoUpdate || this.autoUpdateUrl.equals("")) return;
         Application application = (Application) this.getContext().getApplicationContext();
         application.registerActivityLifecycleCallbacks(this);
-        try {
-            PackageInfo pInfo = this.getContext().getPackageManager().getPackageInfo(this.getContext().getPackageName(), 0);
-            currentVersionNative = pInfo.versionName;
-        } catch (Exception ex) {
-            Log.e(TAG, "Error get currentVersionNative", ex);
-            return;
-        }
         onActivityStarted(getActivity());
     }
 
@@ -321,7 +317,6 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         String tmpCurVersion = implementation.getLastPathHot();
         String curVersion = tmpCurVersion.substring(tmpCurVersion.lastIndexOf('/') +1);
         String curVersionName = implementation.getVersionName();
-        Log.i(TAG, "Next version: " + nextVersionName + ", past version: " + (pastVersionName.equals("") ? "builtin" : pastVersionName));
         if (!nextVersion.equals("") && !nextVersionName.equals("")) {
             Boolean res = implementation.set(nextVersion, nextVersionName);
             if (res && this._reload()) {

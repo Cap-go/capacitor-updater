@@ -37,6 +37,7 @@ extension Bundle {
     public var appId = ""
     public var deviceID = UIDevice.current.identifierForVendor?.uuidString ?? ""
     public var notifyDownload: (Int) -> Void = { _ in }
+    public var pluginVersion = "2.3.3"
     private var versionBuild = Bundle.main.buildVersionNumber ?? ""
     private var lastPathHot = ""
     private var lastPathPersist = ""
@@ -111,6 +112,7 @@ extension Bundle {
             "cap_device_id": self.deviceID,
             "cap_app_id": self.appId,
             "cap_version_build": self.versionBuild,
+            "cap_plugin_version": self.pluginVersion,
             "cap_version_name": UserDefaults.standard.string(forKey: "versionName") ?? "builtin"
         ]
         let request = AF.request(url, headers: headers)
@@ -251,6 +253,7 @@ extension Bundle {
             "device_id": self.deviceID,
             "version_name": version,
             "version_build": self.versionBuild,
+            "plugin_version": self.pluginVersion,
             "app_id": self.appId
         ]
 

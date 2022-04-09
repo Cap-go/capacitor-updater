@@ -12,11 +12,17 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     static let autoUpdateUrlDefault = "https://capgo.app/api/auto_update"
     static let statsUrlDefault = "https://capgo.app/api/stats"
     private var autoUpdateUrl = ""
+    private var currentVersionNative: Version = "0.0.0"
     private var autoUpdate = false
     private var statsUrl = ""
     private var resetWhenUpdate = true;
     
     override public func load() {
+        do {
+            currentVersionNative = try Version(Bundle.main.buildVersionNumber ?? "0.0.0")
+        } catch {
+            print("✨  Capacitor-updater: Cannot get version native \(currentVersionNative)")
+        }
         autoUpdateUrl = getConfigValue("autoUpdateUrl") as? String ?? CapacitorUpdaterPlugin.autoUpdateUrlDefault
         autoUpdate = getConfigValue("autoUpdate") as? Bool ?? false
         implementation.appId = Bundle.main.bundleIdentifier ?? ""
@@ -28,9 +34,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         implementation.statsUrl = getConfigValue("statsUrl") as? String ?? CapacitorUpdaterPlugin.statsUrlDefault
         if (resetWhenUpdate) {
             var LatestVersionNative: Version = "0.0.0"
-            var currentVersionNative: Version = "0.0.0"
             do {
-                currentVersionNative = try Version(Bundle.main.buildVersionNumber ?? "0.0.0")
                 LatestVersionNative = try Version(UserDefaults.standard.string(forKey: "LatestVersionNative") ?? "0.0.0")
             } catch {
                 print("✨  Capacitor-updater: Cannot get version native \(currentVersionNative)")
@@ -171,7 +175,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     @objc func current(_ call: CAPPluginCall) {
         let pathHot = implementation.getLastPathHot()
         let current  = pathHot.count >= 10 ? pathHot.suffix(10) : "builtin"
-        let currentVersionNative = Bundle.main.buildVersionNumber ?? "0.0.0"
         call.resolve([
             "current": current,
             "currentNative": currentVersionNative
@@ -248,7 +251,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         let notifyAppReady = UserDefaults.standard.bool(forKey: "notifyAppReady")
         let curVersion = implementation.getLastPathPersist().components(separatedBy: "/").last!
         let curVersionName = implementation.getVersionName()
-        print("✨  Capacitor-updater: Next version: \(nextVersionName), past version: \(pastVersionName == "" ? "builtin" : pastVersionName)");
         if (nextVersion != "" && nextVersionName != "") {
             let res = implementation.set(version: nextVersion, versionName: nextVersionName)
             if (res && self._reload()) {
