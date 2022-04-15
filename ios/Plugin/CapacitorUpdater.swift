@@ -38,7 +38,7 @@ extension Bundle {
     public var deviceID = UIDevice.current.identifierForVendor?.uuidString ?? ""
     public var notifyDownload: (Int) -> Void = { _ in }
     public var pluginVersion = "2.3.3"
-    private var versionBuild = Bundle.main.buildVersionNumber ?? ""
+    private var versionBuild = Bundle.main.releaseVersionNumber ?? ""
     private var lastPathHot = ""
     private var lastPathPersist = ""
     private let basePathHot = "versions"
