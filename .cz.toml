@@ -1,7 +1,7 @@
 [tool.commitizen]
 name = "cz_conventional_commits"
 tag_format = "$major.$minor.$patch$prerelease"
-version = "3.0.2"
+version = "3.0.3"
 version_files = [
     "package.json:version",
     "ios/Plugin/CapacitorUpdater.swift",
