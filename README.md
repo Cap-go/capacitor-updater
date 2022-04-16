@@ -28,7 +28,7 @@ Create account in [capgo.app](https://capgo.app) and get your [API key](https://
 - Add app from CLI `capgo add -a API_KEY`
 - Upload app `capgo upload -a API_KEY`
 - Upload app `capgo set -a API_KEY -s public`
-- Edit your `capacitor.config.json` like below, set `autoUpdateUrl` with the url printed in the previous step.
+- Edit your `capacitor.config.json` like below, set `autoUpdate` to true.
 ```json
 // capacitor.config.json
 {
@@ -36,7 +36,7 @@ Create account in [capgo.app](https://capgo.app) and get your [API key](https://
 	"appName": "Name",
 	"plugins": {
 		"CapacitorUpdater": {
-			"autoUpdateUrl": "https://capgo.app/api/latest?appid=**.****.***&channel=dev"
+			"autoUpdate": true,
 		}
 	}
 }
