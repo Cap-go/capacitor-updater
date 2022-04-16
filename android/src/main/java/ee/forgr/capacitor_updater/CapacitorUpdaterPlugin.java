@@ -255,17 +255,19 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             public void run() {
                 implementation.getLatest(autoUpdateUrl, (res) -> {
                     try {
-                        String currentVersion = implementation.getVersionName();
-                        String newVersion = (String) res.get("version");
-                        JSObject ret = new JSObject();
-                        ret.put("newVersion", newVersion);
                         if (res.has("message")) {
                             Log.i(TAG, "Capacitor-updater: " + res.get("message"));
-                            if (res.getBoolean("major")) {
+                            if (res.has("major") && res.getBoolean("major") && res.has("version")) {
+                                JSObject ret = new JSObject();
+                                ret.put("newVersion", (String) res.get("version"));
                                 notifyListeners("majorAvailable", ret);
                             }
                             return;
                         }
+                        String currentVersion = implementation.getVersionName();
+                        String newVersion = (String) res.get("version");
+                        JSObject ret = new JSObject();
+                        ret.put("newVersion", newVersion);
                         String failingVersion = prefs.getString("failingVersion", "");
                         if (!newVersion.equals("") && !newVersion.equals(failingVersion)) {
                             new Thread(new Runnable(){
