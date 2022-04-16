@@ -12,7 +12,7 @@
     "android/build.gradle",
     "dist/",
     "ios/Plugin/",
-    "CapacitorUpdater.podspec"
+    "CapgoCapacitorUpdater.podspec"
   ],
   "author": "Martin Donadieu",
   "repository": {
