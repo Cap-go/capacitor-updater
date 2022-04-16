@@ -1,5 +1,5 @@
 {
-  "name": "capacitor-updater",
+  "name": "@capgo/capacitor-updater",
   "version": "3.0.2",
   "license": "AGPL-3.0-only",
   "description": "OTA update for capacitor apps",
