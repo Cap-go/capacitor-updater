@@ -1,3 +1,37 @@
+## 3.0.0 (2022-04-16)
+
+### Fix
+
+- issue path for auto version update
+- tigger CI
+- wrong version send
+- pack version
+- android build
+- version number
+- remove call when not necessary
+- send builtin if no version
+- platform
+- typing issue
+- typing
+- def issue
+- remove auto update logic from app
+- issue with OSX hidden folder
+
+### Feat
+
+- make auto update server side first
+- add pluginVersion send to server
+- reset on update by default.
+- add currentNative to get current
+- add updateAvailable event
+- add getId method for version by device control
+- :boom: use the new auto update system
+- add headers to getLatest for future usage
+
+### BREAKING CHANGE
+
+- the url config change and not compatible with the past one
+
 ## 2.3.3 (2022-04-05)
 
 ### Fix
