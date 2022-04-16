@@ -1,3 +1,9 @@
+## 3.0.3 (2022-04-16)
+
+### Fix
+
+- again issue typo version npm
+
 ## 3.0.2 (2022-04-16)
 
 ### Fix
