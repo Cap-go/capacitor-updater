@@ -11,12 +11,16 @@ extension URL {
     }
 }
 struct AppVersionDec: Decodable {
-    let version: String
-    let url: String
+    let version: String?
+    let url: String?
+    let message: String?
+    let major: Bool?
 }
 public class AppVersion: NSObject {
     var version: String = ""
     var url: String = ""
+    var message: String?
+    var major: Bool?
 }
 extension Bundle {
     var releaseVersionNumber: String? {
@@ -31,9 +35,10 @@ extension Bundle {
     
     public var statsUrl = ""
     public var appId = ""
+    public var deviceID = UIDevice.current.identifierForVendor?.uuidString ?? ""
     public var notifyDownload: (Int) -> Void = { _ in }
-    private var versionBuild = Bundle.main.buildVersionNumber ?? ""
-    private var deviceID = UIDevice.current.identifierForVendor?.uuidString ?? ""
+    public var pluginVersion = "2.3.3"
+    private var versionBuild = Bundle.main.releaseVersionNumber ?? ""
     private var lastPathHot = ""
     private var lastPathPersist = ""
     private let basePathHot = "versions"
@@ -72,17 +77,20 @@ extension Bundle {
         }
     }
     
-    private func moveFolder(source: URL, dest: URL) {
+    private func unflatFolder(source: URL, dest: URL) -> Bool {
         let index = source.appendingPathComponent("index.html")
         do {
             let files = try FileManager.default.contentsOfDirectory(atPath: source.path)
             if (files.count == 1 && source.appendingPathComponent(files[0]).isDirectory && !FileManager.default.fileExists(atPath: index.path)) {
                 try FileManager.default.moveItem(at: source.appendingPathComponent(files[0]), to: dest)
+                return true
             } else {
                 try FileManager.default.moveItem(at: source, to: dest)
+                return false
             }
         } catch {
             print("✨  Capacitor-updater: File not moved. source: \(source.path) dest: \(dest.path)")
+            return true
         }
     }
     
@@ -91,21 +99,38 @@ extension Bundle {
         let destHot = base.appendingPathComponent(version)
         let destUnZip = documentsUrl.appendingPathComponent(randomString(length: 10))
         SSZipArchive.unzipFile(atPath: sourceZip.path, toDestination: destUnZip.path)
-        moveFolder(source: destUnZip, dest: destHot)
-        deleteFolder(source: destUnZip)
+        if (unflatFolder(source: destUnZip, dest: destHot)) {
+            deleteFolder(source: destUnZip)
+        }
     }
 
     @objc public func getLatest(url: URL) -> AppVersion? {
         let semaphore = DispatchSemaphore(value: 0)
-        let request = AF.request(url)
         let latest = AppVersion()
+        let headers: HTTPHeaders = [
+            "cap_platform": "ios",
+            "cap_device_id": self.deviceID,
+            "cap_app_id": self.appId,
+            "cap_version_build": self.versionBuild,
+            "cap_plugin_version": self.pluginVersion,
+            "cap_version_name": UserDefaults.standard.string(forKey: "versionName") ?? "builtin"
+        ]
+        let request = AF.request(url, headers: headers)
 
         request.validate().responseDecodable(of: AppVersionDec.self) { response in
             switch response.result {
                 case .success:
-                    if let url = response.value?.url, let version = response.value?.version {
+                    if let url = response.value?.url {
                         latest.url = url
+                    }
+                    if let version = response.value?.version {
                         latest.version = version
+                    }
+                    if let major = response.value?.major {
+                        latest.major = major
+                    }
+                    if let message = response.value?.message {
+                        latest.message = message
                     }
                 case let .failure(error):
                     print("✨  Capacitor-updater: Error getting Latest", error )
@@ -228,6 +253,7 @@ extension Bundle {
             "device_id": self.deviceID,
             "version_name": version,
             "version_build": self.versionBuild,
+            "plugin_version": self.pluginVersion,
             "app_id": self.appId
         ]
 

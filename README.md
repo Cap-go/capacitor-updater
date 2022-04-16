@@ -28,7 +28,7 @@ Create account in [capgo.app](https://capgo.app) and get your [API key](https://
 - Add app from CLI `capgo add -a API_KEY`
 - Upload app `capgo upload -a API_KEY`
 - Upload app `capgo set -a API_KEY -s public`
-- Edit your `capacitor.config.json` like below, set `autoUpdateUrl` with the url printed in the previous step.
+- Edit your `capacitor.config.json` like below, set `autoUpdate` to true.
 ```json
 // capacitor.config.json
 {
@@ -36,7 +36,7 @@ Create account in [capgo.app](https://capgo.app) and get your [API key](https://
 	"appName": "Name",
 	"plugins": {
 		"CapacitorUpdater": {
-			"autoUpdateUrl": "https://capgo.app/api/latest?appid=**.****.***&channel=dev"
+			"autoUpdate": true,
 		}
 	}
 }
@@ -117,6 +117,7 @@ Do not password encrypt this file, or it will fail to unpack.
 
 * [`download(...)`](#download)
 * [`set(...)`](#set)
+* [`getId()`](#getid)
 * [`delete(...)`](#delete)
 * [`list()`](#list)
 * [`reset(...)`](#reset)
@@ -128,6 +129,7 @@ Do not password encrypt this file, or it will fail to unpack.
 * [`cancelDelay()`](#canceldelay)
 * [`addListener('download', ...)`](#addlistenerdownload)
 * [`addListener('majorAvailable', ...)`](#addlistenermajoravailable)
+* [`addListener('updateAvailable', ...)`](#addlistenerupdateavailable)
 * [`addListener(string, ...)`](#addlistenerstring)
 * [`removeAllListeners()`](#removealllisteners)
 * [Interfaces](#interfaces)
@@ -166,6 +168,19 @@ Set version as current version, set will return an error if there are is no inde
 | Param         | Type                                                    |
 | ------------- | ------------------------------------------------------- |
 | **`options`** | <code>{ version: string; versionName?: string; }</code> |
+
+--------------------
+
+
+### getId()
+
+```typescript
+getId() => Promise<{ id: string; }>
+```
+
+Get unique ID used to identify device into auto update server
+
+**Returns:** <code>Promise&lt;{ id: string; }&gt;</code>
 
 --------------------
 
@@ -216,12 +231,12 @@ Set the `builtin` version (the one sent to Apple store / Google play store ) as 
 ### current()
 
 ```typescript
-current() => Promise<{ current: string; }>
+current() => Promise<{ current: string; currentNative: string; }>
 ```
 
-Get the current version, if none are set it returns `builtin`
+Get the current version, if none are set it returns `builtin`, currentNative is the original version install on the device
 
-**Returns:** <code>Promise&lt;{ current: string; }&gt;</code>
+**Returns:** <code>Promise&lt;{ current: string; currentNative: string; }&gt;</code>
 
 --------------------
 
@@ -323,6 +338,26 @@ Listen for Major update event in the App, let you know when major update is bloc
 --------------------
 
 
+### addListener('updateAvailable', ...)
+
+```typescript
+addListener(eventName: 'updateAvailable', listenerFunc: UpdateAvailableListener) => Promise<PluginListenerHandle> & PluginListenerHandle
+```
+
+Listen for update event in the App, let you know when update is ready to install at next app start
+
+| Param              | Type                                                                        |
+| ------------------ | --------------------------------------------------------------------------- |
+| **`eventName`**    | <code>'updateAvailable'</code>                                              |
+| **`listenerFunc`** | <code><a href="#updateavailablelistener">UpdateAvailableListener</a></code> |
+
+**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt; & <a href="#pluginlistenerhandle">PluginListenerHandle</a></code>
+
+**Since:** 2.3.0
+
+--------------------
+
+
 ### addListener(string, ...)
 
 ```typescript
@@ -367,9 +402,16 @@ removeAllListeners() => Promise<void>
 
 #### MajorAvailableEvent
 
-| Prop          | Type                | Description                                    | Since |
-| ------------- | ------------------- | ---------------------------------------------- | ----- |
-| **`version`** | <code>string</code> | Current status of download, between 0 and 100. | 2.3.0 |
+| Prop          | Type                | Description                                 | Since |
+| ------------- | ------------------- | ------------------------------------------- | ----- |
+| **`version`** | <code>string</code> | Emit when a new major version is available. | 2.3.0 |
+
+
+#### UpdateAvailableEvent
+
+| Prop          | Type                | Description                          | Since |
+| ------------- | ------------------- | ------------------------------------ | ----- |
+| **`version`** | <code>string</code> | Emit when a new update is available. | 3.0.0 |
 
 
 ### Type Aliases
@@ -383,6 +425,11 @@ removeAllListeners() => Promise<void>
 #### MajorAvailableListener
 
 <code>(state: <a href="#majoravailableevent">MajorAvailableEvent</a>): void</code>
+
+
+#### UpdateAvailableListener
+
+<code>(state: <a href="#updateavailableevent">UpdateAvailableEvent</a>): void</code>
 
 </docgen-api>
 

@@ -10,15 +10,24 @@ export interface DownloadEvent {
 }
 export interface MajorAvailableEvent {
   /**
-   * Current status of download, between 0 and 100.
+   * Emit when a new major version is available.
    *
    * @since 2.3.0
+   */
+  version: string;
+}
+export interface UpdateAvailableEvent {
+  /**
+   * Emit when a new update is available.
+   *
+   * @since 3.0.0
    */
   version: string;
 }
 
 export type DownloadChangeListener = (state: DownloadEvent) => void;
 export type MajorAvailableListener = (state: MajorAvailableEvent) => void;
+export type UpdateAvailableListener = (state: UpdateAvailableEvent) => void;
 export interface CapacitorUpdaterPlugin {
     /**
    * Download a new version from the provided URL, it should be a zip file, with files inside or with a unique folder inside with all your files
@@ -32,6 +41,11 @@ export interface CapacitorUpdaterPlugin {
    * @param version The version name to set as current version
    */
   set(options: { version: string, versionName?: string }): Promise<void>;
+    /**
+   * Get unique ID used to identify device into auto update server
+   * @returns {Promise<{ id: string }>} an Promise with id for this device
+   */
+  getId(): Promise<{ id: string }>;
     /**
    * Delete version in storage
    * @returns {Promise<void>} an empty Promise when the version is delete, otherwise throw an error
@@ -50,10 +64,10 @@ export interface CapacitorUpdaterPlugin {
    */
   reset(options?:{ toAutoUpdate?: boolean }): Promise<void>;
     /**
-   * Get the current version, if none are set it returns `builtin`
-   * @returns {Promise<{ current: string }>} an Promise with the current version name
+   * Get the current version, if none are set it returns `builtin`, currentNative is the original version install on the device
+   * @returns {Promise<{ current: string, currentNative: string }>} an Promise with the current version name
    */
-  current(): Promise<{ current: string }>;
+  current(): Promise<{ current: string, currentNative: string }>;
     /**
    * Reload the view
    * @returns {Promise<void>} an Promise resolved when the view is reloaded
@@ -98,5 +112,14 @@ export interface CapacitorUpdaterPlugin {
   addListener(
     eventName: 'majorAvailable',
     listenerFunc: MajorAvailableListener,
+  ): Promise<PluginListenerHandle> & PluginListenerHandle;
+  /**
+   * Listen for update event in the App, let you know when update is ready to install at next app start
+   *
+   * @since 2.3.0
+   */
+  addListener(
+    eventName: 'updateAvailable',
+    listenerFunc: UpdateAvailableListener,
   ): Promise<PluginListenerHandle> & PluginListenerHandle;
 }

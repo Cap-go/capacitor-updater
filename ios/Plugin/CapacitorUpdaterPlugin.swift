@@ -9,33 +9,32 @@ import Version
 @objc(CapacitorUpdaterPlugin)
 public class CapacitorUpdaterPlugin: CAPPlugin {
     private var implementation = CapacitorUpdater()
+    static let autoUpdateUrlDefault = "https://capgo.app/api/auto_update"
+    static let statsUrlDefault = "https://capgo.app/api/stats"
     private var autoUpdateUrl = ""
+    private var currentVersionNative: Version = "0.0.0"
+    private var autoUpdate = false
     private var statsUrl = ""
-    private var disableAutoUpdateUnderNative = false;
-    private var disableAutoUpdateToMajor = false;
-    private var resetWhenUpdate = false;
+    private var resetWhenUpdate = true;
     
     override public func load() {
-        autoUpdateUrl = getConfigValue("autoUpdateUrl") as? String ?? ""
+        do {
+            currentVersionNative = try Version(Bundle.main.buildVersionNumber ?? "0.0.0")
+        } catch {
+            print("✨  Capacitor-updater: Cannot get version native \(currentVersionNative)")
+        }
+        autoUpdateUrl = getConfigValue("autoUpdateUrl") as? String ?? CapacitorUpdaterPlugin.autoUpdateUrlDefault
+        autoUpdate = getConfigValue("autoUpdate") as? Bool ?? false
         implementation.appId = Bundle.main.bundleIdentifier ?? ""
         implementation.notifyDownload = notifyDownload
         let config = (self.bridge?.viewController as? CAPBridgeViewController)?.instanceDescriptor().legacyConfig
         if (config?["appId"] != nil) {
             implementation.appId = config?["appId"] as! String
         }
-        implementation.statsUrl = getConfigValue("statsUrl") as? String ?? "https://capgo.app/api/stats"
-        if (autoUpdateUrl == "") { return }
-        disableAutoUpdateUnderNative = getConfigValue("disableAutoUpdateUnderNative") as? Bool ?? false
-        disableAutoUpdateToMajor = getConfigValue("disableAutoUpdateBreaking") as? Bool ?? false
-        resetWhenUpdate = getConfigValue("resetWhenUpdate") as? Bool ?? false
-        let nc = NotificationCenter.default
-        nc.addObserver(self, selector: #selector(appMovedToBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
-        nc.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
+        implementation.statsUrl = getConfigValue("statsUrl") as? String ?? CapacitorUpdaterPlugin.statsUrlDefault
         if (resetWhenUpdate) {
             var LatestVersionNative: Version = "0.0.0"
-            var currentVersionNative: Version = "0.0.0"
             do {
-                currentVersionNative = try Version(Bundle.main.buildVersionNumber ?? "0.0.0")
                 LatestVersionNative = try Version(UserDefaults.standard.string(forKey: "LatestVersionNative") ?? "0.0.0")
             } catch {
                 print("✨  Capacitor-updater: Cannot get version native \(currentVersionNative)")
@@ -44,14 +43,27 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 _ = self._reset(toAutoUpdate: false)
                 UserDefaults.standard.set("", forKey: "LatestVersionAutoUpdate")
                 UserDefaults.standard.set("", forKey: "LatestVersionNameAutoUpdate")
+                let res = implementation.list()
+                res.forEach { version in
+                    _ = implementation.delete(version: version, versionName: "")
+                }
             }
             UserDefaults.standard.set( Bundle.main.buildVersionNumber, forKey: "LatestVersionNative")
         }
+        if (!autoUpdate || autoUpdateUrl == "") { return }
+        resetWhenUpdate = getConfigValue("resetWhenUpdate") as? Bool ?? true
+        let nc = NotificationCenter.default
+        nc.addObserver(self, selector: #selector(appMovedToBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
+        nc.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
         self.appMovedToForeground()
     }
     
     @objc func notifyDownload(percent: Int) {
         self.notifyListeners("download", data: ["percent": percent])
+    }
+
+    @objc func getId(_ call: CAPPluginCall) {
+        call.resolve(["id": implementation.deviceID])
     }
     
     @objc func download(_ call: CAPPluginCall) {
@@ -164,7 +176,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         let pathHot = implementation.getLastPathHot()
         let current  = pathHot.count >= 10 ? pathHot.suffix(10) : "builtin"
         call.resolve([
-            "current": current
+            "current": current,
+            "currentNative": currentVersionNative
         ])
     }
 
@@ -192,34 +205,28 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 return
             }
             guard let downloadUrl = URL(string: res?.url ?? "") else {
+                print("✨  Capacitor-updater: Error \(res?.message ?? "Unknow error")")
+                if (res?.major == true) {
+                    self.notifyListeners("majorAvailable", data: ["version": res?.version ?? "0.0.0"])
+                }
                 return
             }
             let currentVersion = self.implementation.getVersionName()
             var failingVersion: Version = "0.0.0"
-            var currentVersionForCompare: Version = "0.0.0"
             var newVersion: Version = "0.0.0"
-            var currentVersionNative: Version = "0.0.0"
             do {
-                currentVersionForCompare = try Version(currentVersion == "" ? "0.0.0" : currentVersion)
                 newVersion = try Version(res?.version ?? "0.0.0")
-                currentVersionNative = try Version(Bundle.main.buildVersionNumber ?? "0.0.0")
                 failingVersion = try Version(UserDefaults.standard.string(forKey: "failingVersion") ?? "0.0.0")
             } catch {
-                print("✨  Capacitor-updater: Cannot get version \(failingVersion) \(currentVersionForCompare) \(newVersion) \(currentVersionNative)")
+                print("✨  Capacitor-updater: Cannot get version \(failingVersion) \(newVersion)")
             }
-            if (self.disableAutoUpdateUnderNative && newVersion < currentVersionNative) {
-                print("✨  Capacitor-updater: Cannot download revert, \(newVersion) is lest than native version \(currentVersionNative)")
-            }
-            else if (self.disableAutoUpdateToMajor && newVersion.major > currentVersionNative.major) {
-                print("✨  Capacitor-updater: Cannot download Major, \(newVersion) is Breaking change from \(currentVersion)")
-                self.notifyListeners("majorAvailable", data: ["version": newVersion])
-            }
-            else if (newVersion != "0.0.0" && newVersion != currentVersionForCompare && newVersion != failingVersion) {
+            if (newVersion != "0.0.0" && newVersion != failingVersion) {
                 let dlOp = self.implementation.download(url: downloadUrl)
                 if let dl = dlOp {
                     print("✨  Capacitor-updater: New version: \(newVersion) found. Current is \(currentVersion == "" ? "builtin" : currentVersion), next backgrounding will trigger update")
                     UserDefaults.standard.set(dl, forKey: "nextVersion")
                     UserDefaults.standard.set(newVersion.description, forKey: "nextVersionName")
+                    self.notifyListeners("updateAvailable", data: ["version": newVersion])
                 } else {
                     print("✨  Capacitor-updater: Download version \(newVersion) fail")
                 }
@@ -244,7 +251,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         let notifyAppReady = UserDefaults.standard.bool(forKey: "notifyAppReady")
         let curVersion = implementation.getLastPathPersist().components(separatedBy: "/").last!
         let curVersionName = implementation.getVersionName()
-        print("✨  Capacitor-updater: Next version: \(nextVersionName), past version: \(pastVersionName == "" ? "builtin" : pastVersionName)");
         if (nextVersion != "" && nextVersionName != "") {
             let res = implementation.set(version: nextVersion, versionName: nextVersionName)
             if (res && self._reload()) {
