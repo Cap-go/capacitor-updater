@@ -17,7 +17,7 @@ I maintain a more user friendly and complete [documentation](https://github.com/
 ## install plugin
 
 ```bash
-npm install capacitor-updater
+npm install @capgo/capacitor-updater
 npx cap sync
 ```
 
