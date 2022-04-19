@@ -32,6 +32,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             implementation.appId = config?["appId"] as! String
         }
         implementation.statsUrl = getConfigValue("statsUrl") as? String ?? CapacitorUpdaterPlugin.statsUrlDefault
+        resetWhenUpdate = getConfigValue("resetWhenUpdate") as? Bool ?? true
         if (resetWhenUpdate) {
             var LatestVersionNative: Version = "0.0.0"
             do {
@@ -51,7 +52,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             UserDefaults.standard.set( Bundle.main.buildVersionNumber, forKey: "LatestVersionNative")
         }
         if (!autoUpdate || autoUpdateUrl == "") { return }
-        resetWhenUpdate = getConfigValue("resetWhenUpdate") as? Bool ?? true
         let nc = NotificationCenter.default
         nc.addObserver(self, selector: #selector(appMovedToBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
         nc.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
