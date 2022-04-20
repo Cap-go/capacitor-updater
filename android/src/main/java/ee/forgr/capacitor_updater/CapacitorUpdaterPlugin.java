@@ -82,7 +82,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                 editor.putString("LatestVersionNative", currentVersionNative.toString());
                 editor.commit();
             } catch (Exception ex) {
-                Log.e("CapacitorUpdater", "Cannot get the current version" + ex.getMessage());
+                Log.e("CapacitorUpdater", "Cannot get the current version " + ex.getMessage());
             }
         }
         if (!autoUpdate || this.autoUpdateUrl.equals("")) return;
@@ -183,7 +183,10 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         }
         implementation.reset();
         String pathHot = implementation.getLastPathHot();
-        this.bridge.setServerAssetPath(pathHot);
+        if (this.bridge.getLocalServer() != null) {
+            // if the server is not ready yet, hot reload is not needed
+            this.bridge.setServerAssetPath(pathHot);
+        }
         return true;
     }
 
