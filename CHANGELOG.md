@@ -1,3 +1,9 @@
+## 3.0.9 (2022-04-19)
+
+### Fix
+
+- order issue resetWhenUpdate
+
 ## 3.0.8 (2022-04-16)
 
 ### Fix
