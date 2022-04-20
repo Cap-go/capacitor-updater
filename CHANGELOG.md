@@ -1,3 +1,9 @@
+## 3.0.10 (2022-04-20)
+
+### Fix
+
+- reset issue android cannot hot reload
+
 ## 3.0.9 (2022-04-19)
 
 ### Fix
