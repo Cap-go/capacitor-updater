@@ -59,6 +59,7 @@ public class CapacitorUpdater {
     };
     private final CapacitorUpdaterPlugin plugin;
     private String versionBuild = "";
+    private String versionCode = "";
     private String TAG = "Capacitor-updater";
     private Context context;
     private String basePathHot = "versions";
@@ -86,6 +87,7 @@ public class CapacitorUpdater {
         this.deviceID = Secure.getString(context.getContentResolver(), Secure.ANDROID_ID);
         PackageInfo pInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
         this.versionBuild = pInfo.versionName;
+        this.versionCode = Integer.toString(pInfo.versionCode);
     }
     public CapacitorUpdater (Context context, CapacitorUpdaterPlugin plugin) throws PackageManager.NameNotFoundException {
         this.context = context;
@@ -95,6 +97,7 @@ public class CapacitorUpdater {
         this.deviceID = Secure.getString(context.getContentResolver(), Secure.ANDROID_ID);
         PackageInfo pInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
         this.versionBuild = pInfo.versionName;
+        this.versionCode = Integer.toString(pInfo.versionCode);
     }
 
     private Boolean unzip(String source, String dest) {
@@ -114,7 +117,7 @@ public class CapacitorUpdater {
             int buffLength = 8192;
             byte[] buffer = new byte[buffLength];
             long totalLength = zipFile.length();
-            long readedLength = buffLength;
+            long readLength = buffLength;
             int percent = 0;
             this.plugin.notifyDownload(75);
             while ((ze = zis.getNextEntry()) != null) {
@@ -131,19 +134,19 @@ public class CapacitorUpdater {
                             dir.getAbsolutePath());
                 if (ze.isDirectory())
                     continue;
-                FileOutputStream fout = new FileOutputStream(file);
+                FileOutputStream fileOut = new FileOutputStream(file);
                 try {
                     while ((count = zis.read(buffer)) != -1)
-                        fout.write(buffer, 0, count);
+                        fileOut.write(buffer, 0, count);
                 } finally {
-                    fout.close();
+                    fileOut.close();
                 }
-                int newPercent = (int)((readedLength * 100) / totalLength);
+                int newPercent = (int)((readLength * 100) / totalLength);
                 if (totalLength > 1 && newPercent != percent) {
                     percent = newPercent;
                     this.plugin.notifyDownload(calcTotalPercent((int)percent, 75, 90));
                 }
-                readedLength += ze.getCompressedSize();
+                readLength += ze.getCompressedSize();
             }
         } catch (Exception e) {
             Log.i(TAG, "unzip error", e);
@@ -194,17 +197,17 @@ public class CapacitorUpdater {
             downFile.getParentFile().mkdirs();
             downFile.createNewFile();
             FileOutputStream fos = new FileOutputStream(downFile);
-            int readedLength = buffLength;
+            int readLength = buffLength;
             int percent = 0;
             this.plugin.notifyDownload(10);
             while ((length = dis.read(buffer))>0) {
                 fos.write(buffer, 0, length);
-                int newPercent = (int)((readedLength * 100) / totalLength);
+                int newPercent = (int)((readLength * 100) / totalLength);
                 if (totalLength > 1 && newPercent != percent) {
                     percent = newPercent;
                     this.plugin.notifyDownload(calcTotalPercent(percent, 10, 70));
                 }
-                readedLength += length;
+                readLength += length;
             }
         } catch (Exception e) {
             Log.e(TAG, "downloadFile error", e);
@@ -297,6 +300,7 @@ public class CapacitorUpdater {
         String deviceID = this.deviceID;
         String appId = this.appId;
         String versionBuild = this.versionBuild;
+        String versionCode = this.versionCode;
         String pluginVersion = this.pluginVersion;
         String versionName = getVersionName().equals("") ? "builtin" : getVersionName();
         StringRequest stringRequest = new StringRequest(Request.Method.GET, url,
@@ -323,6 +327,7 @@ public class CapacitorUpdater {
                     params.put("cap_device_id", deviceID);
                     params.put("cap_app_id", appId);
                     params.put("cap_version_build", versionBuild);
+                    params.put("cap_version_code", versionCode);
                     params.put("cap_version_name", versionName);
                     params.put("cap_plugin_version", pluginVersion);
                     return params;
@@ -361,6 +366,7 @@ public class CapacitorUpdater {
             json.put("version_name", version);
             json.put("device_id", this.deviceID);
             json.put("version_build", this.versionBuild);
+            json.put("version_code", this.versionCode);
             json.put("plugin_version", this.pluginVersion);
             json.put("app_id", this.appId);
             jsonString = json.toString();

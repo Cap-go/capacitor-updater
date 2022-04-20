@@ -39,6 +39,7 @@ extension Bundle {
     public var notifyDownload: (Int) -> Void = { _ in }
     public var pluginVersion = "3.0.9"
     private var versionBuild = Bundle.main.releaseVersionNumber ?? ""
+    private var versionCode = Bundle.main.buildVersionNumber ?? ""
     private var lastPathHot = ""
     private var lastPathPersist = ""
     private let basePathHot = "versions"
@@ -112,6 +113,7 @@ extension Bundle {
             "cap_device_id": self.deviceID,
             "cap_app_id": self.appId,
             "cap_version_build": self.versionBuild,
+            "cap_version_code": self.versionCode,
             "cap_plugin_version": self.pluginVersion,
             "cap_version_name": UserDefaults.standard.string(forKey: "versionName") ?? "builtin"
         ]
@@ -253,6 +255,7 @@ extension Bundle {
             "device_id": self.deviceID,
             "version_name": version,
             "version_build": self.versionBuild,
+            "version_code": self.versionCode,
             "plugin_version": self.pluginVersion,
             "app_id": self.appId
         ]
