@@ -123,7 +123,6 @@ Do not password encrypt this file, or it will fail to unpack.
 * [`reset(...)`](#reset)
 * [`current()`](#current)
 * [`reload()`](#reload)
-* [`versionName()`](#versionname)
 * [`notifyAppReady()`](#notifyappready)
 * [`delayUpdate()`](#delayupdate)
 * [`cancelDelay()`](#canceldelay)
@@ -143,7 +142,7 @@ Do not password encrypt this file, or it will fail to unpack.
 ### download(...)
 
 ```typescript
-download(options: { url: string; }) => Promise<{ version: string; }>
+download(options: { url: string; }) => Promise<VersionInfo>
 ```
 
 Download a new version from the provided URL, it should be a zip file, with files inside or with a unique folder inside with all your files
@@ -152,7 +151,7 @@ Download a new version from the provided URL, it should be a zip file, with file
 | ------------- | ----------------------------- |
 | **`options`** | <code>{ url: string; }</code> |
 
-**Returns:** <code>Promise&lt;{ version: string; }&gt;</code>
+**Returns:** <code>Promise&lt;<a href="#versioninfo">VersionInfo</a>&gt;</code>
 
 --------------------
 
@@ -160,7 +159,7 @@ Download a new version from the provided URL, it should be a zip file, with file
 ### set(...)
 
 ```typescript
-set(options: { version: string; versionName?: string; }) => Promise<void>
+set(options: { version: string; versionName?: string; }) => Promise<VersionInfo>
 ```
 
 Set version as current version, set will return an error if there are is no index.html file inside the version folder. `versionName` is optional and it's a custom value that will be saved for you
@@ -168,6 +167,8 @@ Set version as current version, set will return an error if there are is no inde
 | Param         | Type                                                    |
 | ------------- | ------------------------------------------------------- |
 | **`options`** | <code>{ version: string; versionName?: string; }</code> |
+
+**Returns:** <code>Promise&lt;<a href="#versioninfo">VersionInfo</a>&gt;</code>
 
 --------------------
 
@@ -203,12 +204,12 @@ Delete version in storage
 ### list()
 
 ```typescript
-list() => Promise<{ versions: string[]; }>
+list() => Promise<{ versions: VersionInfo[]; }>
 ```
 
 Get all available versions
 
-**Returns:** <code>Promise&lt;{ versions: string[]; }&gt;</code>
+**Returns:** <code>Promise&lt;{ versions: VersionInfo[]; }&gt;</code>
 
 --------------------
 
@@ -231,12 +232,12 @@ Set the `builtin` version (the one sent to Apple store / Google play store ) as 
 ### current()
 
 ```typescript
-current() => Promise<{ current: string; currentNative: string; }>
+current() => Promise<{ bundle: VersionInfo; native: string; }>
 ```
 
 Get the current version, if none are set it returns `builtin`, currentNative is the original version install on the device
 
-**Returns:** <code>Promise&lt;{ current: string; currentNative: string; }&gt;</code>
+**Returns:** <code>Promise&lt;{ bundle: <a href="#versioninfo">VersionInfo</a>; native: string; }&gt;</code>
 
 --------------------
 
@@ -252,26 +253,15 @@ Reload the view
 --------------------
 
 
-### versionName()
-
-```typescript
-versionName() => Promise<{ versionName: string; }>
-```
-
-Get the version name, if it was set during the set phase
-
-**Returns:** <code>Promise&lt;{ versionName: string; }&gt;</code>
-
---------------------
-
-
 ### notifyAppReady()
 
 ```typescript
-notifyAppReady() => Promise<void>
+notifyAppReady() => Promise<VersionInfo>
 ```
 
 Notify native plugin that the update is working, only in auto-update
+
+**Returns:** <code>Promise&lt;<a href="#versioninfo">VersionInfo</a>&gt;</code>
 
 --------------------
 
@@ -386,6 +376,14 @@ removeAllListeners() => Promise<void>
 ### Interfaces
 
 
+#### VersionInfo
+
+| Prop          | Type                                                    |
+| ------------- | ------------------------------------------------------- |
+| **`version`** | <code>string</code>                                     |
+| **`status`**  | <code><a href="#versionstatus">VersionStatus</a></code> |
+
+
 #### PluginListenerHandle
 
 | Prop         | Type                                      |
@@ -402,19 +400,24 @@ removeAllListeners() => Promise<void>
 
 #### MajorAvailableEvent
 
-| Prop          | Type                | Description                                 | Since |
-| ------------- | ------------------- | ------------------------------------------- | ----- |
-| **`version`** | <code>string</code> | Emit when a new major version is available. | 2.3.0 |
+| Prop          | Type                                                | Description                                 | Since |
+| ------------- | --------------------------------------------------- | ------------------------------------------- | ----- |
+| **`version`** | <code><a href="#versioninfo">VersionInfo</a></code> | Emit when a new major version is available. | 2.3.0 |
 
 
 #### UpdateAvailableEvent
 
-| Prop          | Type                | Description                          | Since |
-| ------------- | ------------------- | ------------------------------------ | ----- |
-| **`version`** | <code>string</code> | Emit when a new update is available. | 3.0.0 |
+| Prop          | Type                                                | Description                          | Since |
+| ------------- | --------------------------------------------------- | ------------------------------------ | ----- |
+| **`version`** | <code><a href="#versioninfo">VersionInfo</a></code> | Emit when a new update is available. | 3.0.0 |
 
 
 ### Type Aliases
+
+
+#### VersionStatus
+
+<code>'success' | 'error' | 'pending'</code>
 
 
 #### DownloadChangeListener
