@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.os.Build;
 import android.util.Log;
 
 import com.android.volley.AuthFailureError;
@@ -60,6 +61,7 @@ public class CapacitorUpdater {
     private final CapacitorUpdaterPlugin plugin;
     private String versionBuild = "";
     private String versionCode = "";
+    private String versionOs = "";
     private String TAG = "Capacitor-updater";
     private Context context;
     private String basePathHot = "versions";
@@ -84,6 +86,7 @@ public class CapacitorUpdater {
         this.plugin = new CapacitorUpdaterPlugin();
         this.prefs = context.getSharedPreferences("CapWebViewSettings", Activity.MODE_PRIVATE);
         this.editor = prefs.edit();
+        this.versionOs = Build.VERSION.RELEASE;
         this.deviceID = Secure.getString(context.getContentResolver(), Secure.ANDROID_ID);
         PackageInfo pInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
         this.versionBuild = pInfo.versionName;
@@ -94,6 +97,7 @@ public class CapacitorUpdater {
         this.plugin = plugin;
         this.prefs = context.getSharedPreferences("CapWebViewSettings", Activity.MODE_PRIVATE);
         this.editor = prefs.edit();
+        this.versionOs = Build.VERSION.RELEASE;
         this.deviceID = Secure.getString(context.getContentResolver(), Secure.ANDROID_ID);
         PackageInfo pInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
         this.versionBuild = pInfo.versionName;
@@ -301,36 +305,38 @@ public class CapacitorUpdater {
         String appId = this.appId;
         String versionBuild = this.versionBuild;
         String versionCode = this.versionCode;
+        String versionOs = this.versionOs;
         String pluginVersion = this.pluginVersion;
         String versionName = getVersionName().equals("") ? "builtin" : getVersionName();
         StringRequest stringRequest = new StringRequest(Request.Method.GET, url,
-        new Response.Listener<String>() {
-            @Override
-            public void onResponse(String response) {
-                try {
-                    JSONObject jsonObject = new JSONObject(response);
-                    callback.callback(jsonObject);
-                } catch (JSONException e) {
-                    e.printStackTrace();
-                }
-            }
-        }, new Response.ErrorListener() {
+                new Response.Listener<String>() {
+                    @Override
+                    public void onResponse(String response) {
+                        try {
+                            JSONObject jsonObject = new JSONObject(response);
+                            callback.callback(jsonObject);
+                        } catch (JSONException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                }, new Response.ErrorListener() {
             @Override
             public void onErrorResponse(VolleyError error) {
                 Log.e(TAG, "Error getting Latest" +  error);
             }
-        }) {     
+        }) {
             @Override
             public Map<String, String> getHeaders() throws AuthFailureError {
-                    Map<String, String>  params = new HashMap<String, String>();
-                    params.put("cap_platform", "android");
-                    params.put("cap_device_id", deviceID);
-                    params.put("cap_app_id", appId);
-                    params.put("cap_version_build", versionBuild);
-                    params.put("cap_version_code", versionCode);
-                    params.put("cap_version_name", versionName);
-                    params.put("cap_plugin_version", pluginVersion);
-                    return params;
+                Map<String, String>  params = new HashMap<String, String>();
+                params.put("cap_platform", "android");
+                params.put("cap_device_id", deviceID);
+                params.put("cap_app_id", appId);
+                params.put("cap_version_build", versionBuild);
+                params.put("cap_version_code", versionCode);
+                params.put("cap_version_os", versionOs);
+                params.put("cap_version_name", versionName);
+                params.put("cap_plugin_version", pluginVersion);
+                return params;
             }
         };
         RequestQueue requestQueue = Volley.newRequestQueue(this.context);
@@ -345,7 +351,7 @@ public class CapacitorUpdater {
         return prefs.getString("versionName", "");
     }
 
-    public void reset() {        
+    public void reset() {
         String version = prefs.getString("versionName", "");
         this.sendStats("reset", version);
         editor.putString("lastPathHot", "public");
@@ -367,6 +373,7 @@ public class CapacitorUpdater {
             json.put("device_id", this.deviceID);
             json.put("version_build", this.versionBuild);
             json.put("version_code", this.versionCode);
+            json.put("version_os", this.versionOs);
             json.put("plugin_version", this.pluginVersion);
             json.put("app_id", this.appId);
             jsonString = json.toString();

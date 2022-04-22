@@ -22,6 +22,11 @@ public class AppVersion: NSObject {
     var message: String?
     var major: Bool?
 }
+extension OperatingSystemVersion {
+    func getFullVersion(separator: String = ".") -> String {
+        return "\(majorVersion)\(separator)\(minorVersion)\(separator)\(patchVersion)"
+    }
+}
 extension Bundle {
     var releaseVersionNumber: String? {
         return infoDictionary?["CFBundleShortVersionString"] as? String
@@ -40,6 +45,7 @@ extension Bundle {
     public var pluginVersion = "3.0.10"
     private var versionBuild = Bundle.main.releaseVersionNumber ?? ""
     private var versionCode = Bundle.main.buildVersionNumber ?? ""
+    private var versionOs = ProcessInfo().operatingSystemVersion.getFullVersion()
     private var lastPathHot = ""
     private var lastPathPersist = ""
     private let basePathHot = "versions"
@@ -114,6 +120,7 @@ extension Bundle {
             "cap_app_id": self.appId,
             "cap_version_build": self.versionBuild,
             "cap_version_code": self.versionCode,
+            "cap_version_os": self.versionOs,
             "cap_plugin_version": self.pluginVersion,
             "cap_version_name": UserDefaults.standard.string(forKey: "versionName") ?? "builtin"
         ]
@@ -256,6 +263,7 @@ extension Bundle {
             "version_name": version,
             "version_build": self.versionBuild,
             "version_code": self.versionCode,
+            "version_os": self.versionOs,
             "plugin_version": self.pluginVersion,
             "app_id": self.appId
         ]
