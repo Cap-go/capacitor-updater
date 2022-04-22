@@ -1,3 +1,9 @@
+## 3.1.0 (2022-04-20)
+
+### Feat
+
+- add versionCode in stats and update
+
 ## 3.0.10 (2022-04-20)
 
 ### Fix
