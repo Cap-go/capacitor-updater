@@ -1,3 +1,9 @@
+## 3.2.0 (2022-04-22)
+
+### Feat
+
+- add os version in metadata
+
 ## 3.1.0 (2022-04-20)
 
 ### Feat

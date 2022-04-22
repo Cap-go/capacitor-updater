@@ -48,7 +48,7 @@ public class CapacitorUpdater {
     public String statsUrl = "";
     public String appId = "";
     public String deviceID = "";
-    private String pluginVersion = "3.1.0";
+    private String pluginVersion = "3.2.0";
 
 
     private FilenameFilter filter = new FilenameFilter() {
