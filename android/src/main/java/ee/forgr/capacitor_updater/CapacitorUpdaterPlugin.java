@@ -192,7 +192,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
 
     @PluginMethod
     public void reset(PluginCall call) {
-        Boolean toAutoUpdate = call.getBoolean("toAutoUpdate");
+        Boolean toAutoUpdate = call.getBoolean("toAutoUpdate", false);
         if (this._reset(toAutoUpdate)) {
             call.resolve();
             return;
