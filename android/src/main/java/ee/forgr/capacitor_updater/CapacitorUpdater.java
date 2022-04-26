@@ -45,11 +45,26 @@ interface Callback {
 }
 
 public class CapacitorUpdater {
-    public String statsUrl = "";
-    public String appId = "";
-    public String deviceID = "";
+    private final String TAG = "Capacitor-updater";
+
+    private static final String AB = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    private static final SecureRandom rnd = new SecureRandom();
+
     private final String pluginVersion = "3.2.0";
 
+    private final Context context;
+    private final CapacitorUpdaterEvents events;
+
+    private final String basePathHot = "versions";
+    private final SharedPreferences prefs;
+    private final SharedPreferences.Editor editor;
+
+    private String statsUrl = "";
+    private String appId = "";
+    private String deviceID = "";
+    private String versionBuild = "";
+    private String versionCode = "";
+    private String versionOs = "";
 
     private final FilenameFilter filter = new FilenameFilter() {
         @Override
@@ -58,30 +73,6 @@ public class CapacitorUpdater {
             return !name.startsWith("__MACOSX") && !name.startsWith(".") && !name.startsWith(".DS_Store");
         }
     };
-    private final Context context;
-    private final CapacitorUpdaterEvents events;
-
-    private String versionBuild = "";
-    private String versionCode = "";
-    private String versionOs = "";
-    private final String TAG = "Capacitor-updater";
-    private final String basePathHot = "versions";
-    private final SharedPreferences prefs;
-    private final SharedPreferences.Editor editor;
-
-    static final String AB = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-    static SecureRandom rnd = new SecureRandom();
-
-    private int calcTotalPercent(final int percent, final int min, final int max) {
-        return (percent * (max - min)) / 100 + min;
-    }
-
-    private String randomString(final int len){
-        final StringBuilder sb = new StringBuilder(len);
-        for(int i = 0; i < len; i++)
-            sb.append(AB.charAt(rnd.nextInt(AB.length())));
-        return sb.toString();
-    }
 
     public CapacitorUpdater(final Context context) throws PackageManager.NameNotFoundException {
         this(context, new CapacitorUpdaterEvents() {});
@@ -94,11 +85,22 @@ public class CapacitorUpdater {
         this.prefs = this.context.getSharedPreferences("CapWebViewSettings", Activity.MODE_PRIVATE);
         this.editor = this.prefs.edit();
         this.versionOs = Build.VERSION.RELEASE;
-        this.deviceID = Secure.getString(context.getContentResolver(), Secure.ANDROID_ID);
+        this.setDeviceID(Secure.getString(context.getContentResolver(), Secure.ANDROID_ID));
 
         final PackageInfo pInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
         this.versionBuild = pInfo.versionName;
         this.versionCode = Integer.toString(pInfo.versionCode);
+    }
+
+    private int calcTotalPercent(final int percent, final int min, final int max) {
+        return (percent * (max - min)) / 100 + min;
+    }
+
+    private String randomString(final int len){
+        final StringBuilder sb = new StringBuilder(len);
+        for(int i = 0; i < len; i++)
+            sb.append(AB.charAt(rnd.nextInt(AB.length())));
+        return sb.toString();
     }
 
     private Boolean unzip(final String source, final String dest) {
@@ -298,8 +300,8 @@ public class CapacitorUpdater {
     }
 
     public void getLatest(final String url, final Callback callback) {
-        final String deviceID = this.deviceID;
-        final String appId = this.appId;
+        final String deviceID = this.getDeviceID();
+        final String appId = this.getAppId();
         final String versionBuild = this.versionBuild;
         final String versionCode = this.versionCode;
         final String versionOs = this.versionOs;
@@ -358,21 +360,21 @@ public class CapacitorUpdater {
     }
 
     public void sendStats(final String action, final String version) {
-        if (this.statsUrl == "") { return; }
+        if (this.getStatsUrl() == "") { return; }
         final URL url;
         final JSONObject json = new JSONObject();
         final String jsonString;
         try {
-            url = new URL(this.statsUrl);
+            url = new URL(this.getStatsUrl());
             json.put("platform", "android");
             json.put("action", action);
             json.put("version_name", version);
-            json.put("device_id", this.deviceID);
+            json.put("device_id", this.getDeviceID());
             json.put("version_build", this.versionBuild);
             json.put("version_code", this.versionCode);
             json.put("version_os", this.versionOs);
             json.put("plugin_version", this.pluginVersion);
-            json.put("app_id", this.appId);
+            json.put("app_id", this.getAppId());
             jsonString = json.toString();
         } catch (final Exception ex) {
             Log.e(this.TAG, "Error get stats", ex);
@@ -408,5 +410,29 @@ public class CapacitorUpdater {
                 }
             }
         }).start();
+    }
+
+    public String getStatsUrl() {
+        return this.statsUrl;
+    }
+
+    public void setStatsUrl(final String statsUrl) {
+        this.statsUrl = statsUrl;
+    }
+
+    public String getAppId() {
+        return this.appId;
+    }
+
+    public void setAppId(final String appId) {
+        this.appId = appId;
+    }
+
+    public String getDeviceID() {
+        return this.deviceID;
+    }
+
+    public void setDeviceID(final String deviceID) {
+        this.deviceID = deviceID;
     }
 }

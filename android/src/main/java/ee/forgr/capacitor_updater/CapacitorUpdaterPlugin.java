@@ -5,13 +5,11 @@ import android.app.Application;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
-import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.annotation.RequiresApi;
 
 import com.getcapacitor.CapConfig;
 import com.getcapacitor.JSArray;
@@ -30,16 +28,19 @@ import java.util.ArrayList;
 @CapacitorPlugin(name = "CapacitorUpdater")
 public class CapacitorUpdaterPlugin extends Plugin implements Application.ActivityLifecycleCallbacks {
     private final String TAG = "Capacitor-updater";
-    private CapacitorUpdater implementation;
-    private SharedPreferences prefs;
-    private SharedPreferences.Editor editor;
+
     private static final String autoUpdateUrlDefault = "https://capgo.app/api/auto_update";
     private static final String statsUrlDefault = "https://capgo.app/api/stats";
+
+    private CapacitorUpdater implementation;
+
+    private SharedPreferences prefs;
+    private SharedPreferences.Editor editor;
+
     private String autoUpdateUrl = "";
     private Version currentVersionNative;
     private Boolean autoUpdate = false;
     private Boolean resetWhenUpdate = true;
-
 
     @Override
     public void load() {
@@ -63,8 +64,8 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             return;
         }
         final CapConfig config = CapConfig.loadDefault(this.getActivity());
-        this.implementation.appId = config.getString("appId", "");
-        this.implementation.statsUrl = this.getConfig().getString("statsUrl", statsUrlDefault);
+        this.implementation.setAppId(config.getString("appId", ""));
+        this.implementation.setStatsUrl(this.getConfig().getString("statsUrl", statsUrlDefault));
         this.autoUpdateUrl = this.getConfig().getString("autoUpdateUrl", autoUpdateUrlDefault);
         this.autoUpdate = this.getConfig().getBoolean("autoUpdate", false);
         this.resetWhenUpdate = this.getConfig().getBoolean("resetWhenUpdate", true);
@@ -105,7 +106,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     @PluginMethod
     public void getId(final PluginCall call) {
         final JSObject ret = new JSObject();
-        ret.put("id", this.implementation.deviceID);
+        ret.put("id", this.implementation.getDeviceID());
         call.resolve(ret);
     }
 
