@@ -102,121 +102,111 @@ public class CapacitorUpdater {
             sb.append(AB.charAt(rnd.nextInt(AB.length())));
         return sb.toString();
     }
-
-    private Boolean unzip(final String source, final String dest) {
-        final File zipFile = new File(this.context.getFilesDir()  + "/" + source);
+    private File unzip(final File zipFile, final String dest) throws IOException {
         final File targetDirectory = new File(this.context.getFilesDir()  + "/" + dest);
-        ZipInputStream zis = null;
+        final ZipInputStream zis = new ZipInputStream(new BufferedInputStream(new FileInputStream(zipFile)));
         try {
-            zis = new ZipInputStream(
-                    new BufferedInputStream(new FileInputStream(zipFile)));
-        } catch (final FileNotFoundException e) {
-            e.printStackTrace();
-            return false;
-        }
-        try {
-            ZipEntry ze;
             int count;
-            final int buffLength = 8192;
-            final byte[] buffer = new byte[buffLength];
-            final long totalLength = zipFile.length();
-            long readLength = buffLength;
+            final int bufferSize = 8192;
+            final byte[] buffer = new byte[bufferSize];
+            final long lengthTotal = zipFile.length();
+            long lengthRead = bufferSize;
             int percent = 0;
             this.events.notifyDownload(75);
-            while ((ze = zis.getNextEntry()) != null) {
-                final File file = new File(targetDirectory, ze.getName());
+
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                final File file = new File(targetDirectory, entry.getName());
                 final String canonicalPath = file.getCanonicalPath();
                 final String canonicalDir = (new File(String.valueOf(targetDirectory))).getCanonicalPath();
-                final File dir = ze.isDirectory() ? file : file.getParentFile();
+                final File dir = entry.isDirectory() ? file : file.getParentFile();
+
                 if (!canonicalPath.startsWith(canonicalDir)) {
                     throw new FileNotFoundException("SecurityException, Failed to ensure directory is the start path : " +
                             canonicalDir + " of " + canonicalPath);
                 }
-                if (!dir.isDirectory() && !dir.mkdirs())
+
+                if (!dir.isDirectory() && !dir.mkdirs()) {
                     throw new FileNotFoundException("Failed to ensure directory: " +
                             dir.getAbsolutePath());
-                if (ze.isDirectory())
-                    continue;
-                final FileOutputStream fileOut = new FileOutputStream(file);
-                try {
-                    while ((count = zis.read(buffer)) != -1)
-                        fileOut.write(buffer, 0, count);
-                } finally {
-                    fileOut.close();
                 }
-                final int newPercent = (int)((readLength * 100) / totalLength);
-                if (totalLength > 1 && newPercent != percent) {
+
+                if (entry.isDirectory()) {
+                    continue;
+                }
+
+                try(final FileOutputStream outputStream = new FileOutputStream(file)) {
+                    while ((count = zis.read(buffer)) != -1)
+                        outputStream.write(buffer, 0, count);
+                }
+
+                final int newPercent = (int)((lengthRead * 100) / lengthTotal);
+                if (lengthTotal > 1 && newPercent != percent) {
                     percent = newPercent;
                     this.events.notifyDownload(this.calcTotalPercent(percent, 75, 90));
                 }
-                readLength += ze.getCompressedSize();
+
+                lengthRead += entry.getCompressedSize();
             }
-        } catch (final Exception e) {
-            Log.i(this.TAG, "unzip error", e);
-            return false;
+            return targetDirectory;
         } finally {
             try {
                 zis.close();
             } catch (final IOException e) {
-                e.printStackTrace();
-                return false;
+                Log.e(this.TAG, "Failed to close zip input stream", e);
             }
-            return true;
         }
     }
 
-    private Boolean flattenAssets(final String source, final String dest) {
-        final File current = new File(this.context.getFilesDir()  + "/" + source);
-        if (!current.exists()) {
-            return false;
+    private void flattenAssets(final File sourceFile, final String dest) throws IOException {
+        if (!sourceFile.exists()) {
+            throw new FileNotFoundException("Source file not found: " + sourceFile.getPath());
         }
-        final File fDest = new File(this.context.getFilesDir()  + "/" + dest);
-        fDest.getParentFile().mkdirs();
-        final String[] pathsName = current.list(this.filter);
-        if (pathsName == null || pathsName.length == 0) {
-            return false;
+        final File destinationFile = new File(this.context.getFilesDir()  + "/" + dest);
+        destinationFile.getParentFile().mkdirs();
+        final String[] entries = sourceFile.list(this.filter);
+        if (entries == null || entries.length == 0) {
+            throw new IOException("Source file was not a directory or was empty: " + sourceFile.getPath());
         }
-        if (pathsName.length == 1 && !pathsName[0].equals("index.html")) {
-            final File newFlat =  new File(current.getPath() + "/" + pathsName[0]);
-            newFlat.renameTo(fDest);
+        if (entries.length == 1 && !entries[0].equals("index.html")) {
+            final File child = new File(sourceFile.getPath() + "/" + entries[0]);
+            child.renameTo(destinationFile);
         } else {
-            current.renameTo(fDest);
+            sourceFile.renameTo(destinationFile);
         }
-        current.delete();
-        return true;
+        sourceFile.delete();
     }
 
-    private Boolean downloadFile(final String url, final String dest) throws JSONException {
-        try {
-            final URL u = new URL(url);
-            final URLConnection uc = u.openConnection();
-            final InputStream is = u.openStream();
-            final DataInputStream dis = new DataInputStream(is);
-            final long totalLength = uc.getContentLength();
-            final int buffLength = 1024;
-            final byte[] buffer = new byte[buffLength];
-            int length;
-            final File downFile = new File(this.context.getFilesDir()  + "/" + dest);
-            downFile.getParentFile().mkdirs();
-            downFile.createNewFile();
-            final FileOutputStream fos = new FileOutputStream(downFile);
-            int readLength = buffLength;
-            int percent = 0;
-            this.events.notifyDownload(10);
-            while ((length = dis.read(buffer))>0) {
-                fos.write(buffer, 0, length);
-                final int newPercent = (int)((readLength * 100) / totalLength);
-                if (totalLength > 1 && newPercent != percent) {
-                    percent = newPercent;
-                    this.events.notifyDownload(this.calcTotalPercent(percent, 10, 70));
-                }
-                readLength += length;
+    private File downloadFile(final String url, final String dest) throws IOException {
+
+        final URL u = new URL(url);
+        final URLConnection connection = u.openConnection();
+        final InputStream is = u.openStream();
+        final DataInputStream dis = new DataInputStream(is);
+
+        final File target = new File(this.context.getFilesDir()  + "/" + dest);
+        target.getParentFile().mkdirs();
+        target.createNewFile();
+        final FileOutputStream fos = new FileOutputStream(target);
+
+        final long totalLength = connection.getContentLength();
+        final int bufferSize = 1024;
+        final byte[] buffer = new byte[bufferSize];
+        int length;
+
+        int bytesRead = bufferSize;
+        int percent = 0;
+        this.events.notifyDownload(10);
+        while ((length = dis.read(buffer))>0) {
+            fos.write(buffer, 0, length);
+            final int newPercent = (int)((bytesRead * 100) / totalLength);
+            if (totalLength > 1 && newPercent != percent) {
+                percent = newPercent;
+                this.events.notifyDownload(this.calcTotalPercent(percent, 10, 70));
             }
-        } catch (final Exception e) {
-            Log.e(this.TAG, "downloadFile error", e);
-            return false;
+            bytesRead += length;
         }
-        return true;
+        return target;
     }
 
     private void deleteDirectory(final File file) throws IOException {
@@ -233,30 +223,22 @@ public class CapacitorUpdater {
         }
     }
 
-    public String download(final String url) {
-        try {
-            this.events.notifyDownload(0);
-            final String folderNameZip = this.randomString(10);
-            final File fileZip = new File(this.context.getFilesDir()  + "/" + folderNameZip);
-            final String folderNameUnZip = this.randomString(10);
-            final String version = this.randomString(10);
-            final String folderName = this.basePathHot + "/" + version;
-            this.events.notifyDownload(5);
-            final Boolean downloaded = this.downloadFile(url, folderNameZip);
-            if(!downloaded) return "";
-            this.events.notifyDownload(71);
-            final Boolean unzipped = this.unzip(folderNameZip, folderNameUnZip);
-            if(!unzipped) return "";
-            fileZip.delete();
-            this.events.notifyDownload(91);
-            final Boolean flatt = this.flattenAssets(folderNameUnZip, folderName);
-            if(!flatt) return "";
-            this.events.notifyDownload(100);
-            return version;
-        } catch (final Exception e) {
-            Log.e(this.TAG, "updateApp error", e);
-            return "";
-        }
+    public String download(final String url) throws IOException {
+        this.events.notifyDownload(0);
+        final String path = this.randomString(10);
+        final File zipFile = new File(this.context.getFilesDir()  + "/" + path);
+        final String folderNameUnZip = this.randomString(10);
+        final String version = this.randomString(10);
+        final String folderName = this.basePathHot + "/" + version;
+        this.events.notifyDownload(5);
+        final File downloaded = this.downloadFile(url, path);
+        this.events.notifyDownload(71);
+        final File unzipped = this.unzip(downloaded, folderNameUnZip);
+        zipFile.delete();
+        this.events.notifyDownload(91);
+        this.flattenAssets(unzipped, folderName);
+        this.events.notifyDownload(100);  
+        return version;
     }
 
     public ArrayList<String> list() {

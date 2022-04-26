@@ -115,14 +115,15 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         new Thread(new Runnable(){
             @Override
             public void run() {
-                final String url = call.getString("url");
-                final String res = CapacitorUpdaterPlugin.this.implementation.download(url);
-                if (!res.equals("")) {
+                try {
+                    final String url = call.getString("url");
+                    final String version = CapacitorUpdaterPlugin.this.implementation.download(url);
                     final JSObject ret = new JSObject();
-                    ret.put("version", res);
+                    ret.put("version", version);
                     call.resolve(ret);
-                } else {
-                    call.reject("download failed");
+                } catch (final IOException e) {
+                    Log.e(CapacitorUpdaterPlugin.this.TAG, "download failed", e);
+                    call.reject("download failed", e);
                 }
             }
         }).start();
@@ -248,17 +249,8 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     @Override
     public void onActivityStarted(@NonNull final Activity activity) {
 //        disableRevert disableBreaking
-        String currentVersionNative = "";
-        try {
-            final PackageInfo pInfo = this.getContext().getPackageManager().getPackageInfo(this.getContext().getPackageName(), 0);
-            currentVersionNative = pInfo.versionName;
-        } catch (final Exception ex) {
-            Log.e(this.TAG, "Error get stats", ex);
-            return;
-        }
         Log.i(this.TAG, "Check for update in the server");
         if (this.autoUpdateUrl.equals("")) return;
-        final String finalCurrentVersionNative = currentVersionNative;
         new Thread(new Runnable(){
             @Override
             public void run() {
@@ -283,7 +275,8 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                 @Override
                                 public void run() {
                                     try {
-                                        final String dl = CapacitorUpdaterPlugin.this.implementation.download((String) res.get("url"));
+                                        final String url = (String) res.get("url");
+                                        final String dl = CapacitorUpdaterPlugin.this.implementation.download(url);
                                         if (dl.equals("")) {
                                             Log.i(CapacitorUpdaterPlugin.this.TAG, "Download version: " + newVersion + " failed");
                                             return;
@@ -293,8 +286,8 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                         CapacitorUpdaterPlugin.this.editor.putString("nextVersionName", (String) res.get("version"));
                                         CapacitorUpdaterPlugin.this.editor.commit();
                                         CapacitorUpdaterPlugin.this.notifyListeners("updateAvailable", ret);
-                                    } catch (final JSONException e) {
-                                        e.printStackTrace();
+                                    } catch (final Exception e) {
+                                        Log.e(CapacitorUpdaterPlugin.this.TAG, "error downloading file", e);
                                     }
                                 }
                             }).start();
