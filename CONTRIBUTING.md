@@ -39,6 +39,8 @@ This is useful to run in CI to verify that the plugin builds for all platforms.
 
 Check formatting and code quality, autoformat/autofix if possible.
 
+Android: Ensure you are using the provided java_code_style.xml settings in Android Studio, when committing changes. (See Settings -> Editor -> Inspections -> Import Profile)
+
 This template is integrated with ESLint, Prettier, and SwiftLint. Using these tools is completely optional, but the [Capacitor Community](https://github.com/capacitor-community/) strives to have consistent code style and structure for easier cooperation.
 
 ## Publishing

@@ -29,7 +29,7 @@ import java.util.ArrayList;
 
 @CapacitorPlugin(name = "CapacitorUpdater")
 public class CapacitorUpdaterPlugin extends Plugin implements Application.ActivityLifecycleCallbacks {
-    private String TAG = "Capacitor-updater";
+    private final String TAG = "Capacitor-updater";
     private CapacitorUpdater implementation;
     private SharedPreferences prefs;
     private SharedPreferences.Editor editor;
@@ -45,74 +45,74 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     public void load() {
         super.load();
         this.prefs = this.getContext().getSharedPreferences("CapWebViewSettings", Activity.MODE_PRIVATE);
-        this.editor = prefs.edit();
+        this.editor = this.prefs.edit();
         try {
-            implementation = new CapacitorUpdater(this.getContext(), this);
-            PackageInfo pInfo = this.getContext().getPackageManager().getPackageInfo(this.getContext().getPackageName(), 0);
-            currentVersionNative = new Version(pInfo.versionName);
-        } catch (PackageManager.NameNotFoundException e) {
+            this.implementation = new CapacitorUpdater(this.getContext(), this);
+            final PackageInfo pInfo = this.getContext().getPackageManager().getPackageInfo(this.getContext().getPackageName(), 0);
+            this.currentVersionNative = new Version(pInfo.versionName);
+        } catch (final PackageManager.NameNotFoundException e) {
             e.printStackTrace();
             return;
-        } catch (Exception ex) {
-            Log.e(TAG, "Error get currentVersionNative", ex);
+        } catch (final Exception ex) {
+            Log.e(this.TAG, "Error get currentVersionNative", ex);
             return;
         }
-        CapConfig config = CapConfig.loadDefault(getActivity());
-        implementation.appId = config.getString("appId", "");
-        implementation.statsUrl = getConfig().getString("statsUrl", statsUrlDefault);
-        this.autoUpdateUrl = getConfig().getString("autoUpdateUrl", autoUpdateUrlDefault);
-        this.autoUpdate = getConfig().getBoolean("autoUpdate", false);
-        resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true);
-        if (resetWhenUpdate) {
-            Version LatestVersionNative = new Version(prefs.getString("LatestVersionNative", ""));
+        final CapConfig config = CapConfig.loadDefault(this.getActivity());
+        this.implementation.appId = config.getString("appId", "");
+        this.implementation.statsUrl = this.getConfig().getString("statsUrl", statsUrlDefault);
+        this.autoUpdateUrl = this.getConfig().getString("autoUpdateUrl", autoUpdateUrlDefault);
+        this.autoUpdate = this.getConfig().getBoolean("autoUpdate", false);
+        this.resetWhenUpdate = this.getConfig().getBoolean("resetWhenUpdate", true);
+        if (this.resetWhenUpdate) {
+            final Version LatestVersionNative = new Version(this.prefs.getString("LatestVersionNative", ""));
             try {
-                if (!LatestVersionNative.equals("") && currentVersionNative.getMajor() > LatestVersionNative.getMajor()) {
+                if (!LatestVersionNative.equals("") && this.currentVersionNative.getMajor() > LatestVersionNative.getMajor()) {
                     this._reset(false);
-                    editor.putString("LatestVersionAutoUpdate", "");
-                    editor.putString("LatestVersionNameAutoUpdate", "");
-                    ArrayList<String> res = implementation.list();
+                    this.editor.putString("LatestVersionAutoUpdate", "");
+                    this.editor.putString("LatestVersionNameAutoUpdate", "");
+                    final ArrayList<String> res = this.implementation.list();
                     for (int i = 0; i < res.size(); i++) {
                         try {
-                            implementation.delete(res.get(i), "");
-                        } catch (IOException e) {
+                            this.implementation.delete(res.get(i), "");
+                        } catch (final IOException e) {
                             e.printStackTrace();
                         }
                     }
                 }
-                editor.putString("LatestVersionNative", currentVersionNative.toString());
-                editor.commit();
-            } catch (Exception ex) {
+                this.editor.putString("LatestVersionNative", this.currentVersionNative.toString());
+                this.editor.commit();
+            } catch (final Exception ex) {
                 Log.e("CapacitorUpdater", "Cannot get the current version " + ex.getMessage());
             }
         }
-        if (!autoUpdate || this.autoUpdateUrl.equals("")) return;
-        Application application = (Application) this.getContext().getApplicationContext();
+        if (!this.autoUpdate || this.autoUpdateUrl.equals("")) return;
+        final Application application = (Application) this.getContext().getApplicationContext();
         application.registerActivityLifecycleCallbacks(this);
-        onActivityStarted(getActivity());
+        this.onActivityStarted(this.getActivity());
     }
 
-    public void notifyDownload(int percent) {
-        JSObject ret = new JSObject();
+    public void notifyDownload(final int percent) {
+        final JSObject ret = new JSObject();
         ret.put("percent", percent);
-        notifyListeners("download", ret);
+        this.notifyListeners("download", ret);
     }
 
     @PluginMethod
-    public void getId(PluginCall call) {
-        JSObject ret = new JSObject();
-        ret.put("id", implementation.deviceID);
+    public void getId(final PluginCall call) {
+        final JSObject ret = new JSObject();
+        ret.put("id", this.implementation.deviceID);
         call.resolve(ret);
     }
 
     @PluginMethod
-    public void download(PluginCall call) {
+    public void download(final PluginCall call) {
         new Thread(new Runnable(){
             @Override
             public void run() {
-                String url = call.getString("url");
-                String res = implementation.download(url);
+                final String url = call.getString("url");
+                final String res = CapacitorUpdaterPlugin.this.implementation.download(url);
                 if (!res.equals("")) {
-                    JSObject ret = new JSObject();
+                    final JSObject ret = new JSObject();
                     ret.put("version", res);
                     call.resolve(ret);
                 } else {
@@ -123,13 +123,13 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     }
 
     private boolean _reload() {
-        String pathHot = implementation.getLastPathHot();
+        final String pathHot = this.implementation.getLastPathHot();
         this.bridge.setServerBasePath(pathHot);
         return true;
     }
     
     @PluginMethod
-    public void reload(PluginCall call) {
+    public void reload(final PluginCall call) {
         if (this._reload()) {
             call.resolve();
         } else {
@@ -138,10 +138,10 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     }
 
     @PluginMethod
-    public void set(PluginCall call) {
-        String version = call.getString("version");
-        String versionName = call.getString("versionName", version);
-        Boolean res = implementation.set(version, versionName);
+    public void set(final PluginCall call) {
+        final String version = call.getString("version");
+        final String versionName = call.getString("versionName", version);
+        final Boolean res = this.implementation.set(version, versionName);
 
         if (!res) {
             call.reject("Update failed, version " + version + " doesn't exist");
@@ -151,38 +151,38 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     }
 
     @PluginMethod
-    public void delete(PluginCall call) {
-        String version = call.getString("version");
+    public void delete(final PluginCall call) {
+        final String version = call.getString("version");
         try {
-            Boolean res = implementation.delete(version, "");
+            final Boolean res = this.implementation.delete(version, "");
             if (res) {
                 call.resolve();
             } else {
                 call.reject("Delete failed, version " + version + " doesn't exist");
             }
-        } catch(IOException ex) {
+        } catch(final IOException ex) {
             Log.e("CapacitorUpdater", "An unexpected error occurred during deletion of folder. Message: " + ex.getMessage());
             call.reject("An unexpected error occurred during deletion of folder.");
         }
     }
 
     @PluginMethod
-    public void list(PluginCall call) {
-        ArrayList<String> res = implementation.list();
-        JSObject ret = new JSObject();
+    public void list(final PluginCall call) {
+        final ArrayList<String> res = this.implementation.list();
+        final JSObject ret = new JSObject();
         ret.put("versions", new JSArray(res));
         call.resolve(ret);
     }
 
-    private boolean _reset(Boolean toAutoUpdate) {
-        String version = prefs.getString("LatestVersionAutoUpdate", "");
-        String versionName = prefs.getString("LatestVersionNameAutoUpdate", "");
+    private boolean _reset(final Boolean toAutoUpdate) {
+        final String version = this.prefs.getString("LatestVersionAutoUpdate", "");
+        final String versionName = this.prefs.getString("LatestVersionNameAutoUpdate", "");
         if (toAutoUpdate && !version.equals("") && !versionName.equals("")) {
-            Boolean res = implementation.set(version, versionName);
+            final Boolean res = this.implementation.set(version, versionName);
             return res && this._reload();
         }
-        implementation.reset();
-        String pathHot = implementation.getLastPathHot();
+        this.implementation.reset();
+        final String pathHot = this.implementation.getLastPathHot();
         if (this.bridge.getLocalServer() != null) {
             // if the server is not ready yet, hot reload is not needed
             this.bridge.setServerAssetPath(pathHot);
@@ -191,8 +191,8 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     }
 
     @PluginMethod
-    public void reset(PluginCall call) {
-        Boolean toAutoUpdate = call.getBoolean("toAutoUpdate", false);
+    public void reset(final PluginCall call) {
+        final Boolean toAutoUpdate = call.getBoolean("toAutoUpdate", false);
         if (this._reset(toAutoUpdate)) {
             call.resolve();
             return;
@@ -201,101 +201,101 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     }
 
     @PluginMethod
-    public void versionName(PluginCall call) {
-        String name = implementation.getVersionName();
-        JSObject ret = new JSObject();
+    public void versionName(final PluginCall call) {
+        final String name = this.implementation.getVersionName();
+        final JSObject ret = new JSObject();
         ret.put("versionName", name);
         call.resolve(ret);
     }
 
     @PluginMethod
-    public void current(PluginCall call) {
-        String pathHot = implementation.getLastPathHot();
-        JSObject ret = new JSObject();
-        String current = pathHot.length() >= 10 ? pathHot.substring(pathHot.length() - 10) : "builtin";
+    public void current(final PluginCall call) {
+        final String pathHot = this.implementation.getLastPathHot();
+        final JSObject ret = new JSObject();
+        final String current = pathHot.length() >= 10 ? pathHot.substring(pathHot.length() - 10) : "builtin";
         ret.put("current", current);
-        ret.put("currentNative", currentVersionNative);
+        ret.put("currentNative", this.currentVersionNative);
         call.resolve(ret);
     }
 
     @PluginMethod
-    public void notifyAppReady(PluginCall call) {
-        editor.putBoolean("notifyAppReady", true);
-        editor.commit();
+    public void notifyAppReady(final PluginCall call) {
+        this.editor.putBoolean("notifyAppReady", true);
+        this.editor.commit();
         call.resolve();
     }
 
     @PluginMethod
-    public void delayUpdate(PluginCall call) {
-        editor.putBoolean("delayUpdate", true);
-        editor.commit();
+    public void delayUpdate(final PluginCall call) {
+        this.editor.putBoolean("delayUpdate", true);
+        this.editor.commit();
         call.resolve();
     }
 
     @PluginMethod
-    public void cancelDelay(PluginCall call) {
-        editor.putBoolean("delayUpdate", false);
-        editor.commit();
+    public void cancelDelay(final PluginCall call) {
+        this.editor.putBoolean("delayUpdate", false);
+        this.editor.commit();
         call.resolve();
     }
 
     @Override
-    public void onActivityStarted(@NonNull Activity activity) {
+    public void onActivityStarted(@NonNull final Activity activity) {
 //        disableRevert disableBreaking
         String currentVersionNative = "";
         try {
-            PackageInfo pInfo = this.getContext().getPackageManager().getPackageInfo(this.getContext().getPackageName(), 0);
+            final PackageInfo pInfo = this.getContext().getPackageManager().getPackageInfo(this.getContext().getPackageName(), 0);
             currentVersionNative = pInfo.versionName;
-        } catch (Exception ex) {
-            Log.e(TAG, "Error get stats", ex);
+        } catch (final Exception ex) {
+            Log.e(this.TAG, "Error get stats", ex);
             return;
         }
-        Log.i(TAG, "Check for update in the server");
-        if (autoUpdateUrl.equals("")) return;
-        String finalCurrentVersionNative = currentVersionNative;
+        Log.i(this.TAG, "Check for update in the server");
+        if (this.autoUpdateUrl.equals("")) return;
+        final String finalCurrentVersionNative = currentVersionNative;
         new Thread(new Runnable(){
             @Override
             public void run() {
-                implementation.getLatest(autoUpdateUrl, (res) -> {
+                CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.autoUpdateUrl, (res) -> {
                     try {
                         if (res.has("message")) {
-                            Log.i(TAG, "Capacitor-updater: " + res.get("message"));
+                            Log.i(CapacitorUpdaterPlugin.this.TAG, "Capacitor-updater: " + res.get("message"));
                             if (res.has("major") && res.getBoolean("major") && res.has("version")) {
-                                JSObject ret = new JSObject();
+                                final JSObject ret = new JSObject();
                                 ret.put("newVersion", (String) res.get("version"));
-                                notifyListeners("majorAvailable", ret);
+                                CapacitorUpdaterPlugin.this.notifyListeners("majorAvailable", ret);
                             }
                             return;
                         }
-                        String currentVersion = implementation.getVersionName();
-                        String newVersion = (String) res.get("version");
-                        JSObject ret = new JSObject();
+                        final String currentVersion = CapacitorUpdaterPlugin.this.implementation.getVersionName();
+                        final String newVersion = (String) res.get("version");
+                        final JSObject ret = new JSObject();
                         ret.put("newVersion", newVersion);
-                        String failingVersion = prefs.getString("failingVersion", "");
+                        final String failingVersion = CapacitorUpdaterPlugin.this.prefs.getString("failingVersion", "");
                         if (!newVersion.equals("") && !newVersion.equals(failingVersion)) {
                             new Thread(new Runnable(){
                                 @Override
                                 public void run() {
                                     try {
-                                        String dl = implementation.download((String) res.get("url"));
+                                        final String dl = CapacitorUpdaterPlugin.this.implementation.download((String) res.get("url"));
                                         if (dl.equals("")) {
-                                            Log.i(TAG, "Download version: " + newVersion + " failed");
+                                            Log.i(CapacitorUpdaterPlugin.this.TAG, "Download version: " + newVersion + " failed");
                                             return;
                                         }
-                                        Log.i(TAG, "New version: " + newVersion + " found. Current is " + (currentVersion.equals("") ? "builtin" : currentVersion) + ", next backgrounding will trigger update");
-                                        editor.putString("nextVersion", dl);
-                                        editor.putString("nextVersionName", (String) res.get("version"));
-                                        editor.commit();
-                                        notifyListeners("updateAvailable", ret);
-                                    } catch (JSONException e) {
+                                        Log.i(CapacitorUpdaterPlugin.this.TAG, "New version: " + newVersion + " found. Current is " + (currentVersion.equals("") ? "builtin" : currentVersion) + ", next backgrounding will trigger update");
+                                        CapacitorUpdaterPlugin.this.editor.putString("nextVersion", dl);
+                                        CapacitorUpdaterPlugin.this.editor.putString("nextVersionName", (String) res.get("version"));
+                                        CapacitorUpdaterPlugin.this.editor.commit();
+                                        CapacitorUpdaterPlugin.this.notifyListeners("updateAvailable", ret);
+                                    } catch (final JSONException e) {
                                         e.printStackTrace();
                                     }
                                 }
                             }).start();
                         } else {
-                            Log.i(TAG, "No need to update, " + currentVersion + " is the latest");
+                            Log.i(CapacitorUpdaterPlugin.this.TAG, "No need to update, " + currentVersion + " is the latest");
                         }
-                    } catch (JSONException e) {
+                    } catch (final JSONException e) {
                         e.printStackTrace();
                     }
                 });
@@ -304,106 +304,106 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     }
 
     @Override
-    public void onActivityStopped(@NonNull Activity activity) {
-        String pathHot = implementation.getLastPathHot();
-        Log.i(TAG, "Check for waiting update");
-        String nextVersion = prefs.getString("nextVersion", "");
-        Boolean delayUpdate = prefs.getBoolean("delayUpdate", false);
-        editor.putBoolean("delayUpdate", false);
-        editor.commit();
+    public void onActivityStopped(@NonNull final Activity activity) {
+        final String pathHot = this.implementation.getLastPathHot();
+        Log.i(this.TAG, "Check for waiting update");
+        final String nextVersion = this.prefs.getString("nextVersion", "");
+        final Boolean delayUpdate = this.prefs.getBoolean("delayUpdate", false);
+        this.editor.putBoolean("delayUpdate", false);
+        this.editor.commit();
         if (delayUpdate) {
-            Log.i(TAG, "Update delayed to next backgrounding");
+            Log.i(this.TAG, "Update delayed to next backgrounding");
             return;
         }
-        String nextVersionName = prefs.getString("nextVersionName", "");
-        String pastVersion = prefs.getString("pastVersion", "");
-        String pastVersionName = prefs.getString("pastVersionName", "");
-        Boolean notifyAppReady = prefs.getBoolean("notifyAppReady", false);
-        String tmpCurVersion = implementation.getLastPathHot();
-        String curVersion = tmpCurVersion.substring(tmpCurVersion.lastIndexOf('/') +1);
-        String curVersionName = implementation.getVersionName();
+        final String nextVersionName = this.prefs.getString("nextVersionName", "");
+        final String pastVersion = this.prefs.getString("pastVersion", "");
+        final String pastVersionName = this.prefs.getString("pastVersionName", "");
+        final Boolean notifyAppReady = this.prefs.getBoolean("notifyAppReady", false);
+        final String tmpCurVersion = this.implementation.getLastPathHot();
+        final String curVersion = tmpCurVersion.substring(tmpCurVersion.lastIndexOf('/') +1);
+        final String curVersionName = this.implementation.getVersionName();
         if (!nextVersion.equals("") && !nextVersionName.equals("")) {
-            Boolean res = implementation.set(nextVersion, nextVersionName);
+            final Boolean res = this.implementation.set(nextVersion, nextVersionName);
             if (res && this._reload()) {
-                Log.i(TAG, "Auto update to version: " + nextVersionName);
-                editor.putString("LatestVersionAutoUpdate", nextVersion);
-                editor.putString("LatestVersionNameAutoUpdate", nextVersionName);
-                editor.putString("nextVersion", "");
-                editor.putString("nextVersionName", "");
-                editor.putString("pastVersion", curVersion);
-                editor.putString("pastVersionName", curVersionName);
-                editor.putBoolean("notifyAppReady", false);
-                editor.commit();
+                Log.i(this.TAG, "Auto update to version: " + nextVersionName);
+                this.editor.putString("LatestVersionAutoUpdate", nextVersion);
+                this.editor.putString("LatestVersionNameAutoUpdate", nextVersionName);
+                this.editor.putString("nextVersion", "");
+                this.editor.putString("nextVersionName", "");
+                this.editor.putString("pastVersion", curVersion);
+                this.editor.putString("pastVersionName", curVersionName);
+                this.editor.putBoolean("notifyAppReady", false);
+                this.editor.commit();
             } else {
-                Log.i(TAG, "Auto update to version: " + nextVersionName + "Failed");
+                Log.i(this.TAG, "Auto update to version: " + nextVersionName + "Failed");
             }
         } else if (!notifyAppReady && !pathHot.equals("public")) {
-            Log.i(TAG, "notifyAppReady never trigger");
-            Log.i(TAG, "Version: " + curVersionName + ", is considered broken");
-            Log.i(TAG, "Will downgraded to version: " + (pastVersionName.equals("") ? "builtin" : pastVersionName) + " for next start");
-            Log.i(TAG, "Don't forget to trigger 'notifyAppReady()' in js code to validate a version.");
+            Log.i(this.TAG, "notifyAppReady never trigger");
+            Log.i(this.TAG, "Version: " + curVersionName + ", is considered broken");
+            Log.i(this.TAG, "Will downgraded to version: " + (pastVersionName.equals("") ? "builtin" : pastVersionName) + " for next start");
+            Log.i(this.TAG, "Don't forget to trigger 'notifyAppReady()' in js code to validate a version.");
             if (!pastVersion.equals("") && !pastVersionName.equals("")) {
-                Boolean res = implementation.set(pastVersion, pastVersionName);
+                final Boolean res = this.implementation.set(pastVersion, pastVersionName);
                 if (res && this._reload()) {
-                    Log.i(TAG, "Revert to version: " + (pastVersionName.equals("") ? "builtin" : pastVersionName));
-                    editor.putString("LatestVersionAutoUpdate", pastVersion);
-                    editor.putString("LatestVersionNameAutoUpdate", pastVersionName);
-                    editor.putString("pastVersion", "");
-                    editor.putString("pastVersionName", "");
-                    editor.commit();
+                    Log.i(this.TAG, "Revert to version: " + (pastVersionName.equals("") ? "builtin" : pastVersionName));
+                    this.editor.putString("LatestVersionAutoUpdate", pastVersion);
+                    this.editor.putString("LatestVersionNameAutoUpdate", pastVersionName);
+                    this.editor.putString("pastVersion", "");
+                    this.editor.putString("pastVersionName", "");
+                    this.editor.commit();
                 } else {
-                    Log.i(TAG, "Revert to version: " + (pastVersionName.equals("") ? "builtin" : pastVersionName) + "Failed");
+                    Log.i(this.TAG, "Revert to version: " + (pastVersionName.equals("") ? "builtin" : pastVersionName) + "Failed");
                 }
             } else {
                 if (this._reset(false)) {
-                    editor.putString("LatestVersionAutoUpdate", "");
-                    editor.putString("LatestVersionNameAutoUpdate", "");
-                    Log.i(TAG, "Auto reset done");
+                    this.editor.putString("LatestVersionAutoUpdate", "");
+                    this.editor.putString("LatestVersionNameAutoUpdate", "");
+                    Log.i(this.TAG, "Auto reset done");
                 }
             }
-            editor.putString("failingVersion", curVersionName);
-            editor.commit();
+            this.editor.putString("failingVersion", curVersionName);
+            this.editor.commit();
             try {
-                Boolean res = implementation.delete(curVersion, curVersionName);
+                final Boolean res = this.implementation.delete(curVersion, curVersionName);
                 if (res) {
-                    Log.i(TAG, "Delete failing version: " + curVersionName);
+                    Log.i(this.TAG, "Delete failing version: " + curVersionName);
                 }
-            } catch (IOException e) {
+            } catch (final IOException e) {
                 e.printStackTrace();
             }
         } else if (!pastVersion.equals("")) {
-            Log.i(TAG, "Validated version: " + curVersionName);
+            Log.i(this.TAG, "Validated version: " + curVersionName);
             try {
-                Boolean res = implementation.delete(pastVersion, pastVersionName);
+                final Boolean res = this.implementation.delete(pastVersion, pastVersionName);
                 if (res) {
-                    Log.i(TAG, "Delete past version: " + pastVersionName);
+                    Log.i(this.TAG, "Delete past version: " + pastVersionName);
                 }
-            } catch (IOException e) {
+            } catch (final IOException e) {
                 e.printStackTrace();
             }
-            editor.putString("pastVersion", "");
-            editor.putString("pastVersionName", "");
-            editor.commit();
+            this.editor.putString("pastVersion", "");
+            this.editor.putString("pastVersionName", "");
+            this.editor.commit();
         }
     }
 
     // not use but necessary here to remove warnings
     @Override
-    public void onActivityResumed(@NonNull Activity activity) {
+    public void onActivityResumed(@NonNull final Activity activity) {
     }
 
     @Override
-    public void onActivityPaused(@NonNull Activity activity) {
+    public void onActivityPaused(@NonNull final Activity activity) {
     }
     @Override
-    public void onActivityCreated(@NonNull Activity activity, @Nullable Bundle savedInstanceState) {
-    }
-
-    @Override
-    public void onActivitySaveInstanceState(@NonNull Activity activity, @NonNull Bundle outState) {
+    public void onActivityCreated(@NonNull final Activity activity, @Nullable final Bundle savedInstanceState) {
     }
 
     @Override
-    public void onActivityDestroyed(@NonNull Activity activity) {
+    public void onActivitySaveInstanceState(@NonNull final Activity activity, @NonNull final Bundle outState) {
+    }
+
+    @Override
+    public void onActivityDestroyed(@NonNull final Activity activity) {
     }
 }
