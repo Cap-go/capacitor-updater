@@ -53,7 +53,7 @@ Create account in [capgo.app](https://capgo.app) and get your [API key](https://
 - If update fail it will roolback to previous version.
 
 See more there in the [Auto update](
-https://doc.capgo.app/Auto-update-2cf9edda70484d7fa57111ab9c435d08) documentation.
+https://github.com/Cap-go/capacitor-updater/wiki) documentation.
 
 
 ## Manual setup
