@@ -58,7 +58,7 @@ public class CapacitorUpdater {
 
     public String appId = "";
     public String deviceID = "";
-    public final String pluginVersion = "3.2.1";
+    public final String pluginVersion = "3.3.0";
     public String statsUrl = "";
 
     public CapacitorUpdater (final Context context) throws PackageManager.NameNotFoundException {
