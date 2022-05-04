@@ -51,7 +51,6 @@ interface Callback {
 public class CapacitorUpdater {
     private static final String AB = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
     private static SecureRandom rnd = new SecureRandom();
-    private final String TAG = "Capacitor-updater";
 
     private static final String DOWNLOADED_SUFFIX = "_downloaded";
     private static final String NAME_SUFFIX = "_name";
@@ -72,6 +71,7 @@ public class CapacitorUpdater {
     private String versionCode = "";
     private String versionOs = "";
 
+    public final String TAG = "Capacitor-updater";
     public String appId = "";
     public String deviceID = "";
     public String statsUrl = "";
