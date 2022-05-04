@@ -30,10 +30,6 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     private static final String autoUpdateUrlDefault = "https://capgo.app/api/auto_update";
     private static final String statsUrlDefault = "https://capgo.app/api/stats";
     private final String TAG = "Capacitor-updater";
-
-    private static final String autoUpdateUrlDefault = "https://capgo.app/api/auto_update";
-    private static final String statsUrlDefault = "https://capgo.app/api/stats";
-
     private CapacitorUpdater implementation;
 
     private SharedPreferences prefs;
