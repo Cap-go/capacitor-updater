@@ -5,13 +5,11 @@ import android.app.Application;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
-import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.annotation.RequiresApi;
 
 import com.getcapacitor.CapConfig;
 import com.getcapacitor.JSArray;
@@ -29,12 +27,12 @@ import java.util.ArrayList;
 
 @CapacitorPlugin(name = "CapacitorUpdater")
 public class CapacitorUpdaterPlugin extends Plugin implements Application.ActivityLifecycleCallbacks {
+    private static final String autoUpdateUrlDefault = "https://capgo.app/api/auto_update";
+    private static final String statsUrlDefault = "https://capgo.app/api/stats";
     private final String TAG = "Capacitor-updater";
     private CapacitorUpdater implementation;
     private SharedPreferences prefs;
     private SharedPreferences.Editor editor;
-    private static final String autoUpdateUrlDefault = "https://capgo.app/api/auto_update";
-    private static final String statsUrlDefault = "https://capgo.app/api/stats";
     private String autoUpdateUrl = "";
     private Version currentVersionNative;
     private Boolean autoUpdate = false;
