@@ -54,12 +54,12 @@ public class CapacitorUpdater {
     private final SharedPreferences prefs;
     private final SharedPreferences.Editor editor;
 
-    public String statsUrl = "";
     public String appId = "";
     public String deviceID = "";
     private String versionBuild = "";
     private String versionCode = "";
     private String versionOs = "";
+    public String statsUrl = "";
 
     public CapacitorUpdater (final Context context) throws PackageManager.NameNotFoundException {
         this.context = context;
