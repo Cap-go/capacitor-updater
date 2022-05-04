@@ -118,6 +118,7 @@ Do not password encrypt this file, or it will fail to unpack.
 * [`download(...)`](#download)
 * [`set(...)`](#set)
 * [`getId()`](#getid)
+* [`getPluginVersion()`](#getpluginversion)
 * [`delete(...)`](#delete)
 * [`list()`](#list)
 * [`reset(...)`](#reset)
@@ -181,6 +182,19 @@ getId() => Promise<{ id: string; }>
 Get unique ID used to identify device into auto update server
 
 **Returns:** <code>Promise&lt;{ id: string; }&gt;</code>
+
+--------------------
+
+
+### getPluginVersion()
+
+```typescript
+getPluginVersion() => Promise<{ version: string; }>
+```
+
+Get plugin version used in native code
+
+**Returns:** <code>Promise&lt;{ version: string; }&gt;</code>
 
 --------------------
 

@@ -47,6 +47,11 @@ export interface CapacitorUpdaterPlugin {
    */
   getId(): Promise<{ id: string }>;
     /**
+   * Get plugin version used in native code
+   * @returns {Promise<{ id: string }>} an Promise with version for this device
+   */
+  getPluginVersion(): Promise<{ version: string }>;
+    /**
    * Delete version in storage
    * @returns {Promise<void>} an empty Promise when the version is delete, otherwise throw an error
    * @param version The version name to delete
