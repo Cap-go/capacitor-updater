@@ -45,22 +45,21 @@ interface Callback {
 }
 
 public class CapacitorUpdater {
-    public String statsUrl = "";
-    public String appId = "";
-    public String deviceID = "";
-
+    static final String AB = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    static SecureRandom rnd = new SecureRandom();
+    private final String TAG = "Capacitor-updater";
     private final String pluginVersion = "3.2.1";
     private final Context context;
-    private String versionBuild = "";
-    private String versionCode = "";
-    private String versionOs = "";
-    private final String TAG = "Capacitor-updater";
     private final String basePathHot = "versions";
     private final SharedPreferences prefs;
     private final SharedPreferences.Editor editor;
 
-    static final String AB = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-    static SecureRandom rnd = new SecureRandom();
+    public String statsUrl = "";
+    public String appId = "";
+    public String deviceID = "";
+    private String versionBuild = "";
+    private String versionCode = "";
+    private String versionOs = "";
 
     public CapacitorUpdater (final Context context) throws PackageManager.NameNotFoundException {
         this.context = context;
