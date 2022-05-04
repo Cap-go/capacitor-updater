@@ -49,8 +49,8 @@ interface Callback {
 }
 
 public class CapacitorUpdater {
-    static final String AB = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-    static SecureRandom rnd = new SecureRandom();
+    private static final String AB = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    private static SecureRandom rnd = new SecureRandom();
     private final String TAG = "Capacitor-updater";
 
     private static final String DOWNLOADED_SUFFIX = "_downloaded";
@@ -60,13 +60,9 @@ public class CapacitorUpdater {
     private static final String FALLBACK_VERSION = "pastVersion";
     private static final String NEXT_VERSION = "nextVersion";
 
-    private static final String AB = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-    private static final SecureRandom rnd = new SecureRandom();
-
-    private final String pluginVersion = "3.2.0";
+    public final String pluginVersion = "3.3.2";
 
     private final Context context;
-    private final CapacitorUpdaterEvents events;
 
     private final String bundleDirectory = "versions";
 
@@ -78,7 +74,6 @@ public class CapacitorUpdater {
 
     public String appId = "";
     public String deviceID = "";
-    public final String pluginVersion = "3.3.2";
     public String statsUrl = "";
 
     public CapacitorUpdater (final Context context) throws PackageManager.NameNotFoundException {
@@ -539,9 +534,9 @@ public class CapacitorUpdater {
 
     private void setFallbackVersion(final VersionInfo fallback) {
         this.editor.putString(FALLBACK_VERSION,
-            fallback == null
-                ? VersionInfo.VERSION_BUILTIN
-                : fallback.getVersion()
+                fallback == null
+                        ? VersionInfo.VERSION_BUILTIN
+                        : fallback.getVersion()
         );
     }
 
