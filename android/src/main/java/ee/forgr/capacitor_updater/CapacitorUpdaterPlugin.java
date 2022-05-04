@@ -113,7 +113,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     @PluginMethod
     public void getPluginVersion(final PluginCall call) {
         final JSObject ret = new JSObject();
-        ret.put("vrsion", this.implementation.pluginVersion);
+        ret.put("version", this.implementation.pluginVersion);
         call.resolve(ret);
     }
 
