@@ -45,26 +45,32 @@ interface Callback {
 }
 
 public class CapacitorUpdater {
+    static final String AB = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    static SecureRandom rnd = new SecureRandom();
     private final String TAG = "Capacitor-updater";
-
-    private static final String AB = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-    private static final SecureRandom rnd = new SecureRandom();
-
-    private final String pluginVersion = "3.2.0";
-
+    private final String pluginVersion = "3.2.1";
     private final Context context;
-    private final CapacitorUpdaterEvents events;
-
     private final String basePathHot = "versions";
     private final SharedPreferences prefs;
     private final SharedPreferences.Editor editor;
 
-    private String statsUrl = "";
-    private String appId = "";
-    private String deviceID = "";
+    public String appId = "";
+    public String deviceID = "";
     private String versionBuild = "";
     private String versionCode = "";
     private String versionOs = "";
+    public String statsUrl = "";
+
+    public CapacitorUpdater (final Context context) throws PackageManager.NameNotFoundException {
+        this.context = context;
+        this.prefs = this.context.getSharedPreferences("CapWebViewSettings", Activity.MODE_PRIVATE);
+        this.editor = this.prefs.edit();
+        this.versionOs = Build.VERSION.RELEASE;
+        this.deviceID = Secure.getString(context.getContentResolver(), Secure.ANDROID_ID);
+        final PackageInfo pInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
+        this.versionBuild = pInfo.versionName;
+        this.versionCode = Integer.toString(pInfo.versionCode);
+    }
 
     private final FilenameFilter filter = new FilenameFilter() {
         @Override
@@ -74,26 +80,12 @@ public class CapacitorUpdater {
         }
     };
 
-    public CapacitorUpdater(final Context context) throws PackageManager.NameNotFoundException {
-        this(context, new CapacitorUpdaterEvents() {});
-    }
-
-    public CapacitorUpdater (final Context context, final CapacitorUpdaterEvents events) throws PackageManager.NameNotFoundException {
-        this.context = context;
-        this.events = events;
-
-        this.prefs = this.context.getSharedPreferences("CapWebViewSettings", Activity.MODE_PRIVATE);
-        this.editor = this.prefs.edit();
-        this.versionOs = Build.VERSION.RELEASE;
-        this.setDeviceID(Secure.getString(context.getContentResolver(), Secure.ANDROID_ID));
-
-        final PackageInfo pInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
-        this.versionBuild = pInfo.versionName;
-        this.versionCode = Integer.toString(pInfo.versionCode);
-    }
-
     private int calcTotalPercent(final int percent, final int min, final int max) {
         return (percent * (max - min)) / 100 + min;
+    }
+
+    void notifyDownload(final int percent) {
+        return;
     }
 
     private String randomString(final int len){
@@ -143,7 +135,7 @@ public class CapacitorUpdater {
                 final int newPercent = (int)((lengthRead * 100) / lengthTotal);
                 if (lengthTotal > 1 && newPercent != percent) {
                     percent = newPercent;
-                    this.events.notifyDownload(this.calcTotalPercent(percent, 75, 90));
+                    this.notifyDownload(this.calcTotalPercent(percent, 75, 90));
                 }
 
                 lengthRead += entry.getCompressedSize();
