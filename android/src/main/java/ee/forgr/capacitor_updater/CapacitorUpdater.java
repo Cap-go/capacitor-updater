@@ -59,7 +59,6 @@ public class CapacitorUpdater {
     private static final String FALLBACK_VERSION = "pastVersion";
     private static final String NEXT_VERSION = "nextVersion";
 
-    public final String pluginVersion = "3.3.2";
 
     private final Context context;
 
@@ -72,9 +71,10 @@ public class CapacitorUpdater {
     private String versionOs = "";
 
     public final String TAG = "Capacitor-updater";
+    public final String pluginVersion = "3.3.2";
+    public String statsUrl = "";
     public String appId = "";
     public String deviceID = "";
-    public String statsUrl = "";
 
     public CapacitorUpdater (final Context context) throws PackageManager.NameNotFoundException {
         this.context = context;
