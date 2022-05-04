@@ -1,3 +1,9 @@
+## 3.3.2 (2022-05-04)
+
+### Fix
+
+- **android**: Fix typo in 'getPluginVersion'
+
 ## 3.3.1 (2022-05-04)
 
 ### Fix
