@@ -292,8 +292,8 @@ public class CapacitorUpdater {
     }
 
     public void getLatest(final String url, final Callback callback) {
-        final String deviceID = this.deviceID;
-        final String appId = this.appId;
+        final String deviceID = this.getDeviceID();
+        final String appId = this.getAppId();
         final String versionBuild = this.versionBuild;
         final String versionCode = this.versionCode;
         final String versionOs = this.versionOs;
@@ -352,21 +352,21 @@ public class CapacitorUpdater {
     }
 
     public void sendStats(final String action, final String version) {
-        if (this.statsUrl == "") { return; }
+        if (this.getStatsUrl() == "") { return; }
         final URL url;
         final JSONObject json = new JSONObject();
         final String jsonString;
         try {
-            url = new URL(this.statsUrl);
+            url = new URL(this.getStatsUrl());
             json.put("platform", "android");
             json.put("action", action);
             json.put("version_name", version);
-            json.put("device_id", this.deviceID);
+            json.put("device_id", this.getDeviceID());
             json.put("version_build", this.versionBuild);
             json.put("version_code", this.versionCode);
             json.put("version_os", this.versionOs);
             json.put("plugin_version", this.pluginVersion);
-            json.put("app_id", this.appId);
+            json.put("app_id", this.getAppId());
             jsonString = json.toString();
         } catch (final Exception ex) {
             Log.e(this.TAG, "Error get stats", ex);
@@ -402,5 +402,29 @@ public class CapacitorUpdater {
                 }
             }
         }).start();
+    }
+
+    public String getStatsUrl() {
+        return this.statsUrl;
+    }
+
+    public void setStatsUrl(final String statsUrl) {
+        this.statsUrl = statsUrl;
+    }
+
+    public String getAppId() {
+        return this.appId;
+    }
+
+    public void setAppId(final String appId) {
+        this.appId = appId;
+    }
+
+    public String getDeviceID() {
+        return this.deviceID;
+    }
+
+    public void setDeviceID(final String deviceID) {
+        this.deviceID = deviceID;
     }
 }
