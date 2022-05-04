@@ -251,7 +251,7 @@ public class CapacitorUpdater {
         zipFile.delete();
         this.notifyDownload(91);
         this.flattenAssets(unzipped, folderName);
-        this.events.notifyDownload(100);
+        this.notifyDownload(100);
         this.setVersionStatus(version, VersionStatus.PENDING);
         this.setVersionDownloadedTimestamp(version, new Date(System.currentTimeMillis()));
         this.setVersionName(version, versionName);
