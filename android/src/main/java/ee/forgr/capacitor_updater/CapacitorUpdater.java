@@ -289,7 +289,7 @@ public class CapacitorUpdater {
                             final JSONObject jsonObject = new JSONObject(response);
                             callback.callback(jsonObject);
                         } catch (final JSONException e) {
-                            e.printStackTrace();
+                            Log.e(CapacitorUpdater.this.TAG, "Error parsing JSON", e);
                         }
                     }
                 }, new Response.ErrorListener() {

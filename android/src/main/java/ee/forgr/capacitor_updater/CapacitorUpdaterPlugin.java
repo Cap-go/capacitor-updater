@@ -59,10 +59,10 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             final PackageInfo pInfo = this.getContext().getPackageManager().getPackageInfo(this.getContext().getPackageName(), 0);
             this.currentVersionNative = new Version(pInfo.versionName);
         } catch (final PackageManager.NameNotFoundException e) {
-            e.printStackTrace();
+            Log.e(this.TAG, "Error instantiating implementation", e);
             return;
         } catch (final Exception ex) {
-            Log.e(this.TAG, "Error get currentVersionNative", ex);
+            Log.e(this.TAG, "Error getting current native app version", ex);
             return;
         }
         final CapConfig config = CapConfig.loadDefault(this.getActivity());
@@ -81,16 +81,18 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                     final ArrayList<String> res = this.implementation.list();
                     for (int i = 0; i < res.size(); i++) {
                         try {
-                            this.implementation.delete(res.get(i), "");
+                            final String version = res.get(i);
+                            this.implementation.delete(version, "");
+                            Log.i(this.TAG, "Deleted obsolete version: " + version);
                         } catch (final IOException e) {
-                            e.printStackTrace();
+                            Log.e(CapacitorUpdaterPlugin.this.TAG, "error deleting version", e);
                         }
                     }
                 }
                 this.editor.putString("LatestVersionNative", this.currentVersionNative.toString());
                 this.editor.commit();
             } catch (final Exception ex) {
-                Log.e("CapacitorUpdater", "Cannot get the current version " + ex.getMessage());
+                Log.e(this.TAG, "Cannot get the current version " + ex.getMessage());
             }
         }
         if (!this.autoUpdate || this.autoUpdateUrl.equals("")) return;
@@ -170,7 +172,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                 call.reject("Delete failed, version " + version + " doesn't exist");
             }
         } catch(final IOException ex) {
-            Log.e("CapacitorUpdater", "An unexpected error occurred during deletion of folder. Message: " + ex.getMessage());
+            Log.e(this.TAG, "An unexpected error occurred during deletion of folder. Message: " + ex.getMessage());
             call.reject("An unexpected error occurred during deletion of folder.");
         }
     }
@@ -297,7 +299,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                             Log.i(CapacitorUpdaterPlugin.this.TAG, "No need to update, " + currentVersion + " is the latest");
                         }
                     } catch (final JSONException e) {
-                        e.printStackTrace();
+                        Log.e(CapacitorUpdaterPlugin.this.TAG, "error parsing JSON", e);
                     }
                 });
             }
@@ -367,20 +369,20 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             try {
                 final Boolean res = this.implementation.delete(curVersion, curVersionName);
                 if (res) {
-                    Log.i(this.TAG, "Delete failing version: " + curVersionName);
+                    Log.i(this.TAG, "Deleted failing version: " + curVersionName);
                 }
             } catch (final IOException e) {
-                e.printStackTrace();
+                Log.e(CapacitorUpdaterPlugin.this.TAG, "error deleting version", e);
             }
         } else if (!pastVersion.equals("")) {
             Log.i(this.TAG, "Validated version: " + curVersionName);
             try {
                 final Boolean res = this.implementation.delete(pastVersion, pastVersionName);
                 if (res) {
-                    Log.i(this.TAG, "Delete past version: " + pastVersionName);
+                    Log.i(this.TAG, "Deleted past version: " + pastVersionName);
                 }
             } catch (final IOException e) {
-                e.printStackTrace();
+                Log.e(CapacitorUpdaterPlugin.this.TAG, "error deleting version", e);
             }
             this.editor.putString("pastVersion", "");
             this.editor.putString("pastVersionName", "");
