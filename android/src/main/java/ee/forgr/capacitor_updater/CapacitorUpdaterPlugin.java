@@ -29,12 +29,10 @@ import java.util.ArrayList;
 
 @CapacitorPlugin(name = "CapacitorUpdater")
 public class CapacitorUpdaterPlugin extends Plugin implements Application.ActivityLifecycleCallbacks {
-    private final String TAG = "Capacitor-updater";
-
     private static final String autoUpdateUrlDefault = "https://capgo.app/api/auto_update";
     private static final String statsUrlDefault = "https://capgo.app/api/stats";
     private static final String DELAY_UPDATE = "delayUpdate";
-
+    private final String TAG = "Capacitor-updater";
     private CapacitorUpdater implementation;
 
     private SharedPreferences prefs;
@@ -57,12 +55,12 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         this.editor = this.prefs.edit();
 
         try {
-            this.implementation = new CapacitorUpdater(this.getContext(), new CapacitorUpdaterEvents() {
+            this.implementation = new CapacitorUpdater(this.getContext()) {
                 @Override
                 public void notifyDownload(final int percent) {
-                    CapacitorUpdaterPlugin.this.notifyDownload(percent);
+                    this.notifyDownload(percent);
                 }
-            });
+            };
             final PackageInfo pInfo = this.getContext().getPackageManager().getPackageInfo(this.getContext().getPackageName(), 0);
             this.currentVersionNative = new Version(pInfo.versionName);
         } catch (final PackageManager.NameNotFoundException e) {
@@ -145,6 +143,13 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     }
 
     @PluginMethod
+    public void getPluginVersion(final PluginCall call) {
+        final JSObject ret = new JSObject();
+        ret.put("version", this.implementation.pluginVersion);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
     public void download(final PluginCall call) {
         final String url = call.getString("url");
         try {
@@ -180,7 +185,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         this.checkAppReady();
         return true;
     }
-    
+
     @PluginMethod
     public void reload(final PluginCall call) {
         try {

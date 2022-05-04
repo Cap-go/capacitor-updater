@@ -1,3 +1,38 @@
+## 3.3.2 (2022-05-04)
+
+### Fix
+
+- **android**: Fix typo in 'getPluginVersion'
+
+## 3.3.1 (2022-05-04)
+
+### Fix
+
+- add missing def ios
+
+## 3.3.0 (2022-05-04)
+
+### Fix
+
+- add getPluginVersion
+- remove duplicated var
+- better error handling download function
+- lint
+- order
+- var order
+- some issue in order
+- remove event for now to have simple interface
+
+### Feat
+
+- **android**: download method bubbles exception to client
+
+## 3.2.1 (2022-04-29)
+
+### Fix
+
+- doc link issue
+
 ## 3.2.0 (2022-04-22)
 
 ### Feat

@@ -157,16 +157,22 @@ export interface CapacitorUpdaterPlugin {
    * @throws An error if the something went wrong
    */
   getId(): Promise<{ id: string }>;
-
+  
   /**
+   * Get plugin version used in native code
+   * @returns {Promise<{ id: string }>} an Promise with version for this device
+   */
+  getPluginVersion(): Promise<{ version: string }>;
+  
+   /**
    * Delete version in storage
    * @returns {Promise<void>} an empty Promise when the version is deleted
    * @param version The version to delete (note, this is the version, NOT the version name)
    * @throws An error if the something went wrong
    */
   delete(options: { version: string }): Promise<void>;
-
-    /**
+  
+   /**
    * Get all available versions
    * @returns {Promise<{version: VersionInfo[]}>} an Promise witht the version list
    * @throws An error if the something went wrong

@@ -65,16 +65,20 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     @objc func getId(_ call: CAPPluginCall) {
         call.resolve(["id": implementation.deviceID])
     }
+
+    @objc func getPluginVersion(_ call: CAPPluginCall) {
+        call.resolve(["version": implementation.pluginVersion])
+    }
     
     @objc func download(_ call: CAPPluginCall) {
         let url = URL(string: call.getString("url") ?? "")
-        let res = implementation.download(url: url!)
-        if ((res) != nil) {
+        do {
+            let res = try implementation.download(url: url!)
             call.resolve([
-                "version": res!
+                "version": res
             ])
-        } else {
-            call.reject("download failed")
+        } catch {
+            call.reject("download failed", error.localizedDescription)
         }
     }
 
@@ -221,14 +225,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 print("✨  Capacitor-updater: Cannot get version \(failingVersion) \(newVersion)")
             }
             if (newVersion != "0.0.0" && newVersion != failingVersion) {
-                let dlOp = self.implementation.download(url: downloadUrl)
-                if let dl = dlOp {
+                do {
+                    let dl = try self.implementation.download(url: downloadUrl)
                     print("✨  Capacitor-updater: New version: \(newVersion) found. Current is \(currentVersion == "" ? "builtin" : currentVersion), next backgrounding will trigger update")
                     UserDefaults.standard.set(dl, forKey: "nextVersion")
                     UserDefaults.standard.set(newVersion.description, forKey: "nextVersionName")
                     self.notifyListeners("updateAvailable", data: ["version": newVersion])
-                } else {
-                    print("✨  Capacitor-updater: Download version \(newVersion) fail")
+                } catch {
+                    print("✨  Capacitor-updater: Download version \(newVersion) fail", error.localizedDescription)
                 }
             } else {
                 print("✨  Capacitor-updater: No need to update, \(currentVersion) is the latest")

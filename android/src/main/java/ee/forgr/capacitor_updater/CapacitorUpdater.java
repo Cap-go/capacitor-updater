@@ -49,6 +49,8 @@ interface Callback {
 }
 
 public class CapacitorUpdater {
+    static final String AB = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    static SecureRandom rnd = new SecureRandom();
     private final String TAG = "Capacitor-updater";
 
     private static final String DOWNLOADED_SUFFIX = "_downloaded";
@@ -67,15 +69,28 @@ public class CapacitorUpdater {
     private final CapacitorUpdaterEvents events;
 
     private final String bundleDirectory = "versions";
+
     private final SharedPreferences prefs;
     private final SharedPreferences.Editor editor;
-
-    private String statsUrl = "";
-    private String appId = "";
-    private String deviceID = "";
     private String versionBuild = "";
     private String versionCode = "";
     private String versionOs = "";
+
+    public String appId = "";
+    public String deviceID = "";
+    public final String pluginVersion = "3.3.2";
+    public String statsUrl = "";
+
+    public CapacitorUpdater (final Context context) throws PackageManager.NameNotFoundException {
+        this.context = context;
+        this.prefs = this.context.getSharedPreferences("CapWebViewSettings", Activity.MODE_PRIVATE);
+        this.editor = this.prefs.edit();
+        this.versionOs = Build.VERSION.RELEASE;
+        this.deviceID = Secure.getString(context.getContentResolver(), Secure.ANDROID_ID);
+        final PackageInfo pInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
+        this.versionBuild = pInfo.versionName;
+        this.versionCode = Integer.toString(pInfo.versionCode);
+    }
 
     private final FilenameFilter filter = new FilenameFilter() {
         @Override
@@ -85,26 +100,12 @@ public class CapacitorUpdater {
         }
     };
 
-    public CapacitorUpdater(final Context context) throws PackageManager.NameNotFoundException {
-        this(context, new CapacitorUpdaterEvents() {});
-    }
-
-    public CapacitorUpdater (final Context context, final CapacitorUpdaterEvents events) throws PackageManager.NameNotFoundException {
-        this.context = context;
-        this.events = events;
-
-        this.prefs = this.context.getSharedPreferences("CapWebViewSettings", Activity.MODE_PRIVATE);
-        this.editor = this.prefs.edit();
-        this.versionOs = Build.VERSION.RELEASE;
-        this.setDeviceID(Secure.getString(context.getContentResolver(), Secure.ANDROID_ID));
-
-        final PackageInfo pInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
-        this.versionBuild = pInfo.versionName;
-        this.versionCode = Integer.toString(pInfo.versionCode);
-    }
-
     private int calcTotalPercent(final int percent, final int min, final int max) {
         return (percent * (max - min)) / 100 + min;
+    }
+
+    void notifyDownload(final int percent) {
+        return;
     }
 
     private String randomString(final int len){
@@ -124,7 +125,7 @@ public class CapacitorUpdater {
             final long lengthTotal = zipFile.length();
             long lengthRead = bufferSize;
             int percent = 0;
-            this.events.notifyDownload(75);
+            this.notifyDownload(75);
 
             ZipEntry entry;
             while ((entry = zis.getNextEntry()) != null) {
@@ -155,7 +156,7 @@ public class CapacitorUpdater {
                 final int newPercent = (int)((lengthRead * 100) / lengthTotal);
                 if (lengthTotal > 1 && newPercent != percent) {
                     percent = newPercent;
-                    this.events.notifyDownload(this.calcTotalPercent(percent, 75, 90));
+                    this.notifyDownload(this.calcTotalPercent(percent, 75, 90));
                 }
 
                 lengthRead += entry.getCompressedSize();
@@ -208,13 +209,13 @@ public class CapacitorUpdater {
 
         int bytesRead = bufferSize;
         int percent = 0;
-        this.events.notifyDownload(10);
+        this.notifyDownload(10);
         while ((length = dis.read(buffer))>0) {
             fos.write(buffer, 0, length);
             final int newPercent = (int)((bytesRead * 100) / totalLength);
             if (totalLength > 1 && newPercent != percent) {
                 percent = newPercent;
-                this.events.notifyDownload(this.calcTotalPercent(percent, 10, 70));
+                this.notifyDownload(this.calcTotalPercent(percent, 10, 70));
             }
             bytesRead += length;
         }
@@ -242,18 +243,18 @@ public class CapacitorUpdater {
     }
 
     public VersionInfo download(final String url, final String versionName) throws IOException {
-        this.events.notifyDownload(0);
+        this.notifyDownload(0);
         final String path = this.randomString(10);
         final File zipFile = new File(this.context.getFilesDir()  + "/" + path);
         final String folderNameUnZip = this.randomString(10);
         final String version = this.randomString(10);
         final String folderName = this.bundleDirectory + "/" + version;
-        this.events.notifyDownload(5);
+        this.notifyDownload(5);
         final File downloaded = this.downloadFile(url, path);
-        this.events.notifyDownload(71);
+        this.notifyDownload(71);
         final File unzipped = this.unzip(downloaded, folderNameUnZip);
         zipFile.delete();
-        this.events.notifyDownload(91);
+        this.notifyDownload(91);
         this.flattenAssets(unzipped, folderName);
         this.events.notifyDownload(100);
         this.setVersionStatus(version, VersionStatus.PENDING);

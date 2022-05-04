@@ -36,13 +36,33 @@ extension Bundle {
     }
 }
 
+enum CustomError: Error {
+    // Throw when an unzip fail
+    case cannotUnzip
+
+    // Throw in all other cases
+    case unexpected(code: Int)
+}
+
+extension CustomError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .cannotUnzip:
+            return NSLocalizedString(
+                "The file cannot be unzip",
+                comment: "Invalid zip"
+            )
+        case .unexpected(_):
+            return NSLocalizedString(
+                "An unexpected error occurred.",
+                comment: "Unexpected Error"
+            )
+        }
+    }
+}
+
 @objc public class CapacitorUpdater: NSObject {
     
-    public var statsUrl = ""
-    public var appId = ""
-    public var deviceID = UIDevice.current.identifierForVendor?.uuidString ?? ""
-    public var notifyDownload: (Int) -> Void = { _ in }
-    public var pluginVersion = "3.2.0"
     private var versionBuild = Bundle.main.releaseVersionNumber ?? ""
     private var versionCode = Bundle.main.buildVersionNumber ?? ""
     private var versionOs = ProcessInfo().operatingSystemVersion.getFullVersion()
@@ -53,11 +73,17 @@ extension Bundle {
     private let documentsUrl = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
     private let libraryUrl = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
     
-    @objc private func calcTotalPercent(percent: Int, min: Int, max: Int) -> Int {
+    public var statsUrl = ""
+    public var appId = ""
+    public var deviceID = UIDevice.current.identifierForVendor?.uuidString ?? ""
+    public var notifyDownload: (Int) -> Void = { _ in }
+    public var pluginVersion = "3.2.0"
+
+    private func calcTotalPercent(percent: Int, min: Int, max: Int) -> Int {
         return (percent * (max - min)) / 100 + min;
     }
     
-    @objc private func randomString(length: Int) -> String {
+    private func randomString(length: Int) -> String {
         let letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
         return String((0..<length).map{ _ in letters.randomElement()! })
     }
@@ -101,17 +127,19 @@ extension Bundle {
         }
     }
     
-    private func saveDownloaded(sourceZip: URL, version: String, base: URL) {
+    private func saveDownloaded(sourceZip: URL, version: String, base: URL) throws {
         prepareFolder(source: base)
         let destHot = base.appendingPathComponent(version)
         let destUnZip = documentsUrl.appendingPathComponent(randomString(length: 10))
-        SSZipArchive.unzipFile(atPath: sourceZip.path, toDestination: destUnZip.path)
+        if (!SSZipArchive.unzipFile(atPath: sourceZip.path, toDestination: destUnZip.path)) {
+            throw CustomError.cannotUnzip
+        }
         if (unflatFolder(source: destUnZip, dest: destHot)) {
             deleteFolder(source: destUnZip)
         }
     }
 
-    @objc public func getLatest(url: URL) -> AppVersion? {
+    public func getLatest(url: URL) -> AppVersion? {
         let semaphore = DispatchSemaphore(value: 0)
         let latest = AppVersion()
         let headers: HTTPHeaders = [
@@ -150,9 +178,10 @@ extension Bundle {
         return latest.url != "" ? latest : nil
     }
     
-    @objc public func download(url: URL) -> String? {
+    public func download(url: URL) throws -> String {
         let semaphore = DispatchSemaphore(value: 0)
-        var version: String? = nil
+        var version: String = ""
+        var mainError: NSError? = nil
         let destination: DownloadRequest.Destination = { _, _ in
             let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             let fileURL = documentsURL.appendingPathComponent(self.randomString(length: 10))
@@ -171,24 +200,32 @@ extension Bundle {
                 case .success:
                     self.notifyDownload(71);
                     version = self.randomString(length: 10)
-                    self.saveDownloaded(sourceZip: fileURL, version: version!, base: self.documentsUrl.appendingPathComponent(self.basePathHot))
-                    self.notifyDownload(85);
-                    self.saveDownloaded(sourceZip: fileURL, version: version!, base: self.libraryUrl.appendingPathComponent(self.basePathPersist))
-                    self.notifyDownload(100);
-                    self.deleteFolder(source: fileURL)
+                    do {
+                        try self.saveDownloaded(sourceZip: fileURL, version: version, base: self.documentsUrl.appendingPathComponent(self.basePathHot))
+                        self.notifyDownload(85);
+                        try self.saveDownloaded(sourceZip: fileURL, version: version, base: self.libraryUrl.appendingPathComponent(self.basePathPersist))
+                        self.notifyDownload(100);
+                        self.deleteFolder(source: fileURL)
+                    } catch {
+                        print("✨  Capacitor-updater: download unzip error", error)
+                        mainError = error as NSError
+                    }
                 case let .failure(error):
                     print("✨  Capacitor-updater: download error", error)
-                    version = nil
+                    mainError = error as NSError
                 }
             }
             semaphore.signal()
         }
         self.notifyDownload(0);
         semaphore.wait()
+        if (mainError != nil) {
+            throw mainError!
+        }
         return version
     }
 
-    @objc public func list() -> [String] {
+    public func list() -> [String] {
         let dest = documentsUrl.appendingPathComponent(basePathHot)
         do {
             let files = try FileManager.default.contentsOfDirectory(atPath: dest.path)
@@ -199,7 +236,7 @@ extension Bundle {
         }
     }
     
-    @objc public func delete(version: String, versionName: String) -> Bool {
+    public func delete(version: String, versionName: String) -> Bool {
         let destHot = documentsUrl.appendingPathComponent(basePathHot).appendingPathComponent(version)
         let destPersist = libraryUrl.appendingPathComponent(basePathPersist).appendingPathComponent(version)
         do {
@@ -217,7 +254,7 @@ extension Bundle {
         return true
     }
 
-    @objc public func set(version: String, versionName: String) -> Bool {
+    public func set(version: String, versionName: String) -> Bool {
         let destHot = documentsUrl.appendingPathComponent(basePathHot).appendingPathComponent(version)
         let indexHot = destHot.appendingPathComponent("index.html")
         let destHotPersist = libraryUrl.appendingPathComponent(basePathPersist).appendingPathComponent(version)
@@ -233,19 +270,19 @@ extension Bundle {
         return false
     }
     
-    @objc public func getLastPathHot() -> String {
+    public func getLastPathHot() -> String {
         return UserDefaults.standard.string(forKey: "lastPathHot") ?? ""
     }
     
-    @objc public func getVersionName() -> String {
+    public func getVersionName() -> String {
         return UserDefaults.standard.string(forKey: "versionName") ?? ""
     }
     
-    @objc public func getLastPathPersist() -> String {
+    public func getLastPathPersist() -> String {
         return UserDefaults.standard.string(forKey: "lastPathPersist") ?? ""
     }
     
-    @objc public func reset() {
+    public func reset() {
         let version = UserDefaults.standard.string(forKey: "versionName") ?? ""
         sendStats(action: "reset", version: version)
         UserDefaults.standard.set("", forKey: "lastPathHot")
@@ -254,7 +291,7 @@ extension Bundle {
         UserDefaults.standard.synchronize()
     }
 
-    @objc func sendStats(action: String, version: String) {
+    func sendStats(action: String, version: String) {
         if (statsUrl == "") { return }
         let parameters: [String: String] = [
             "platform": "ios",

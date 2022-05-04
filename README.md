@@ -43,7 +43,7 @@ Create account in [capgo.app](https://capgo.app) and get your [API key](https://
 ```
 - Add to your main code
 ```javascript
-  import { CapacitorUpdater } from 'capacitor-updater'
+  import { CapacitorUpdater } from '@capgo/capacitor-updater'
   CapacitorUpdater.notifyAppReady()
   // To let auto update know you app boot well.
 ```
@@ -53,7 +53,7 @@ Create account in [capgo.app](https://capgo.app) and get your [API key](https://
 - If update fail it will roolback to previous version.
 
 See more there in the [Auto update](
-https://doc.capgo.app/Auto-update-2cf9edda70484d7fa57111ab9c435d08) documentation.
+https://github.com/Cap-go/capacitor-updater/wiki) documentation.
 
 
 ## Manual setup
@@ -64,7 +64,7 @@ install it when user background the app.
 In your main code :
 
 ```javascript
-  import { CapacitorUpdater } from 'capacitor-updater'
+  import { CapacitorUpdater } from '@capgo/capacitor-updater'
   import { SplashScreen } from '@capacitor/splash-screen'
   import { App } from '@capacitor/app'
 
@@ -119,6 +119,7 @@ Do not password encrypt this file, or it will fail to unpack.
 * [`next(...)`](#next)
 * [`set(...)`](#set)
 * [`getId()`](#getid)
+* [`getPluginVersion()`](#getpluginversion)
 * [`delete(...)`](#delete)
 * [`list()`](#list)
 * [`reset(...)`](#reset)
@@ -198,6 +199,19 @@ getId() => Promise<{ id: string; }>
 Get unique ID used to identify device into auto update server
 
 **Returns:** <code>Promise&lt;{ id: string; }&gt;</code>
+
+--------------------
+
+
+### getPluginVersion()
+
+```typescript
+getPluginVersion() => Promise<{ version: string; }>
+```
+
+Get plugin version used in native code
+
+**Returns:** <code>Promise&lt;{ version: string; }&gt;</code>
 
 --------------------
 
@@ -457,7 +471,7 @@ removeAllListeners() => Promise<void>
 ### Listen to download events
 
 ```javascript
-  import { CapacitorUpdater } from 'capacitor-updater';
+  import { CapacitorUpdater } from '@capgo/capacitor-updater';
 
 CapacitorUpdater.addListener('download', (info: any) => {
   console.log('download was fired', info.percent);

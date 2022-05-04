@@ -23,6 +23,10 @@ export class CapacitorUpdaterWeb
     console.warn('Cannot get ID in web');
     return { id: 'default' };
   }
+  async getPluginVersion(): Promise<{ version: string }> {
+    console.log('Cannot get version in web');
+    return { version: 'default'};
+  }
   async delete(options: { version: string }): Promise<void> {
     console.warn('Cannot delete version in web', options);
   }
