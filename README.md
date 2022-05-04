@@ -43,7 +43,7 @@ Create account in [capgo.app](https://capgo.app) and get your [API key](https://
 ```
 - Add to your main code
 ```javascript
-  import { CapacitorUpdater } from 'capacitor-updater'
+  import { CapacitorUpdater } from '@capgo/capacitor-updater'
   CapacitorUpdater.notifyAppReady()
   // To let auto update know you app boot well.
 ```
@@ -64,7 +64,7 @@ install it when user background the app.
 In your main code :
 
 ```javascript
-  import { CapacitorUpdater } from 'capacitor-updater'
+  import { CapacitorUpdater } from '@capgo/capacitor-updater'
   import { SplashScreen } from '@capacitor/splash-screen'
   import { App } from '@capacitor/app'
 
@@ -436,7 +436,7 @@ removeAllListeners() => Promise<void>
 ### Listen to download events
 
 ```javascript
-  import { CapacitorUpdater } from 'capacitor-updater';
+  import { CapacitorUpdater } from '@capgo/capacitor-updater';
 
 CapacitorUpdater.addListener('download', (info: any) => {
   console.log('download was fired', info.percent);

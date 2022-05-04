@@ -27,6 +27,8 @@ import java.util.ArrayList;
 
 @CapacitorPlugin(name = "CapacitorUpdater")
 public class CapacitorUpdaterPlugin extends Plugin implements Application.ActivityLifecycleCallbacks {
+    private static final String autoUpdateUrlDefault = "https://capgo.app/api/auto_update";
+    private static final String statsUrlDefault = "https://capgo.app/api/stats";
     private final String TAG = "Capacitor-updater";
 
     private static final String autoUpdateUrlDefault = "https://capgo.app/api/auto_update";
@@ -48,12 +50,12 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         this.prefs = this.getContext().getSharedPreferences("CapWebViewSettings", Activity.MODE_PRIVATE);
         this.editor = this.prefs.edit();
         try {
-            this.implementation = new CapacitorUpdater(this.getContext(), new CapacitorUpdaterEvents() {
+            this.implementation = new CapacitorUpdater(this.getContext()) {
                 @Override
                 public void notifyDownload(final int percent) {
-                    CapacitorUpdaterPlugin.this.notifyDownload(percent);
+                    this.notifyDownload(percent);
                 }
-            });
+            };
             final PackageInfo pInfo = this.getContext().getPackageManager().getPackageInfo(this.getContext().getPackageName(), 0);
             this.currentVersionNative = new Version(pInfo.versionName);
         } catch (final PackageManager.NameNotFoundException e) {
@@ -133,7 +135,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         this.bridge.setServerBasePath(pathHot);
         return true;
     }
-    
+
     @PluginMethod
     public void reload(final PluginCall call) {
         if (this._reload()) {
