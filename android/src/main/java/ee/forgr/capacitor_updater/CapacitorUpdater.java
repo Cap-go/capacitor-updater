@@ -63,12 +63,10 @@ public class CapacitorUpdater {
 
     public CapacitorUpdater (final Context context) throws PackageManager.NameNotFoundException {
         this.context = context;
-
         this.prefs = this.context.getSharedPreferences("CapWebViewSettings", Activity.MODE_PRIVATE);
         this.editor = this.prefs.edit();
         this.versionOs = Build.VERSION.RELEASE;
         this.deviceID = Secure.getString(context.getContentResolver(), Secure.ANDROID_ID);
-
         final PackageInfo pInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
         this.versionBuild = pInfo.versionName;
         this.versionCode = Integer.toString(pInfo.versionCode);
