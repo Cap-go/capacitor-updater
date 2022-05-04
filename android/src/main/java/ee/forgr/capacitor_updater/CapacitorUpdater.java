@@ -15,6 +15,7 @@ import com.android.volley.Response;
 import com.android.volley.VolleyError;
 import com.android.volley.toolbox.StringRequest;
 import com.android.volley.toolbox.Volley;
+import com.getcapacitor.plugin.WebView;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -33,8 +34,11 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLConnection;
 import java.security.SecureRandom;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.TimeZone;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.ArrayList;
@@ -48,8 +52,24 @@ public class CapacitorUpdater {
     static final String AB = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
     static SecureRandom rnd = new SecureRandom();
     private final String TAG = "Capacitor-updater";
+
+    private static final String DOWNLOADED_SUFFIX = "_downloaded";
+    private static final String NAME_SUFFIX = "_name";
+    private static final String STATUS_SUFFIX = "_status";
+
+    private static final String FALLBACK_VERSION = "pastVersion";
+    private static final String NEXT_VERSION = "nextVersion";
+
+    private static final String AB = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    private static final SecureRandom rnd = new SecureRandom();
+
+    private final String pluginVersion = "3.2.0";
+
     private final Context context;
-    private final String basePathHot = "versions";
+    private final CapacitorUpdaterEvents events;
+
+    private final String bundleDirectory = "versions";
+
     private final SharedPreferences prefs;
     private final SharedPreferences.Editor editor;
     private String versionBuild = "";
@@ -94,6 +114,7 @@ public class CapacitorUpdater {
             sb.append(AB.charAt(rnd.nextInt(AB.length())));
         return sb.toString();
     }
+
     private File unzip(final File zipFile, final String dest) throws IOException {
         final File targetDirectory = new File(this.context.getFilesDir()  + "/" + dest);
         final ZipInputStream zis = new ZipInputStream(new BufferedInputStream(new FileInputStream(zipFile)));
@@ -215,13 +236,19 @@ public class CapacitorUpdater {
         }
     }
 
-    public String download(final String url) throws IOException {
+    private void setCurrentBundle(final File bundle) {
+        this.editor.putString(WebView.CAP_SERVER_PATH, bundle.getPath());
+        Log.i(this.TAG, "Current bundle set to: " + bundle);
+        this.editor.commit();
+    }
+
+    public VersionInfo download(final String url, final String versionName) throws IOException {
         this.notifyDownload(0);
         final String path = this.randomString(10);
         final File zipFile = new File(this.context.getFilesDir()  + "/" + path);
         final String folderNameUnZip = this.randomString(10);
         final String version = this.randomString(10);
-        final String folderName = this.basePathHot + "/" + version;
+        final String folderName = this.bundleDirectory + "/" + version;
         this.notifyDownload(5);
         final File downloaded = this.downloadFile(url, path);
         this.notifyDownload(71);
@@ -229,17 +256,21 @@ public class CapacitorUpdater {
         zipFile.delete();
         this.notifyDownload(91);
         this.flattenAssets(unzipped, folderName);
-        this.notifyDownload(100);
-        return version;
+        this.events.notifyDownload(100);
+        this.setVersionStatus(version, VersionStatus.PENDING);
+        this.setVersionDownloadedTimestamp(version, new Date(System.currentTimeMillis()));
+        this.setVersionName(version, versionName);
+        return this.getVersionInfo(version);
     }
 
-    public ArrayList<String> list() {
-        final ArrayList<String> res = new ArrayList<String>();
-        final File destHot = new File(this.context.getFilesDir()  + "/" + this.basePathHot);
+    public ArrayList<VersionInfo> list() {
+        final ArrayList<VersionInfo> res = new ArrayList<>();
+        final File destHot = new File(this.context.getFilesDir()  + "/" + this.bundleDirectory);
         Log.i(this.TAG, "list File : " + destHot.getPath());
         if (destHot.exists()) {
             for (final File i : destHot.listFiles()) {
-                res.add(i.getName());
+                final String version = i.getName();
+                res.add(this.getVersionInfo(version));
             }
         } else {
             Log.i(this.TAG, "No version available" + destHot);
@@ -247,30 +278,71 @@ public class CapacitorUpdater {
         return res;
     }
 
-    public Boolean delete(final String version, final String versionName) throws IOException {
-        final File destHot = new File(this.context.getFilesDir()  + "/" + this.basePathHot + "/" + version);
-        if (destHot.exists()) {
-            this.deleteDirectory(destHot);
+    public Boolean delete(final String version) throws IOException {
+        final VersionInfo deleted = this.getVersionInfo(version);
+        final File bundle = new File(this.context.getFilesDir()  + "/" + this.bundleDirectory + "/" + version);
+        if (bundle.exists()) {
+            this.deleteDirectory(bundle);
+            this.removeVersionInfo(version);
             return true;
         }
-        Log.i(this.TAG, "Directory not removed: " + destHot.getPath());
-        this.sendStats("delete", versionName);
+        Log.i(this.TAG, "Directory not removed: " + bundle.getPath());
+        this.sendStats("delete", deleted);
         return false;
     }
 
-    public Boolean set(final String version, final String versionName) {
-        final File destHot = new File(this.context.getFilesDir()  + "/" + this.basePathHot + "/" + version);
-        final File destIndex = new File(destHot.getPath()  + "/index.html");
-        if (destHot.exists() && destIndex.exists()) {
-            this.editor.putString("lastPathHot", destHot.getPath());
-            this.editor.putString("serverBasePath", destHot.getPath());
-            this.editor.putString("versionName", versionName);
-            this.editor.commit();
-            this.sendStats("set", versionName);
+    private File getBundleDirectory(final String version) {
+        return new File(this.context.getFilesDir()  + "/" + this.bundleDirectory + "/" + version);
+    }
+
+    private boolean bundleExists(final File bundle) {
+        if(bundle == null || !bundle.exists()) {
+            return false;
+        }
+
+        return new File(bundle.getPath()  + "/index.html").exists();
+    }
+
+    public Boolean set(final VersionInfo version) {
+        return this.set(version.getVersion());
+    }
+
+    public Boolean set(final String version) {
+
+        final VersionInfo existing = this.getVersionInfo(version);
+        final File bundle = this.getBundleDirectory(version);
+
+        Log.i(this.TAG, "Setting next active bundle " + existing);
+        if (this.bundleExists(bundle)) {
+            this.setCurrentBundle(bundle);
+            this.setVersionStatus(version, VersionStatus.PENDING);
+            this.sendStats("set", existing);
             return true;
         }
-        this.sendStats("set_fail", versionName);
+        this.sendStats("set_fail", existing);
         return false;
+    }
+
+    public void commit(final VersionInfo version) {
+        this.setVersionStatus(version.getVersion(), VersionStatus.SUCCESS);
+        this.setFallbackVersion(version);
+    }
+
+    public void reset() {
+        this.reset(false);
+    }
+
+    public void rollback(final VersionInfo version) {
+        this.setVersionStatus(version.getVersion(), VersionStatus.ERROR);
+    }
+
+    public void reset(final boolean internal) {
+        this.setCurrentBundle(new File("public"));
+        this.setFallbackVersion(null);
+        this.setNextVersion(null);
+        if(!internal) {
+            this.sendStats("reset", this.getCurrentBundle());
+        }
     }
 
     public void getLatest(final String url, final Callback callback) {
@@ -280,7 +352,7 @@ public class CapacitorUpdater {
         final String versionCode = this.versionCode;
         final String versionOs = this.versionOs;
         final String pluginVersion = this.pluginVersion;
-        final String versionName = this.getVersionName().equals("") ? "builtin" : this.getVersionName();
+        final String versionName = this.getCurrentBundle().getName();
         final StringRequest stringRequest = new StringRequest(Request.Method.GET, url,
                 new Response.Listener<String>() {
                     @Override
@@ -316,24 +388,7 @@ public class CapacitorUpdater {
         requestQueue.add(stringRequest);
     }
 
-    public String getLastPathHot() {
-        return this.prefs.getString("lastPathHot", "public");
-    }
-
-    public String getVersionName() {
-        return this.prefs.getString("versionName", "");
-    }
-
-    public void reset() {
-        final String version = this.prefs.getString("versionName", "");
-        this.sendStats("reset", version);
-        this.editor.putString("lastPathHot", "public");
-        this.editor.putString("serverBasePath", "public");
-        this.editor.putString("versionName", "");
-        this.editor.commit();
-    }
-
-    public void sendStats(final String action, final String version) {
+    public void sendStats(final String action, final VersionInfo version) {
         if (this.getStatsUrl() == "") { return; }
         final URL url;
         final JSONObject json = new JSONObject();
@@ -384,6 +439,134 @@ public class CapacitorUpdater {
                 }
             }
         }).start();
+    }
+
+    public VersionInfo getVersionInfo(String version) {
+        if(version == null) {
+            version = "unknown";
+        }
+        final String downloaded = this.getVersionDownloadedTimestamp(version);
+        final String name = this.getVersionName(version);
+        final VersionStatus status = this.getVersionStatus(version);
+        return new VersionInfo(version, status, downloaded, name);
+    }
+
+    private void removeVersionInfo(final String version) {
+        this.setVersionDownloadedTimestamp(version, null);
+        this.setVersionName(version, null);
+        this.setVersionStatus(version, null);
+    }
+
+    private String getVersionDownloadedTimestamp(final String version) {
+        return this.prefs.getString(version + DOWNLOADED_SUFFIX, "");
+    }
+
+    private void setVersionDownloadedTimestamp(final String version, final Date time) {
+        if(version != null) {
+            Log.i(this.TAG, "Setting version download timestamp " + version + " to " + time);
+            if(time == null) {
+                this.editor.remove(version + DOWNLOADED_SUFFIX);
+            } else {
+
+                final SimpleDateFormat sdf;
+                sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ");
+                sdf.setTimeZone(TimeZone.getTimeZone("CET"));
+                final String isoDate = sdf.format(time);
+
+                this.editor.putString(version + DOWNLOADED_SUFFIX, isoDate);
+            }
+            this.editor.commit();
+        }
+    }
+
+    private String getVersionName(final String version) {
+        return this.prefs.getString(version + NAME_SUFFIX, "");
+    }
+
+    public void setVersionName(final String version, final String name) {
+        if(version != null) {
+            Log.i(this.TAG, "Setting version name " + version + " to " + name);
+            if(name == null) {
+                this.editor.remove(version + NAME_SUFFIX);
+            } else {
+                this.editor.putString(version + NAME_SUFFIX, name);
+            }
+            this.editor.commit();
+        }
+    }
+
+    private VersionStatus getVersionStatus(final String version) {
+        return VersionStatus.fromString(this.prefs.getString(version + STATUS_SUFFIX, "pending"));
+    }
+
+    private void setVersionStatus(final String version, final VersionStatus status) {
+        if(version != null) {
+            Log.i(this.TAG, "Setting version status " + version + " to " + status);
+            if(status == null) {
+                this.editor.remove(version + STATUS_SUFFIX);
+            } else {
+                this.editor.putString(version + STATUS_SUFFIX, status.label);
+            }
+            this.editor.commit();
+        }
+    }
+
+    private String getCurrentBundleVersion() {
+        if(this.isUsingBuiltin()) {
+            return VersionInfo.VERSION_BUILTIN;
+        } else {
+            final String path = this.getCurrentBundlePath();
+            return path.substring(path.lastIndexOf('/') + 1);
+        }
+    }
+
+    public VersionInfo getCurrentBundle() {
+        return this.getVersionInfo(this.getCurrentBundleVersion());
+    }
+
+    public String getCurrentBundlePath() {
+        return this.prefs.getString(WebView.CAP_SERVER_PATH, "public");
+    }
+
+    public Boolean isUsingBuiltin() {
+        return this.getCurrentBundlePath().equals("public");
+    }
+
+    public VersionInfo getFallbackVersion() {
+        final String version = this.prefs.getString(FALLBACK_VERSION, VersionInfo.VERSION_BUILTIN);
+        return this.getVersionInfo(version);
+    }
+
+    private void setFallbackVersion(final VersionInfo fallback) {
+        this.editor.putString(FALLBACK_VERSION,
+            fallback == null
+                ? VersionInfo.VERSION_BUILTIN
+                : fallback.getVersion()
+        );
+    }
+
+    public VersionInfo getNextVersion() {
+        final String version = this.prefs.getString(NEXT_VERSION, "");
+        if(version != "") {
+            return this.getVersionInfo(version);
+        } else {
+            return null;
+        }
+    }
+
+    public boolean setNextVersion(final String next) {
+        if (next == null) {
+            this.editor.remove(NEXT_VERSION);
+        } else {
+            final File bundle = this.getBundleDirectory(next);
+            if (!this.bundleExists(bundle)) {
+                return false;
+            }
+
+            this.editor.putString(NEXT_VERSION, next);
+        }
+        this.editor.commit();
+        return true;
     }
 
     public String getStatsUrl() {
