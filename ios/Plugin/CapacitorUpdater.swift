@@ -63,11 +63,6 @@ extension CustomError: LocalizedError {
 
 @objc public class CapacitorUpdater: NSObject {
     
-    public var statsUrl = ""
-    public var appId = ""
-    public var deviceID = UIDevice.current.identifierForVendor?.uuidString ?? ""
-    public var notifyDownload: (Int) -> Void = { _ in }
-    public var pluginVersion = "3.2.0"
     private var versionBuild = Bundle.main.releaseVersionNumber ?? ""
     private var versionCode = Bundle.main.buildVersionNumber ?? ""
     private var versionOs = ProcessInfo().operatingSystemVersion.getFullVersion()
@@ -78,6 +73,12 @@ extension CustomError: LocalizedError {
     private let documentsUrl = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
     private let libraryUrl = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
     
+    public var statsUrl = ""
+    public var appId = ""
+    public var deviceID = UIDevice.current.identifierForVendor?.uuidString ?? ""
+    public var notifyDownload: (Int) -> Void = { _ in }
+    public var pluginVersion = "3.2.0"
+
     private func calcTotalPercent(percent: Int, min: Int, max: Int) -> Int {
         return (percent * (max - min)) / 100 + min;
     }

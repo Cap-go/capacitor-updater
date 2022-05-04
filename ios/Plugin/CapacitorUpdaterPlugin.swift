@@ -65,6 +65,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     @objc func getId(_ call: CAPPluginCall) {
         call.resolve(["id": implementation.deviceID])
     }
+
+    @objc func getPluginVersion(_ call: CAPPluginCall) {
+        call.resolve(["version": implementation.pluginVersion])
+    }
     
     @objc func download(_ call: CAPPluginCall) {
         let url = URL(string: call.getString("url") ?? "")

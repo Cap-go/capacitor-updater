@@ -48,17 +48,17 @@ public class CapacitorUpdater {
     static final String AB = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
     static SecureRandom rnd = new SecureRandom();
     private final String TAG = "Capacitor-updater";
-    private final String pluginVersion = "3.2.1";
     private final Context context;
     private final String basePathHot = "versions";
     private final SharedPreferences prefs;
     private final SharedPreferences.Editor editor;
-
-    public String appId = "";
-    public String deviceID = "";
     private String versionBuild = "";
     private String versionCode = "";
     private String versionOs = "";
+
+    public String appId = "";
+    public String deviceID = "";
+    public final String pluginVersion = "3.2.1";
     public String statsUrl = "";
 
     public CapacitorUpdater (final Context context) throws PackageManager.NameNotFoundException {
@@ -104,7 +104,7 @@ public class CapacitorUpdater {
             final long lengthTotal = zipFile.length();
             long lengthRead = bufferSize;
             int percent = 0;
-            this.events.notifyDownload(75);
+            this.notifyDownload(75);
 
             ZipEntry entry;
             while ((entry = zis.getNextEntry()) != null) {
@@ -188,13 +188,13 @@ public class CapacitorUpdater {
 
         int bytesRead = bufferSize;
         int percent = 0;
-        this.events.notifyDownload(10);
+        this.notifyDownload(10);
         while ((length = dis.read(buffer))>0) {
             fos.write(buffer, 0, length);
             final int newPercent = (int)((bytesRead * 100) / totalLength);
             if (totalLength > 1 && newPercent != percent) {
                 percent = newPercent;
-                this.events.notifyDownload(this.calcTotalPercent(percent, 10, 70));
+                this.notifyDownload(this.calcTotalPercent(percent, 10, 70));
             }
             bytesRead += length;
         }
@@ -216,20 +216,20 @@ public class CapacitorUpdater {
     }
 
     public String download(final String url) throws IOException {
-        this.events.notifyDownload(0);
+        this.notifyDownload(0);
         final String path = this.randomString(10);
         final File zipFile = new File(this.context.getFilesDir()  + "/" + path);
         final String folderNameUnZip = this.randomString(10);
         final String version = this.randomString(10);
         final String folderName = this.basePathHot + "/" + version;
-        this.events.notifyDownload(5);
+        this.notifyDownload(5);
         final File downloaded = this.downloadFile(url, path);
-        this.events.notifyDownload(71);
+        this.notifyDownload(71);
         final File unzipped = this.unzip(downloaded, folderNameUnZip);
         zipFile.delete();
-        this.events.notifyDownload(91);
+        this.notifyDownload(91);
         this.flattenAssets(unzipped, folderName);
-        this.events.notifyDownload(100);  
+        this.notifyDownload(100);
         return version;
     }
 
