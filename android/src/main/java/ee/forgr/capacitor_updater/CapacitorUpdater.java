@@ -59,7 +59,6 @@ public class CapacitorUpdater {
         }
     };
     private final Context context;
-    private final CapacitorUpdaterEvents events;
 
     private String versionBuild = "";
     private String versionCode = "";
@@ -76,6 +75,10 @@ public class CapacitorUpdater {
         return (percent * (max - min)) / 100 + min;
     }
 
+    void notifyDownload(final int percent) {
+        return;
+    }
+
     private String randomString(final int len){
         final StringBuilder sb = new StringBuilder(len);
         for(int i = 0; i < len; i++)
@@ -83,13 +86,8 @@ public class CapacitorUpdater {
         return sb.toString();
     }
 
-    public CapacitorUpdater(final Context context) throws PackageManager.NameNotFoundException {
-        this(context, new CapacitorUpdaterEvents() {});
-    }
-
-    public CapacitorUpdater (final Context context, final CapacitorUpdaterEvents events) throws PackageManager.NameNotFoundException {
+    public CapacitorUpdater (final Context context) throws PackageManager.NameNotFoundException {
         this.context = context;
-        this.events = events;
 
         this.prefs = this.context.getSharedPreferences("CapWebViewSettings", Activity.MODE_PRIVATE);
         this.editor = this.prefs.edit();
@@ -120,7 +118,7 @@ public class CapacitorUpdater {
             final long totalLength = zipFile.length();
             long readLength = buffLength;
             int percent = 0;
-            this.events.notifyDownload(75);
+            this.notifyDownload(75);
             while ((ze = zis.getNextEntry()) != null) {
                 final File file = new File(targetDirectory, ze.getName());
                 final String canonicalPath = file.getCanonicalPath();
@@ -145,7 +143,7 @@ public class CapacitorUpdater {
                 final int newPercent = (int)((readLength * 100) / totalLength);
                 if (totalLength > 1 && newPercent != percent) {
                     percent = newPercent;
-                    this.events.notifyDownload(this.calcTotalPercent(percent, 75, 90));
+                    this.notifyDownload(this.calcTotalPercent(percent, 75, 90));
                 }
                 readLength += ze.getCompressedSize();
             }
@@ -200,13 +198,13 @@ public class CapacitorUpdater {
             final FileOutputStream fos = new FileOutputStream(downFile);
             int readLength = buffLength;
             int percent = 0;
-            this.events.notifyDownload(10);
+            this.notifyDownload(10);
             while ((length = dis.read(buffer))>0) {
                 fos.write(buffer, 0, length);
                 final int newPercent = (int)((readLength * 100) / totalLength);
                 if (totalLength > 1 && newPercent != percent) {
                     percent = newPercent;
-                    this.events.notifyDownload(this.calcTotalPercent(percent, 10, 70));
+                    this.notifyDownload(this.calcTotalPercent(percent, 10, 70));
                 }
                 readLength += length;
             }
@@ -233,23 +231,23 @@ public class CapacitorUpdater {
 
     public String download(final String url) {
         try {
-            this.events.notifyDownload(0);
+            this.notifyDownload(0);
             final String folderNameZip = this.randomString(10);
             final File fileZip = new File(this.context.getFilesDir()  + "/" + folderNameZip);
             final String folderNameUnZip = this.randomString(10);
             final String version = this.randomString(10);
             final String folderName = this.basePathHot + "/" + version;
-            this.events.notifyDownload(5);
+            this.notifyDownload(5);
             final Boolean downloaded = this.downloadFile(url, folderNameZip);
             if(!downloaded) return "";
-            this.events.notifyDownload(71);
+            this.notifyDownload(71);
             final Boolean unzipped = this.unzip(folderNameZip, folderNameUnZip);
             if(!unzipped) return "";
             fileZip.delete();
-            this.events.notifyDownload(91);
+            this.notifyDownload(91);
             final Boolean flatt = this.flattenAssets(folderNameUnZip, folderName);
             if(!flatt) return "";
-            this.events.notifyDownload(100);
+            this.notifyDownload(100);
             return version;
         } catch (final Exception e) {
             Log.e(this.TAG, "updateApp error", e);
