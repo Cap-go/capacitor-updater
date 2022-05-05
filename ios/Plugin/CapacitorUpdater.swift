@@ -39,6 +39,9 @@ extension Bundle {
 enum CustomError: Error {
     // Throw when an unzip fail
     case cannotUnzip
+    case cannotUnflat
+    case cannotCreateDirectory
+    case cannotDeleteDirectory
 
     // Throw in all other cases
     case unexpected(code: Int)
@@ -52,6 +55,21 @@ extension CustomError: LocalizedError {
                 "The file cannot be unzip",
                 comment: "Invalid zip"
             )
+        case .cannotCreateDirectory:
+            return NSLocalizedString(
+                "The folder cannot be created",
+                comment: "Invalid folder"
+            )
+        case .cannotDeleteDirectory:
+            return NSLocalizedString(
+                "The folder cannot be deleted",
+                comment: "Invalid folder"
+            )
+        case .cannotUnzip:
+            return NSLocalizedString(
+                "The file cannot be unflat",
+                comment: "Invalid folder"
+            )
         case .unexpected(_):
             return NSLocalizedString(
                 "An unexpected error occurred.",
@@ -63,21 +81,29 @@ extension CustomError: LocalizedError {
 
 @objc public class CapacitorUpdater: NSObject {
     
-    private var versionBuild = Bundle.main.releaseVersionNumber ?? ""
-    private var versionCode = Bundle.main.buildVersionNumber ?? ""
-    private var versionOs = ProcessInfo().operatingSystemVersion.getFullVersion()
+    private let versionBuild = Bundle.main.releaseVersionNumber ?? ""
+    private let versionCode = Bundle.main.buildVersionNumber ?? ""
+    private let versionOs = ProcessInfo().operatingSystemVersion.getFullVersion()
+    private let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+    private let libraryDir = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+    private let bundleDirectoryHot = "versions"
+    private let bundleDirectory = "NoCloud/ionic_built_snapshots"
+    private let DOWNLOADED_SUFFIX = "_downloaded"
+    private let NAME_SUFFIX = "_name"
+    private let STATUS_SUFFIX = "_status"
+    private let FALLBACK_VERSION = "pastVersion"
+    private let NEXT_VERSION = "nextVersion"
+
     private var lastPathHot = ""
     private var lastPathPersist = ""
-    private let basePathHot = "versions"
-    private let basePathPersist = "NoCloud/ionic_built_snapshots"
-    private let documentsUrl = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-    private let libraryUrl = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
     
+    public let TAG = "✨  Capacitor-updater:";
+    public let pluginVersion = "3.2.0"
     public var statsUrl = ""
     public var appId = ""
     public var deviceID = UIDevice.current.identifierForVendor?.uuidString ?? ""
+    
     public var notifyDownload: (Int) -> Void = { _ in }
-    public var pluginVersion = "3.2.0"
 
     private func calcTotalPercent(percent: Int, min: Int, max: Int) -> Int {
         return (percent * (max - min)) / 100 + min;
@@ -97,7 +123,8 @@ extension CustomError: LocalizedError {
             do {
                 try FileManager.default.createDirectory(atPath: source.path, withIntermediateDirectories: true, attributes: nil)
             } catch {
-                print("✨  Capacitor-updater: Cannot createDirectory \(source.path)")
+                print("\(self.TAG) Cannot createDirectory \(source.path)")
+                throw CustomError.cannotCreateDirectory
             }
         }
     }
@@ -106,7 +133,8 @@ extension CustomError: LocalizedError {
         do {
             try FileManager.default.removeItem(atPath: source.path)
         } catch {
-            print("✨  Capacitor-updater: File not removed. \(source.path)")
+            print("\(self.TAG) File not removed. \(source.path)")
+            throw CustomError.cannotDeleteDirectory
         }
     }
     
@@ -122,15 +150,15 @@ extension CustomError: LocalizedError {
                 return false
             }
         } catch {
-            print("✨  Capacitor-updater: File not moved. source: \(source.path) dest: \(dest.path)")
-            return true
+            print("\(self.TAG) File not moved. source: \(source.path) dest: \(dest.path)")
+            throw CustomError.cannotUnflat
         }
     }
     
     private func saveDownloaded(sourceZip: URL, version: String, base: URL) throws {
         prepareFolder(source: base)
         let destHot = base.appendingPathComponent(version)
-        let destUnZip = documentsUrl.appendingPathComponent(randomString(length: 10))
+        let destUnZip = documentsDir.appendingPathComponent(randomString(length: 10))
         if (!SSZipArchive.unzipFile(atPath: sourceZip.path, toDestination: destUnZip.path)) {
             throw CustomError.cannotUnzip
         }
@@ -170,7 +198,7 @@ extension CustomError: LocalizedError {
                         latest.message = message
                     }
                 case let .failure(error):
-                    print("✨  Capacitor-updater: Error getting Latest", error )
+                    print("\(self.TAG) Error getting Latest", error )
             }
             semaphore.signal()
         }
@@ -201,17 +229,17 @@ extension CustomError: LocalizedError {
                     self.notifyDownload(71);
                     version = self.randomString(length: 10)
                     do {
-                        try self.saveDownloaded(sourceZip: fileURL, version: version, base: self.documentsUrl.appendingPathComponent(self.basePathHot))
+                        try self.saveDownloaded(sourceZip: fileURL, version: version, base: self.documentsDir.appendingPathComponent(self.bundleDirectoryHot))
                         self.notifyDownload(85);
-                        try self.saveDownloaded(sourceZip: fileURL, version: version, base: self.libraryUrl.appendingPathComponent(self.basePathPersist))
+                        try self.saveDownloaded(sourceZip: fileURL, version: version, base: self.libraryDir.appendingPathComponent(self.bundleDirectory))
                         self.notifyDownload(100);
                         self.deleteFolder(source: fileURL)
                     } catch {
-                        print("✨  Capacitor-updater: download unzip error", error)
+                        print("\(self.TAG) download unzip error", error)
                         mainError = error as NSError
                     }
                 case let .failure(error):
-                    print("✨  Capacitor-updater: download error", error)
+                    print("\(self.TAG) download error", error)
                     mainError = error as NSError
                 }
             }
@@ -226,28 +254,28 @@ extension CustomError: LocalizedError {
     }
 
     public func list() -> [String] {
-        let dest = documentsUrl.appendingPathComponent(basePathHot)
+        let dest = documentsDir.appendingPathComponent(bundleDirectoryHot)
         do {
             let files = try FileManager.default.contentsOfDirectory(atPath: dest.path)
             return files
         } catch {
-            print("✨  Capacitor-updater: No version available \(dest.path)")
+            print("\(self.TAG) No version available \(dest.path)")
             return []
         }
     }
     
     public func delete(version: String, versionName: String) -> Bool {
-        let destHot = documentsUrl.appendingPathComponent(basePathHot).appendingPathComponent(version)
-        let destPersist = libraryUrl.appendingPathComponent(basePathPersist).appendingPathComponent(version)
+        let destHot = documentsDir.appendingPathComponent(bundleDirectoryHot).appendingPathComponent(version)
+        let destPersist = libraryDir.appendingPathComponent(bundleDirectory).appendingPathComponent(version)
         do {
             try FileManager.default.removeItem(atPath: destHot.path)
         } catch {
-            print("✨  Capacitor-updater: Hot Folder \(destHot.path), not removed.")
+            print("\(self.TAG) Hot Folder \(destHot.path), not removed.")
         }
         do {
             try FileManager.default.removeItem(atPath: destPersist.path)
         } catch {
-            print("✨  Capacitor-updater: Folder \(destPersist.path), not removed.")
+            print("\(self.TAG) Folder \(destPersist.path), not removed.")
             return false
         }
         sendStats(action: "delete", version: versionName)
@@ -255,9 +283,9 @@ extension CustomError: LocalizedError {
     }
 
     public func set(version: String, versionName: String) -> Bool {
-        let destHot = documentsUrl.appendingPathComponent(basePathHot).appendingPathComponent(version)
+        let destHot = documentsDir.appendingPathComponent(bundleDirectoryHot).appendingPathComponent(version)
         let indexHot = destHot.appendingPathComponent("index.html")
-        let destHotPersist = libraryUrl.appendingPathComponent(basePathPersist).appendingPathComponent(version)
+        let destHotPersist = libraryDir.appendingPathComponent(bundleDirectory).appendingPathComponent(version)
         let indexPersist = destHotPersist.appendingPathComponent("index.html")
         if (destHot.isDirectory && destHotPersist.isDirectory && indexHot.exist && indexPersist.exist) {
             UserDefaults.standard.set(destHot.path, forKey: "lastPathHot")
@@ -307,7 +335,7 @@ extension CustomError: LocalizedError {
 
         DispatchQueue.global(qos: .background).async {
             let _ = AF.request(self.statsUrl, method: .post,parameters: parameters, encoder: JSONParameterEncoder.default)
-            print("✨  Capacitor-updater: Stats send for \(action), version \(version)")
+            print("\(self.TAG) Stats send for \(action), version \(version)")
         }
     }
     
