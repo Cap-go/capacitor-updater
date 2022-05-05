@@ -155,9 +155,14 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
 
     @PluginMethod
     public void getPluginVersion(final PluginCall call) {
-        final JSObject ret = new JSObject();
-        ret.put("version", CapacitorUpdater.pluginVersion);
-        call.resolve(ret);
+        try {
+            final JSObject ret = new JSObject();
+            ret.put("version", CapacitorUpdater.pluginVersion);
+            call.resolve(ret);
+        } catch (final Exception e) {
+            Log.e(CapacitorUpdater.TAG, "Could not get plugin version", e);
+            call.reject("Could not get plugin version", e);
+        }
     }
 
     @PluginMethod
@@ -383,9 +388,14 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
 
     @PluginMethod
     public void isAutoUpdateEnabled(final PluginCall call) {
-        final JSObject ret = new JSObject();
-        ret.put("enabled", this._isAutoUpdateEnabled());
-        call.resolve(ret);
+        try {
+            final JSObject ret = new JSObject();
+            ret.put("enabled", this._isAutoUpdateEnabled());
+            call.resolve(ret);
+        } catch (final Exception e) {
+            Log.e(CapacitorUpdater.TAG, "Could not get autoUpdate status", e);
+            call.reject("Could not get autoUpdate status", e);
+        }
     }
 
     private void checkAppReady() {
