@@ -117,6 +117,7 @@ Do not password encrypt this file, or it will fail to unpack.
 
 * [`download(...)`](#download)
 * [`next(...)`](#next)
+* [`isAutoUpdateEnabled()`](#isautoupdateenabled)
 * [`set(...)`](#set)
 * [`getId()`](#getid)
 * [`getPluginVersion()`](#getpluginversion)
@@ -171,6 +172,19 @@ Set the next bundle version to be used when the app is reloaded.
 | **`options`** | <code>{ version: string; versionName?: string; }</code> |
 
 **Returns:** <code>Promise&lt;<a href="#versioninfo">VersionInfo</a>&gt;</code>
+
+--------------------
+
+
+### isAutoUpdateEnabled()
+
+```typescript
+isAutoUpdateEnabled() => Promise<{ enabled: boolean; }>
+```
+
+Get the state of auto update config.
+
+**Returns:** <code>Promise&lt;{ enabled: boolean; }&gt;</code>
 
 --------------------
 

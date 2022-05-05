@@ -43,7 +43,7 @@ interface Callback {
 
 public class CapacitorUpdater {
     private static final String AB = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-    private static SecureRandom rnd = new SecureRandom();
+    private static final SecureRandom rnd = new SecureRandom();
 
     private static final String DOWNLOADED_SUFFIX = "_downloaded";
     private static final String NAME_SUFFIX = "_name";
@@ -51,21 +51,24 @@ public class CapacitorUpdater {
 
     private static final String FALLBACK_VERSION = "pastVersion";
     private static final String NEXT_VERSION = "nextVersion";
-    private final String bundleDirectory = "versions";
+    private static final String bundleDirectory = "versions";
+
+    public static final String TAG = "Capacitor-updater";
+    public static final String pluginVersion = "4.0.0";
+
+    private SharedPreferences.Editor editor;
+    private SharedPreferences prefs;
 
     private RequestQueue requestQueue;
+
     private String documentsDir = "";
     private String versionBuild = "";
     private String versionCode = "";
     private String versionOs = "";
 
-    public static final String TAG = "Capacitor-updater";
-    public static final String pluginVersion = "3.3.2";
-    public String statsUrl = "";
-    public String appId = "";
-    public String deviceID = "";
-    private SharedPreferences prefs;
-    private SharedPreferences.Editor editor;
+    private String statsUrl = "";
+    private String appId = "";
+    private String deviceID = "";
 
     private final FilenameFilter filter = new FilenameFilter() {
         @Override
@@ -141,7 +144,7 @@ public class CapacitorUpdater {
             try {
                 zis.close();
             } catch (final IOException e) {
-                Log.e(this.TAG, "Failed to close zip input stream", e);
+                Log.e(TAG, "Failed to close zip input stream", e);
             }
         }
     }
@@ -213,7 +216,7 @@ public class CapacitorUpdater {
 
     private void setCurrentBundle(final File bundle) {
         this.editor.putString(WebView.CAP_SERVER_PATH, bundle.getPath());
-        Log.i(this.TAG, "Current bundle set to: " + bundle);
+        Log.i(TAG, "Current bundle set to: " + bundle);
         this.editor.commit();
     }
 
@@ -223,7 +226,7 @@ public class CapacitorUpdater {
         final File zipFile = new File(this.getDocumentsDir()  + "/" + path);
         final String folderNameUnZip = this.randomString(10);
         final String version = this.randomString(10);
-        final String folderName = this.bundleDirectory + "/" + version;
+        final String folderName = bundleDirectory + "/" + version;
         this.notifyDownload(5);
         final File downloaded = this.downloadFile(url, path);
         this.notifyDownload(71);
@@ -240,34 +243,34 @@ public class CapacitorUpdater {
 
     public ArrayList<VersionInfo> list() {
         final ArrayList<VersionInfo> res = new ArrayList<>();
-        final File destHot = new File(this.getDocumentsDir()  + "/" + this.bundleDirectory);
-        Log.i(this.TAG, "list File : " + destHot.getPath());
+        final File destHot = new File(this.getDocumentsDir()  + "/" + bundleDirectory);
+        Log.i(TAG, "list File : " + destHot.getPath());
         if (destHot.exists()) {
             for (final File i : destHot.listFiles()) {
                 final String version = i.getName();
                 res.add(this.getVersionInfo(version));
             }
         } else {
-            Log.i(this.TAG, "No version available" + destHot);
+            Log.i(TAG, "No version available" + destHot);
         }
         return res;
     }
 
     public Boolean delete(final String version) throws IOException {
         final VersionInfo deleted = this.getVersionInfo(version);
-        final File bundle = new File(this.getDocumentsDir()  + "/" + this.bundleDirectory + "/" + version);
+        final File bundle = new File(this.getDocumentsDir()  + "/" + bundleDirectory + "/" + version);
         if (bundle.exists()) {
             this.deleteDirectory(bundle);
             this.removeVersionInfo(version);
             return true;
         }
-        Log.i(this.TAG, "Directory not removed: " + bundle.getPath());
+        Log.i(TAG, "Directory not removed: " + bundle.getPath());
         this.sendStats("delete", deleted);
         return false;
     }
 
     private File getBundleDirectory(final String version) {
-        return new File(this.getDocumentsDir()  + "/" + this.bundleDirectory + "/" + version);
+        return new File(this.getDocumentsDir()  + "/" + bundleDirectory + "/" + version);
     }
 
     private boolean bundleExists(final File bundle) {
@@ -287,7 +290,7 @@ public class CapacitorUpdater {
         final VersionInfo existing = this.getVersionInfo(version);
         final File bundle = this.getBundleDirectory(version);
 
-        Log.i(this.TAG, "Setting next active bundle " + existing);
+        Log.i(TAG, "Setting next active bundle " + existing);
         if (this.bundleExists(bundle)) {
             this.setCurrentBundle(bundle);
             this.setVersionStatus(version, VersionStatus.PENDING);
@@ -326,7 +329,7 @@ public class CapacitorUpdater {
         final String versionBuild = this.versionBuild;
         final String versionCode = this.versionCode;
         final String versionOs = this.versionOs;
-        final String pluginVersion = this.pluginVersion;
+        final String pluginVersion = CapacitorUpdater.pluginVersion;
         final String versionName = this.getCurrentBundle().getName();
         final StringRequest stringRequest = new StringRequest(Request.Method.GET, url,
                 new Response.Listener<String>() {
@@ -336,13 +339,13 @@ public class CapacitorUpdater {
                             final JSONObject jsonObject = new JSONObject(response);
                             callback.callback(jsonObject);
                         } catch (final JSONException e) {
-                            Log.e(CapacitorUpdater.this.TAG, "Error parsing JSON", e);
+                            Log.e(TAG, "Error parsing JSON", e);
                         }
                     }
                 }, new Response.ErrorListener() {
             @Override
             public void onErrorResponse(final VolleyError error) {
-                Log.e(CapacitorUpdater.this.TAG, "Error getting Latest" +  error);
+                Log.e(TAG, "Error getting Latest" +  error);
             }
         }) {
             @Override
@@ -376,11 +379,11 @@ public class CapacitorUpdater {
             json.put("version_build", this.versionBuild);
             json.put("version_code", this.versionCode);
             json.put("version_os", this.versionOs);
-            json.put("plugin_version", this.pluginVersion);
+            json.put("plugin_version", pluginVersion);
             json.put("app_id", this.getAppId());
             jsonString = json.toString();
         } catch (final Exception ex) {
-            Log.e(this.TAG, "Error get stats", ex);
+            Log.e(TAG, "Error get stats", ex);
             return;
         }
         new Thread(new Runnable(){
@@ -400,12 +403,12 @@ public class CapacitorUpdater {
                     wr.close();
                     final int responseCode = con.getResponseCode();
                     if (responseCode != 200) {
-                        Log.e(CapacitorUpdater.this.TAG, "Stats error responseCode: " + responseCode);
+                        Log.e(TAG, "Stats error responseCode: " + responseCode);
                     } else {
-                        Log.i(CapacitorUpdater.this.TAG, "Stats send for \"" + action + "\", version " + version);
+                        Log.i(TAG, "Stats send for \"" + action + "\", version " + version);
                     }
                 } catch (final Exception ex) {
-                    Log.e(CapacitorUpdater.this.TAG, "Error post stats", ex);
+                    Log.e(TAG, "Error post stats", ex);
                 } finally {
                     if (con != null) {
                         con.disconnect();
@@ -437,7 +440,7 @@ public class CapacitorUpdater {
 
     private void setVersionDownloadedTimestamp(final String version, final Date time) {
         if(version != null) {
-            Log.i(this.TAG, "Setting version download timestamp " + version + " to " + time);
+            Log.i(TAG, "Setting version download timestamp " + version + " to " + time);
             if(time == null) {
                 this.editor.remove(version + DOWNLOADED_SUFFIX);
             } else {
@@ -459,7 +462,7 @@ public class CapacitorUpdater {
 
     public void setVersionName(final String version, final String name) {
         if(version != null) {
-            Log.i(this.TAG, "Setting version name " + version + " to " + name);
+            Log.i(TAG, "Setting version name " + version + " to " + name);
             if(name == null) {
                 this.editor.remove(version + NAME_SUFFIX);
             } else {
@@ -475,7 +478,7 @@ public class CapacitorUpdater {
 
     private void setVersionStatus(final String version, final VersionStatus status) {
         if(version != null) {
-            Log.i(this.TAG, "Setting version status " + version + " to " + status);
+            Log.i(TAG, "Setting version status " + version + " to " + status);
             if(status == null) {
                 this.editor.remove(version + STATUS_SUFFIX);
             } else {
@@ -567,35 +570,35 @@ public class CapacitorUpdater {
         this.deviceID = deviceID;
     }
 
-    public void setVersionBuild(String versionBuild) {
+    public void setVersionBuild(final String versionBuild) {
         this.versionBuild = versionBuild;
     }
 
-    public void setVersionCode(String versionCode) {
+    public void setVersionCode(final String versionCode) {
         this.versionCode = versionCode;
     }
 
-    public void setVersionOs(String versionOs) {
+    public void setVersionOs(final String versionOs) {
         this.versionOs = versionOs;
     }
 
-    public void setPrefs(SharedPreferences prefs) {
+    public void setPrefs(final SharedPreferences prefs) {
         this.prefs = prefs;
     }
 
-    public void setEditor(SharedPreferences.Editor editor) {
+    public void setEditor(final SharedPreferences.Editor editor) {
         this.editor = editor;
     }
 
-    public void setDocumentsDir(String documentsDir) {
+    public void setDocumentsDir(final String documentsDir) {
         this.documentsDir = documentsDir;
     }
 
-    public void setRequestQueue(RequestQueue requestQueue) {
+    public void setRequestQueue(final RequestQueue requestQueue) {
         this.requestQueue = requestQueue;
     }
 
     public String getDocumentsDir() {
-        return documentsDir;
+        return this.documentsDir;
     }
 }

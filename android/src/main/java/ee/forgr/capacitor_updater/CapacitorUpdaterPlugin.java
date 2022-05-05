@@ -35,17 +35,18 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     private static final String autoUpdateUrlDefault = "https://capgo.app/api/auto_update";
     private static final String statsUrlDefault = "https://capgo.app/api/stats";
     private static final String DELAY_UPDATE = "delayUpdate";
+
+
+    private SharedPreferences.Editor editor;
+    private SharedPreferences prefs;
     private CapacitorUpdater implementation;
 
-    private SharedPreferences prefs;
-    private SharedPreferences.Editor editor;
-
     private Integer appReadyTimeout = 10000;
-    private String autoUpdateUrl = "";
-    private Version currentVersionNative;
     private Boolean autoDeleteFailed = true;
     private Boolean autoDeletePrevious = true;
     private Boolean autoUpdate = false;
+    private String autoUpdateUrl = "";
+    private Version currentVersionNative;
     private Boolean resetWhenUpdate = true;
 
     private volatile Thread appReadyCheck;
