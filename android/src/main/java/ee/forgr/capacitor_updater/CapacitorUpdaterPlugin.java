@@ -61,7 +61,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             this.implementation = new CapacitorUpdater() {
                 @Override
                 public void notifyDownload(final int percent) {
-                    this.notifyDownload(percent);
+                    CapacitorUpdaterPlugin.this.notifyDownload(percent);
                 }
             };
             final PackageInfo pInfo = this.getContext().getPackageManager().getPackageInfo(this.getContext().getPackageName(), 0);
@@ -80,6 +80,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         final CapConfig config = CapConfig.loadDefault(this.getActivity());
         this.implementation.setAppId(config.getString("appId", ""));
         this.implementation.setStatsUrl(this.getConfig().getString("statsUrl", statsUrlDefault));
+        this.implementation.setDocumentsDir(this.getContext().getFilesDir());
         this.implementation.setPrefs(this.getContext().getSharedPreferences(WebView.WEBVIEW_PREFS_NAME, Activity.MODE_PRIVATE));
         this.implementation.setEditor(this.prefs.edit());
         this.implementation.setVersionOs(Build.VERSION.RELEASE);

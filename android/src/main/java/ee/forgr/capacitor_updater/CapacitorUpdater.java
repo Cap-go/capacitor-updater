@@ -61,7 +61,7 @@ public class CapacitorUpdater {
 
     private RequestQueue requestQueue;
 
-    private String documentsDir = "";
+    private File documentsDir;
     private String versionBuild = "";
     private String versionCode = "";
     private String versionOs = "";
@@ -94,7 +94,7 @@ public class CapacitorUpdater {
     }
 
     private File unzip(final File zipFile, final String dest) throws IOException {
-        final File targetDirectory = new File(this.getDocumentsDir()  + "/" + dest);
+        final File targetDirectory = new File(this.getDocumentsDir(), dest);
         final ZipInputStream zis = new ZipInputStream(new BufferedInputStream(new FileInputStream(zipFile)));
         try {
             int count;
@@ -153,14 +153,14 @@ public class CapacitorUpdater {
         if (!sourceFile.exists()) {
             throw new FileNotFoundException("Source file not found: " + sourceFile.getPath());
         }
-        final File destinationFile = new File(this.getDocumentsDir()  + "/" + dest);
+        final File destinationFile = new File(this.getDocumentsDir(), dest);
         destinationFile.getParentFile().mkdirs();
         final String[] entries = sourceFile.list(this.filter);
         if (entries == null || entries.length == 0) {
             throw new IOException("Source file was not a directory or was empty: " + sourceFile.getPath());
         }
         if (entries.length == 1 && !entries[0].equals("index.html")) {
-            final File child = new File(sourceFile.getPath() + "/" + entries[0]);
+            final File child = new File(sourceFile, entries[0]);
             child.renameTo(destinationFile);
         } else {
             sourceFile.renameTo(destinationFile);
@@ -175,7 +175,7 @@ public class CapacitorUpdater {
         final InputStream is = u.openStream();
         final DataInputStream dis = new DataInputStream(is);
 
-        final File target = new File(this.getDocumentsDir()  + "/" + dest);
+        final File target = new File(this.getDocumentsDir(), dest);
         target.getParentFile().mkdirs();
         target.createNewFile();
         final FileOutputStream fos = new FileOutputStream(target);
@@ -223,7 +223,7 @@ public class CapacitorUpdater {
     public VersionInfo download(final String url, final String versionName) throws IOException {
         this.notifyDownload(0);
         final String path = this.randomString(10);
-        final File zipFile = new File(this.getDocumentsDir()  + "/" + path);
+        final File zipFile = new File(this.getDocumentsDir(), path);
         final String folderNameUnZip = this.randomString(10);
         final String version = this.randomString(10);
         final String folderName = bundleDirectory + "/" + version;
@@ -243,7 +243,7 @@ public class CapacitorUpdater {
 
     public ArrayList<VersionInfo> list() {
         final ArrayList<VersionInfo> res = new ArrayList<>();
-        final File destHot = new File(this.getDocumentsDir()  + "/" + bundleDirectory);
+        final File destHot = new File(this.getDocumentsDir(), bundleDirectory);
         Log.i(TAG, "list File : " + destHot.getPath());
         if (destHot.exists()) {
             for (final File i : destHot.listFiles()) {
@@ -258,7 +258,7 @@ public class CapacitorUpdater {
 
     public Boolean delete(final String version) throws IOException {
         final VersionInfo deleted = this.getVersionInfo(version);
-        final File bundle = new File(this.getDocumentsDir()  + "/" + bundleDirectory + "/" + version);
+        final File bundle = new File(this.getDocumentsDir(), bundleDirectory + "/" + version);
         if (bundle.exists()) {
             this.deleteDirectory(bundle);
             this.removeVersionInfo(version);
@@ -270,7 +270,7 @@ public class CapacitorUpdater {
     }
 
     private File getBundleDirectory(final String version) {
-        return new File(this.getDocumentsDir()  + "/" + bundleDirectory + "/" + version);
+        return new File(this.getDocumentsDir(), bundleDirectory + "/" + version);
     }
 
     private boolean bundleExists(final File bundle) {
@@ -278,7 +278,7 @@ public class CapacitorUpdater {
             return false;
         }
 
-        return new File(bundle.getPath()  + "/index.html").exists();
+        return new File(bundle.getPath(), "/index.html").exists();
     }
 
     public Boolean set(final VersionInfo version) {
@@ -590,7 +590,7 @@ public class CapacitorUpdater {
         this.editor = editor;
     }
 
-    public void setDocumentsDir(final String documentsDir) {
+    public void setDocumentsDir(final File documentsDir) {
         this.documentsDir = documentsDir;
     }
 
@@ -598,7 +598,7 @@ public class CapacitorUpdater {
         this.requestQueue = requestQueue;
     }
 
-    public String getDocumentsDir() {
+    public File getDocumentsDir() {
         return this.documentsDir;
     }
 }
