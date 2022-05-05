@@ -98,6 +98,7 @@ extension CustomError: LocalizedError {
     private var lastPathPersist = ""
     
     public let TAG = "✨  Capacitor-updater:";
+    public let CAP_SERVER_PATH = "serverBasePath"
     public let pluginVersion = "3.2.0"
     public var statsUrl = ""
     public var appId = ""
@@ -206,7 +207,13 @@ extension CustomError: LocalizedError {
         return latest.url != "" ? latest : nil
     }
     
-    public func download(url: URL) throws -> String {
+    private func setCurrentBundle(bundle: String) {
+        UserDefaults.standard.set(bundle, forKey: WebView.CAP_SERVER_PATH)
+        print("\(self.TAG) Current bundle set to: \(source.path) dest: \(dest.path)")
+        UserDefaults.standard.synchronize()
+    }
+
+    public func download(url: URL, versionName: String) throws -> VersionInfo {
         let semaphore = DispatchSemaphore(value: 0)
         var version: String = ""
         var mainError: NSError? = nil

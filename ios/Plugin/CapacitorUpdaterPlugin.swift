@@ -98,7 +98,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             let pathHot = implementation.getLastPathHot()
             let pathPersist = implementation.getLastPathPersist()
             if (pathHot != "" && pathPersist != "") {
-                UserDefaults.standard.set(String(pathPersist.suffix(10)), forKey: "serverBasePath")
+                UserDefaults.standard.set(String(pathPersist.suffix(10)), forKey: self.implementation.CAP_SERVER_PATH)
                 vc.setServerBasePath(path: pathHot)
                 print("\(self.implementation.TAG) Reload app done")
                 return true
@@ -159,7 +159,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             implementation.reset()
             let pathPersist = implementation.getLastPathPersist()
             vc.setServerBasePath(path: pathPersist)
-            UserDefaults.standard.set(pathPersist, forKey: "serverBasePath")
+            UserDefaults.standard.set(pathPersist, forKey: self.implementation.CAP_SERVER_PATH)
             DispatchQueue.main.async {
                 vc.loadView()
                 vc.viewDidLoad()
