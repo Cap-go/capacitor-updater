@@ -15,6 +15,11 @@ export class CapacitorUpdaterWeb
     console.warn('Cannot set next version in web', options);
     return VERSION_BUILTIN;
   }
+
+  async isAutoUpdateEnabled(): Promise<{ enabled: boolean }> {
+    console.warn('Cannot get isAutoUpdateEnabled version in web');
+    return { enabled: false };
+  }
   async set(options: { version: string, versionName?: string }): Promise<void> {
     console.warn('Cannot set version in web', options);
     return;

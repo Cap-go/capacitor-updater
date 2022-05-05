@@ -375,9 +375,32 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         }
     }
 
+    private Boolean _isAutoUpdateEnabled() {
+        return !"".equals(CapacitorUpdaterPlugin.this.autoUpdateUrl);
+    }
+
+    @PluginMethod
+    public void isAutoUpdateEnabled(final PluginCall call) {
+        final JSObject ret = new JSObject();
+        ret.put("enabled", this._isAutoUpdateEnabled());
+        call.resolve(ret);
+    }
+
+    private void checkAppReady() {
+        try {
+            if(this.appReadyCheck != null) {
+                this.appReadyCheck.interrupt();
+            }
+            this.appReadyCheck = new Thread(new DeferredNotifyAppReadyCheck());
+            this.appReadyCheck.start();
+        } catch (final Exception e) {
+            Log.e(CapacitorUpdater.TAG, "Failed to start " + DeferredNotifyAppReadyCheck.class.getName(), e);
+        }
+    }
+
     @Override
     public void onActivityStarted(@NonNull final Activity activity) {
-        if (CapacitorUpdaterPlugin.this.isAutoUpdateEnabled()) {
+        if (CapacitorUpdaterPlugin.this._isAutoUpdateEnabled()) {
             new Thread(new Runnable(){
                 @Override
                 public void run() {
@@ -528,44 +551,6 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         }
     }
 
-    private Boolean isAutoUpdateEnabled() {
-        return !"".equals(CapacitorUpdaterPlugin.this.autoUpdateUrl);
-    }
-
-    // not use but necessary here to remove warnings
-    @Override
-    public void onActivityResumed(@NonNull final Activity activity) {
-        // TODO: Implement background updating based on `backgroundUpdate` and `backgroundUpdateDelay` capacitor.config.ts settings
-    }
-
-    @Override
-    public void onActivityPaused(@NonNull final Activity activity) {
-        // TODO: Implement background updating based on `backgroundUpdate` and `backgroundUpdateDelay` capacitor.config.ts settings
-    }
-    @Override
-    public void onActivityCreated(@NonNull final Activity activity, @Nullable final Bundle savedInstanceState) {
-    }
-
-    @Override
-    public void onActivitySaveInstanceState(@NonNull final Activity activity, @NonNull final Bundle outState) {
-    }
-
-    @Override
-    public void onActivityDestroyed(@NonNull final Activity activity) {
-    }
-
-    private void checkAppReady() {
-        try {
-            if(this.appReadyCheck != null) {
-                this.appReadyCheck.interrupt();
-            }
-            this.appReadyCheck = new Thread(new DeferredNotifyAppReadyCheck());
-            this.appReadyCheck.start();
-        } catch (final Exception e) {
-            Log.e(CapacitorUpdater.TAG, "Failed to start " + DeferredNotifyAppReadyCheck.class.getName(), e);
-        }
-    }
-
     private class DeferredNotifyAppReadyCheck implements Runnable {
         @Override
         public void run() {
@@ -592,5 +577,27 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                 Log.e(CapacitorUpdater.TAG, DeferredNotifyAppReadyCheck.class.getName() + " was interrupted.");
             }
         }
+    }
+
+    // not use but necessary here to remove warnings
+    @Override
+    public void onActivityResumed(@NonNull final Activity activity) {
+        // TODO: Implement background updating based on `backgroundUpdate` and `backgroundUpdateDelay` capacitor.config.ts settings
+    }
+
+    @Override
+    public void onActivityPaused(@NonNull final Activity activity) {
+        // TODO: Implement background updating based on `backgroundUpdate` and `backgroundUpdateDelay` capacitor.config.ts settings
+    }
+    @Override
+    public void onActivityCreated(@NonNull final Activity activity, @Nullable final Bundle savedInstanceState) {
+    }
+
+    @Override
+    public void onActivitySaveInstanceState(@NonNull final Activity activity, @NonNull final Bundle outState) {
+    }
+
+    @Override
+    public void onActivityDestroyed(@NonNull final Activity activity) {
     }
 }

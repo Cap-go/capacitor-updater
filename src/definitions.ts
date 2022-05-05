@@ -1,5 +1,6 @@
 /// <reference types="@capacitor/cli" />
 import type { PluginListenerHandle } from '@capacitor/core';
+
 declare module '@capacitor/cli' {
   export interface PluginsConfig {
     /**
@@ -140,6 +141,13 @@ export interface CapacitorUpdaterPlugin {
    * @throws An error if there are is no index.html file inside the version folder.
    */
   next(options: { version: string, versionName?: string }): Promise<VersionInfo>;
+
+  /**
+   * Get the state of auto update config.
+   * 
+   * @returns {Promise<{enabled: boolean}>} The status for auto update.
+   */
+  isAutoUpdateEnabled(): Promise<{enabled: boolean}>;
 
   /**
    * Set the current bundle version and immediately reloads the app.
