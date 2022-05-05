@@ -117,23 +117,23 @@ Capacitor Updator works by unzipping a compiled app bundle to the native device 
 
 <docgen-index>
 
+* [`notifyAppReady()`](#notifyappready)
 * [`download(...)`](#download)
 * [`next(...)`](#next)
-* [`isAutoUpdateEnabled()`](#isautoupdateenabled)
 * [`set(...)`](#set)
-* [`getId()`](#getid)
-* [`getPluginVersion()`](#getpluginversion)
 * [`delete(...)`](#delete)
 * [`list()`](#list)
 * [`reset(...)`](#reset)
 * [`current()`](#current)
 * [`reload()`](#reload)
-* [`notifyAppReady()`](#notifyappready)
 * [`delayUpdate()`](#delayupdate)
 * [`cancelDelay()`](#canceldelay)
 * [`addListener('download', ...)`](#addlistenerdownload)
 * [`addListener('majorAvailable', ...)`](#addlistenermajoravailable)
 * [`addListener('updateAvailable', ...)`](#addlistenerupdateavailable)
+* [`getId()`](#getid)
+* [`getPluginVersion()`](#getpluginversion)
+* [`isAutoUpdateEnabled()`](#isautoupdateenabled)
 * [`addListener(string, ...)`](#addlistenerstring)
 * [`removeAllListeners()`](#removealllisteners)
 * [Interfaces](#interfaces)
@@ -143,6 +143,19 @@ Capacitor Updator works by unzipping a compiled app bundle to the native device 
 
 <docgen-api>
 <!--Update the source file JSDoc comments and rerun docgen to update the docs below-->
+
+### notifyAppReady()
+
+```typescript
+notifyAppReady() => Promise<VersionInfo>
+```
+
+Notify Capacitor Updater that the current bundle is working (a rollback will occur of this method is not called on every app launch)
+
+**Returns:** <code>Promise&lt;<a href="#versioninfo">VersionInfo</a>&gt;</code>
+
+--------------------
+
 
 ### download(...)
 
@@ -178,19 +191,6 @@ Set the next bundle version to be used when the app is reloaded.
 --------------------
 
 
-### isAutoUpdateEnabled()
-
-```typescript
-isAutoUpdateEnabled() => Promise<{ enabled: boolean; }>
-```
-
-Get the state of auto update config.
-
-**Returns:** <code>Promise&lt;{ enabled: boolean; }&gt;</code>
-
---------------------
-
-
 ### set(...)
 
 ```typescript
@@ -202,32 +202,6 @@ Set the current bundle version and immediately reloads the app.
 | Param         | Type                                                    |
 | ------------- | ------------------------------------------------------- |
 | **`options`** | <code>{ version: string; versionName?: string; }</code> |
-
---------------------
-
-
-### getId()
-
-```typescript
-getId() => Promise<{ id: string; }>
-```
-
-Get unique ID used to identify device into auto update server
-
-**Returns:** <code>Promise&lt;{ id: string; }&gt;</code>
-
---------------------
-
-
-### getPluginVersion()
-
-```typescript
-getPluginVersion() => Promise<{ version: string; }>
-```
-
-Get plugin version used in native code
-
-**Returns:** <code>Promise&lt;{ version: string; }&gt;</code>
 
 --------------------
 
@@ -299,19 +273,6 @@ Reload the view
 --------------------
 
 
-### notifyAppReady()
-
-```typescript
-notifyAppReady() => Promise<VersionInfo>
-```
-
-Notify native plugin that the update is working, only in auto-update
-
-**Returns:** <code>Promise&lt;<a href="#versioninfo">VersionInfo</a>&gt;</code>
-
---------------------
-
-
 ### delayUpdate()
 
 ```typescript
@@ -329,7 +290,7 @@ Skip updates in the next time the app goes into the background, only in auto-upd
 cancelDelay() => Promise<void>
 ```
 
-allow update in the next time the app goes into the background, only in auto-update
+Allow update in the next time the app goes into the background, only in auto-update
 
 --------------------
 
@@ -390,6 +351,45 @@ Listen for update event in the App, let you know when update is ready to install
 **Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt; & <a href="#pluginlistenerhandle">PluginListenerHandle</a></code>
 
 **Since:** 2.3.0
+
+--------------------
+
+
+### getId()
+
+```typescript
+getId() => Promise<{ id: string; }>
+```
+
+Get unique ID used to identify device (sent to auto update server)
+
+**Returns:** <code>Promise&lt;{ id: string; }&gt;</code>
+
+--------------------
+
+
+### getPluginVersion()
+
+```typescript
+getPluginVersion() => Promise<{ version: string; }>
+```
+
+Get the native Capacitor Updater plugin version (sent to auto update server)
+
+**Returns:** <code>Promise&lt;{ version: string; }&gt;</code>
+
+--------------------
+
+
+### isAutoUpdateEnabled()
+
+```typescript
+isAutoUpdateEnabled() => Promise<{ enabled: boolean; }>
+```
+
+Get the state of auto update config. This will return `false` in manual mode.
+
+**Returns:** <code>Promise&lt;{ enabled: boolean; }&gt;</code>
 
 --------------------
 
