@@ -1,11 +1,11 @@
 # capacitor-updater
 
-Update capacitor app withtout store review.
+Update Ionic Capacitor apps without App/Play Store review (Code-push / hot-code updates).
 
-You have 3 ways possible :
-- use [capgo.app](https://capgo.app) a full featured auto update system in 5 min Setup, to manage version, update, revert and see stats.
-- use your own server update with auto update system
-- use manual methods to zip, upload, download, from JS to do it when you want.
+Usage options:
+- use [capgo.app](https://capgo.app), a full featured auto update system. (5 min Setup, easily manage versions, update, revert, and see detailed stats.)
+- integrate your own API with this plugin's auto update system.
+- use manual methods to zip, upload, download, from application code - you have full control.
 
 
 ## Community
@@ -14,14 +14,14 @@ Join the [discord](https://discord.gg/VnYRvBfgA6) to get help.
 ## Documentation
 I maintain a more user friendly and complete [documentation](https://github.com/Cap-go/capacitor-updater/wiki) in GitHub wiki.
 
-## install plugin
+## Installation
 
 ```bash
 npm install @capgo/capacitor-updater
 npx cap sync
 ```
 
-## Auto update setup
+## Auto-update setup
 
 Create account in [capgo.app](https://capgo.app) and get your [API key](https://capgo.app/app/apikeys)
 - Download the CLI `npm i -g capgo`
@@ -45,71 +45,73 @@ Create account in [capgo.app](https://capgo.app) and get your [API key](https://
 ```javascript
   import { CapacitorUpdater } from '@capgo/capacitor-updater'
   CapacitorUpdater.notifyAppReady()
-  // To let auto update know you app boot well.
 ```
+This tells Capacitor Updator that the current update bundle has loaded succesfully. Failing to call this method will cause your application to be rolled back to the previously successful version (or built-in bundle).
 
 - Do `npm run build && npx cap copy` to copy the build to capacitor.
 - Run the app and see app auto update after each backgrounding.
-- If update fail it will roolback to previous version.
+- Failed updates will automatically roll back to the last successful version.
 
-See more there in the [Auto update](
-https://github.com/Cap-go/capacitor-updater/wiki) documentation.
+See more details in the [Auto update](https://github.com/Cap-go/capacitor-updater/wiki) documentation.
 
 
 ## Manual setup
 
-Download app update from url when user enter the app
-install it when user background the app.
+Download update distribution zipfiles from a custom url. Manually control the entire update process.
 
-In your main code :
-
+- Add to your main code
 ```javascript
   import { CapacitorUpdater } from '@capgo/capacitor-updater'
+  CapacitorUpdater.notifyAppReady()
+```
+This informs Capacitor Updator that the current update bundle has loaded succesfully. Failing to call this method will cause your application to be rolled back to the previously successful version (or built-in bundle).
+- Add this to your application.
+```javascript
+  const version = await CapacitorUpdater.download({
+    url: 'https://github.com/Cap-go/demo-app/releases/download/0.0.4/dist.zip',
+  })
+  await CapacitorUpdater.set(version); // sets the new version, and reloads the app
+```
+- Failed updates will automatically roll back to the last successful version.
+- Example: Using App-state to control updates, with SplashScreen:
+You might also consider performing auto-update when application state changes, and using the Splash Screen to improve user experience.
+```javascript
+  import { CapacitorUpdater, VersionInfo } from '@capgo/capacitor-updater'
   import { SplashScreen } from '@capacitor/splash-screen'
   import { App } from '@capacitor/app'
 
-  let version = ""
-  App.addListener('appStateChange', async(state) => {
+  let version: VersionInfo;
+  App.addListener('appStateChange', async (state) => {
       if (state.isActive) {
-        // Do the download during user active app time to prevent failed download
+        // Ensure download occurs while the app is active, or download may fail
         version = await CapacitorUpdater.download({
-        url: 'https://github.com/Cap-go/demo-app/releases/download/0.0.4/dist.zip',
+          url: 'https://github.com/Cap-go/demo-app/releases/download/0.0.4/dist.zip',
         })
       }
-      if (!state.isActive && version !== "") {
-        // Do the switch when user leave app
+
+      if (!state.isActive && version) {
+        // Activate the update when the application is sent to background
         SplashScreen.show()
         try {
-          await CapacitorUpdater.set(version)
+          await CapacitorUpdater.set(version);
+          // At this point, the new version should be active, and will need to hide the splash screen
         } catch () {
-          SplashScreen.hide() // in case the set fail, otherwise the new app will have to hide it
+          SplashScreen.hide() // Hide the splash screen again if something went wrong
         }
       }
   })
 
-  // or do it when click on button
-  const updateNow = async () => {
-    const version = await CapacitorUpdater.download({
-      url: 'https://github.com/Cap-go/demo-app/releases/download/0.0.4/dist.zip',
-    })
-    // show the splashscreen to let the update happen
-    SplashScreen.show()
-    await CapacitorUpdater.set(version)
-    SplashScreen.hide() // in case the set fail, otherwise the new app will have to hide it
-  }
 ```
 
-*Be extra carufull for your update* if you send a broken update, the app will crash until the user reinstalls it.
+TIP: If you prefer a secure and automated way to update your app, you can use [capgo.app](https://capgo.app) - a full-featured, auto update system.
 
-If you need more secure way to update your app, you can use Auto update system.
+### Packaging `dist.zip` update bundles
 
-You can list the version and manage it with the command below.
+Capacitor Updator works by unzipping a compiled app bundle to the native device filesystem. Whatever you choose to name the file you upload/download from your release/update server URL (via either manual or automatic updating), this `.zip` bundle must meet the following requirements:
 
-### Packaging `dist.zip`
-
-Whatever you choose to name the file you download from your release/update server URL, the zip file should contain the full contents of your production Capacitor build output folder, usually `{project directory}/dist/` or `{project directory}/www/`. This is where `index.html` will be located, and it should also contain all bundled JavaScript, CSS, and web resources necessary for your app to run.
-
-Do not password encrypt this file, or it will fail to unpack.
+- The zip file should contain the full contents of your production Capacitor build output folder, usually `{project directory}/dist/` or `{project directory}/www/`. This is where `index.html` will be located, and it should also contain all bundled JavaScript, CSS, and web resources necessary for your app to run.
+- Do not password encrypt the bundle zip file, or it will fail to unpack.
+- Make sure the bundle does not contain any extra hidden files or folders, or it may fail to unpack.
 
 ## API
 
