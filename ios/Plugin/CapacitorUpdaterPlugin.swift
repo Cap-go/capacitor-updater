@@ -15,6 +15,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     private var statsUrl = ""
     private var currentVersionNative: Version = "0.0.0"
     private var autoUpdate = false
+    private var appReadyTimeout = 10000
+    private var appReadyCheck: DispatchWorkItem?
     private var resetWhenUpdate = true
     private var autoDeleteFailed = false
     private var autoDeletePrevious = false
@@ -209,6 +211,41 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         call.resolve()
     }
 
+    func checkAppReady() {
+        do {
+            self.appReadyCheck?.cancel()
+            self.appReadyCheck = DispatchWorkItem(block: {
+                self.DeferredNotifyAppReadyCheck()
+            })
+            print("\(self.implementation.TAG) Wait for \(self.appReadyTimeout) ms, then check for notifyAppReady")
+            DispatchQueue.main.asyncAfter(deadline: .now() + self.appReadyTimeout, execute: self.appReadyCheck)
+        } catch {
+            print("\(self.implementation.TAG) Failed to start \"DeferredNotifyAppReadyCheck\"", error.localizedDescription)
+        }
+    }
+
+    func DeferredNotifyAppReadyCheck() {
+            do {
+                // Automatically roll back to fallback version if notifyAppReady has not been called yet
+                final VersionInfo current = self.implementation.getCurrentBundle();
+                if(current.isBuiltin()) {
+                    print("\(self.implementation.TAG) Built-in bundle is active. Nothing to do.")
+                    return
+                }
+
+                if(VersionStatus.SUCCESS != current.getStatus()) {
+                    print("\(self.implementation.TAG) notifyAppReady was not called, roll back current version: \(current)")
+                    self.implementation.rollback(current);
+                    self._reset(true);
+                } else {
+                    print("\(self.implementation.TAG) notifyAppReady was called. This is fine: \(current)")
+                }
+                self.appReadyCheck = false;
+            } catch () {
+                print("\(self.implementation.TAG) DeferredNotifyAppReadyCheck was interrupted.")
+            }
+    }
+
     @objc func appMovedToForeground() {
         DispatchQueue.global(qos: .background).async {
             print("\(self.implementation.TAG) Check for update in the server")
@@ -231,7 +268,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 newVersion = try Version(res?.version ?? "0.0.0")
                 failingVersion = try Version(UserDefaults.standard.string(forKey: "failingVersion") ?? "0.0.0")
             } catch {
-                print("\(self.implementation.TAG) Cannot get version \(failingVersion) \(newVersion)")
+                print("\(self.implementation.TAG) Cannot get version \(failingVersion) \(newVersion)", error.localizedDescription)
             }
             if (newVersion != "0.0.0" && newVersion != failingVersion) {
                 do {
