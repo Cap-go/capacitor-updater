@@ -103,6 +103,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 UserDefaults.standard.set(String(pathPersist.suffix(10)), forKey: self.implementation.CAP_SERVER_PATH)
                 vc.setServerBasePath(path: pathHot)
                 print("\(self.implementation.TAG) Reload app done")
+                self.checkAppReady()
                 return true
             } else {
                 return false
@@ -116,6 +117,26 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             call.resolve()
         } else {
             call.reject("Cannot reload")
+        }
+    }
+
+    @objc func next(_ call: CAPPluginCall) {
+        letg version = call.getString("version");
+        let versionName = call.getString("versionName", "");
+
+        try {
+            print("\(self.implementation.TAG) Setting next active version \(version)")
+            if (!self.implementation.setNextVersion(version)) {
+                call.reject("Set next version failed. Version \(version) does not exist.");
+            } else {
+                if(versionName != "") {
+                    self.implementation.setVersionName(version, versionName);
+                }
+                call.resolve(self.implementation.getVersionInfo(version).toJSON());
+            }
+        } catch () {
+            print("\(self.implementation.TAG) Could not set next version  \(version)", error.localizedDescription)
+            call.reject("Could not set next version \(version)", e);
         }
     }
     
@@ -283,6 +304,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             } else {
                 print("\(self.implementation.TAG) No need to update, \(currentVersion) is the latest")
             }
+            self.checkAppReady()
         }
     }
 
