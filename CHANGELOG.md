@@ -1,3 +1,10 @@
+## 3.3.4 (2022-05-09)
+
+### Fix
+
+- **android**: crashing on notifyDownload inifinite stack recursion
+- **android**: crashing on notifyDownload inifinite stack recursion
+
 ## 3.3.3 (2022-05-04)
 
 ### Fix
