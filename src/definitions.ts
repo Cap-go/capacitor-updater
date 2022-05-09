@@ -6,7 +6,7 @@ declare module '@capacitor/cli' {
     /**
      * These configuration values are available:
      */
-     CapacitorUpdater?: {
+    CapacitorUpdater?: {
       /**
        * Configure the number of milliseconds the native plugin should wait before considering an update 'failed'.
        *
@@ -123,8 +123,18 @@ export type UpdateAvailableListener = (state: UpdateAvailableEvent) => void;
 
 
 export interface CapacitorUpdaterPlugin {
+
+  /**
+   * Notify Capacitor Updater that the current bundle is working (a rollback will occur of this method is not called on every app launch)
+   *
+   * @returns {Promise<void>} an Promise resolved directly
+   * @throws An error if the something went wrong
+   */
+  notifyAppReady(): Promise<VersionInfo>;
+
   /**
    * Download a new version from the provided URL, it should be a zip file, with files inside or with a unique folder inside with all your files
+   *
    * @returns {Promise<VersionInfo>} The {@link VersionInfo} for the specified version.
    * @param url The URL of the bundle zip file (e.g: dist.zip) to be downloaded. (This can be any URL. E.g: Amazon S3, a github tag, any other place you've hosted your bundle.)
    * @param versionName (optional) set the name of this version
@@ -134,7 +144,7 @@ export interface CapacitorUpdaterPlugin {
 
   /**
    * Set the next bundle version to be used when the app is reloaded.
-   * 
+   *
    * @returns {Promise<VersionInfo>} The {@link VersionInfo} for the specified version.
    * @param version The version to set as current, next time the app is reloaded. See {@link VersionInfo.version}
    * @param versionName (optional) set or change the name of this version
@@ -143,15 +153,8 @@ export interface CapacitorUpdaterPlugin {
   next(options: { version: string, versionName?: string }): Promise<VersionInfo>;
 
   /**
-   * Get the state of auto update config.
-   * 
-   * @returns {Promise<{enabled: boolean}>} The status for auto update.
-   */
-  isAutoUpdateEnabled(): Promise<{enabled: boolean}>;
-
-  /**
    * Set the current bundle version and immediately reloads the app.
-   * 
+   *
    * @param version The version to set as current. See {@link VersionInfo.version}
    * @returns {Promise<Void>} An empty promise.
    * @param versionName (optional) set or change the name of this version
@@ -160,28 +163,17 @@ export interface CapacitorUpdaterPlugin {
   set(options: { version: string, versionName?: string }): Promise<void>;
 
   /**
-   * Get unique ID used to identify device into auto update server
-   * @returns {Promise<{ id: string }>} an Promise with id for this device
-   * @throws An error if the something went wrong
-   */
-  getId(): Promise<{ id: string }>;
-  
-  /**
-   * Get plugin version used in native code
-   * @returns {Promise<{ id: string }>} an Promise with version for this device
-   */
-  getPluginVersion(): Promise<{ version: string }>;
-  
-   /**
    * Delete version in storage
+   *
    * @returns {Promise<void>} an empty Promise when the version is deleted
    * @param version The version to delete (note, this is the version, NOT the version name)
    * @throws An error if the something went wrong
    */
   delete(options: { version: string }): Promise<void>;
-  
-   /**
+
+  /**
    * Get all available versions
+   *
    * @returns {Promise<{version: VersionInfo[]}>} an Promise witht the version list
    * @throws An error if the something went wrong
    */
@@ -189,41 +181,40 @@ export interface CapacitorUpdaterPlugin {
 
   /**
    * Set the `builtin` version (the one sent to Apple store / Google play store ) as current version
+   *
    * @returns {Promise<void>} an empty Promise
-   * @param toLastSuccessful [false] if yes it reset to to the last AutoUpdate version instead of `builtin`
+   * @param toLastSuccessful [false] if yes it reset to to the last successfully loaded bundle version instead of `builtin`
+   * @throws An error if the something went wrong
    */
-  reset(options?:{ toLastSuccessful?: boolean }): Promise<void>;
+  reset(options?: { toLastSuccessful?: boolean }): Promise<void>;
 
   /**
    * Get the current version, if none are set it returns `builtin`, currentNative is the original version install on the device
+   *
    * @returns {Promise<{ current: string, currentNative: string }>} an Promise with the current version name
    * @throws An error if the something went wrong
    */
   current(): Promise<{ bundle: VersionInfo, native: string }>;
 
-    /**
+  /**
    * Reload the view
+   *
    * @returns {Promise<void>} an Promise resolved when the view is reloaded
    * @throws An error if the something went wrong
    */
   reload(): Promise<void>;
 
   /**
-   * Notify native plugin that the update is working, only in auto-update
-   * @returns {Promise<void>} an Promise resolved directly
-   * @throws An error if the something went wrong
-   */
-  notifyAppReady(): Promise<VersionInfo>;
-
-  /**
    * Skip updates in the next time the app goes into the background, only in auto-update
+   *
    * @returns {Promise<void>} an Promise resolved directly
    * @throws An error if the something went wrong
    */
   delayUpdate(): Promise<void>;
 
   /**
-   * allow update in the next time the app goes into the background, only in auto-update
+   * Allow update in the next time the app goes into the background, only in auto-update
+   *
    * @returns {Promise<void>} an Promise resolved directly
    * @throws An error if the something went wrong
    */
@@ -258,4 +249,28 @@ export interface CapacitorUpdaterPlugin {
     eventName: 'updateAvailable',
     listenerFunc: UpdateAvailableListener,
   ): Promise<PluginListenerHandle> & PluginListenerHandle;
+
+  /**
+   * Get unique ID used to identify device (sent to auto update server)
+   *
+   * @returns {Promise<{ id: string }>} an Promise with id for this device
+   * @throws An error if the something went wrong
+   */
+  getId(): Promise<{ id: string }>;
+
+  /**
+   * Get the native Capacitor Updater plugin version (sent to auto update server)
+   *
+   * @returns {Promise<{ id: string }>} an Promise with version for this device
+   * @throws An error if the something went wrong
+   */
+  getPluginVersion(): Promise<{ version: string }>;
+
+  /**
+   * Get the state of auto update config. This will return `false` in manual mode.
+   *
+   * @returns {Promise<{enabled: boolean}>} The status for auto update.
+   * @throws An error if the something went wrong
+   */
+  isAutoUpdateEnabled(): Promise<{ enabled: boolean }>;
 }

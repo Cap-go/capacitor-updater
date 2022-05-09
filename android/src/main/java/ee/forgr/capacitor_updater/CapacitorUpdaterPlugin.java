@@ -35,17 +35,18 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     private static final String autoUpdateUrlDefault = "https://capgo.app/api/auto_update";
     private static final String statsUrlDefault = "https://capgo.app/api/stats";
     private static final String DELAY_UPDATE = "delayUpdate";
+
+
+    private SharedPreferences.Editor editor;
+    private SharedPreferences prefs;
     private CapacitorUpdater implementation;
 
-    private SharedPreferences prefs;
-    private SharedPreferences.Editor editor;
-
     private Integer appReadyTimeout = 10000;
-    private String autoUpdateUrl = "";
-    private Version currentVersionNative;
     private Boolean autoDeleteFailed = true;
     private Boolean autoDeletePrevious = true;
     private Boolean autoUpdate = false;
+    private String autoUpdateUrl = "";
+    private Version currentVersionNative;
     private Boolean resetWhenUpdate = true;
 
     private volatile Thread appReadyCheck;
@@ -60,7 +61,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             this.implementation = new CapacitorUpdater() {
                 @Override
                 public void notifyDownload(final int percent) {
-                    this.notifyDownload(percent);
+                    CapacitorUpdaterPlugin.this.notifyDownload(percent);
                 }
             };
             final PackageInfo pInfo = this.getContext().getPackageManager().getPackageInfo(this.getContext().getPackageName(), 0);
@@ -79,6 +80,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         final CapConfig config = CapConfig.loadDefault(this.getActivity());
         this.implementation.setAppId(config.getString("appId", ""));
         this.implementation.setStatsUrl(this.getConfig().getString("statsUrl", statsUrlDefault));
+        this.implementation.setDocumentsDir(this.getContext().getFilesDir());
         this.implementation.setPrefs(this.getContext().getSharedPreferences(WebView.WEBVIEW_PREFS_NAME, Activity.MODE_PRIVATE));
         this.implementation.setEditor(this.prefs.edit());
         this.implementation.setVersionOs(Build.VERSION.RELEASE);
@@ -153,9 +155,14 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
 
     @PluginMethod
     public void getPluginVersion(final PluginCall call) {
-        final JSObject ret = new JSObject();
-        ret.put("version", CapacitorUpdater.pluginVersion);
-        call.resolve(ret);
+        try {
+            final JSObject ret = new JSObject();
+            ret.put("version", CapacitorUpdater.pluginVersion);
+            call.resolve(ret);
+        } catch (final Exception e) {
+            Log.e(CapacitorUpdater.TAG, "Could not get plugin version", e);
+            call.reject("Could not get plugin version", e);
+        }
     }
 
     @PluginMethod
@@ -381,9 +388,14 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
 
     @PluginMethod
     public void isAutoUpdateEnabled(final PluginCall call) {
-        final JSObject ret = new JSObject();
-        ret.put("enabled", this._isAutoUpdateEnabled());
-        call.resolve(ret);
+        try {
+            final JSObject ret = new JSObject();
+            ret.put("enabled", this._isAutoUpdateEnabled());
+            call.resolve(ret);
+        } catch (final Exception e) {
+            Log.e(CapacitorUpdater.TAG, "Could not get autoUpdate status", e);
+            call.reject("Could not get autoUpdate status", e);
+        }
     }
 
     private void checkAppReady() {
