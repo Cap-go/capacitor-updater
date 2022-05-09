@@ -49,7 +49,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             this.implementation = new CapacitorUpdater(this.getContext()) {
                 @Override
                 public void notifyDownload(final int percent) {
-                    this.notifyDownload(percent);
+                    CapacitorUpdaterPlugin.this.notifyDownload(percent);
                 }
             };
             final PackageInfo pInfo = this.getContext().getPackageManager().getPackageInfo(this.getContext().getPackageName(), 0);
