@@ -95,9 +95,9 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
 
         this.cleanupObsoleteVersions();
 
-        if (!this.autoUpdate || this.autoUpdateUrl.equals("")) return;
         final Application application = (Application) this.getContext().getApplicationContext();
         application.registerActivityLifecycleCallbacks(this);
+
         this.onActivityStarted(this.getActivity());
     }
 
