@@ -435,10 +435,18 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                 if (latestVersionName != null && !"".equals(latestVersionName) && !current.getName().equals(latestVersionName)) {
 
                                     final VersionInfo latest = CapacitorUpdaterPlugin.this.implementation.getVersionInfoByName(latestVersionName);
-                                    if(latest != null && latest.isErrorStatus()) {
-                                        Log.e(CapacitorUpdater.TAG, "Latest version already exists, and is in error state. Aborting update.");
-                                        return;
+                                    if(latest != null) {
+                                        if(latest.isErrorStatus()) {
+                                            Log.e(CapacitorUpdater.TAG, "Latest version already exists, and is in error state. Aborting update.");
+                                            return;
+                                        }
+                                        if(latest.isDownloaded()){
+                                            Log.e(CapacitorUpdater.TAG, "Latest version already exists and download is NOT required. Update will occur next time app moves to background.");
+                                            CapacitorUpdaterPlugin.this.implementation.setNextVersion(latest.getVersion());
+                                            return;
+                                        }
                                     }
+
 
                                     new Thread(new Runnable(){
                                         @Override
