@@ -28,7 +28,7 @@ import io.github.g00fy2.versioncompare.Version;
 import org.json.JSONException;
 
 import java.io.IOException;
-import java.util.ArrayList;
+import java.util.List;
 
 @CapacitorPlugin(name = "CapacitorUpdater")
 public class CapacitorUpdaterPlugin extends Plugin implements Application.ActivityLifecycleCallbacks {
@@ -108,7 +108,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                 try {
                     if (!"".equals(previous.getOriginalString()) && this.currentVersionNative.getMajor() > previous.getMajor()) {
                         this.implementation.reset(true);
-                        final ArrayList<VersionInfo> installed = this.implementation.list();
+                        final List<VersionInfo> installed = this.implementation.list();
                         for (final VersionInfo version: installed) {
                             try {
                                 Log.i(CapacitorUpdater.TAG, "Deleting obsolete version: " + version);
@@ -281,7 +281,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     @PluginMethod
     public void list(final PluginCall call) {
         try {
-            final ArrayList<VersionInfo> res = this.implementation.list();
+            final List<VersionInfo> res = this.implementation.list();
             final JSObject ret = new JSObject();
             final JSArray values = new JSArray();
             for (final VersionInfo version : res) {
@@ -383,7 +383,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     }
 
     private Boolean _isAutoUpdateEnabled() {
-        return !"".equals(CapacitorUpdaterPlugin.this.autoUpdateUrl);
+        return CapacitorUpdaterPlugin.this.autoUpdate && !"".equals(CapacitorUpdaterPlugin.this.autoUpdateUrl);
     }
 
     @PluginMethod
@@ -430,18 +430,24 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                     return;
                                 }
                                 final VersionInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
-                                final String newVersion = (String) res.get("version");
+                                final String latestVersionName = (String) res.get("version");
 
-                                // FIXME: What is failingVersion actually doing? Seems redundant with VersionStatus
-                                final String failingVersion = CapacitorUpdaterPlugin.this.prefs.getString("failingVersion", "");
-                                if (!"".equals(newVersion) && !newVersion.equals(current.getVersion()) && !newVersion.equals(failingVersion)) {
+                                if (latestVersionName != null && !"".equals(latestVersionName) && !current.getName().equals(latestVersionName)) {
+
+                                    final VersionInfo latest = CapacitorUpdaterPlugin.this.implementation.getVersionInfoByName(latestVersionName);
+                                    if(latest != null && latest.isErrorStatus()) {
+                                        Log.e(CapacitorUpdater.TAG, "Latest version already exists, and is in error state. Aborting update.");
+                                        return;
+                                    }
+
                                     new Thread(new Runnable(){
                                         @Override
                                         public void run() {
                                             try {
+                                                Log.i(CapacitorUpdater.TAG, "New version: " + latestVersionName + " found. Current is: " + current.getName() + ". Update will occur next time app moves to background.");
+
                                                 final String url = (String) res.get("url");
-                                                final VersionInfo next = CapacitorUpdaterPlugin.this.implementation.download(url, newVersion);
-                                                Log.i(CapacitorUpdater.TAG, "New version: " + newVersion + " found. Current is " + (current.getName().equals("") ? "builtin" : current.getName()) + ", next backgrounding will trigger update");
+                                                final VersionInfo next = CapacitorUpdaterPlugin.this.implementation.download(url, latestVersionName);
 
                                                 CapacitorUpdaterPlugin.this.implementation.setNextVersion(next.getVersion());
 
@@ -491,6 +497,9 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
 
             final Boolean success = current.getStatus() == VersionStatus.SUCCESS;
 
+            Log.d(CapacitorUpdater.TAG, "Fallback version is: " + fallback);
+            Log.d(CapacitorUpdater.TAG, "Current version is: " + current);
+            Log.d(CapacitorUpdater.TAG, "Next version is: " + next);
             if (next != null && !next.isErrorStatus() && (next.getVersion() != current.getVersion())) {
                 // There is a next version waiting for activation
 

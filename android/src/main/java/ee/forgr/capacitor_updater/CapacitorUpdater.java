@@ -32,6 +32,7 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.TimeZone;
 import java.util.zip.ZipEntry;
@@ -241,8 +242,8 @@ public class CapacitorUpdater {
         return this.getVersionInfo(version);
     }
 
-    public ArrayList<VersionInfo> list() {
-        final ArrayList<VersionInfo> res = new ArrayList<>();
+    public List<VersionInfo> list() {
+        final List<VersionInfo> res = new ArrayList<>();
         final File destHot = new File(this.getDocumentsDir(), bundleDirectory);
         Log.i(TAG, "list File : " + destHot.getPath());
         if (destHot.exists()) {
@@ -426,6 +427,16 @@ public class CapacitorUpdater {
         final String name = this.getVersionName(version);
         final VersionStatus status = this.getVersionStatus(version);
         return new VersionInfo(version, status, downloaded, name);
+    }
+
+    public VersionInfo getVersionInfoByName(final String version) {
+        final List<VersionInfo> installed = this.list();
+        for(final VersionInfo i : installed) {
+            if(i.getName().equals(version)) {
+                return i;
+            }
+        }
+        return null;
     }
 
     private void removeVersionInfo(final String version) {
