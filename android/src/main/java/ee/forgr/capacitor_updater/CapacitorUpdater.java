@@ -29,13 +29,13 @@ import java.net.URL;
 import java.net.URLConnection;
 import java.security.SecureRandom;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.TimeZone;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
-import java.util.ArrayList;
 
 interface Callback {
     void callback(JSONObject jsonObject);
@@ -541,6 +541,7 @@ public class CapacitorUpdater {
             }
 
             this.editor.putString(NEXT_VERSION, next);
+            this.setVersionStatus(next, VersionStatus.PENDING);
         }
         this.editor.commit();
         return true;
