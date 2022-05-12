@@ -6,6 +6,7 @@ import java.util.Objects;
 
 public class VersionInfo {
     public static final String VERSION_BUILTIN = "builtin";
+    public static final String DOWNLOADED_BUILTIN = "1970-01-01T00:00:00.000Z";
 
     private final String downloaded;
     private final String name;
@@ -27,8 +28,12 @@ public class VersionInfo {
         return VersionStatus.ERROR == this.status;
     }
 
+    public boolean isDownloaded() {
+        return !this.isBuiltin() && this.downloaded != null && this.downloaded.trim().length() == DOWNLOADED_BUILTIN.length();
+    }
+
     public String getDownloaded() {
-        return this.isBuiltin() ? "1970-01-01T00:00:00.000Z" : this.downloaded;
+        return this.isBuiltin() ? DOWNLOADED_BUILTIN : this.downloaded;
     }
 
     public String getName() {

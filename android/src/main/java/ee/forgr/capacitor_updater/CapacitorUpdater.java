@@ -29,13 +29,14 @@ import java.net.URL;
 import java.net.URLConnection;
 import java.security.SecureRandom;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.TimeZone;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
-import java.util.ArrayList;
 
 interface Callback {
     void callback(JSONObject jsonObject);
@@ -241,8 +242,8 @@ public class CapacitorUpdater {
         return this.getVersionInfo(version);
     }
 
-    public ArrayList<VersionInfo> list() {
-        final ArrayList<VersionInfo> res = new ArrayList<>();
+    public List<VersionInfo> list() {
+        final List<VersionInfo> res = new ArrayList<>();
         final File destHot = new File(this.getDocumentsDir(), bundleDirectory);
         Log.i(TAG, "list File : " + destHot.getPath());
         if (destHot.exists()) {
@@ -428,6 +429,16 @@ public class CapacitorUpdater {
         return new VersionInfo(version, status, downloaded, name);
     }
 
+    public VersionInfo getVersionInfoByName(final String version) {
+        final List<VersionInfo> installed = this.list();
+        for(final VersionInfo i : installed) {
+            if(i.getName().equals(version)) {
+                return i;
+            }
+        }
+        return null;
+    }
+
     private void removeVersionInfo(final String version) {
         this.setVersionDownloadedTimestamp(version, null);
         this.setVersionName(version, null);
@@ -541,6 +552,7 @@ public class CapacitorUpdater {
             }
 
             this.editor.putString(NEXT_VERSION, next);
+            this.setVersionStatus(next, VersionStatus.PENDING);
         }
         this.editor.commit();
         return true;
