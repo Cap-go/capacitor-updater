@@ -36,6 +36,22 @@ extension Bundle {
     }
 }
 
+extension ISO8601DateFormatter {
+    convenience init(_ formatOptions: Options) {
+        self.init()
+        self.formatOptions = formatOptions
+    }
+}
+extension Formatter {
+    static let iso8601withFractionalSeconds = ISO8601DateFormatter([.withInternetDateTime, .withFractionalSeconds])
+}
+extension Date {
+    var iso8601withFractionalSeconds: String { return Formatter.iso8601withFractionalSeconds.string(from: self) }
+}
+extension String {
+    var iso8601withFractionalSeconds: Date? { return Formatter.iso8601withFractionalSeconds.date(from: self) }
+}
+
 enum CustomError: Error {
     // Throw when an unzip fail
     case cannotUnzip
@@ -208,7 +224,7 @@ extension CustomError: LocalizedError {
     }
     
     private func setCurrentBundle(bundle: String) {
-        UserDefaults.standard.set(bundle, forKey: WebView.CAP_SERVER_PATH)
+        UserDefaults.standard.set(bundle, forKey: self.CAP_SERVER_PATH)
         print("\(self.TAG) Current bundle set to: \(source.path) dest: \(dest.path)")
         UserDefaults.standard.synchronize()
     }
@@ -344,6 +360,136 @@ extension CustomError: LocalizedError {
             let _ = AF.request(self.statsUrl, method: .post,parameters: parameters, encoder: JSONParameterEncoder.default)
             print("\(self.TAG) Stats send for \(action), version \(version)")
         }
+    }
+
+    public func getVersionInfo(version:? String) -> VersionInfo {
+        if(version == nil) {
+            version = "unknown"
+        }
+        let downloaded: String = self.getVersionDownloadedTimestamp(version)
+        let name: String = self.getVersionName(version)
+        final VersionStatus status = self.getVersionStatus(version)
+        return new VersionInfo(version, status, downloaded, name)
+    }
+
+    public func getVersionInfoByName(version: String) -> VersionInfo? {
+        let installed : Array<VersionInfo> = self.list()
+        for i in installed {
+            if(i.getName() == version) {
+                return i
+            }
+        }
+        return nil
+    }
+
+    private func removeVersionInfo(version: String) {
+        self.setVersionDownloadedTimestamp(version, nil)
+        self.setVersionName(version, nil)
+        self.setVersionStatus(version, nil)
+    }
+
+    private func getVersionDownloadedTimestamp(version: String) -> String {
+        return UserDefaults.standard.string(forKey: "\(version)\(self.DOWNLOADED_SUFFIX)")  ?? ""
+    }
+
+    private func setVersionDownloadedTimestamp(version:? String, time:? Date) {
+        if(version != nil) {
+            print("\(self.TAG) Setting version download timestamp \(version) to \(time)")
+            if(time == nil) {
+                UserDefaults.standard.removeObject(forKey: "\(version)\(self.DOWNLOADED_SUFFIX)")
+            } else {
+                let isoDate = time.iso8601withFractionalSeconds  
+                UserDefaults.standard.set(isoDate, forKey: "\(version)\(self.DOWNLOADED_SUFFIX)")
+            }
+            UserDefaults.standard.synchronize()
+        }
+    }
+
+    private func getVersionName(version: String) -> String {
+        return UserDefaults.standard.string(forKey: "\(version)\(self.NAME_SUFFIX)") ?? ""
+    }
+
+    public func setVersionName(version:? String, name:? String) {
+        if(version != nil) {
+            print("\(self.TAG) Setting version name \(version) to \(time)")
+            if(name == nil) {
+                UserDefaults.standard.removeObject(forKey: "\(version)\(self.NAME_SUFFIX)")
+            } else {
+                UserDefaults.standard.set(name, forKey: "\(version)\(self.NAME_SUFFIX)")
+            }
+            UserDefaults.standard.synchronize()
+        }
+    }
+
+    private func getVersionStatus(version: String) -> VersionStatus {
+        let status = UserDefaults.standard.string(forKey: "\(version)\(self.STATUS_SUFFIX)") ?? "pending"
+        return VersionStatus.fromString(status)
+    }
+
+    private func setVersionStatus(version:? String, status:? VersionStatus) {
+        if(version != nil) {
+            print("\(self.TAG) Setting version status \(version) to \(status)")
+            if(status == nil) {
+                UserDefaults.standard.removeObject(forKey: "\(version)\(self.STATUS_SUFFIX)")
+            } else {
+                UserDefaults.standard.set(status.toString(), forKey: "\(version)\(self.STATUS_SUFFIX)")
+            }
+            UserDefaults.standard.synchronize()
+        }
+    }
+
+    private func getCurrentBundleVersion() -> String {
+        if(self.isUsingBuiltin()) {
+            return VersionInfo.VERSION_BUILTIN
+        } else {
+            let path: String = self.getCurrentBundlePath()
+            return path.substring(from: path.lastIndex(of: "/") + 1)
+        }
+    }
+
+    public func getCurrentBundle() -> VersionInfo {
+        return self.getVersionInfo(self.getCurrentBundleVersion());
+    }
+
+    public func getCurrentBundlePath() -> String {
+        return UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH) ?? "public"
+    }
+
+    public func isUsingBuiltin() -> Boolean {
+        return self.getCurrentBundlePath().equals("public")
+    }
+
+    public func getFallbackVersion() -> VersionInfo {
+        let version: String = UserDefaults.standard.string(forKey: self.FALLBACK_VERSION) ?? VersionInfo.VERSION_BUILTIN
+        return self.getVersionInfo(version)
+    }
+
+    private func setFallbackVersion(fallback:? VersionInfo ) {
+        UserDefaults.standard.set(fallback == nil ? VersionInfo.VERSION_BUILTIN : fallback.getVersion(), forKey: self.FALLBACK_VERSION)
+    }
+
+    public func getNextVersion() -> VersionInfo? {
+        let version: String = UserDefaults.standard.string(forKey: self.NEXT_VERSION) ?? ""
+        if(version != "") {
+            return self.getVersionInfo(version)
+        } else {
+            return nil
+        }
+    }
+
+    public func setNextVersion(next:? String) -> boolean {
+        if (next == nil) {
+            UserDefaults.standard.removeObject(forKey: self.NEXT_VERSION)
+        } else {
+            let bundle: File = self.getBundle(next!)
+            if (!self.bundleExists(bundle)) {
+                return false
+            }
+            UserDefaults.standard.set(next, forKey: self.NEXT_VERSION)
+            self.setVersionStatus(next, VersionStatus.PENDING);
+        }
+        UserDefaults.standard.synchronize()
+        return true
     }
     
 }
