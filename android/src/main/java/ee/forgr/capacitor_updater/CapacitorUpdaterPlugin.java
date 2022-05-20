@@ -529,7 +529,10 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                     Log.i(CapacitorUpdater.TAG, "Version: " + current + ", is in error state.");
                     Log.i(CapacitorUpdater.TAG, "Will fallback to: " + fallback + " on application restart.");
                     Log.i(CapacitorUpdater.TAG, "Did you forget to call 'notifyAppReady()' in your Capacitor App code?");
-
+                    final JSObject ret = new JSObject();
+                    ret.put("version", current);
+                    this.notifyListeners("updateFailed", ret);
+                    this.implementation.sendStats("revert", current)
                     if (!fallback.isBuiltin() && !fallback.equals(current)) {
                         final Boolean res = this.implementation.set(fallback);
                         if (res && this._reload()) {
@@ -544,9 +547,6 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                     }
 
                     if (this.autoDeleteFailed) {
-                        final JSObject ret = new JSObject();
-                        ret.put("version", current);
-                        this.notifyListeners("updateFailed", ret);
                         Log.i(CapacitorUpdater.TAG, "Deleting failing version: " + current);
                         try {
                             final Boolean res = this.implementation.delete(current.getVersion());

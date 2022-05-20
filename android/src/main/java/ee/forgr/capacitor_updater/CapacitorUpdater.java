@@ -375,7 +375,7 @@ public class CapacitorUpdater {
             url = new URL(this.getStatsUrl());
             json.put("platform", "android");
             json.put("action", action);
-            json.put("version_name", version);
+            json.put("version_name", version.getName());
             json.put("device_id", this.getDeviceID());
             json.put("version_build", this.versionBuild);
             json.put("version_code", this.versionCode);

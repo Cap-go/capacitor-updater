@@ -342,6 +342,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             print("\(self.implementation.TAG) Version: \(curVersionName), is considered broken")
             print("\(self.implementation.TAG) Will downgraded to version: \(pastVersionName == "" ? "builtin" : pastVersionName) for next start")
             print("\(self.implementation.TAG) Don't forget to trigger 'notifyAppReady()' in js code to validate a version.")
+            self.notifyListeners("updateFailed", data: ["version": curVersionName])
             implementation.sendStats(action: "revert", version: curVersionName)
             if (pastVersion != "" && pastVersionName != "") {
                 let res = implementation.set(version: pastVersion, versionName: pastVersionName)
@@ -364,7 +365,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             UserDefaults.standard.set(curVersionName, forKey: "failingVersion")
             let res = implementation.delete(version: curVersion, versionName: curVersionName)
             if (res) {
-                self.notifyListeners("updateFailed", data: ["version": curVersionName])
                 print("\(self.implementation.TAG) Delete failing version: \(curVersionName)")
             }
         } else if (pastVersion != "") {
