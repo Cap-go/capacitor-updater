@@ -93,8 +93,9 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         this.appReadyTimeout = this.getConfig().getInt("appReadyTimeout", 10000);
         this.resetWhenUpdate = this.getConfig().getBoolean("resetWhenUpdate", true);
 
-        this.cleanupObsoleteVersions();
-
+        if (this.resetWhenUpdate) {
+            this.cleanupObsoleteVersions();
+        }
         final Application application = (Application) this.getContext().getApplicationContext();
         application.registerActivityLifecycleCallbacks(this);
 
@@ -102,30 +103,27 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     }
 
     private void cleanupObsoleteVersions() {
-        if (this.resetWhenUpdate) {
+        try {
+            final Version previous = new Version(this.prefs.getString("LatestVersionNative", ""));
             try {
-                final Version previous = new Version(this.prefs.getString("LatestVersionNative", ""));
-                try {
-                    if (!"".equals(previous.getOriginalString()) && this.currentVersionNative.getMajor() > previous.getMajor()) {
-                        this.implementation.reset(true);
-                        final List<VersionInfo> installed = this.implementation.list();
-                        for (final VersionInfo version: installed) {
-                            try {
-                                Log.i(CapacitorUpdater.TAG, "Deleting obsolete version: " + version);
-                                this.implementation.delete(version.getVersion());
-                            } catch (final Exception e) {
-                                Log.e(CapacitorUpdater.TAG, "Failed to delete: " + version, e);
-                            }
+                if (!"".equals(previous.getOriginalString()) && this.currentVersionNative.getMajor() > previous.getMajor()) {
+                    this.implementation.reset(true);
+                    final List<VersionInfo> installed = this.implementation.list();
+                    for (final VersionInfo version: installed) {
+                        try {
+                            Log.i(CapacitorUpdater.TAG, "Deleting obsolete version: " + version);
+                            this.implementation.delete(version.getVersion());
+                        } catch (final Exception e) {
+                            Log.e(CapacitorUpdater.TAG, "Failed to delete: " + version, e);
                         }
                     }
-                } catch (final Exception e) {
-                    Log.e(CapacitorUpdater.TAG, "Could not determine the current version", e);
                 }
-            } catch(final Exception e) {
-                Log.e(CapacitorUpdater.TAG, "Error calculating previous native version", e);
+            } catch (final Exception e) {
+                Log.e(CapacitorUpdater.TAG, "Could not determine the current version", e);
             }
+        } catch(final Exception e) {
+            Log.e(CapacitorUpdater.TAG, "Error calculating previous native version", e);
         }
-
         this.editor.putString("LatestVersionNative", this.currentVersionNative.toString());
         this.editor.commit();
     }
