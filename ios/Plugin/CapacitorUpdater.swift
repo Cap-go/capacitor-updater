@@ -195,7 +195,7 @@ extension CustomError: LocalizedError {
             "cap_version_code": self.versionCode,
             "cap_version_os": self.versionOs,
             "cap_plugin_version": self.pluginVersion,
-            "cap_version_name": UserDefaults.standard.string(forKey: "versionName") ?? "builtin"
+            "cap_version_name": self.getCurrentBundle().getName()
         ]
         let request = AF.request(url, headers: headers)
 
@@ -324,10 +324,6 @@ extension CustomError: LocalizedError {
         return false
     }
     
-    public func getLastPathHot() -> String {
-        return UserDefaults.standard.string(forKey: "lastPathHot") ?? ""
-    }
-    
     public func getVersionName() -> String {
         return UserDefaults.standard.string(forKey: "versionName") ?? ""
     }
@@ -335,23 +331,24 @@ extension CustomError: LocalizedError {
     public func getLastPathPersist() -> String {
         return UserDefaults.standard.string(forKey: "lastPathPersist") ?? ""
     }
-    
-    public func reset() {
-        let version = UserDefaults.standard.string(forKey: "versionName") ?? ""
-        sendStats(action: "reset", version: version)
+
+    public func reset(internal: Bool = false) {
         UserDefaults.standard.set("", forKey: "lastPathHot")
         UserDefaults.standard.set("", forKey: "lastPathPersist")
         UserDefaults.standard.set("", forKey: "versionName")
         UserDefaults.standard.synchronize()
+        if(!internal) {
+            sendStats("reset", this.getCurrentBundle())
+        }
     }
 
-    func sendStats(action: String, version: String) {
+    func sendStats(action: String, version: VersionInfo) {
         if (statsUrl == "") { return }
         let parameters: [String: String] = [
             "platform": "ios",
             "action": action,
             "device_id": self.deviceID,
-            "version_name": version,
+            "version_name": version.getName(),
             "version_build": self.versionBuild,
             "version_code": self.versionCode,
             "version_os": self.versionOs,
@@ -361,7 +358,7 @@ extension CustomError: LocalizedError {
 
         DispatchQueue.global(qos: .background).async {
             let _ = AF.request(self.statsUrl, method: .post,parameters: parameters, encoder: JSONParameterEncoder.default)
-            print("\(self.TAG) Stats send for \(action), version \(version)")
+            print("\(self.TAG) Stats send for \(action), version \(version.getName())")
         }
     }
 
@@ -458,7 +455,7 @@ extension CustomError: LocalizedError {
         return UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH) ?? "public"
     }
 
-    public func isUsingBuiltin() -> Boolean {
+    public func isUsingBuiltin() -> Bool {
         return self.getCurrentBundlePath().equals("public")
     }
 
@@ -480,7 +477,7 @@ extension CustomError: LocalizedError {
         }
     }
 
-    public func setNextVersion(next:? String) -> boolean {
+    public func setNextVersion(next:? String) -> Bool {
         if (next == nil) {
             UserDefaults.standard.removeObject(forKey: self.NEXT_VERSION)
         } else {
