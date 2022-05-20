@@ -48,6 +48,18 @@ public class VersionInfo {
         return this.isBuiltin() ? VersionStatus.SUCCESS : this.status;
     }
 
+    public JSObject fromJSONString(final String objStringified) {
+        try {
+            JSONObject json = new JSONObject(new JSONTokener(jsonString));
+            this.downloaded = json.getString('downloaded');
+            this.name = json.getString('name');
+            this.version = json.getString('version');
+            this.status = json.getString('status');
+        } catch (JSONException err){
+            Log.d("Error", err.toString());
+        }
+    }
+
     public JSObject toJSON() {
         final JSObject result = new JSObject();
         result.put("downloaded", this.getDownloaded());
@@ -56,6 +68,8 @@ public class VersionInfo {
         result.put("status", this.getStatus());
         return result;
     }
+    
+
 
     @Override
     public boolean equals(final Object o) {
