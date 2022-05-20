@@ -253,9 +253,9 @@ extension CustomError: LocalizedError {
                     version = self.randomString(length: 10)
                     do {
                         try self.saveDownloaded(sourceZip: fileURL, version: version, base: self.documentsDir.appendingPathComponent(self.bundleDirectoryHot))
-                        self.notifyDownload(85);
+                        self.notifyDownload(85)
                         try self.saveDownloaded(sourceZip: fileURL, version: version, base: self.libraryDir.appendingPathComponent(self.bundleDirectory))
-                        self.notifyDownload(100);
+                        self.notifyDownload(100)
                         self.deleteFolder(source: fileURL)
                     } catch {
                         print("\(self.TAG) download unzip error", error)
@@ -268,12 +268,15 @@ extension CustomError: LocalizedError {
             }
             semaphore.signal()
         }
-        self.notifyDownload(0);
+        self.notifyDownload(0)
         semaphore.wait()
         if (mainError != nil) {
             throw mainError!
         }
-        return version
+        self.setVersionStatus(version, VersionStatus.PENDING)
+        self.setVersionDownloadedTimestamp(version, Date())
+        self.setVersionName(version, versionName)
+        return self.getVersionInfo(version)
     }
 
     public func list() -> [String] {
