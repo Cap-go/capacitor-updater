@@ -131,6 +131,7 @@ Capacitor Updator works by unzipping a compiled app bundle to the native device 
 * [`addListener('download', ...)`](#addlistenerdownload)
 * [`addListener('majorAvailable', ...)`](#addlistenermajoravailable)
 * [`addListener('updateAvailable', ...)`](#addlistenerupdateavailable)
+* [`addListener('updateFailed', ...)`](#addlistenerupdatefailed)
 * [`getId()`](#getid)
 * [`getPluginVersion()`](#getpluginversion)
 * [`isAutoUpdateEnabled()`](#isautoupdateenabled)
@@ -355,6 +356,26 @@ Listen for update event in the App, let you know when update is ready to install
 --------------------
 
 
+### addListener('updateFailed', ...)
+
+```typescript
+addListener(eventName: 'updateFailed', listenerFunc: UpdateFailedListener) => Promise<PluginListenerHandle> & PluginListenerHandle
+```
+
+Listen for update event in the App, let you know when update is ready to install at next app start
+
+| Param              | Type                                                                  |
+| ------------------ | --------------------------------------------------------------------- |
+| **`eventName`**    | <code>'updateFailed'</code>                                           |
+| **`listenerFunc`** | <code><a href="#updatefailedlistener">UpdateFailedListener</a></code> |
+
+**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt; & <a href="#pluginlistenerhandle">PluginListenerHandle</a></code>
+
+**Since:** 2.3.0
+
+--------------------
+
+
 ### getId()
 
 ```typescript
@@ -460,6 +481,13 @@ removeAllListeners() => Promise<void>
 | **`version`** | <code><a href="#versioninfo">VersionInfo</a></code> | Emit when a new update is available. | 3.0.0 |
 
 
+#### UpdateFailedEvent
+
+| Prop          | Type                                                | Description                           | Since |
+| ------------- | --------------------------------------------------- | ------------------------------------- | ----- |
+| **`version`** | <code><a href="#versioninfo">VersionInfo</a></code> | Emit when a update failed to install. | 4.0.0 |
+
+
 ### Type Aliases
 
 
@@ -481,6 +509,11 @@ removeAllListeners() => Promise<void>
 #### UpdateAvailableListener
 
 <code>(state: <a href="#updateavailableevent">UpdateAvailableEvent</a>): void</code>
+
+
+#### UpdateFailedListener
+
+<code>(state: <a href="#updatefailedevent">UpdateFailedEvent</a>): void</code>
 
 </docgen-api>
 

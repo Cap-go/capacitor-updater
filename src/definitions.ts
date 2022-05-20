@@ -106,6 +106,15 @@ export interface UpdateAvailableEvent {
   version: VersionInfo;
 }
 
+export interface UpdateFailedEvent {
+  /**
+   * Emit when a update failed to install.
+   *
+   * @since 4.0.0
+   */
+  version: VersionInfo;
+}
+
 export interface VersionInfo {
   version: string;
   downloaded: string;
@@ -118,6 +127,7 @@ export type VersionStatus = 'success' | 'error' | 'pending';
 export type DownloadChangeListener = (state: DownloadEvent) => void;
 export type MajorAvailableListener = (state: MajorAvailableEvent) => void;
 export type UpdateAvailableListener = (state: UpdateAvailableEvent) => void;
+export type UpdateFailedListener = (state: UpdateFailedEvent) => void;
 
 
 
@@ -249,6 +259,16 @@ export interface CapacitorUpdaterPlugin {
     eventName: 'updateAvailable',
     listenerFunc: UpdateAvailableListener,
   ): Promise<PluginListenerHandle> & PluginListenerHandle;
+
+    /**
+   * Listen for update event in the App, let you know when update is ready to install at next app start
+   *
+   * @since 2.3.0
+   */
+  addListener(
+      eventName: 'updateFailed',
+      listenerFunc: UpdateFailedListener,
+    ): Promise<PluginListenerHandle> & PluginListenerHandle;
 
   /**
    * Get unique ID used to identify device (sent to auto update server)

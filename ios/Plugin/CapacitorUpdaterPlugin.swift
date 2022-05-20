@@ -364,6 +364,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             UserDefaults.standard.set(curVersionName, forKey: "failingVersion")
             let res = implementation.delete(version: curVersion, versionName: curVersionName)
             if (res) {
+                self.notifyListeners("updateFailed", data: ["version": curVersionName])
                 print("\(self.implementation.TAG) Delete failing version: \(curVersionName)")
             }
         } else if (pastVersion != "") {

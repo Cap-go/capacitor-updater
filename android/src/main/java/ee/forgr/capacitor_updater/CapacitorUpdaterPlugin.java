@@ -544,6 +544,9 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                     }
 
                     if (this.autoDeleteFailed) {
+                        final JSObject ret = new JSObject();
+                        ret.put("version", current);
+                        this.notifyListeners("updateFailed", ret);
                         Log.i(CapacitorUpdater.TAG, "Deleting failing version: " + current);
                         try {
                             final Boolean res = this.implementation.delete(current.getVersion());
