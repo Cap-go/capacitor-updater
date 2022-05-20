@@ -291,6 +291,7 @@ extension CustomError: LocalizedError {
     }
     
     public func delete(version: String, versionName: String) -> Bool {
+        let deleted: VersionInfo = self.getVersionInfo(version)
         let destHot = documentsDir.appendingPathComponent(bundleDirectoryHot).appendingPathComponent(version)
         let destPersist = libraryDir.appendingPathComponent(bundleDirectory).appendingPathComponent(version)
         do {
@@ -304,7 +305,8 @@ extension CustomError: LocalizedError {
             print("\(self.TAG) Folder \(destPersist.path), not removed.")
             return false
         }
-        sendStats(action: "delete", version: versionName)
+        self.removeVersionInfo(version)
+        self.sendStats(action: "delete", version: deleted)
         return true
     }
 
@@ -326,6 +328,10 @@ extension CustomError: LocalizedError {
     
     public func getVersionName() -> String {
         return UserDefaults.standard.string(forKey: "versionName") ?? ""
+    }
+    
+    public func getLastPathHot() -> String {
+        return UserDefaults.standard.string(forKey: "lastPathHot") ?? ""
     }
     
     public func getLastPathPersist() -> String {
