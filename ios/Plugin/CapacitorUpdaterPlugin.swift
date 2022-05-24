@@ -11,6 +11,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     private var implementation = CapacitorUpdater()
     static let autoUpdateUrlDefault = "https://capgo.app/api/auto_update"
     static let statsUrlDefault = "https://capgo.app/api/stats"
+    static final let DELAY_UPDATE = "delayUpdate"
     private var autoUpdateUrl = ""
     private var statsUrl = ""
     private var currentVersionNative: Version = "0.0.0"
@@ -44,31 +45,38 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             implementation.appId = config?["appId"] as! String
         }
         implementation.statsUrl = getConfigValue("statsUrl") as? String ?? CapacitorUpdaterPlugin.statsUrlDefault
+
         if (resetWhenUpdate) {
-            var LatestVersionNative: Version = "0.0.0"
-            do {
-                LatestVersionNative = try Version(UserDefaults.standard.string(forKey: "LatestVersionNative") ?? "0.0.0")
-            } catch {
-                print("\(self.implementation.TAG) Cannot get version native \(currentVersionNative)")
-            }
-            if (LatestVersionNative != "0.0.0" && currentVersionNative.major > LatestVersionNative.major) {
-                _ = self._reset(toAutoUpdate: false)
-                UserDefaults.standard.set("", forKey: "LatestVersionAutoUpdate")
-                UserDefaults.standard.set("", forKey: "LatestVersionNameAutoUpdate")
-                let res = implementation.list()
-                res.forEach { version in
-                    _ = implementation.delete(version: version, versionName: "")
-                }
-            }
-            UserDefaults.standard.set( Bundle.main.buildVersionNumber, forKey: "LatestVersionNative")
+            self.cleanupObsoleteVersions()
         }
-        if (!autoUpdate || autoUpdateUrl == "") { return }
         let nc = NotificationCenter.default
         nc.addObserver(self, selector: #selector(appMovedToBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
         nc.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
         self.appMovedToForeground()
     }
-    
+
+    private func cleanupObsoleteVersions() {
+        var LatestVersionNative: Version = "0.0.0"
+        do {
+            LatestVersionNative = try Version(UserDefaults.standard.string(forKey: "LatestVersionNative") ?? "0.0.0")
+        } catch {
+            print("\(self.implementation.TAG) Cannot get version native \(currentVersionNative)")
+        }
+        if (LatestVersionNative != "0.0.0" && currentVersionNative.major > LatestVersionNative.major) {
+            _ = self._reset(toAutoUpdate: false)
+            UserDefaults.standard.set("", forKey: "LatestVersionAutoUpdate")
+            UserDefaults.standard.set("", forKey: "LatestVersionNameAutoUpdate")
+            let res = implementation.list()
+            res.forEach { version in
+                print("\(self.implementation.TAG) Deleting obsolete version: \(version)")
+                _ = implementation.delete(version: version, versionName: "")
+            }
+        }
+        UserDefaults.standard.set( Bundle.main.buildVersionNumber, forKey: "LatestVersionNative")
+        this.editor.putString("LatestVersionNative", this.currentVersionNative.toString());
+        this.editor.commit();
+    }
+
     @objc func notifyDownload(percent: Int) {
         self.notifyListeners("download", data: ["percent": percent])
     }
@@ -83,6 +91,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     
     @objc func download(_ call: CAPPluginCall) {
         let url = URL(string: call.getString("url") ?? "")
+        let versionName: String = call.getString("versionName") ?? ""
+        print("\(self.implementation.TAG) Downloading \(url)")
         do {
             let res = try implementation.download(url: url!)
             call.resolve([
@@ -95,12 +105,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
     private func _reload() -> Bool {
         guard let bridge = self.bridge else { return false }
+        print("\(self.implementation.TAG) Reloading \(path)")
 
         if let vc = bridge.viewController as? CAPBridgeViewController {
-            let pathHot = implementation.getLastPathHot()
-            let pathPersist = implementation.getLastPathPersist()
+            let pathHot = self.implementation.getLastPathHot()
+            let pathPersist = self.implementation.getCurrentBundlePath()
             if (pathHot != "" && pathPersist != "") {
-                UserDefaults.standard.set(String(pathPersist.suffix(10)), forKey: self.implementation.CAP_SERVER_PATH)
+                self.setCurrentBundle(path: path)
                 vc.setServerBasePath(path: pathHot)
                 print("\(self.implementation.TAG) Reload app done")
                 self.checkAppReady()
@@ -142,14 +153,18 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     
     @objc func set(_ call: CAPPluginCall) {
         let version = call.getString("version") ?? ""
-        let versionName = call.getString("versionName") ?? version
-        let res = implementation.set(version: version, versionName: versionName)
-        
-        if (res && self._reload()) {
-            print("\(self.implementation.TAG) Set to version: \(version) versionName: \(versionName)")
-            call.resolve()
-        } else {
-            call.reject("Update failed, version \(version) doesn't exist")
+        try {
+            let res = implementation.set(version: version)
+            print("\(self.implementation.TAG) Set active bundle: \(version)")
+            if (!res) {
+                print("\(self.implementation.TAG) Bundle successfully set to: \(version) ")
+                call.reject("Update failed, version \(version) doesn't exist")
+            } else {
+                self.reload(call)
+            }
+        } catch {
+            print("\(self.implementation.TAG) Could not set version: \(version) \(error.localizedDescription)")
+            call.reject("Could not set version " + version, error);
         }
     }
 

@@ -238,7 +238,6 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     @PluginMethod
     public void set(final PluginCall call) {
         final String version = call.getString("version");
-        final String versionName = call.getString("versionName", "");
 
         try {
             Log.i(CapacitorUpdater.TAG, "Setting active bundle " + version);
@@ -247,9 +246,6 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                 call.reject("Update failed, version " + version + " does not exist.");
             } else {
                 Log.i(CapacitorUpdater.TAG, "Bundle successfully set to" + version);
-                if(!"".equals(versionName)) {
-                    this.implementation.setVersionName(version, versionName);
-                }
                 this.reload(call);
             }
         } catch(final Exception e) {
