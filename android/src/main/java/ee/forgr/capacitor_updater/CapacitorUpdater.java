@@ -46,9 +46,7 @@ public class CapacitorUpdater {
     private static final String AB = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
     private static final SecureRandom rnd = new SecureRandom();
 
-    private static final String DOWNLOADED_SUFFIX = "_downloaded";
-    private static final String NAME_SUFFIX = "_name";
-    private static final String STATUS_SUFFIX = "_status";
+    private static final String INFO_SUFFIX = "_info";
 
     private static final String FALLBACK_VERSION = "pastVersion";
     private static final String NEXT_VERSION = "nextVersion";
@@ -236,10 +234,10 @@ public class CapacitorUpdater {
         this.notifyDownload(91);
         this.flattenAssets(unzipped, folderName);
         this.notifyDownload(100);
-        this.setVersionStatus(version, VersionStatus.PENDING);
-        this.setVersionDownloadedTimestamp(version, new Date(System.currentTimeMillis()));
-        this.setVersionName(version, versionName);
-        return this.getVersionInfo(version);
+
+        VersionInfo info = new VersionInfo(version, VersionStatus.PENDING, new Date(System.currentTimeMillis()), versionName);
+        this.saveVersionInfo(version, info);
+        return info;
     }
 
     public List<VersionInfo> list() {
@@ -421,12 +419,14 @@ public class CapacitorUpdater {
 
     public VersionInfo getVersionInfo(String version) {
         if(version == null) {
-            version = "unknown";
+            version = VersionInfo.VERSION_UNKNOWN;
         }
-        final String downloaded = this.getVersionDownloadedTimestamp(version);
-        final String name = this.getVersionName(version);
-        final VersionStatus status = this.getVersionStatus(version);
-        return new VersionInfo(version, status, downloaded, name);
+        String stored = this.prefs.getString(version + INFO_SUFFIX, "");
+        try {
+            return VersionInfo.fromJSON(stored);
+        } catch (JSONException e) {
+            return new VersionInfo(version, VersionStatus.PENDING, (String) null, "");
+        }
     }
 
     public VersionInfo getVersionInfoByName(final String version) {
@@ -440,62 +440,38 @@ public class CapacitorUpdater {
     }
 
     private void removeVersionInfo(final String version) {
-        this.setVersionDownloadedTimestamp(version, null);
-        this.setVersionName(version, null);
-        this.setVersionStatus(version, null);
+        this.saveVersionInfo(version, null);
     }
 
-    private String getVersionDownloadedTimestamp(final String version) {
-        return this.prefs.getString(version + DOWNLOADED_SUFFIX, "");
-    }
-
-    private void setVersionDownloadedTimestamp(final String version, final Date time) {
+    private void saveVersionInfo(final String version, final VersionInfo info) {
         if(version != null) {
-            Log.i(TAG, "Setting version download timestamp " + version + " to " + time);
-            if(time == null) {
-                this.editor.remove(version + DOWNLOADED_SUFFIX);
+            Log.i(TAG, "Storing version info " + version + ": " + info);
+            if(info == null) {
+                this.editor.remove(version + INFO_SUFFIX);
             } else {
-
-                final SimpleDateFormat sdf;
-                sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ");
-                sdf.setTimeZone(TimeZone.getTimeZone("CET"));
-                final String isoDate = sdf.format(time);
-
-                this.editor.putString(version + DOWNLOADED_SUFFIX, isoDate);
+                this.editor.putString(version + INFO_SUFFIX, info.toString());
             }
             this.editor.commit();
         }
-    }
-
-    private String getVersionName(final String version) {
-        return this.prefs.getString(version + NAME_SUFFIX, "");
     }
 
     public void setVersionName(final String version, final String name) {
         if(version != null) {
             Log.i(TAG, "Setting version name " + version + " to " + name);
-            if(name == null) {
-                this.editor.remove(version + NAME_SUFFIX);
-            } else {
-                this.editor.putString(version + NAME_SUFFIX, name);
+            VersionInfo info = this.getVersionInfo(version);
+            if(!info.isBuiltin() && !info.isUnknown()) {
+                this.saveVersionInfo(version, info.setName(name));
             }
-            this.editor.commit();
         }
     }
 
-    private VersionStatus getVersionStatus(final String version) {
-        return VersionStatus.fromString(this.prefs.getString(version + STATUS_SUFFIX, "pending"));
-    }
-
     private void setVersionStatus(final String version, final VersionStatus status) {
-        if(version != null) {
+        if(version != null && status != null) {
             Log.i(TAG, "Setting version status " + version + " to " + status);
-            if(status == null) {
-                this.editor.remove(version + STATUS_SUFFIX);
-            } else {
-                this.editor.putString(version + STATUS_SUFFIX, status.label);
+            VersionInfo info = this.getVersionInfo(version);
+            if(!info.isBuiltin() && !info.isUnknown()) {
+                this.saveVersionInfo(version, info.setStatus(status));
             }
-            this.editor.commit();
         }
     }
 

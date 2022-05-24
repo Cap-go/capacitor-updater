@@ -36,7 +36,6 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     private static final String statsUrlDefault = "https://capgo.app/api/stats";
     private static final String DELAY_UPDATE = "delayUpdate";
 
-
     private SharedPreferences.Editor editor;
     private SharedPreferences prefs;
     private CapacitorUpdater implementation;
