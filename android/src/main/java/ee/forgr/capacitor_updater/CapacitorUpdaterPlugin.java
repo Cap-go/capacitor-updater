@@ -348,6 +348,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             Log.i(this.TAG, "Version: " + curVersionName + ", is considered broken");
             Log.i(this.TAG, "Will downgraded to version: " + (pastVersionName.equals("") ? "builtin" : pastVersionName) + " for next start");
             Log.i(this.TAG, "Don't forget to trigger 'notifyAppReady()' in js code to validate a version.");
+            this.implementation.sendStats("revert", curVersionName)
             if (!pastVersion.equals("") && !pastVersionName.equals("")) {
                 final Boolean res = this.implementation.set(pastVersion, pastVersionName);
                 if (res && this._reload()) {
