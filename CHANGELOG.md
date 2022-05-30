@@ -1,3 +1,9 @@
+## 3.3.5 (2022-05-30)
+
+### Fix
+
+- add missing revert for stats
+
 ## 3.3.4 (2022-05-09)
 
 ### Fix
