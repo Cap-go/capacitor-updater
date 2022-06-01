@@ -1,3 +1,9 @@
+## 3.3.7 (2022-06-01)
+
+### Fix
+
+- build with the new licence
+
 ## 3.3.6 (2022-06-01)
 
 ### Fix
