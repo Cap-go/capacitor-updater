@@ -1,6 +1,6 @@
 # capacitor-updater
 
-Update capacitor app withtout store review.
+Update capacitor app without store review.
 
 You have 3 ways possible :
 - use [capgo.app](https://capgo.app) a full featured auto update system in 5 min Setup, to manage version, update, revert and see stats.
@@ -99,7 +99,7 @@ In your main code :
   }
 ```
 
-*Be extra carufull for your update* if you send a broken update, the app will crash until the user reinstalls it.
+*Be extra careful for your update* if you send a broken update, the app will crash until the user reinstalls it.
 
 If you need more secure way to update your app, you can use Auto update system.
 

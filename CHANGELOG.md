@@ -1,3 +1,10 @@
+## 3.3.9 (2022-06-16)
+
+### Fix
+
+- Update typos in README
+- Update typos in README
+
 ## 3.3.8 (2022-06-07)
 
 ### Fix
