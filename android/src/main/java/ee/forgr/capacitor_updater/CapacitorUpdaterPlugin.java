@@ -36,7 +36,6 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     private static final String statsUrlDefault = "https://capgo.app/api/stats";
     private static final String DELAY_UPDATE = "delayUpdate";
 
-
     private SharedPreferences.Editor editor;
     private SharedPreferences prefs;
     private CapacitorUpdater implementation;
@@ -107,6 +106,8 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             final Version previous = new Version(this.prefs.getString("LatestVersionNative", ""));
             try {
                 if (!"".equals(previous.getOriginalString()) && this.currentVersionNative.getMajor() > previous.getMajor()) {
+
+                    Log.i(CapacitorUpdater.TAG, "New native major version detected: " + this.currentVersionNative);
                     this.implementation.reset(true);
                     final List<VersionInfo> installed = this.implementation.list();
                     for (final VersionInfo version: installed) {
@@ -337,14 +338,14 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     @PluginMethod
     public void notifyAppReady(final PluginCall call) {
         try {
-            Log.i(CapacitorUpdater.TAG, "Current bundle loaded successfully.");
+            Log.i(CapacitorUpdater.TAG, "Current bundle loaded successfully. ['notifyAppReady()' was called]");
             final VersionInfo version = this.implementation.getCurrentBundle();
             this.implementation.commit(version);
             call.resolve();
         }
         catch(final Exception e) {
-            Log.e(CapacitorUpdater.TAG, "Failed to notify app ready state", e);
-            call.reject("Failed to notify app ready state", e);
+            Log.e(CapacitorUpdater.TAG, "Failed to notify app ready state. [Error calling 'notifyAppReady()']", e);
+            call.reject("Failed to commit app ready state.", e);
         }
     }
 
@@ -526,7 +527,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                     final JSObject ret = new JSObject();
                     ret.put("version", current);
                     this.notifyListeners("updateFailed", ret);
-                    this.implementation.sendStats("revert", current)
+                    this.implementation.sendStats("revert", current);
                     if (!fallback.isBuiltin() && !fallback.equals(current)) {
                         final Boolean res = this.implementation.set(fallback);
                         if (res && this._reload()) {
