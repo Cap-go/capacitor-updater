@@ -24,10 +24,10 @@ npx cap sync
 ## Auto update setup
 
 Create account in [capgo.app](https://capgo.app) and get your [API key](https://capgo.app/app/apikeys)
-- Download the CLI `npm i -g capgo`
-- Add app from CLI `capgo add -a API_KEY`
-- Upload app `capgo upload -a API_KEY`
-- Upload app `capgo set -a API_KEY -s public`
+- Download the CLI `npm i -g @capgo/cli`
+- Add app from CLI `npx @capgo/cli add -a API_KEY`
+- Upload app `npx @capgo/cli upload -a API_KEY`
+- Upload app `npx @capgo/cli set -a API_KEY -s public`
 - Edit your `capacitor.config.json` like below, set `autoUpdate` to true.
 ```json
 // capacitor.config.json
