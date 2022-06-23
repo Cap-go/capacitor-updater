@@ -36,7 +36,7 @@ public class VersionInfo {
     }
 
     public VersionInfo(final String version, final VersionStatus status, final String downloaded, final String name) {
-        this.downloaded = downloaded;
+        this.downloaded = downloaded.trim();
         this.name = name;
         this.version = version;
         this.status = status;
@@ -52,7 +52,7 @@ public class VersionInfo {
         return VersionStatus.ERROR == this.status;
     }
     public boolean isDownloaded() {
-        return !this.isBuiltin() && this.downloaded != null && this.downloaded.trim().length() == DOWNLOADED_BUILTIN.length();
+        return !this.isBuiltin() && this.downloaded != null && !this.downloaded.equals("");
     }
 
     public String getDownloaded() {

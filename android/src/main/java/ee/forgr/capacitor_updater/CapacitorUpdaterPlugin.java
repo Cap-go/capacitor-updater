@@ -64,9 +64,9 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                 }
             };
             final PackageInfo pInfo = this.getContext().getPackageManager().getPackageInfo(this.getContext().getPackageName(), 0);
-            this.implementation.setVersionBuild(pInfo.versionName);
-            this.implementation.setVersionCode(Integer.toString(pInfo.versionCode));
-            this.implementation.setRequestQueue(Volley.newRequestQueue(this.getContext()));
+            this.implementation.versionBuild = pInfo.versionName;
+            this.implementation.versionCode = Integer.toString(pInfo.versionCode);
+            this.implementation.requestQueue = Volley.newRequestQueue(this.getContext());
             this.currentVersionNative = new Version(pInfo.versionName);
         } catch (final PackageManager.NameNotFoundException e) {
             Log.e(CapacitorUpdater.TAG, "Error instantiating implementation", e);
@@ -77,13 +77,13 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         }
 
         final CapConfig config = CapConfig.loadDefault(this.getActivity());
-        this.implementation.setAppId(config.getString("appId", ""));
-        this.implementation.setStatsUrl(this.getConfig().getString("statsUrl", statsUrlDefault));
-        this.implementation.setDocumentsDir(this.getContext().getFilesDir());
-        this.implementation.setPrefs(this.getContext().getSharedPreferences(WebView.WEBVIEW_PREFS_NAME, Activity.MODE_PRIVATE));
-        this.implementation.setEditor(this.prefs.edit());
-        this.implementation.setVersionOs(Build.VERSION.RELEASE);
-        this.implementation.setDeviceID(Settings.Secure.getString(this.getContext().getContentResolver(), Settings.Secure.ANDROID_ID));
+        this.implementation.appId = config.getString("appId", "");
+        this.implementation.statsUrl = this.getConfig().getString("statsUrl", statsUrlDefault);
+        this.implementation.documentsDir = this.getContext().getFilesDir();
+        this.implementation.prefs = this.getContext().getSharedPreferences(WebView.WEBVIEW_PREFS_NAME, Activity.MODE_PRIVATE);
+        this.implementation.editor = this.prefs.edit();
+        this.implementation.versionOs = Build.VERSION.RELEASE;
+        this.implementation.deviceID = Settings.Secure.getString(this.getContext().getContentResolver(), Settings.Secure.ANDROID_ID);
 
         this.autoDeleteFailed = this.getConfig().getBoolean("autoDeleteFailed", true);
         this.autoDeletePrevious = this.getConfig().getBoolean("autoDeletePrevious", true);
@@ -144,7 +144,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     public void getId(final PluginCall call) {
         try {
             final JSObject ret = new JSObject();
-            ret.put("id", this.implementation.getDeviceID());
+            ret.put("id", this.implementation.deviceID);
             call.resolve(ret);
         } catch (final Exception e) {
             Log.e(CapacitorUpdater.TAG, "Could not get device id", e);

@@ -55,8 +55,8 @@ public class CapacitorUpdater {
     public static final String TAG = "Capacitor-updater";
     public static final String pluginVersion = "4.0.0";
 
-    private SharedPreferences.Editor editor;
-    private SharedPreferences prefs;
+    public SharedPreferences.Editor editor;
+    public SharedPreferences prefs;
 
     private RequestQueue requestQueue;
 
@@ -65,9 +65,9 @@ public class CapacitorUpdater {
     private String versionCode = "";
     private String versionOs = "";
 
-    private String statsUrl = "";
-    private String appId = "";
-    private String deviceID = "";
+    public String statsUrl = "";
+    public String appId = "";
+    public String deviceID = "";
 
     private final FilenameFilter filter = new FilenameFilter() {
         @Override
@@ -93,7 +93,7 @@ public class CapacitorUpdater {
     }
 
     private File unzip(final File zipFile, final String dest) throws IOException {
-        final File targetDirectory = new File(this.getDocumentsDir(), dest);
+        final File targetDirectory = new File(this.documentsDir, dest);
         final ZipInputStream zis = new ZipInputStream(new BufferedInputStream(new FileInputStream(zipFile)));
         try {
             int count;
@@ -152,7 +152,7 @@ public class CapacitorUpdater {
         if (!sourceFile.exists()) {
             throw new FileNotFoundException("Source file not found: " + sourceFile.getPath());
         }
-        final File destinationFile = new File(this.getDocumentsDir(), dest);
+        final File destinationFile = new File(this.documentsDir, dest);
         destinationFile.getParentFile().mkdirs();
         final String[] entries = sourceFile.list(this.filter);
         if (entries == null || entries.length == 0) {
@@ -174,7 +174,7 @@ public class CapacitorUpdater {
         final InputStream is = u.openStream();
         final DataInputStream dis = new DataInputStream(is);
 
-        final File target = new File(this.getDocumentsDir(), dest);
+        final File target = new File(this.documentsDir, dest);
         target.getParentFile().mkdirs();
         target.createNewFile();
         final FileOutputStream fos = new FileOutputStream(target);
@@ -222,7 +222,7 @@ public class CapacitorUpdater {
     public VersionInfo download(final String url, final String versionName) throws IOException {
         this.notifyDownload(0);
         final String path = this.randomString(10);
-        final File zipFile = new File(this.getDocumentsDir(), path);
+        final File zipFile = new File(this.documentsDir, path);
         final String folderNameUnZip = this.randomString(10);
         final String version = this.randomString(10);
         final String folderName = bundleDirectory + "/" + version;
@@ -242,7 +242,7 @@ public class CapacitorUpdater {
 
     public List<VersionInfo> list() {
         final List<VersionInfo> res = new ArrayList<>();
-        final File destHot = new File(this.getDocumentsDir(), bundleDirectory);
+        final File destHot = new File(this.documentsDir, bundleDirectory);
         Log.d(TAG, "list File : " + destHot.getPath());
         if (destHot.exists()) {
             for (final File i : destHot.listFiles()) {
@@ -257,7 +257,7 @@ public class CapacitorUpdater {
 
     public Boolean delete(final String version) throws IOException {
         final VersionInfo deleted = this.getVersionInfo(version);
-        final File bundle = new File(this.getDocumentsDir(), bundleDirectory + "/" + version);
+        final File bundle = new File(this.documentsDir, bundleDirectory + "/" + version);
         if (bundle.exists()) {
             this.deleteDirectory(bundle);
             this.removeVersionInfo(version);
@@ -269,7 +269,7 @@ public class CapacitorUpdater {
     }
 
     private File getBundleDirectory(final String version) {
-        return new File(this.getDocumentsDir(), bundleDirectory + "/" + version);
+        return new File(this.documentsDir, bundleDirectory + "/" + version);
     }
 
     private boolean bundleExists(final File bundle) {
@@ -323,8 +323,8 @@ public class CapacitorUpdater {
     }
 
     public void getLatest(final String url, final Callback callback) {
-        final String deviceID = this.getDeviceID();
-        final String appId = this.getAppId();
+        final String deviceID = this.deviceID;
+        final String appId = this.appId;
         final String versionBuild = this.versionBuild;
         final String versionCode = this.versionCode;
         final String versionOs = this.versionOs;
@@ -365,7 +365,7 @@ public class CapacitorUpdater {
     }
 
     public void sendStats(final String action, final VersionInfo version) {
-        String statsUrl = this.getStatsUrl();
+        String statsUrl = this.statsUrl;
         if (statsUrl == null || "".equals(statsUrl) || statsUrl.length() == 0) { return; }
         final URL url;
         final JSONObject json = new JSONObject();
@@ -375,12 +375,12 @@ public class CapacitorUpdater {
             json.put("platform", "android");
             json.put("action", action);
             json.put("version_name", version.getName());
-            json.put("device_id", this.getDeviceID());
+            json.put("device_id", this.deviceID);
             json.put("version_build", this.versionBuild);
             json.put("version_code", this.versionCode);
             json.put("version_os", this.versionOs);
             json.put("plugin_version", pluginVersion);
-            json.put("app_id", this.getAppId());
+            json.put("app_id", this.appId);
             jsonString = json.toString();
         } catch (final Exception ex) {
             Log.e(TAG, "Error get stats", ex);
@@ -544,59 +544,4 @@ public class CapacitorUpdater {
         return true;
     }
 
-    public String getStatsUrl() {
-        return this.statsUrl;
-    }
-
-    public void setStatsUrl(final String statsUrl) {
-        this.statsUrl = statsUrl;
-    }
-
-    public String getAppId() {
-        return this.appId;
-    }
-
-    public void setAppId(final String appId) {
-        this.appId = appId;
-    }
-
-    public String getDeviceID() {
-        return this.deviceID;
-    }
-
-    public void setDeviceID(final String deviceID) {
-        this.deviceID = deviceID;
-    }
-
-    public void setVersionBuild(final String versionBuild) {
-        this.versionBuild = versionBuild;
-    }
-
-    public void setVersionCode(final String versionCode) {
-        this.versionCode = versionCode;
-    }
-
-    public void setVersionOs(final String versionOs) {
-        this.versionOs = versionOs;
-    }
-
-    public void setPrefs(final SharedPreferences prefs) {
-        this.prefs = prefs;
-    }
-
-    public void setEditor(final SharedPreferences.Editor editor) {
-        this.editor = editor;
-    }
-
-    public void setDocumentsDir(final File documentsDir) {
-        this.documentsDir = documentsDir;
-    }
-
-    public void setRequestQueue(final RequestQueue requestQueue) {
-        this.requestQueue = requestQueue;
-    }
-
-    public File getDocumentsDir() {
-        return this.documentsDir;
-    }
 }
