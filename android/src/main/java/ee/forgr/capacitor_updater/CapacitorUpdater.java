@@ -455,18 +455,20 @@ public class CapacitorUpdater {
     }
 
     private void saveVersionInfo(final String version, final VersionInfo info) {
-        if(version != null && (info == null || !info.isBuiltin() && !info.isUnknown())) {
+        if(version == null || (info != null && (info.isBuiltin() || info.isUnknown()))) {
+            Log.d(TAG, "Not saving info for version: [" + version + "] " + info);
+           return;
+        }
+
+        if(info == null) {
+            Log.d(TAG, "Removing info for version [" + version + "]");
+            this.editor.remove(version + INFO_SUFFIX);
+        } else {
             final VersionInfo update = info.setVersion(version);
             Log.d(TAG, "Storing info for version [" + version + "] " + update.toString());
-            if(info == null) {
-                this.editor.remove(version + INFO_SUFFIX);
-            } else {
-                this.editor.putString(version + INFO_SUFFIX, update.toString());
-            }
-            this.editor.commit();
-        } else {
-            Log.d(TAG, "Not saving info for version: [" + version + "] " + info);
+            this.editor.putString(version + INFO_SUFFIX, update.toString());
         }
+        this.editor.commit();
     }
 
     public void setVersionName(final String version, final String name) {
