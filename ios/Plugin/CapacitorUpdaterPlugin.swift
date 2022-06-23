@@ -275,6 +275,53 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func appMovedToForeground() {
+        if (self._isAutoUpdateEnabled()) {
+            DispatchQueue.global(qos: .background).async {
+                print("\(self.implementation.TAG) Check for update via \(self.autoUpdateUrl)")
+                let url = URL(string: self.autoUpdateUrl)!
+                let res = self.implementation.getLatest(url: url)
+                if (res == nil) {
+                    return
+                }
+                guard let downloadUrl = URL(string: res?.url ?? "") else {
+                    print("\(self.implementation.TAG) Error \(res?.message ?? "Unknow error")")
+                    if (res?.major == true) {
+                        self.notifyListeners("majorAvailable", data: ["version": res?.version ?? "0.0.0"])
+                    }
+                    return
+                }
+                let current = self.implementation.getCurrentBundle()
+                let latestVersionName = res?.version
+                if (latestVersionName != nil && latestVersionName != "" && current.getName() != latestVersionName) {
+                    let latest = self.implementation.getVersionInfoByName(version: latestVersionName!)
+                    if (latest != nil) {
+                        if(latest!.isErrorStatus()) {
+                            print("\(self.implementation.TAG) Latest version already exists, and is in error state. Aborting update.")
+                            return;
+                        }
+                        if(latest!.isDownloaded()){
+                            print("\(self.implementation.TAG) Latest version already exists and download is NOT required. Update will occur next time app moves to background.")
+                            let _ = self.implementation.setNextVersion(next: latest!.getVersion());
+                            return;
+                        }
+                    }
+
+                    do {
+                        print("\(self.implementation.TAG) New version: \(latestVersionName!) found. Current is: \(current.getName()). Update will occur next time app moves to background.")
+                        let next = try self.implementation.download(url: downloadUrl, versionName: latestVersionName!)
+
+                        let _ = self.implementation.setNextVersion(next: next.getVersion());
+
+                        self.notifyListeners("updateAvailable", data: [
+                            "version": next.getVersion()
+                        ])
+                    } catch {
+                        print("\(self.implementation.TAG) Error downloading file", error.localizedDescription)
+                    }
+                }
+        }
+
+        self.checkAppReady()
         DispatchQueue.global(qos: .background).async {
             print("\(self.implementation.TAG) Check for update in the server")
             let url = URL(string: self.autoUpdateUrl)!

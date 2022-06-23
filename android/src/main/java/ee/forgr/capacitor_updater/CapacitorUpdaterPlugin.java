@@ -454,16 +454,12 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
 
                                                 CapacitorUpdaterPlugin.this.implementation.setNextVersion(next.getVersion());
 
-                                                this.notifyUpdateAvailable(next.getVersion());
+                                                final JSObject updateAvailable = new JSObject();
+                                                updateAvailable.put("version", next.getVersion());
+                                                CapacitorUpdaterPlugin.this.notifyListeners("updateAvailable", updateAvailable);
                                             } catch (final Exception e) {
                                                 Log.e(CapacitorUpdater.TAG, "error downloading file", e);
                                             }
-                                        }
-
-                                        private void notifyUpdateAvailable(final String version) {
-                                            final JSObject updateAvailable = new JSObject();
-                                            updateAvailable.put("version", version);
-                                            CapacitorUpdaterPlugin.this.notifyListeners("updateAvailable", updateAvailable);
                                         }
                                     }).start();
                                 } else {
