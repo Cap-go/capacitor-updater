@@ -233,6 +233,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         UserDefaults.standard.set(false, forKey: "delayUpdate")
         call.resolve()
     }
+    
+    private func _isAutoUpdateEnabled() -> Bool {
+        return self.autoUpdate && !(self.autoUpdateUrl != "")
+    }
+
+    @objc func isAutoUpdateEnabled(_ call: CAPPluginCall) {
+        call.resolve([
+            "enabled": self._isAutoUpdateEnabled()
+        ])
+    }
 
     func checkAppReady() {
         self.appReadyCheck?.cancel()
