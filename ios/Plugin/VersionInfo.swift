@@ -7,11 +7,6 @@
 //
 
 import Foundation
-extension String {
-    func trim(using characterSet: CharacterSet = .whitespacesAndNewlines) -> String {
-        return trimmingCharacters(in: characterSet)
-    }
-}
 
 
 @objc public class VersionInfo: NSObject {

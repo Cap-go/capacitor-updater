@@ -11,7 +11,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     private var implementation = CapacitorUpdater()
     static let autoUpdateUrlDefault = "https://capgo.app/api/auto_update"
     static let statsUrlDefault = "https://capgo.app/api/stats"
-    static final let DELAY_UPDATE = "delayUpdate"
+    static let DELAY_UPDATE = "delayUpdate"
     private var autoUpdateUrl = ""
     private var statsUrl = ""
     private var currentVersionNative: Version = "0.0.0"
@@ -21,8 +21,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     private var resetWhenUpdate = true
     private var autoDeleteFailed = false
     private var autoDeletePrevious = false
-    private var resetWhenUpdate = true
-    private var resetWhenUpdate = true
     
     override public func load() {
         do {
@@ -69,12 +67,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             let res = implementation.list()
             res.forEach { version in
                 print("\(self.implementation.TAG) Deleting obsolete version: \(version)")
-                _ = implementation.delete(version: version, versionName: "")
+                _ = implementation.delete(version: version.getName())
             }
         }
-        UserDefaults.standard.set( Bundle.main.buildVersionNumber, forKey: "LatestVersionNative")
-        this.editor.putString("LatestVersionNative", this.currentVersionNative.toString());
-        this.editor.commit();
+        UserDefaults.standard.set( self.currentVersionNative, forKey: "LatestVersionNative")
+        UserDefaults.standard.synchronize()
     }
 
     @objc func notifyDownload(percent: Int) {
@@ -92,9 +89,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     @objc func download(_ call: CAPPluginCall) {
         let url = URL(string: call.getString("url") ?? "")
         let versionName: String = call.getString("versionName") ?? ""
-        print("\(self.implementation.TAG) Downloading \(url)")
+        print("\(self.implementation.TAG) Downloading \(url!)")
         do {
-            let res = try implementation.download(url: url!)
+            let res = try implementation.download(url: url!, versionName: versionName)
             call.resolve([
                 "version": res
             ])
@@ -105,20 +102,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
     private func _reload() -> Bool {
         guard let bridge = self.bridge else { return false }
+        let path = self.implementation.getCurrentBundlePath()
         print("\(self.implementation.TAG) Reloading \(path)")
-
         if let vc = bridge.viewController as? CAPBridgeViewController {
-            let pathHot = self.implementation.getLastPathHot()
-            let pathPersist = self.implementation.getCurrentBundlePath()
-            if (pathHot != "" && pathPersist != "") {
-                self.setCurrentBundle(path: path)
-                vc.setServerBasePath(path: pathHot)
-                print("\(self.implementation.TAG) Reload app done")
-                self.checkAppReady()
-                return true
-            } else {
-                return false
-            }
+            vc.setServerBasePath(path: path)
+            self.checkAppReady()
+            return true
         }
         return false
     }
@@ -127,50 +116,53 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         if (self._reload()) {
             call.resolve()
         } else {
-            call.reject("Cannot reload")
+            call.reject("Reload failed")
+            print("\(self.implementation.TAG) Reload failed")
         }
     }
 
     @objc func next(_ call: CAPPluginCall) {
-        letg version = call.getString("version");
-        let versionName = call.getString("versionName", "");
+        guard let version = call.getString("version") else {
+            print("\(self.implementation.TAG) Next call version missing")
+            call.reject("Next called without version")
+            return
+        }
+        guard let versionName = call.getString("versionName") else {
+            print("\(self.implementation.TAG) Next call versionName missing")
+            call.reject("Next called without versionName")
+            return
+        }
 
-        try {
-            print("\(self.implementation.TAG) Setting next active version \(version)")
-            if (!self.implementation.setNextVersion(version)) {
-                call.reject("Set next version failed. Version \(version) does not exist.");
-            } else {
-                if(versionName != "") {
-                    self.implementation.setVersionName(version, versionName);
-                }
-                call.resolve(self.implementation.getVersionInfo(version).toJSON());
+        print("\(self.implementation.TAG) Setting next active version \(version)")
+        if (!self.implementation.setNextVersion(next: version)) {
+            call.reject("Set next version failed. Version \(version) does not exist.");
+        } else {
+            if(versionName != "") {
+                self.implementation.setVersionName(version: version, name: versionName);
             }
-        } catch () {
-            print("\(self.implementation.TAG) Could not set next version  \(version)", error.localizedDescription)
-            call.reject("Could not set next version \(version)", e);
+            call.resolve(self.implementation.getVersionInfo(version: version).toJSON());
         }
     }
     
     @objc func set(_ call: CAPPluginCall) {
-        let version = call.getString("version") ?? ""
-        try {
-            let res = implementation.set(version: version)
-            print("\(self.implementation.TAG) Set active bundle: \(version)")
-            if (!res) {
-                print("\(self.implementation.TAG) Bundle successfully set to: \(version) ")
-                call.reject("Update failed, version \(version) doesn't exist")
-            } else {
-                self.reload(call)
-            }
-        } catch {
-            print("\(self.implementation.TAG) Could not set version: \(version) \(error.localizedDescription)")
-            call.reject("Could not set version " + version, error);
+        guard let version = call.getString("version") else {
+            print("\(self.implementation.TAG) Set called without version")
+            call.reject("Next call version missing")
+            return
+        }
+        let res = implementation.set(versionName: version)
+        print("\(self.implementation.TAG) Set active bundle: \(version)")
+        if (!res) {
+            print("\(self.implementation.TAG) Bundle successfully set to: \(version) ")
+            call.reject("Update failed, version \(version) doesn't exist")
+        } else {
+            self.reload(call)
         }
     }
 
     @objc func delete(_ call: CAPPluginCall) {
         let version = call.getString("version") ?? ""
-        let res = implementation.delete(version: version, versionName: "")
+        let res = implementation.delete(version: version)
         if (res) {
             call.resolve()
         } else {
@@ -188,15 +180,18 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     @objc func _reset(toAutoUpdate: Bool) -> Bool {
         guard let bridge = self.bridge else { return false }
         if let vc = bridge.viewController as? CAPBridgeViewController {
+            self.implementation.reset()
+            
             let LatestVersionAutoUpdate = UserDefaults.standard.string(forKey: "LatestVersionAutoUpdate") ?? ""
             let LatestVersionNameAutoUpdate = UserDefaults.standard.string(forKey: "LatestVersionNameAutoUpdate") ?? ""
             if(toAutoUpdate && LatestVersionAutoUpdate != "" && LatestVersionNameAutoUpdate != "") {
-                let res = implementation.set(version: LatestVersionAutoUpdate, versionName: LatestVersionNameAutoUpdate)
+                let res = implementation.set(versionName: LatestVersionNameAutoUpdate)
                 return res && self._reload()
             }
             implementation.reset()
-            let pathPersist = implementation.getLastPathPersist()
-            vc.setServerBasePath(path: pathPersist)
+            let curr = implementation.getCurrentBundle()
+            let pathPersist = implementation.getPathPersist(folderName: curr.getName())
+            vc.setServerBasePath(path: pathPersist.path)
             UserDefaults.standard.set(pathPersist, forKey: self.implementation.CAP_SERVER_PATH)
             DispatchQueue.main.async {
                 vc.loadView()
@@ -215,20 +210,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         }
         call.reject("\(self.implementation.TAG) Reset failed")
     }
-
-    @objc func versionName(_ call: CAPPluginCall) {
-        let name = implementation.getVersionName()
-        call.resolve([
-            "versionName": name
-        ])
-    }
     
     @objc func current(_ call: CAPPluginCall) {
-        let pathHot = implementation.getLastPathHot()
-        let current  = pathHot.count >= 10 ? pathHot.suffix(10) : "builtin"
+        let bundle: VersionInfo = self.implementation.getCurrentBundle()
         call.resolve([
-            "current": current,
-            "currentNative": currentVersionNative
+            "bundle": bundle.toJSON(),
+            "native": self.currentVersionNative
         ])
     }
 
@@ -248,38 +235,33 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     func checkAppReady() {
-        do {
-            self.appReadyCheck?.cancel()
-            self.appReadyCheck = DispatchWorkItem(block: {
-                self.DeferredNotifyAppReadyCheck()
-            })
-            print("\(self.implementation.TAG) Wait for \(self.appReadyTimeout) ms, then check for notifyAppReady")
-            DispatchQueue.main.asyncAfter(deadline: .now() + self.appReadyTimeout, execute: self.appReadyCheck)
-        } catch {
-            print("\(self.implementation.TAG) Failed to start \"DeferredNotifyAppReadyCheck\"", error.localizedDescription)
-        }
+        self.appReadyCheck?.cancel()
+        self.appReadyCheck = DispatchWorkItem(block: {
+            self.DeferredNotifyAppReadyCheck()
+        })
+        print("\(self.implementation.TAG) Wait for \(self.appReadyTimeout) ms, then check for notifyAppReady")
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(self.appReadyTimeout), execute: self.appReadyCheck!)
     }
 
     func DeferredNotifyAppReadyCheck() {
-            do {
-                // Automatically roll back to fallback version if notifyAppReady has not been called yet
-                final VersionInfo current = self.implementation.getCurrentBundle();
-                if(current.isBuiltin()) {
-                    print("\(self.implementation.TAG) Built-in bundle is active. Nothing to do.")
-                    return
-                }
+        // Automatically roll back to fallback version if notifyAppReady has not been called yet
+        let current: VersionInfo = self.implementation.getCurrentBundle();
+        if(current.isBuiltin()) {
+            print("\(self.implementation.TAG) Built-in bundle is active. Nothing to do.")
+            return
+        }
 
-                if(VersionStatus.SUCCESS != current.getStatus()) {
-                    print("\(self.implementation.TAG) notifyAppReady was not called, roll back current version: \(current)")
-                    self.implementation.rollback(current);
-                    self._reset(true);
-                } else {
-                    print("\(self.implementation.TAG) notifyAppReady was called. This is fine: \(current)")
-                }
-                self.appReadyCheck = false;
-            } catch () {
-                print("\(self.implementation.TAG) DeferredNotifyAppReadyCheck was interrupted.")
+        if(VersionStatus.SUCCESS != current.getStatus()) {
+            print("\(self.implementation.TAG) notifyAppReady was not called, roll back current version: \(current)")
+            self.implementation.rollback(version: current)
+            let res = self._reset(toAutoUpdate: true)
+            if (!res) {
+                return
             }
+        } else {
+            print("\(self.implementation.TAG) notifyAppReady was called. This is fine: \(current)")
+        }
+        self.appReadyCheck = nil;
     }
 
     @objc func appMovedToForeground() {
@@ -297,7 +279,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 }
                 return
             }
-            let currentVersion = self.implementation.getVersionName()
+            let current = self.implementation.getCurrentBundle()
+            let latestVersionName: String = res!.version
             var failingVersion: Version = "0.0.0"
             var newVersion: Version = "0.0.0"
             do {
@@ -308,16 +291,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             }
             if (newVersion != "0.0.0" && newVersion != failingVersion) {
                 do {
-                    let dl = try self.implementation.download(url: downloadUrl)
-                    print("\(self.implementation.TAG) New version: \(newVersion) found. Current is \(currentVersion == "" ? "builtin" : currentVersion), next backgrounding will trigger update")
-                    UserDefaults.standard.set(dl, forKey: "nextVersion")
-                    UserDefaults.standard.set(newVersion.description, forKey: "nextVersionName")
+                    let next = try self.implementation.download(url: downloadUrl, versionName: latestVersionName)
+                    print("\(self.implementation.TAG) New version: \(latestVersionName) found. Current is \(current.getName()). Update will occur next time app moves to background.")
+                    let _ = self.implementation.setNextVersion(next: next.getVersion())
                     self.notifyListeners("updateAvailable", data: ["version": newVersion])
                 } catch {
                     print("\(self.implementation.TAG) Download version \(newVersion) fail", error.localizedDescription)
                 }
             } else {
-                print("\(self.implementation.TAG) No need to update, \(currentVersion) is the latest")
+                print("\(self.implementation.TAG) No need to update, \(current.getName()) is the latest")
             }
             self.checkAppReady()
         }
@@ -331,65 +313,79 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             print("\(self.implementation.TAG) Update delayed to next backgrounding")
             return
         }
-        let nextVersion = UserDefaults.standard.string(forKey: "nextVersion") ?? ""
-        let nextVersionName = UserDefaults.standard.string(forKey: "nextVersionName") ?? ""
-        let pastVersion = UserDefaults.standard.string(forKey: "pastVersion") ?? ""
-        let pastVersionName = UserDefaults.standard.string(forKey: "pastVersionName") ?? ""
-        let notifyAppReady = UserDefaults.standard.bool(forKey: "notifyAppReady")
-        let curVersion = implementation.getLastPathPersist().components(separatedBy: "/").last!
-        let curVersionName = implementation.getVersionName()
-        if (nextVersion != "" && nextVersionName != "") {
-            let res = implementation.set(version: nextVersion, versionName: nextVersionName)
-            if (res && self._reload()) {
-                print("\(self.implementation.TAG) Auto update to version: \(nextVersionName)")
-                UserDefaults.standard.set(nextVersion, forKey: "LatestVersionAutoUpdate")
-                UserDefaults.standard.set(nextVersionName, forKey: "LatestVersionNameAutoUpdate")
-                UserDefaults.standard.set("", forKey: "nextVersion")
-                UserDefaults.standard.set("", forKey: "nextVersionName")
-                UserDefaults.standard.set(curVersion, forKey: "pastVersion")
-                UserDefaults.standard.set(curVersionName, forKey: "pastVersionName")
-                UserDefaults.standard.set(false, forKey: "notifyAppReady")
+
+        let fallback: VersionInfo = self.implementation.getFallbackVersion()
+        let current: VersionInfo = self.implementation.getCurrentBundle()
+        let next: VersionInfo? = self.implementation.getNextVersion()
+
+        let success: Bool = current.getStatus() == VersionStatus.SUCCESS
+
+        print("\(self.implementation.TAG) Fallback version is: \(fallback)")
+        print("\(self.implementation.TAG) Current version is: \(current)")
+
+        if (next != nil && !next!.isErrorStatus() && (next!.getVersion() != current.getVersion())) {
+            print("\(self.implementation.TAG) Next version is: \(next!)")
+            if (self.implementation.set(version: next!) && self._reload()) {
+                print("\(self.implementation.TAG) Updated to version: \(next!)")
+                let _ = self.implementation.setNextVersion(next: Optional<String>.none)
             } else {
-                print("\(self.implementation.TAG) Auto update to version: \(nextVersionName) Failed");
+                print("\(self.implementation.TAG) Updated to version: \(next!) Failed!")
             }
-        } else if (!notifyAppReady && curVersionName != "") {
-            print("\(self.implementation.TAG) notifyAppReady never trigger")
-            print("\(self.implementation.TAG) Version: \(curVersionName), is considered broken")
-            print("\(self.implementation.TAG) Will downgraded to version: \(pastVersionName == "" ? "builtin" : pastVersionName) for next start")
-            print("\(self.implementation.TAG) Don't forget to trigger 'notifyAppReady()' in js code to validate a version.")
-            self.notifyListeners("updateFailed", data: ["version": curVersionName])
-            implementation.sendStats(action: "revert", version: curVersionName)
-            if (pastVersion != "" && pastVersionName != "") {
-                let res = implementation.set(version: pastVersion, versionName: pastVersionName)
-                if (res && self._reload()) {
-                    print("\(self.implementation.TAG) Revert to version: \(pastVersionName == "" ? "builtin" : pastVersionName)")
-                    UserDefaults.standard.set(pastVersion, forKey: "LatestVersionAutoUpdate")
-                    UserDefaults.standard.set(pastVersionName, forKey: "LatestVersionNameAutoUpdate")
-                    UserDefaults.standard.set("", forKey: "pastVersion")
-                    UserDefaults.standard.set("", forKey: "pastVersionName")
+        } else if (!success) {
+            // There is a no next version, and the current version has failed
+
+            if(!current.isBuiltin()) {
+                // Don't try to roll back the builtin version. Nothing we can do.
+
+                self.implementation.rollback(version: current)
+                
+                print("\(self.implementation.TAG) Update failed: 'notifyAppReady()' was never called.")
+                print("\(self.implementation.TAG) Version: \(current), is in error state.")
+                print("\(self.implementation.TAG) Will fallback to: \(fallback) on application restart.")
+                print("\(self.implementation.TAG) Did you forget to call 'notifyAppReady()' in your Capacitor App code?")
+
+                self.notifyListeners("updateFailed", data: [
+                    "version": current
+                ])
+                self.implementation.sendStats(action: "revert", version: current);
+                if (!fallback.isBuiltin() && !(fallback == current)) {
+                    let res = self.implementation.set(version: fallback);
+                    if (res && self._reload()) {
+                        print("\(self.implementation.TAG) Revert to version: \(fallback)")
+                    } else {
+                        print("\(self.implementation.TAG) Revert to version: \(fallback) Failed!")
+                    }
                 } else {
-                    print("\(self.implementation.TAG) Revert to version: \(pastVersionName == "" ? "builtin" : pastVersionName) Failed");
+                    if (self._reset(toAutoUpdate: false)) {
+                        print("\(self.implementation.TAG) Reverted to 'builtin' bundle.")
+                    }
+                }
+
+                if (self.autoDeleteFailed) {
+                    print("\(self.implementation.TAG) Deleting failing version: \(current)")
+                    let res = self.implementation.delete(version: current.getVersion());
+                    if (!res) {
+                        print("\(self.implementation.TAG) Delete version deleted: \(current)")
+                    } else {
+                        print("\(self.implementation.TAG) Failed to delete failed version: \(current)")
+                    }
                 }
             } else {
-                if self._reset(toAutoUpdate: false) {
-                    UserDefaults.standard.set("", forKey: "LatestVersionAutoUpdate")
-                    UserDefaults.standard.set("", forKey: "LatestVersionNameAutoUpdate")
-                    print("\(self.implementation.TAG) Auto reset done")
+                // Nothing we can/should do by default if the 'builtin' bundle fails to call 'notifyAppReady()'.
+            }
+        } else if (!fallback.isBuiltin()) {
+            // There is a no next version, and the current version has succeeded
+            self.implementation.commit(version: current);
+
+            if(self.autoDeletePrevious) {
+                print("\(self.implementation.TAG) Version successfully loaded: \(current)")
+                let res = self.implementation.delete(version: fallback.getVersion())
+                if (res) {
+                    print("\(self.implementation.TAG) Deleted previous version: \(fallback)")
+                } else {
+                    print("\(self.implementation.TAG) Failed to delete previous version: \(fallback)")
                 }
             }
-            UserDefaults.standard.set(curVersionName, forKey: "failingVersion")
-            let res = implementation.delete(version: curVersion, versionName: curVersionName)
-            if (res) {
-                print("\(self.implementation.TAG) Delete failing version: \(curVersionName)")
-            }
-        } else if (pastVersion != "") {
-            print("\(self.implementation.TAG) Validated version: \(curVersionName)")
-            let res = implementation.delete(version: pastVersion, versionName: curVersionName)
-            if (res) {
-                print("\(self.implementation.TAG) Delete past version: \(pastVersionName)")
-            }
-            UserDefaults.standard.set("", forKey: "pastVersion")
-            UserDefaults.standard.set("", forKey: "pastVersionName")
         }
     }
 }
