@@ -207,7 +207,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             if (this._reload()) {
                 call.resolve();
             } else {
-                call.reject("reload failed");
+                call.reject("Reload failed");
             }
         } catch(final Exception e) {
             Log.e(CapacitorUpdater.TAG, "Could not reload", e);
@@ -484,7 +484,6 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     public void onActivityStopped(@NonNull final Activity activity) {
         Log.i(CapacitorUpdater.TAG, "Checking for pending update");
         try {
-
             final Boolean delayUpdate = this.prefs.getBoolean(DELAY_UPDATE, false);
             this.editor.putBoolean(DELAY_UPDATE, false);
             this.editor.commit();
