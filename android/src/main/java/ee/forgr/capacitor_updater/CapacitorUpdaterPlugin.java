@@ -405,7 +405,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         }
     }
 
-    @Override
+    @Override // appMovedToForeground
     public void onActivityStarted(@NonNull final Activity activity) {
         if (CapacitorUpdaterPlugin.this._isAutoUpdateEnabled()) {
             new Thread(new Runnable(){
@@ -480,7 +480,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         this.checkAppReady();
     }
 
-    @Override
+    @Override // appMovedToBackground
     public void onActivityStopped(@NonNull final Activity activity) {
         Log.i(CapacitorUpdater.TAG, "Checking for pending update");
         try {
