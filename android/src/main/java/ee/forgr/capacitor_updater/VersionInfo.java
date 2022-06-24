@@ -43,10 +43,10 @@ public class VersionInfo {
     }
 
     public Boolean isBuiltin() {
-        return VERSION_BUILTIN.equals(this.getVersionName());
+        return VERSION_BUILTIN.equals(this.folder);
     }
     public Boolean isUnknown() {
-        return VERSION_UNKNOWN.equals(this.getVersionName());
+        return VERSION_UNKNOWN.equals(this.folder);
     }
     public Boolean isErrorStatus() {
         return VersionStatus.ERROR == this.status;

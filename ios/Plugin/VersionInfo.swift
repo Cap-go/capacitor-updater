@@ -25,14 +25,14 @@ import Foundation
     
     enum CodingKeys: String, CodingKey {
         case downloaded, folder, versionName, status
-     }
+    }
     
     public func isBuiltin() -> Bool {
-        return VersionInfo.VERSION_BUILTIN == self.getFolder()
+        return VersionInfo.VERSION_BUILTIN == self.folder
     }
 
     public func isUnknown() -> Bool {
-        return VersionInfo.VERSION_UNKNOWN == self.getFolder()
+        return VersionInfo.VERSION_UNKNOWN == self.folder
     }
 
     public func isErrorStatus() -> Bool {
