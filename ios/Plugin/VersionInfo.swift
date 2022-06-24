@@ -8,31 +8,31 @@ import Foundation
     public static let DOWNLOADED_BUILTIN: String = "1970-01-01T00:00:00.000Z"
 
     private let downloaded: String
-    private let name: String
-    private let version: String
+    private let folder: String
+    private let versionName: String
     private let status: VersionStatus
     
-    convenience init(version: String, status: VersionStatus, downloaded: Date, name: String) {
-        self.init(version: version, status: status, downloaded: downloaded.iso8601withFractionalSeconds, name: name)
+    convenience init(folder: String, versionName: String, status: VersionStatus, downloaded: Date) {
+        self.init(folder: folder, versionName: versionName, status: status, downloaded: downloaded.iso8601withFractionalSeconds)
     }
 
-    init(version: String, status: VersionStatus, downloaded: String = VersionInfo.DOWNLOADED_BUILTIN, name: String) {
+    init(folder: String, versionName: String, status: VersionStatus, downloaded: String = VersionInfo.DOWNLOADED_BUILTIN) {
         self.downloaded = downloaded.trim()
-        self.name = name
-        self.version = version
+        self.folder = folder
+        self.versionName = versionName
         self.status = status
     }
     
     enum CodingKeys: String, CodingKey {
-        case downloaded, name, version, status
+        case downloaded, folder, versionName, status
      }
     
     public func isBuiltin() -> Bool {
-        return VersionInfo.VERSION_BUILTIN == self.getVersion()
+        return VersionInfo.VERSION_BUILTIN == self.getFolder()
     }
 
     public func isUnknown() -> Bool {
-        return VersionInfo.VERSION_UNKNOWN == self.getVersion()
+        return VersionInfo.VERSION_UNKNOWN == self.getFolder()
     }
 
     public func isErrorStatus() -> Bool {
@@ -48,23 +48,23 @@ import Foundation
     }
     
     public func setDownloaded(downloaded: Date) -> VersionInfo {
-        return VersionInfo(version: self.version, status: self.status, downloaded: downloaded, name: self.name)
+        return VersionInfo(folder: self.folder, versionName: self.versionName, status: self.status, downloaded: downloaded)
     }
 
-    public func getName() -> String {
-        return self.isBuiltin() ? VersionInfo.VERSION_BUILTIN : self.name
+    public func getFolder() -> String {
+        return self.isBuiltin() ? VersionInfo.VERSION_BUILTIN : self.folder
     }
 
-    public func setName(name: String) -> VersionInfo {
-        return VersionInfo(version: self.version, status: self.status, downloaded: self.downloaded, name: name)
+    public func setFolder(folder: String) -> VersionInfo {
+        return VersionInfo(folder: folder, versionName: self.versionName, status: self.status, downloaded: self.downloaded)
     }
 
-    public func getVersion() -> String {
-        return self.version == "" ? VersionInfo.VERSION_BUILTIN : self.version
+    public func getVersionName() -> String {
+        return self.versionName == "" ? VersionInfo.VERSION_BUILTIN : self.versionName
     }
 
-    public func setVersion(version: String) -> VersionInfo {
-        return VersionInfo(version: version, status: self.status, downloaded: self.downloaded, name: self.name)
+    public func setVersionName(versionName: String) -> VersionInfo {
+        return VersionInfo(folder: self.folder, versionName: versionName, status: self.status, downloaded: self.downloaded)
     }
 
     public func getStatus() -> String {
@@ -72,23 +72,23 @@ import Foundation
     }
 
     public func setStatus(status: String) -> VersionInfo {
-        return VersionInfo(version: self.version, status: VersionStatus(localizedString: status)!, downloaded: self.downloaded, name: self.name)
+        return VersionInfo(folder: self.folder, versionName: self.versionName, status: VersionStatus(localizedString: status)!, downloaded: self.downloaded)
     }
 
     public func toJSON() -> [String: String] {
         return [
+            "folder": self.getFolder(),
+            "versionName": self.getVersionName(),
             "downloaded": self.getDownloaded(),
-            "name": self.getName(),
-            "version": self.getVersion(),
             "status": self.getStatus(),
         ]
     }
 
     public static func == (lhs: VersionInfo, rhs: VersionInfo) -> Bool {
-        return lhs.getVersion() == rhs.getVersion()
+        return lhs.getVersionName() == rhs.getVersionName()
     }
 
     public func toString() -> String {
-        return "{ downloaded: \"\(self.getDownloaded())\", name: \"\(self.getName())\", version: \"\(self.getVersion())\", status: \"\(self.getStatus())\"}"
+        return "{ downloaded: \"\(self.getDownloaded())\", folder: \"\(self.getFolder())\", versionName: \"\(self.getVersionName())\", status: \"\(self.getStatus())\"}"
     }
 }

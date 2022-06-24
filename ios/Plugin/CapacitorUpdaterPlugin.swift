@@ -67,7 +67,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             let res = implementation.list()
             res.forEach { version in
                 print("\(self.implementation.TAG) Deleting obsolete version: \(version)")
-                _ = implementation.delete(version: version.getName())
+                _ = implementation.delete(folder: version.getFolder())
             }
         }
         UserDefaults.standard.set( self.currentVersionNative.description, forKey: "LatestVersionNative")
@@ -122,7 +122,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func next(_ call: CAPPluginCall) {
-        guard let version = call.getString("version") else {
+        guard let folder = call.getString("folder") else {
             print("\(self.implementation.TAG) Next call version missing")
             call.reject("Next called without version")
             return
@@ -133,40 +133,40 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             return
         }
 
-        print("\(self.implementation.TAG) Setting next active version \(version)")
-        if (!self.implementation.setNextVersion(next: version)) {
-            call.reject("Set next version failed. Version \(version) does not exist.");
+        print("\(self.implementation.TAG) Setting next active folder \(folder)")
+        if (!self.implementation.setNextVersion(next: folder)) {
+            call.reject("Set next version failed. folder \(folder) does not exist.");
         } else {
             if(versionName != "") {
-                self.implementation.setVersionName(version: version, name: versionName);
+                self.implementation.setVersionName(folder: folder, versionName: versionName);
             }
-            call.resolve(self.implementation.getVersionInfo(version: version).toJSON());
+            call.resolve(self.implementation.getVersionInfo(folder: folder).toJSON());
         }
     }
     
     @objc func set(_ call: CAPPluginCall) {
-        guard let version = call.getString("version") else {
+        guard let folder = call.getString("folder") else {
             print("\(self.implementation.TAG) Set called without version")
             call.reject("Next call version missing")
             return
         }
-        let res = implementation.set(versionName: version)
-        print("\(self.implementation.TAG) Set active bundle: \(version)")
+        let res = implementation.set(folder: folder)
+        print("\(self.implementation.TAG) Set active bundle: \(folder)")
         if (!res) {
-            print("\(self.implementation.TAG) Bundle successfully set to: \(version) ")
-            call.reject("Update failed, version \(version) doesn't exist")
+            print("\(self.implementation.TAG) Bundle successfully set to: \(folder) ")
+            call.reject("Update failed, folder \(folder) doesn't exist")
         } else {
             self.reload(call)
         }
     }
 
     @objc func delete(_ call: CAPPluginCall) {
-        let version = call.getString("version") ?? ""
-        let res = implementation.delete(version: version)
+        let folder = call.getString("folder") ?? ""
+        let res = implementation.delete(folder: folder)
         if (res) {
             call.resolve()
         } else {
-            call.reject("Delete failed, version \(version) doesn't exist")
+            call.reject("Delete failed, folder \(folder) doesn't exist")
         }
     }
 
@@ -185,12 +185,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             let LatestVersionAutoUpdate = UserDefaults.standard.string(forKey: "LatestVersionAutoUpdate") ?? ""
             let LatestVersionNameAutoUpdate = UserDefaults.standard.string(forKey: "LatestVersionNameAutoUpdate") ?? ""
             if(toAutoUpdate && LatestVersionAutoUpdate != "" && LatestVersionNameAutoUpdate != "") {
-                let res = implementation.set(versionName: LatestVersionNameAutoUpdate)
+                let res = implementation.set(folder: LatestVersionNameAutoUpdate)
                 return res && self._reload()
             }
             implementation.reset()
             let curr = implementation.getCurrentBundle()
-            let pathPersist = implementation.getPathPersist(folderName: curr.getName())
+            let pathPersist = implementation.getPathPersist(folderName: curr.getFolder())
             vc.setServerBasePath(path: pathPersist.path)
             UserDefaults.standard.set(pathPersist, forKey: self.implementation.CAP_SERVER_PATH)
             DispatchQueue.main.async {
@@ -292,8 +292,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 }
                 let current = self.implementation.getCurrentBundle()
                 let latestVersionName = res?.version
-                if (latestVersionName != nil && latestVersionName != "" && current.getName() != latestVersionName) {
-                    let latest = self.implementation.getVersionInfoByName(version: latestVersionName!)
+                if (latestVersionName != nil && latestVersionName != "" && current.getVersionName() != latestVersionName) {
+                    let latest = self.implementation.getVersionInfoByVersionName(versionName: latestVersionName!)
                     if (latest != nil) {
                         if(latest!.isErrorStatus()) {
                             print("\(self.implementation.TAG) Latest version already exists, and is in error state. Aborting update.")
@@ -301,19 +301,19 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                         }
                         if(latest!.isDownloaded()){
                             print("\(self.implementation.TAG) Latest version already exists and download is NOT required. Update will occur next time app moves to background.")
-                            let _ = self.implementation.setNextVersion(next: latest!.getVersion());
+                            let _ = self.implementation.setNextVersion(next: latest!.getVersionName());
                             return;
                         }
                     }
 
                     do {
-                        print("\(self.implementation.TAG) New version: \(latestVersionName!) found. Current is: \(current.getName()). Update will occur next time app moves to background.")
+                        print("\(self.implementation.TAG) New version: \(latestVersionName!) found. Current is: \(current.getVersionName()). Update will occur next time app moves to background.")
                         let next = try self.implementation.download(url: downloadUrl, versionName: latestVersionName!)
 
-                        let _ = self.implementation.setNextVersion(next: next.getVersion());
+                        let _ = self.implementation.setNextVersion(next: next.getVersionName());
 
                         self.notifyListeners("updateAvailable", data: [
-                            "version": next.getVersion()
+                            "versionName": next.getVersionName()
                         ])
                     } catch {
                         print("\(self.implementation.TAG) Error downloading file", error.localizedDescription)
@@ -343,7 +343,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         print("\(self.implementation.TAG) Fallback version is: \(fallback)")
         print("\(self.implementation.TAG) Current version is: \(current)")
 
-        if (next != nil && !next!.isErrorStatus() && (next!.getVersion() != current.getVersion())) {
+        if (next != nil && !next!.isErrorStatus() && (next!.getVersionName() != current.getVersionName())) {
             print("\(self.implementation.TAG) Next version is: \(next!)")
             if (self.implementation.set(version: next!) && self._reload()) {
                 print("\(self.implementation.TAG) Updated to version: \(next!)")
@@ -383,7 +383,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
                 if (self.autoDeleteFailed) {
                     print("\(self.implementation.TAG) Deleting failing version: \(current)")
-                    let res = self.implementation.delete(version: current.getVersion());
+                    let res = self.implementation.delete(folder: current.getFolder());
                     if (!res) {
                         print("\(self.implementation.TAG) Delete version deleted: \(current)")
                     } else {
@@ -399,7 +399,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
             if(self.autoDeletePrevious) {
                 print("\(self.implementation.TAG) Version successfully loaded: \(current)")
-                let res = self.implementation.delete(version: fallback.getVersion())
+                let res = self.implementation.delete(folder: fallback.getFolder())
                 if (res) {
                     print("\(self.implementation.TAG) Deleted previous version: \(fallback)")
                 } else {

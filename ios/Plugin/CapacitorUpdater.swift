@@ -123,6 +123,7 @@ extension CustomError: LocalizedError {
     private let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
     private let libraryDir = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
     private let bundleDirectoryHot = "versions"
+    private let DEFAULT_FOLDER = "public"
     private let bundleDirectory = "NoCloud/ionic_built_snapshots"
     private let INFO_SUFFIX = "_info"
     private let FALLBACK_VERSION = "pastVersion"
@@ -190,9 +191,9 @@ extension CustomError: LocalizedError {
         }
     }
     
-    private func saveDownloaded(sourceZip: URL, version: String, base: URL) throws {
+    private func saveDownloaded(sourceZip: URL, folder: String, base: URL) throws {
         try prepareFolder(source: base)
-        let destHot = base.appendingPathComponent(version)
+        let destHot = base.appendingPathComponent(folder)
         let destUnZip = documentsDir.appendingPathComponent(randomString(length: 10))
         if (!SSZipArchive.unzipFile(atPath: sourceZip.path, toDestination: destUnZip.path)) {
             throw CustomError.cannotUnzip
@@ -213,7 +214,7 @@ extension CustomError: LocalizedError {
             "cap_version_code": self.versionCode,
             "cap_version_os": self.versionOs,
             "cap_plugin_version": self.pluginVersion,
-            "cap_version_name": self.getCurrentBundle().getName()
+            "cap_version_name": self.getCurrentBundle().getVersionName()
         ]
         let request = AF.request(url, headers: headers)
 
@@ -249,7 +250,7 @@ extension CustomError: LocalizedError {
 
     public func download(url: URL, versionName: String) throws -> VersionInfo {
         let semaphore = DispatchSemaphore(value: 0)
-        var version: String = ""
+        var folder: String = ""
         var mainError: NSError? = nil
         let destination: DownloadRequest.Destination = { _, _ in
             let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -268,11 +269,11 @@ extension CustomError: LocalizedError {
                 switch response.result {
                 case .success:
                     self.notifyDownload(71);
-                    version = self.randomString(length: 10)
+                    folder = self.randomString(length: 10)
                     do {
-                        try self.saveDownloaded(sourceZip: fileURL, version: version, base: self.documentsDir.appendingPathComponent(self.bundleDirectoryHot))
+                        try self.saveDownloaded(sourceZip: fileURL, folder: folder, base: self.documentsDir.appendingPathComponent(self.bundleDirectoryHot))
                         self.notifyDownload(85)
-                        try self.saveDownloaded(sourceZip: fileURL, version: version, base: self.libraryDir.appendingPathComponent(self.bundleDirectory))
+                        try self.saveDownloaded(sourceZip: fileURL, folder: folder, base: self.libraryDir.appendingPathComponent(self.bundleDirectory))
                         self.notifyDownload(100)
                         try self.deleteFolder(source: fileURL)
                     } catch {
@@ -291,8 +292,8 @@ extension CustomError: LocalizedError {
         if (mainError != nil) {
             throw mainError!
         }
-        let info: VersionInfo = VersionInfo(version: version, status: VersionStatus.PENDING, downloaded: Date(), name: versionName)
-        self.saveVersionInfo(version: version, info: info)
+        let info: VersionInfo = VersionInfo(folder: folder, versionName: versionName, status: VersionStatus.PENDING, downloaded: Date())
+        self.saveVersionInfo(folder: folder, info: info)
         return info
     }
 
@@ -303,8 +304,8 @@ extension CustomError: LocalizedError {
             var res: [VersionInfo] = []
             print("\(self.TAG) list File : \(dest.path)")
             if (dest.exist) {
-                for version in files {
-                    res.append(self.getVersionInfo(version: version));
+                for folder in files {
+                    res.append(self.getVersionInfo(folder: folder));
                 }
             }
             return res
@@ -314,10 +315,10 @@ extension CustomError: LocalizedError {
         }
     }
     
-    public func delete(version: String) -> Bool {
-        let deleted: VersionInfo = self.getVersionInfo(version: version)
-        let destHot = documentsDir.appendingPathComponent(bundleDirectoryHot).appendingPathComponent(version)
-        let destPersist = libraryDir.appendingPathComponent(bundleDirectory).appendingPathComponent(version)
+    public func delete(folder: String) -> Bool {
+        let deleted: VersionInfo = self.getVersionInfo(folder: folder)
+        let destHot = documentsDir.appendingPathComponent(bundleDirectoryHot).appendingPathComponent(folder)
+        let destPersist = libraryDir.appendingPathComponent(bundleDirectory).appendingPathComponent(folder)
         do {
             try FileManager.default.removeItem(atPath: destHot.path)
         } catch {
@@ -329,29 +330,29 @@ extension CustomError: LocalizedError {
             print("\(self.TAG) Folder \(destPersist.path), not removed.")
             return false
         }
-        self.removeVersionInfo(version: version)
+        self.removeVersionInfo(folder: folder)
         self.sendStats(action: "delete", version: deleted)
         return true
     }
 
-    public func getBundleDirectory(version: String) -> URL {
-        return URL(string: "\(self.documentsDir)\(self.bundleDirectory)/\(version)")!
+    public func getBundleDirectory(folder: String) -> URL {
+        return URL(string: "\(self.documentsDir)\(self.bundleDirectory)/\(folder)")!
     }
 
     public func set(version: VersionInfo) -> Bool {
-        return self.set(versionName: version.getVersion());
+        return self.set(folder: version.getFolder());
     }
 
-    public func set(versionName: String) -> Bool {
-        let destHot = self.getPathHot(folderName: versionName)
-        let destHotPersist = self.getPathPersist(folderName: versionName)
+    public func set(folder: String) -> Bool {
+        let destHot = self.getPathHot(folderName: folder)
+        let destHotPersist = self.getPathPersist(folderName: folder)
         let indexHot = destHot.appendingPathComponent("index.html")
         let indexPersist = destHotPersist.appendingPathComponent("index.html")
-        let existing: VersionInfo = self.getVersionInfo(version: versionName)
-        let bundle: URL = self.getBundleDirectory(version: versionName)
+        let existing: VersionInfo = self.getVersionInfo(folder: folder)
+        let bundle: URL = self.getBundleDirectory(folder: folder)
         if (bundle.isDirectory && destHotPersist.isDirectory && indexHot.exist && indexPersist.exist) {
             self.setCurrentBundle(bundle: bundle.path)
-            self.setVersionStatus(version: versionName, status: VersionStatus.PENDING)
+            self.setVersionStatus(folder: folder, status: VersionStatus.PENDING)
             sendStats(action: "set", version: existing)
             return true
         }
@@ -382,12 +383,12 @@ extension CustomError: LocalizedError {
     }
     
     public func commit(version: VersionInfo) {
-        self.setVersionStatus(version: version.getVersion(), status: VersionStatus.SUCCESS)
+        self.setVersionStatus(folder: version.getFolder(), status: VersionStatus.SUCCESS)
         self.setFallbackVersion(fallback: version)
     }
     
     public func rollback(version: VersionInfo) {
-        self.setVersionStatus(version: version.getVersion(), status: VersionStatus.ERROR);
+        self.setVersionStatus(folder: version.getFolder(), status: VersionStatus.ERROR);
     }
 
     func sendStats(action: String, version: VersionInfo) {
@@ -396,7 +397,7 @@ extension CustomError: LocalizedError {
             "platform": "ios",
             "action": action,
             "device_id": self.deviceID,
-            "version_name": version.getName(),
+            "version_name": version.getVersionName(),
             "version_build": self.versionBuild,
             "version_code": self.versionCode,
             "version_os": self.versionOs,
@@ -406,73 +407,73 @@ extension CustomError: LocalizedError {
 
         DispatchQueue.global(qos: .background).async {
             let _ = AF.request(self.statsUrl, method: .post,parameters: parameters, encoder: JSONParameterEncoder.default)
-            print("\(self.TAG) Stats send for \(action), version \(version.getName())")
+            print("\(self.TAG) Stats send for \(action), version \(version.getVersionName())")
         }
     }
 
-    public func getVersionInfo(version: String = VersionInfo.VERSION_UNKNOWN) -> VersionInfo {
-        print("\(self.TAG) Getting info for [\(version)]")
-        if(VersionInfo.VERSION_BUILTIN == version) {
+    public func getVersionInfo(folder: String = VersionInfo.VERSION_BUILTIN) -> VersionInfo {
+        print("\(self.TAG) Getting info for [\(folder)]")
+        if(VersionInfo.VERSION_BUILTIN == folder) {
 //            (version: String, status: VersionStatus, downloaded: Date, name: String)
-            return VersionInfo(version: version, status: VersionStatus.SUCCESS, name: "")
+            return VersionInfo(folder: folder, versionName: "", status: VersionStatus.SUCCESS)
         }
         do {
-            let result: VersionInfo = try UserDefaults.standard.getObject(forKey: "\(version)\(self.INFO_SUFFIX)", castTo: VersionInfo.self)
-            print("\(self.TAG) Returning info [\(version)]", result)
+            let result: VersionInfo = try UserDefaults.standard.getObject(forKey: "\(folder)\(self.INFO_SUFFIX)", castTo: VersionInfo.self)
+            print("\(self.TAG) Returning info [\(folder)]", result)
             return result
         } catch {
-            print("\(self.TAG) Failed to parse version info for [\(version)]", error.localizedDescription)
-            return VersionInfo(version: version, status: VersionStatus.PENDING, name: "")
+            print("\(self.TAG) Failed to parse version info for [\(folder)]", error.localizedDescription)
+            return VersionInfo(folder: folder, versionName: "", status: VersionStatus.PENDING)
         }
     }
 
-    public func getVersionInfoByName(version: String) -> VersionInfo? {
+    public func getVersionInfoByVersionName(versionName: String) -> VersionInfo? {
         let installed : Array<VersionInfo> = self.list()
         for i in installed {
-            if(i.getName() == version) {
+            if(i.getVersionName() == versionName) {
                 return i
             }
         }
         return nil
     }
 
-    private func removeVersionInfo(version: String) {
-        self.saveVersionInfo(version: version, info: nil)
+    private func removeVersionInfo(folder: String) {
+        self.saveVersionInfo(folder: folder, info: nil)
     }
 
-    private func saveVersionInfo(version: String, info: VersionInfo?) {
+    private func saveVersionInfo(folder: String, info: VersionInfo?) {
         if (info != nil && (info!.isBuiltin() || info!.isUnknown())) {
-            print("\(self.TAG) Not saving info for version [\(version)]", info!)
+            print("\(self.TAG) Not saving info for folder [\(folder)]", info!)
             return
         }
         if(info == nil) {
-            print("\(self.TAG) Removing info for version [\(version)]")
-            UserDefaults.standard.removeObject(forKey: "\(version)\(INFO_SUFFIX)")
+            print("\(self.TAG) Removing info for folder [\(folder)]")
+            UserDefaults.standard.removeObject(forKey: "\(folder)\(INFO_SUFFIX)")
         } else {
-            let update = info!.setVersion(version: version)
-            print("\(self.TAG) Storing info for version [\(version)]", update.toString())
+            let update = info!.setFolder(folder: folder)
+            print("\(self.TAG) Storing info for folder [\(folder)]", update.toString())
             do {
-                try UserDefaults.standard.setObject(update.toString(), forKey: "\(version)\(self.INFO_SUFFIX)")
+                try UserDefaults.standard.setObject(update.toString(), forKey: "\(folder)\(self.INFO_SUFFIX)")
             } catch {
-                print("\(self.TAG) Failed to save version info for [\(version)]", error.localizedDescription)
+                print("\(self.TAG) Failed to save version info for [\(folder)]", error.localizedDescription)
             }
         }
         UserDefaults.standard.synchronize()
     }
 
-    public func setVersionName(version: String, name: String) {
-        print("\(self.TAG) Setting name for version [\(version)] to \(name)")
-        let info = self.getVersionInfo(version: version)
-        self.saveVersionInfo(version: version, info: info.setName(name: name))
+    public func setVersionName(folder: String, versionName: String) {
+        print("\(self.TAG) Setting versionName for folder [\(folder)] to \(versionName)")
+        let info = self.getVersionInfo(folder: folder)
+        self.saveVersionInfo(folder: folder, info: info.setVersionName(versionName: versionName))
     }
 
-    private func setVersionStatus(version: String, status: VersionStatus) {
-        print("\(self.TAG) Setting version status [\(version)] to \(status)")
-        let info = self.getVersionInfo(version: version)
-        self.saveVersionInfo(version: version, info: info.setStatus(status: status.localizedString))
+    private func setVersionStatus(folder: String, status: VersionStatus) {
+        print("\(self.TAG) Setting version status for folder [\(folder)] to \(status)")
+        let info = self.getVersionInfo(folder: folder)
+        self.saveVersionInfo(folder: folder, info: info.setStatus(status: status.localizedString))
     }
 
-    private func getCurrentBundleVersion() -> String {
+    private func getCurrentBundleFolder() -> String {
         if(self.isUsingBuiltin()) {
             return VersionInfo.VERSION_BUILTIN
         } else {
@@ -482,30 +483,30 @@ extension CustomError: LocalizedError {
     }
 
     public func getCurrentBundle() -> VersionInfo {
-        return self.getVersionInfo(version: self.getCurrentBundleVersion());
+        return self.getVersionInfo(folder: self.getCurrentBundleFolder());
     }
 
     public func getCurrentBundlePath() -> String {
-        return UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH) ?? "public"
+        return UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH) ?? self.DEFAULT_FOLDER
     }
 
     public func isUsingBuiltin() -> Bool {
-        return self.getCurrentBundlePath() == "public"
+        return self.getCurrentBundlePath() == self.DEFAULT_FOLDER
     }
 
     public func getFallbackVersion() -> VersionInfo {
-        let version: String = UserDefaults.standard.string(forKey: self.FALLBACK_VERSION) ?? VersionInfo.VERSION_BUILTIN
-        return self.getVersionInfo(version: version)
+        let folder: String = UserDefaults.standard.string(forKey: self.FALLBACK_VERSION) ?? VersionInfo.VERSION_BUILTIN
+        return self.getVersionInfo(folder: folder)
     }
 
     private func setFallbackVersion(fallback: VersionInfo?) {
-        UserDefaults.standard.set(fallback == nil ? VersionInfo.VERSION_BUILTIN : fallback!.getVersion(), forKey: self.FALLBACK_VERSION)
+        UserDefaults.standard.set(fallback == nil ? VersionInfo.VERSION_BUILTIN : fallback!.getFolder(), forKey: self.FALLBACK_VERSION)
     }
 
     public func getNextVersion() -> VersionInfo? {
-        let version: String = UserDefaults.standard.string(forKey: self.NEXT_VERSION) ?? ""
-        if(version != "") {
-            return self.getVersionInfo(version: version)
+        let folder: String = UserDefaults.standard.string(forKey: self.NEXT_VERSION) ?? ""
+        if(folder != "") {
+            return self.getVersionInfo(folder: folder)
         } else {
             return nil
         }
@@ -515,12 +516,12 @@ extension CustomError: LocalizedError {
         if (next == nil) {
             UserDefaults.standard.removeObject(forKey: self.NEXT_VERSION)
         } else {
-            let bundle: URL = self.getBundleDirectory(version: next!)
+            let bundle: URL = self.getBundleDirectory(folder: next!)
             if (!bundle.exist) {
                 return false
             }
             UserDefaults.standard.set(next, forKey: self.NEXT_VERSION)
-            self.setVersionStatus(version: next!, status: VersionStatus.PENDING);
+            self.setVersionStatus(folder: next!, status: VersionStatus.PENDING);
         }
         UserDefaults.standard.synchronize()
         return true

@@ -116,9 +116,9 @@ export interface UpdateFailedEvent {
 }
 
 export interface VersionInfo {
-  version: string;
+  folder: string;
+  versionName: string;
   downloaded: string;
-  name: string;
   status: VersionStatus
 }
 
@@ -160,7 +160,7 @@ export interface CapacitorUpdaterPlugin {
    * @param versionName (optional) set or change the name of this version
    * @throws An error if there are is no index.html file inside the version folder.
    */
-  next(options: { version: string, versionName?: string }): Promise<VersionInfo>;
+  next(options: { folder: string, versionName?: string }): Promise<VersionInfo>;
 
   /**
    * Set the current bundle version and immediately reloads the app.
@@ -170,7 +170,7 @@ export interface CapacitorUpdaterPlugin {
    * @param versionName (optional) set or change the name of this version
    * @throws An error if there are is no index.html file inside the version folder.
    */
-  set(options: { version: string, versionName?: string }): Promise<void>;
+  set(options: { folder: string, versionName?: string }): Promise<void>;
 
   /**
    * Delete version in storage
@@ -179,7 +179,7 @@ export interface CapacitorUpdaterPlugin {
    * @param version The version to delete (note, this is the version, NOT the version name)
    * @throws An error if the something went wrong
    */
-  delete(options: { version: string }): Promise<void>;
+  delete(options: { folder: string }): Promise<void>;
 
   /**
    * Get all available versions
