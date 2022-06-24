@@ -319,47 +319,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                         print("\(self.implementation.TAG) Error downloading file", error.localizedDescription)
                     }
                 }
+            }
         }
 
         self.checkAppReady()
-        DispatchQueue.global(qos: .background).async {
-            print("\(self.implementation.TAG) Check for update in the server")
-            let url = URL(string: self.autoUpdateUrl)!
-            let res = self.implementation.getLatest(url: url)
-            if (res == nil) {
-                return
-            }
-            guard let downloadUrl = URL(string: res?.url ?? "") else {
-                print("\(self.implementation.TAG) Error \(res?.message ?? "Unknow error")")
-                if (res?.major == true) {
-                    self.notifyListeners("majorAvailable", data: ["version": res?.version ?? "0.0.0"])
-                }
-                return
-            }
-            let current = self.implementation.getCurrentBundle()
-            let latestVersionName: String = res!.version
-            var failingVersion: Version = "0.0.0"
-            var newVersion: Version = "0.0.0"
-            do {
-                newVersion = try Version(res?.version ?? "0.0.0")
-                failingVersion = try Version(UserDefaults.standard.string(forKey: "failingVersion") ?? "0.0.0")
-            } catch {
-                print("\(self.implementation.TAG) Cannot get version \(failingVersion) \(newVersion)", error.localizedDescription)
-            }
-            if (newVersion != "0.0.0" && newVersion != failingVersion) {
-                do {
-                    let next = try self.implementation.download(url: downloadUrl, versionName: latestVersionName)
-                    print("\(self.implementation.TAG) New version: \(latestVersionName) found. Current is \(current.getName()). Update will occur next time app moves to background.")
-                    let _ = self.implementation.setNextVersion(next: next.getVersion())
-                    self.notifyListeners("updateAvailable", data: ["version": newVersion])
-                } catch {
-                    print("\(self.implementation.TAG) Download version \(newVersion) fail", error.localizedDescription)
-                }
-            } else {
-                print("\(self.implementation.TAG) No need to update, \(current.getName()) is the latest")
-            }
-            self.checkAppReady()
-        }
     }
 
     @objc func appMovedToBackground() {
