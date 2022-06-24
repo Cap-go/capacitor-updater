@@ -81,7 +81,7 @@ public class CapacitorUpdater {
         return (percent * (max - min)) / 100 + min;
     }
 
-    void notifyDownload(final int percent) {
+    void notifyDownload(final String folder, final int percent) {
         return;
     }
 
@@ -92,7 +92,7 @@ public class CapacitorUpdater {
         return sb.toString();
     }
 
-    private File unzip(final File zipFile, final String dest) throws IOException {
+    private File unzip(final String folder, final File zipFile, final String dest) throws IOException {
         final File targetDirectory = new File(this.documentsDir, dest);
         final ZipInputStream zis = new ZipInputStream(new BufferedInputStream(new FileInputStream(zipFile)));
         try {
@@ -102,11 +102,11 @@ public class CapacitorUpdater {
             final long lengthTotal = zipFile.length();
             long lengthRead = bufferSize;
             int percent = 0;
-            this.notifyDownload(75);
+            this.notifyDownload(folder, 75);
 
             ZipEntry entry;
             while ((entry = zis.getNextEntry()) != null) {
-                final File file = new File(targetDirectory, entry.getName());
+                final File file = new File(targetDirectory, entry.getFolder());
                 final String canonicalPath = file.getCanonicalPath();
                 final String canonicalDir = (new File(String.valueOf(targetDirectory))).getCanonicalPath();
                 final File dir = entry.isDirectory() ? file : file.getParentFile();
@@ -133,7 +133,7 @@ public class CapacitorUpdater {
                 final int newPercent = (int)((lengthRead * 100) / lengthTotal);
                 if (lengthTotal > 1 && newPercent != percent) {
                     percent = newPercent;
-                    this.notifyDownload(this.calcTotalPercent(percent, 75, 90));
+                    this.notifyDownload(folder, this.calcTotalPercent(percent, 75, 90));
                 }
 
                 lengthRead += entry.getCompressedSize();
@@ -167,7 +167,7 @@ public class CapacitorUpdater {
         sourceFile.delete();
     }
 
-    private File downloadFile(final String url, final String dest) throws IOException {
+    private File downloadFile(final String folder, final String url, final String dest) throws IOException {
 
         final URL u = new URL(url);
         final URLConnection connection = u.openConnection();
@@ -186,13 +186,13 @@ public class CapacitorUpdater {
 
         int bytesRead = bufferSize;
         int percent = 0;
-        this.notifyDownload(10);
+        this.notifyDownload(folder, 10);
         while ((length = dis.read(buffer))>0) {
             fos.write(buffer, 0, length);
             final int newPercent = (int)((bytesRead * 100) / totalLength);
             if (totalLength > 1 && newPercent != percent) {
                 percent = newPercent;
-                this.notifyDownload(this.calcTotalPercent(percent, 10, 70));
+                this.notifyDownload(folder, this.calcTotalPercent(percent, 10, 70));
             }
             bytesRead += length;
         }
@@ -220,23 +220,25 @@ public class CapacitorUpdater {
     }
 
     public VersionInfo download(final String url, final String versionName) throws IOException {
-        this.notifyDownload(0);
+        final String folder = this.randomString(10);
+        VersionInfo info = new VersionInfo(folder, versionName, VersionStatus.DOWNLOADING, new Date(System.currentTimeMillis()));
+        this.saveVersionInfo(folder, info);
+        this.notifyDownload(folder, 0);
         final String path = this.randomString(10);
         final File zipFile = new File(this.documentsDir, path);
         final String folderNameUnZip = this.randomString(10);
-        final String version = this.randomString(10);
-        final String folderName = bundleDirectory + "/" + version;
-        this.notifyDownload(5);
-        final File downloaded = this.downloadFile(url, path);
-        this.notifyDownload(71);
-        final File unzipped = this.unzip(downloaded, folderNameUnZip);
+        final String folderName = bundleDirectory + "/" + folder;
+        this.notifyDownload(folder, 5);
+        final File downloaded = this.downloadFile(folder, url, path);
+        this.notifyDownload(folder, 71);
+        final File unzipped = this.unzip(folder, downloaded, folderNameUnZip);
         zipFile.delete();
-        this.notifyDownload(91);
+        this.notifyDownload(folder, 91);
         this.flattenAssets(unzipped, folderName);
-        this.notifyDownload(100);
-
-        VersionInfo info = new VersionInfo(version, VersionStatus.PENDING, new Date(System.currentTimeMillis()), versionName);
-        this.saveVersionInfo(version, info);
+        this.notifyDownload(folder, 100);
+        this.saveVersionInfo(folder, null);
+        VersionInfo info = new VersionInfo(folder, versionName, VersionStatus.PENDING, new Date(System.currentTimeMillis()));
+        this.saveVersionInfo(folder, info);
         return info;
     }
 
@@ -246,8 +248,8 @@ public class CapacitorUpdater {
         Log.d(TAG, "list File : " + destHot.getPath());
         if (destHot.exists()) {
             for (final File i : destHot.listFiles()) {
-                final String version = i.getName();
-                res.add(this.getVersionInfo(version));
+                final String folder = i.getFolder();
+                res.add(this.getVersionInfo(folder));
             }
         } else {
             Log.i(TAG, "No versions available to list" + destHot);
@@ -255,12 +257,12 @@ public class CapacitorUpdater {
         return res;
     }
 
-    public Boolean delete(final String version) throws IOException {
-        final VersionInfo deleted = this.getVersionInfo(version);
-        final File bundle = new File(this.documentsDir, bundleDirectory + "/" + version);
+    public Boolean delete(final String folder) throws IOException {
+        final VersionInfo deleted = this.getVersionInfo(folder);
+        final File bundle = new File(this.documentsDir, bundleDirectory + "/" + folder);
         if (bundle.exists()) {
             this.deleteDirectory(bundle);
-            this.removeVersionInfo(version);
+            this.removeVersionInfo(folder);
             return true;
         }
         Log.e(TAG, "Directory not removed: " + bundle.getPath());
@@ -268,8 +270,8 @@ public class CapacitorUpdater {
         return false;
     }
 
-    private File getBundleDirectory(final String version) {
-        return new File(this.documentsDir, bundleDirectory + "/" + version);
+    private File getBundleDirectory(final String folder) {
+        return new File(this.documentsDir, bundleDirectory + "/" + folder);
     }
 
     private boolean bundleExists(final File bundle) {
@@ -281,18 +283,18 @@ public class CapacitorUpdater {
     }
 
     public Boolean set(final VersionInfo version) {
-        return this.set(version.getVersion());
+        return this.set(version.getFolder());
     }
 
-    public Boolean set(final String version) {
+    public Boolean set(final String folder) {
 
-        final VersionInfo existing = this.getVersionInfo(version);
-        final File bundle = this.getBundleDirectory(version);
+        final VersionInfo existing = this.getVersionInfo(folder);
+        final File bundle = this.getBundleDirectory(folder);
 
         Log.i(TAG, "Setting next active bundle: " + existing);
         if (this.bundleExists(bundle)) {
             this.setCurrentBundle(bundle);
-            this.setVersionStatus(version, VersionStatus.PENDING);
+            this.setVersionStatus(folder, VersionStatus.PENDING);
             this.sendStats("set", existing);
             return true;
         }
@@ -301,7 +303,7 @@ public class CapacitorUpdater {
     }
 
     public void commit(final VersionInfo version) {
-        this.setVersionStatus(version.getVersion(), VersionStatus.SUCCESS);
+        this.setVersionStatus(version.getVersionName(), VersionStatus.SUCCESS);
         this.setFallbackVersion(version);
     }
 
@@ -310,7 +312,7 @@ public class CapacitorUpdater {
     }
 
     public void rollback(final VersionInfo version) {
-        this.setVersionStatus(version.getVersion(), VersionStatus.ERROR);
+        this.setVersionStatus(version.getVersionName(), VersionStatus.ERROR);
     }
 
     public void reset(final boolean internal) {
@@ -329,7 +331,7 @@ public class CapacitorUpdater {
         final String versionCode = this.versionCode;
         final String versionOs = this.versionOs;
         final String pluginVersion = CapacitorUpdater.pluginVersion;
-        final String versionName = this.getCurrentBundle().getName();
+        final String versionName = this.getCurrentBundle().getFolder();
         final StringRequest stringRequest = new StringRequest(Request.Method.GET, url,
                 new Response.Listener<String>() {
                     @Override
@@ -374,7 +376,7 @@ public class CapacitorUpdater {
             url = new URL(statsUrl);
             json.put("platform", "android");
             json.put("action", action);
-            json.put("version_name", version.getName());
+            json.put("version_name", version.getVersionName());
             json.put("device_id", this.deviceID);
             json.put("version_build", this.versionBuild);
             json.put("version_code", this.versionCode);
@@ -418,76 +420,76 @@ public class CapacitorUpdater {
         }).start();
     }
 
-    public VersionInfo getVersionInfo(String version) {
-        if(version == null) {
-            version = VersionInfo.VERSION_UNKNOWN;
+    public VersionInfo getVersionInfo(String folder) {
+        if(folder == null) {
+            folder = VersionInfo.VERSION_UNKNOWN;
         }
-        Log.d(TAG, "Getting info for [" + version + "]");
+        Log.d(TAG, "Getting info for [" + folder + "]");
         VersionInfo result;
-        if(VersionInfo.VERSION_BUILTIN.equals(version)) {
-            result = new VersionInfo(version, VersionStatus.SUCCESS, (String) null, "");
+        if(VersionInfo.VERSION_BUILTIN.equals(folder)) {
+            result = new VersionInfo(folder, VersionStatus.SUCCESS, (String) null, "");
         } else {
             try {
-                String stored = this.prefs.getString(version + INFO_SUFFIX, "");
+                String stored = this.prefs.getString(folder + INFO_SUFFIX, "");
                 result = VersionInfo.fromJSON(stored);
             } catch (JSONException e) {
-                Log.e(TAG, "Failed to parse version info for [" + version + "] ", e);
-                result = new VersionInfo(version, VersionStatus.PENDING, (String) null, "");
+                Log.e(TAG, "Failed to parse folder info for [" + folder + "] ", e);
+                result = new VersionInfo(folder, VersionStatus.PENDING, (String) null, "");
             }
         }
 
-        Log.d(TAG, "Returning info [" + version + "] " + result);
+        Log.d(TAG, "Returning info [" + folder + "] " + result);
         return result;
     }
 
     public VersionInfo getVersionInfoByName(final String version) {
         final List<VersionInfo> installed = this.list();
         for(final VersionInfo i : installed) {
-            if(i.getName().equals(version)) {
+            if(i.getFolder().equals(version)) {
                 return i;
             }
         }
         return null;
     }
 
-    private void removeVersionInfo(final String version) {
-        this.saveVersionInfo(version, null);
+    private void removeVersionInfo(final String folder) {
+        this.saveVersionInfo(folder, null);
     }
 
-    private void saveVersionInfo(final String version, final VersionInfo info) {
-        if(version == null || (info != null && (info.isBuiltin() || info.isUnknown()))) {
-            Log.d(TAG, "Not saving info for version: [" + version + "] " + info);
+    private void saveVersionInfo(final String folder, final VersionInfo info) {
+        if(folder == null || (info != null && (info.isBuiltin() || info.isUnknown()))) {
+            Log.d(TAG, "Not saving info for folder: [" + folder + "] " + info);
            return;
         }
 
         if(info == null) {
-            Log.d(TAG, "Removing info for version [" + version + "]");
-            this.editor.remove(version + INFO_SUFFIX);
+            Log.d(TAG, "Removing info for folder [" + folder + "]");
+            this.editor.remove(folder + INFO_SUFFIX);
         } else {
-            final VersionInfo update = info.setVersion(version);
-            Log.d(TAG, "Storing info for version [" + version + "] " + update.toString());
-            this.editor.putString(version + INFO_SUFFIX, update.toString());
+            final VersionInfo update = info.setFolder(folder);
+            Log.d(TAG, "Storing info for folder [" + folder + "] " + update.toString());
+            this.editor.putString(folder + INFO_SUFFIX, update.toString());
         }
         this.editor.commit();
     }
 
-    public void setVersionName(final String version, final String name) {
-        if(version != null) {
-            Log.d(TAG, "Setting name for version [" + version + "] to " + name);
-            VersionInfo info = this.getVersionInfo(version);
-            this.saveVersionInfo(version, info.setName(name));
+    public void setVersionName(final String folder, final String name) {
+        if(folder != null) {
+            Log.d(TAG, "Setting name for folder [" + folder + "] to " + name);
+            VersionInfo info = this.getVersionInfo(folder);
+            this.saveVersionInfo(folder, info.setVersionName(name));
         }
     }
 
-    private void setVersionStatus(final String version, final VersionStatus status) {
-        if(version != null && status != null) {
-            VersionInfo info = this.getVersionInfo(version);
-            Log.d(TAG, "Setting status for [" + version + "] to " + status);
-            this.saveVersionInfo(version, info.setStatus(status));
+    private void setVersionStatus(final String folder, final VersionStatus status) {
+        if(folder != null && status != null) {
+            VersionInfo info = this.getVersionInfo(folder);
+            Log.d(TAG, "Setting status for [" + folder + "] to " + status);
+            this.saveVersionInfo(folder, info.setStatus(status));
         }
     }
 
-    private String getCurrentBundleVersion() {
+    private String getCurrentBundleFolder() {
         if(this.isUsingBuiltin()) {
             return VersionInfo.VERSION_BUILTIN;
         } else {
@@ -497,7 +499,7 @@ public class CapacitorUpdater {
     }
 
     public VersionInfo getCurrentBundle() {
-        return this.getVersionInfo(this.getCurrentBundleVersion());
+        return this.getVersionInfo(this.getCurrentBundleFolder());
     }
 
     public String getCurrentBundlePath() {
@@ -509,22 +511,22 @@ public class CapacitorUpdater {
     }
 
     public VersionInfo getFallbackVersion() {
-        final String version = this.prefs.getString(FALLBACK_VERSION, VersionInfo.VERSION_BUILTIN);
-        return this.getVersionInfo(version);
+        final String folder = this.prefs.getString(FALLBACK_VERSION, VersionInfo.VERSION_BUILTIN);
+        return this.getVersionInfo(folder);
     }
 
     private void setFallbackVersion(final VersionInfo fallback) {
         this.editor.putString(FALLBACK_VERSION,
                 fallback == null
                         ? VersionInfo.VERSION_BUILTIN
-                        : fallback.getVersion()
+                        : fallback.getVersionName()
         );
     }
 
     public VersionInfo getNextVersion() {
-        final String version = this.prefs.getString(NEXT_VERSION, "");
-        if(version != "") {
-            return this.getVersionInfo(version);
+        final String folder = this.prefs.getString(NEXT_VERSION, "");
+        if(folder != "") {
+            return this.getVersionInfo(folder);
         } else {
             return null;
         }

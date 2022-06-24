@@ -139,7 +139,7 @@ extension CustomError: LocalizedError {
     public var appId = ""
     public var deviceID = UIDevice.current.identifierForVendor?.uuidString ?? ""
     
-    public var notifyDownload: (Int) -> Void = { _ in }
+    public var notifyDownload: (String, Int) -> Void = { _,_  in }
 
     private func calcTotalPercent(percent: Int, min: Int, max: Int) -> Int {
         return (percent * (max - min)) / 100 + min;
@@ -250,7 +250,7 @@ extension CustomError: LocalizedError {
 
     public func download(url: URL, versionName: String) throws -> VersionInfo {
         let semaphore = DispatchSemaphore(value: 0)
-        var folder: String = ""
+        let folder: String = self.randomString(length: 10)
         var mainError: NSError? = nil
         let destination: DownloadRequest.Destination = { _, _ in
             let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -262,19 +262,18 @@ extension CustomError: LocalizedError {
         
         request.downloadProgress { progress in
             let percent = self.calcTotalPercent(percent: Int(progress.fractionCompleted * 100), min: 10, max: 70)
-            self.notifyDownload(percent)
+            self.notifyDownload(folder, percent)
         }
         request.responseURL { (response) in
             if let fileURL = response.fileURL {
                 switch response.result {
                 case .success:
-                    self.notifyDownload(71);
-                    folder = self.randomString(length: 10)
+                    self.notifyDownload(folder, 71)
                     do {
                         try self.saveDownloaded(sourceZip: fileURL, folder: folder, base: self.documentsDir.appendingPathComponent(self.bundleDirectoryHot))
-                        self.notifyDownload(85)
+                        self.notifyDownload(folder, 85)
                         try self.saveDownloaded(sourceZip: fileURL, folder: folder, base: self.libraryDir.appendingPathComponent(self.bundleDirectory))
-                        self.notifyDownload(100)
+                        self.notifyDownload(folder, 100)
                         try self.deleteFolder(source: fileURL)
                     } catch {
                         print("\(self.TAG) download unzip error", error)
@@ -287,7 +286,8 @@ extension CustomError: LocalizedError {
             }
             semaphore.signal()
         }
-        self.notifyDownload(0)
+        self.saveVersionInfo(folder: folder, info: VersionInfo(folder: folder, versionName: versionName, status: VersionStatus.DOWNLOADING, downloaded: Date()))
+        self.notifyDownload(folder, 0)
         semaphore.wait()
         if (mainError != nil) {
             throw mainError!

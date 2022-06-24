@@ -6,7 +6,8 @@ import java.util.Map;
 public enum VersionStatus {
     SUCCESS("success"),
     ERROR("error"),
-    PENDING("pending");
+    PENDING("pending"),
+    DOWNLOADING("donwloading");
 
     public final String label;
 

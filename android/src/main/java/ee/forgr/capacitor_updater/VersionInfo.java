@@ -19,8 +19,8 @@ public class VersionInfo {
     public static final String DOWNLOADED_BUILTIN = "1970-01-01T00:00:00.000Z";
 
     private final String downloaded;
-    private final String name;
-    private final String version;
+    private final String folder;
+    private final String versionName;
     private final VersionStatus status;
 
     static {
@@ -28,25 +28,25 @@ public class VersionInfo {
     }
 
     public VersionInfo(final VersionInfo source) {
-        this(source.version, source.status, source.downloaded, source.name);
+        this(source.folder, source.version, source.status, source.downloaded);
     }
 
-    public VersionInfo(final String version, final VersionStatus status, final Date downloaded, final String name) {
-        this(version, status, sdf.format(downloaded), name);
+    public VersionInfo(final String folder, final String version, final VersionStatus status, final Date downloaded) {
+        this(folder, version, status, sdf.format(downloaded));
     }
 
-    public VersionInfo(final String version, final VersionStatus status, final String downloaded, final String name) {
+    public VersionInfo(final String folder, final String version, final VersionStatus status, final String downloaded) {
         this.downloaded = downloaded.trim();
-        this.name = name;
+        this.folder = folder;
         this.version = version;
         this.status = status;
     }
 
     public Boolean isBuiltin() {
-        return VERSION_BUILTIN.equals(this.getVersion());
+        return VERSION_BUILTIN.equals(this.getVersionName());
     }
     public Boolean isUnknown() {
-        return VERSION_UNKNOWN.equals(this.getVersion());
+        return VERSION_UNKNOWN.equals(this.getVersionName());
     }
     public Boolean isErrorStatus() {
         return VersionStatus.ERROR == this.status;
@@ -60,23 +60,23 @@ public class VersionInfo {
     }
 
     public VersionInfo setDownloaded(Date downloaded) {
-        return new VersionInfo(this.version, this.status, downloaded, this.name);
+        return new VersionInfo(this.folder, this.version, this.status, downloaded);
     }
 
-    public String getName() {
-        return this.isBuiltin() ? VERSION_BUILTIN : this.name;
+    public String getFolder() {
+        return this.isBuiltin() ? VERSION_BUILTIN : this.folder;
     }
 
-    public VersionInfo setName(String name) {
-        return new VersionInfo(this.version, this.status, this.downloaded, name);
+    public VersionInfo setFolder(String folder) {
+        return new VersionInfo(folder, this.version, this.status, this.downloaded);
     }
 
-    public String getVersion() {
+    public String getVersionName() {
         return this.version == null ? VERSION_BUILTIN : this.version;
     }
 
-    public VersionInfo setVersion(String version) {
-        return new VersionInfo(version, this.status, this.downloaded, this.name);
+    public VersionInfo setVersionName(String version) {
+        return new VersionInfo(this.folder, version, this.status, this.downloaded);
     }
 
     public VersionStatus getStatus() {
@@ -84,7 +84,7 @@ public class VersionInfo {
     }
 
     public VersionInfo setStatus(VersionStatus status) {
-        return new VersionInfo(this.version, status, this.downloaded, this.name);
+        return new VersionInfo(this.folder, this.version, status, this.downloaded);
     }
 
     public static VersionInfo fromJSON(final JSObject json) throws JSONException {
@@ -94,30 +94,28 @@ public class VersionInfo {
     public static VersionInfo fromJSON(final String jsonString) throws JSONException {
         JSONObject json = new JSONObject(new JSONTokener(jsonString));
         return new VersionInfo(
-                json.has("version") ? json.getString("version") : VersionInfo.VERSION_UNKNOWN,
+                json.has("folder") ? json.getString("name") : "",
+                json.has("versionName") ? json.getString("version") : VersionInfo.VERSION_UNKNOWN,
                 json.has("status") ? VersionStatus.fromString(json.getString("status")) : VersionStatus.PENDING,
-                json.has("downloaded") ? json.getString("downloaded") : "",
-                json.has("name") ? json.getString("name") : ""
+                json.has("downloaded") ? json.getString("downloaded") : ""
         );
     }
 
     public JSObject toJSON() {
         final JSObject result = new JSObject();
+        result.put("folder", this.getFolder());
+        result.put("versionName", this.getVersionName());
         result.put("downloaded", this.getDownloaded());
-        result.put("name", this.getName());
-        result.put("version", this.getVersion());
         result.put("status", this.getStatus());
         return result;
     }
-    
-
 
     @Override
     public boolean equals(final Object o) {
         if (this == o) return true;
         if (!(o instanceof VersionInfo)) return false;
         final VersionInfo that = (VersionInfo) o;
-        return this.getVersion().equals(that.getVersion());
+        return this.getFolder().equals(that.getFolder());
     }
 
     @Override

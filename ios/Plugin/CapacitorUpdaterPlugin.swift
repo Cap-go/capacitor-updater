@@ -74,8 +74,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         UserDefaults.standard.synchronize()
     }
 
-    @objc func notifyDownload(percent: Int) {
-        self.notifyListeners("download", data: ["percent": percent])
+    @objc func notifyDownload(folder: String, percent: Int) {
+        let version = self.implementation.getVersionInfo(folder: folder).toJSON()
+        self.notifyListeners("download", data: ["percent": percent, "version": version])
     }
 
     @objc func getId(_ call: CAPPluginCall) {

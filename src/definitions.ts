@@ -85,15 +85,16 @@ export interface DownloadEvent {
   /**
    * Current status of download, between 0 and 100.
    *
-   * @since 2.0.11
+   * @since  4.0.0
    */
   percent: number;
+  version: VersionInfo;
 }
 export interface MajorAvailableEvent {
   /**
    * Emit when a new major version is available.
    *
-   * @since 2.3.0
+   * @since  4.0.0
    */
   version: VersionInfo;
 }
@@ -101,7 +102,7 @@ export interface UpdateAvailableEvent {
   /**
    * Emit when a new update is available.
    *
-   * @since 3.0.0
+   * @since  4.0.0
    */
   version: VersionInfo;
 }
@@ -122,7 +123,7 @@ export interface VersionInfo {
   status: VersionStatus
 }
 
-export type VersionStatus = 'success' | 'error' | 'pending';
+export type VersionStatus = 'success' | 'error' | 'pending' | 'downloading';
 
 export type DownloadChangeListener = (state: DownloadEvent) => void;
 export type MajorAvailableListener = (state: MajorAvailableEvent) => void;

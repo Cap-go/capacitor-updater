@@ -29,6 +29,7 @@ enum VersionStatus: LocalizedString, Decodable {
     case SUCCESS = "success"
     case ERROR = "error"
     case PENDING  = "pending"
+    case DOWNLOADING  = "donwloading"
 
     var localizedString: String {
         return self.rawValue.v
