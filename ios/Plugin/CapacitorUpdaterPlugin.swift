@@ -221,7 +221,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func notifyAppReady(_ call: CAPPluginCall) {
-        UserDefaults.standard.set(true, forKey: "notifyAppReady")
+        print("\(self.implementation.TAG) Current bundle loaded successfully. ['notifyAppReady()' was called]")
+        let version = self.implementation.getCurrentBundle()
+        self.implementation.commit(version: version)
         call.resolve()
     }
     
