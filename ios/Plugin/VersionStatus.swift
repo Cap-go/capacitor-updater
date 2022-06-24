@@ -1,11 +1,3 @@
-//
-//  VersionStatus.swift
-//  Plugin
-//
-//  Created by Martin DONADIEU on 05/05/2022.
-//  Copyright © 2022 Capgo. All rights reserved.
-//
-
 import Foundation
 
 struct LocalizedString: ExpressibleByStringLiteral, Equatable {
@@ -33,14 +25,12 @@ func ==(lhs:LocalizedString, rhs:LocalizedString) -> Bool {
     return lhs.v == rhs.v
 }
 
-enum VersionStatus: LocalizedString {
+enum VersionStatus: LocalizedString, Decodable {
     case SUCCESS = "success"
     case ERROR = "error"
     case PENDING  = "pending"
 
-
     var localizedString: String {
         return self.rawValue.v
     }
-
 }

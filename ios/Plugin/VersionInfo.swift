@@ -1,15 +1,8 @@
-//
-//  VersionInfo.swift
-//  Plugin
-//
-//  Created by Martin DONADIEU on 05/05/2022.
-//  Copyright © 2022 Capgo. All rights reserved.
-//
 
 import Foundation
 
 
-@objc public class VersionInfo: NSObject {
+@objc public class VersionInfo: NSObject, Decodable {
     public static let VERSION_BUILTIN: String = "builtin"
     public static let VERSION_UNKNOWN: String = "unknown"
     public static let DOWNLOADED_BUILTIN: String = "1970-01-01T00:00:00.000Z"
@@ -23,12 +16,16 @@ import Foundation
         self.init(version: version, status: status, downloaded: downloaded.iso8601withFractionalSeconds, name: name)
     }
 
-    init(version: String, status: VersionStatus, downloaded: String, name: String) {
+    init(version: String, status: VersionStatus, downloaded: String = VersionInfo.DOWNLOADED_BUILTIN, name: String) {
         self.downloaded = downloaded.trim()
         self.name = name
         self.version = version
         self.status = status
     }
+    
+    enum CodingKeys: String, CodingKey {
+        case downloaded, name, version, status
+     }
     
     public func isBuiltin() -> Bool {
         return VersionInfo.VERSION_BUILTIN == self.getVersion()
@@ -43,7 +40,7 @@ import Foundation
     }
 
     public func isDownloaded() -> Bool {
-        return !self.isBuiltin() && self.downloaded != nil && self.downloaded == VersionInfo.DOWNLOADED_BUILTIN
+        return !self.isBuiltin() && self.downloaded != "" && self.downloaded == VersionInfo.DOWNLOADED_BUILTIN
     }
 
     public func getDownloaded() -> String {
@@ -63,19 +60,19 @@ import Foundation
     }
 
     public func getVersion() -> String {
-        return self.version == nil ? VersionInfo.VERSION_BUILTIN : self.version
+        return self.version == "" ? VersionInfo.VERSION_BUILTIN : self.version
     }
 
     public func setVersion(version: String) -> VersionInfo {
         return VersionInfo(version: version, status: self.status, downloaded: self.downloaded, name: self.name)
     }
 
-    public func getStatus() -> VersionStatus {
-        return self.isBuiltin() ? VersionStatus.SUCCESS : self.status
+    public func getStatus() -> String {
+        return self.isBuiltin() ? VersionStatus.SUCCESS.localizedString : self.status.localizedString
     }
 
-    public func setStatus(status: VersionStatus) -> VersionInfo {
-        return VersionInfo(version: self.version, status: status, downloaded: self.downloaded, name: self.name)
+    public func setStatus(status: String) -> VersionInfo {
+        return VersionInfo(version: self.version, status: VersionStatus(localizedString: status)!, downloaded: self.downloaded, name: self.name)
     }
 
     public func toJSON() -> [String: String] {
@@ -83,7 +80,7 @@ import Foundation
             "downloaded": self.getDownloaded(),
             "name": self.getName(),
             "version": self.getVersion(),
-            "status": self.getStatus().localizedString,
+            "status": self.getStatus(),
         ]
     }
 
@@ -92,6 +89,6 @@ import Foundation
     }
 
     public func toString() -> String {
-        return "{ downloaded: \"\(self.downloaded)\", name: \"\(self.name)\", version: \"\(self.version)\", status: \"\(self.status)\"}"
+        return "{ downloaded: \"\(self.getDownloaded())\", name: \"\(self.getName())\", version: \"\(self.getVersion())\", status: \"\(self.getStatus())\"}"
     }
 }
