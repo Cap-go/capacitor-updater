@@ -70,7 +70,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 _ = implementation.delete(version: version.getName())
             }
         }
-        UserDefaults.standard.set( self.currentVersionNative, forKey: "LatestVersionNative")
+        UserDefaults.standard.set( self.currentVersionNative.description, forKey: "LatestVersionNative")
         UserDefaults.standard.synchronize()
     }
 
