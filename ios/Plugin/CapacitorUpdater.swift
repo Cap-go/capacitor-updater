@@ -123,7 +123,7 @@ extension CustomError: LocalizedError {
     private let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
     private let libraryDir = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
     private let bundleDirectoryHot = "versions"
-    private let DEFAULT_FOLDER = "public"
+    private let DEFAULT_FOLDER = ""
     private let bundleDirectory = "NoCloud/ionic_built_snapshots"
     private let INFO_SUFFIX = "_info"
     private let FALLBACK_VERSION = "pastVersion"
