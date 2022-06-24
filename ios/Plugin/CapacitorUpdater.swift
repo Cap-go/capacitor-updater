@@ -469,7 +469,7 @@ extension CustomError: LocalizedError {
     private func setVersionStatus(version: String, status: VersionStatus) {
         print("\(self.TAG) Setting version status [\(version)] to \(status)")
         let info = self.getVersionInfo(version: version)
-        self.saveVersionInfo(version: version, info: info.setStatus(status: status))
+        self.saveVersionInfo(version: version, info: info.setStatus(status: status.localizedString))
     }
 
     private func getCurrentBundleVersion() -> String {

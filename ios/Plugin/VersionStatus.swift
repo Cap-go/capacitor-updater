@@ -33,4 +33,8 @@ enum VersionStatus: LocalizedString, Decodable {
     var localizedString: String {
         return self.rawValue.v
     }
+    
+    init?(localizedString: String) {
+        self.init(rawValue: LocalizedString(localized: localizedString))
+    }
 }

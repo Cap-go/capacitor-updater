@@ -261,7 +261,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             return
         }
 
-        if(VersionStatus.SUCCESS != current.getStatus()) {
+        if(VersionStatus.SUCCESS.localizedString != current.getStatus()) {
             print("\(self.implementation.TAG) notifyAppReady was not called, roll back current version: \(current)")
             self.implementation.rollback(version: current)
             let res = self._reset(toAutoUpdate: true)
@@ -338,7 +338,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         let current: VersionInfo = self.implementation.getCurrentBundle()
         let next: VersionInfo? = self.implementation.getNextVersion()
 
-        let success: Bool = current.getStatus() == VersionStatus.SUCCESS
+        let success: Bool = current.getStatus() == VersionStatus.SUCCESS.localizedString
 
         print("\(self.implementation.TAG) Fallback version is: \(fallback)")
         print("\(self.implementation.TAG) Current version is: \(current)")
