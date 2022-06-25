@@ -336,7 +336,7 @@ extension CustomError: LocalizedError {
     }
 
     public func getBundleDirectory(folder: String) -> URL {
-        return URL(string: "\(self.documentsDir)\(self.bundleDirectory)/\(folder)")!
+        return libraryDir.appendingPathComponent(self.bundleDirectory).appendingPathComponent(folder)
     }
 
     public func set(version: VersionInfo) -> Bool {
