@@ -350,8 +350,9 @@ extension CustomError: LocalizedError {
         let indexPersist = destHotPersist.appendingPathComponent("index.html")
         let existing: VersionInfo = self.getVersionInfo(folder: folder)
         let bundle: URL = self.getBundleDirectory(folder: folder)
+        print("bundle", bundle.path)
         if (bundle.isDirectory && destHotPersist.isDirectory && indexHot.exist && indexPersist.exist) {
-            self.setCurrentBundle(bundle: bundle.path)
+            self.setCurrentBundle(bundle: String(bundle.path.suffix(10)))
             self.setVersionStatus(folder: folder, status: VersionStatus.PENDING)
             sendStats(action: "set", version: existing)
             return true
@@ -442,7 +443,7 @@ extension CustomError: LocalizedError {
 
     private func saveVersionInfo(folder: String, info: VersionInfo?) {
         if (info != nil && (info!.isBuiltin() || info!.isUnknown())) {
-            print("\(self.TAG) Not saving info for folder [\(folder)]", info!)
+            print("\(self.TAG) Not saving info for folder [\(folder)]", info!.toString())
             return
         }
         if(info == nil) {
@@ -476,7 +477,7 @@ extension CustomError: LocalizedError {
         if(self.isUsingBuiltin()) {
             return VersionInfo.VERSION_BUILTIN
         } else {
-            let path: String = self.getCurrentBundlePath()
+            let path: String = self.getCurrentBundleFolderName()
             return path.lastPathComponent
         }
     }
@@ -485,12 +486,12 @@ extension CustomError: LocalizedError {
         return self.getVersionInfo(folder: self.getCurrentBundleFolder());
     }
 
-    public func getCurrentBundlePath() -> String {
+    public func getCurrentBundleFolderName() -> String {
         return UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH) ?? self.DEFAULT_FOLDER
     }
 
     public func isUsingBuiltin() -> Bool {
-        return self.getCurrentBundlePath() == self.DEFAULT_FOLDER
+        return self.getCurrentBundleFolderName() == self.DEFAULT_FOLDER
     }
 
     public func getFallbackVersion() -> VersionInfo {

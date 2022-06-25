@@ -110,10 +110,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
     private func _reload() -> Bool {
         guard let bridge = self.bridge else { return false }
-        let path = self.implementation.getCurrentBundlePath()
-        print("\(self.implementation.TAG) Reloading \(path)")
+        let folderName = self.implementation.getCurrentBundleFolderName()
+        let destHot = self.implementation.getPathHot(folderName: folderName)
+        print("\(self.implementation.TAG) Reloading \(folderName)")
         if let vc = bridge.viewController as? CAPBridgeViewController {
-            vc.setServerBasePath(path: path)
+            vc.setServerBasePath(path: destHot.path)
             self.checkAppReady()
             return true
         }
@@ -208,7 +209,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             let curr = implementation.getCurrentBundle()
             let pathPersist = implementation.getPathPersist(folderName: curr.getFolder())
             vc.setServerBasePath(path: pathPersist.path)
-            UserDefaults.standard.set(pathPersist, forKey: self.implementation.CAP_SERVER_PATH)
+            UserDefaults.standard.set(String(pathPersist.path.suffix(10)), forKey: self.implementation.CAP_SERVER_PATH)
             DispatchQueue.main.async {
                 vc.loadView()
                 vc.viewDidLoad()
@@ -358,11 +359,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
         let success: Bool = current.getStatus() == VersionStatus.SUCCESS.localizedString
 
-        print("\(self.implementation.TAG) Fallback version is: \(fallback)")
-        print("\(self.implementation.TAG) Current version is: \(current)")
+        print("\(self.implementation.TAG) Fallback version is: \(fallback.toString())")
+        print("\(self.implementation.TAG) Current version is: \(current.toString())")
 
         if (next != nil && !next!.isErrorStatus() && (next!.getVersionName() != current.getVersionName())) {
-            print("\(self.implementation.TAG) Next version is: \(next!)")
+            print("\(self.implementation.TAG) Next version is: \(next!.toString())")
             if (self.implementation.set(version: next!) && self._reload()) {
                 print("\(self.implementation.TAG) Updated to version: \(next!)")
                 let _ = self.implementation.setNextVersion(next: Optional<String>.none)
