@@ -2,7 +2,7 @@
 import Foundation
 
 
-@objc public class VersionInfo: NSObject, Decodable {
+@objc public class VersionInfo: NSObject, Decodable, Encodable {
     public static let VERSION_BUILTIN: String = "builtin"
     public static let VERSION_UNKNOWN: String = "unknown"
     public static let DOWNLOADED_BUILTIN: String = "1970-01-01T00:00:00.000Z"
@@ -13,10 +13,12 @@ import Foundation
     private let status: VersionStatus
     
     convenience init(folder: String, versionName: String, status: VersionStatus, downloaded: Date) {
+        print("downloaded", downloaded.iso8601withFractionalSeconds)
         self.init(folder: folder, versionName: versionName, status: status, downloaded: downloaded.iso8601withFractionalSeconds)
     }
 
     init(folder: String, versionName: String, status: VersionStatus, downloaded: String = VersionInfo.DOWNLOADED_BUILTIN) {
+        print("downloaded", downloaded)
         self.downloaded = downloaded.trim()
         self.folder = folder
         self.versionName = versionName
@@ -89,6 +91,6 @@ import Foundation
     }
 
     public func toString() -> String {
-        return "{ downloaded: \"\(self.getDownloaded())\", folder: \"\(self.getFolder())\", versionName: \"\(self.getVersionName())\", status: \"\(self.getStatus())\"}"
+        return "{ \"downloaded\": \"\(self.getDownloaded())\", \"folder\": \"\(self.getFolder())\", \"versionName\": \"\(self.getVersionName())\", \"status\": \"\(self.getStatus())\"}"
     }
 }

@@ -414,12 +414,11 @@ extension CustomError: LocalizedError {
     public func getVersionInfo(folder: String = VersionInfo.VERSION_BUILTIN) -> VersionInfo {
         print("\(self.TAG) Getting info for [\(folder)]")
         if(VersionInfo.VERSION_BUILTIN == folder) {
-//            (version: String, status: VersionStatus, downloaded: Date, name: String)
             return VersionInfo(folder: folder, versionName: "", status: VersionStatus.SUCCESS)
         }
         do {
-            let result: VersionInfo = try UserDefaults.standard.getObject(forKey: "\(folder)\(self.INFO_SUFFIX)", castTo: VersionInfo.self)
-            print("\(self.TAG) Returning info [\(folder)]", result)
+            let result: VersionInfo = try UserDefaults.standard.getObj(forKey: "\(folder)\(self.INFO_SUFFIX)", castTo: VersionInfo.self)
+            print("\(self.TAG) Returning info [\(folder)]", result.toString())
             return result
         } catch {
             print("\(self.TAG) Failed to parse version info for [\(folder)]", error.localizedDescription)
@@ -448,12 +447,12 @@ extension CustomError: LocalizedError {
         }
         if(info == nil) {
             print("\(self.TAG) Removing info for folder [\(folder)]")
-            UserDefaults.standard.removeObject(forKey: "\(folder)\(INFO_SUFFIX)")
+            UserDefaults.standard.removeObject(forKey: "\(folder)\(self.INFO_SUFFIX)")
         } else {
             let update = info!.setFolder(folder: folder)
             print("\(self.TAG) Storing info for folder [\(folder)]", update.toString())
             do {
-                try UserDefaults.standard.setObject(update.toString(), forKey: "\(folder)\(self.INFO_SUFFIX)")
+                try UserDefaults.standard.setObj(update, forKey: "\(folder)\(self.INFO_SUFFIX)")
             } catch {
                 print("\(self.TAG) Failed to save version info for [\(folder)]", error.localizedDescription)
             }

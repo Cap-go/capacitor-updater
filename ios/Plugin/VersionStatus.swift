@@ -25,7 +25,7 @@ func ==(lhs:LocalizedString, rhs:LocalizedString) -> Bool {
     return lhs.v == rhs.v
 }
 
-enum VersionStatus: LocalizedString, Decodable {
+enum VersionStatus: LocalizedString, Decodable, Encodable {
     case SUCCESS = "success"
     case ERROR = "error"
     case PENDING  = "pending"

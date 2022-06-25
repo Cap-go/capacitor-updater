@@ -75,8 +75,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func notifyDownload(folder: String, percent: Int) {
-        let version = self.implementation.getVersionInfo(folder: folder).toJSON()
-        self.notifyListeners("download", data: ["percent": percent, "version": version])
+        let version = self.implementation.getVersionInfo(folder: folder)
+        self.notifyListeners("download", data: ["percent": percent, "version": version.toJSON()])
     }
 
     @objc func getId(_ call: CAPPluginCall) {
@@ -88,14 +88,21 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
     
     @objc func download(_ call: CAPPluginCall) {
-        let url = URL(string: call.getString("url") ?? "")
-        let versionName: String = call.getString("versionName") ?? ""
+        guard let urlString = call.getString("url") else {
+            print("\(self.implementation.TAG) Download called without url")
+            call.reject("Download called without folder")
+            return
+        }
+        guard let versionName = call.getString("versionName") else {
+            print("\(self.implementation.TAG) Download called without versionName")
+            call.reject("Download called without versionName")
+            return
+        }
+        let url = URL(string: urlString)
         print("\(self.implementation.TAG) Downloading \(url!)")
         do {
             let res = try implementation.download(url: url!, versionName: versionName)
-            call.resolve([
-                "version": res
-            ])
+            call.resolve(res.toJSON())
         } catch {
             call.reject("download failed", error.localizedDescription)
         }
@@ -124,12 +131,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
     @objc func next(_ call: CAPPluginCall) {
         guard let folder = call.getString("folder") else {
-            print("\(self.implementation.TAG) Next call version missing")
-            call.reject("Next called without version")
+            print("\(self.implementation.TAG) Next called without folder")
+            call.reject("Next called without folder")
             return
         }
         guard let versionName = call.getString("versionName") else {
-            print("\(self.implementation.TAG) Next call versionName missing")
+            print("\(self.implementation.TAG) Next called without versionName")
             call.reject("Next called without versionName")
             return
         }
@@ -147,8 +154,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     
     @objc func set(_ call: CAPPluginCall) {
         guard let folder = call.getString("folder") else {
-            print("\(self.implementation.TAG) Set called without version")
-            call.reject("Next call version missing")
+            print("\(self.implementation.TAG) Set called without folder")
+            call.reject("Set called without folder")
             return
         }
         let res = implementation.set(folder: folder)
@@ -162,7 +169,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func delete(_ call: CAPPluginCall) {
-        let folder = call.getString("folder") ?? ""
+        guard let folder = call.getString("folder") else {
+            print("\(self.implementation.TAG) Delete called without version")
+            call.reject("Delete called without folder")
+            return
+        }
         let res = implementation.delete(folder: folder)
         if (res) {
             call.resolve()
@@ -173,8 +184,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
     @objc func list(_ call: CAPPluginCall) {
         let res = implementation.list()
+        var resArr: [[String: String]] = []
+        for v in res {
+            resArr.append(v.toJSON())
+        }
         call.resolve([
-            "versions": res
+            "versions": resArr
         ])
     }
 
@@ -368,7 +383,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 print("\(self.implementation.TAG) Did you forget to call 'notifyAppReady()' in your Capacitor App code?")
 
                 self.notifyListeners("updateFailed", data: [
-                    "version": current
+                    "version": current.toJSON()
                 ])
                 self.implementation.sendStats(action: "revert", version: current);
                 if (!fallback.isBuiltin() && !(fallback == current)) {
