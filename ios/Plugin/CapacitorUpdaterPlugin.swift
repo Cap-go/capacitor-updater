@@ -278,14 +278,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         }
 
         if(VersionStatus.SUCCESS.localizedString != current.getStatus()) {
-            print("\(self.implementation.TAG) notifyAppReady was not called, roll back current version: \(current)")
+            print("\(self.implementation.TAG) notifyAppReady was not called, roll back current version: \(current.toString())")
             self.implementation.rollback(version: current)
             let res = self._reset(toAutoUpdate: true)
             if (!res) {
                 return
             }
         } else {
-            print("\(self.implementation.TAG) notifyAppReady was called. This is fine: \(current)")
+            print("\(self.implementation.TAG) notifyAppReady was called. This is fine: \(current.toString())")
         }
         self.appReadyCheck = nil;
     }
