@@ -376,8 +376,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 self.implementation.rollback(version: current)
                 
                 print("\(self.implementation.TAG) Update failed: 'notifyAppReady()' was never called.")
-                print("\(self.implementation.TAG) Version: \(current), is in error state.")
-                print("\(self.implementation.TAG) Will fallback to: \(fallback) on application restart.")
+                print("\(self.implementation.TAG) Version: \(current.toString()), is in error state.")
+                print("\(self.implementation.TAG) Will fallback to: \(fallback.toString()) on application restart.")
                 print("\(self.implementation.TAG) Did you forget to call 'notifyAppReady()' in your Capacitor App code?")
 
                 self.notifyListeners("updateFailed", data: [
@@ -387,9 +387,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 if (!fallback.isBuiltin() && !(fallback == current)) {
                     let res = self.implementation.set(version: fallback);
                     if (res && self._reload()) {
-                        print("\(self.implementation.TAG) Revert to version: \(fallback)")
+                        print("\(self.implementation.TAG) Revert to version: \(fallback.toString())")
                     } else {
-                        print("\(self.implementation.TAG) Revert to version: \(fallback) Failed!")
+                        print("\(self.implementation.TAG) Revert to version: \(fallback.toString()) Failed!")
                     }
                 } else {
                     if (self._reset(toAutoUpdate: false)) {
@@ -398,12 +398,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 }
 
                 if (self.autoDeleteFailed) {
-                    print("\(self.implementation.TAG) Deleting failing version: \(current)")
+                    print("\(self.implementation.TAG) Deleting failing version: \(current.toString())")
                     let res = self.implementation.delete(folder: current.getFolder());
                     if (!res) {
-                        print("\(self.implementation.TAG) Delete version deleted: \(current)")
+                        print("\(self.implementation.TAG) Delete version deleted: \(current.toString())")
                     } else {
-                        print("\(self.implementation.TAG) Failed to delete failed version: \(current)")
+                        print("\(self.implementation.TAG) Failed to delete failed version: \(current.toString())")
                     }
                 }
             } else {
@@ -414,12 +414,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             self.implementation.commit(version: current);
 
             if(self.autoDeletePrevious) {
-                print("\(self.implementation.TAG) Version successfully loaded: \(current)")
+                print("\(self.implementation.TAG) Version successfully loaded: \(current.toString())")
                 let res = self.implementation.delete(folder: fallback.getFolder())
                 if (res) {
-                    print("\(self.implementation.TAG) Deleted previous version: \(fallback)")
+                    print("\(self.implementation.TAG) Deleted previous version: \(fallback.toString())")
                 } else {
-                    print("\(self.implementation.TAG) Failed to delete previous version: \(fallback)")
+                    print("\(self.implementation.TAG) Failed to delete previous version: \(fallback.toString())")
                 }
             }
         }
