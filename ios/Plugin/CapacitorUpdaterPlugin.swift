@@ -206,14 +206,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 return res && self._reload()
             }
             implementation.reset()
-            let curr = implementation.getCurrentBundle()
-            let pathPersist = implementation.getPathPersist(folderName: curr.getFolder())
-            vc.setServerBasePath(path: pathPersist.path)
-            UserDefaults.standard.set(String(pathPersist.path.suffix(10)), forKey: self.implementation.CAP_SERVER_PATH)
+            vc.setServerBasePath(path: "")
             DispatchQueue.main.async {
                 vc.loadView()
                 vc.viewDidLoad()
-                print("\(self.implementation.TAG) Reset to original version")
+                print("\(self.implementation.TAG) Reset to builtin version")
             }
             return true
         }
