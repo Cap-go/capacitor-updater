@@ -232,6 +232,7 @@ extension CustomError: LocalizedError {
                     }
                     if let message = response.value?.message {
                         latest.message = message
+                        print("\(self.TAG) Auto-update message: \(message)")
                     }
                 case let .failure(error):
                     print("\(self.TAG) Error getting Latest", error )
