@@ -13,12 +13,10 @@ import Foundation
     private let status: VersionStatus
     
     convenience init(folder: String, versionName: String, status: VersionStatus, downloaded: Date) {
-        print("downloaded", downloaded.iso8601withFractionalSeconds)
         self.init(folder: folder, versionName: versionName, status: status, downloaded: downloaded.iso8601withFractionalSeconds)
     }
 
     init(folder: String, versionName: String, status: VersionStatus, downloaded: String = VersionInfo.DOWNLOADED_BUILTIN) {
-        print("downloaded", downloaded)
         self.downloaded = downloaded.trim()
         self.folder = folder
         self.versionName = versionName
