@@ -2,7 +2,7 @@ import { WebPlugin } from '@capacitor/core';
 
 import type { CapacitorUpdaterPlugin, VersionInfo } from './definitions';
 
-const VERSION_BUILTIN: VersionInfo = { status: 'success', version: '', downloaded: '1970-01-01T00:00:00.000Z', name: 'builtin' };
+const VERSION_BUILTIN: VersionInfo = { status: 'success', versionName: '', downloaded: '1970-01-01T00:00:00.000Z', folder: 'builtin' };
 
 export class CapacitorUpdaterWeb
   extends WebPlugin
@@ -11,7 +11,7 @@ export class CapacitorUpdaterWeb
     console.warn('Cannot download version in web', options);
     return VERSION_BUILTIN;
   }
-  async next(options: { version: string, versionName?: string }): Promise<VersionInfo> {
+  async next(options: { folder: string, versionName?: string }): Promise<VersionInfo> {
     console.warn('Cannot set next version in web', options);
     return VERSION_BUILTIN;
   }
@@ -20,7 +20,7 @@ export class CapacitorUpdaterWeb
     console.warn('Cannot get isAutoUpdateEnabled version in web');
     return { enabled: false };
   }
-  async set(options: { version: string, versionName?: string }): Promise<void> {
+  async set(options: { folder: string, versionName?: string }): Promise<void> {
     console.warn('Cannot set version in web', options);
     return;
   }
@@ -32,7 +32,7 @@ export class CapacitorUpdaterWeb
     console.warn('Cannot get version in web');
     return { version: 'default'};
   }
-  async delete(options: { version: string }): Promise<void> {
+  async delete(options: { folder: string }): Promise<void> {
     console.warn('Cannot delete version in web', options);
   }
   async list(): Promise<{ versions: VersionInfo[] }> {
@@ -54,12 +54,8 @@ export class CapacitorUpdaterWeb
     console.warn('Cannot notify App Ready in web');
     return VERSION_BUILTIN;
   }
-  async delayUpdate(): Promise<void> {
-    console.warn('Cannot delay update in web');
-    return;
-  }
-  async cancelDelay(): Promise<void> {
-    console.warn('Cannot cancel delay update in web');
+  async setDelay(options: { delay: boolean }): Promise<void> {
+    console.warn('Cannot setDelay delay update in web', options);
     return;
   }
 }

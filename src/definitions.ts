@@ -216,20 +216,12 @@ export interface CapacitorUpdaterPlugin {
   reload(): Promise<void>;
 
   /**
-   * Skip updates in the next time the app goes into the background, only in auto-update
+   * Set delay to skip updates in the next time the app goes into the background
    *
    * @returns {Promise<void>} an Promise resolved directly
    * @throws An error if the something went wrong
    */
-  delayUpdate(): Promise<void>;
-
-  /**
-   * Allow update in the next time the app goes into the background, only in auto-update
-   *
-   * @returns {Promise<void>} an Promise resolved directly
-   * @throws An error if the something went wrong
-   */
-  cancelDelay(): Promise<void>;
+  setDelay(options: {delay: boolean}): Promise<void>;
 
   /**
    * Listen for download event in the App, let you know when the download is started, loading and finished
