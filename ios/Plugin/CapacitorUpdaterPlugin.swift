@@ -316,7 +316,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                         }
                         if(latest!.isDownloaded()){
                             print("\(self.implementation.TAG) Latest version already exists and download is NOT required. Update will occur next time app moves to background.")
-                            let _ = self.implementation.setNextVersion(next: latest!.getVersionName())
+                            let _ = self.implementation.setNextVersion(next: latest!.getFolder())
                             return
                         }
                     }
@@ -325,7 +325,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                         print("\(self.implementation.TAG) New version: \(latestVersionName!) found. Current is: \(current.getVersionName()). Update will occur next time app moves to background.")
                         let next = try self.implementation.download(url: downloadUrl, versionName: latestVersionName!)
 
-                        let _ = self.implementation.setNextVersion(next: next.getVersionName())
+                        let _ = self.implementation.setNextVersion(next: next.getFolder())
 
                         self.notifyListeners("updateAvailable", data: [
                             "versionName": next.getVersionName()
