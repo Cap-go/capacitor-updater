@@ -1,10 +1,3 @@
-//
-//  UserDefaultsExtension.swift
-//  UserDefaultsExtension
-//
-//  Created by Ankit Bhana on 15/08/20.
-//  Copyright © 2020 Ankit Bhana. All rights reserved.
-//
 import Foundation
 
 protocol ObjectSavable {
