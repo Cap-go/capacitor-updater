@@ -58,12 +58,12 @@ public class CapacitorUpdater {
     public SharedPreferences.Editor editor;
     public SharedPreferences prefs;
 
-    private RequestQueue requestQueue;
+    public RequestQueue requestQueue;
 
-    private File documentsDir;
-    private String versionBuild = "";
-    private String versionCode = "";
-    private String versionOs = "";
+    public File documentsDir;
+    public String versionBuild = "";
+    public String versionCode = "";
+    public String versionOs = "";
 
     public String statsUrl = "";
     public String appId = "";
@@ -106,7 +106,7 @@ public class CapacitorUpdater {
 
             ZipEntry entry;
             while ((entry = zis.getNextEntry()) != null) {
-                final File file = new File(targetDirectory, entry.getFolder());
+                final File file = new File(targetDirectory, entry.getName());
                 final String canonicalPath = file.getCanonicalPath();
                 final String canonicalDir = (new File(String.valueOf(targetDirectory))).getCanonicalPath();
                 final File dir = entry.isDirectory() ? file : file.getParentFile();
@@ -221,8 +221,7 @@ public class CapacitorUpdater {
 
     public VersionInfo download(final String url, final String versionName) throws IOException {
         final String folder = this.randomString(10);
-        VersionInfo info = new VersionInfo(folder, versionName, VersionStatus.DOWNLOADING, new Date(System.currentTimeMillis()));
-        this.saveVersionInfo(folder, info);
+        this.saveVersionInfo(folder, new VersionInfo(folder, versionName, VersionStatus.DOWNLOADING, new Date(System.currentTimeMillis())));
         this.notifyDownload(folder, 0);
         final String path = this.randomString(10);
         final File zipFile = new File(this.documentsDir, path);
@@ -248,7 +247,7 @@ public class CapacitorUpdater {
         Log.d(TAG, "list File : " + destHot.getPath());
         if (destHot.exists()) {
             for (final File i : destHot.listFiles()) {
-                final String folder = i.getFolder();
+                final String folder = i.getName();
                 res.add(this.getVersionInfo(folder));
             }
         } else {
@@ -427,14 +426,14 @@ public class CapacitorUpdater {
         Log.d(TAG, "Getting info for [" + folder + "]");
         VersionInfo result;
         if(VersionInfo.VERSION_BUILTIN.equals(folder)) {
-            result = new VersionInfo(folder, VersionStatus.SUCCESS, (String) null, "");
+            result = new VersionInfo(folder, (String) null, VersionStatus.SUCCESS, "");
         } else {
             try {
                 String stored = this.prefs.getString(folder + INFO_SUFFIX, "");
                 result = VersionInfo.fromJSON(stored);
             } catch (JSONException e) {
                 Log.e(TAG, "Failed to parse folder info for [" + folder + "] ", e);
-                result = new VersionInfo(folder, VersionStatus.PENDING, (String) null, "");
+                result = new VersionInfo(folder, (String) null, VersionStatus.PENDING, "");
             }
         }
 
@@ -459,7 +458,7 @@ public class CapacitorUpdater {
     private void saveVersionInfo(final String folder, final VersionInfo info) {
         if(folder == null || (info != null && (info.isBuiltin() || info.isUnknown()))) {
             Log.d(TAG, "Not saving info for folder: [" + folder + "] " + info);
-           return;
+            return;
         }
 
         if(info == null) {

@@ -169,7 +169,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     public void download(final PluginCall call) {
         final String url = call.getString("url");
         final String versionName = call.getString("versionName");
-        if (!url || !versionName) {
+        if (url == null || versionName == null) {
             call.reject("missing url or versionName");
             return;
         }
@@ -179,7 +179,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                 @Override
                 public void run() {
                     try {
-                        
+
                         final VersionInfo downloaded = CapacitorUpdaterPlugin.this.implementation.download(url, versionName);
                         call.resolve(downloaded.toJSON());
                     } catch (final IOException e) {
@@ -406,7 +406,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             this.appReadyCheck = new Thread(new DeferredNotifyAppReadyCheck());
             this.appReadyCheck.start();
         } catch (final Exception e) {
-            Log.e(CapacitorUpdater.TAG, "Failed to start " + DeferredNotifyAppReadyCheck.class.getFolder(), e);
+            Log.e(CapacitorUpdater.TAG, "Failed to start " + DeferredNotifyAppReadyCheck.class.getName(), e);
         }
     }
 
@@ -417,64 +417,64 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                 @Override
                 public void run() {
 
-                        Log.i(CapacitorUpdater.TAG, "Check for update via: " + CapacitorUpdaterPlugin.this.autoUpdateUrl);
-                        CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.autoUpdateUrl, (res) -> {
-                            try {
-                                if (res.has("message")) {
-                                    Log.i(CapacitorUpdater.TAG, "message: " + res.get("message"));
-                                    if (res.has("major") && res.getBoolean("major") && res.has("version")) {
-                                        final JSObject majorAvailable = new JSObject();
-                                        majorAvailable.put("version", (String) res.get("version"));
-                                        CapacitorUpdaterPlugin.this.notifyListeners("majorAvailable", majorAvailable);
-                                    }
-                                    return;
+                    Log.i(CapacitorUpdater.TAG, "Check for update via: " + CapacitorUpdaterPlugin.this.autoUpdateUrl);
+                    CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.autoUpdateUrl, (res) -> {
+                        try {
+                            if (res.has("message")) {
+                                Log.i(CapacitorUpdater.TAG, "message: " + res.get("message"));
+                                if (res.has("major") && res.getBoolean("major") && res.has("version")) {
+                                    final JSObject majorAvailable = new JSObject();
+                                    majorAvailable.put("version", (String) res.get("version"));
+                                    CapacitorUpdaterPlugin.this.notifyListeners("majorAvailable", majorAvailable);
                                 }
-                                final VersionInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
-                                final String latestVersionName = (String) res.get("version");
-
-                                if (latestVersionName != null && !"".equals(latestVersionName) && !current.getFolder().equals(latestVersionName)) {
-
-                                    final VersionInfo latest = CapacitorUpdaterPlugin.this.implementation.getVersionInfoByName(latestVersionName);
-                                    if(latest != null) {
-                                        if(latest.isErrorStatus()) {
-                                            Log.e(CapacitorUpdater.TAG, "Latest version already exists, and is in error state. Aborting update.");
-                                            return;
-                                        }
-                                        if(latest.isDownloaded()){
-                                            Log.e(CapacitorUpdater.TAG, "Latest version already exists and download is NOT required. Update will occur next time app moves to background.");
-                                            CapacitorUpdaterPlugin.this.implementation.setNextVersion(latest.getFolder());
-                                            return;
-                                        }
-                                    }
-
-
-                                    new Thread(new Runnable(){
-                                        @Override
-                                        public void run() {
-                                            try {
-                                                Log.i(CapacitorUpdater.TAG, "New version: " + latestVersionName + " found. Current is: " + current.getVersionName() + ". Update will occur next time app moves to background.");
-
-                                                final String url = (String) res.get("url");
-                                                final VersionInfo next = CapacitorUpdaterPlugin.this.implementation.download(url, latestVersionName);
-
-                                                CapacitorUpdaterPlugin.this.implementation.setNextVersion(next.getFolder());
-
-                                                final JSObject updateAvailable = new JSObject();
-                                                updateAvailable.put("version", next.toJSON());
-                                                CapacitorUpdaterPlugin.this.notifyListeners("updateAvailable", updateAvailable);
-                                            } catch (final Exception e) {
-                                                Log.e(CapacitorUpdater.TAG, "error downloading file", e);
-                                            }
-                                        }
-                                    }).start();
-                                } else {
-                                    Log.i(CapacitorUpdater.TAG, "No need to update, " + current + " is the latest version.");
-                                }
-                            } catch (final JSONException e) {
-                                Log.e(CapacitorUpdater.TAG, "error parsing JSON", e);
+                                return;
                             }
-                        });
-                    }
+                            final VersionInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
+                            final String latestVersionName = (String) res.get("version");
+
+                            if (latestVersionName != null && !"".equals(latestVersionName) && !current.getFolder().equals(latestVersionName)) {
+
+                                final VersionInfo latest = CapacitorUpdaterPlugin.this.implementation.getVersionInfoByName(latestVersionName);
+                                if(latest != null) {
+                                    if(latest.isErrorStatus()) {
+                                        Log.e(CapacitorUpdater.TAG, "Latest version already exists, and is in error state. Aborting update.");
+                                        return;
+                                    }
+                                    if(latest.isDownloaded()){
+                                        Log.e(CapacitorUpdater.TAG, "Latest version already exists and download is NOT required. Update will occur next time app moves to background.");
+                                        CapacitorUpdaterPlugin.this.implementation.setNextVersion(latest.getFolder());
+                                        return;
+                                    }
+                                }
+
+
+                                new Thread(new Runnable(){
+                                    @Override
+                                    public void run() {
+                                        try {
+                                            Log.i(CapacitorUpdater.TAG, "New version: " + latestVersionName + " found. Current is: " + current.getVersionName() + ". Update will occur next time app moves to background.");
+
+                                            final String url = (String) res.get("url");
+                                            final VersionInfo next = CapacitorUpdaterPlugin.this.implementation.download(url, latestVersionName);
+
+                                            CapacitorUpdaterPlugin.this.implementation.setNextVersion(next.getFolder());
+
+                                            final JSObject updateAvailable = new JSObject();
+                                            updateAvailable.put("version", next.toJSON());
+                                            CapacitorUpdaterPlugin.this.notifyListeners("updateAvailable", updateAvailable);
+                                        } catch (final Exception e) {
+                                            Log.e(CapacitorUpdater.TAG, "error downloading file", e);
+                                        }
+                                    }
+                                }).start();
+                            } else {
+                                Log.i(CapacitorUpdater.TAG, "No need to update, " + current + " is the latest version.");
+                            }
+                        } catch (final JSONException e) {
+                            Log.e(CapacitorUpdater.TAG, "error parsing JSON", e);
+                        }
+                    });
+                }
             }).start();
         }
 
@@ -601,7 +601,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
 
                 CapacitorUpdaterPlugin.this.appReadyCheck = null;
             } catch (final InterruptedException e) {
-                Log.e(CapacitorUpdater.TAG, DeferredNotifyAppReadyCheck.class.getFolder() + " was interrupted.");
+                Log.e(CapacitorUpdater.TAG, DeferredNotifyAppReadyCheck.class.getName() + " was interrupted.");
             }
         }
     }

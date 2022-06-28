@@ -28,7 +28,7 @@ public class VersionInfo {
     }
 
     public VersionInfo(final VersionInfo source) {
-        this(source.folder, source.version, source.status, source.downloaded);
+        this(source.folder, source.versionName, source.status, source.downloaded);
     }
 
     public VersionInfo(final String folder, final String version, final VersionStatus status, final Date downloaded) {
@@ -38,7 +38,7 @@ public class VersionInfo {
     public VersionInfo(final String folder, final String version, final VersionStatus status, final String downloaded) {
         this.downloaded = downloaded.trim();
         this.folder = folder;
-        this.version = version;
+        this.versionName = version;
         this.status = status;
     }
 
@@ -60,7 +60,7 @@ public class VersionInfo {
     }
 
     public VersionInfo setDownloaded(Date downloaded) {
-        return new VersionInfo(this.folder, this.version, this.status, downloaded);
+        return new VersionInfo(this.folder, this.versionName, this.status, downloaded);
     }
 
     public String getFolder() {
@@ -68,11 +68,11 @@ public class VersionInfo {
     }
 
     public VersionInfo setFolder(String folder) {
-        return new VersionInfo(folder, this.version, this.status, this.downloaded);
+        return new VersionInfo(folder, this.versionName, this.status, this.downloaded);
     }
 
     public String getVersionName() {
-        return this.version == null ? VERSION_BUILTIN : this.version;
+        return this.versionName == null ? VERSION_BUILTIN : this.versionName;
     }
 
     public VersionInfo setVersionName(String version) {
@@ -84,7 +84,7 @@ public class VersionInfo {
     }
 
     public VersionInfo setStatus(VersionStatus status) {
-        return new VersionInfo(this.folder, this.version, status, this.downloaded);
+        return new VersionInfo(this.folder, this.versionName, status, this.downloaded);
     }
 
     public static VersionInfo fromJSON(final JSObject json) throws JSONException {
@@ -120,7 +120,7 @@ public class VersionInfo {
 
     @Override
     public int hashCode() {
-        return Objects.hash(this.version);
+        return Objects.hash(this.versionName);
     }
 
     @Override
