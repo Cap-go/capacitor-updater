@@ -474,7 +474,7 @@ extension CustomError: LocalizedError {
         self.saveBundleInfo(id: id, bundle: info.setStatus(status: status.localizedString))
     }
 
-    private func getCurrentBundleFolder() -> String {
+    private func getCurrentBundleVersion() -> String {
         if(self.isUsingBuiltin()) {
             return BundleInfo.VERSION_BUILTIN
         } else {
@@ -484,7 +484,7 @@ extension CustomError: LocalizedError {
     }
 
     public func getCurrentBundle() -> BundleInfo {
-        return self.getBundleInfo(id: self.getCurrentBundleFolder());
+        return self.getBundleInfo(id: self.getCurrentBundleId());
     }
 
     public func getCurrentBundleId() -> String {

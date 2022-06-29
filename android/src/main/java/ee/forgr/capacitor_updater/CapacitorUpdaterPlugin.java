@@ -59,8 +59,8 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         try {
             this.implementation = new CapacitorUpdater() {
                 @Override
-                public void notifyDownload(final String folder, final int percent) {
-                    CapacitorUpdaterPlugin.this.notifyDownload(folder, percent);
+                public void notifyDownload(final String id, final int percent) {
+                    CapacitorUpdaterPlugin.this.notifyDownload(id, percent);
                 }
             };
             final PackageInfo pInfo = this.getContext().getPackageManager().getPackageInfo(this.getContext().getPackageName(), 0);
@@ -129,11 +129,11 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         this.editor.commit();
     }
 
-    public void notifyDownload(final String folder, final int percent) {
+    public void notifyDownload(final String id, final int percent) {
         try {
             final JSObject ret = new JSObject();
             ret.put("percent", percent);
-            ret.put("version", this.implementation.getBundleInfo(folder).toJSON());
+            ret.put("version", this.implementation.getBundleInfo(id).toJSON());
             this.notifyListeners("download", ret);
         } catch (final Exception e) {
             Log.e(CapacitorUpdater.TAG, "Could not notify listeners", e);
@@ -222,54 +222,54 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
 
     @PluginMethod
     public void next(final PluginCall call) {
-        final String folder = call.getString("folder");
+        final String id = call.getString("id");
 
         try {
-            Log.i(CapacitorUpdater.TAG, "Setting next active folder " + folder);
-            if (!this.implementation.setNextVersion(folder)) {
-                call.reject("Set next folder failed. Version " + folder + " does not exist.");
+            Log.i(CapacitorUpdater.TAG, "Setting next active id " + id);
+            if (!this.implementation.setNextVersion(id)) {
+                call.reject("Set next id failed. Version " + id + " does not exist.");
             } else {
-                call.resolve(this.implementation.getBundleInfo(folder).toJSON());
+                call.resolve(this.implementation.getBundleInfo(id).toJSON());
             }
         } catch (final Exception e) {
-            Log.e(CapacitorUpdater.TAG, "Could not set next folder " + folder, e);
-            call.reject("Could not set next folder " + folder, e);
+            Log.e(CapacitorUpdater.TAG, "Could not set next id " + id, e);
+            call.reject("Could not set next id " + id, e);
         }
     }
 
     @PluginMethod
     public void set(final PluginCall call) {
-        final String folder = call.getString("folder");
+        final String id = call.getString("id");
 
         try {
-            Log.i(CapacitorUpdater.TAG, "Setting active bundle " + folder);
-            if (!this.implementation.set(folder)) {
-                Log.i(CapacitorUpdater.TAG, "No such bundle " + folder);
-                call.reject("Update failed, folder " + folder + " does not exist.");
+            Log.i(CapacitorUpdater.TAG, "Setting active bundle " + id);
+            if (!this.implementation.set(id)) {
+                Log.i(CapacitorUpdater.TAG, "No such bundle " + id);
+                call.reject("Update failed, id " + id + " does not exist.");
             } else {
-                Log.i(CapacitorUpdater.TAG, "Bundle successfully set to" + folder);
+                Log.i(CapacitorUpdater.TAG, "Bundle successfully set to" + id);
                 this.reload(call);
             }
         } catch(final Exception e) {
-            Log.e(CapacitorUpdater.TAG, "Could not set folder " + folder, e);
-            call.reject("Could not set folder " + folder, e);
+            Log.e(CapacitorUpdater.TAG, "Could not set id " + id, e);
+            call.reject("Could not set id " + id, e);
         }
     }
 
     @PluginMethod
     public void delete(final PluginCall call) {
-        final String folder = call.getString("folder");
-        Log.i(CapacitorUpdater.TAG, "Deleting folder: " + folder);
+        final String id = call.getString("id");
+        Log.i(CapacitorUpdater.TAG, "Deleting id: " + id);
         try {
-            final Boolean res = this.implementation.delete(folder);
+            final Boolean res = this.implementation.delete(id);
             if (res) {
                 call.resolve();
             } else {
-                call.reject("Delete failed, folder " + folder + " does not exist");
+                call.reject("Delete failed, id " + id + " does not exist");
             }
         } catch(final Exception e) {
-            Log.e(CapacitorUpdater.TAG, "Could not delete folder " + folder, e);
-            call.reject("Could not delete folder " + folder, e);
+            Log.e(CapacitorUpdater.TAG, "Could not delete id " + id, e);
+            call.reject("Could not delete id " + id, e);
         }
     }
 

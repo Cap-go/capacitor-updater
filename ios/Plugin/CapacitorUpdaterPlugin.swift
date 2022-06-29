@@ -35,7 +35,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         appReadyTimeout = getConfigValue("appReadyTimeout") as? Int ?? 10000
         resetWhenUpdate = getConfigValue("resetWhenUpdate") as? Bool ?? true
 
-
         implementation.appId = Bundle.main.bundleIdentifier ?? ""
         implementation.notifyDownload = notifyDownload
         let config = (self.bridge?.viewController as? CAPBridgeViewController)?.instanceDescriptor().legacyConfig
@@ -74,8 +73,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         UserDefaults.standard.synchronize()
     }
 
-    @objc func notifyDownload(folder: String, percent: Int) {
-        let bundle = self.implementation.getBundleInfo(id: folder)
+    @objc func notifyDownload(id: String, percent: Int) {
+        let bundle = self.implementation.getBundleInfo(id: id)
         self.notifyListeners("download", data: ["percent": percent, "bundle": bundle.toJSON()])
     }
 
@@ -90,7 +89,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     @objc func download(_ call: CAPPluginCall) {
         guard let urlString = call.getString("url") else {
             print("\(self.implementation.TAG) Download called without url")
-            call.reject("Download called without folder")
+            call.reject("Download called without url")
             return
         }
         guard let version = call.getString("version") else {
@@ -110,7 +109,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
     private func _reload() -> Bool {
         guard let bridge = self.bridge else { return false }
-        let id = self.implementation.getCurrentBundleFolderName()
+        let id = self.implementation.getCurrentBundleId()
         let destHot = self.implementation.getPathHot(id: id)
         print("\(self.implementation.TAG) Reloading \(id)")
         if let vc = bridge.viewController as? CAPBridgeViewController {
@@ -132,14 +131,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
     @objc func next(_ call: CAPPluginCall) {
         guard let id = call.getString("id") else {
-            print("\(self.implementation.TAG) Next called without folder")
-            call.reject("Next called without folder")
+            print("\(self.implementation.TAG) Next called without id")
+            call.reject("Next called without id")
             return
         }
 
-        print("\(self.implementation.TAG) Setting next active folder \(id)")
+        print("\(self.implementation.TAG) Setting next active id \(id)")
         if (!self.implementation.setNextVersion(next: id)) {
-            call.reject("Set next version failed. folder \(id) does not exist.")
+            call.reject("Set next version failed. id \(id) does not exist.")
         } else {
             call.resolve(self.implementation.getBundleInfo(id: id).toJSON())
         }
@@ -155,7 +154,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         print("\(self.implementation.TAG) Set active bundle: \(id)")
         if (!res) {
             print("\(self.implementation.TAG) Bundle successfully set to: \(id) ")
-            call.reject("Update failed, folder \(id) doesn't exist")
+            call.reject("Update failed, id \(id) doesn't exist")
         } else {
             self.reload(call)
         }
