@@ -117,7 +117,7 @@ export interface UpdateFailedEvent {
 }
 
 export interface BundleInfo {
-  folder: string;
+  id: string;
   version: string;
   downloaded: string;
   status: BundleStatus
@@ -144,7 +144,7 @@ export interface CapacitorUpdaterPlugin {
   notifyAppReady(): Promise<BundleInfo>;
 
   /**
-   * Download a new version from the provided URL, it should be a zip file, with files inside or with a unique folder inside with all your files
+   * Download a new version from the provided URL, it should be a zip file, with files inside or with a unique id inside with all your files
    *
    * @returns {Promise<BundleInfo>} The {@link BundleInfo} for the specified version.
    * @param url The URL of the bundle zip file (e.g: dist.zip) to be downloaded. (This can be any URL. E.g: Amazon S3, a github tag, any other place you've hosted your bundle.)
@@ -159,9 +159,9 @@ export interface CapacitorUpdaterPlugin {
    * @returns {Promise<BundleInfo>} The {@link BundleInfo} for the specified version.
    * @param version The version to set as current, next time the app is reloaded. See {@link BundleInfo.version}
    * @param version (optional) set or change the name of this version
-   * @throws An error if there are is no index.html file inside the version folder.
+   * @throws An error if there are is no index.html file inside the version id.
    */
-  next(options: { folder: string, version?: string }): Promise<BundleInfo>;
+  next(options: { id: string, version?: string }): Promise<BundleInfo>;
 
   /**
    * Set the current bundle version and immediately reloads the app.
@@ -169,9 +169,9 @@ export interface CapacitorUpdaterPlugin {
    * @param version The version to set as current. See {@link BundleInfo.version}
    * @returns {Promise<Void>} An empty promise.
    * @param version (optional) set or change the name of this version
-   * @throws An error if there are is no index.html file inside the version folder.
+   * @throws An error if there are is no index.html file inside the version id.
    */
-  set(options: { folder: string, version?: string }): Promise<void>;
+  set(options: { id: string, version?: string }): Promise<void>;
 
   /**
    * Delete version in storage
@@ -180,7 +180,7 @@ export interface CapacitorUpdaterPlugin {
    * @param version The version to delete (note, this is the version, NOT the version name)
    * @throws An error if the something went wrong
    */
-  delete(options: { folder: string }): Promise<void>;
+  delete(options: { id: string }): Promise<void>;
 
   /**
    * Get all available versions
