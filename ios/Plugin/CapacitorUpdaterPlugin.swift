@@ -75,7 +75,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func notifyDownload(folder: String, percent: Int) {
-        let version = self.implementation.getVersionInfo(folder: folder)
+        let version = self.implementation.getBundleInfo(folder: folder)
         self.notifyListeners("download", data: ["percent": percent, "version": version.toJSON()])
     }
 
@@ -93,15 +93,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             call.reject("Download called without folder")
             return
         }
-        guard let versionName = call.getString("versionName") else {
-            print("\(self.implementation.TAG) Download called without versionName")
-            call.reject("Download called without versionName")
+        guard let version = call.getString("version") else {
+            print("\(self.implementation.TAG) Download called without version")
+            call.reject("Download called without version")
             return
         }
         let url = URL(string: urlString)
         print("\(self.implementation.TAG) Downloading \(url!)")
         do {
-            let res = try implementation.download(url: url!, versionName: versionName)
+            let res = try implementation.download(url: url!, version: version)
             call.resolve(res.toJSON())
         } catch {
             call.reject("download failed", error.localizedDescription)
@@ -141,7 +141,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         if (!self.implementation.setNextVersion(next: folder)) {
             call.reject("Set next version failed. folder \(folder) does not exist.")
         } else {
-            call.resolve(self.implementation.getVersionInfo(folder: folder).toJSON())
+            call.resolve(self.implementation.getBundleInfo(folder: folder).toJSON())
         }
     }
     
@@ -218,7 +218,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
     
     @objc func current(_ call: CAPPluginCall) {
-        let bundle: VersionInfo = self.implementation.getCurrentBundle()
+        let bundle: BundleInfo = self.implementation.getCurrentBundle()
         call.resolve([
             "bundle": bundle.toJSON(),
             "native": self.currentVersionNative
@@ -263,13 +263,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
     func DeferredNotifyAppReadyCheck() {
         // Automatically roll back to fallback version if notifyAppReady has not been called yet
-        let current: VersionInfo = self.implementation.getCurrentBundle()
+        let current: BundleInfo = self.implementation.getCurrentBundle()
         if(current.isBuiltin()) {
             print("\(self.implementation.TAG) Built-in bundle is active. Nothing to do.")
             return
         }
 
-        if(VersionStatus.SUCCESS.localizedString != current.getStatus()) {
+        if(BundleStatus.SUCCESS.localizedString != current.getStatus()) {
             print("\(self.implementation.TAG) notifyAppReady was not called, roll back current version: \(current.toString())")
             self.implementation.rollback(version: current)
             let res = self._reset(toAutoUpdate: true)
@@ -302,7 +302,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 let current = self.implementation.getCurrentBundle()
                 let latestVersionName = res?.version
                 if (latestVersionName != nil && latestVersionName != "" && current.getVersionName() != latestVersionName) {
-                    let latest = self.implementation.getVersionInfoByVersionName(versionName: latestVersionName!)
+                    let latest = self.implementation.getBundleInfoByVersionName(version: latestVersionName!)
                     if (latest != nil) {
                         if(latest!.isErrorStatus()) {
                             print("\(self.implementation.TAG) Latest version already exists, and is in error state. Aborting update.")
@@ -317,12 +317,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
                     do {
                         print("\(self.implementation.TAG) New version: \(latestVersionName!) found. Current is: \(current.getVersionName()). Update will occur next time app moves to background.")
-                        let next = try self.implementation.download(url: downloadUrl, versionName: latestVersionName!)
+                        let next = try self.implementation.download(url: downloadUrl, version: latestVersionName!)
 
                         let _ = self.implementation.setNextVersion(next: next.getFolder())
 
                         self.notifyListeners("updateAvailable", data: [
-                            "versionName": next.getVersionName()
+                            "version": next.getVersionName()
                         ])
                     } catch {
                         print("\(self.implementation.TAG) Error downloading file", error.localizedDescription)
@@ -343,11 +343,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             return
         }
 
-        let fallback: VersionInfo = self.implementation.getFallbackVersion()
-        let current: VersionInfo = self.implementation.getCurrentBundle()
-        let next: VersionInfo? = self.implementation.getNextVersion()
+        let fallback: BundleInfo = self.implementation.getFallbackVersion()
+        let current: BundleInfo = self.implementation.getCurrentBundle()
+        let next: BundleInfo? = self.implementation.getNextVersion()
 
-        let success: Bool = current.getStatus() == VersionStatus.SUCCESS.localizedString
+        let success: Bool = current.getStatus() == BundleStatus.SUCCESS.localizedString
 
         print("\(self.implementation.TAG) Fallback version is: \(fallback.toString())")
         print("\(self.implementation.TAG) Current version is: \(current.toString())")

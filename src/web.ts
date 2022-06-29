@@ -1,17 +1,17 @@
 import { WebPlugin } from '@capacitor/core';
 
-import type { CapacitorUpdaterPlugin, VersionInfo } from './definitions';
+import type { CapacitorUpdaterPlugin, BundleInfo } from './definitions';
 
-const VERSION_BUILTIN: VersionInfo = { status: 'success', versionName: '', downloaded: '1970-01-01T00:00:00.000Z', folder: 'builtin' };
+const VERSION_BUILTIN: BundleInfo = { status: 'success', version: '', downloaded: '1970-01-01T00:00:00.000Z', folder: 'builtin' };
 
 export class CapacitorUpdaterWeb
   extends WebPlugin
   implements CapacitorUpdaterPlugin {
-  async download(options: { url: string, versionName?: string }): Promise<VersionInfo> {
+  async download(options: { url: string, version?: string }): Promise<BundleInfo> {
     console.warn('Cannot download version in web', options);
     return VERSION_BUILTIN;
   }
-  async next(options: { folder: string, versionName?: string }): Promise<VersionInfo> {
+  async next(options: { folder: string, version?: string }): Promise<BundleInfo> {
     console.warn('Cannot set next version in web', options);
     return VERSION_BUILTIN;
   }
@@ -20,7 +20,7 @@ export class CapacitorUpdaterWeb
     console.warn('Cannot get isAutoUpdateEnabled version in web');
     return { enabled: false };
   }
-  async set(options: { folder: string, versionName?: string }): Promise<void> {
+  async set(options: { folder: string, version?: string }): Promise<void> {
     console.warn('Cannot set version in web', options);
     return;
   }
@@ -35,14 +35,14 @@ export class CapacitorUpdaterWeb
   async delete(options: { folder: string }): Promise<void> {
     console.warn('Cannot delete version in web', options);
   }
-  async list(): Promise<{ versions: VersionInfo[] }> {
+  async list(): Promise<{ versions: BundleInfo[] }> {
     console.warn('Cannot list version in web');
     return { versions: [] };
   }
   async reset(options?: { toLastSuccessful?: boolean }): Promise<void> {
     console.warn('Cannot reset version in web', options);
   }
-  async current(): Promise<{ bundle: VersionInfo, native: string }> {
+  async current(): Promise<{ bundle: BundleInfo, native: string }> {
     console.warn('Cannot get current version in web');
     return { bundle: VERSION_BUILTIN, native: '0.0.0' };
   }
@@ -50,7 +50,7 @@ export class CapacitorUpdaterWeb
     console.warn('Cannot reload current version in web');
     return;
   }
-  async notifyAppReady(): Promise<VersionInfo> {
+  async notifyAppReady(): Promise<BundleInfo> {
     console.warn('Cannot notify App Ready in web');
     return VERSION_BUILTIN;
   }

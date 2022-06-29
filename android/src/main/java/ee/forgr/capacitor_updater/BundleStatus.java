@@ -3,7 +3,7 @@ package ee.forgr.capacitor_updater;
 import java.util.HashMap;
 import java.util.Map;
 
-public enum VersionStatus {
+public enum BundleStatus {
     SUCCESS("success"),
     ERROR("error"),
     PENDING("pending"),
@@ -11,14 +11,14 @@ public enum VersionStatus {
 
     public final String label;
 
-    private static final Map<String, VersionStatus> BY_LABEL = new HashMap<>();
+    private static final Map<String, BundleStatus> BY_LABEL = new HashMap<>();
     static {
-        for (final VersionStatus e: values()) {
+        for (final BundleStatus e: values()) {
             BY_LABEL.put(e.label, e);
         }
     }
 
-    VersionStatus(final String label) {
+    BundleStatus(final String label) {
         this.label = label;
     }
 
@@ -27,10 +27,10 @@ public enum VersionStatus {
         return this.label;
     }
 
-    public static VersionStatus fromString(final String status) {
+    public static BundleStatus fromString(final String status) {
         if(status == null || status.isEmpty()) {
-            return VersionStatus.PENDING;
+            return BundleStatus.PENDING;
         }
-        return VersionStatus.BY_LABEL.get(status);
+        return BundleStatus.BY_LABEL.get(status);
     }
 }

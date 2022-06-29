@@ -16,8 +16,8 @@
 		50ADFFA42020D75100D50D53 /* Capacitor.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 50ADFFA52020D75100D50D53 /* Capacitor.framework */; };
 		50ADFFA82020EE4F00D50D53 /* CapacitorUpdaterPlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = 50ADFFA72020EE4F00D50D53 /* CapacitorUpdaterPlugin.m */; };
 		50E1A94820377CB70090CE1A /* CapacitorUpdaterPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50E1A94720377CB70090CE1A /* CapacitorUpdaterPlugin.swift */; };
-		863289042823450E0057FC90 /* VersionInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 863289032823450E0057FC90 /* VersionInfo.swift */; };
-		863289062823453C0057FC90 /* VersionStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 863289052823453C0057FC90 /* VersionStatus.swift */; };
+		863289042823450E0057FC90 /* BundleInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 863289032823450E0057FC90 /* BundleInfo.swift */; };
+		863289062823453C0057FC90 /* BundleStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 863289052823453C0057FC90 /* BundleStatus.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -43,8 +43,8 @@
 		50ADFFA72020EE4F00D50D53 /* CapacitorUpdaterPlugin.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = CapacitorUpdaterPlugin.m; sourceTree = "<group>"; };
 		50E1A94720377CB70090CE1A /* CapacitorUpdaterPlugin.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CapacitorUpdaterPlugin.swift; sourceTree = "<group>"; };
 		5E23F77F099397094342571A /* Pods-Plugin.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Plugin.debug.xcconfig"; path = "Pods/Target Support Files/Pods-Plugin/Pods-Plugin.debug.xcconfig"; sourceTree = "<group>"; };
-		863289032823450E0057FC90 /* VersionInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VersionInfo.swift; sourceTree = "<group>"; };
-		863289052823453C0057FC90 /* VersionStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VersionStatus.swift; sourceTree = "<group>"; };
+		863289032823450E0057FC90 /* BundleInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundleInfo.swift; sourceTree = "<group>"; };
+		863289052823453C0057FC90 /* BundleStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundleStatus.swift; sourceTree = "<group>"; };
 		91781294A431A2A7CC6EB714 /* Pods-Plugin.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Plugin.release.xcconfig"; path = "Pods/Target Support Files/Pods-Plugin/Pods-Plugin.release.xcconfig"; sourceTree = "<group>"; };
 		96ED1B6440D6672E406C8D19 /* Pods-PluginTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-PluginTests.debug.xcconfig"; path = "Pods/Target Support Files/Pods-PluginTests/Pods-PluginTests.debug.xcconfig"; sourceTree = "<group>"; };
 		F65BB2953ECE002E1EF3E424 /* Pods-PluginTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-PluginTests.release.xcconfig"; path = "Pods/Target Support Files/Pods-PluginTests/Pods-PluginTests.release.xcconfig"; sourceTree = "<group>"; };
@@ -98,8 +98,8 @@
 			children = (
 				50E1A94720377CB70090CE1A /* CapacitorUpdaterPlugin.swift */,
 				2F98D68124C9AAE400613A4C /* CapacitorUpdater.swift */,
-				863289032823450E0057FC90 /* VersionInfo.swift */,
-				863289052823453C0057FC90 /* VersionStatus.swift */,
+				863289032823450E0057FC90 /* BundleInfo.swift */,
+				863289052823453C0057FC90 /* BundleStatus.swift */,
 				50ADFF8B201F53D600D50D53 /* CapacitorUpdaterPlugin.h */,
 				50ADFFA72020EE4F00D50D53 /* CapacitorUpdaterPlugin.m */,
 				50ADFF8C201F53D600D50D53 /* Info.plist */,
@@ -313,9 +313,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				50E1A94820377CB70090CE1A /* CapacitorUpdaterPlugin.swift in Sources */,
-				863289062823453C0057FC90 /* VersionStatus.swift in Sources */,
+				863289062823453C0057FC90 /* BundleStatus.swift in Sources */,
 				2F98D68224C9AAE500613A4C /* CapacitorUpdater.swift in Sources */,
-				863289042823450E0057FC90 /* VersionInfo.swift in Sources */,
+				863289042823450E0057FC90 /* BundleInfo.swift in Sources */,
 				50ADFFA82020EE4F00D50D53 /* CapacitorUpdaterPlugin.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

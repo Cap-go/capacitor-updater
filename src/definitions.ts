@@ -88,7 +88,7 @@ export interface DownloadEvent {
    * @since  4.0.0
    */
   percent: number;
-  version: VersionInfo;
+  version: BundleInfo;
 }
 export interface MajorAvailableEvent {
   /**
@@ -96,7 +96,7 @@ export interface MajorAvailableEvent {
    *
    * @since  4.0.0
    */
-  version: VersionInfo;
+  version: BundleInfo;
 }
 export interface UpdateAvailableEvent {
   /**
@@ -104,7 +104,7 @@ export interface UpdateAvailableEvent {
    *
    * @since  4.0.0
    */
-  version: VersionInfo;
+  version: BundleInfo;
 }
 
 export interface UpdateFailedEvent {
@@ -113,17 +113,17 @@ export interface UpdateFailedEvent {
    *
    * @since 4.0.0
    */
-  version: VersionInfo;
+  version: BundleInfo;
 }
 
-export interface VersionInfo {
+export interface BundleInfo {
   folder: string;
-  versionName: string;
+  version: string;
   downloaded: string;
-  status: VersionStatus
+  status: BundleStatus
 }
 
-export type VersionStatus = 'success' | 'error' | 'pending' | 'downloading';
+export type BundleStatus = 'success' | 'error' | 'pending' | 'downloading';
 
 export type DownloadChangeListener = (state: DownloadEvent) => void;
 export type MajorAvailableListener = (state: MajorAvailableEvent) => void;
@@ -141,37 +141,37 @@ export interface CapacitorUpdaterPlugin {
    * @returns {Promise<void>} an Promise resolved directly
    * @throws An error if the something went wrong
    */
-  notifyAppReady(): Promise<VersionInfo>;
+  notifyAppReady(): Promise<BundleInfo>;
 
   /**
    * Download a new version from the provided URL, it should be a zip file, with files inside or with a unique folder inside with all your files
    *
-   * @returns {Promise<VersionInfo>} The {@link VersionInfo} for the specified version.
+   * @returns {Promise<BundleInfo>} The {@link BundleInfo} for the specified version.
    * @param url The URL of the bundle zip file (e.g: dist.zip) to be downloaded. (This can be any URL. E.g: Amazon S3, a github tag, any other place you've hosted your bundle.)
-   * @param versionName (optional) set the name of this version
+   * @param version (optional) set the name of this version
    * @example https://example.com/versions/{version}/dist.zip 
    */
-  download(options: { url: string, versionName?: string }): Promise<VersionInfo>;
+  download(options: { url: string, version?: string }): Promise<BundleInfo>;
 
   /**
    * Set the next bundle version to be used when the app is reloaded.
    *
-   * @returns {Promise<VersionInfo>} The {@link VersionInfo} for the specified version.
-   * @param version The version to set as current, next time the app is reloaded. See {@link VersionInfo.version}
-   * @param versionName (optional) set or change the name of this version
+   * @returns {Promise<BundleInfo>} The {@link BundleInfo} for the specified version.
+   * @param version The version to set as current, next time the app is reloaded. See {@link BundleInfo.version}
+   * @param version (optional) set or change the name of this version
    * @throws An error if there are is no index.html file inside the version folder.
    */
-  next(options: { folder: string, versionName?: string }): Promise<VersionInfo>;
+  next(options: { folder: string, version?: string }): Promise<BundleInfo>;
 
   /**
    * Set the current bundle version and immediately reloads the app.
    *
-   * @param version The version to set as current. See {@link VersionInfo.version}
+   * @param version The version to set as current. See {@link BundleInfo.version}
    * @returns {Promise<Void>} An empty promise.
-   * @param versionName (optional) set or change the name of this version
+   * @param version (optional) set or change the name of this version
    * @throws An error if there are is no index.html file inside the version folder.
    */
-  set(options: { folder: string, versionName?: string }): Promise<void>;
+  set(options: { folder: string, version?: string }): Promise<void>;
 
   /**
    * Delete version in storage
@@ -185,10 +185,10 @@ export interface CapacitorUpdaterPlugin {
   /**
    * Get all available versions
    *
-   * @returns {Promise<{version: VersionInfo[]}>} an Promise witht the version list
+   * @returns {Promise<{version: BundleInfo[]}>} an Promise witht the version list
    * @throws An error if the something went wrong
    */
-  list(): Promise<{ versions: VersionInfo[] }>;
+  list(): Promise<{ versions: BundleInfo[] }>;
 
   /**
    * Set the `builtin` version (the one sent to Apple store / Google play store ) as current version
@@ -205,7 +205,7 @@ export interface CapacitorUpdaterPlugin {
    * @returns {Promise<{ current: string, currentNative: string }>} an Promise with the current version name
    * @throws An error if the something went wrong
    */
-  current(): Promise<{ bundle: VersionInfo, native: string }>;
+  current(): Promise<{ bundle: BundleInfo, native: string }>;
 
   /**
    * Reload the view

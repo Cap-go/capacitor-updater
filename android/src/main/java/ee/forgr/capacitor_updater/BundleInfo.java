@@ -11,7 +11,7 @@ import java.util.Date;
 import java.util.Objects;
 import java.util.TimeZone;
 
-public class VersionInfo {
+public class BundleInfo {
     private static final SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ");
 
     public static final String VERSION_BUILTIN = "builtin";
@@ -20,25 +20,25 @@ public class VersionInfo {
 
     private final String downloaded;
     private final String folder;
-    private final String versionName;
-    private final VersionStatus status;
+    private final String version;
+    private final BundleStatus status;
 
     static {
         sdf.setTimeZone(TimeZone.getTimeZone("GMT"));
     }
 
-    public VersionInfo(final VersionInfo source) {
-        this(source.folder, source.versionName, source.status, source.downloaded);
+    public BundleInfo(final BundleInfo source) {
+        this(source.folder, source.version, source.status, source.downloaded);
     }
 
-    public VersionInfo(final String folder, final String version, final VersionStatus status, final Date downloaded) {
+    public BundleInfo(final String folder, final String version, final BundleStatus status, final Date downloaded) {
         this(folder, version, status, sdf.format(downloaded));
     }
 
-    public VersionInfo(final String folder, final String version, final VersionStatus status, final String downloaded) {
+    public BundleInfo(final String folder, final String version, final BundleStatus status, final String downloaded) {
         this.downloaded = downloaded.trim();
         this.folder = folder;
-        this.versionName = version;
+        this.version = version;
         this.status = status;
     }
 
@@ -49,7 +49,7 @@ public class VersionInfo {
         return VERSION_UNKNOWN.equals(this.folder);
     }
     public Boolean isErrorStatus() {
-        return VersionStatus.ERROR == this.status;
+        return BundleStatus.ERROR == this.status;
     }
     public boolean isDownloaded() {
         return !this.isBuiltin() && this.downloaded != null && !this.downloaded.equals("");
@@ -59,44 +59,44 @@ public class VersionInfo {
         return this.isBuiltin() ? DOWNLOADED_BUILTIN : this.downloaded;
     }
 
-    public VersionInfo setDownloaded(Date downloaded) {
-        return new VersionInfo(this.folder, this.versionName, this.status, downloaded);
+    public BundleInfo setDownloaded(Date downloaded) {
+        return new BundleInfo(this.folder, this.version, this.status, downloaded);
     }
 
     public String getFolder() {
         return this.isBuiltin() ? VERSION_BUILTIN : this.folder;
     }
 
-    public VersionInfo setFolder(String folder) {
-        return new VersionInfo(folder, this.versionName, this.status, this.downloaded);
+    public BundleInfo setFolder(String folder) {
+        return new BundleInfo(folder, this.version, this.status, this.downloaded);
     }
 
     public String getVersionName() {
-        return this.versionName == null ? VERSION_BUILTIN : this.versionName;
+        return this.version == null ? VERSION_BUILTIN : this.version;
     }
 
-    public VersionInfo setVersionName(String version) {
-        return new VersionInfo(this.folder, version, this.status, this.downloaded);
+    public BundleInfo setVersionName(String version) {
+        return new BundleInfo(this.folder, version, this.status, this.downloaded);
     }
 
-    public VersionStatus getStatus() {
-        return this.isBuiltin() ? VersionStatus.SUCCESS : this.status;
+    public BundleStatus getStatus() {
+        return this.isBuiltin() ? BundleStatus.SUCCESS : this.status;
     }
 
-    public VersionInfo setStatus(VersionStatus status) {
-        return new VersionInfo(this.folder, this.versionName, status, this.downloaded);
+    public BundleInfo setStatus(BundleStatus status) {
+        return new BundleInfo(this.folder, this.version, status, this.downloaded);
     }
 
-    public static VersionInfo fromJSON(final JSObject json) throws JSONException {
-        return VersionInfo.fromJSON(json.toString());
+    public static BundleInfo fromJSON(final JSObject json) throws JSONException {
+        return BundleInfo.fromJSON(json.toString());
     }
 
-    public static VersionInfo fromJSON(final String jsonString) throws JSONException {
+    public static BundleInfo fromJSON(final String jsonString) throws JSONException {
         JSONObject json = new JSONObject(new JSONTokener(jsonString));
-        return new VersionInfo(
+        return new BundleInfo(
                 json.has("folder") ? json.getString("folder") : "",
-                json.has("versionName") ? json.getString("versionName") : VersionInfo.VERSION_UNKNOWN,
-                json.has("status") ? VersionStatus.fromString(json.getString("status")) : VersionStatus.PENDING,
+                json.has("version") ? json.getString("version") : BundleInfo.VERSION_UNKNOWN,
+                json.has("status") ? BundleStatus.fromString(json.getString("status")) : BundleStatus.PENDING,
                 json.has("downloaded") ? json.getString("downloaded") : ""
         );
     }
@@ -104,7 +104,7 @@ public class VersionInfo {
     public JSObject toJSON() {
         final JSObject result = new JSObject();
         result.put("folder", this.getFolder());
-        result.put("versionName", this.getVersionName());
+        result.put("version", this.getVersionName());
         result.put("downloaded", this.getDownloaded());
         result.put("status", this.getStatus());
         return result;
@@ -113,14 +113,14 @@ public class VersionInfo {
     @Override
     public boolean equals(final Object o) {
         if (this == o) return true;
-        if (!(o instanceof VersionInfo)) return false;
-        final VersionInfo that = (VersionInfo) o;
+        if (!(o instanceof BundleInfo)) return false;
+        final BundleInfo that = (BundleInfo) o;
         return this.getFolder().equals(that.getFolder());
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(this.versionName);
+        return Objects.hash(this.version);
     }
 
     @Override
