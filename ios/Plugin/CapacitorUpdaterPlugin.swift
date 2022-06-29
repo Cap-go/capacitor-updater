@@ -136,17 +136,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             call.reject("Next called without folder")
             return
         }
-        guard let versionName = call.getString("versionName") else {
-            print("\(self.implementation.TAG) Next called without versionName")
-            call.reject("Next called without versionName")
-            return
-        }
 
         print("\(self.implementation.TAG) Setting next active folder \(folder)")
         if (!self.implementation.setNextVersion(next: folder)) {
             call.reject("Set next version failed. folder \(folder) does not exist.")
         } else {
-            self.implementation.setVersionName(folder: folder, versionName: versionName)
             call.resolve(self.implementation.getVersionInfo(folder: folder).toJSON())
         }
     }

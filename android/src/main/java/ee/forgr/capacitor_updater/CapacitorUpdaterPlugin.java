@@ -223,16 +223,12 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     @PluginMethod
     public void next(final PluginCall call) {
         final String folder = call.getString("folder");
-        final String versionName = call.getString("versionName", "");
 
         try {
             Log.i(CapacitorUpdater.TAG, "Setting next active folder " + folder);
             if (!this.implementation.setNextVersion(folder)) {
                 call.reject("Set next folder failed. Version " + folder + " does not exist.");
             } else {
-                if(!"".equals(versionName)) {
-                    this.implementation.setVersionName(folder, versionName);
-                }
                 call.resolve(this.implementation.getVersionInfo(folder).toJSON());
             }
         } catch (final Exception e) {
