@@ -2,7 +2,7 @@ import { WebPlugin } from '@capacitor/core';
 
 import type { CapacitorUpdaterPlugin, BundleInfo } from './definitions';
 
-const VERSION_BUILTIN: BundleInfo = { status: 'success', version: '', downloaded: '1970-01-01T00:00:00.000Z', folder: 'builtin' };
+const VERSION_BUILTIN: BundleInfo = { status: 'success', version: '', downloaded: '1970-01-01T00:00:00.000Z', id: 'builtin' };
 
 export class CapacitorUpdaterWeb
   extends WebPlugin
@@ -11,7 +11,7 @@ export class CapacitorUpdaterWeb
     console.warn('Cannot download version in web', options);
     return VERSION_BUILTIN;
   }
-  async next(options: { folder: string, version?: string }): Promise<BundleInfo> {
+  async next(options: { id: string, version?: string }): Promise<BundleInfo> {
     console.warn('Cannot set next version in web', options);
     return VERSION_BUILTIN;
   }
@@ -20,7 +20,7 @@ export class CapacitorUpdaterWeb
     console.warn('Cannot get isAutoUpdateEnabled version in web');
     return { enabled: false };
   }
-  async set(options: { folder: string, version?: string }): Promise<void> {
+  async set(options: { id: string, version?: string }): Promise<void> {
     console.warn('Cannot set version in web', options);
     return;
   }
@@ -32,7 +32,7 @@ export class CapacitorUpdaterWeb
     console.warn('Cannot get version in web');
     return { version: 'default'};
   }
-  async delete(options: { folder: string }): Promise<void> {
+  async delete(options: { id: string }): Promise<void> {
     console.warn('Cannot delete version in web', options);
   }
   async list(): Promise<{ versions: BundleInfo[] }> {
