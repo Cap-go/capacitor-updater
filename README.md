@@ -126,8 +126,7 @@ Capacitor Updator works by unzipping a compiled app bundle to the native device 
 * [`reset(...)`](#reset)
 * [`current()`](#current)
 * [`reload()`](#reload)
-* [`delayUpdate()`](#delayupdate)
-* [`cancelDelay()`](#canceldelay)
+* [`setDelay(...)`](#setdelay)
 * [`addListener('download', ...)`](#addlistenerdownload)
 * [`addListener('majorAvailable', ...)`](#addlistenermajoravailable)
 * [`addListener('updateAvailable', ...)`](#addlistenerupdateavailable)
@@ -148,12 +147,12 @@ Capacitor Updator works by unzipping a compiled app bundle to the native device 
 ### notifyAppReady()
 
 ```typescript
-notifyAppReady() => Promise<VersionInfo>
+notifyAppReady() => Promise<BundleInfo>
 ```
 
 Notify Capacitor Updater that the current bundle is working (a rollback will occur of this method is not called on every app launch)
 
-**Returns:** <code>Promise&lt;<a href="#versioninfo">VersionInfo</a>&gt;</code>
+**Returns:** <code>Promise&lt;<a href="#bundleinfo">BundleInfo</a>&gt;</code>
 
 --------------------
 
@@ -161,16 +160,16 @@ Notify Capacitor Updater that the current bundle is working (a rollback will occ
 ### download(...)
 
 ```typescript
-download(options: { url: string; versionName?: string; }) => Promise<VersionInfo>
+download(options: { url: string; version?: string; }) => Promise<BundleInfo>
 ```
 
-Download a new version from the provided URL, it should be a zip file, with files inside or with a unique folder inside with all your files
+Download a new version from the provided URL, it should be a zip file, with files inside or with a unique id inside with all your files
 
-| Param         | Type                                                |
-| ------------- | --------------------------------------------------- |
-| **`options`** | <code>{ url: string; versionName?: string; }</code> |
+| Param         | Type                                            |
+| ------------- | ----------------------------------------------- |
+| **`options`** | <code>{ url: string; version?: string; }</code> |
 
-**Returns:** <code>Promise&lt;<a href="#versioninfo">VersionInfo</a>&gt;</code>
+**Returns:** <code>Promise&lt;<a href="#bundleinfo">BundleInfo</a>&gt;</code>
 
 --------------------
 
@@ -178,16 +177,16 @@ Download a new version from the provided URL, it should be a zip file, with file
 ### next(...)
 
 ```typescript
-next(options: { version: string; versionName?: string; }) => Promise<VersionInfo>
+next(options: { id: string; version?: string; }) => Promise<BundleInfo>
 ```
 
 Set the next bundle version to be used when the app is reloaded.
 
-| Param         | Type                                                    |
-| ------------- | ------------------------------------------------------- |
-| **`options`** | <code>{ version: string; versionName?: string; }</code> |
+| Param         | Type                                           |
+| ------------- | ---------------------------------------------- |
+| **`options`** | <code>{ id: string; version?: string; }</code> |
 
-**Returns:** <code>Promise&lt;<a href="#versioninfo">VersionInfo</a>&gt;</code>
+**Returns:** <code>Promise&lt;<a href="#bundleinfo">BundleInfo</a>&gt;</code>
 
 --------------------
 
@@ -195,14 +194,14 @@ Set the next bundle version to be used when the app is reloaded.
 ### set(...)
 
 ```typescript
-set(options: { version: string; versionName?: string; }) => Promise<void>
+set(options: { id: string; version?: string; }) => Promise<void>
 ```
 
 Set the current bundle version and immediately reloads the app.
 
-| Param         | Type                                                    |
-| ------------- | ------------------------------------------------------- |
-| **`options`** | <code>{ version: string; versionName?: string; }</code> |
+| Param         | Type                                           |
+| ------------- | ---------------------------------------------- |
+| **`options`** | <code>{ id: string; version?: string; }</code> |
 
 --------------------
 
@@ -210,14 +209,14 @@ Set the current bundle version and immediately reloads the app.
 ### delete(...)
 
 ```typescript
-delete(options: { version: string; }) => Promise<void>
+delete(options: { id: string; }) => Promise<void>
 ```
 
 Delete version in storage
 
-| Param         | Type                              |
-| ------------- | --------------------------------- |
-| **`options`** | <code>{ version: string; }</code> |
+| Param         | Type                         |
+| ------------- | ---------------------------- |
+| **`options`** | <code>{ id: string; }</code> |
 
 --------------------
 
@@ -225,12 +224,12 @@ Delete version in storage
 ### list()
 
 ```typescript
-list() => Promise<{ versions: VersionInfo[]; }>
+list() => Promise<{ versions: BundleInfo[]; }>
 ```
 
 Get all available versions
 
-**Returns:** <code>Promise&lt;{ versions: VersionInfo[]; }&gt;</code>
+**Returns:** <code>Promise&lt;{ versions: BundleInfo[]; }&gt;</code>
 
 --------------------
 
@@ -253,12 +252,12 @@ Set the `builtin` version (the one sent to Apple store / Google play store ) as 
 ### current()
 
 ```typescript
-current() => Promise<{ bundle: VersionInfo; native: string; }>
+current() => Promise<{ bundle: BundleInfo; native: string; }>
 ```
 
 Get the current version, if none are set it returns `builtin`, currentNative is the original version install on the device
 
-**Returns:** <code>Promise&lt;{ bundle: <a href="#versioninfo">VersionInfo</a>; native: string; }&gt;</code>
+**Returns:** <code>Promise&lt;{ bundle: <a href="#bundleinfo">BundleInfo</a>; native: string; }&gt;</code>
 
 --------------------
 
@@ -274,24 +273,17 @@ Reload the view
 --------------------
 
 
-### delayUpdate()
+### setDelay(...)
 
 ```typescript
-delayUpdate() => Promise<void>
+setDelay(options: { delay: boolean; }) => Promise<void>
 ```
 
-Skip updates in the next time the app goes into the background, only in auto-update
+Set delay to skip updates in the next time the app goes into the background
 
---------------------
-
-
-### cancelDelay()
-
-```typescript
-cancelDelay() => Promise<void>
-```
-
-Allow update in the next time the app goes into the background, only in auto-update
+| Param         | Type                             |
+| ------------- | -------------------------------- |
+| **`options`** | <code>{ delay: boolean; }</code> |
 
 --------------------
 
@@ -443,14 +435,14 @@ removeAllListeners() => Promise<void>
 ### Interfaces
 
 
-#### VersionInfo
+#### BundleInfo
 
-| Prop             | Type                                                    |
-| ---------------- | ------------------------------------------------------- |
-| **`version`**    | <code>string</code>                                     |
-| **`downloaded`** | <code>string</code>                                     |
-| **`name`**       | <code>string</code>                                     |
-| **`status`**     | <code><a href="#versionstatus">VersionStatus</a></code> |
+| Prop             | Type                                                  |
+| ---------------- | ----------------------------------------------------- |
+| **`id`**         | <code>string</code>                                   |
+| **`version`**    | <code>string</code>                                   |
+| **`downloaded`** | <code>string</code>                                   |
+| **`status`**     | <code><a href="#bundlestatus">BundleStatus</a></code> |
 
 
 #### PluginListenerHandle
@@ -462,38 +454,39 @@ removeAllListeners() => Promise<void>
 
 #### DownloadEvent
 
-| Prop          | Type                | Description                                    | Since  |
-| ------------- | ------------------- | ---------------------------------------------- | ------ |
-| **`percent`** | <code>number</code> | Current status of download, between 0 and 100. | 2.0.11 |
+| Prop          | Type                                              | Description                                    | Since |
+| ------------- | ------------------------------------------------- | ---------------------------------------------- | ----- |
+| **`percent`** | <code>number</code>                               | Current status of download, between 0 and 100. | 4.0.0 |
+| **`version`** | <code><a href="#bundleinfo">BundleInfo</a></code> |                                                |       |
 
 
 #### MajorAvailableEvent
 
-| Prop          | Type                                                | Description                                 | Since |
-| ------------- | --------------------------------------------------- | ------------------------------------------- | ----- |
-| **`version`** | <code><a href="#versioninfo">VersionInfo</a></code> | Emit when a new major version is available. | 2.3.0 |
+| Prop          | Type                                              | Description                                 | Since |
+| ------------- | ------------------------------------------------- | ------------------------------------------- | ----- |
+| **`version`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emit when a new major version is available. | 4.0.0 |
 
 
 #### UpdateAvailableEvent
 
-| Prop          | Type                                                | Description                          | Since |
-| ------------- | --------------------------------------------------- | ------------------------------------ | ----- |
-| **`version`** | <code><a href="#versioninfo">VersionInfo</a></code> | Emit when a new update is available. | 3.0.0 |
+| Prop          | Type                                              | Description                          | Since |
+| ------------- | ------------------------------------------------- | ------------------------------------ | ----- |
+| **`version`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emit when a new update is available. | 4.0.0 |
 
 
 #### UpdateFailedEvent
 
-| Prop          | Type                                                | Description                           | Since |
-| ------------- | --------------------------------------------------- | ------------------------------------- | ----- |
-| **`version`** | <code><a href="#versioninfo">VersionInfo</a></code> | Emit when a update failed to install. | 4.0.0 |
+| Prop          | Type                                              | Description                           | Since |
+| ------------- | ------------------------------------------------- | ------------------------------------- | ----- |
+| **`version`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emit when a update failed to install. | 4.0.0 |
 
 
 ### Type Aliases
 
 
-#### VersionStatus
+#### BundleStatus
 
-<code>'success' | 'error' | 'pending'</code>
+<code>'success' | 'error' | 'pending' | 'downloading'</code>
 
 
 #### DownloadChangeListener
