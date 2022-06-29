@@ -300,7 +300,7 @@ public class CapacitorUpdater {
     }
 
     public void commit(final BundleInfo bundle) {
-        this.setBundleStatus(bundle.getVersionName(), BundleStatus.SUCCESS);
+        this.setBundleStatus(bundle.getId(), BundleStatus.SUCCESS);
         this.setFallbackVersion(bundle);
     }
 
@@ -309,7 +309,7 @@ public class CapacitorUpdater {
     }
 
     public void rollback(final BundleInfo bundle) {
-        this.setBundleStatus(bundle.getVersionName(), BundleStatus.ERROR);
+        this.setBundleStatus(bundle.getId(), BundleStatus.ERROR);
     }
 
     public void reset(final boolean internal) {
