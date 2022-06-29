@@ -221,15 +221,12 @@ public class CapacitorUpdater {
         final String id = this.randomString(10);
         this.saveBundleInfo(id, new BundleInfo(id, version, BundleStatus.DOWNLOADING, new Date(System.currentTimeMillis())));
         this.notifyDownload(id, 0);
-        final String path = this.randomString(10);
-        final File zipFile = new File(this.documentsDir, path);
-        final String idNameUnZip = this.randomString(10);
         final String idName = bundleDirectory + "/" + id;
         this.notifyDownload(id, 5);
-        final File downloaded = this.downloadFile(id, url, path);
+        final File downloaded = this.downloadFile(id, url, this.randomString(10));
         this.notifyDownload(id, 71);
-        final File unzipped = this.unzip(id, downloaded, idNameUnZip);
-        zipFile.delete();
+        final File unzipped = this.unzip(id, downloaded, this.randomString(10));
+        downloaded.delete();
         this.notifyDownload(id, 91);
         this.flattenAssets(unzipped, idName);
         this.notifyDownload(id, 100);
