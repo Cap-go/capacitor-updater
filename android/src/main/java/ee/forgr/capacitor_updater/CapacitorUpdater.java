@@ -439,10 +439,10 @@ public class CapacitorUpdater {
         return result;
     }
 
-    public BundleInfo getBundleInfoByName(final String id) {
+    public BundleInfo getBundleInfoByName(final String versionName) {
         final List<BundleInfo> installed = this.list();
         for(final BundleInfo i : installed) {
-            if(i.getId().equals(id)) {
+            if(i.getVersionName().equals(versionName)) {
                 return i;
             }
         }
