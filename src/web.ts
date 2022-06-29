@@ -11,7 +11,7 @@ export class CapacitorUpdaterWeb
     console.warn('Cannot download version in web', options);
     return VERSION_BUILTIN;
   }
-  async next(options: { id: string, version?: string }): Promise<BundleInfo> {
+  async next(options: { id: string }): Promise<BundleInfo> {
     console.warn('Cannot set next version in web', options);
     return VERSION_BUILTIN;
   }
@@ -20,7 +20,7 @@ export class CapacitorUpdaterWeb
     console.warn('Cannot get isAutoUpdateEnabled version in web');
     return { enabled: false };
   }
-  async set(options: { id: string, version?: string }): Promise<void> {
+  async set(options: { id: string }): Promise<void> {
     console.warn('Cannot set version in web', options);
     return;
   }
