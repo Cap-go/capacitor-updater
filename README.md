@@ -177,14 +177,14 @@ Download a new version from the provided URL, it should be a zip file, with file
 ### next(...)
 
 ```typescript
-next(options: { id: string; version?: string; }) => Promise<BundleInfo>
+next(options: { id: string; }) => Promise<BundleInfo>
 ```
 
 Set the next bundle version to be used when the app is reloaded.
 
-| Param         | Type                                           |
-| ------------- | ---------------------------------------------- |
-| **`options`** | <code>{ id: string; version?: string; }</code> |
+| Param         | Type                         |
+| ------------- | ---------------------------- |
+| **`options`** | <code>{ id: string; }</code> |
 
 **Returns:** <code>Promise&lt;<a href="#bundleinfo">BundleInfo</a>&gt;</code>
 
@@ -194,14 +194,14 @@ Set the next bundle version to be used when the app is reloaded.
 ### set(...)
 
 ```typescript
-set(options: { id: string; version?: string; }) => Promise<void>
+set(options: { id: string; }) => Promise<void>
 ```
 
 Set the current bundle version and immediately reloads the app.
 
-| Param         | Type                                           |
-| ------------- | ---------------------------------------------- |
-| **`options`** | <code>{ id: string; version?: string; }</code> |
+| Param         | Type                         |
+| ------------- | ---------------------------- |
+| **`options`** | <code>{ id: string; }</code> |
 
 --------------------
 
