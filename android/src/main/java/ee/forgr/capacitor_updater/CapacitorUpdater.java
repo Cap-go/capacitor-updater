@@ -281,8 +281,8 @@ public class CapacitorUpdater {
         return new File(bundle.getPath(), "/index.html").exists();
     }
 
-    public Boolean set(final BundleInfo version) {
-        return this.set(version.getFolder());
+    public Boolean set(final BundleInfo bundle) {
+        return this.set(bundle.getId());
     }
 
     public Boolean set(final String folder) {
@@ -301,17 +301,17 @@ public class CapacitorUpdater {
         return false;
     }
 
-    public void commit(final BundleInfo version) {
-        this.setBundleStatus(version.getVersionName(), BundleStatus.SUCCESS);
-        this.setFallbackVersion(version);
+    public void commit(final BundleInfo bundle) {
+        this.setBundleStatus(bundle.getVersionName(), BundleStatus.SUCCESS);
+        this.setFallbackVersion(bundle);
     }
 
     public void reset() {
         this.reset(false);
     }
 
-    public void rollback(final BundleInfo version) {
-        this.setBundleStatus(version.getVersionName(), BundleStatus.ERROR);
+    public void rollback(final BundleInfo bundle) {
+        this.setBundleStatus(bundle.getVersionName(), BundleStatus.ERROR);
     }
 
     public void reset(final boolean internal) {
@@ -330,7 +330,7 @@ public class CapacitorUpdater {
         final String versionCode = this.versionCode;
         final String versionOs = this.versionOs;
         final String pluginVersion = CapacitorUpdater.pluginVersion;
-        final String version = this.getCurrentBundle().getFolder();
+        final String version = this.getCurrentBundle().getId();
         final StringRequest stringRequest = new StringRequest(Request.Method.GET, url,
                 new Response.Listener<String>() {
                     @Override
@@ -365,7 +365,7 @@ public class CapacitorUpdater {
         this.requestQueue.add(stringRequest);
     }
 
-    public void sendStats(final String action, final BundleInfo version) {
+    public void sendStats(final String action, final BundleInfo bundle) {
         String statsUrl = this.statsUrl;
         if (statsUrl == null || "".equals(statsUrl) || statsUrl.length() == 0) { return; }
         final URL url;
@@ -375,7 +375,7 @@ public class CapacitorUpdater {
             url = new URL(statsUrl);
             json.put("platform", "android");
             json.put("action", action);
-            json.put("version_name", version.getVersionName());
+            json.put("version_name", bundle.getVersionName());
             json.put("device_id", this.deviceID);
             json.put("version_build", this.versionBuild);
             json.put("version_code", this.versionCode);
@@ -406,7 +406,7 @@ public class CapacitorUpdater {
                     if (responseCode != 200) {
                         Log.e(TAG, "Stats error responseCode: " + responseCode);
                     } else {
-                        Log.i(TAG, "Stats send for \"" + action + "\", version " + version);
+                        Log.i(TAG, "Stats send for \"" + action + "\", version " + bundle.getVersionName());
                     }
                 } catch (final Exception ex) {
                     Log.e(TAG, "Error post stats", ex);
@@ -441,10 +441,10 @@ public class CapacitorUpdater {
         return result;
     }
 
-    public BundleInfo getBundleInfoByName(final String version) {
+    public BundleInfo getBundleInfoByName(final String folder) {
         final List<BundleInfo> installed = this.list();
         for(final BundleInfo i : installed) {
-            if(i.getFolder().equals(version)) {
+            if(i.getId().equals(folder)) {
                 return i;
             }
         }
@@ -465,7 +465,7 @@ public class CapacitorUpdater {
             Log.d(TAG, "Removing info for folder [" + folder + "]");
             this.editor.remove(folder + INFO_SUFFIX);
         } else {
-            final BundleInfo update = info.setFolder(folder);
+            final BundleInfo update = info.setId(folder);
             Log.d(TAG, "Storing info for folder [" + folder + "] " + update.toString());
             this.editor.putString(folder + INFO_SUFFIX, update.toString());
         }

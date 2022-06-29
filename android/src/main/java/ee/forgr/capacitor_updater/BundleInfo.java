@@ -19,7 +19,7 @@ public class BundleInfo {
     public static final String DOWNLOADED_BUILTIN = "1970-01-01T00:00:00.000Z";
 
     private final String downloaded;
-    private final String folder;
+    private final String id;
     private final String version;
     private final BundleStatus status;
 
@@ -28,25 +28,25 @@ public class BundleInfo {
     }
 
     public BundleInfo(final BundleInfo source) {
-        this(source.folder, source.version, source.status, source.downloaded);
+        this(source.id, source.version, source.status, source.downloaded);
     }
 
-    public BundleInfo(final String folder, final String version, final BundleStatus status, final Date downloaded) {
-        this(folder, version, status, sdf.format(downloaded));
+    public BundleInfo(final String id, final String version, final BundleStatus status, final Date downloaded) {
+        this(id, version, status, sdf.format(downloaded));
     }
 
-    public BundleInfo(final String folder, final String version, final BundleStatus status, final String downloaded) {
+    public BundleInfo(final String id, final String version, final BundleStatus status, final String downloaded) {
         this.downloaded = downloaded.trim();
-        this.folder = folder;
+        this.id = id;
         this.version = version;
         this.status = status;
     }
 
     public Boolean isBuiltin() {
-        return VERSION_BUILTIN.equals(this.folder);
+        return VERSION_BUILTIN.equals(this.id);
     }
     public Boolean isUnknown() {
-        return VERSION_UNKNOWN.equals(this.folder);
+        return VERSION_UNKNOWN.equals(this.id);
     }
     public Boolean isErrorStatus() {
         return BundleStatus.ERROR == this.status;
@@ -60,15 +60,15 @@ public class BundleInfo {
     }
 
     public BundleInfo setDownloaded(Date downloaded) {
-        return new BundleInfo(this.folder, this.version, this.status, downloaded);
+        return new BundleInfo(this.id, this.version, this.status, downloaded);
     }
 
-    public String getFolder() {
-        return this.isBuiltin() ? VERSION_BUILTIN : this.folder;
+    public String getId() {
+        return this.isBuiltin() ? VERSION_BUILTIN : this.id;
     }
 
-    public BundleInfo setFolder(String folder) {
-        return new BundleInfo(folder, this.version, this.status, this.downloaded);
+    public BundleInfo setId(String id) {
+        return new BundleInfo(id, this.version, this.status, this.downloaded);
     }
 
     public String getVersionName() {
@@ -76,7 +76,7 @@ public class BundleInfo {
     }
 
     public BundleInfo setVersionName(String version) {
-        return new BundleInfo(this.folder, version, this.status, this.downloaded);
+        return new BundleInfo(this.id, version, this.status, this.downloaded);
     }
 
     public BundleStatus getStatus() {
@@ -84,7 +84,7 @@ public class BundleInfo {
     }
 
     public BundleInfo setStatus(BundleStatus status) {
-        return new BundleInfo(this.folder, this.version, status, this.downloaded);
+        return new BundleInfo(this.id, this.version, status, this.downloaded);
     }
 
     public static BundleInfo fromJSON(final JSObject json) throws JSONException {
@@ -94,7 +94,7 @@ public class BundleInfo {
     public static BundleInfo fromJSON(final String jsonString) throws JSONException {
         JSONObject json = new JSONObject(new JSONTokener(jsonString));
         return new BundleInfo(
-                json.has("folder") ? json.getString("folder") : "",
+                json.has("id") ? json.getString("id") : "",
                 json.has("version") ? json.getString("version") : BundleInfo.VERSION_UNKNOWN,
                 json.has("status") ? BundleStatus.fromString(json.getString("status")) : BundleStatus.PENDING,
                 json.has("downloaded") ? json.getString("downloaded") : ""
@@ -103,7 +103,7 @@ public class BundleInfo {
 
     public JSObject toJSON() {
         final JSObject result = new JSObject();
-        result.put("folder", this.getFolder());
+        result.put("id", this.getId());
         result.put("version", this.getVersionName());
         result.put("downloaded", this.getDownloaded());
         result.put("status", this.getStatus());
@@ -115,7 +115,7 @@ public class BundleInfo {
         if (this == o) return true;
         if (!(o instanceof BundleInfo)) return false;
         final BundleInfo that = (BundleInfo) o;
-        return this.getFolder().equals(that.getFolder());
+        return this.getId().equals(that.getId());
     }
 
     @Override

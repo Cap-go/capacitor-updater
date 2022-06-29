@@ -8,31 +8,31 @@ import Foundation
     public static let DOWNLOADED_BUILTIN: String = "1970-01-01T00:00:00.000Z"
 
     private let downloaded: String
-    private let folder: String
+    private let id: String
     private let version: String
     private let status: BundleStatus
     
-    convenience init(folder: String, version: String, status: BundleStatus, downloaded: Date) {
-        self.init(folder: folder, version: version, status: status, downloaded: downloaded.iso8601withFractionalSeconds)
+    convenience init(id: String, version: String, status: BundleStatus, downloaded: Date) {
+        self.init(id: id, version: version, status: status, downloaded: downloaded.iso8601withFractionalSeconds)
     }
 
-    init(folder: String, version: String, status: BundleStatus, downloaded: String = BundleInfo.DOWNLOADED_BUILTIN) {
+    init(id: String, version: String, status: BundleStatus, downloaded: String = BundleInfo.DOWNLOADED_BUILTIN) {
         self.downloaded = downloaded.trim()
-        self.folder = folder
+        self.id = id
         self.version = version
         self.status = status
     }
     
     enum CodingKeys: String, CodingKey {
-        case downloaded, folder, version, status
+        case downloaded, id, version, status
     }
     
     public func isBuiltin() -> Bool {
-        return BundleInfo.VERSION_BUILTIN == self.folder
+        return BundleInfo.VERSION_BUILTIN == self.id
     }
 
     public func isUnknown() -> Bool {
-        return BundleInfo.VERSION_UNKNOWN == self.folder
+        return BundleInfo.VERSION_UNKNOWN == self.id
     }
 
     public func isErrorStatus() -> Bool {
@@ -48,15 +48,15 @@ import Foundation
     }
     
     public func setDownloaded(downloaded: Date) -> BundleInfo {
-        return BundleInfo(folder: self.folder, version: self.version, status: self.status, downloaded: downloaded)
+        return BundleInfo(id: self.id, version: self.version, status: self.status, downloaded: downloaded)
     }
 
-    public func getFolder() -> String {
-        return self.isBuiltin() ? BundleInfo.VERSION_BUILTIN : self.folder
+    public func getId() -> String {
+        return self.isBuiltin() ? BundleInfo.VERSION_BUILTIN : self.id
     }
 
-    public func setFolder(folder: String) -> BundleInfo {
-        return BundleInfo(folder: folder, version: self.version, status: self.status, downloaded: self.downloaded)
+    public func setId(id: String) -> BundleInfo {
+        return BundleInfo(id: id, version: self.version, status: self.status, downloaded: self.downloaded)
     }
 
     public func getVersionName() -> String {
@@ -64,7 +64,7 @@ import Foundation
     }
 
     public func setVersionName(version: String) -> BundleInfo {
-        return BundleInfo(folder: self.folder, version: version, status: self.status, downloaded: self.downloaded)
+        return BundleInfo(id: self.id, version: version, status: self.status, downloaded: self.downloaded)
     }
 
     public func getStatus() -> String {
@@ -72,12 +72,12 @@ import Foundation
     }
 
     public func setStatus(status: String) -> BundleInfo {
-        return BundleInfo(folder: self.folder, version: self.version, status: BundleStatus(localizedString: status)!, downloaded: self.downloaded)
+        return BundleInfo(id: self.id, version: self.version, status: BundleStatus(localizedString: status)!, downloaded: self.downloaded)
     }
 
     public func toJSON() -> [String: String] {
         return [
-            "folder": self.getFolder(),
+            "id": self.getId(),
             "version": self.getVersionName(),
             "downloaded": self.getDownloaded(),
             "status": self.getStatus(),
@@ -89,6 +89,6 @@ import Foundation
     }
 
     public func toString() -> String {
-        return "{ \"downloaded\": \"\(self.getDownloaded())\", \"folder\": \"\(self.getFolder())\", \"version\": \"\(self.getVersionName())\", \"status\": \"\(self.getStatus())\"}"
+        return "{ \"downloaded\": \"\(self.getDownloaded())\", \"id\": \"\(self.getId())\", \"version\": \"\(self.getVersionName())\", \"status\": \"\(self.getStatus())\"}"
     }
 }

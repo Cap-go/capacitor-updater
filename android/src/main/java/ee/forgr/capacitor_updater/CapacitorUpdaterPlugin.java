@@ -110,12 +110,12 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                     Log.i(CapacitorUpdater.TAG, "New native major version detected: " + this.currentVersionNative);
                     this.implementation.reset(true);
                     final List<BundleInfo> installed = this.implementation.list();
-                    for (final BundleInfo version: installed) {
+                    for (final BundleInfo bundle: installed) {
                         try {
-                            Log.i(CapacitorUpdater.TAG, "Deleting obsolete version: " + version);
-                            this.implementation.delete(version.getFolder());
+                            Log.i(CapacitorUpdater.TAG, "Deleting obsolete bundle: " + bundle.getId());
+                            this.implementation.delete(bundle.getId());
                         } catch (final Exception e) {
-                            Log.e(CapacitorUpdater.TAG, "Failed to delete: " + version, e);
+                            Log.e(CapacitorUpdater.TAG, "Failed to delete: " + bundle.getId(), e);
                         }
                     }
                 }
@@ -280,10 +280,10 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             final List<BundleInfo> res = this.implementation.list();
             final JSObject ret = new JSObject();
             final JSArray values = new JSArray();
-            for (final BundleInfo version : res) {
-                values.put(version.toJSON());
+            for (final BundleInfo bundle : res) {
+                values.put(bundle.toJSON());
             }
-            ret.put("versions", values);
+            ret.put("bundles", values);
             call.resolve(ret);
         }
         catch(final Exception e) {
@@ -340,8 +340,8 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     public void notifyAppReady(final PluginCall call) {
         try {
             Log.i(CapacitorUpdater.TAG, "Current bundle loaded successfully. ['notifyAppReady()' was called]");
-            final BundleInfo version = this.implementation.getCurrentBundle();
-            this.implementation.commit(version);
+            final BundleInfo bundle = this.implementation.getCurrentBundle();
+            this.implementation.commit(bundle);
             call.resolve();
         }
         catch(final Exception e) {
@@ -428,7 +428,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                             final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
                             final String latestVersionName = (String) res.get("version");
 
-                            if (latestVersionName != null && !"".equals(latestVersionName) && !current.getFolder().equals(latestVersionName)) {
+                            if (latestVersionName != null && !"".equals(latestVersionName) && !current.getId().equals(latestVersionName)) {
 
                                 final BundleInfo latest = CapacitorUpdaterPlugin.this.implementation.getBundleInfoByName(latestVersionName);
                                 if(latest != null) {
@@ -438,7 +438,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                     }
                                     if(latest.isDownloaded()){
                                         Log.e(CapacitorUpdater.TAG, "Latest version already exists and download is NOT required. Update will occur next time app moves to background.");
-                                        CapacitorUpdaterPlugin.this.implementation.setNextVersion(latest.getFolder());
+                                        CapacitorUpdaterPlugin.this.implementation.setNextVersion(latest.getId());
                                         return;
                                     }
                                 }
@@ -448,12 +448,12 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                     @Override
                                     public void run() {
                                         try {
-                                            Log.i(CapacitorUpdater.TAG, "New version: " + latestVersionName + " found. Current is: " + current.getVersionName() + ". Update will occur next time app moves to background.");
+                                            Log.i(CapacitorUpdater.TAG, "New bundle: " + latestVersionName + " found. Current is: " + current.getVersionName() + ". Update will occur next time app moves to background.");
 
                                             final String url = (String) res.get("url");
                                             final BundleInfo next = CapacitorUpdaterPlugin.this.implementation.download(url, latestVersionName);
 
-                                            CapacitorUpdaterPlugin.this.implementation.setNextVersion(next.getFolder());
+                                            CapacitorUpdaterPlugin.this.implementation.setNextVersion(next.getId());
 
                                             final JSObject updateAvailable = new JSObject();
                                             updateAvailable.put("version", next.toJSON());
@@ -499,14 +499,14 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             Log.d(CapacitorUpdater.TAG, "Fallback version is: " + fallback);
             Log.d(CapacitorUpdater.TAG, "Current version is: " + current);
 
-            if (next != null && !next.isErrorStatus() && (next.getFolder() != current.getFolder())) {
+            if (next != null && !next.isErrorStatus() && (next.getId() != current.getId())) {
                 // There is a next version waiting for activation
-                Log.d(CapacitorUpdater.TAG, "Next version is: " + next);
+                Log.d(CapacitorUpdater.TAG, "Next version is: " + next.getVersionName());
                 if (this.implementation.set(next) && this._reload()) {
-                    Log.i(CapacitorUpdater.TAG, "Updated to version: " + next);
+                    Log.i(CapacitorUpdater.TAG, "Updated to version: " + next.getVersionName());
                     this.implementation.setNextVersion(null);
                 } else {
-                    Log.e(CapacitorUpdater.TAG, "Update to version: " + next + " Failed!");
+                    Log.e(CapacitorUpdater.TAG, "Update to version: " + next.getVersionName() + " Failed!");
                 }
             } else if (!success) {
                 // There is a no next version, and the current version has failed
@@ -527,9 +527,9 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                     if (!fallback.isBuiltin() && !fallback.equals(current)) {
                         final Boolean res = this.implementation.set(fallback);
                         if (res && this._reload()) {
-                            Log.i(CapacitorUpdater.TAG, "Revert to version: " + fallback);
+                            Log.i(CapacitorUpdater.TAG, "Revert to version: " + fallback.getVersionName());
                         } else {
-                            Log.e(CapacitorUpdater.TAG, "Revert to version: " + fallback + " Failed!");
+                            Log.e(CapacitorUpdater.TAG, "Revert to version: " + fallback.getVersionName() + " Failed!");
                         }
                     } else {
                         if (this._reset(false)) {
@@ -538,14 +538,14 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                     }
 
                     if (this.autoDeleteFailed) {
-                        Log.i(CapacitorUpdater.TAG, "Deleting failing version: " + current);
+                        Log.i(CapacitorUpdater.TAG, "Deleting failing version: " + current.getVersionName());
                         try {
-                            final Boolean res = this.implementation.delete(current.getFolder());
+                            final Boolean res = this.implementation.delete(current.getId());
                             if (res) {
-                                Log.i(CapacitorUpdater.TAG, "Failed version deleted: " + current);
+                                Log.i(CapacitorUpdater.TAG, "Failed version deleted: " + current.getVersionName());
                             }
                         } catch (final IOException e) {
-                            Log.e(CapacitorUpdater.TAG, "Failed to delete failed version: " + current, e);
+                            Log.e(CapacitorUpdater.TAG, "Failed to delete failed version: " + current.getVersionName(), e);
                         }
                     }
                 } else {
@@ -561,10 +561,10 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                     try {
                         final Boolean res = this.implementation.delete(fallback.getVersionName());
                         if (res) {
-                            Log.i(CapacitorUpdater.TAG, "Deleted previous version: " + fallback);
+                            Log.i(CapacitorUpdater.TAG, "Deleted previous version: " + fallback.getVersionName());
                         }
                     } catch (final IOException e) {
-                        Log.e(CapacitorUpdater.TAG, "Failed to delete previous version: " + fallback, e);
+                        Log.e(CapacitorUpdater.TAG, "Failed to delete previous version: " + fallback.getVersionName(), e);
                     }
                 }
             }
@@ -588,11 +588,11 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                 }
 
                 if(BundleStatus.SUCCESS != current.getStatus()) {
-                    Log.e(CapacitorUpdater.TAG, "notifyAppReady was not called, roll back current version: " + current);
+                    Log.e(CapacitorUpdater.TAG, "notifyAppReady was not called, roll back current bundle: " + current.getId());
                     CapacitorUpdaterPlugin.this.implementation.rollback(current);
                     CapacitorUpdaterPlugin.this._reset(true);
                 } else {
-                    Log.i(CapacitorUpdater.TAG, "notifyAppReady was called. This is fine: " + current);
+                    Log.i(CapacitorUpdater.TAG, "notifyAppReady was called. This is fine: " + current.getId());
                 }
 
                 CapacitorUpdaterPlugin.this.appReadyCheck = null;

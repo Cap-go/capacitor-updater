@@ -66,8 +66,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             UserDefaults.standard.set("", forKey: "LatestVersionNameAutoUpdate")
             let res = implementation.list()
             res.forEach { version in
-                print("\(self.implementation.TAG) Deleting obsolete version: \(version)")
-                _ = implementation.delete(folder: version.getFolder())
+                print("\(self.implementation.TAG) Deleting obsolete bundle: \(version)")
+                _ = implementation.delete(id: version.getId())
             }
         }
         UserDefaults.standard.set( self.currentVersionNative.description, forKey: "LatestVersionNative")
@@ -75,8 +75,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func notifyDownload(folder: String, percent: Int) {
-        let version = self.implementation.getBundleInfo(folder: folder)
-        self.notifyListeners("download", data: ["percent": percent, "version": version.toJSON()])
+        let bundle = self.implementation.getBundleInfo(id: folder)
+        self.notifyListeners("download", data: ["percent": percent, "bundle": bundle.toJSON()])
     }
 
     @objc func getId(_ call: CAPPluginCall) {
@@ -110,9 +110,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
     private func _reload() -> Bool {
         guard let bridge = self.bridge else { return false }
-        let folderName = self.implementation.getCurrentBundleFolderName()
-        let destHot = self.implementation.getPathHot(folderName: folderName)
-        print("\(self.implementation.TAG) Reloading \(folderName)")
+        let id = self.implementation.getCurrentBundleFolderName()
+        let destHot = self.implementation.getPathHot(id: id)
+        print("\(self.implementation.TAG) Reloading \(id)")
         if let vc = bridge.viewController as? CAPBridgeViewController {
             vc.setServerBasePath(path: destHot.path)
             self.checkAppReady()
@@ -131,47 +131,47 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func next(_ call: CAPPluginCall) {
-        guard let folder = call.getString("folder") else {
+        guard let id = call.getString("id") else {
             print("\(self.implementation.TAG) Next called without folder")
             call.reject("Next called without folder")
             return
         }
 
-        print("\(self.implementation.TAG) Setting next active folder \(folder)")
-        if (!self.implementation.setNextVersion(next: folder)) {
-            call.reject("Set next version failed. folder \(folder) does not exist.")
+        print("\(self.implementation.TAG) Setting next active folder \(id)")
+        if (!self.implementation.setNextVersion(next: id)) {
+            call.reject("Set next version failed. folder \(id) does not exist.")
         } else {
-            call.resolve(self.implementation.getBundleInfo(folder: folder).toJSON())
+            call.resolve(self.implementation.getBundleInfo(id: id).toJSON())
         }
     }
     
     @objc func set(_ call: CAPPluginCall) {
-        guard let folder = call.getString("folder") else {
-            print("\(self.implementation.TAG) Set called without folder")
-            call.reject("Set called without folder")
+        guard let id = call.getString("id") else {
+            print("\(self.implementation.TAG) Set called without id")
+            call.reject("Set called without id")
             return
         }
-        let res = implementation.set(folder: folder)
-        print("\(self.implementation.TAG) Set active bundle: \(folder)")
+        let res = implementation.set(id: id)
+        print("\(self.implementation.TAG) Set active bundle: \(id)")
         if (!res) {
-            print("\(self.implementation.TAG) Bundle successfully set to: \(folder) ")
-            call.reject("Update failed, folder \(folder) doesn't exist")
+            print("\(self.implementation.TAG) Bundle successfully set to: \(id) ")
+            call.reject("Update failed, folder \(id) doesn't exist")
         } else {
             self.reload(call)
         }
     }
 
     @objc func delete(_ call: CAPPluginCall) {
-        guard let folder = call.getString("folder") else {
+        guard let id = call.getString("id") else {
             print("\(self.implementation.TAG) Delete called without version")
-            call.reject("Delete called without folder")
+            call.reject("Delete called without id")
             return
         }
-        let res = implementation.delete(folder: folder)
+        let res = implementation.delete(id: id)
         if (res) {
             call.resolve()
         } else {
-            call.reject("Delete failed, folder \(folder) doesn't exist")
+            call.reject("Delete failed, id \(id) doesn't exist")
         }
     }
 
@@ -194,7 +194,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             let LatestVersionAutoUpdate = UserDefaults.standard.string(forKey: "LatestVersionAutoUpdate") ?? ""
             let LatestVersionNameAutoUpdate = UserDefaults.standard.string(forKey: "LatestVersionNameAutoUpdate") ?? ""
             if(toAutoUpdate && LatestVersionAutoUpdate != "" && LatestVersionNameAutoUpdate != "") {
-                let res = implementation.set(folder: LatestVersionNameAutoUpdate)
+                let res = implementation.set(id: LatestVersionNameAutoUpdate)
                 return res && self._reload()
             }
             implementation.reset()
@@ -228,7 +228,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     @objc func notifyAppReady(_ call: CAPPluginCall) {
         print("\(self.implementation.TAG) Current bundle loaded successfully. ['notifyAppReady()' was called]")
         let version = self.implementation.getCurrentBundle()
-        self.implementation.commit(version: version)
+        self.implementation.commit(bundle: version)
         call.resolve()
     }
     
@@ -270,8 +270,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         }
 
         if(BundleStatus.SUCCESS.localizedString != current.getStatus()) {
-            print("\(self.implementation.TAG) notifyAppReady was not called, roll back current version: \(current.toString())")
-            self.implementation.rollback(version: current)
+            print("\(self.implementation.TAG) notifyAppReady was not called, roll back current bundle: \(current.toString())")
+            self.implementation.rollback(bundle: current)
             let res = self._reset(toAutoUpdate: true)
             if (!res) {
                 return
@@ -310,19 +310,19 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                         }
                         if(latest!.isDownloaded()){
                             print("\(self.implementation.TAG) Latest version already exists and download is NOT required. Update will occur next time app moves to background.")
-                            let _ = self.implementation.setNextVersion(next: latest!.getFolder())
+                            let _ = self.implementation.setNextVersion(next: latest!.getId())
                             return
                         }
                     }
 
                     do {
-                        print("\(self.implementation.TAG) New version: \(latestVersionName!) found. Current is: \(current.getVersionName()). Update will occur next time app moves to background.")
+                        print("\(self.implementation.TAG) New bundle: \(latestVersionName!) found. Current is: \(current.getVersionName()). Update will occur next time app moves to background.")
                         let next = try self.implementation.download(url: downloadUrl, version: latestVersionName!)
 
-                        let _ = self.implementation.setNextVersion(next: next.getFolder())
+                        let _ = self.implementation.setNextVersion(next: next.getId())
 
                         self.notifyListeners("updateAvailable", data: [
-                            "version": next.getVersionName()
+                            "bundle": next.getVersionName()
                         ])
                     } catch {
                         print("\(self.implementation.TAG) Error downloading file", error.localizedDescription)
@@ -349,16 +349,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
         let success: Bool = current.getStatus() == BundleStatus.SUCCESS.localizedString
 
-        print("\(self.implementation.TAG) Fallback version is: \(fallback.toString())")
-        print("\(self.implementation.TAG) Current version is: \(current.toString())")
+        print("\(self.implementation.TAG) Fallback bundle is: \(fallback.toString())")
+        print("\(self.implementation.TAG) Current bundle is: \(current.toString())")
 
         if (next != nil && !next!.isErrorStatus() && (next!.getVersionName() != current.getVersionName())) {
-            print("\(self.implementation.TAG) Next version is: \(next!.toString())")
-            if (self.implementation.set(version: next!) && self._reload()) {
-                print("\(self.implementation.TAG) Updated to version: \(next!)")
+            print("\(self.implementation.TAG) Next bundle is: \(next!.toString())")
+            if (self.implementation.set(bundle: next!) && self._reload()) {
+                print("\(self.implementation.TAG) Updated to bundle: \(next!)")
                 let _ = self.implementation.setNextVersion(next: Optional<String>.none)
             } else {
-                print("\(self.implementation.TAG) Updated to version: \(next!) Failed!")
+                print("\(self.implementation.TAG) Updated to bundle: \(next!) Failed!")
             }
         } else if (!success) {
             // There is a no next version, and the current version has failed
@@ -366,7 +366,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             if(!current.isBuiltin()) {
                 // Don't try to roll back the builtin version. Nothing we can do.
 
-                self.implementation.rollback(version: current)
+                self.implementation.rollback(bundle: current)
                 
                 print("\(self.implementation.TAG) Update failed: 'notifyAppReady()' was never called.")
                 print("\(self.implementation.TAG) Version: \(current.toString()), is in error state.")
@@ -376,13 +376,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 self.notifyListeners("updateFailed", data: [
                     "version": current.toJSON()
                 ])
-                self.implementation.sendStats(action: "revert", version: current)
+                self.implementation.sendStats(action: "revert", bundle: current)
                 if (!fallback.isBuiltin() && !(fallback == current)) {
-                    let res = self.implementation.set(version: fallback)
+                    let res = self.implementation.set(bundle: fallback)
                     if (res && self._reload()) {
-                        print("\(self.implementation.TAG) Revert to version: \(fallback.toString())")
+                        print("\(self.implementation.TAG) Revert to bundle: \(fallback.toString())")
                     } else {
-                        print("\(self.implementation.TAG) Revert to version: \(fallback.toString()) Failed!")
+                        print("\(self.implementation.TAG) Revert to bundle: \(fallback.toString()) Failed!")
                     }
                 } else {
                     if (self._reset(toAutoUpdate: false)) {
@@ -391,12 +391,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 }
 
                 if (self.autoDeleteFailed) {
-                    print("\(self.implementation.TAG) Deleting failing version: \(current.toString())")
-                    let res = self.implementation.delete(folder: current.getFolder())
+                    print("\(self.implementation.TAG) Deleting failing bundle: \(current.toString())")
+                    let res = self.implementation.delete(id: current.getId())
                     if (!res) {
                         print("\(self.implementation.TAG) Delete version deleted: \(current.toString())")
                     } else {
-                        print("\(self.implementation.TAG) Failed to delete failed version: \(current.toString())")
+                        print("\(self.implementation.TAG) Failed to delete failed bundle: \(current.toString())")
                     }
                 }
             } else {
@@ -404,15 +404,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             }
         } else if (!fallback.isBuiltin()) {
             // There is a no next version, and the current version has succeeded
-            self.implementation.commit(version: current)
+            self.implementation.commit(bundle: current)
 
             if(self.autoDeletePrevious) {
                 print("\(self.implementation.TAG) Version successfully loaded: \(current.toString())")
-                let res = self.implementation.delete(folder: fallback.getFolder())
+                let res = self.implementation.delete(id: fallback.getId())
                 if (res) {
-                    print("\(self.implementation.TAG) Deleted previous version: \(fallback.toString())")
+                    print("\(self.implementation.TAG) Deleted previous bundle: \(fallback.toString())")
                 } else {
-                    print("\(self.implementation.TAG) Failed to delete previous version: \(fallback.toString())")
+                    print("\(self.implementation.TAG) Failed to delete previous bundle: \(fallback.toString())")
                 }
             }
         }
