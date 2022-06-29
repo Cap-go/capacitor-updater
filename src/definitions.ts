@@ -18,7 +18,7 @@ declare module '@capacitor/cli' {
       appReadyTimeout?: number;
 
       /**
-       * Configure whether the plugin should use automatically delete failed versions.
+       * Configure whether the plugin should use automatically delete failed bundles.
        *
        * Only available for Android and iOS.
        *
@@ -28,7 +28,7 @@ declare module '@capacitor/cli' {
       autoDeleteFailed?: boolean;
 
       /**
-       * Configure whether the plugin should use automatically delete previous versions after a successful update.
+       * Configure whether the plugin should use automatically delete previous bundles after a successful update.
        *
        * Only available for Android and iOS.
        *
@@ -58,7 +58,7 @@ declare module '@capacitor/cli' {
       autoUpdateUrl?: string;
 
       /**
-       * Automatically delete previous downloaded bundles when a newer native version is installed to the device.
+       * Automatically delete previous downloaded bundles when a newer native app version is installed to the device.
        *
        * Only available for Android and iOS.
        *
@@ -88,7 +88,7 @@ export interface DownloadEvent {
    * @since  4.0.0
    */
   percent: number;
-  version: BundleInfo;
+  bundle: BundleInfo;
 }
 export interface MajorAvailableEvent {
   /**
@@ -96,7 +96,7 @@ export interface MajorAvailableEvent {
    *
    * @since  4.0.0
    */
-  version: BundleInfo;
+  bundle: BundleInfo;
 }
 export interface UpdateAvailableEvent {
   /**
@@ -104,7 +104,7 @@ export interface UpdateAvailableEvent {
    *
    * @since  4.0.0
    */
-  version: BundleInfo;
+  bundle: BundleInfo;
 }
 
 export interface UpdateFailedEvent {
@@ -113,7 +113,7 @@ export interface UpdateFailedEvent {
    *
    * @since 4.0.0
    */
-  version: BundleInfo;
+   bundle: BundleInfo;
 }
 
 export interface BundleInfo {
@@ -148,34 +148,34 @@ export interface CapacitorUpdaterPlugin {
    *
    * @returns {Promise<BundleInfo>} The {@link BundleInfo} for the specified version.
    * @param url The URL of the bundle zip file (e.g: dist.zip) to be downloaded. (This can be any URL. E.g: Amazon S3, a github tag, any other place you've hosted your bundle.)
-   * @param version (optional) set the name of this version
+   * @param version (optional) set the version code/name of this bundle/version
    * @example https://example.com/versions/{version}/dist.zip 
    */
   download(options: { url: string, version?: string }): Promise<BundleInfo>;
 
   /**
-   * Set the next bundle version to be used when the app is reloaded.
+   * Set the next bundle to be used when the app is reloaded.
    *
-   * @returns {Promise<BundleInfo>} The {@link BundleInfo.id} for the specified version.
-   * @param id The version id to set as current, next time the app is reloaded. See {@link BundleInfo.id}
+   * @returns {Promise<BundleInfo>} The {@link BundleInfo} for the specified bundle id.
+   * @param id The bundle id to set as current, next time the app is reloaded. See {@link BundleInfo.id}
    * @throws An error if there are is no index.html file inside the version folder.
    */
   next(options: { id: string }): Promise<BundleInfo>;
 
   /**
-   * Set the current bundle version and immediately reloads the app.
+   * Set the current bundle and immediately reloads the app.
    *
-   * @param id The version id to set as current. See {@link BundleInfo.id}
+   * @param id The bundle id to set as current. See {@link BundleInfo.id}
    * @returns {Promise<Void>} An empty promise.
    * @throws An error if there are is no index.html file inside the version folder.
    */
   set(options: { id: string }): Promise<void>;
 
   /**
-   * Delete version in storage
+   * Delete bundle in storage
    *
-   * @returns {Promise<void>} an empty Promise when the version is deleted
-   * @param version The version to delete (note, this is the version, NOT the version name)
+   * @returns {Promise<void>} an empty Promise when the bundle is deleted
+   * @param id The bundle id to delete (note, this is the bundle id, NOT the version name)
    * @throws An error if the something went wrong
    */
   delete(options: { id: string }): Promise<void>;
@@ -186,21 +186,21 @@ export interface CapacitorUpdaterPlugin {
    * @returns {Promise<{version: BundleInfo[]}>} an Promise witht the version list
    * @throws An error if the something went wrong
    */
-  list(): Promise<{ versions: BundleInfo[] }>;
+  list(): Promise<{ bundles: BundleInfo[] }>;
 
   /**
    * Set the `builtin` version (the one sent to Apple store / Google play store ) as current version
    *
    * @returns {Promise<void>} an empty Promise
-   * @param toLastSuccessful [false] if yes it reset to to the last successfully loaded bundle version instead of `builtin`
+   * @param toLastSuccessful [false] if yes it reset to to the last successfully loaded bundle instead of `builtin`
    * @throws An error if the something went wrong
    */
   reset(options?: { toLastSuccessful?: boolean }): Promise<void>;
 
   /**
-   * Get the current version, if none are set it returns `builtin`, currentNative is the original version install on the device
+   * Get the current bundle, if none are set it returns `builtin`, currentNative is the original bundle installed on the device
    *
-   * @returns {Promise<{ current: string, currentNative: string }>} an Promise with the current version name
+   * @returns {Promise<{ current: string, currentNative: string }>} an Promise with the current bundle info
    * @throws An error if the something went wrong
    */
   current(): Promise<{ bundle: BundleInfo, native: string }>;
