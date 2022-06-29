@@ -158,20 +158,18 @@ export interface CapacitorUpdaterPlugin {
    *
    * @returns {Promise<BundleInfo>} The {@link BundleInfo} for the specified version.
    * @param version The version to set as current, next time the app is reloaded. See {@link BundleInfo.version}
-   * @param version (optional) set or change the name of this version
    * @throws An error if there are is no index.html file inside the version id.
    */
-  next(options: { id: string, version?: string }): Promise<BundleInfo>;
+  next(options: { id: string }): Promise<BundleInfo>;
 
   /**
    * Set the current bundle version and immediately reloads the app.
    *
    * @param version The version to set as current. See {@link BundleInfo.version}
    * @returns {Promise<Void>} An empty promise.
-   * @param version (optional) set or change the name of this version
    * @throws An error if there are is no index.html file inside the version id.
    */
-  set(options: { id: string, version?: string }): Promise<void>;
+  set(options: { id: string }): Promise<void>;
 
   /**
    * Delete version in storage
