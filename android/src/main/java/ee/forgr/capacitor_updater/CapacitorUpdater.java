@@ -28,13 +28,11 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLConnection;
 import java.security.SecureRandom;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.TimeZone;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -488,7 +486,7 @@ public class CapacitorUpdater {
         }
     }
 
-    private String getCurrentBundleId() {
+    private String getCurrentBundleFolder() {
         if(this.isUsingBuiltin()) {
             return BundleInfo.VERSION_BUILTIN;
         } else {
@@ -498,7 +496,7 @@ public class CapacitorUpdater {
     }
 
     public BundleInfo getCurrentBundle() {
-        return this.getBundleInfo(this.getCurrentBundleId());
+        return this.getBundleInfo(this.getCurrentBundleFolder());
     }
 
     public String getCurrentBundlePath() {
