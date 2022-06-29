@@ -486,7 +486,7 @@ public class CapacitorUpdater {
         }
     }
 
-    private String getCurrentBundleFolder() {
+    private String getCurrentBundleId() {
         if(this.isUsingBuiltin()) {
             return BundleInfo.VERSION_BUILTIN;
         } else {
@@ -496,7 +496,7 @@ public class CapacitorUpdater {
     }
 
     public BundleInfo getCurrentBundle() {
-        return this.getBundleInfo(this.getCurrentBundleFolder());
+        return this.getBundleInfo(this.getCurrentBundleId());
     }
 
     public String getCurrentBundlePath() {
