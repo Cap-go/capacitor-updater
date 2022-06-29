@@ -94,8 +94,8 @@ public class VersionInfo {
     public static VersionInfo fromJSON(final String jsonString) throws JSONException {
         JSONObject json = new JSONObject(new JSONTokener(jsonString));
         return new VersionInfo(
-                json.has("folder") ? json.getString("name") : "",
-                json.has("versionName") ? json.getString("version") : VersionInfo.VERSION_UNKNOWN,
+                json.has("folder") ? json.getString("folder") : "",
+                json.has("versionName") ? json.getString("versionName") : VersionInfo.VERSION_UNKNOWN,
                 json.has("status") ? VersionStatus.fromString(json.getString("status")) : VersionStatus.PENDING,
                 json.has("downloaded") ? json.getString("downloaded") : ""
         );
