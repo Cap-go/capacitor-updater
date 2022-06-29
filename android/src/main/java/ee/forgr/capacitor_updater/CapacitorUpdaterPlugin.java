@@ -456,7 +456,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                             CapacitorUpdaterPlugin.this.implementation.setNextVersion(next.getId());
 
                                             final JSObject updateAvailable = new JSObject();
-                                            updateAvailable.put("version", next.toJSON());
+                                            updateAvailable.put("bundle", next.toJSON());
                                             CapacitorUpdaterPlugin.this.notifyListeners("updateAvailable", updateAvailable);
                                         } catch (final Exception e) {
                                             Log.e(CapacitorUpdater.TAG, "error downloading file", e);
@@ -521,7 +521,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                     Log.i(CapacitorUpdater.TAG, "Will fallback to: " + fallback + " on application restart.");
                     Log.i(CapacitorUpdater.TAG, "Did you forget to call 'notifyAppReady()' in your Capacitor App code?");
                     final JSObject ret = new JSObject();
-                    ret.put("version", current);
+                    ret.put("bundle", current);
                     this.notifyListeners("updateFailed", ret);
                     this.implementation.sendStats("revert", current);
                     if (!fallback.isBuiltin() && !fallback.equals(current)) {

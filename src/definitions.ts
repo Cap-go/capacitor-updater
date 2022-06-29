@@ -96,7 +96,7 @@ export interface MajorAvailableEvent {
    *
    * @since  4.0.0
    */
-  bundle: BundleInfo;
+  version: string;
 }
 export interface UpdateAvailableEvent {
   /**

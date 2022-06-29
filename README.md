@@ -180,7 +180,7 @@ Download a new version from the provided URL, it should be a zip file, with file
 next(options: { id: string; }) => Promise<BundleInfo>
 ```
 
-Set the next bundle version to be used when the app is reloaded.
+Set the next bundle to be used when the app is reloaded.
 
 | Param         | Type                         |
 | ------------- | ---------------------------- |
@@ -197,7 +197,7 @@ Set the next bundle version to be used when the app is reloaded.
 set(options: { id: string; }) => Promise<void>
 ```
 
-Set the current bundle version and immediately reloads the app.
+Set the current bundle and immediately reloads the app.
 
 | Param         | Type                         |
 | ------------- | ---------------------------- |
@@ -212,7 +212,7 @@ Set the current bundle version and immediately reloads the app.
 delete(options: { id: string; }) => Promise<void>
 ```
 
-Delete version in storage
+Delete bundle in storage
 
 | Param         | Type                         |
 | ------------- | ---------------------------- |
@@ -224,12 +224,12 @@ Delete version in storage
 ### list()
 
 ```typescript
-list() => Promise<{ versions: BundleInfo[]; }>
+list() => Promise<{ bundles: BundleInfo[]; }>
 ```
 
 Get all available versions
 
-**Returns:** <code>Promise&lt;{ versions: BundleInfo[]; }&gt;</code>
+**Returns:** <code>Promise&lt;{ bundles: BundleInfo[]; }&gt;</code>
 
 --------------------
 
@@ -255,7 +255,7 @@ Set the `builtin` version (the one sent to Apple store / Google play store ) as 
 current() => Promise<{ bundle: BundleInfo; native: string; }>
 ```
 
-Get the current version, if none are set it returns `builtin`, currentNative is the original version install on the device
+Get the current bundle, if none are set it returns `builtin`, currentNative is the original bundle installed on the device
 
 **Returns:** <code>Promise&lt;{ bundle: <a href="#bundleinfo">BundleInfo</a>; native: string; }&gt;</code>
 
@@ -457,28 +457,28 @@ removeAllListeners() => Promise<void>
 | Prop          | Type                                              | Description                                    | Since |
 | ------------- | ------------------------------------------------- | ---------------------------------------------- | ----- |
 | **`percent`** | <code>number</code>                               | Current status of download, between 0 and 100. | 4.0.0 |
-| **`version`** | <code><a href="#bundleinfo">BundleInfo</a></code> |                                                |       |
+| **`bundle`**  | <code><a href="#bundleinfo">BundleInfo</a></code> |                                                |       |
 
 
 #### MajorAvailableEvent
 
-| Prop          | Type                                              | Description                                 | Since |
-| ------------- | ------------------------------------------------- | ------------------------------------------- | ----- |
-| **`version`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emit when a new major version is available. | 4.0.0 |
+| Prop          | Type                | Description                                 | Since |
+| ------------- | ------------------- | ------------------------------------------- | ----- |
+| **`version`** | <code>string</code> | Emit when a new major version is available. | 4.0.0 |
 
 
 #### UpdateAvailableEvent
 
-| Prop          | Type                                              | Description                          | Since |
-| ------------- | ------------------------------------------------- | ------------------------------------ | ----- |
-| **`version`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emit when a new update is available. | 4.0.0 |
+| Prop         | Type                                              | Description                          | Since |
+| ------------ | ------------------------------------------------- | ------------------------------------ | ----- |
+| **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emit when a new update is available. | 4.0.0 |
 
 
 #### UpdateFailedEvent
 
-| Prop          | Type                                              | Description                           | Since |
-| ------------- | ------------------------------------------------- | ------------------------------------- | ----- |
-| **`version`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emit when a update failed to install. | 4.0.0 |
+| Prop         | Type                                              | Description                           | Since |
+| ------------ | ------------------------------------------------- | ------------------------------------- | ----- |
+| **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emit when a update failed to install. | 4.0.0 |
 
 
 ### Type Aliases
