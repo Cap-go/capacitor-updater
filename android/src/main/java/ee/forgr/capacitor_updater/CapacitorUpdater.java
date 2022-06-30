@@ -497,7 +497,11 @@ public class CapacitorUpdater {
     }
 
     public String getCurrentBundlePath() {
-        return this.prefs.getString(WebView.CAP_SERVER_PATH, "public");
+        String path = this.prefs.getString(WebView.CAP_SERVER_PATH, "public");
+        if("".equals(path.trim())) {
+            return "public";
+        }
+        return path;
     }
 
     public Boolean isUsingBuiltin() {
