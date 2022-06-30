@@ -14,7 +14,7 @@ import java.util.TimeZone;
 public class BundleInfo {
     private static final SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ");
 
-    public static final String VERSION_BUILTIN = "builtin";
+    public static final String ID_BUILTIN = "builtin";
     public static final String VERSION_UNKNOWN = "unknown";
     public static final String DOWNLOADED_BUILTIN = "1970-01-01T00:00:00.000Z";
 
@@ -43,7 +43,7 @@ public class BundleInfo {
     }
 
     public Boolean isBuiltin() {
-        return VERSION_BUILTIN.equals(this.id);
+        return ID_BUILTIN.equals(this.id);
     }
     public Boolean isUnknown() {
         return VERSION_UNKNOWN.equals(this.id);
@@ -64,7 +64,7 @@ public class BundleInfo {
     }
 
     public String getId() {
-        return this.isBuiltin() ? VERSION_BUILTIN : this.id;
+        return this.isBuiltin() ? ID_BUILTIN : this.id;
     }
 
     public BundleInfo setId(String id) {
@@ -72,7 +72,7 @@ public class BundleInfo {
     }
 
     public String getVersionName() {
-        return this.version == null ? VERSION_BUILTIN : this.version;
+        return this.version == null ? ID_BUILTIN : this.version;
     }
 
     public BundleInfo setVersionName(String version) {

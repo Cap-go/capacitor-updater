@@ -297,7 +297,7 @@ public class CapacitorUpdater {
     }
 
     public void commit(final BundleInfo bundle) {
-        this.setBundleStatus(bundle.getVersionName(), BundleStatus.SUCCESS);
+        this.setBundleStatus(bundle.getId(), BundleStatus.SUCCESS);
         this.setFallbackVersion(bundle);
     }
 
@@ -306,7 +306,7 @@ public class CapacitorUpdater {
     }
 
     public void rollback(final BundleInfo bundle) {
-        this.setBundleStatus(bundle.getVersionName(), BundleStatus.ERROR);
+        this.setBundleStatus(bundle.getId(), BundleStatus.ERROR);
     }
 
     public void reset(final boolean internal) {
@@ -420,7 +420,7 @@ public class CapacitorUpdater {
         }
         Log.d(TAG, "Getting info for [" + id + "]");
         BundleInfo result;
-        if(BundleInfo.VERSION_BUILTIN.equals(id)) {
+        if(BundleInfo.ID_BUILTIN.equals(id)) {
             result = new BundleInfo(id, (String) null, BundleStatus.SUCCESS, "");
         } else {
             try {
@@ -436,10 +436,10 @@ public class CapacitorUpdater {
         return result;
     }
 
-    public BundleInfo getBundleInfoByName(final String id) {
+    public BundleInfo getBundleInfoByName(final String versionName) {
         final List<BundleInfo> installed = this.list();
         for(final BundleInfo i : installed) {
-            if(i.getId().equals(id)) {
+            if(i.getVersionName().equals(versionName)) {
                 return i;
             }
         }
@@ -452,16 +452,16 @@ public class CapacitorUpdater {
 
     private void saveBundleInfo(final String id, final BundleInfo info) {
         if(id == null || (info != null && (info.isBuiltin() || info.isUnknown()))) {
-            Log.d(TAG, "Not saving info for id: [" + id + "] " + info);
+            Log.d(TAG, "Not saving info for: [" + id + "] " + info);
             return;
         }
 
         if(info == null) {
-            Log.d(TAG, "Removing info for id [" + id + "]");
+            Log.d(TAG, "Removing info for [" + id + "]");
             this.editor.remove(id + INFO_SUFFIX);
         } else {
             final BundleInfo update = info.setId(id);
-            Log.d(TAG, "Storing info for id [" + id + "] " + update.toString());
+            Log.d(TAG, "Storing info for [" + id + "] " + update.toString());
             this.editor.putString(id + INFO_SUFFIX, update.toString());
         }
         this.editor.commit();
@@ -485,7 +485,7 @@ public class CapacitorUpdater {
 
     private String getCurrentBundleId() {
         if(this.isUsingBuiltin()) {
-            return BundleInfo.VERSION_BUILTIN;
+            return BundleInfo.ID_BUILTIN;
         } else {
             final String path = this.getCurrentBundlePath();
             return path.substring(path.lastIndexOf('/') + 1);
@@ -505,15 +505,15 @@ public class CapacitorUpdater {
     }
 
     public BundleInfo getFallbackVersion() {
-        final String id = this.prefs.getString(FALLBACK_VERSION, BundleInfo.VERSION_BUILTIN);
+        final String id = this.prefs.getString(FALLBACK_VERSION, BundleInfo.ID_BUILTIN);
         return this.getBundleInfo(id);
     }
 
     private void setFallbackVersion(final BundleInfo fallback) {
         this.editor.putString(FALLBACK_VERSION,
                 fallback == null
-                        ? BundleInfo.VERSION_BUILTIN
-                        : fallback.getVersionName()
+                        ? BundleInfo.ID_BUILTIN
+                        : fallback.getId()
         );
     }
 
