@@ -128,8 +128,8 @@ Capacitor Updator works by unzipping a compiled app bundle to the native device 
 * [`reload()`](#reload)
 * [`setDelay(...)`](#setdelay)
 * [`addListener('download', ...)`](#addlistenerdownload)
+* [`addListener('downloadComplete', ...)`](#addlistenerdownloadcomplete)
 * [`addListener('majorAvailable', ...)`](#addlistenermajoravailable)
-* [`addListener('updateAvailable', ...)`](#addlistenerupdateavailable)
 * [`addListener('updateFailed', ...)`](#addlistenerupdatefailed)
 * [`getId()`](#getid)
 * [`getPluginVersion()`](#getpluginversion)
@@ -308,6 +308,26 @@ Listen for download event in the App, let you know when the download is started,
 --------------------
 
 
+### addListener('downloadComplete', ...)
+
+```typescript
+addListener(eventName: 'downloadComplete', listenerFunc: DownloadCompleteListener) => Promise<PluginListenerHandle> & PluginListenerHandle
+```
+
+Listen for download event in the App, let you know when the download is started, loading and finished
+
+| Param              | Type                                                                          |
+| ------------------ | ----------------------------------------------------------------------------- |
+| **`eventName`**    | <code>'downloadComplete'</code>                                               |
+| **`listenerFunc`** | <code><a href="#downloadcompletelistener">DownloadCompleteListener</a></code> |
+
+**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt; & <a href="#pluginlistenerhandle">PluginListenerHandle</a></code>
+
+**Since:** 4.0.0
+
+--------------------
+
+
 ### addListener('majorAvailable', ...)
 
 ```typescript
@@ -320,26 +340,6 @@ Listen for Major update event in the App, let you know when major update is bloc
 | ------------------ | ------------------------------------------------------------------------- |
 | **`eventName`**    | <code>'majorAvailable'</code>                                             |
 | **`listenerFunc`** | <code><a href="#majoravailablelistener">MajorAvailableListener</a></code> |
-
-**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt; & <a href="#pluginlistenerhandle">PluginListenerHandle</a></code>
-
-**Since:** 2.3.0
-
---------------------
-
-
-### addListener('updateAvailable', ...)
-
-```typescript
-addListener(eventName: 'updateAvailable', listenerFunc: UpdateAvailableListener) => Promise<PluginListenerHandle> & PluginListenerHandle
-```
-
-Listen for update event in the App, let you know when update is ready to install at next app start
-
-| Param              | Type                                                                        |
-| ------------------ | --------------------------------------------------------------------------- |
-| **`eventName`**    | <code>'updateAvailable'</code>                                              |
-| **`listenerFunc`** | <code><a href="#updateavailablelistener">UpdateAvailableListener</a></code> |
 
 **Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt; & <a href="#pluginlistenerhandle">PluginListenerHandle</a></code>
 
@@ -460,18 +460,18 @@ removeAllListeners() => Promise<void>
 | **`bundle`**  | <code><a href="#bundleinfo">BundleInfo</a></code> |                                                |       |
 
 
+#### DownloadCompleteEvent
+
+| Prop         | Type                                              | Description                          | Since |
+| ------------ | ------------------------------------------------- | ------------------------------------ | ----- |
+| **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emit when a new update is available. | 4.0.0 |
+
+
 #### MajorAvailableEvent
 
 | Prop          | Type                | Description                                 | Since |
 | ------------- | ------------------- | ------------------------------------------- | ----- |
 | **`version`** | <code>string</code> | Emit when a new major version is available. | 4.0.0 |
-
-
-#### UpdateAvailableEvent
-
-| Prop         | Type                                              | Description                          | Since |
-| ------------ | ------------------------------------------------- | ------------------------------------ | ----- |
-| **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emit when a new update is available. | 4.0.0 |
 
 
 #### UpdateFailedEvent
@@ -494,14 +494,14 @@ removeAllListeners() => Promise<void>
 <code>(state: <a href="#downloadevent">DownloadEvent</a>): void</code>
 
 
+#### DownloadCompleteListener
+
+<code>(state: <a href="#downloadcompleteevent">DownloadCompleteEvent</a>): void</code>
+
+
 #### MajorAvailableListener
 
 <code>(state: <a href="#majoravailableevent">MajorAvailableEvent</a>): void</code>
-
-
-#### UpdateAvailableListener
-
-<code>(state: <a href="#updateavailableevent">UpdateAvailableEvent</a>): void</code>
 
 
 #### UpdateFailedListener

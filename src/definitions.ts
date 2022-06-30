@@ -98,7 +98,7 @@ export interface MajorAvailableEvent {
    */
   version: string;
 }
-export interface UpdateAvailableEvent {
+export interface DownloadCompleteEvent {
   /**
    * Emit when a new update is available.
    *
@@ -126,8 +126,8 @@ export interface BundleInfo {
 export type BundleStatus = 'success' | 'error' | 'pending' | 'downloading';
 
 export type DownloadChangeListener = (state: DownloadEvent) => void;
+export type DownloadCompleteListener = (state: DownloadCompleteEvent) => void;
 export type MajorAvailableListener = (state: MajorAvailableEvent) => void;
-export type UpdateAvailableListener = (state: UpdateAvailableEvent) => void;
 export type UpdateFailedListener = (state: UpdateFailedEvent) => void;
 
 
@@ -232,6 +232,16 @@ export interface CapacitorUpdaterPlugin {
   ): Promise<PluginListenerHandle> & PluginListenerHandle;
 
   /**
+   * Listen for download event in the App, let you know when the download is started, loading and finished
+   *
+   * @since 4.0.0
+   */
+  addListener(
+    eventName: 'downloadComplete',
+    listenerFunc: DownloadCompleteListener,
+  ): Promise<PluginListenerHandle> & PluginListenerHandle;
+  
+  /**
    * Listen for Major update event in the App, let you know when major update is blocked by setting disableAutoUpdateBreaking
    *
    * @since 2.3.0
@@ -239,16 +249,6 @@ export interface CapacitorUpdaterPlugin {
   addListener(
     eventName: 'majorAvailable',
     listenerFunc: MajorAvailableListener,
-  ): Promise<PluginListenerHandle> & PluginListenerHandle;
-
-  /**
-   * Listen for update event in the App, let you know when update is ready to install at next app start
-   *
-   * @since 2.3.0
-   */
-  addListener(
-    eventName: 'updateAvailable',
-    listenerFunc: UpdateAvailableListener,
   ): Promise<PluginListenerHandle> & PluginListenerHandle;
 
     /**

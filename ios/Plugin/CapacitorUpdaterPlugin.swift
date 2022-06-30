@@ -76,6 +76,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     @objc func notifyDownload(id: String, percent: Int) {
         let bundle = self.implementation.getBundleInfo(id: id)
         self.notifyListeners("download", data: ["percent": percent, "bundle": bundle.toJSON()])
+        if (percent == 100) {
+            self.notifyListeners("downloadComplete", data: ["bundle": bundle.toJSON()])
+        }
     }
 
     @objc func getId(_ call: CAPPluginCall) {
@@ -319,10 +322,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                         let next = try self.implementation.download(url: downloadUrl, version: latestVersionName!)
 
                         let _ = self.implementation.setNextVersion(next: next.getId())
-
-                        self.notifyListeners("updateAvailable", data: [
-                            "bundle": next.getVersionName()
-                        ])
                     } catch {
                         print("\(self.implementation.TAG) Error downloading file", error.localizedDescription)
                     }

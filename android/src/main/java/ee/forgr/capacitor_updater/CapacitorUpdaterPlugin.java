@@ -133,8 +133,12 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         try {
             final JSObject ret = new JSObject();
             ret.put("percent", percent);
-            ret.put("bundle", this.implementation.getBundleInfo(id).toJSON());
+            var bundle = this.implementation.getBundleInfo(id).toJSON();
+            ret.put("bundle", bundle);
             this.notifyListeners("download", ret);
+            if (percent == 100) {
+                this.notifyListeners("downloadComplete", bundle);
+            }
         } catch (final Exception e) {
             Log.e(CapacitorUpdater.TAG, "Could not notify listeners", e);
         }
@@ -454,10 +458,6 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                             final BundleInfo next = CapacitorUpdaterPlugin.this.implementation.download(url, latestVersionName);
 
                                             CapacitorUpdaterPlugin.this.implementation.setNextVersion(next.getId());
-
-                                            final JSObject updateAvailable = new JSObject();
-                                            updateAvailable.put("bundle", next.toJSON());
-                                            CapacitorUpdaterPlugin.this.notifyListeners("updateAvailable", updateAvailable);
                                         } catch (final Exception e) {
                                             Log.e(CapacitorUpdater.TAG, "error downloading file", e);
                                         }
