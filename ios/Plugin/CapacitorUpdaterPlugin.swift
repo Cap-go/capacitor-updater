@@ -9,8 +9,8 @@ import Version
 @objc(CapacitorUpdaterPlugin)
 public class CapacitorUpdaterPlugin: CAPPlugin {
     private var implementation = CapacitorUpdater()
-    static let autoUpdateUrlDefault = "https://capgo.app/api/auto_update"
-    static let statsUrlDefault = "https://capgo.app/api/stats"
+    static let autoUpdateUrlDefault = "https://xvwzpoazmxkqosrdewyv.functions.supabase.co/updates"
+    static let statsUrlDefault = "https://xvwzpoazmxkqosrdewyv.functions.supabase.co/stats"
     static let DELAY_UPDATE = "delayUpdate"
     private var autoUpdateUrl = ""
     private var statsUrl = ""

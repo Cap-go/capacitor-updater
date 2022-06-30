@@ -3,12 +3,11 @@ package ee.forgr.capacitor_updater;
 import android.content.SharedPreferences;
 import android.util.Log;
 
-import com.android.volley.AuthFailureError;
 import com.android.volley.Request;
 import com.android.volley.RequestQueue;
 import com.android.volley.Response;
 import com.android.volley.VolleyError;
-import com.android.volley.toolbox.StringRequest;
+import com.android.volley.toolbox.JsonObjectRequest;
 import com.getcapacitor.plugin.WebView;
 
 import org.json.JSONException;
@@ -16,7 +15,6 @@ import org.json.JSONObject;
 
 import java.io.BufferedInputStream;
 import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -24,15 +22,12 @@ import java.io.FileOutputStream;
 import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLConnection;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -318,7 +313,7 @@ public class CapacitorUpdater {
         }
     }
 
-    public void getLatest(final String url, final Callback callback) {
+    public void getLatest(final String updateUrl, final Callback callback) {
         final String deviceID = this.deviceID;
         final String appId = this.appId;
         final String versionBuild = this.versionBuild;
@@ -326,92 +321,78 @@ public class CapacitorUpdater {
         final String versionOs = this.versionOs;
         final String pluginVersion = CapacitorUpdater.pluginVersion;
         final String version = this.getCurrentBundle().getId();
-        final StringRequest stringRequest = new StringRequest(Request.Method.GET, url,
-                new Response.Listener<String>() {
-                    @Override
-                    public void onResponse(final String response) {
-                        try {
-                            final JSONObject jsonObject = new JSONObject(response);
-                            callback.callback(jsonObject);
-                        } catch (final JSONException e) {
-                            Log.e(TAG, "Error parsing JSON", e);
+        try {
+            JSONObject json = new JSONObject();
+            json.put("platform", "android");
+            json.put("device_id", deviceID);
+            json.put("app_id", appId);
+            json.put("version_build", versionBuild);
+            json.put("version_code", versionCode);
+            json.put("version_os", versionOs);
+            json.put("version_name", version);
+            json.put("plugin_version", pluginVersion);
+
+            // Building a request
+            JsonObjectRequest request = new JsonObjectRequest(
+                    Request.Method.POST,
+                    updateUrl,
+                    json,
+                    new Response.Listener<JSONObject>() {
+                        @Override
+                        public void onResponse(JSONObject response) {
+                            callback.callback(response);
                         }
-                    }
-                }, new Response.ErrorListener() {
-            @Override
-            public void onErrorResponse(final VolleyError error) {
-                Log.e(TAG, "Error getting Latest" +  error);
-            }
-        }) {
-            @Override
-            public Map<String, String> getHeaders() throws AuthFailureError {
-                final Map<String, String>  params = new HashMap<String, String>();
-                params.put("cap_platform", "android");
-                params.put("cap_device_id", deviceID);
-                params.put("cap_app_id", appId);
-                params.put("cap_version_build", versionBuild);
-                params.put("cap_version_code", versionCode);
-                params.put("cap_version_os", versionOs);
-                params.put("cap_version_name", version);
-                params.put("cap_plugin_version", pluginVersion);
-                return params;
-            }
-        };
-        this.requestQueue.add(stringRequest);
+                    },
+                    new Response.ErrorListener(){
+                        @Override
+                        public void onErrorResponse(VolleyError error) {
+                            Log.e(TAG, "Error getting Latest " +  error);
+                        }
+                    });
+            this.requestQueue.add(request);
+        } catch(JSONException ex){
+            // Catch if something went wrong with the params
+            Log.e(TAG, "Error getLatest JSONException " +  ex);
+        }
     }
 
     public void sendStats(final String action, final BundleInfo bundle) {
         String statsUrl = this.statsUrl;
         if (statsUrl == null || "".equals(statsUrl) || statsUrl.length() == 0) { return; }
-        final URL url;
-        final JSONObject json = new JSONObject();
-        final String jsonString;
         try {
-            url = new URL(statsUrl);
+            JSONObject json = new JSONObject();
             json.put("platform", "android");
-            json.put("action", action);
-            json.put("version_name", bundle.getVersionName());
             json.put("device_id", this.deviceID);
+            json.put("app_id", this.appId);
             json.put("version_build", this.versionBuild);
             json.put("version_code", this.versionCode);
             json.put("version_os", this.versionOs);
+            json.put("version_name", bundle.getVersionName());
             json.put("plugin_version", pluginVersion);
-            json.put("app_id", this.appId);
-            jsonString = json.toString();
-        } catch (final Exception ex) {
-            Log.e(TAG, "Error get stats", ex);
-            return;
+            json.put("action", action);
+
+            // Building a request
+            JsonObjectRequest request = new JsonObjectRequest(
+                    Request.Method.POST,
+                    statsUrl,
+                    json,
+                    new Response.Listener<JSONObject>() {
+                        @Override
+                        public void onResponse(JSONObject response) {
+                            Log.i(TAG, "Stats send for \"" + action + "\", version " + bundle.getVersionName());
+                        }
+                    },
+                    new Response.ErrorListener(){
+                        @Override
+                        public void onErrorResponse(VolleyError error) {
+                            Log.i(TAG, "Stats send for \"" + action + "\", version " + bundle.getVersionName());
+                        }
+                    });
+            this.requestQueue.add(request);
+        } catch(JSONException ex){
+            // Catch if something went wrong with the params
+            Log.e(TAG, "Error sendStats JSONException " +  ex);
         }
-        new Thread(new Runnable(){
-            @Override
-            public void run() {
-                HttpURLConnection con = null;
-                try {
-                    con = (HttpURLConnection) url.openConnection();
-                    con.setRequestMethod("POST");
-                    con.setRequestProperty("Content-Type", "application/json");
-                    con.setRequestProperty("Accept", "application/json");
-                    con.setRequestProperty("Content-Length", Integer.toString(jsonString.getBytes().length));
-                    con.setDoOutput(true);
-                    con.setConnectTimeout(500);
-                    final DataOutputStream wr = new DataOutputStream (con.getOutputStream());
-                    wr.writeBytes(jsonString);
-                    wr.close();
-                    final int responseCode = con.getResponseCode();
-                    if (responseCode != 200) {
-                        Log.e(TAG, "Stats error responseCode: " + responseCode);
-                    } else {
-                        Log.i(TAG, "Stats send for \"" + action + "\", version " + bundle.getVersionName());
-                    }
-                } catch (final Exception ex) {
-                    Log.e(TAG, "Error post stats", ex);
-                } finally {
-                    if (con != null) {
-                        con.disconnect();
-                    }
-                }
-            }
-        }).start();
     }
 
     public BundleInfo getBundleInfo(String id) {
@@ -452,7 +433,7 @@ public class CapacitorUpdater {
 
     private void saveBundleInfo(final String id, final BundleInfo info) {
         if(id == null || (info != null && (info.isBuiltin() || info.isUnknown()))) {
-            Log.d(TAG, "Not saving info for: [" + id + "] " + info);
+            Log.d(TAG, "Not saving info for bundle: [" + id + "] " + info);
             return;
         }
 

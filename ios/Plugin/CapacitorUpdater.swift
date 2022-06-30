@@ -206,17 +206,17 @@ extension CustomError: LocalizedError {
     public func getLatest(url: URL) -> AppVersion? {
         let semaphore = DispatchSemaphore(value: 0)
         let latest = AppVersion()
-        let headers: HTTPHeaders = [
-            "cap_platform": "ios",
-            "cap_device_id": self.deviceID,
-            "cap_app_id": self.appId,
-            "cap_version_build": self.versionBuild,
-            "cap_version_code": self.versionCode,
-            "cap_version_os": self.versionOs,
-            "cap_plugin_version": self.pluginVersion,
-            "cap_version_name": self.getCurrentBundle().getVersionName()
+        let parameters: [String: String] = [
+            "platform": "ios",
+            "device_id": self.deviceID,
+            "app_id": self.appId,
+            "version_build": self.versionBuild,
+            "version_code": self.versionCode,
+            "version_os": self.versionOs,
+            "plugin_version": self.pluginVersion,
+            "version_name": self.getCurrentBundle().getVersionName()
         ]
-        let request = AF.request(url, headers: headers)
+        let request = AF.request(url, method: .post,parameters: parameters, encoder: JSONParameterEncoder.default)
 
         request.validate().responseDecodable(of: AppVersionDec.self) { response in
             switch response.result {

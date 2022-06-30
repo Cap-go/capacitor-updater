@@ -32,8 +32,8 @@ import java.util.List;
 
 @CapacitorPlugin(name = "CapacitorUpdater")
 public class CapacitorUpdaterPlugin extends Plugin implements Application.ActivityLifecycleCallbacks {
-    private static final String autoUpdateUrlDefault = "https://capgo.app/api/auto_update";
-    private static final String statsUrlDefault = "https://capgo.app/api/stats";
+    private static final String autoUpdateUrlDefault = "https://xvwzpoazmxkqosrdewyv.functions.supabase.co/updates";
+    private static final String statsUrlDefault = "https://xvwzpoazmxkqosrdewyv.functions.supabase.co/stats";
     private static final String DELAY_UPDATE = "delayUpdate";
 
     private SharedPreferences.Editor editor;
@@ -428,7 +428,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                             final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
                             final String latestVersionName = (String) res.get("version");
 
-                            if (latestVersionName != null && !"".equals(latestVersionName) && !current.getId().equals(latestVersionName)) {
+                            if (latestVersionName != null && !"".equals(latestVersionName) && !current.getVersionName().equals(latestVersionName)) {
 
                                 final BundleInfo latest = CapacitorUpdaterPlugin.this.implementation.getBundleInfoByName(latestVersionName);
                                 if(latest != null) {
