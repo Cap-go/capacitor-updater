@@ -373,7 +373,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 print("\(self.implementation.TAG) Did you forget to call 'notifyAppReady()' in your Capacitor App code?")
 
                 self.notifyListeners("updateFailed", data: [
-                    "version": current.toJSON()
+                    "bundle": current.toJSON()
                 ])
                 self.implementation.sendStats(action: "revert", bundle: current)
                 if (!fallback.isBuiltin() && !(fallback == current)) {

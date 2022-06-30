@@ -413,9 +413,9 @@ extension CustomError: LocalizedError {
         }
     }
 
-    public func getBundleInfo(id: String = BundleInfo.VERSION_BUILTIN) -> BundleInfo {
+    public func getBundleInfo(id: String = BundleInfo.ID_BUILTIN) -> BundleInfo {
         print("\(self.TAG) Getting info for [\(id)]")
-        if(BundleInfo.VERSION_BUILTIN == id) {
+        if(BundleInfo.ID_BUILTIN == id) {
             return BundleInfo(id: id, version: "", status: BundleStatus.SUCCESS)
         }
         do {
@@ -476,7 +476,7 @@ extension CustomError: LocalizedError {
 
     private func getCurrentBundleVersion() -> String {
         if(self.isUsingBuiltin()) {
-            return BundleInfo.VERSION_BUILTIN
+            return BundleInfo.ID_BUILTIN
         } else {
             let path: String = self.getCurrentBundleId()
             return path.lastPathComponent
@@ -496,12 +496,12 @@ extension CustomError: LocalizedError {
     }
 
     public func getFallbackVersion() -> BundleInfo {
-        let id: String = UserDefaults.standard.string(forKey: self.FALLBACK_VERSION) ?? BundleInfo.VERSION_BUILTIN
+        let id: String = UserDefaults.standard.string(forKey: self.FALLBACK_VERSION) ?? BundleInfo.ID_BUILTIN
         return self.getBundleInfo(id: id)
     }
 
     private func setFallbackVersion(fallback: BundleInfo?) {
-        UserDefaults.standard.set(fallback == nil ? BundleInfo.VERSION_BUILTIN : fallback!.getId(), forKey: self.FALLBACK_VERSION)
+        UserDefaults.standard.set(fallback == nil ? BundleInfo.ID_BUILTIN : fallback!.getId(), forKey: self.FALLBACK_VERSION)
     }
 
     public func getNextVersion() -> BundleInfo? {
