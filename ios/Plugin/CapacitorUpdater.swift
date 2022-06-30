@@ -414,16 +414,16 @@ extension CustomError: LocalizedError {
     }
 
     public func getBundleInfo(id: String = BundleInfo.ID_BUILTIN) -> BundleInfo {
-        print("\(self.TAG) Getting info for [\(id)]")
+        print("\(self.TAG) Getting info for bundle [\(id)]")
         if(BundleInfo.ID_BUILTIN == id) {
             return BundleInfo(id: id, version: "", status: BundleStatus.SUCCESS)
         }
         do {
             let result: BundleInfo = try UserDefaults.standard.getObj(forKey: "\(id)\(self.INFO_SUFFIX)", castTo: BundleInfo.self)
-            print("\(self.TAG) Returning info [\(id)]", result.toString())
+            print("\(self.TAG) Returning info bundle [\(id)]", result.toString())
             return result
         } catch {
-            print("\(self.TAG) Failed to parse version info for [\(id)]", error.localizedDescription)
+            print("\(self.TAG) Failed to parse info for bundle [\(id)]", error.localizedDescription)
             return BundleInfo(id: id, version: "", status: BundleStatus.PENDING)
         }
     }

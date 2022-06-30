@@ -418,7 +418,7 @@ public class CapacitorUpdater {
         if(id == null) {
             id = BundleInfo.VERSION_UNKNOWN;
         }
-        Log.d(TAG, "Getting info for [" + id + "]");
+        Log.d(TAG, "Getting info for bundle [" + id + "]");
         BundleInfo result;
         if(BundleInfo.ID_BUILTIN.equals(id)) {
             result = new BundleInfo(id, (String) null, BundleStatus.SUCCESS, "");
@@ -427,7 +427,7 @@ public class CapacitorUpdater {
                 String stored = this.prefs.getString(id + INFO_SUFFIX, "");
                 result = BundleInfo.fromJSON(stored);
             } catch (JSONException e) {
-                Log.e(TAG, "Failed to parse id info for [" + id + "] ", e);
+                Log.e(TAG, "Failed to parse info for bundle [" + id + "] ", e);
                 result = new BundleInfo(id, (String) null, BundleStatus.PENDING, "");
             }
         }
@@ -457,11 +457,11 @@ public class CapacitorUpdater {
         }
 
         if(info == null) {
-            Log.d(TAG, "Removing info for [" + id + "]");
+            Log.d(TAG, "Removing info for bundle [" + id + "]");
             this.editor.remove(id + INFO_SUFFIX);
         } else {
             final BundleInfo update = info.setId(id);
-            Log.d(TAG, "Storing info for [" + id + "] " + update.toString());
+            Log.d(TAG, "Storing info for bundle [" + id + "] " + update.toString());
             this.editor.putString(id + INFO_SUFFIX, update.toString());
         }
         this.editor.commit();
@@ -469,7 +469,7 @@ public class CapacitorUpdater {
 
     public void setVersionName(final String id, final String name) {
         if(id != null) {
-            Log.d(TAG, "Setting name for id [" + id + "] to " + name);
+            Log.d(TAG, "Setting name for bundle [" + id + "] to " + name);
             BundleInfo info = this.getBundleInfo(id);
             this.saveBundleInfo(id, info.setVersionName(name));
         }
@@ -478,7 +478,7 @@ public class CapacitorUpdater {
     private void setBundleStatus(final String id, final BundleStatus status) {
         if(id != null && status != null) {
             BundleInfo info = this.getBundleInfo(id);
-            Log.d(TAG, "Setting status for [" + id + "] to " + status);
+            Log.d(TAG, "Setting status for bundle [" + id + "] to " + status);
             this.saveBundleInfo(id, info.setStatus(status));
         }
     }
