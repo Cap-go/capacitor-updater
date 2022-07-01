@@ -1,6 +1,6 @@
 import { WebPlugin } from '@capacitor/core';
 
-import type { CapacitorUpdaterPlugin, BundleInfo } from './definitions';
+import type { CapacitorUpdaterPlugin, BundleInfo, latestVersion } from './definitions';
 
 const BUNDLE_BUILTIN: BundleInfo = { status: 'success', version: '', downloaded: '1970-01-01T00:00:00.000Z', id: 'builtin' };
 
@@ -49,6 +49,13 @@ export class CapacitorUpdaterWeb
   async reload(): Promise<void> {
     console.warn('Cannot reload current bundle in web');
     return;
+  }
+  async getLatest(): Promise<latestVersion> {
+    console.warn('Cannot getLatest current bundle in web');
+    return {
+      version: "0.0.0",
+      message: "Cannot getLatest current bundle in web",
+    }
   }
   async notifyAppReady(): Promise<BundleInfo> {
     console.warn('Cannot notify App Ready in web');
