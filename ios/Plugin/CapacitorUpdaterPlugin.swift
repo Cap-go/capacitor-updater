@@ -60,7 +60,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             print("\(self.implementation.TAG) Cannot get version native \(currentVersionNative)")
         }
         if (LatestVersionNative != "0.0.0" && currentVersionNative.major > LatestVersionNative.major) {
-            _ = self._reset(toAutoUpdate: false)
+            _ = self._reset(toLastSuccessful: false)
             UserDefaults.standard.set("", forKey: "LatestVersionAutoUpdate")
             UserDefaults.standard.set("", forKey: "LatestVersionNameAutoUpdate")
             let res = implementation.list()
@@ -189,8 +189,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func getLatest(_ call: CAPPluginCall) {
-        let res = self.implementation.getLatest(url: url)
-        call.resolve(res)
+        let res = self.implementation.getLatest(url: URL(string: self.updateUrl)!)
+        call.resolve((res?.toDict())!)
     }
 
     @objc func _reset(toLastSuccessful: Bool) -> Bool {
@@ -200,7 +200,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             let fallback: BundleInfo = self.implementation.getFallbackVersion()
             if (toLastSuccessful && !fallback.isBuiltin()) {
                 print("\(self.implementation.TAG) Resetting to: \(fallback.toString())")
-                return self.implementation.set(fallback) && self._reload()
+                return self.implementation.set(bundle: fallback) && self._reload()
             }
             self.implementation.reset()
             vc.setServerBasePath(path: "")
@@ -215,7 +215,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func reset(_ call: CAPPluginCall) {
-        let toAutoUpdate = call.getBool("toLastSuccessful") ?? false
+        let toLastSuccessful = call.getBool("toLastSuccessful") ?? false
         if (self._reset(toLastSuccessful: toLastSuccessful)) {
             return call.resolve()
         }
@@ -277,7 +277,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         if(BundleStatus.SUCCESS.localizedString != current.getStatus()) {
             print("\(self.implementation.TAG) notifyAppReady was not called, roll back current bundle: \(current.toString())")
             self.implementation.rollback(bundle: current)
-            let res = self._reset(toAutoUpdate: true)
+            let res = self._reset(toLastSuccessful: true)
             if (!res) {
                 return
             }
@@ -297,8 +297,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                     print("\(self.implementation.TAG) No result found in \(self.updateUrl)")
                     return
                 }
-                if (res?.message) {
-                    print("\(self.implementation.TAG) message \(res.message)")
+                if ((res?.message) != nil) {
+                    print("\(self.implementation.TAG) message \(res!.message ?? "")")
                     if (res?.major == true) {
                         self.notifyListeners("majorAvailable", data: ["version": res?.version ?? "0.0.0"])
                     }
@@ -306,6 +306,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 }
                 guard let downloadUrl = URL(string: res?.url ?? "") else {
                     print("\(self.implementation.TAG) Error no url or wrong format")
+                    return
                 }
                 let current = self.implementation.getCurrentBundle()
                 let latestVersionName = res?.version
@@ -389,7 +390,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                         print("\(self.implementation.TAG) Revert to bundle: \(fallback.toString()) Failed!")
                     }
                 } else {
-                    if (self._reset(toAutoUpdate: false)) {
+                    if (self._reset(toLastSuccessful: false)) {
                         print("\(self.implementation.TAG) Reverted to 'builtin' bundle.")
                     }
                 }

@@ -27,6 +27,20 @@ public class AppVersion: NSObject {
     var message: String?
     var major: Bool?
 }
+
+extension AppVersion {
+    func toDict() -> [String:Any] {
+        var dict = [String:Any]()
+        let otherSelf = Mirror(reflecting: self)
+        for child in otherSelf.children {
+            if let key = child.label {
+                dict[key] = child.value
+            }
+        }
+        return dict
+    }
+}
+
 extension OperatingSystemVersion {
     func getFullVersion(separator: String = ".") -> String {
         return "\(majorVersion)\(separator)\(minorVersion)\(separator)\(patchVersion)"
