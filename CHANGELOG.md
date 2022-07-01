@@ -1,3 +1,9 @@
+## 3.3.12 (2022-07-01)
+
+### Fix
+
+- Trigger ci to remove beta from active
+
 ## 3.3.11 (2022-06-17)
 
 ### Fix
