@@ -25,7 +25,13 @@ jobs:
         id: build_code
         run: npm run build
       - uses: JS-DevTools/npm-publish@v1
+        if: "!contains(github.ref, '-alpha.')"
         with:
           token: ${{ secrets.NPM_TOKEN }}
+      - uses: JS-DevTools/npm-publish@v1
+        if: "contains(github.ref, '-alpha.')"
+        with:
+          token: ${{ secrets.NPM_TOKEN }}
+          tag: next
       
 
