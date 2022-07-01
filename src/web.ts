@@ -1,57 +1,61 @@
 import { WebPlugin } from '@capacitor/core';
 
-import type { CapacitorUpdaterPlugin } from './definitions';
+import type { CapacitorUpdaterPlugin, BundleInfo } from './definitions';
+
+const BUNDLE_BUILTIN: BundleInfo = { status: 'success', version: '', downloaded: '1970-01-01T00:00:00.000Z', id: 'builtin' };
 
 export class CapacitorUpdaterWeb
   extends WebPlugin
   implements CapacitorUpdaterPlugin {
-  async download(options: { url: string }): Promise<{ version: string }> {
-    console.log('Cannot download version in web', options);
-    return { version: ""};
+  async download(options: { url: string, version?: string }): Promise<BundleInfo> {
+    console.warn('Cannot download version in web', options);
+    return BUNDLE_BUILTIN;
   }
-  async set(options: { version: string, versionName?: string }): Promise<void> {
-    console.log('Cannot set version in web', options);
+  async next(options: { id: string }): Promise<BundleInfo> {
+    console.warn('Cannot set next version in web', options);
+    return BUNDLE_BUILTIN;
+  }
+
+  async isAutoUpdateEnabled(): Promise<{ enabled: boolean }> {
+    console.warn('Cannot get isAutoUpdateEnabled in web');
+    return { enabled: false };
+  }
+  async set(options: { id: string }): Promise<void> {
+    console.warn('Cannot set active bundle in web', options);
+    return;
   }
   async getId(): Promise<{ id: string }> {
-    console.log('Cannot get ID in web');
-    return { id: 'default'};
+    console.warn('Cannot get ID in web');
+    return { id: 'default' };
   }
   async getPluginVersion(): Promise<{ version: string }> {
-    console.log('Cannot get version in web');
+    console.warn('Cannot get plugin version in web');
     return { version: 'default'};
   }
-  async delete(options: { version: string }): Promise<void> {
-    console.log('Cannot delete version in web', options);
+  async delete(options: { id: string }): Promise<void> {
+    console.warn('Cannot delete bundle in web', options);
   }
-  async list(): Promise<{ versions: string[] }> {
-    console.log('Cannot list version in web');
-    return { versions: []};
+  async list(): Promise<{ bundles: BundleInfo[] }> {
+    console.warn('Cannot list bundles in web');
+    return { bundles: [] };
   }
-  async reset(options?: { toAutoUpdate?: boolean }): Promise<void> {
-    console.log('Cannot reset version in web', options);
+  async reset(options?: { toLastSuccessful?: boolean }): Promise<void> {
+    console.warn('Cannot reset version in web', options);
   }
-  async current(): Promise<{ current: string, currentNative: string }> {
-    console.log('Cannot get current version in web');
-    return { current: 'default', currentNative: '0.0.0'};
+  async current(): Promise<{ bundle: BundleInfo, native: string }> {
+    console.warn('Cannot get current bundle in web');
+    return { bundle: BUNDLE_BUILTIN, native: '0.0.0' };
   }
   async reload(): Promise<void> {
-    console.log('Cannot reload current version in web');
+    console.warn('Cannot reload current bundle in web');
     return;
   }
-  async versionName(): Promise<{ versionName: string }> {
-    console.log('Cannot get current versionName in web');
-    return { versionName: 'default'};
+  async notifyAppReady(): Promise<BundleInfo> {
+    console.warn('Cannot notify App Ready in web');
+    return BUNDLE_BUILTIN;
   }
-  async notifyAppReady(): Promise<void> {
-    console.log('Cannot notify App Ready in web');
-    return;
-  }
-  async delayUpdate(): Promise<void> {
-    console.log('Cannot delay update in web');
-    return;
-  }
-  async cancelDelay(): Promise<void> {
-    console.log('Cannot cancel delay update in web');
+  async setDelay(options: { delay: boolean }): Promise<void> {
+    console.warn('Cannot setDelay delay update in web', options);
     return;
   }
 }
