@@ -193,18 +193,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         call.resolve(res)
     }
 
-    @objc func _reset(toAutoUpdate: Bool) -> Bool {
+    @objc func _reset(toLastSuccessful: Bool) -> Bool {
         guard let bridge = self.bridge else { return false }
+
         if let vc = bridge.viewController as? CAPBridgeViewController {
-            self.implementation.reset()
-            
-            let LatestVersionAutoUpdate = UserDefaults.standard.string(forKey: "LatestVersionAutoUpdate") ?? ""
-            let LatestVersionNameAutoUpdate = UserDefaults.standard.string(forKey: "LatestVersionNameAutoUpdate") ?? ""
-            if(toAutoUpdate && LatestVersionAutoUpdate != "" && LatestVersionNameAutoUpdate != "") {
-                let res = implementation.set(id: LatestVersionNameAutoUpdate)
-                return res && self._reload()
+            let fallback: BundleInfo = self.implementation.getFallbackVersion()
+            if (toLastSuccessful && !fallback.isBuiltin()) {
+                print("\(self.implementation.TAG) Resetting to: \(fallback.toString())")
+                return self.implementation.set(fallback) && self._reload()
             }
-            implementation.reset()
+            self.implementation.reset()
             vc.setServerBasePath(path: "")
             DispatchQueue.main.async {
                 vc.loadView()
@@ -217,8 +215,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func reset(_ call: CAPPluginCall) {
-        let toAutoUpdate = call.getBool("toAutoUpdate") ?? false
-        if (self._reset(toAutoUpdate: toAutoUpdate)) {
+        let toAutoUpdate = call.getBool("toLastSuccessful") ?? false
+        if (self._reset(toLastSuccessful: toLastSuccessful)) {
             return call.resolve()
         }
         call.reject("\(self.implementation.TAG) Reset failed")
