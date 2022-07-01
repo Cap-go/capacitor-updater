@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.0.0-alpha.3](https://github.com/Cap-go/capacitor-updater/compare/4.0.0-alpha.2...4.0.0-alpha.3) (2022-07-01)
+
+
+### Features
+
+* expose getLatest in js ([813fee4](https://github.com/Cap-go/capacitor-updater/commit/813fee461d26158354ca51011b1d93c70ea1d64c))
+
 ## [4.0.0-alpha.2](https://github.com/Cap-go/capacitor-updater/compare/4.0.0-alpha.1...4.0.0-alpha.2) (2022-07-01)
 
 
