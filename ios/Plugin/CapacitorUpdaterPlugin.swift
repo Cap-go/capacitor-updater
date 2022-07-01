@@ -30,7 +30,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         }
         autoDeleteFailed = getConfigValue("autoDeleteFailed") as? Bool ?? false
         autoDeletePrevious = getConfigValue("autoDeletePrevious") as? Bool ?? false
-        autoUpdateUrl = getConfigValue("autoUpdateUrl") as? String ?? CapacitorUpdaterPlugin.autoUpdateUrlDefault
+        autoUpdateUrl = getConfigValue("updateUrl") as? String ?? CapacitorUpdaterPlugin.autoUpdateUrlDefault
         autoUpdate = getConfigValue("autoUpdate") as? Bool ?? false
         appReadyTimeout = getConfigValue("appReadyTimeout") as? Int ?? 10000
         resetWhenUpdate = getConfigValue("resetWhenUpdate") as? Bool ?? true
@@ -188,6 +188,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         ])
     }
 
+    @objc func getLatest(_ call: CAPPluginCall) {
+        let res = self.implementation.getLatest(url: url)
+        call.resolve(res)
+    }
+
     @objc func _reset(toAutoUpdate: Bool) -> Bool {
         guard let bridge = self.bridge else { return false }
         if let vc = bridge.viewController as? CAPBridgeViewController {
@@ -294,12 +299,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                     print("\(self.implementation.TAG) No result found in \(self.autoUpdateUrl)")
                     return
                 }
-                guard let downloadUrl = URL(string: res?.url ?? "") else {
-                    print("\(self.implementation.TAG) Error \(res?.message ?? "Unknow error")")
+                if (res?.message) {
+                    print("\(self.implementation.TAG) message \(res.message)")
                     if (res?.major == true) {
                         self.notifyListeners("majorAvailable", data: ["version": res?.version ?? "0.0.0"])
                     }
                     return
+                }
+                guard let downloadUrl = URL(string: res?.url ?? "") else {
+                    print("\(self.implementation.TAG) Error no url or wrong format")
                 }
                 let current = self.implementation.getCurrentBundle()
                 let latestVersionName = res?.version

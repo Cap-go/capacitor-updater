@@ -116,6 +116,19 @@ export interface UpdateFailedEvent {
    bundle: BundleInfo;
 }
 
+export interface latestVersion {
+  /**
+   * Res of getLatest method
+   *
+   * @since 4.0.0
+   */
+  version: string,
+  major?: boolean,
+  message?: string,
+  old?: string,
+  url?: string,
+}
+
 export interface BundleInfo {
   id: string;
   version: string;
@@ -218,8 +231,18 @@ export interface CapacitorUpdaterPlugin {
    *
    * @returns {Promise<void>} an Promise resolved directly
    * @throws An error if the something went wrong
+   * @since 4.0.0
    */
   setDelay(options: {delay: boolean}): Promise<void>;
+
+  /**
+   * Get Latest version available from update Url
+   *
+   * @returns {Promise<latestVersion>} an Promise resolved when url is loaded
+   * @throws An error if the something went wrong
+   * @since 4.0.0
+   */
+  getLatest(options: {delay: boolean}): Promise<latestVersion>;
 
   /**
    * Listen for download event in the App, let you know when the download is started, loading and finished

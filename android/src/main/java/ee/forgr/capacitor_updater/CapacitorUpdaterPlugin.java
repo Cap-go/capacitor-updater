@@ -87,7 +87,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
 
         this.autoDeleteFailed = this.getConfig().getBoolean("autoDeleteFailed", true);
         this.autoDeletePrevious = this.getConfig().getBoolean("autoDeletePrevious", true);
-        this.autoUpdateUrl = this.getConfig().getString("autoUpdateUrl", autoUpdateUrlDefault);
+        this.autoUpdateUrl = this.getConfig().getString("updateUrl", autoUpdateUrlDefault);
         this.autoUpdate = this.getConfig().getBoolean("autoUpdate", false);
         this.appReadyTimeout = this.getConfig().getInt("appReadyTimeout", 10000);
         this.resetWhenUpdate = this.getConfig().getBoolean("resetWhenUpdate", true);
@@ -294,6 +294,18 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             Log.e(CapacitorUpdater.TAG, "Could not list bundles", e);
             call.reject("Could not list bundles", e);
         }
+    }
+
+    @PluginMethod
+    public void getLatest(final PluginCall call) {
+        new Thread(new Runnable(){
+            @Override
+            public void run() {
+                CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.autoUpdateUrl, (res) -> {
+                    call.resolve(res);
+                });
+            }
+        });
     }
 
     private boolean _reset(final Boolean toLastSuccessful) {
