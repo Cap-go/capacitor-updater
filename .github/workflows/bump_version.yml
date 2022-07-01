@@ -21,10 +21,10 @@ jobs:
         run: |
           git config --local user.name "github-actions[bot]"
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
-      - name: Create bump and changelog
+      - name: Create bump and changelog main
         if: github.ref == 'refs/heads/main'
         run: npx standard-version
-      - name: Create bump and changelog
+      - name: Create bump and changelog development
         if: github.ref != 'refs/heads/main'
         run: npx standard-version --prerelease alpha
       - name: Push to origin
