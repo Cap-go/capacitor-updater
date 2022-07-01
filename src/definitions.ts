@@ -151,7 +151,7 @@ export interface CapacitorUpdaterPlugin {
   /**
    * Notify Capacitor Updater that the current bundle is working (a rollback will occur of this method is not called on every app launch)
    *
-   * @returns {Promise<void>} an Promise resolved directly
+   * @returns {Promise<BundleInfo>} an Promise resolved directly
    * @throws An error if the something went wrong
    */
   notifyAppReady(): Promise<BundleInfo>;
@@ -213,7 +213,7 @@ export interface CapacitorUpdaterPlugin {
   /**
    * Get the current bundle, if none are set it returns `builtin`, currentNative is the original bundle installed on the device
    *
-   * @returns {Promise<{ current: string, currentNative: string }>} an Promise with the current bundle info
+   * @returns {Promise<{ bundle: BundleInfo, native: string }>} an Promise with the current bundle info
    * @throws An error if the something went wrong
    */
   current(): Promise<{ bundle: BundleInfo, native: string }>;
