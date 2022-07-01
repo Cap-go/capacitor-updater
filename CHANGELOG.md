@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.0.0-alpha.4](https://github.com/Cap-go/capacitor-updater/compare/4.0.0-alpha.3...4.0.0-alpha.4) (2022-07-01)
+
+
+### Bug Fixes
+
+* rename autoUpdateUrl in updateUrl ([169676c](https://github.com/Cap-go/capacitor-updater/commit/169676cb9c15cb3cc2030dba4717fe64068e0f73))
+
 ## [4.0.0-alpha.3](https://github.com/Cap-go/capacitor-updater/compare/4.0.0-alpha.2...4.0.0-alpha.3) (2022-07-01)
 
 
