@@ -9,10 +9,10 @@ import Version
 @objc(CapacitorUpdaterPlugin)
 public class CapacitorUpdaterPlugin: CAPPlugin {
     private var implementation = CapacitorUpdater()
-    static let autoUpdateUrlDefault = "https://xvwzpoazmxkqosrdewyv.functions.supabase.co/updates"
+    static let updateUrlDefault = "https://xvwzpoazmxkqosrdewyv.functions.supabase.co/updates"
     static let statsUrlDefault = "https://xvwzpoazmxkqosrdewyv.functions.supabase.co/stats"
     static let DELAY_UPDATE = "delayUpdate"
-    private var autoUpdateUrl = ""
+    private var updateUrl = ""
     private var statsUrl = ""
     private var currentVersionNative: Version = "0.0.0"
     private var autoUpdate = false
@@ -30,7 +30,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         }
         autoDeleteFailed = getConfigValue("autoDeleteFailed") as? Bool ?? false
         autoDeletePrevious = getConfigValue("autoDeletePrevious") as? Bool ?? false
-        autoUpdateUrl = getConfigValue("updateUrl") as? String ?? CapacitorUpdaterPlugin.autoUpdateUrlDefault
+        updateUrl = getConfigValue("updateUrl") as? String ?? CapacitorUpdaterPlugin.updateUrlDefault
         autoUpdate = getConfigValue("autoUpdate") as? Bool ?? false
         appReadyTimeout = getConfigValue("appReadyTimeout") as? Int ?? 10000
         resetWhenUpdate = getConfigValue("resetWhenUpdate") as? Bool ?? true
@@ -250,7 +250,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
     
     private func _isAutoUpdateEnabled() -> Bool {
-        return self.autoUpdate && self.autoUpdateUrl != ""
+        return self.autoUpdate && self.updateUrl != ""
     }
 
     @objc func isAutoUpdateEnabled(_ call: CAPPluginCall) {
@@ -292,11 +292,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     @objc func appMovedToForeground() {
         if (self._isAutoUpdateEnabled()) {
             DispatchQueue.global(qos: .background).async {
-                print("\(self.implementation.TAG) Check for update via \(self.autoUpdateUrl)")
-                let url = URL(string: self.autoUpdateUrl)!
+                print("\(self.implementation.TAG) Check for update via \(self.updateUrl)")
+                let url = URL(string: self.updateUrl)!
                 let res = self.implementation.getLatest(url: url)
                 if (res == nil) {
-                    print("\(self.implementation.TAG) No result found in \(self.autoUpdateUrl)")
+                    print("\(self.implementation.TAG) No result found in \(self.updateUrl)")
                     return
                 }
                 if (res?.message) {

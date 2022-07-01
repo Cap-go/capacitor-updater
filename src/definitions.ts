@@ -55,7 +55,7 @@ declare module '@capacitor/cli' {
        * @default https://capgo.app/api/auto_update
        * @example https://example.com/api/auto_update
        */
-      autoUpdateUrl?: string;
+      updateUrl?: string;
 
       /**
        * Automatically delete previous downloaded bundles when a newer native app version is installed to the device.

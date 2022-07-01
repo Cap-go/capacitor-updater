@@ -32,7 +32,7 @@ import java.util.List;
 
 @CapacitorPlugin(name = "CapacitorUpdater")
 public class CapacitorUpdaterPlugin extends Plugin implements Application.ActivityLifecycleCallbacks {
-    private static final String autoUpdateUrlDefault = "https://xvwzpoazmxkqosrdewyv.functions.supabase.co/updates";
+    private static final String updateUrlDefault = "https://xvwzpoazmxkqosrdewyv.functions.supabase.co/updates";
     private static final String statsUrlDefault = "https://xvwzpoazmxkqosrdewyv.functions.supabase.co/stats";
     private static final String DELAY_UPDATE = "delayUpdate";
 
@@ -44,7 +44,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     private Boolean autoDeleteFailed = true;
     private Boolean autoDeletePrevious = true;
     private Boolean autoUpdate = false;
-    private String autoUpdateUrl = "";
+    private String updateUrl = "";
     private Version currentVersionNative;
     private Boolean resetWhenUpdate = true;
 
@@ -87,7 +87,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
 
         this.autoDeleteFailed = this.getConfig().getBoolean("autoDeleteFailed", true);
         this.autoDeletePrevious = this.getConfig().getBoolean("autoDeletePrevious", true);
-        this.autoUpdateUrl = this.getConfig().getString("updateUrl", autoUpdateUrlDefault);
+        this.updateUrl = this.getConfig().getString("updateUrl", updateUrlDefault);
         this.autoUpdate = this.getConfig().getBoolean("autoUpdate", false);
         this.appReadyTimeout = this.getConfig().getInt("appReadyTimeout", 10000);
         this.resetWhenUpdate = this.getConfig().getBoolean("resetWhenUpdate", true);
@@ -301,7 +301,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         new Thread(new Runnable(){
             @Override
             public void run() {
-                CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.autoUpdateUrl, (res) -> {
+                CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.updateUrl, (res) -> {
                     call.resolve(res);
                 });
             }
@@ -395,7 +395,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     }
 
     private Boolean _isAutoUpdateEnabled() {
-        return CapacitorUpdaterPlugin.this.autoUpdate && !"".equals(CapacitorUpdaterPlugin.this.autoUpdateUrl);
+        return CapacitorUpdaterPlugin.this.autoUpdate && !"".equals(CapacitorUpdaterPlugin.this.updateUrl);
     }
 
     @PluginMethod
@@ -429,8 +429,8 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                 @Override
                 public void run() {
 
-                    Log.i(CapacitorUpdater.TAG, "Check for update via: " + CapacitorUpdaterPlugin.this.autoUpdateUrl);
-                    CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.autoUpdateUrl, (res) -> {
+                    Log.i(CapacitorUpdater.TAG, "Check for update via: " + CapacitorUpdaterPlugin.this.updateUrl);
+                    CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.updateUrl, (res) -> {
                         try {
                             if (res.has("message")) {
                                 Log.i(CapacitorUpdater.TAG, "message: " + res.get("message"));
