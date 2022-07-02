@@ -28,6 +28,7 @@ import io.github.g00fy2.versioncompare.Version;
 import org.json.JSONException;
 
 import java.io.IOException;
+import java.util.Iterator;
 import java.util.List;
 
 @CapacitorPlugin(name = "CapacitorUpdater")
@@ -133,7 +134,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         try {
             final JSObject ret = new JSObject();
             ret.put("percent", percent);
-            var bundle = this.implementation.getBundleInfo(id).toJSON();
+            JSObject bundle = this.implementation.getBundleInfo(id).toJSON();
             ret.put("bundle", bundle);
             this.notifyListeners("download", ret);
             if (percent == 100) {
@@ -302,7 +303,19 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             @Override
             public void run() {
                 CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.updateUrl, (res) -> {
-                    call.resolve(res);
+                    final JSObject ret = new JSObject();
+                    Iterator<String> keys = res.keys();
+                    while(keys.hasNext()) {
+                        String key = keys.next();
+                        if (res.has(key)) {
+                            try {
+                                ret.put(key, res.get(key));
+                            } catch (JSONException e) {
+                                e.printStackTrace();
+                            }
+                        }
+                    }
+                    call.resolve(ret);
                 });
             }
         });
