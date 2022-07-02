@@ -381,7 +381,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 self.notifyListeners("updateFailed", data: [
                     "bundle": current.toJSON()
                 ])
-                self.implementation.sendStats(action: "revert", bundle: current)
+                self.implementation.sendStats(action: "fail_update", versionName: current.getVersionName())
                 if (!fallback.isBuiltin() && !(fallback == current)) {
                     let res = self.implementation.set(bundle: fallback)
                     if (res && self._reload()) {

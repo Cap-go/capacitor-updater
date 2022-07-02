@@ -255,7 +255,7 @@ public class CapacitorUpdater {
             return true;
         }
         Log.e(TAG, "Directory not removed: " + bundle.getPath());
-        this.sendStats("delete", deleted);
+        this.sendStats("delete", deleted.getVersionName());
         return false;
     }
 
@@ -263,11 +263,11 @@ public class CapacitorUpdater {
         return new File(this.documentsDir, bundleDirectory + "/" + id);
     }
 
-    private boolean bundleExists(final File bundle) {
+    private boolean bundleExists(final String id) {
+        final File bundle = this.getBundleDirectory(id);
         if(bundle == null || !bundle.exists()) {
             return false;
         }
-
         return new File(bundle.getPath(), "/index.html").exists();
     }
 
@@ -277,17 +277,17 @@ public class CapacitorUpdater {
 
     public Boolean set(final String id) {
 
-        final BundleInfo existing = this.getBundleInfo(id);
+        final BundleInfo newBundle = this.getBundleInfo(id);
         final File bundle = this.getBundleDirectory(id);
 
-        Log.i(TAG, "Setting next active bundle: " + existing);
-        if (this.bundleExists(bundle)) {
+        Log.i(TAG, "Setting next active bundle: " + id);
+        if (this.bundleExists(id)) {
             this.setCurrentBundle(bundle);
             this.setBundleStatus(id, BundleStatus.PENDING);
-            this.sendStats("set", existing);
+            this.sendStats("set", newBundle.getVersionName());
             return true;
         }
-        this.sendStats("set_fail", existing);
+        this.sendStats("set_fail", newBundle.getVersionName());
         return false;
     }
 
@@ -309,7 +309,7 @@ public class CapacitorUpdater {
         this.setFallbackVersion(null);
         this.setNextVersion(null);
         if(!internal) {
-            this.sendStats("reset", this.getCurrentBundle());
+            this.sendStats("reset", this.getCurrentBundle().getVersionName());
         }
     }
 
@@ -356,7 +356,7 @@ public class CapacitorUpdater {
         }
     }
 
-    public void sendStats(final String action, final BundleInfo bundle) {
+    public void sendStats(final String action, final String versionName) {
         String statsUrl = this.statsUrl;
         if (statsUrl == null || "".equals(statsUrl) || statsUrl.length() == 0) { return; }
         try {
@@ -367,7 +367,7 @@ public class CapacitorUpdater {
             json.put("version_build", this.versionBuild);
             json.put("version_code", this.versionCode);
             json.put("version_os", this.versionOs);
-            json.put("version_name", bundle.getVersionName());
+            json.put("version_name", versionName);
             json.put("plugin_version", pluginVersion);
             json.put("action", action);
 
@@ -379,13 +379,13 @@ public class CapacitorUpdater {
                     new Response.Listener<JSONObject>() {
                         @Override
                         public void onResponse(JSONObject response) {
-                            Log.i(TAG, "Stats send for \"" + action + "\", version " + bundle.getVersionName());
+                            Log.i(TAG, "Stats send for \"" + action + "\", version " + versionName);
                         }
                     },
                     new Response.ErrorListener(){
                         @Override
                         public void onErrorResponse(VolleyError error) {
-                            Log.i(TAG, "Stats send for \"" + action + "\", version " + bundle.getVersionName());
+                            Log.i(TAG, "Stats send for \"" + action + "\", version " + versionName);
                         }
                     });
             this.requestQueue.add(request);
@@ -515,11 +515,9 @@ public class CapacitorUpdater {
         if (next == null) {
             this.editor.remove(NEXT_VERSION);
         } else {
-            final File bundle = this.getBundleDirectory(next);
-            if (!this.bundleExists(bundle)) {
+            if (!this.bundleExists(next)) {
                 return false;
             }
-
             this.editor.putString(NEXT_VERSION, next);
             this.setBundleStatus(next, BundleStatus.PENDING);
         }

@@ -346,7 +346,7 @@ extension CustomError: LocalizedError {
             return false
         }
         self.removeBundleInfo(id: id)
-        self.sendStats(action: "delete", bundle: deleted)
+        self.sendStats(action: "delete", versionName: deleted.getVersionName())
         return true
     }
 
@@ -358,21 +358,28 @@ extension CustomError: LocalizedError {
         return self.set(id: bundle.getId());
     }
 
-    public func set(id: String) -> Bool {
+    private func bundleExists(id: String) -> Bool {
         let destHot = self.getPathHot(id: id)
         let destHotPersist = self.getPathPersist(id: id)
         let indexHot = destHot.appendingPathComponent("index.html")
         let indexPersist = destHotPersist.appendingPathComponent("index.html")
-        let existing: BundleInfo = self.getBundleInfo(id: id)
-        let bundle: URL = self.getBundleDirectory(id: id)
-        print("bundle", bundle.path)
-        if (bundle.isDirectory && destHotPersist.isDirectory && indexHot.exist && indexPersist.exist) {
-            self.setCurrentBundle(bundle: String(bundle.path.suffix(10)))
+        let url: URL = self.getBundleDirectory(id: id)
+        if(url.isDirectory && destHotPersist.isDirectory && indexHot.exist && indexPersist.exist) {
+            return true;
+        }
+        return false;
+    }
+
+    public func set(id: String) -> Bool {
+        let newBundle: BundleInfo = self.getBundleInfo(id: id)
+        if (bundleExists(id: id)) {
+            let url: URL = self.getBundleDirectory(id: id)
+            self.setCurrentBundle(bundle: String(url.path.suffix(10)))
             self.setBundleStatus(id: id, status: BundleStatus.PENDING)
-            sendStats(action: "set", bundle: existing)
+            sendStats(action: "set", versionName: newBundle.getVersionName())
             return true
         }
-        sendStats(action: "set_fail", bundle: existing)
+        sendStats(action: "set_fail", versionName: newBundle.getVersionName())
         return false
     }
     
@@ -394,7 +401,7 @@ extension CustomError: LocalizedError {
         let _ = self.setNextVersion(next: Optional<String>.none)
         UserDefaults.standard.synchronize()
         if(!isInternal) {
-            sendStats(action: "reset", bundle: self.getCurrentBundle())
+            sendStats(action: "reset", versionName: self.getCurrentBundle().getVersionName())
         }
     }
     
@@ -407,13 +414,13 @@ extension CustomError: LocalizedError {
         self.setBundleStatus(id: bundle.getId(), status: BundleStatus.ERROR);
     }
 
-    func sendStats(action: String, bundle: BundleInfo) {
+    func sendStats(action: String, versionName: String) {
         if (statsUrl == "") { return }
         let parameters: [String: String] = [
             "platform": "ios",
             "action": action,
             "device_id": self.deviceID,
-            "version_name": bundle.getVersionName(),
+            "version_name": versionName,
             "version_build": self.versionBuild,
             "version_code": self.versionCode,
             "version_os": self.versionOs,
@@ -423,7 +430,7 @@ extension CustomError: LocalizedError {
 
         DispatchQueue.global(qos: .background).async {
             let _ = AF.request(self.statsUrl, method: .post,parameters: parameters, encoder: JSONParameterEncoder.default)
-            print("\(self.TAG) Stats send for \(action), version \(bundle.getVersionName())")
+            print("\(self.TAG) Stats send for \(action), version \(versionName)")
         }
     }
 

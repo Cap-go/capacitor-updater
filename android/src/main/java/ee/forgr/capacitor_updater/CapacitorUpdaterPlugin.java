@@ -548,7 +548,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                     final JSObject ret = new JSObject();
                     ret.put("bundle", current);
                     this.notifyListeners("updateFailed", ret);
-                    this.implementation.sendStats("revert", current);
+                    this.implementation.sendStats("update_fail", current.getVersionName());
                     if (!fallback.isBuiltin() && !fallback.equals(current)) {
                         final Boolean res = this.implementation.set(fallback);
                         if (res && this._reload()) {
