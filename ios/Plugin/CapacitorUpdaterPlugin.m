@@ -14,7 +14,7 @@ CAP_PLUGIN(CapacitorUpdaterPlugin, "CapacitorUpdater",
            CAP_PLUGIN_METHOD(notifyAppReady, CAPPluginReturnPromise);
            CAP_PLUGIN_METHOD(setDelay, CAPPluginReturnPromise);
            CAP_PLUGIN_METHOD(getLatest, CAPPluginReturnPromise);
-           CAP_PLUGIN_METHOD(getId, CAPPluginReturnPromise);
+           CAP_PLUGIN_METHOD(getDeviceId, CAPPluginReturnPromise);
            CAP_PLUGIN_METHOD(getPluginVersion, CAPPluginReturnPromise);
            CAP_PLUGIN_METHOD(next, CAPPluginReturnPromise);
            CAP_PLUGIN_METHOD(isAutoUpdateEnabled, CAPPluginReturnPromise);

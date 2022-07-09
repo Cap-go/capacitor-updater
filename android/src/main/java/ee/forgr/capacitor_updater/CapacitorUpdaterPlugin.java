@@ -147,10 +147,10 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
 
 
     @PluginMethod
-    public void getId(final PluginCall call) {
+    public void getDeviceId(final PluginCall call) {
         try {
             final JSObject ret = new JSObject();
-            ret.put("id", this.implementation.deviceID);
+            ret.put("deviceId", this.implementation.deviceID);
             call.resolve(ret);
         } catch (final Exception e) {
             Log.e(CapacitorUpdater.TAG, "Could not get device id", e);

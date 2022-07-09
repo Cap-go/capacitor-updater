@@ -79,8 +79,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         }
     }
 
-    @objc func getId(_ call: CAPPluginCall) {
-        call.resolve(["id": implementation.deviceID])
+    @objc func getDeviceId(_ call: CAPPluginCall) {
+        call.resolve(["deviceId": implementation.deviceID])
     }
 
     @objc func getPluginVersion(_ call: CAPPluginCall) {
