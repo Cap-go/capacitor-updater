@@ -11,7 +11,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     private var implementation = CapacitorUpdater()
     static let updateUrlDefault = "https://xvwzpoazmxkqosrdewyv.functions.supabase.co/updates"
     static let statsUrlDefault = "https://xvwzpoazmxkqosrdewyv.functions.supabase.co/stats"
-    static let DELAY_UPDATE = "delayUpdate"
+    let DELAY_UPDATE = "delayUpdate"
+    let DELAY_UPDATE_VAL = "delayUpdateVal"
     private var updateUrl = ""
     private var statsUrl = ""
     private var currentVersionNative: Version = "0.0.0"
@@ -49,6 +50,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         let nc = NotificationCenter.default
         nc.addObserver(self, selector: #selector(appMovedToBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
         nc.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
+        self._checkCancelDelay(killed: true)
         self.appMovedToForeground()
     }
 
@@ -236,15 +238,63 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
     
     @objc func setDelay(_ call: CAPPluginCall) {
-        guard let delay = call.getBool("delay") else {
-            print("\(self.implementation.TAG) setDelay called without delay")
-            call.reject("setDelay called without delay")
+        guard let kind = call.getBool("kind") else {
+            print("\(self.implementation.TAG) setDelay called without kind")
+            call.reject("setDelay called without kind")
             return
         }
-        UserDefaults.standard.set(delay, forKey: "delayUpdate")
+        let val = call.getString("value") ?? ""
+        UserDefaults.standard.set(kind, forKey: DELAY_UPDATE)
+        UserDefaults.standard.set(val, forKey: DELAY_UPDATE_VAL)
+        UserDefaults.standard.synchronize()
+        print("\(self.implementation.TAG) Delay update saved.")
         call.resolve()
     }
-    
+
+    private func _cancelDelay() -> Void {
+        print("\(self.implementation.TAG) delay Canceled")
+        UserDefaults.standard.removeObject(forKey: DELAY_UPDATE)
+        UserDefaults.standard.removeObject(forKey: DELAY_UPDATE_VAL)
+        UserDefaults.standard.synchronize()
+    }
+
+    @objc func cancelDelay(_ call: CAPPluginCall) {
+        self._cancelDelay()
+        call.resolve()
+    }
+
+    private func _checkCancelDelay(killed: Bool) -> Void {
+        let delayUpdate = UserDefaults.standard.string(forKey: DELAY_UPDATE)
+        if (delayUpdate != nil) {
+            if (delayUpdate == "background" && !killed) {
+                self._cancelDelay()
+            } else if (delayUpdate == "kill" && killed) {
+                self._cancelDelay()
+            }
+            let delayVal = UserDefaults.standard.string(forKey: DELAY_UPDATE_VAL)
+            if (delayVal == nil) {
+                self._cancelDelay()
+            } else if (delayUpdate == "date") {
+                let dateFormatter = ISO8601DateFormatter()
+                let date = dateFormatter.date(from: delayVal!)!
+                let toDay = Date()
+                if (toDay < date)  {
+                    self._cancelDelay()
+                }
+            } else if (delayUpdate == "nativeVersion") {
+                do {
+                    let versionLimit = try Version(delayVal!)
+                    if (self.currentVersionNative >= versionLimit) {
+                        self._cancelDelay()
+                    }
+                } catch {
+                    self._cancelDelay()
+                }
+            }
+            UserDefaults.standard.synchronize()
+        }
+    }
+
     private func _isAutoUpdateEnabled() -> Bool {
         return self.autoUpdate && self.updateUrl != ""
     }
@@ -339,10 +389,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
     @objc func appMovedToBackground() {
         print("\(self.implementation.TAG) Check for waiting update")
-        let delayUpdate = UserDefaults.standard.bool(forKey: "delayUpdate")
-        UserDefaults.standard.set(false, forKey: "delayUpdate")
-        if (delayUpdate) {
-            print("\(self.implementation.TAG) Update delayed to next backgrounding")
+        let delayUpdate = UserDefaults.standard.string(forKey: DELAY_UPDATE)
+        self._checkCancelDelay(killed: false)
+        if (delayUpdate != nil) {
+            print("\(self.implementation.TAG) Update delayed")
             return
         }
 

@@ -137,6 +137,7 @@ export interface BundleInfo {
 }
 
 export type BundleStatus = 'success' | 'error' | 'pending' | 'downloading';
+export type DelayUntilNext = 'background' | 'kill' | 'nativeVersion' | 'date';
 
 export type DownloadChangeListener = (state: DownloadEvent) => void;
 export type DownloadCompleteListener = (state: DownloadCompleteEvent) => void;
@@ -233,7 +234,16 @@ export interface CapacitorUpdaterPlugin {
    * @throws An error if the something went wrong
    * @since 4.0.0
    */
-  setDelay(options: {delay: boolean}): Promise<void>;
+  setDelay(options: {kind: DelayUntilNext, value?: string}): Promise<void>;
+
+  /**
+   * Cancel delay to updates as usual
+   *
+   * @returns {Promise<void>} an Promise resolved directly
+   * @throws An error if the something went wrong
+   * @since 4.0.0
+   */
+  cancelDelay(): Promise<void>;
 
   /**
    * Get Latest version available from update Url
