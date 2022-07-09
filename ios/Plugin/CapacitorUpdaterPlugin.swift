@@ -61,8 +61,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         }
         if (LatestVersionNative != "0.0.0" && currentVersionNative.major > LatestVersionNative.major) {
             _ = self._reset(toLastSuccessful: false)
-            UserDefaults.standard.set("", forKey: "LatestVersionAutoUpdate")
-            UserDefaults.standard.set("", forKey: "LatestVersionNameAutoUpdate")
             let res = implementation.list()
             res.forEach { version in
                 print("\(self.implementation.TAG) Deleting obsolete bundle: \(version)")
