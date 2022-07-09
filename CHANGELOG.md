@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.0.0-alpha.13](https://github.com/Cap-go/capacitor-updater/compare/4.0.0-alpha.12...4.0.0-alpha.13) (2022-07-09)
+
+
+### Bug Fixes
+
+* allow delay kinds ([47dce5e](https://github.com/Cap-go/capacitor-updater/commit/47dce5e3d5d790c258569acd43785efc760a9e88))
+
 ## [4.0.0-alpha.12](https://github.com/Cap-go/capacitor-updater/compare/4.0.0-alpha.11...4.0.0-alpha.12) (2022-07-09)
 
 
