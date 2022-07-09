@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.0.0-alpha.12](https://github.com/Cap-go/capacitor-updater/compare/4.0.0-alpha.11...4.0.0-alpha.12) (2022-07-09)
+
+
+### Bug Fixes
+
+* rename getId in getDeviceId ([caac92c](https://github.com/Cap-go/capacitor-updater/commit/caac92cb98bedaa472c4ddf30481a7b859e2aeaa))
+
 ## [4.0.0-alpha.11](https://github.com/Cap-go/capacitor-updater/compare/4.0.0-alpha.10...4.0.0-alpha.11) (2022-07-09)
 
 
