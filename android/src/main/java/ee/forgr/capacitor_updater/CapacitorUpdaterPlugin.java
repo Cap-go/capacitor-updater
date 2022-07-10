@@ -409,54 +409,61 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         }
     }
 
-    private boolean _cancelDelay() {
+    private boolean _cancelDelay(String source) {
         try {
             this.editor.remove(DELAY_UPDATE);
             this.editor.remove(DELAY_UPDATE_VAL);
             this.editor.commit();
-            Log.i(CapacitorUpdater.TAG, "delay Canceled");
+            Log.i(CapacitorUpdater.TAG, "delay canceled from " + source);
+            return true;
         }
         catch(final Exception e) {
             Log.e(CapacitorUpdater.TAG, "Failed to cancel update delay", e);
-            call.reject("Failed to cancel update delay", e);
+            return false;
         }
     }
 
     @PluginMethod
     public void cancelDelay(final PluginCall call) {
-        this._cancelDelay();
-        call.resolve();
+        if(this._cancelDelay("JS")) {
+            call.resolve();
+        } else {
+            call.reject("Failed to cancel delay");
+        }
     }
 
     private void _checkCancelDelay(Boolean killed) {
         final String delayUpdate = this.prefs.getString(DELAY_UPDATE, "");
         if ("".equals(delayUpdate)) {
             if ("background".equals(delayUpdate) && !killed) {
-                this._cancelDelay();
+                this._cancelDelay("background check");
             } else if ("kill".equals(delayUpdate) && killed) {
-                this._cancelDelay();
+                this._cancelDelay("kill check");
             }
             final String delayVal = this.prefs.getString(DELAY_UPDATE_VAL, "");
-            if (delayVal == null) {
-                this._cancelDelay();
+            if ("".equals(delayVal)) {
+                this._cancelDelay("delayVal absent");
             } else if ("date".equals(delayUpdate)) {
                 try {
                     final SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ");
                     Date date = sdf.parse(delayVal);
-                    Date today = new Date();
-                    if (date.compareTo(today) > 0)  {
-                        this._cancelDelay();
+                    if (date.compareTo(new Date()) > 0)  {
+                        this._cancelDelay("date expired");
                     }
                 }
                 catch(final Exception e) {
-                    Log.e(CapacitorUpdater.TAG, "Failed to parse delay date", e);
-                    this._cancelDelay();
+                    this._cancelDelay("date parsing issue");
                 }
 
             } else if ("nativeVersion".equals(delayUpdate)) {
-                final Version versionLimit = new Version(delayVal);
-                if (this.currentVersionNative.isAtLeast(versionLimit)) {
-                    this._cancelDelay();
+                try {
+                    final Version versionLimit = new Version(delayVal);
+                    if (this.currentVersionNative.isAtLeast(versionLimit)) {
+                        this._cancelDelay("nativeVersion above limit");
+                    }
+                }
+                catch(final Exception e) {
+                    this._cancelDelay("nativeVersion parsing issue");
                 }
             }
         }
@@ -489,6 +496,8 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             Log.e(CapacitorUpdater.TAG, "Failed to start " + DeferredNotifyAppReadyCheck.class.getName(), e);
         }
     }
+
+
 
     @Override // appMovedToForeground
     public void onActivityStarted(@NonNull final Activity activity) {
@@ -561,13 +570,12 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     public void onActivityStopped(@NonNull final Activity activity) {
         Log.i(CapacitorUpdater.TAG, "Checking for pending update");
         try {
-            final Boolean delayUpdate = this.prefs.getString(DELAY_UPDATE, false);
+            final String delayUpdate = this.prefs.getString(DELAY_UPDATE, "");
             this._checkCancelDelay(false);
-            if (delayUpdate) {
+            if ("".equals(delayUpdate)) {
                 Log.i(CapacitorUpdater.TAG, "Update delayed to next backgrounding");
                 return;
             }
-
             final BundleInfo fallback = this.implementation.getFallbackVersion();
             final BundleInfo current = this.implementation.getCurrentBundle();
             final BundleInfo next = this.implementation.getNextVersion();

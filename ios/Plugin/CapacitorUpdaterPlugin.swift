@@ -294,7 +294,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                         self._cancelDelay(source: "nativeVersion above limit")
                     }
                 } catch {
-                    self._cancelDelay(source: "nativeVersion cannot parse")
+                    self._cancelDelay(source: "nativeVersion parsing issue")
                 }
             }
         }
