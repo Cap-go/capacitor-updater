@@ -226,7 +226,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         let bundle: BundleInfo = self.implementation.getCurrentBundle()
         call.resolve([
             "bundle": bundle.toJSON(),
-            "native": self.currentVersionNative
+            "native": self.currentVersionNative.description
         ])
     }
 
