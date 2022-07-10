@@ -236,7 +236,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
 
         try {
             Log.i(CapacitorUpdater.TAG, "Setting next active id " + id);
-            if (!this.implementation.setNextVersion(id)) {
+            if (!this.implementation.setNext(id)) {
                 Log.e(CapacitorUpdater.TAG, "Set next id failed. Bundle " + id + " does not exist.");
                 call.reject("Set next id failed. Bundle " + id + " does not exist.");
             } else {
@@ -522,7 +522,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                     }
                                     if(latest.isDownloaded()){
                                         Log.e(CapacitorUpdater.TAG, "Latest bundle already exists and download is NOT required. Update will occur next time app moves to background.");
-                                        CapacitorUpdaterPlugin.this.implementation.setNextVersion(latest.getId());
+                                        CapacitorUpdaterPlugin.this.implementation.setNext(latest.getId());
                                         return;
                                     }
                                 }
@@ -537,7 +537,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                             final String url = (String) res.get("url");
                                             final BundleInfo next = CapacitorUpdaterPlugin.this.implementation.download(url, latestVersionName);
 
-                                            CapacitorUpdaterPlugin.this.implementation.setNextVersion(next.getId());
+                                            CapacitorUpdaterPlugin.this.implementation.setNext(next.getId());
                                         } catch (final Exception e) {
                                             Log.e(CapacitorUpdater.TAG, "error downloading file", e);
                                         }
@@ -582,7 +582,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                 Log.d(CapacitorUpdater.TAG, "Next bundle is: " + next.getVersionName());
                 if (this.implementation.set(next) && this._reload()) {
                     Log.i(CapacitorUpdater.TAG, "Updated to bundle: " + next.getVersionName());
-                    this.implementation.setNextVersion(null);
+                    this.implementation.setNext(null);
                 } else {
                     Log.e(CapacitorUpdater.TAG, "Update to bundle: " + next.getVersionName() + " Failed!");
                 }

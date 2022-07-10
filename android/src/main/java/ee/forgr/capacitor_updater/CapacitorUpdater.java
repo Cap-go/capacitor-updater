@@ -307,7 +307,7 @@ public class CapacitorUpdater {
     public void reset(final boolean internal) {
         this.setCurrentBundle(new File("public"));
         this.setFallbackVersion(null);
-        this.setNextVersion(null);
+        this.setNext(null);
         if(!internal) {
             this.sendStats("reset", this.getCurrentBundle().getVersionName());
         }
@@ -511,7 +511,7 @@ public class CapacitorUpdater {
         }
     }
 
-    public boolean setNextVersion(final String next) {
+    public boolean setNext(final String next) {
         if (next == null) {
             this.editor.remove(NEXT_VERSION);
         } else {

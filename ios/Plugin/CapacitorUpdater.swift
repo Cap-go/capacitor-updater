@@ -259,8 +259,8 @@ extension CustomError: LocalizedError {
     
     private func setCurrentBundle(bundle: String) {
         UserDefaults.standard.set(bundle, forKey: self.CAP_SERVER_PATH)
-        print("\(self.TAG) Current bundle set to: \(bundle)")
         UserDefaults.standard.synchronize()
+        print("\(self.TAG) Current bundle set to: \(bundle == "" ? BundleInfo.ID_BUILTIN : bundle)")
     }
 
     public func download(url: URL, version: String) throws -> BundleInfo {
@@ -372,9 +372,12 @@ extension CustomError: LocalizedError {
 
     public func set(id: String) -> Bool {
         let newBundle: BundleInfo = self.getBundleInfo(id: id)
+        if(newBundle.isBuiltin()) {
+            self.reset()
+            return true
+        }
         if (bundleExists(id: id)) {
-            let url: URL = self.getBundleDirectory(id: id)
-            self.setCurrentBundle(bundle: String(url.path.suffix(10)))
+            self.setCurrentBundle(bundle: id)
             self.setBundleStatus(id: id, status: BundleStatus.PENDING)
             sendStats(action: "set", versionName: newBundle.getVersionName())
             return true
@@ -398,8 +401,7 @@ extension CustomError: LocalizedError {
     public func reset(isInternal: Bool) {
         self.setCurrentBundle(bundle: "")
         self.setFallbackVersion(fallback: Optional<BundleInfo>.none)
-        let _ = self.setNextVersion(next: Optional<String>.none)
-        UserDefaults.standard.synchronize()
+        let _ = self.setNext(next: Optional<String>.none)
         if(!isInternal) {
             sendStats(action: "reset", versionName: self.getCurrentBundle().getVersionName())
         }
@@ -441,7 +443,7 @@ extension CustomError: LocalizedError {
         }
         do {
             let result: BundleInfo = try UserDefaults.standard.getObj(forKey: "\(id)\(self.INFO_SUFFIX)", castTo: BundleInfo.self)
-            print("\(self.TAG) Returning info bundle [\(id)]", result.toString())
+//            print("\(self.TAG) Returning info bundle [\(id)]", result.toString())
             return result
         } catch {
             print("\(self.TAG) Failed to parse info for bundle [\(id)]", error.localizedDescription)
@@ -495,25 +497,22 @@ extension CustomError: LocalizedError {
         self.saveBundleInfo(id: id, bundle: info.setStatus(status: status.localizedString))
     }
 
-    private func getCurrentBundleVersion() -> String {
-        if(self.isUsingBuiltin()) {
-            return BundleInfo.ID_BUILTIN
-        } else {
-            let path: String = self.getCurrentBundleId()
-            return path.lastPathComponent
-        }
-    }
-
     public func getCurrentBundle() -> BundleInfo {
         return self.getBundleInfo(id: self.getCurrentBundleId());
     }
 
     public func getCurrentBundleId() -> String {
-        return UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH) ?? self.DEFAULT_FOLDER
+        guard let bundleID = UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH) else {
+            return BundleInfo.ID_BUILTIN
+        }
+        if (bundleID == "") {
+            return BundleInfo.ID_BUILTIN
+        }
+        return bundleID
     }
 
     public func isUsingBuiltin() -> Bool {
-        return self.getCurrentBundleId() == self.DEFAULT_FOLDER
+        return (UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH) ?? "") == self.DEFAULT_FOLDER
     }
 
     public func getFallbackVersion() -> BundleInfo {
@@ -523,6 +522,7 @@ extension CustomError: LocalizedError {
 
     private func setFallbackVersion(fallback: BundleInfo?) {
         UserDefaults.standard.set(fallback == nil ? BundleInfo.ID_BUILTIN : fallback!.getId(), forKey: self.FALLBACK_VERSION)
+        UserDefaults.standard.synchronize()
     }
 
     public func getNextVersion() -> BundleInfo? {
@@ -534,19 +534,24 @@ extension CustomError: LocalizedError {
         }
     }
 
-    public func setNextVersion(next: String?) -> Bool {
+    public func setNext(next: String?) -> Bool {
         guard let nextId = next else {
             UserDefaults.standard.removeObject(forKey: self.NEXT_VERSION)
             UserDefaults.standard.synchronize()
-            return
+            return false
         }
-        let bundle: URL = self.getBundleDirectory(id: next)
+        let newBundle: BundleInfo = self.getBundleInfo(id: nextId)
+        if(newBundle.isBuiltin()) {
+            self.reset()
+            return true
+        }
+        let bundle: URL = self.getBundleDirectory(id: nextId)
         if (!bundle.exist) {
             return false
         }
         UserDefaults.standard.set(next, forKey: self.NEXT_VERSION)
-        self.setBundleStatus(id: next!, status: BundleStatus.PENDING)
         UserDefaults.standard.synchronize()
+        self.setBundleStatus(id: next!, status: BundleStatus.PENDING)
         return true
     }
 }
