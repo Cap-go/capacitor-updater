@@ -84,8 +84,8 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         this.implementation.appId = config.getString("appId", "");
         this.implementation.statsUrl = this.getConfig().getString("statsUrl", statsUrlDefault);
         this.implementation.documentsDir = this.getContext().getFilesDir();
-        this.implementation.prefs = this.getContext().getSharedPreferences(WebView.WEBVIEW_PREFS_NAME, Activity.MODE_PRIVATE);
-        this.implementation.editor = this.prefs.edit();
+        this.implementation.prefs = this.prefs;
+        this.implementation.editor = this.editor;
         this.implementation.versionOs = Build.VERSION.RELEASE;
         this.implementation.deviceID = Settings.Secure.getString(this.getContext().getContentResolver(), Settings.Secure.ANDROID_ID);
 
@@ -236,7 +236,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
 
         try {
             Log.i(CapacitorUpdater.TAG, "Setting next active id " + id);
-            if (!this.implementation.setNext(id)) {
+            if (!this.implementation.setNextBundle(id)) {
                 Log.e(CapacitorUpdater.TAG, "Set next id failed. Bundle " + id + " does not exist.");
                 call.reject("Set next id failed. Bundle " + id + " does not exist.");
             } else {
@@ -329,7 +329,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     }
 
     private boolean _reset(final Boolean toLastSuccessful) {
-        final BundleInfo fallback = this.implementation.getFallbackVersion();
+        final BundleInfo fallback = this.implementation.getFallbackBundle();
         this.implementation.reset();
 
         if (toLastSuccessful && !fallback.isBuiltin()) {
@@ -388,7 +388,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     }
 
     @PluginMethod
-    public void delayUpdate(final PluginCall call) {
+    public void setDelay(final PluginCall call) {
         try {
             final String kind = call.getString("kind");
             final String value = call.getString("value");
@@ -531,7 +531,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                     }
                                     if(latest.isDownloaded()){
                                         Log.e(CapacitorUpdater.TAG, "Latest bundle already exists and download is NOT required. Update will occur next time app moves to background.");
-                                        CapacitorUpdaterPlugin.this.implementation.setNext(latest.getId());
+                                        CapacitorUpdaterPlugin.this.implementation.setNextBundle(latest.getId());
                                         return;
                                     }
                                 }
@@ -546,7 +546,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                             final String url = (String) res.get("url");
                                             final BundleInfo next = CapacitorUpdaterPlugin.this.implementation.download(url, latestVersionName);
 
-                                            CapacitorUpdaterPlugin.this.implementation.setNext(next.getId());
+                                            CapacitorUpdaterPlugin.this.implementation.setNextBundle(next.getId());
                                         } catch (final Exception e) {
                                             Log.e(CapacitorUpdater.TAG, "error downloading file", e);
                                         }
@@ -576,9 +576,9 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                 Log.i(CapacitorUpdater.TAG, "Update delayed to next backgrounding");
                 return;
             }
-            final BundleInfo fallback = this.implementation.getFallbackVersion();
+            final BundleInfo fallback = this.implementation.getFallbackBundle();
             final BundleInfo current = this.implementation.getCurrentBundle();
-            final BundleInfo next = this.implementation.getNextVersion();
+            final BundleInfo next = this.implementation.getNextBundle();
 
             final Boolean success = current.getStatus() == BundleStatus.SUCCESS;
 
@@ -590,7 +590,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                 Log.d(CapacitorUpdater.TAG, "Next bundle is: " + next.getVersionName());
                 if (this.implementation.set(next) && this._reload()) {
                     Log.i(CapacitorUpdater.TAG, "Updated to bundle: " + next.getVersionName());
-                    this.implementation.setNext(null);
+                    this.implementation.setNextBundle(null);
                 } else {
                     Log.e(CapacitorUpdater.TAG, "Update to bundle: " + next.getVersionName() + " Failed!");
                 }

@@ -98,7 +98,7 @@ public class CapacitorUpdater {
             this.notifyDownload(id, 75);
 
             ZipEntry entry;
-            while ((entry = zis.getNextEntry()) != null) {
+            while ((entry = zis.getNextBundleEntry()) != null) {
                 final File file = new File(targetDirectory, entry.getName());
                 final String canonicalPath = file.getCanonicalPath();
                 final String canonicalDir = (new File(String.valueOf(targetDirectory))).getCanonicalPath();
@@ -276,10 +276,12 @@ public class CapacitorUpdater {
     }
 
     public Boolean set(final String id) {
-
         final BundleInfo newBundle = this.getBundleInfo(id);
+        if(newBundle.isBuiltin()) {
+            this.reset();
+            return true;
+        }
         final File bundle = this.getBundleDirectory(id);
-
         Log.i(TAG, "Setting next active bundle: " + id);
         if (this.bundleExists(id)) {
             this.setCurrentBundle(bundle);
@@ -293,7 +295,7 @@ public class CapacitorUpdater {
 
     public void commit(final BundleInfo bundle) {
         this.setBundleStatus(bundle.getId(), BundleStatus.SUCCESS);
-        this.setFallbackVersion(bundle);
+        this.setFallbackBundle(bundle);
     }
 
     public void reset() {
@@ -306,8 +308,8 @@ public class CapacitorUpdater {
 
     public void reset(final boolean internal) {
         this.setCurrentBundle(new File("public"));
-        this.setFallbackVersion(null);
-        this.setNext(null);
+        this.setFallbackBundle(null);
+        this.setNextBundle(null);
         if(!internal) {
             this.sendStats("reset", this.getCurrentBundle().getVersionName());
         }
@@ -489,12 +491,12 @@ public class CapacitorUpdater {
         return this.getCurrentBundlePath().equals("public");
     }
 
-    public BundleInfo getFallbackVersion() {
+    public BundleInfo getFallbackBundle() {
         final String id = this.prefs.getString(FALLBACK_VERSION, BundleInfo.ID_BUILTIN);
         return this.getBundleInfo(id);
     }
 
-    private void setFallbackVersion(final BundleInfo fallback) {
+    private void setFallbackBundle(final BundleInfo fallback) {
         this.editor.putString(FALLBACK_VERSION,
                 fallback == null
                         ? BundleInfo.ID_BUILTIN
@@ -502,7 +504,7 @@ public class CapacitorUpdater {
         );
     }
 
-    public BundleInfo getNextVersion() {
+    public BundleInfo getNextBundle() {
         final String id = this.prefs.getString(NEXT_VERSION, "");
         if(id != "") {
             return this.getBundleInfo(id);
@@ -511,10 +513,15 @@ public class CapacitorUpdater {
         }
     }
 
-    public boolean setNext(final String next) {
+    public boolean setNextBundle(final String next) {
         if (next == null) {
             this.editor.remove(NEXT_VERSION);
         } else {
+            final BundleInfo newBundle = this.getBundleInfo(next);
+            if(newBundle.isBuiltin()) {
+                this.reset();
+                return true;
+            }
             if (!this.bundleExists(next)) {
                 return false;
             }

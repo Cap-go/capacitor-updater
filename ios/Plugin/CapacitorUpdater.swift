@@ -400,8 +400,8 @@ extension CustomError: LocalizedError {
     
     public func reset(isInternal: Bool) {
         self.setCurrentBundle(bundle: "")
-        self.setFallbackVersion(fallback: Optional<BundleInfo>.none)
-        let _ = self.setNext(next: Optional<String>.none)
+        self.setFallbackBundle(fallback: Optional<BundleInfo>.none)
+        let _ = self.setNextBundle(next: Optional<String>.none)
         if(!isInternal) {
             sendStats(action: "reset", versionName: self.getCurrentBundle().getVersionName())
         }
@@ -409,7 +409,7 @@ extension CustomError: LocalizedError {
     
     public func commit(bundle: BundleInfo) {
         self.setBundleStatus(id: bundle.getId(), status: BundleStatus.SUCCESS)
-        self.setFallbackVersion(fallback: bundle)
+        self.setFallbackBundle(fallback: bundle)
     }
     
     public func rollback(bundle: BundleInfo) {
@@ -515,17 +515,17 @@ extension CustomError: LocalizedError {
         return (UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH) ?? "") == self.DEFAULT_FOLDER
     }
 
-    public func getFallbackVersion() -> BundleInfo {
+    public func getFallbackBundle() -> BundleInfo {
         let id: String = UserDefaults.standard.string(forKey: self.FALLBACK_VERSION) ?? BundleInfo.ID_BUILTIN
         return self.getBundleInfo(id: id)
     }
 
-    private func setFallbackVersion(fallback: BundleInfo?) {
+    private func setFallbackBundle(fallback: BundleInfo?) {
         UserDefaults.standard.set(fallback == nil ? BundleInfo.ID_BUILTIN : fallback!.getId(), forKey: self.FALLBACK_VERSION)
         UserDefaults.standard.synchronize()
     }
 
-    public func getNextVersion() -> BundleInfo? {
+    public func getNextBundle() -> BundleInfo? {
         let id: String = UserDefaults.standard.string(forKey: self.NEXT_VERSION) ?? ""
         if(id != "") {
             return self.getBundleInfo(id: id)
@@ -534,7 +534,7 @@ extension CustomError: LocalizedError {
         }
     }
 
-    public func setNext(next: String?) -> Bool {
+    public func setNextBundle(next: String?) -> Bool {
         guard let nextId = next else {
             UserDefaults.standard.removeObject(forKey: self.NEXT_VERSION)
             UserDefaults.standard.synchronize()

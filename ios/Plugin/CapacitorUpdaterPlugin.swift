@@ -140,7 +140,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             return
         }
         print("\(self.implementation.TAG) Setting next active id \(id)")
-        if (!self.implementation.setNext(next: id)) {
+        if (!self.implementation.setNextBundle(next: id)) {
             print("\(self.implementation.TAG) Set next version failed. id \(id) does not exist.")
             call.reject("Set next version failed. id \(id) does not exist.")
         } else {
@@ -199,7 +199,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         guard let bridge = self.bridge else { return false }
 
         if let vc = bridge.viewController as? CAPBridgeViewController {
-            let fallback: BundleInfo = self.implementation.getFallbackVersion()
+            let fallback: BundleInfo = self.implementation.getFallbackBundle()
             if (toLastSuccessful && !fallback.isBuiltin()) {
                 print("\(self.implementation.TAG) Resetting to: \(fallback.toString())")
                 return self.implementation.set(bundle: fallback) && self._reload()
@@ -372,7 +372,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                         }
                         if(latest!.isDownloaded()){
                             print("\(self.implementation.TAG) Latest version already exists and download is NOT required. Update will occur next time app moves to background.")
-                            let _ = self.implementation.setNext(next: latest!.getId())
+                            let _ = self.implementation.setNextBundle(next: latest!.getId())
                             return
                         }
                     }
@@ -381,7 +381,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                         print("\(self.implementation.TAG) New bundle: \(latestVersionName!) found. Current is: \(current.getVersionName()). Update will occur next time app moves to background.")
                         let next = try self.implementation.download(url: downloadUrl, version: latestVersionName!)
 
-                        let _ = self.implementation.setNext(next: next.getId())
+                        let _ = self.implementation.setNextBundle(next: next.getId())
                     } catch {
                         print("\(self.implementation.TAG) Error downloading file", error.localizedDescription)
                     }
@@ -401,9 +401,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             return
         }
 
-        let fallback: BundleInfo = self.implementation.getFallbackVersion()
+        let fallback: BundleInfo = self.implementation.getFallbackBundle()
         let current: BundleInfo = self.implementation.getCurrentBundle()
-        let next: BundleInfo? = self.implementation.getNextVersion()
+        let next: BundleInfo? = self.implementation.getNextBundle()
 
         let success: Bool = current.getStatus() == BundleStatus.SUCCESS.localizedString
 
@@ -414,7 +414,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             print("\(self.implementation.TAG) Next bundle is: \(next!.toString())")
             if (self.implementation.set(bundle: next!) && self._reload()) {
                 print("\(self.implementation.TAG) Updated to bundle: \(next!)")
-                let _ = self.implementation.setNext(next: Optional<String>.none)
+                let _ = self.implementation.setNextBundle(next: Optional<String>.none)
             } else {
                 print("\(self.implementation.TAG) Updated to bundle: \(next!) Failed!")
             }
