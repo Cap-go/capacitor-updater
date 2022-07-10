@@ -231,6 +231,8 @@ export interface CapacitorUpdaterPlugin {
    * Set delay to skip updates in the next time the app goes into the background
    *
    * @returns {Promise<void>} an Promise resolved directly
+   * @param kind is the kind of delay to set
+   * @param value is the delay value acording to the type
    * @throws An error if the something went wrong
    * @since 4.0.0
    */
