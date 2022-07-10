@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.0.0-alpha.17](https://github.com/Cap-go/capacitor-updater/compare/4.0.0-alpha.16...4.0.0-alpha.17) (2022-07-10)
+
+
+### Bug Fixes
+
+* setDelay type ([6b214d7](https://github.com/Cap-go/capacitor-updater/commit/6b214d7c7d6d879093c10cd9973e201c72f3a3b4))
+
 ## [4.0.0-alpha.16](https://github.com/Cap-go/capacitor-updater/compare/4.0.0-alpha.15...4.0.0-alpha.16) (2022-07-10)
 
 
