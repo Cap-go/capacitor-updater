@@ -535,16 +535,17 @@ extension CustomError: LocalizedError {
     }
 
     public func setNextVersion(next: String?) -> Bool {
-        if (next == nil) {
+        guard let nextId = next else {
             UserDefaults.standard.removeObject(forKey: self.NEXT_VERSION)
-        } else {
-            let bundle: URL = self.getBundleDirectory(id: next!)
-            if (!bundle.exist) {
-                return false
-            }
-            UserDefaults.standard.set(next, forKey: self.NEXT_VERSION)
-            self.setBundleStatus(id: next!, status: BundleStatus.PENDING);
+            UserDefaults.standard.synchronize()
+            return
         }
+        let bundle: URL = self.getBundleDirectory(id: next)
+        if (!bundle.exist) {
+            return false
+        }
+        UserDefaults.standard.set(next, forKey: self.NEXT_VERSION)
+        self.setBundleStatus(id: next!, status: BundleStatus.PENDING)
         UserDefaults.standard.synchronize()
         return true
     }

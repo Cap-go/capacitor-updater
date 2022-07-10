@@ -106,6 +106,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             let res = try implementation.download(url: url!, version: version)
             call.resolve(res.toJSON())
         } catch {
+            print("\(self.implementation.TAG) download failed \(error.localizedDescription)")
             call.reject("download failed", error.localizedDescription)
         }
     }
@@ -127,8 +128,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         if (self._reload()) {
             call.resolve()
         } else {
-            call.reject("Reload failed")
             print("\(self.implementation.TAG) Reload failed")
+            call.reject("Reload failed")
         }
     }
 
@@ -138,9 +139,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             call.reject("Next called without id")
             return
         }
-
         print("\(self.implementation.TAG) Setting next active id \(id)")
         if (!self.implementation.setNextVersion(next: id)) {
+            print("\(self.implementation.TAG) Set next version failed. id \(id) does not exist.")
             call.reject("Set next version failed. id \(id) does not exist.")
         } else {
             call.resolve(self.implementation.getBundleInfo(id: id).toJSON())
@@ -173,6 +174,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         if (res) {
             call.resolve()
         } else {
+            print("\(self.implementation.TAG) Delete failed, id \(id) doesn't exist")
             call.reject("Delete failed, id \(id) doesn't exist")
         }
     }
@@ -219,6 +221,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         if (self._reset(toLastSuccessful: toLastSuccessful)) {
             return call.resolve()
         }
+        print("\(self.implementation.TAG) Reset failed")
         call.reject("\(self.implementation.TAG) Reset failed")
     }
     

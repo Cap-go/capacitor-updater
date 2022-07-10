@@ -178,6 +178,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         final String url = call.getString("url");
         final String version = call.getString("version");
         if (url == null || version == null) {
+            Log.e(CapacitorUpdater.TAG, "missing url or version");
             call.reject("missing url or version");
             return;
         }
@@ -220,6 +221,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             if (this._reload()) {
                 call.resolve();
             } else {
+                Log.e(CapacitorUpdater.TAG, "Reload failed");
                 call.reject("Reload failed");
             }
         } catch(final Exception e) {
@@ -235,6 +237,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         try {
             Log.i(CapacitorUpdater.TAG, "Setting next active id " + id);
             if (!this.implementation.setNextVersion(id)) {
+                Log.e(CapacitorUpdater.TAG, "Set next id failed. Bundle " + id + " does not exist.");
                 call.reject("Set next id failed. Bundle " + id + " does not exist.");
             } else {
                 call.resolve(this.implementation.getBundleInfo(id).toJSON());
@@ -273,6 +276,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             if (res) {
                 call.resolve();
             } else {
+                Log.e(CapacitorUpdater.TAG, "Delete failed, id " + id + " does not exist");
                 call.reject("Delete failed, id " + id + " does not exist");
             }
         } catch(final Exception e) {
@@ -345,6 +349,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                 call.resolve();
                 return;
             }
+            Log.e(CapacitorUpdater.TAG, "Reset failed");
             call.reject("Reset failed");
         }
         catch(final Exception e) {
