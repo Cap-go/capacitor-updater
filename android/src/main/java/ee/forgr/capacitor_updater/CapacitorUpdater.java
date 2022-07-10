@@ -502,15 +502,12 @@ public class CapacitorUpdater {
                         ? BundleInfo.ID_BUILTIN
                         : fallback.getId()
         );
+        this.editor.commit();
     }
 
     public BundleInfo getNextBundle() {
-        final String id = this.prefs.getString(NEXT_VERSION, "");
-        if(id != "") {
-            return this.getBundleInfo(id);
-        } else {
-            return null;
-        }
+        final String id = this.prefs.getString(NEXT_VERSION, BundleInfo.ID_BUILTIN);
+        return this.getBundleInfo(id);
     }
 
     public boolean setNextBundle(final String next) {
@@ -518,11 +515,7 @@ public class CapacitorUpdater {
             this.editor.remove(NEXT_VERSION);
         } else {
             final BundleInfo newBundle = this.getBundleInfo(next);
-            if(newBundle.isBuiltin()) {
-                this.reset();
-                return true;
-            }
-            if (!this.bundleExists(next)) {
+            if (!newBundle.isBuiltin() && !this.bundleExists(next)) {
                 return false;
             }
             this.editor.putString(NEXT_VERSION, next);

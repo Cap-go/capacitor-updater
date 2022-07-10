@@ -526,12 +526,8 @@ extension CustomError: LocalizedError {
     }
 
     public func getNextBundle() -> BundleInfo? {
-        let id: String = UserDefaults.standard.string(forKey: self.NEXT_VERSION) ?? ""
-        if(id != "") {
-            return self.getBundleInfo(id: id)
-        } else {
-            return nil
-        }
+        let id: String = UserDefaults.standard.string(forKey: self.NEXT_VERSION) ?? BundleInfo.ID_BUILTIN
+        return self.getBundleInfo(id: id)
     }
 
     public func setNextBundle(next: String?) -> Bool {
@@ -541,17 +537,13 @@ extension CustomError: LocalizedError {
             return false
         }
         let newBundle: BundleInfo = self.getBundleInfo(id: nextId)
-        if(newBundle.isBuiltin()) {
-            self.reset()
-            return true
-        }
         let bundle: URL = self.getBundleDirectory(id: nextId)
-        if (!bundle.exist) {
+        if (!newBundle.isBuiltin() && !bundle.exist) {
             return false
         }
-        UserDefaults.standard.set(next, forKey: self.NEXT_VERSION)
+        UserDefaults.standard.set(nextId, forKey: self.NEXT_VERSION)
         UserDefaults.standard.synchronize()
-        self.setBundleStatus(id: next!, status: BundleStatus.PENDING)
+        self.setBundleStatus(id: nextId, status: BundleStatus.PENDING)
         return true
     }
 }
