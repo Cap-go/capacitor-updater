@@ -98,7 +98,7 @@ public class CapacitorUpdater {
             this.notifyDownload(id, 75);
 
             ZipEntry entry;
-            while ((entry = zis.getNextBundleEntry()) != null) {
+            while ((entry = zis.getNextEntry()) != null) {
                 final File file = new File(targetDirectory, entry.getName());
                 final String canonicalPath = file.getCanonicalPath();
                 final String canonicalDir = (new File(String.valueOf(targetDirectory))).getCanonicalPath();
