@@ -88,6 +88,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         this.implementation.editor = this.editor;
         this.implementation.versionOs = Build.VERSION.RELEASE;
         this.implementation.deviceID = Settings.Secure.getString(this.getContext().getContentResolver(), Settings.Secure.ANDROID_ID);
+        Log.e(CapacitorUpdater.TAG, "init for device", this.implementation.deviceID);
 
         this.autoDeleteFailed = this.getConfig().getBoolean("autoDeleteFailed", true);
         this.autoDeletePrevious = this.getConfig().getBoolean("autoDeletePrevious", true);

@@ -24,6 +24,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     private var autoDeletePrevious = false
     
     override public func load() {
+        print("\(self.implementation.TAG) init for device \(self.implementation.deviceID)")
         do {
             currentVersionNative = try Version(Bundle.main.buildVersionNumber ?? "0.0.0")
         } catch {
