@@ -35,8 +35,8 @@ import java.util.List;
 
 @CapacitorPlugin(name = "CapacitorUpdater")
 public class CapacitorUpdaterPlugin extends Plugin implements Application.ActivityLifecycleCallbacks {
-    private static final String updateUrlDefault = "https://xvwzpoazmxkqosrdewyv.functions.supabase.co/updates";
-    private static final String statsUrlDefault = "https://xvwzpoazmxkqosrdewyv.functions.supabase.co/stats";
+    private static final String updateUrlDefault = "https://api.capgo.app/updates";
+    private static final String statsUrlDefault = "https://api.capgo.app/stats";
     private static final String DELAY_UPDATE = "delayUpdate";
     private static final String DELAY_UPDATE_VAL = "delayUpdateVal";
 
