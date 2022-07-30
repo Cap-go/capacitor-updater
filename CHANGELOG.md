@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.0.0-alpha.25](https://github.com/Cap-go/capacitor-updater/compare/4.0.0-alpha.24...4.0.0-alpha.25) (2022-07-30)
+
+
+### Bug Fixes
+
+* switch to load balancer ([39e5fec](https://github.com/Cap-go/capacitor-updater/commit/39e5fec5f826ee3d3580175ed14571cf55bfda70))
+
 ## [4.0.0-alpha.24](https://github.com/Cap-go/capacitor-updater/compare/4.0.0-alpha.23...4.0.0-alpha.24) (2022-07-28)
 
 
