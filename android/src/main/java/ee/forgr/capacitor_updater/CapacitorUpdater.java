@@ -35,6 +35,7 @@ import java.net.URLConnection;
 import java.security.SecureRandom;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.ArrayList;
@@ -67,6 +68,8 @@ public class CapacitorUpdater {
         this.editor = this.prefs.edit();
         this.versionOs = Build.VERSION.RELEASE;
         this.deviceID = Secure.getString(context.getContentResolver(), Secure.ANDROID_ID);
+        this.deviceID = this.prefs.getString("appUUID", UUID.randomUUID().toString());
+        this.editor.putString("appUUID", this.deviceID);
         final PackageInfo pInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
         this.versionBuild = pInfo.versionName;
         this.versionCode = Integer.toString(pInfo.versionCode);
