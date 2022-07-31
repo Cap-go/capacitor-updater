@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.0.0-alpha.27](https://github.com/Cap-go/capacitor-updater/compare/4.0.0-alpha.26...4.0.0-alpha.27) (2022-07-31)
+
+
+### Bug Fixes
+
+* uuid android ([a2d50e1](https://github.com/Cap-go/capacitor-updater/commit/a2d50e162747a006ba4f3564d2f0e5fd5a23bc6a))
+
 ## [4.0.0-alpha.26](https://github.com/Cap-go/capacitor-updater/compare/4.0.0-alpha.25...4.0.0-alpha.26) (2022-07-30)
 
 
