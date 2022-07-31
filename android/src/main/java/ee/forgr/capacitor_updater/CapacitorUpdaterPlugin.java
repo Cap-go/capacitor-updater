@@ -32,6 +32,7 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
+import java.util.UUID;
 
 @CapacitorPlugin(name = "CapacitorUpdater")
 public class CapacitorUpdaterPlugin extends Plugin implements Application.ActivityLifecycleCallbacks {
@@ -87,7 +88,8 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         this.implementation.prefs = this.prefs;
         this.implementation.editor = this.editor;
         this.implementation.versionOs = Build.VERSION.RELEASE;
-        this.implementation.deviceID = Settings.Secure.getString(this.getContext().getContentResolver(), Settings.Secure.ANDROID_ID);
+        this.implementation.deviceID = this.prefs.getString("appUUID", UUID.randomUUID().toString());
+        this.editor.putString("appUUID", this.implementation.deviceID);
         Log.e(CapacitorUpdater.TAG, "init for device " + this.implementation.deviceID);
 
         this.autoDeleteFailed = this.getConfig().getBoolean("autoDeleteFailed", true);
