@@ -162,10 +162,10 @@ export interface CapacitorUpdaterPlugin {
    *
    * @returns {Promise<BundleInfo>} The {@link BundleInfo} for the specified version.
    * @param url The URL of the bundle zip file (e.g: dist.zip) to be downloaded. (This can be any URL. E.g: Amazon S3, a github tag, any other place you've hosted your bundle.)
-   * @param version (optional) set the version code/name of this bundle/version
+   * @param version set the version code/name of this bundle/version
    * @example https://example.com/versions/{version}/dist.zip 
    */
-  download(options: { url: string, version?: string }): Promise<BundleInfo>;
+  download(options: { url: string, version: string }): Promise<BundleInfo>;
 
   /**
    * Set the next bundle to be used when the app is reloaded.
@@ -287,7 +287,7 @@ export interface CapacitorUpdaterPlugin {
   ): Promise<PluginListenerHandle> & PluginListenerHandle;
 
     /**
-   * Listen for update event in the App, let you know when update is ready to install at next app start
+   * Listen for update fail event in the App, let you know when update hs fail to install at next app start
    *
    * @since 2.3.0
    */
