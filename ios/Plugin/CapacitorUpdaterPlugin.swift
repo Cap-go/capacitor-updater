@@ -181,7 +181,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         let current  = pathHot.count >= 10 ? pathHot.suffix(10) : "builtin"
         call.resolve([
             "current": current,
-            "currentNative": currentVersionNative
+            "currentNative": currentVersionNative.description
         ])
     }
 
