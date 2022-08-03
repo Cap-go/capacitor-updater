@@ -1,3 +1,9 @@
+## 3.3.15 (2022-08-03)
+
+### Fix
+
+- updateAvailable listener
+
 ## 3.3.14 (2022-08-03)
 
 ### Fix
