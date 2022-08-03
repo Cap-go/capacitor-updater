@@ -595,7 +595,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         try {
             final String delayUpdate = this.prefs.getString(DELAY_UPDATE, "");
             this._checkCancelDelay(false);
-            if ("".equals(delayUpdate)) {
+            if (!"".equals(delayUpdate)) {
                 Log.i(CapacitorUpdater.TAG, "Update delayed to next backgrounding");
                 return;
             }
