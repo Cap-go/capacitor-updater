@@ -228,7 +228,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         final JSObject ret = new JSObject();
         final String current = pathHot.length() >= 10 ? pathHot.substring(pathHot.length() - 10) : "builtin";
         ret.put("current", current);
-        ret.put("currentNative", this.currentVersionNative);
+        ret.put("currentNative", this.currentVersionNative.toString());
         call.resolve(ret);
     }
 
