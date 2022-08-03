@@ -230,7 +230,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                     print("✨  Capacitor-updater: New version: \(newVersion) found. Current is \(currentVersion == "" ? "builtin" : currentVersion), next backgrounding will trigger update")
                     UserDefaults.standard.set(dl, forKey: "nextVersion")
                     UserDefaults.standard.set(newVersion.description, forKey: "nextVersionName")
-                    self.notifyListeners("updateAvailable", data: ["version": newVersion])
+                    self.notifyListeners("updateAvailable", data: ["version": newVersion.description])
                 } catch {
                     print("✨  Capacitor-updater: Download version \(newVersion) fail", error.localizedDescription)
                 }
