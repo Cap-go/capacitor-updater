@@ -180,9 +180,14 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     public void download(final PluginCall call) {
         final String url = call.getString("url");
         final String version = call.getString("version");
-        if (url == null || version == null) {
-            Log.e(CapacitorUpdater.TAG, "missing url or version");
-            call.reject("missing url or version");
+        if (url == null) {
+            Log.e(CapacitorUpdater.TAG, "Download called without url");
+            call.reject("Download called without url");
+            return;
+        }
+        if (version == null) {
+            Log.e(CapacitorUpdater.TAG, "Download called without version");
+            call.reject("Download called without version");
             return;
         }
         try {
