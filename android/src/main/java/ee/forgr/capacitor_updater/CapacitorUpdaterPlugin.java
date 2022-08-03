@@ -236,7 +236,11 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     @PluginMethod
     public void next(final PluginCall call) {
         final String id = call.getString("id");
-
+        if (id == null) {
+            Log.e(CapacitorUpdater.TAG, "Next called without id");
+            call.reject("Next called without id");
+            return;
+        }
         try {
             Log.i(CapacitorUpdater.TAG, "Setting next active id " + id);
             if (!this.implementation.setNextBundle(id)) {
@@ -254,7 +258,11 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     @PluginMethod
     public void set(final PluginCall call) {
         final String id = call.getString("id");
-
+        if (id == null) {
+            Log.e(CapacitorUpdater.TAG, "Set called without id");
+            call.reject("Set called without id");
+            return;
+        }
         try {
             Log.i(CapacitorUpdater.TAG, "Setting active bundle " + id);
             if (!this.implementation.set(id)) {
@@ -273,6 +281,11 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     @PluginMethod
     public void delete(final PluginCall call) {
         final String id = call.getString("id");
+        if (id == null) {
+            Log.e(CapacitorUpdater.TAG, "missing id");
+            call.reject("missing id");
+            return;
+        }
         Log.i(CapacitorUpdater.TAG, "Deleting id: " + id);
         try {
             final Boolean res = this.implementation.delete(id);

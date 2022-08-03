@@ -30,12 +30,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         } catch {
             print("\(self.implementation.TAG) Cannot get version native \(currentVersionNative)")
         }
-        autoDeleteFailed = getConfigValue("autoDeleteFailed") as? Bool ?? false
-        autoDeletePrevious = getConfigValue("autoDeletePrevious") as? Bool ?? false
-        updateUrl = getConfigValue("updateUrl") as? String ?? CapacitorUpdaterPlugin.updateUrlDefault
-        autoUpdate = getConfigValue("autoUpdate") as? Bool ?? false
-        appReadyTimeout = getConfigValue("appReadyTimeout") as? Int ?? 10000
-        resetWhenUpdate = getConfigValue("resetWhenUpdate") as? Bool ?? true
+        autoDeleteFailed = getConfig().getBoolean("autoDeleteFailed", false)
+        autoDeletePrevious = getConfig().getBoolean("autoDeletePrevious", false)
+        updateUrl = getConfig().getString("updateUrl") ?? CapacitorUpdaterPlugin.updateUrlDefault
+        autoUpdate = getConfig().getBoolean("autoUpdate", false)
+        appReadyTimeout = getConfig().getInt("appReadyTimeout", 10000)
+        resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
 
         implementation.appId = Bundle.main.bundleIdentifier ?? ""
         implementation.notifyDownload = notifyDownload
@@ -43,8 +43,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         if (config?["appId"] != nil) {
             implementation.appId = config?["appId"] as! String
         }
-        implementation.statsUrl = getConfigValue("statsUrl") as? String ?? CapacitorUpdaterPlugin.statsUrlDefault
-
+        implementation.statsUrl = getConfig().getString("statsUrl") ?? CapacitorUpdaterPlugin.updateUrlDefault
         if (resetWhenUpdate) {
             self.cleanupObsoleteVersions()
         }
