@@ -1,3 +1,9 @@
+## 3.3.16 (2022-08-03)
+
+### Fix
+
+- currentVersionNative convertion
+
 ## 3.3.15 (2022-08-03)
 
 ### Fix
