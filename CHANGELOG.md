@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.0.0-alpha.33](https://github.com/Cap-go/capacitor-updater/compare/4.0.0-alpha.32...4.0.0-alpha.33) (2022-08-03)
+
+
+### Bug Fixes
+
+* delay issue android ([e88645e](https://github.com/Cap-go/capacitor-updater/commit/e88645e1239a90e71f35724f32466732422c8ce5))
+
 ## [4.0.0-alpha.32](https://github.com/Cap-go/capacitor-updater/compare/4.0.0-alpha.31...4.0.0-alpha.32) (2022-08-03)
 
 
