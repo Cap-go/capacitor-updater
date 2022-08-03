@@ -380,7 +380,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                     do {
                         print("\(self.implementation.TAG) New bundle: \(latestVersionName!) found. Current is: \(current.getVersionName()). Update will occur next time app moves to background.")
                         let next = try self.implementation.download(url: downloadUrl, version: latestVersionName!)
-                        self.notifyListeners("updateAvailable", data: ["version": next.toJSON()])
+                        self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
                         let _ = self.implementation.setNextBundle(next: next.getId())
                     } catch {
                         print("\(self.implementation.TAG) Error downloading file", error.localizedDescription)

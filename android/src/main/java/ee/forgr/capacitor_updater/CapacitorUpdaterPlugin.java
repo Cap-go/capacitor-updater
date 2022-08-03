@@ -566,7 +566,9 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
 
                                             final String url = (String) res.get("url");
                                             final BundleInfo next = CapacitorUpdaterPlugin.this.implementation.download(url, latestVersionName);
-                                            this.notifyListeners("updateAvailable", next);
+                                            final JSObject ret = new JSObject();
+                                            ret.put("bundle", next.toJSON());
+                                            this.notifyListeners("updateAvailable", ret);
                                             CapacitorUpdaterPlugin.this.implementation.setNextBundle(next.getId());
                                         } catch (final Exception e) {
                                             Log.e(CapacitorUpdater.TAG, "error downloading file", e);
