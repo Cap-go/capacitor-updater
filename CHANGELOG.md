@@ -1,3 +1,9 @@
+## 3.3.17 (2022-08-05)
+
+### Fix
+
+- peer issues with capacitor
+
 ## 3.3.16 (2022-08-03)
 
 ### Fix
