@@ -2,7 +2,7 @@ import { WebPlugin } from '@capacitor/core';
 
 import type { CapacitorUpdaterPlugin, BundleInfo, latestVersion, DelayUntilNext } from './definitions';
 
-const BUNDLE_BUILTIN: BundleInfo = { status: 'success', version: '', downloaded: '1970-01-01T00:00:00.000Z', id: 'builtin' };
+const BUNDLE_BUILTIN: BundleInfo = { status: 'success', version: '', downloaded: '1970-01-01T00:00:00.000Z', id: 'builtin', checksum: "" };
 
 export class CapacitorUpdaterWeb
   extends WebPlugin
