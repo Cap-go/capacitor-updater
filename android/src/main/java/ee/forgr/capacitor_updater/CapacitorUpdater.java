@@ -28,6 +28,7 @@ import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -212,13 +213,25 @@ public class CapacitorUpdater {
         this.editor.commit();
     }
 
+    private String getChecksum(File file) throws IOException {
+        byte[] bytes = new byte[(int) file.length()];
+        try(FileInputStream fis = new FileInputStream(file)){
+            fis.read(bytes);
+        }
+        CRC32 crc = new CRC32();
+        crc.update(bytes);
+        String enc = String.format("%08X", crc.getValue());
+        return enc.toLowerCase();
+    }
+
     public BundleInfo download(final String url, final String version) throws IOException {
         final String id = this.randomString(10);
-        this.saveBundleInfo(id, new BundleInfo(id, version, BundleStatus.DOWNLOADING, new Date(System.currentTimeMillis())));
+        this.saveBundleInfo(id, new BundleInfo(id, version, BundleStatus.DOWNLOADING, new Date(System.currentTimeMillis()), ""));
         this.notifyDownload(id, 0);
         final String idName = bundleDirectory + "/" + id;
         this.notifyDownload(id, 5);
         final File downloaded = this.downloadFile(id, url, this.randomString(10));
+        final String checksum = this.getChecksum(downloaded);
         this.notifyDownload(id, 71);
         final File unzipped = this.unzip(id, downloaded, this.randomString(10));
         downloaded.delete();
@@ -226,7 +239,7 @@ public class CapacitorUpdater {
         this.flattenAssets(unzipped, idName);
         this.notifyDownload(id, 100);
         this.saveBundleInfo(id, null);
-        BundleInfo info = new BundleInfo(id, version, BundleStatus.PENDING, new Date(System.currentTimeMillis()));
+        BundleInfo info = new BundleInfo(id, version, BundleStatus.PENDING, new Date(System.currentTimeMillis()), checksum);
         this.saveBundleInfo(id, info);
         return info;
     }
@@ -246,17 +259,23 @@ public class CapacitorUpdater {
         return res;
     }
 
-    public Boolean delete(final String id) throws IOException {
+    public Boolean delete(final String id, final Boolean removeInfo) throws IOException {
         final BundleInfo deleted = this.getBundleInfo(id);
         final File bundle = new File(this.documentsDir, bundleDirectory + "/" + id);
         if (bundle.exists()) {
             this.deleteDirectory(bundle);
-            this.removeBundleInfo(id);
+            if (removeInfo) {
+                this.removeBundleInfo(id);
+            }
             return true;
         }
         Log.e(TAG, "Directory not removed: " + bundle.getPath());
         this.sendStats("delete", deleted.getVersionName());
         return false;
+    }
+
+    public Boolean delete(final String id) throws IOException {
+        return this.delete(id, true);
     }
 
     private File getBundleDirectory(final String id) {
@@ -293,16 +312,16 @@ public class CapacitorUpdater {
         return false;
     }
 
-    public void commit(final BundleInfo bundle) {
-        this.setBundleStatus(bundle.getId(), BundleStatus.SUCCESS);
-        this.setFallbackBundle(bundle);
-    }
-
     public void reset() {
         this.reset(false);
     }
 
-    public void rollback(final BundleInfo bundle) {
+    public void setSuccess(final BundleInfo bundle) {
+        this.setBundleStatus(bundle.getId(), BundleStatus.SUCCESS);
+        this.setFallbackBundle(bundle);
+    }
+
+    public void setError(final BundleInfo bundle) {
         this.setBundleStatus(bundle.getId(), BundleStatus.ERROR);
     }
 
@@ -404,14 +423,14 @@ public class CapacitorUpdater {
         Log.d(TAG, "Getting info for bundle [" + id + "]");
         BundleInfo result;
         if(BundleInfo.ID_BUILTIN.equals(id)) {
-            result = new BundleInfo(id, (String) null, BundleStatus.SUCCESS, "");
+            result = new BundleInfo(id, (String) null, BundleStatus.SUCCESS, "", "");
         } else {
             try {
                 String stored = this.prefs.getString(id + INFO_SUFFIX, "");
                 result = BundleInfo.fromJSON(stored);
             } catch (JSONException e) {
                 Log.e(TAG, "Failed to parse info for bundle [" + id + "] ", e);
-                result = new BundleInfo(id, (String) null, BundleStatus.PENDING, "");
+                result = new BundleInfo(id, (String) null, BundleStatus.PENDING, "", "");
             }
         }
 

@@ -1,6 +1,7 @@
 import Foundation
 import SSZipArchive
 import Alamofire
+import zlib
 
 extension URL {
     var isDirectory: Bool {
@@ -204,8 +205,19 @@ extension CustomError: LocalizedError {
             throw CustomError.cannotUnflat
         }
     }
+
+    private func getChecksum(filePath: URL) -> String {
+        do {
+            let fileData = try Data.init(contentsOf: filePath)
+            let checksum = fileData.withUnsafeBytes { crc32(0, $0.bindMemory(to: Bytef.self).baseAddress, uInt(fileData.count)) }
+            return String(format:"%08X", checksum).lowercased()
+        } catch {
+            print("\(self.TAG) Cannot get checksum: \(filePath.path)", error)
+            return ""
+        }
+    }
     
-    private func saveDownloaded(sourceZip: URL, id: String, base: URL) throws {
+    private func saveDownloaded(sourceZip: URL, id: String, base: URL) throws  {
         try prepareFolder(source: base)
         let destHot = base.appendingPathComponent(id)
         let destUnZip = documentsDir.appendingPathComponent(randomString(length: 10))
@@ -266,6 +278,7 @@ extension CustomError: LocalizedError {
     public func download(url: URL, version: String) throws -> BundleInfo {
         let semaphore = DispatchSemaphore(value: 0)
         let id: String = self.randomString(length: 10)
+        var checksum = ""
         var mainError: NSError? = nil
         let destination: DownloadRequest.Destination = { _, _ in
             let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -285,6 +298,7 @@ extension CustomError: LocalizedError {
                 case .success:
                     self.notifyDownload(id, 71)
                     do {
+                        checksum = self.getChecksum(filePath: fileURL)
                         try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.documentsDir.appendingPathComponent(self.bundleDirectoryHot))
                         self.notifyDownload(id, 85)
                         try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory))
@@ -301,13 +315,13 @@ extension CustomError: LocalizedError {
             }
             semaphore.signal()
         }
-        self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.DOWNLOADING, downloaded: Date()))
+        self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.DOWNLOADING, downloaded: Date(), checksum: checksum))
         self.notifyDownload(id, 0)
         semaphore.wait()
         if (mainError != nil) {
             throw mainError!
         }
-        let info: BundleInfo = BundleInfo(id: id, version: version, status: BundleStatus.PENDING, downloaded: Date())
+        let info: BundleInfo = BundleInfo(id: id, version: version, status: BundleStatus.PENDING, downloaded: Date(), checksum: checksum)
         self.saveBundleInfo(id: id, bundle: info)
         return info
     }
@@ -330,7 +344,7 @@ extension CustomError: LocalizedError {
         }
     }
     
-    public func delete(id: String) -> Bool {
+    public func delete(id: String, removeInfo: Bool) -> Bool {
         let deleted: BundleInfo = self.getBundleInfo(id: id)
         let destHot = documentsDir.appendingPathComponent(bundleDirectoryHot).appendingPathComponent(id)
         let destPersist = libraryDir.appendingPathComponent(bundleDirectory).appendingPathComponent(id)
@@ -345,9 +359,16 @@ extension CustomError: LocalizedError {
             print("\(self.TAG) Folder \(destPersist.path), not removed.")
             return false
         }
+        if (removeInfo) {
+            self.removeBundleInfo(id: id)
+        }
         self.removeBundleInfo(id: id)
         self.sendStats(action: "delete", versionName: deleted.getVersionName())
         return true
+    }
+
+    public func delete(id: String) -> Bool {
+        return self.delete(id: id, removeInfo: true)
     }
 
     public func getBundleDirectory(id: String) -> URL {
@@ -407,12 +428,12 @@ extension CustomError: LocalizedError {
         }
     }
     
-    public func commit(bundle: BundleInfo) {
+    public func setSuccess(bundle: BundleInfo) {
         self.setBundleStatus(id: bundle.getId(), status: BundleStatus.SUCCESS)
         self.setFallbackBundle(fallback: bundle)
     }
     
-    public func rollback(bundle: BundleInfo) {
+    public func setError(bundle: BundleInfo) {
         self.setBundleStatus(id: bundle.getId(), status: BundleStatus.ERROR);
     }
 
@@ -439,7 +460,7 @@ extension CustomError: LocalizedError {
     public func getBundleInfo(id: String = BundleInfo.ID_BUILTIN) -> BundleInfo {
         print("\(self.TAG) Getting info for bundle [\(id)]")
         if(BundleInfo.ID_BUILTIN == id) {
-            return BundleInfo(id: id, version: "", status: BundleStatus.SUCCESS)
+            return BundleInfo(id: id, version: "", status: BundleStatus.SUCCESS, checksum: "")
         }
         do {
             let result: BundleInfo = try UserDefaults.standard.getObj(forKey: "\(id)\(self.INFO_SUFFIX)", castTo: BundleInfo.self)
@@ -447,7 +468,7 @@ extension CustomError: LocalizedError {
             return result
         } catch {
             print("\(self.TAG) Failed to parse info for bundle [\(id)]", error.localizedDescription)
-            return BundleInfo(id: id, version: "", status: BundleStatus.PENDING)
+            return BundleInfo(id: id, version: "", status: BundleStatus.PENDING, checksum: "")
         }
     }
 

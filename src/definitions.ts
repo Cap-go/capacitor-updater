@@ -48,16 +48,6 @@ declare module '@capacitor/cli' {
       autoUpdate?: boolean;
 
       /**
-       * Configure the URL / endpoint to which update checks are sent. 
-       *
-       * Only available for Android and iOS.
-       *
-       * @default https://capgo.app/api/auto_update
-       * @example https://example.com/api/auto_update
-       */
-      updateUrl?: string;
-
-      /**
        * Automatically delete previous downloaded bundles when a newer native app version is installed to the device.
        *
        * Only available for Android and iOS.
@@ -68,11 +58,21 @@ declare module '@capacitor/cli' {
       resetWhenUpdate?: boolean;
 
       /**
-       * Configure the URL / endpoint to which update statistics are sent. 
+       * Configure the URL / endpoint to which update checks are sent. 
        *
        * Only available for Android and iOS.
        *
-       * @default https://capgo.app/api/stats
+       * @default https://api.capgo.app/auto_update
+       * @example https://example.com/api/auto_update
+       */
+      updateUrl?: string;
+
+      /**
+       * Configure the URL / endpoint to which update statistics are sent. 
+       *
+       * Only available for Android and iOS. Set to "" to disable stats reporting.
+       *
+       * @default https://api.capgo.app/stats
        * @example https://example.com/api/stats
        */
       statsUrl?: string;
@@ -91,6 +91,14 @@ export interface DownloadEvent {
   bundle: BundleInfo;
 }
 export interface MajorAvailableEvent {
+  /**
+   * Emit when a new major version is available.
+   *
+   * @since  4.0.0
+   */
+  version: string;
+}
+export interface DownloadFailedEvent {
   /**
    * Emit when a new major version is available.
    *
@@ -133,6 +141,7 @@ export interface BundleInfo {
   id: string;
   version: string;
   downloaded: string;
+  checksum: string;
   status: BundleStatus
 }
 
@@ -140,6 +149,7 @@ export type BundleStatus = 'success' | 'error' | 'pending' | 'downloading';
 export type DelayUntilNext = 'background' | 'kill' | 'nativeVersion' | 'date';
 
 export type DownloadChangeListener = (state: DownloadEvent) => void;
+export type DownloadFailedListener = (state: DownloadFailedEvent) => void;
 export type DownloadCompleteListener = (state: DownloadCompleteEvent) => void;
 export type MajorAvailableListener = (state: MajorAvailableEvent) => void;
 export type UpdateFailedListener = (state: UpdateFailedEvent) => void;
@@ -287,7 +297,7 @@ export interface CapacitorUpdaterPlugin {
   ): Promise<PluginListenerHandle> & PluginListenerHandle;
 
     /**
-   * Listen for update fail event in the App, let you know when update hs fail to install at next app start
+   * Listen for update fail event in the App, let you know when update has fail to install at next app start
    *
    * @since 2.3.0
    */
@@ -295,6 +305,16 @@ export interface CapacitorUpdaterPlugin {
       eventName: 'updateFailed',
       listenerFunc: UpdateFailedListener,
     ): Promise<PluginListenerHandle> & PluginListenerHandle;
+
+  /**
+   * Listen for download fail event in the App, let you know when download has fail finished
+   *
+   * @since 4.0.0
+   */
+  addListener(
+    eventName: 'downloadFailed',
+    listenerFunc: DownloadFailedListener,
+  ): Promise<PluginListenerHandle> & PluginListenerHandle;
 
   /**
    * Get unique ID used to identify device (sent to auto update server)

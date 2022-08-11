@@ -107,6 +107,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             call.resolve(res.toJSON())
         } catch {
             print("\(self.implementation.TAG) download failed \(error.localizedDescription)")
+            self.notifyListeners("downloadFailed", data: ["version": version])
             call.reject("download failed", error.localizedDescription)
         }
     }
@@ -236,7 +237,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     @objc func notifyAppReady(_ call: CAPPluginCall) {
         print("\(self.implementation.TAG) Current bundle loaded successfully. ['notifyAppReady()' was called]")
         let version = self.implementation.getCurrentBundle()
-        self.implementation.commit(bundle: version)
+        self.implementation.setSuccess(bundle: version)
         call.resolve()
     }
     
@@ -319,24 +320,52 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(self.appReadyTimeout), execute: self.appReadyCheck!)
     }
 
-    func DeferredNotifyAppReadyCheck() {
+    func checkRevert() {
         // Automatically roll back to fallback version if notifyAppReady has not been called yet
         let current: BundleInfo = self.implementation.getCurrentBundle()
+        let fallback: BundleInfo = self.implementation.getFallbackBundle()
         if(current.isBuiltin()) {
             print("\(self.implementation.TAG) Built-in bundle is active. Nothing to do.")
             return
         }
 
+        print("\(self.implementation.TAG) Fallback bundle is: \(fallback.toString())")
+        print("\(self.implementation.TAG) Current bundle is: \(current.toString())")
+
         if(BundleStatus.SUCCESS.localizedString != current.getStatus()) {
             print("\(self.implementation.TAG) notifyAppReady was not called, roll back current bundle: \(current.toString())")
-            self.implementation.rollback(bundle: current)
-            let res = self._reset(toLastSuccessful: true)
-            if (!res) {
-                return
+            print("\(self.implementation.TAG) Did you forget to call 'notifyAppReady()' in your Capacitor App code?")
+            self.notifyListeners("updateFailed", data: [
+                "bundle": current.toJSON()
+            ])
+            self.implementation.sendStats(action: "update_fail", versionName: current.getVersionName())
+            self.implementation.setError(bundle: current)
+            _ = self._reset(toLastSuccessful: true)
+            if (self.autoDeleteFailed) {
+                print("\(self.implementation.TAG) Deleting failing bundle: \(current.toString())")
+                let res = self.implementation.delete(id: current.getId(), removeInfo: false)
+                if (!res) {
+                    print("\(self.implementation.TAG) Delete version deleted: \(current.toString())")
+                } else {
+                    print("\(self.implementation.TAG) Failed to delete failed bundle: \(current.toString())")
+                }
             }
         } else {
             print("\(self.implementation.TAG) notifyAppReady was called. This is fine: \(current.toString())")
+            if(self.autoDeletePrevious) {
+                print("\(self.implementation.TAG) Version successfully loaded: \(current.toString())")
+                let res = self.implementation.delete(id: fallback.getId())
+                if (res) {
+                    print("\(self.implementation.TAG) Deleted previous bundle: \(fallback.toString())")
+                } else {
+                    print("\(self.implementation.TAG) Failed to delete previous bundle: \(fallback.toString())")
+                }
+            }
         }
+    }
+
+    func DeferredNotifyAppReadyCheck() {
+        self.checkRevert()
         self.appReadyCheck = nil
     }
 
@@ -384,6 +413,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                         let _ = self.implementation.setNextBundle(next: next.getId())
                     } catch {
                         print("\(self.implementation.TAG) Error downloading file", error.localizedDescription)
+                        self.notifyListeners("downloadFailed", data: ["version": latestVersionName])
                     }
                 }
             }
@@ -401,14 +431,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             return
         }
 
-        let fallback: BundleInfo = self.implementation.getFallbackBundle()
         let current: BundleInfo = self.implementation.getCurrentBundle()
         let next: BundleInfo? = self.implementation.getNextBundle()
-
-        let success: Bool = current.getStatus() == BundleStatus.SUCCESS.localizedString
-
-        print("\(self.implementation.TAG) Fallback bundle is: \(fallback.toString())")
-        print("\(self.implementation.TAG) Current bundle is: \(current.toString())")
 
         if (next != nil && !next!.isErrorStatus() && (next!.getVersionName() != current.getVersionName())) {
             print("\(self.implementation.TAG) Next bundle is: \(next!.toString())")
@@ -417,61 +441,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 let _ = self.implementation.setNextBundle(next: Optional<String>.none)
             } else {
                 print("\(self.implementation.TAG) Updated to bundle: \(next!) Failed!")
-            }
-        } else if (!success) {
-            // There is a no next version, and the current version has failed
-
-            if(!current.isBuiltin()) {
-                // Don't try to roll back the builtin version. Nothing we can do.
-
-                self.implementation.rollback(bundle: current)
-                
-                print("\(self.implementation.TAG) Update failed: 'notifyAppReady()' was never called.")
-                print("\(self.implementation.TAG) Version: \(current.toString()), is in error state.")
-                print("\(self.implementation.TAG) Will fallback to: \(fallback.toString()) on application restart.")
-                print("\(self.implementation.TAG) Did you forget to call 'notifyAppReady()' in your Capacitor App code?")
-
-                self.notifyListeners("updateFailed", data: [
-                    "bundle": current.toJSON()
-                ])
-                self.implementation.sendStats(action: "fail_update", versionName: current.getVersionName())
-                if (!fallback.isBuiltin() && !(fallback == current)) {
-                    let res = self.implementation.set(bundle: fallback)
-                    if (res && self._reload()) {
-                        print("\(self.implementation.TAG) Revert to bundle: \(fallback.toString())")
-                    } else {
-                        print("\(self.implementation.TAG) Revert to bundle: \(fallback.toString()) Failed!")
-                    }
-                } else {
-                    if (self._reset(toLastSuccessful: false)) {
-                        print("\(self.implementation.TAG) Reverted to 'builtin' bundle.")
-                    }
-                }
-
-                if (self.autoDeleteFailed) {
-                    print("\(self.implementation.TAG) Deleting failing bundle: \(current.toString())")
-                    let res = self.implementation.delete(id: current.getId())
-                    if (!res) {
-                        print("\(self.implementation.TAG) Delete version deleted: \(current.toString())")
-                    } else {
-                        print("\(self.implementation.TAG) Failed to delete failed bundle: \(current.toString())")
-                    }
-                }
-            } else {
-                // Nothing we can/should do by default if the 'builtin' bundle fails to call 'notifyAppReady()'.
-            }
-        } else if (!fallback.isBuiltin()) {
-            // There is a no next version, and the current version has succeeded
-            self.implementation.commit(bundle: current)
-
-            if(self.autoDeletePrevious) {
-                print("\(self.implementation.TAG) Version successfully loaded: \(current.toString())")
-                let res = self.implementation.delete(id: fallback.getId())
-                if (res) {
-                    print("\(self.implementation.TAG) Deleted previous bundle: \(fallback.toString())")
-                } else {
-                    print("\(self.implementation.TAG) Failed to delete previous bundle: \(fallback.toString())")
-                }
             }
         }
     }
