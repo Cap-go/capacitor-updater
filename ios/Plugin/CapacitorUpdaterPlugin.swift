@@ -412,11 +412,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func appMovedToBackground() {
-        print("\(self.implementation.TAG) Check for waiting update")
+        print("\(self.implementation.TAG) Check for pending update")
         let delayUpdate = UserDefaults.standard.string(forKey: DELAY_UPDATE)
         self._checkCancelDelay(killed: false)
         if (delayUpdate != nil) {
-            print("\(self.implementation.TAG) Update delayed")
+            print("\(self.implementation.TAG) Update delayed to next backgrounding")
             return
         }
 
@@ -426,10 +426,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         if (next != nil && !next!.isErrorStatus() && (next!.getVersionName() != current.getVersionName())) {
             print("\(self.implementation.TAG) Next bundle is: \(next!.toString())")
             if (self.implementation.set(bundle: next!) && self._reload()) {
-                print("\(self.implementation.TAG) Updated to bundle: \(next!)")
+                print("\(self.implementation.TAG) Updated to bundle: \(next!.toString())")
                 let _ = self.implementation.setNextBundle(next: Optional<String>.none)
             } else {
-                print("\(self.implementation.TAG) Updated to bundle: \(next!) Failed!")
+                print("\(self.implementation.TAG) Update to bundle: \(next!.toString()) Failed!")
             }
         }
     }
