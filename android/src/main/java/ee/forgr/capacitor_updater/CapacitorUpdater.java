@@ -367,6 +367,7 @@ public class CapacitorUpdater {
             json.put("version_name", version);
             json.put("plugin_version", pluginVersion);
 
+            Log.e(CapacitorUpdater.TAG, "Auto-update parameters: " + json.toString());
             // Building a request
             JsonObjectRequest request = new JsonObjectRequest(
                     Request.Method.POST,

@@ -242,6 +242,7 @@ extension CustomError: LocalizedError {
             "plugin_version": self.pluginVersion,
             "version_name": self.getCurrentBundle().getVersionName()
         ]
+        print("\(self.TAG) Auto-update parameters: \(parameters)")
         let request = AF.request(url, method: .post,parameters: parameters, encoder: JSONParameterEncoder.default)
 
         request.validate().responseDecodable(of: AppVersionDec.self) { response in
