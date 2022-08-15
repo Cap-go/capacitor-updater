@@ -420,6 +420,7 @@ extension CustomError: LocalizedError {
     }
     
     public func reset(isInternal: Bool) {
+        print("\(self.TAG) reset: \(internal)")
         self.setCurrentBundle(bundle: "")
         self.setFallbackBundle(fallback: Optional<BundleInfo>.none)
         let _ = self.setNextBundle(next: Optional<String>.none)

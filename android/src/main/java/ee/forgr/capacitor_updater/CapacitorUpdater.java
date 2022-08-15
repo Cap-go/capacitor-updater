@@ -339,6 +339,7 @@ public class CapacitorUpdater {
     }
 
     public void reset(final boolean internal) {
+        Log.d(CapacitorUpdater.TAG, "reset: " + internal);
         this.setCurrentBundle(new File("public"));
         this.setFallbackBundle(null);
         this.setNextBundle(null);
