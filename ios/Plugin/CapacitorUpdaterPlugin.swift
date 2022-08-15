@@ -402,7 +402,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                         let _ = self.implementation.setNextBundle(next: next.getId())
                     } catch {
                         print("\(self.implementation.TAG) Error downloading file", error.localizedDescription)
-                        self.notifyListeners("downloadFailed", data: ["version": latestVersionName])
+                        self.notifyListeners("downloadFailed", data: ["version": latestVersionName ?? ""])
                     }
                 }
             }
