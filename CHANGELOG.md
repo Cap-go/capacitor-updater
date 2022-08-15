@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.0.0-alpha.43](https://github.com/Cap-go/capacitor-updater/compare/4.0.0-alpha.42...4.0.0-alpha.43) (2022-08-15)
+
+
+### Features
+
+* add noNeedUpdate event ([8aa92e3](https://github.com/Cap-go/capacitor-updater/commit/8aa92e3ef51d8a07a7ea17404bc2d7099bb8c94c))
+
 ## [4.0.0-alpha.42](https://github.com/Cap-go/capacitor-updater/compare/4.0.0-alpha.41...4.0.0-alpha.42) (2022-08-15)
 
 
