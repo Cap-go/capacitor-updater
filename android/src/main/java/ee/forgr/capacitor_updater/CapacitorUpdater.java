@@ -433,7 +433,7 @@ public class CapacitorUpdater {
 
     public BundleInfo getBundleInfo(final String id) {
         String trueId = BundleInfo.VERSION_UNKNOWN;
-        if(id == null) {
+        if(id != null) {
             trueId = id;
         }
         Log.d(TAG, "Getting info for bundle [" + trueId + "]");
