@@ -316,8 +316,21 @@ public class CapacitorUpdater {
         this.reset(false);
     }
 
-    public void setSuccess(final BundleInfo bundle) {
+    public void setSuccess(final BundleInfo bundle, Boolean autoDeletePrevious) {
         this.setBundleStatus(bundle.getId(), BundleStatus.SUCCESS);
+        final BundleInfo fallback = this.getFallbackBundle();
+        Log.d(CapacitorUpdater.TAG, "Fallback bundle is: " + fallback);
+        if(autoDeletePrevious && !fallback.isBuiltin()) {
+            Log.i(CapacitorUpdater.TAG, "Version successfully loaded: " + bundle.getVersionName());
+            try {
+                final Boolean res = this.delete(fallback.getId());
+                if (res) {
+                    Log.i(CapacitorUpdater.TAG, "Deleted previous bundle: " + fallback.getVersionName());
+                }
+            } catch (final IOException e) {
+                Log.e(CapacitorUpdater.TAG, "Failed to delete previous bundle: " + fallback.getVersionName(), e);
+            }
+        }
         this.setFallbackBundle(bundle);
     }
 

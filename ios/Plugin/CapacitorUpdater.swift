@@ -428,8 +428,19 @@ extension CustomError: LocalizedError {
         }
     }
     
-    public func setSuccess(bundle: BundleInfo) {
+    public func setSuccess(bundle: BundleInfo, autoDeletePrevious: Bool) {
         self.setBundleStatus(id: bundle.getId(), status: BundleStatus.SUCCESS)
+        let fallback: BundleInfo = self.getFallbackBundle()
+        print("\(self.TAG) Fallback bundle is: \(fallback.toString())")
+        if(autoDeletePrevious) {
+            print("\(self.TAG) Version successfully loaded: \(bundle.toString())")
+            let res = self.delete(id: fallback.getId())
+            if (res) {
+                print("\(self.TAG) Deleted previous bundle: \(fallback.toString())")
+            } else {
+                print("\(self.TAG) Failed to delete previous bundle: \(fallback.toString())")
+            }
+        }
         self.setFallbackBundle(fallback: bundle)
     }
     

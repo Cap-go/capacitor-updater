@@ -235,9 +235,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func notifyAppReady(_ call: CAPPluginCall) {
-        print("\(self.implementation.TAG) Current bundle loaded successfully. ['notifyAppReady()' was called]")
         let version = self.implementation.getCurrentBundle()
-        self.implementation.setSuccess(bundle: version)
+        self.implementation.setSuccess(bundle: version, autoDeletePrevious: self.autoDeletePrevious)
+        print("\(self.implementation.TAG) Current bundle loaded successfully. ['notifyAppReady()' was called] \(version.toString())")
         call.resolve()
     }
     
@@ -323,13 +323,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     func checkRevert() {
         // Automatically roll back to fallback version if notifyAppReady has not been called yet
         let current: BundleInfo = self.implementation.getCurrentBundle()
-        let fallback: BundleInfo = self.implementation.getFallbackBundle()
         if(current.isBuiltin()) {
             print("\(self.implementation.TAG) Built-in bundle is active. Nothing to do.")
             return
         }
 
-        print("\(self.implementation.TAG) Fallback bundle is: \(fallback.toString())")
         print("\(self.implementation.TAG) Current bundle is: \(current.toString())")
 
         if(BundleStatus.SUCCESS.localizedString != current.getStatus()) {
@@ -352,15 +350,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             }
         } else {
             print("\(self.implementation.TAG) notifyAppReady was called. This is fine: \(current.toString())")
-            if(self.autoDeletePrevious) {
-                print("\(self.implementation.TAG) Version successfully loaded: \(current.toString())")
-                let res = self.implementation.delete(id: fallback.getId())
-                if (res) {
-                    print("\(self.implementation.TAG) Deleted previous bundle: \(fallback.toString())")
-                } else {
-                    print("\(self.implementation.TAG) Failed to delete previous bundle: \(fallback.toString())")
-                }
-            }
         }
     }
 

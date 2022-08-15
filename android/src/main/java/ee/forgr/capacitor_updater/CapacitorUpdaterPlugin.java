@@ -400,9 +400,9 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     @PluginMethod
     public void notifyAppReady(final PluginCall call) {
         try {
-            Log.i(CapacitorUpdater.TAG, "Current bundle loaded successfully. ['notifyAppReady()' was called]");
             final BundleInfo bundle = this.implementation.getCurrentBundle();
-            this.implementation.setSuccess(bundle);
+            this.implementation.setSuccess(bundle, this.autoDeletePrevious);
+            Log.i(CapacitorUpdater.TAG, "Current bundle loaded successfully. ['notifyAppReady()' was called] " + bundle.toString());
             call.resolve();
         }
         catch(final Exception e) {
@@ -627,13 +627,11 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     private void checkRevert() {
         // Automatically roll back to fallback version if notifyAppReady has not been called yet
         final BundleInfo current = this.implementation.getCurrentBundle();
-        final BundleInfo fallback = this.implementation.getFallbackBundle();
 
         if(current.isBuiltin()) {
             Log.i(CapacitorUpdater.TAG, "Built-in bundle is active. Nothing to do.");
             return;
         }
-        Log.d(CapacitorUpdater.TAG, "Fallback bundle is: " + fallback);
         Log.d(CapacitorUpdater.TAG, "Current bundle is: " + current);
 
         if(BundleStatus.SUCCESS != current.getStatus()) {
@@ -658,16 +656,6 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             }
         } else {
             Log.i(CapacitorUpdater.TAG, "notifyAppReady was called. This is fine: " + current.getId());
-            if(this.autoDeletePrevious && !fallback.isBuiltin()) {
-                try {
-                    final Boolean res = this.implementation.delete(fallback.getId());
-                    if (res) {
-                        Log.i(CapacitorUpdater.TAG, "Deleted previous bundle: " + fallback.getVersionName());
-                    }
-                } catch (final IOException e) {
-                    Log.e(CapacitorUpdater.TAG, "Failed to delete previous bundle: " + fallback.getVersionName(), e);
-                }
-            }
         }
     }
 
