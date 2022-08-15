@@ -88,6 +88,14 @@ export interface noNeedEvent {
    */
   bundle: BundleInfo;
 }
+export interface updateAvailableEvent {
+  /**
+   * Current status of download, between 0 and 100.
+   *
+   * @since  4.0.0
+   */
+  bundle: BundleInfo;
+}
 
 export interface DownloadEvent {
   /**
@@ -108,7 +116,7 @@ export interface MajorAvailableEvent {
 }
 export interface DownloadFailedEvent {
   /**
-   * Emit when a new major version is available.
+   * Emit when a download fail.
    *
    * @since  4.0.0
    */
@@ -158,6 +166,7 @@ export type DelayUntilNext = 'background' | 'kill' | 'nativeVersion' | 'date';
 
 export type DownloadChangeListener = (state: DownloadEvent) => void;
 export type NoNeedListener = (state: noNeedEvent) => void;
+export type UpdateAvailabledListener = (state: updateAvailableEvent) => void;
 export type DownloadFailedListener = (state: DownloadFailedEvent) => void;
 export type DownloadCompleteListener = (state: DownloadCompleteEvent) => void;
 export type MajorAvailableListener = (state: MajorAvailableEvent) => void;
@@ -294,6 +303,15 @@ export interface CapacitorUpdaterPlugin {
     eventName: 'noNeedUpdate',
     listenerFunc: NoNeedListener,
   ): Promise<PluginListenerHandle> & PluginListenerHandle;
+    /**
+   * Listen for availbale update event, usefull when you want to force check every time the app is launched
+   *
+   * @since 4.0.0
+   */
+    addListener(
+      eventName: 'updateAvailable',
+      listenerFunc: UpdateAvailabledListener,
+    ): Promise<PluginListenerHandle> & PluginListenerHandle;
   
   /**
    * Listen for download event in the App, let you know when the download is started, loading and finished
