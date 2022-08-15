@@ -193,7 +193,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
     @objc func getLatest(_ call: CAPPluginCall) {
         let res = self.implementation.getLatest(url: URL(string: self.updateUrl)!)
-        call.resolve((res?.toDict())!)
+        call.resolve(res.toDict())
     }
 
     @objc func _reset(toLastSuccessful: Bool) -> Bool {
@@ -364,46 +364,51 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 print("\(self.implementation.TAG) Check for update via \(self.updateUrl)")
                 let url = URL(string: self.updateUrl)!
                 let res = self.implementation.getLatest(url: url)
-                if (res == nil) {
-                    print("\(self.implementation.TAG) No result found in \(self.updateUrl)")
-                    return
-                }
-                if ((res?.message) != nil) {
-                    print("\(self.implementation.TAG) message \(res!.message ?? "")")
-                    if (res?.major == true) {
-                        self.notifyListeners("majorAvailable", data: ["version": res?.version ?? "0.0.0"])
-                    }
-                    return
-                }
-                guard let downloadUrl = URL(string: res?.url ?? "") else {
-                    print("\(self.implementation.TAG) Error no url or wrong format")
-                    return
-                }
                 let current = self.implementation.getCurrentBundle()
-                let latestVersionName = res?.version
-                if (latestVersionName != nil && latestVersionName != "" && current.getVersionName() != latestVersionName) {
-                    let latest = self.implementation.getBundleInfoByVersionName(version: latestVersionName!)
+ 
+                if ((res.message) != nil) {
+                    print("\(self.implementation.TAG) message \(res.message ?? "")")
+                    if (res.major == true) {
+                        self.notifyListeners("majorAvailable", data: ["version": res.version])
+                    }
+                    self.notifyListeners("noNeedUpdate", data: ["bundle": current.toJSON()])
+                    return
+                }
+                guard let downloadUrl = URL(string: res.url) else {
+                    print("\(self.implementation.TAG) Error no url or wrong format")
+                    self.notifyListeners("noNeedUpdate", data: ["bundle": current.toJSON()])
+                    return
+                }
+                let latestVersionName = res.version
+                if (latestVersionName != "" && current.getVersionName() != latestVersionName) {
+                    let latest = self.implementation.getBundleInfoByVersionName(version: latestVersionName)
                     if (latest != nil) {
                         if(latest!.isErrorStatus()) {
                             print("\(self.implementation.TAG) Latest version already exists, and is in error state. Aborting update.")
+                            self.notifyListeners("noNeedUpdate", data: ["bundle": current.toJSON()])
                             return
                         }
                         if(latest!.isDownloaded()){
                             print("\(self.implementation.TAG) Latest version already exists and download is NOT required. Update will occur next time app moves to background.")
                             let _ = self.implementation.setNextBundle(next: latest!.getId())
+                            self.notifyListeners("updateAvailable", data: ["bundle": current.toJSON()])
                             return
                         }
                     }
 
                     do {
-                        print("\(self.implementation.TAG) New bundle: \(latestVersionName!) found. Current is: \(current.getVersionName()). Update will occur next time app moves to background.")
-                        let next = try self.implementation.download(url: downloadUrl, version: latestVersionName!)
+                        print("\(self.implementation.TAG) New bundle: \(latestVersionName) found. Current is: \(current.getVersionName()). Update will occur next time app moves to background.")
+                        let next = try self.implementation.download(url: downloadUrl, version: latestVersionName)
                         self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
                         let _ = self.implementation.setNextBundle(next: next.getId())
                     } catch {
                         print("\(self.implementation.TAG) Error downloading file", error.localizedDescription)
-                        self.notifyListeners("downloadFailed", data: ["version": latestVersionName ?? ""])
+                        self.notifyListeners("downloadFailed", data: ["version": latestVersionName])
+                        self.notifyListeners("noNeedUpdate", data: ["bundle": current.toJSON()])
                     }
+                } else {
+                    print("\(self.implementation.TAG) No need to update, \(current.getId()) is the latest bundle.")
+                    self.notifyListeners("noNeedUpdate", data: ["bundle": current.toJSON()])
                 }
             }
         }

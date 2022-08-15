@@ -80,6 +80,14 @@ declare module '@capacitor/cli' {
   }
 }
 
+export interface noNeedEvent {
+  /**
+   * Current status of download, between 0 and 100.
+   *
+   * @since  4.0.0
+   */
+  bundle: BundleInfo;
+}
 
 export interface DownloadEvent {
   /**
@@ -121,7 +129,7 @@ export interface UpdateFailedEvent {
    *
    * @since 4.0.0
    */
-   bundle: BundleInfo;
+  bundle: BundleInfo;
 }
 
 export interface latestVersion {
@@ -149,6 +157,7 @@ export type BundleStatus = 'success' | 'error' | 'pending' | 'downloading';
 export type DelayUntilNext = 'background' | 'kill' | 'nativeVersion' | 'date';
 
 export type DownloadChangeListener = (state: DownloadEvent) => void;
+export type NoNeedListener = (state: noNeedEvent) => void;
 export type DownloadFailedListener = (state: DownloadFailedEvent) => void;
 export type DownloadCompleteListener = (state: DownloadCompleteEvent) => void;
 export type MajorAvailableListener = (state: MajorAvailableEvent) => void;
@@ -276,6 +285,16 @@ export interface CapacitorUpdaterPlugin {
     listenerFunc: DownloadChangeListener,
   ): Promise<PluginListenerHandle> & PluginListenerHandle;
 
+  /**
+   * Listen for no need to update event, usefull when you want force check every time the app is launched
+   *
+   * @since 4.0.0
+   */
+  addListener(
+    eventName: 'noNeedUpdate',
+    listenerFunc: NoNeedListener,
+  ): Promise<PluginListenerHandle> & PluginListenerHandle;
+  
   /**
    * Listen for download event in the App, let you know when the download is started, loading and finished
    *

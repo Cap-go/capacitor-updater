@@ -229,7 +229,7 @@ extension CustomError: LocalizedError {
         }
     }
 
-    public func getLatest(url: URL) -> AppVersion? {
+    public func getLatest(url: URL) -> AppVersion {
         let semaphore = DispatchSemaphore(value: 0)
         let latest = AppVersion()
         let parameters: [String: String] = [
@@ -259,7 +259,6 @@ extension CustomError: LocalizedError {
                     }
                     if let message = response.value?.message {
                         latest.message = message
-                        print("\(self.TAG) Auto-update message: \(message)")
                     }
                 case let .failure(error):
                     print("\(self.TAG) Error getting Latest", error )
@@ -267,7 +266,7 @@ extension CustomError: LocalizedError {
             semaphore.signal()
         }
         semaphore.wait()
-        return latest.url != "" ? latest : nil
+        return latest
     }
     
     private func setCurrentBundle(bundle: String) {
