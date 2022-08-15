@@ -430,25 +430,28 @@ public class CapacitorUpdater {
         }
     }
 
-    public BundleInfo getBundleInfo(String id) {
+    public BundleInfo getBundleInfo(final String id) {
+        String trueId = BundleInfo.VERSION_UNKNOWN;
         if(id == null) {
-            id = BundleInfo.VERSION_UNKNOWN;
+            trueId = id;
         }
-        Log.d(TAG, "Getting info for bundle [" + id + "]");
+        Log.d(TAG, "Getting info for bundle [" + trueId + "]");
         BundleInfo result;
-        if(BundleInfo.ID_BUILTIN.equals(id)) {
-            result = new BundleInfo(id, (String) null, BundleStatus.SUCCESS, "", "");
+        if(BundleInfo.ID_BUILTIN.equals(trueId)) {
+            result = new BundleInfo(trueId, (String) null, BundleStatus.SUCCESS, "", "");
+        } else if(BundleInfo.VERSION_UNKNOWN.equals(trueId)) {
+            result = new BundleInfo(trueId, (String) null, BundleStatus.ERROR, "", "");
         } else {
             try {
-                String stored = this.prefs.getString(id + INFO_SUFFIX, "");
+                String stored = this.prefs.getString(trueId + INFO_SUFFIX, "");
                 result = BundleInfo.fromJSON(stored);
             } catch (JSONException e) {
-                Log.e(TAG, "Failed to parse info for bundle [" + id + "] ", e);
-                result = new BundleInfo(id, (String) null, BundleStatus.PENDING, "", "");
+                Log.e(TAG, "Failed to parse info for bundle [" + trueId + "] ", e);
+                result = new BundleInfo(trueId, (String) null, BundleStatus.PENDING, "", "");
             }
         }
 
-        Log.d(TAG, "Returning info [" + id + "] " + result);
+        Log.d(TAG, "Returning info [" + trueId + "] " + result);
         return result;
     }
 
@@ -539,7 +542,7 @@ public class CapacitorUpdater {
     }
 
     public BundleInfo getNextBundle() {
-        final String id = this.prefs.getString(NEXT_VERSION, BundleInfo.ID_BUILTIN);
+        final String id = this.prefs.getString(NEXT_VERSION, null);
         return this.getBundleInfo(id);
     }
 

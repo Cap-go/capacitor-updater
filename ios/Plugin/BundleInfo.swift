@@ -4,7 +4,7 @@ import Foundation
 
 @objc public class BundleInfo: NSObject, Decodable, Encodable {
     public static let ID_BUILTIN: String = "builtin"
-    public static let ID_UNKNOWN: String = "unknown"
+    public static let VERSION_UNKNOWN: String = "unknown"
     public static let DOWNLOADED_BUILTIN: String = "1970-01-01T00:00:00.000Z"
 
     private let downloaded: String
@@ -34,7 +34,7 @@ import Foundation
     }
 
     public func isUnknown() -> Bool {
-        return BundleInfo.ID_UNKNOWN == self.id
+        return BundleInfo.VERSION_UNKNOWN == self.id
     }
 
     public func isErrorStatus() -> Bool {

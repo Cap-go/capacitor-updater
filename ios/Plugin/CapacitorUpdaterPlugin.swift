@@ -423,7 +423,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         let current: BundleInfo = self.implementation.getCurrentBundle()
         let next: BundleInfo? = self.implementation.getNextBundle()
 
-        if (next != nil && !next!.isErrorStatus() && (next!.getVersionName() != current.getVersionName())) {
+        if (next != nil && !next!.isErrorStatus() && next!.getVersionName() != current.getVersionName()) {
             print("\(self.implementation.TAG) Next bundle is: \(next!.toString())")
             if (self.implementation.set(bundle: next!) && self._reload()) {
                 print("\(self.implementation.TAG) Updated to bundle: \(next!.toString())")

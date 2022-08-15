@@ -420,7 +420,7 @@ extension CustomError: LocalizedError {
     }
     
     public func reset(isInternal: Bool) {
-        print("\(self.TAG) reset: \(internal)")
+        print("\(self.TAG) reset: \(isInternal)")
         self.setCurrentBundle(bundle: "")
         self.setFallbackBundle(fallback: Optional<BundleInfo>.none)
         let _ = self.setNextBundle(next: Optional<String>.none)
@@ -469,19 +469,27 @@ extension CustomError: LocalizedError {
         }
     }
 
-    public func getBundleInfo(id: String = BundleInfo.ID_BUILTIN) -> BundleInfo {
-        print("\(self.TAG) Getting info for bundle [\(id)]")
-        if(BundleInfo.ID_BUILTIN == id) {
-            return BundleInfo(id: id, version: "", status: BundleStatus.SUCCESS, checksum: "")
+    public func getBundleInfo(id: String?) -> BundleInfo {
+        var trueId = BundleInfo.VERSION_UNKNOWN
+        if(id != nil) {
+            trueId = id!
         }
-        do {
-            let result: BundleInfo = try UserDefaults.standard.getObj(forKey: "\(id)\(self.INFO_SUFFIX)", castTo: BundleInfo.self)
-//            print("\(self.TAG) Returning info bundle [\(id)]", result.toString())
-            return result
-        } catch {
-            print("\(self.TAG) Failed to parse info for bundle [\(id)]", error.localizedDescription)
-            return BundleInfo(id: id, version: "", status: BundleStatus.PENDING, checksum: "")
+        print("\(self.TAG) Getting info for bundle [\(trueId)]")
+        let result: BundleInfo;
+        if(BundleInfo.ID_BUILTIN == trueId) {
+            result = BundleInfo(id: trueId, version: "", status: BundleStatus.SUCCESS, checksum: "")
+        } else if (BundleInfo.VERSION_UNKNOWN == trueId) {
+            result = BundleInfo(id: trueId, version: "", status: BundleStatus.ERROR, checksum: "")
+        } else {
+            do {
+                result = try UserDefaults.standard.getObj(forKey: "\(trueId)\(self.INFO_SUFFIX)", castTo: BundleInfo.self)
+            } catch {
+                print("\(self.TAG) Failed to parse info for bundle [\(trueId)]", error.localizedDescription)
+                result = BundleInfo(id: trueId, version: "", status: BundleStatus.PENDING, checksum: "")
+            }
         }
+        print("\(self.TAG) Returning info bundle [\(result.toString())]")
+        return result;
     }
 
     public func getBundleInfoByVersionName(version: String) -> BundleInfo? {
@@ -559,7 +567,7 @@ extension CustomError: LocalizedError {
     }
 
     public func getNextBundle() -> BundleInfo? {
-        let id: String = UserDefaults.standard.string(forKey: self.NEXT_VERSION) ?? BundleInfo.ID_BUILTIN
+        let id: String? = UserDefaults.standard.string(forKey: self.NEXT_VERSION)
         return self.getBundleInfo(id: id)
     }
 
