@@ -1,3 +1,9 @@
+## 3.3.18 (2022-08-18)
+
+### Fix
+
+- rename Bundle var to have same name as Android
+
 ## 3.3.17 (2022-08-05)
 
 ### Fix
