@@ -2,6 +2,113 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.0.0-alpha.46](https://github.com/Cap-go/capacitor-updater/compare/4.0.0-alpha.45...4.0.0-alpha.46) (2022-08-18)
+
+
+### Bug Fixes
+
+* rename Bundle var to have same name as Android ([b68eee7](https://github.com/Cap-go/capacitor-updater/commit/b68eee7b6eaf29a89e129903433dad61201b3e1c))
+
+### [3.3.17](https://github.com/Cap-go/capacitor-updater/compare/4.0.0-alpha.33...3.3.17) (2022-08-05)
+
+
+### Bug Fixes
+
+* peer issues with capacitor ([1166b2e](https://github.com/Cap-go/capacitor-updater/commit/1166b2ec2bcc9df1c9965eb2cc88d9883a90ea3c))
+
+### [3.3.16](https://github.com/Cap-go/capacitor-updater/compare/4.0.0-alpha.32...3.3.16) (2022-08-03)
+
+
+### Bug Fixes
+
+* currentVersionNative convertion ([186425f](https://github.com/Cap-go/capacitor-updater/commit/186425f74970256f787cbdb0da4e0a508a9fa99a))
+
+### [3.3.15](https://github.com/Cap-go/capacitor-updater/compare/3.3.14...3.3.15) (2022-08-03)
+
+
+### Bug Fixes
+
+* updateAvailable listener ([1423253](https://github.com/Cap-go/capacitor-updater/commit/14232534e55650c4ff990023a8e4044e073b7f57))
+
+### [3.3.14](https://github.com/Cap-go/capacitor-updater/compare/4.0.0-alpha.30...3.3.14) (2022-08-03)
+
+
+### Bug Fixes
+
+* current method ([6d0dc02](https://github.com/Cap-go/capacitor-updater/commit/6d0dc029ff92e2583232ec89c24aa2ae74067bfa))
+
+### [3.3.13](https://github.com/Cap-go/capacitor-updater/compare/4.0.0-alpha.27...3.3.13) (2022-07-31)
+
+
+### Bug Fixes
+
+* UUID source on android ([ebbe473](https://github.com/Cap-go/capacitor-updater/commit/ebbe473735ccc0bd73fb274418ca32224a3e46c7))
+
+### [3.3.12](https://github.com/Cap-go/capacitor-updater/compare/4.0.0-alpha.2...3.3.12) (2022-07-01)
+
+
+### Bug Fixes
+
+* Trigger ci to remove beta from active ([f4dca01](https://github.com/Cap-go/capacitor-updater/commit/f4dca01f5a6668df96a89d370d26ab3e3a5d60c8))
+
+### [3.3.11](https://github.com/Cap-go/capacitor-updater/compare/3.3.10...3.3.11) (2022-06-17)
+
+
+### Bug Fixes
+
+* Auto update setup ([34ef24d](https://github.com/Cap-go/capacitor-updater/commit/34ef24d4fffc959453ac6fb7e38466f967916b18))
+
+### [3.3.10](https://github.com/Cap-go/capacitor-updater/compare/3.3.9...3.3.10) (2022-06-17)
+
+
+### Bug Fixes
+
+* install instructions ([7b868bd](https://github.com/Cap-go/capacitor-updater/commit/7b868bd462e1ac9606f6125b9b8064d62e1e6192))
+
+### [3.3.9](https://github.com/Cap-go/capacitor-updater/compare/3.3.8...3.3.9) (2022-06-16)
+
+
+### Bug Fixes
+
+* Update typos in README ([542153d](https://github.com/Cap-go/capacitor-updater/commit/542153dc7a2bdb9e62e02cb2ed54c0532fc197ac))
+
+### [3.3.8](https://github.com/Cap-go/capacitor-updater/compare/3.3.7...3.3.8) (2022-06-07)
+
+
+### Bug Fixes
+
+* licencing ([83018ee](https://github.com/Cap-go/capacitor-updater/commit/83018ee5e7afbeab4d3764a01f304c01fa9c860b))
+
+### [3.3.7](https://github.com/Cap-go/capacitor-updater/compare/3.3.6...3.3.7) (2022-06-01)
+
+
+### Bug Fixes
+
+* build with the new licence ([1a5f53e](https://github.com/Cap-go/capacitor-updater/commit/1a5f53e1f0641dffb8e815abb4921b37dfc94143))
+
+### [3.3.6](https://github.com/Cap-go/capacitor-updater/compare/3.3.5...3.3.6) (2022-06-01)
+
+
+### Bug Fixes
+
+* typo issue ([4b0889f](https://github.com/Cap-go/capacitor-updater/commit/4b0889f4c422c893438ef8c46945bc83713592fc))
+
+### [3.3.5](https://github.com/Cap-go/capacitor-updater/compare/3.3.4...3.3.5) (2022-05-30)
+
+
+### Bug Fixes
+
+* add missing revert for stats ([c736269](https://github.com/Cap-go/capacitor-updater/commit/c7362696bb79a172ebb3172fd0de7dad0cfb864b))
+
+### [3.3.4](https://github.com/Cap-go/capacitor-updater/compare/3.3.3...3.3.4) (2022-05-09)
+
+
+### Bug Fixes
+
+* **android:** crashing on notifyDownload inifinite stack recursion ([b93eeed](https://github.com/Cap-go/capacitor-updater/commit/b93eeedd58508bfec44e809f4904263b41c836ac))
+
+### [3.3.3](https://github.com/Cap-go/capacitor-updater/compare/3.3.2...3.3.3) (2022-05-04)
+
 ## [4.0.0-alpha.45](https://github.com/Cap-go/capacitor-updater/compare/4.0.0-alpha.44...4.0.0-alpha.45) (2022-08-18)
 
 
