@@ -19,7 +19,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     
     override public func load() {
         do {
-            currentVersionNative = try Version(Bundle.main.buildVersionNumber ?? "0.0.0")
+            currentVersionNative = try Version(Bundle.main.versionName ?? "0.0.0")
         } catch {
             print("✨  Capacitor-updater: Cannot get version native \(currentVersionNative)")
         }
@@ -49,7 +49,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                     _ = implementation.delete(version: version, versionName: "")
                 }
             }
-            UserDefaults.standard.set( Bundle.main.buildVersionNumber, forKey: "LatestVersionNative")
+            UserDefaults.standard.set( Bundle.main.versionName, forKey: "LatestVersionNative")
         }
         if (!autoUpdate || autoUpdateUrl == "") { return }
         let nc = NotificationCenter.default

@@ -28,10 +28,10 @@ extension OperatingSystemVersion {
     }
 }
 extension Bundle {
-    var releaseVersionNumber: String? {
+    var versionName: String? {
         return infoDictionary?["CFBundleShortVersionString"] as? String
     }
-    var buildVersionNumber: String? {
+    var versionCode: String? {
         return infoDictionary?["CFBundleVersion"] as? String
     }
 }
@@ -63,8 +63,8 @@ extension CustomError: LocalizedError {
 
 @objc public class CapacitorUpdater: NSObject {
     
-    private var versionBuild = Bundle.main.releaseVersionNumber ?? ""
-    private var versionCode = Bundle.main.buildVersionNumber ?? ""
+    private var versionBuild = Bundle.main.versionName ?? ""
+    private var versionCode = Bundle.main.versionCode ?? ""
     private var versionOs = ProcessInfo().operatingSystemVersion.getFullVersion()
     private var lastPathHot = ""
     private var lastPathPersist = ""
