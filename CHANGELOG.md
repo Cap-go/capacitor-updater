@@ -407,6 +407,98 @@ All notable changes to this project will be documented in this file. See [standa
 * versionInfo to BundleInfo ([d5c300e](https://github.com/Cap-go/capacitor-updater/commit/d5c300e1c25dab7834875d0c216117aa9ba562ff))
 * web ([9bdf9cc](https://github.com/Cap-go/capacitor-updater/commit/9bdf9cca4e866b4bda8e166984bfb386e1edd631))
 
+## 3.3.17 (2022-08-05)
+
+### Fix
+
+- peer issues with capacitor
+
+## 3.3.16 (2022-08-03)
+
+### Fix
+
+- currentVersionNative convertion
+
+## 3.3.15 (2022-08-03)
+
+### Fix
+
+- updateAvailable listener
+
+## 3.3.14 (2022-08-03)
+
+### Fix
+
+- current method
+
+## 3.3.13 (2022-07-31)
+
+### Fix
+
+- UUID source on android
+
+## 3.3.12 (2022-07-01)
+
+### Fix
+
+- Trigger ci to remove beta from active
+
+## 3.3.11 (2022-06-17)
+
+### Fix
+
+- Auto update setup
+
+## 3.3.10 (2022-06-17)
+
+### Fix
+
+- install instructions
+
+## 3.3.9 (2022-06-16)
+
+### Fix
+
+- Update typos in README
+- Update typos in README
+
+## 3.3.8 (2022-06-07)
+
+### Fix
+
+- licencing
+
+## 3.3.7 (2022-06-01)
+
+### Fix
+
+- build with the new licence
+
+## 3.3.6 (2022-06-01)
+
+### Fix
+
+- typo issue
+
+## 3.3.5 (2022-05-30)
+
+### Fix
+
+- add missing revert for stats
+
+## 3.3.4 (2022-05-09)
+
+### Fix
+
+- **android**: crashing on notifyDownload inifinite stack recursion
+- **android**: crashing on notifyDownload inifinite stack recursion
+
+## 3.3.3 (2022-05-04)
+
+### Fix
+
+- add missing definitions
+
 ## 3.3.2 (2022-05-04)
 
 ### Fix

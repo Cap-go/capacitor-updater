@@ -26,7 +26,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     override public func load() {
         print("\(self.implementation.TAG) init for device \(self.implementation.deviceID)")
         do {
-            currentVersionNative = try Version(Bundle.main.releaseVersionNumber ?? "0.0.0")
+            currentVersionNative = try Version(Bundle.main.versionName ?? "0.0.0")
         } catch {
             print("\(self.implementation.TAG) Cannot get version native \(currentVersionNative)")
         }
@@ -299,6 +299,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 }
             }
         }
+
+        self.checkAppReady()
     }
 
     private func _isAutoUpdateEnabled() -> Bool {

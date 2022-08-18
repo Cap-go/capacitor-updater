@@ -48,10 +48,10 @@ extension OperatingSystemVersion {
     }
 }
 extension Bundle {
-    var releaseVersionNumber: String? {
+    var versionName: String? {
         return infoDictionary?["CFBundleShortVersionString"] as? String
     }
-    var buildVersionNumber: String? {
+    var versionCode: String? {
         return infoDictionary?["CFBundleVersion"] as? String
     }
 }
