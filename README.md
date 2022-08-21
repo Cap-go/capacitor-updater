@@ -1,5 +1,5 @@
-# capacitor-updater
-
+# Capacitor updater
+  <a href="https://capgo.app/"><img src='https://raw.githubusercontent.com/Cap-go/capgo/main/assets/capgo_banner.png' alt='Capgo - Instant updates for capacitor'/></a>
 Update capacitor app without store review.
 
 You have 3 ways possible :
