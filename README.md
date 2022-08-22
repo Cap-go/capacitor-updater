@@ -12,7 +12,7 @@ You have 3 ways possible :
 Join the [discord](https://discord.gg/VnYRvBfgA6) to get help.
 
 ## Documentation
-I maintain a more user friendly and complete [documentation](https://github.com/Cap-go/capacitor-updater/wiki) in GitHub wiki.
+I maintain a more user friendly and complete [documentation here](https://docs.capgo.app/).
 
 ## install plugin
 
@@ -53,7 +53,7 @@ Create account in [capgo.app](https://capgo.app) and get your [API key](https://
 - If update fail it will roolback to previous version.
 
 See more there in the [Auto update](
-https://github.com/Cap-go/capacitor-updater/wiki) documentation.
+https://docs.capgo.app/plugin/auto-update/cloud) documentation.
 
 
 ## Manual setup
