@@ -320,8 +320,8 @@ public class CapacitorUpdater {
         this.setBundleStatus(bundle.getId(), BundleStatus.SUCCESS);
         final BundleInfo fallback = this.getFallbackBundle();
         Log.d(CapacitorUpdater.TAG, "Fallback bundle is: " + fallback);
+        Log.i(CapacitorUpdater.TAG, "Version successfully loaded: " + bundle.getVersionName());
         if(autoDeletePrevious && !fallback.isBuiltin()) {
-            Log.i(CapacitorUpdater.TAG, "Version successfully loaded: " + bundle.getVersionName());
             try {
                 final Boolean res = this.delete(fallback.getId());
                 if (res) {
