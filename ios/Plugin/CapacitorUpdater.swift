@@ -132,8 +132,8 @@ extension CustomError: LocalizedError {
 
 @objc public class CapacitorUpdater: NSObject {
     
-    private let versionBuild = Bundle.main.releaseVersionNumber ?? ""
-    private let versionCode = Bundle.main.buildVersionNumber ?? ""
+    private let versionName = Bundle.main.versionName ?? ""
+    private let versionCode = Bundle.main.versionCode ?? ""
     private let versionOs = ProcessInfo().operatingSystemVersion.getFullVersion()
     private let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
     private let libraryDir = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
@@ -233,7 +233,7 @@ extension CustomError: LocalizedError {
             "platform": "ios",
             "device_id": self.deviceID,
             "app_id": self.appId,
-            "version_build": self.versionBuild,
+            "version_build": self.versionName,
             "version_code": self.versionCode,
             "version_os": self.versionOs,
             "plugin_version": self.pluginVersion,
@@ -395,7 +395,7 @@ extension CustomError: LocalizedError {
             return true
         }
         if (bundleExists(id: id)) {
-            self.setCurrentBundle(bundle: self.getBundleDirectory(id: id))
+            self.setCurrentBundle(bundle: self.getBundleDirectory(id: id).path)
             self.setBundleStatus(id: id, status: BundleStatus.PENDING)
             sendStats(action: "set", versionName: newBundle.getVersionName())
             return true
@@ -453,7 +453,7 @@ extension CustomError: LocalizedError {
             "action": action,
             "device_id": self.deviceID,
             "version_name": versionName,
-            "version_build": self.versionBuild,
+            "version_build": self.versionName,
             "version_code": self.versionCode,
             "version_os": self.versionOs,
             "plugin_version": self.pluginVersion,
