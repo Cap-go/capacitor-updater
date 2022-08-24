@@ -30,8 +30,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         } catch {
             print("\(self.implementation.TAG) Cannot get version native \(currentVersionNative)")
         }
-        autoDeleteFailed = getConfig().getBoolean("autoDeleteFailed", false)
-        autoDeletePrevious = getConfig().getBoolean("autoDeletePrevious", false)
+        autoDeleteFailed = getConfig().getBoolean("autoDeleteFailed", true)
+        autoDeletePrevious = getConfig().getBoolean("autoDeletePrevious", true)
         updateUrl = getConfig().getString("updateUrl") ?? CapacitorUpdaterPlugin.updateUrlDefault
         autoUpdate = getConfig().getBoolean("autoUpdate", false)
         appReadyTimeout = getConfig().getInt("appReadyTimeout", 10000)
