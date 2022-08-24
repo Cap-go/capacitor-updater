@@ -540,12 +540,13 @@ extension CustomError: LocalizedError {
     }
 
     public func getCurrentBundleId() -> String {
-        guard let bundleID = UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH) else {
+        guard let bundlePath = UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH) else {
             return BundleInfo.ID_BUILTIN
         }
-        if (bundleID == "") {
+        if (bundlePath == "") {
             return BundleInfo.ID_BUILTIN
         }
+        let bundleID = bundlePath.components(separatedBy: "/").last ?? bundlePath
         return bundleID
     }
 
