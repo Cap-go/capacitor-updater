@@ -143,9 +143,6 @@ extension CustomError: LocalizedError {
     private let INFO_SUFFIX = "_info"
     private let FALLBACK_VERSION = "pastVersion"
     private let NEXT_VERSION = "nextVersion"
-
-    private var lastPathHot = ""
-    private var lastPathPersist = ""
     
     public let TAG = "✨  Capacitor-updater:";
     public let CAP_SERVER_PATH = "serverBasePath"
