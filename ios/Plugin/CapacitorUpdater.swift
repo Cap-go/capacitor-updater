@@ -395,7 +395,7 @@ extension CustomError: LocalizedError {
             return true
         }
         if (bundleExists(id: id)) {
-            self.setCurrentBundle(bundle: id)
+            self.setCurrentBundle(bundle: self.getBundleDirectory(id: id))
             self.setBundleStatus(id: id, status: BundleStatus.PENDING)
             sendStats(action: "set", versionName: newBundle.getVersionName())
             return true
