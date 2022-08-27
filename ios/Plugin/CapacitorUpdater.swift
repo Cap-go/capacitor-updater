@@ -343,6 +343,9 @@ extension CustomError: LocalizedError {
     
     public func delete(id: String, removeInfo: Bool) -> Bool {
         let deleted: BundleInfo = self.getBundleInfo(id: id)
+        if (deleted.isBuiltin()) {
+            return false
+        }
         let destHot = documentsDir.appendingPathComponent(bundleDirectoryHot).appendingPathComponent(id)
         let destPersist = libraryDir.appendingPathComponent(bundleDirectory).appendingPathComponent(id)
         do {
