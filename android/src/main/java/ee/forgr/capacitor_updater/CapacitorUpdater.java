@@ -261,7 +261,8 @@ public class CapacitorUpdater {
 
     public Boolean delete(final String id, final Boolean removeInfo) throws IOException {
         final BundleInfo deleted = this.getBundleInfo(id);
-        if (deleted.isBuiltin()) {
+        if (deleted.isBuiltin() || self.getCurrentBundleId() == id) {
+            Log.e(TAG, "Cannot delete " + id);
             return false;
         }
         final File bundle = new File(this.documentsDir, bundleDirectory + "/" + id);
