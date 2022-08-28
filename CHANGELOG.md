@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.0.0-alpha.55](https://github.com/Cap-go/capacitor-updater/compare/4.0.0-alpha.54...4.0.0-alpha.55) (2022-08-28)
+
+
+### Bug Fixes
+
+* make all setNextBundle in the same order in platforms ([bbaf4ec](https://github.com/Cap-go/capacitor-updater/commit/bbaf4ece165b3c6e43d2f1ff5e0335637a82ef20))
+
 ## [4.0.0-alpha.54](https://github.com/Cap-go/capacitor-updater/compare/4.0.0-alpha.53...4.0.0-alpha.54) (2022-08-28)
 
 
