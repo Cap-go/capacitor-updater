@@ -578,10 +578,10 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                     }
                                     if(latest.isDownloaded()){
                                         Log.e(CapacitorUpdater.TAG, "Latest bundle already exists and download is NOT required. Update will occur next time app moves to background.");
-                                        CapacitorUpdaterPlugin.this.implementation.setNextBundle(latest.getId());
                                         final JSObject ret = new JSObject();
                                         ret.put("bundle", latest.toJSON());
                                         CapacitorUpdaterPlugin.this.notifyListeners("updateAvailable", ret);
+                                        CapacitorUpdaterPlugin.this.implementation.setNextBundle(latest.getId());
                                         return;
                                     }
                                 }
