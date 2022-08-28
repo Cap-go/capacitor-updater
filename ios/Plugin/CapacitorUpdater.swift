@@ -434,7 +434,7 @@ extension CustomError: LocalizedError {
         let fallback: BundleInfo = self.getFallbackBundle()
         print("\(self.TAG) Fallback bundle is: \(fallback.toString())")
         print("\(self.TAG) Version successfully loaded: \(bundle.toString())")
-        if(autoDeletePrevious) {
+        if(autoDeletePrevious && !fallback.isBuiltin()) {
             let res = self.delete(id: fallback.getId())
             if (res) {
                 print("\(self.TAG) Deleted previous bundle: \(fallback.toString())")

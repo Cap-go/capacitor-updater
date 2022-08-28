@@ -678,7 +678,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             this.implementation.sendStats("update_fail", current.getVersionName());
             this.implementation.setError(current);
             this._reset(true);
-            if (CapacitorUpdaterPlugin.this.autoDeleteFailed) {
+            if (CapacitorUpdaterPlugin.this.autoDeleteFailed && !current.isBuiltin()) {
                 Log.i(CapacitorUpdater.TAG, "Deleting failing bundle: " + current.getVersionName());
                 try {
                     final Boolean res = this.implementation.delete(current.getId(), false);

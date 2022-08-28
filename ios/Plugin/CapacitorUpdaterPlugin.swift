@@ -341,7 +341,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             self.implementation.sendStats(action: "update_fail", versionName: current.getVersionName())
             self.implementation.setError(bundle: current)
             _ = self._reset(toLastSuccessful: true)
-            if (self.autoDeleteFailed) {
+            if (self.autoDeleteFailed && !current.isBuiltin()) {
                 print("\(self.implementation.TAG) Deleting failing bundle: \(current.toString())")
                 let res = self.implementation.delete(id: current.getId(), removeInfo: false)
                 if (!res) {
