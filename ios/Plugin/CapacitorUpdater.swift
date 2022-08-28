@@ -146,7 +146,7 @@ extension CustomError: LocalizedError {
     
     public let TAG = "✨  Capacitor-updater:";
     public let CAP_SERVER_PATH = "serverBasePath"
-    public let pluginVersion = "4.0.0-alpha.53"
+    public let pluginVersion = "4.0.0-alpha.54"
     public var statsUrl = ""
     public var appId = ""
     public var deviceID = UIDevice.current.identifierForVendor?.uuidString ?? ""

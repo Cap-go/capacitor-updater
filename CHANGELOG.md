@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.0.0-alpha.54](https://github.com/Cap-go/capacitor-updater/compare/4.0.0-alpha.53...4.0.0-alpha.54) (2022-08-28)
+
+
+### Bug Fixes
+
+* disable delete active ([7f52870](https://github.com/Cap-go/capacitor-updater/commit/7f5287062e601e7beee7c154c6fbf803fac1ae44))
+
 ## [4.0.0-alpha.53](https://github.com/Cap-go/capacitor-updater/compare/4.0.0-alpha.52...4.0.0-alpha.53) (2022-08-28)
 
 
