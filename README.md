@@ -1,18 +1,18 @@
-# capacitor-updater
-
+# Capacitor updater
+  <a href="https://capgo.app/"><img src='https://raw.githubusercontent.com/Cap-go/capgo/main/assets/capgo_banner.png' alt='Capgo - Instant updates for capacitor'/></a>
 Update Ionic Capacitor apps without App/Play Store review (Code-push / hot-code updates).
 
-Usage options:
-- use [capgo.app](https://capgo.app), a full featured auto update system. (5 min Setup, easily manage versions, update, revert, and see detailed stats.)
-- integrate your own API with this plugin's auto update system.
-- use manual methods to zip, upload, download, from application code - you have full control.
+You have 3 ways possible :
+- Use [capgo.app](https://capgo.app) a full featured auto update system in 5 min Setup, to manage version, update, revert and see stats.
+- Use your own server update with auto update system
+- Use manual methods to zip, upload, download, from JS to do it when you want.
 
 
 ## Community
 Join the [discord](https://discord.gg/VnYRvBfgA6) to get help.
 
 ## Documentation
-I maintain a more user friendly and complete [documentation](https://github.com/Cap-go/capacitor-updater/wiki) in GitHub wiki.
+I maintain a more user friendly and complete [documentation here](https://docs.capgo.app/).
 
 ## Installation
 
@@ -24,10 +24,10 @@ npx cap sync
 ## Auto-update setup
 
 Create account in [capgo.app](https://capgo.app) and get your [API key](https://capgo.app/app/apikeys)
-- Download the CLI `npm i -g @capgo/cli`
-- Add app from CLI `capgo add -a API_KEY`
-- Upload app `capgo upload -a API_KEY`
-- Upload app `capgo set -a API_KEY -s public`
+- Login to CLI `npx @capgo/cli@latest  login API_KEY`
+- Add app with CLI `npx @capgo/cli@latest add`
+- Upload app to channel production `npx @capgo/cli@latest  upload -c production`
+- Set channel production public `npx @capgo/cli@latest  set -c production -s public`
 - Edit your `capacitor.config.json` like below, set `autoUpdate` to true.
 ```json
 // capacitor.config.json
@@ -52,7 +52,8 @@ This tells Capacitor Updator that the current update bundle has loaded succesful
 - Run the app and see app auto update after each backgrounding.
 - Failed updates will automatically roll back to the last successful version.
 
-See more details in the [Auto update](https://github.com/Cap-go/capacitor-updater/wiki) documentation.
+See more there in the [Auto update](
+https://github.com/Cap-go/capacitor-updater/wiki) documentation.
 
 
 ## Manual setup
