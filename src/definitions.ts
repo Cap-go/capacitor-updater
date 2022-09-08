@@ -359,7 +359,7 @@ export interface CapacitorUpdaterPlugin {
    * @returns {Promise<{ id: string }>} an Promise with id for this device
    * @throws An error if the something went wrong
    */
-  getId(): Promise<{ id: string }>;
+  getDeviceId(): Promise<{ id: string }>;
 
   /**
    * Get the native Capacitor Updater plugin version (sent to auto update server)

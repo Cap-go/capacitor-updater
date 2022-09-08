@@ -24,7 +24,7 @@ export class CapacitorUpdaterWeb
     console.warn('Cannot set active bundle in web', options);
     return;
   }
-  async getId(): Promise<{ id: string }> {
+  async getDeviceId(): Promise<{ id: string }> {
     console.warn('Cannot get ID in web');
     return { id: 'default' };
   }
