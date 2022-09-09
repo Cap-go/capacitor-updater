@@ -425,7 +425,7 @@ public class CapacitorUpdater {
                     new Response.ErrorListener(){
                         @Override
                         public void onErrorResponse(VolleyError error) {
-                            Log.i(TAG, "Stats send for \"" + action + "\", version " + versionName);
+                            Log.i(TAG, "Error sending stats: " + error);
                         }
                     });
             this.requestQueue.add(request);
