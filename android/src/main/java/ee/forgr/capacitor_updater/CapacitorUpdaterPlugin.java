@@ -460,7 +460,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
 
     private void _checkCancelDelay(Boolean killed) {
         final String delayUpdate = this.prefs.getString(DELAY_UPDATE, "");
-        if ("".equals(delayUpdate)) {
+        if (!"".equals(delayUpdate)) {
             if ("background".equals(delayUpdate) && !killed) {
                 this._cancelDelay("background check");
             } else if ("kill".equals(delayUpdate) && killed) {
