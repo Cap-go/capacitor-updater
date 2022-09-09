@@ -460,7 +460,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
 
     private void _checkCancelDelay(Boolean killed) {
         final String delayUpdate = this.prefs.getString(DELAY_UPDATE, "");
-        if ("".equals(delayUpdate)) {
+        if (!"".equals(delayUpdate)) {
             if ("background".equals(delayUpdate) && !killed) {
                 this._cancelDelay("background check");
             } else if ("kill".equals(delayUpdate) && killed) {
@@ -557,7 +557,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                 return;
                             }
 
-                            if (!res.has("url") || CapacitorUpdaterPlugin.this.isValidURL((String)res.get("url"))) {
+                            if (!res.has("url") || !CapacitorUpdaterPlugin.this.isValidURL((String)res.get("url"))) {
                                 Log.e(CapacitorUpdater.TAG, "Error no url or wrong format");
                                 final JSObject retNoNeed = new JSObject();
                                 retNoNeed.put("bundle", current.toJSON());

@@ -463,10 +463,16 @@ extension CustomError: LocalizedError {
             "plugin_version": self.pluginVersion,
             "app_id": self.appId
         ]
-
         DispatchQueue.global(qos: .background).async {
-            let _ = AF.request(self.statsUrl, method: .post,parameters: parameters, encoder: JSONParameterEncoder.default)
-            print("\(self.TAG) Stats send for \(action), version \(versionName)")
+            let request = AF.request(self.statsUrl, method: .post,parameters: parameters, encoder: JSONParameterEncoder.default)
+            request.responseData { response in
+                switch response.result {
+                case .success():
+                    print("\(self.TAG) Stats send for \(action), version \(versionName)")
+                case .failure(error):
+                    print("\(self.TAG) Error sending stats: ", error )
+                }
+            }
         }
     }
 
