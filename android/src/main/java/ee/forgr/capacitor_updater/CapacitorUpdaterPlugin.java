@@ -557,7 +557,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                 return;
                             }
 
-                            if (!res.has("url") || CapacitorUpdaterPlugin.this.isValidURL((String)res.get("url"))) {
+                            if (!res.has("url") || !CapacitorUpdaterPlugin.this.isValidURL((String)res.get("url"))) {
                                 Log.e(CapacitorUpdater.TAG, "Error no url or wrong format");
                                 final JSObject retNoNeed = new JSObject();
                                 retNoNeed.put("bundle", current.toJSON());
