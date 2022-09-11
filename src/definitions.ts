@@ -42,7 +42,7 @@ declare module '@capacitor/cli' {
        *
        * Only available for Android and iOS.
        *
-       * @default false
+       * @default true
        * @example false
        */
       autoUpdate?: boolean;

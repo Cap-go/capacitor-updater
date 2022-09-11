@@ -97,7 +97,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         this.autoDeleteFailed = this.getConfig().getBoolean("autoDeleteFailed", true);
         this.autoDeletePrevious = this.getConfig().getBoolean("autoDeletePrevious", true);
         this.updateUrl = this.getConfig().getString("updateUrl", updateUrlDefault);
-        this.autoUpdate = this.getConfig().getBoolean("autoUpdate", false);
+        this.autoUpdate = this.getConfig().getBoolean("autoUpdate", true);
         this.appReadyTimeout = this.getConfig().getInt("appReadyTimeout", 10000);
         this.resetWhenUpdate = this.getConfig().getBoolean("resetWhenUpdate", true);
 

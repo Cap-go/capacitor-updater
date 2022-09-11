@@ -28,19 +28,6 @@ Create account in [capgo.app](https://capgo.app) and get your [API key](https://
 - Add app with CLI `npx @capgo/cli@latest add`
 - Upload app to channel production `npx @capgo/cli@latest  upload -c production`
 - Set channel production public `npx @capgo/cli@latest  set -c production -s public`
-- Edit your `capacitor.config.json` like below, set `autoUpdate` to true.
-```json
-// capacitor.config.json
-{
-	"appId": "**.***.**",
-	"appName": "Name",
-	"plugins": {
-		"CapacitorUpdater": {
-			"autoUpdate": true,
-		}
-	}
-}
-```
 - Add to your main code
 ```javascript
   import { CapacitorUpdater } from '@capgo/capacitor-updater'
@@ -60,6 +47,19 @@ https://github.com/Cap-go/capacitor-updater/wiki) documentation.
 
 Download update distribution zipfiles from a custom url. Manually control the entire update process.
 
+- Edit your `capacitor.config.json` like below, set `autoUpdate` to true.
+```json
+// capacitor.config.json
+{
+	"appId": "**.***.**",
+	"appName": "Name",
+	"plugins": {
+		"CapacitorUpdater": {
+			"autoUpdate": false,
+		}
+	}
+}
+```
 - Add to your main code
 ```javascript
   import { CapacitorUpdater } from '@capgo/capacitor-updater'
