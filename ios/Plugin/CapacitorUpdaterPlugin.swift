@@ -33,7 +33,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         autoDeleteFailed = getConfig().getBoolean("autoDeleteFailed", true)
         autoDeletePrevious = getConfig().getBoolean("autoDeletePrevious", true)
         updateUrl = getConfig().getString("updateUrl") ?? CapacitorUpdaterPlugin.updateUrlDefault
-        autoUpdate = getConfig().getBoolean("autoUpdate", false)
+        autoUpdate = getConfig().getBoolean("autoUpdate", true)
         appReadyTimeout = getConfig().getInt("appReadyTimeout", 10000)
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
 
