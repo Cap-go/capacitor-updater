@@ -543,6 +543,7 @@ public class CapacitorUpdater {
 
     public BundleInfo getNextBundle() {
         final String id = this.prefs.getString(NEXT_VERSION, null);
+        if (id == null) return null;
         return this.getBundleInfo(id);
     }
 
