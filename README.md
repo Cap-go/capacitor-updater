@@ -138,6 +138,7 @@ Capacitor Updator works by unzipping a compiled app bundle to the native device 
 * [`addListener('majorAvailable', ...)`](#addlistenermajoravailable)
 * [`addListener('updateFailed', ...)`](#addlistenerupdatefailed)
 * [`addListener('downloadFailed', ...)`](#addlistenerdownloadfailed)
+* [`addListener('appReloaded', ...)`](#addlistenerappreloaded)
 * [`getDeviceId()`](#getdeviceid)
 * [`getPluginVersion()`](#getpluginversion)
 * [`isAutoUpdateEnabled()`](#isautoupdateenabled)
@@ -486,6 +487,26 @@ Listen for download fail event in the App, let you know when download has fail f
 --------------------
 
 
+### addListener('appReloaded', ...)
+
+```typescript
+addListener(eventName: 'appReloaded', listenerFunc: AppReloadedListener) => Promise<PluginListenerHandle> & PluginListenerHandle
+```
+
+Listen for download fail event in the App, let you know when download has fail finished
+
+| Param              | Type                                                                |
+| ------------------ | ------------------------------------------------------------------- |
+| **`eventName`**    | <code>'appReloaded'</code>                                          |
+| **`listenerFunc`** | <code><a href="#appreloadedlistener">AppReloadedListener</a></code> |
+
+**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt; & <a href="#pluginlistenerhandle">PluginListenerHandle</a></code>
+
+**Since:** 4.3.0
+
+--------------------
+
+
 ### getDeviceId()
 
 ```typescript
@@ -686,6 +707,11 @@ removeAllListeners() => Promise<void>
 #### DownloadFailedListener
 
 <code>(state: <a href="#downloadfailedevent">DownloadFailedEvent</a>): void</code>
+
+
+#### AppReloadedListener
+
+<code>(state: void): void</code>
 
 </docgen-api>
 

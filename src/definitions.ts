@@ -180,6 +180,7 @@ export type DownloadFailedListener = (state: DownloadFailedEvent) => void;
 export type DownloadCompleteListener = (state: DownloadCompleteEvent) => void;
 export type MajorAvailableListener = (state: MajorAvailableEvent) => void;
 export type UpdateFailedListener = (state: UpdateFailedEvent) => void;
+export type AppReloadedListener = (state: void) => void;
 
 export interface CapacitorUpdaterPlugin {
   /**
@@ -379,6 +380,16 @@ export interface CapacitorUpdaterPlugin {
   addListener(
     eventName: 'downloadFailed',
     listenerFunc: DownloadFailedListener
+  ): Promise<PluginListenerHandle> & PluginListenerHandle;
+
+  /**
+   * Listen for download fail event in the App, let you know when download has fail finished
+   *
+   * @since 4.3.0
+   */
+   addListener(
+    eventName: 'appReloaded',
+    listenerFunc: AppReloadedListener
   ): Promise<PluginListenerHandle> & PluginListenerHandle;
 
   /**

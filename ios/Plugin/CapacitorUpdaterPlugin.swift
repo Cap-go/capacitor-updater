@@ -121,6 +121,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         if let vc = bridge.viewController as? CAPBridgeViewController {
             vc.setServerBasePath(path: destHot.path)
             self.checkAppReady()
+            self.notifyListeners("appReloaded", data: [:])
             return true
         }
         return false

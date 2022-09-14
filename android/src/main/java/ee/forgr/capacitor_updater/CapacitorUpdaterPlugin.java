@@ -227,6 +227,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             this.bridge.setServerBasePath(path);
         }
         this.checkAppReady();
+        this.notifyListeners("appReloaded", new JSObject());
         return true;
     }
 
