@@ -12,8 +12,9 @@ public enum BundleStatus {
     public final String label;
 
     private static final Map<String, BundleStatus> BY_LABEL = new HashMap<>();
+
     static {
-        for (final BundleStatus e: values()) {
+        for (final BundleStatus e : values()) {
             BY_LABEL.put(e.label, e);
         }
     }
@@ -28,7 +29,7 @@ public enum BundleStatus {
     }
 
     public static BundleStatus fromString(final String status) {
-        if(status == null || status.isEmpty()) {
+        if (status == null || status.isEmpty()) {
             return BundleStatus.PENDING;
         }
         return BundleStatus.BY_LABEL.get(status);

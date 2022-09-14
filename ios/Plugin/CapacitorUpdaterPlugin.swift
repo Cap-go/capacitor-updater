@@ -36,7 +36,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         autoUpdate = getConfig().getBoolean("autoUpdate", true)
         appReadyTimeout = getConfig().getInt("appReadyTimeout", 10000)
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
-
+        
         implementation.appId = Bundle.main.bundleIdentifier ?? ""
         implementation.notifyDownload = notifyDownload
         let config = (self.bridge?.viewController as? CAPBridgeViewController)?.instanceDescriptor().legacyConfig
@@ -53,7 +53,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         self._checkCancelDelay(killed: true)
         self.appMovedToForeground()
     }
-
+    
     private func cleanupObsoleteVersions() {
         var LatestVersionNative: Version = "0.0.0"
         do {
@@ -72,7 +72,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         UserDefaults.standard.set( self.currentVersionNative.description, forKey: "LatestVersionNative")
         UserDefaults.standard.synchronize()
     }
-
+    
     @objc func notifyDownload(id: String, percent: Int) {
         let bundle = self.implementation.getBundleInfo(id: id)
         self.notifyListeners("download", data: ["percent": percent, "bundle": bundle.toJSON()])
@@ -80,11 +80,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             self.notifyListeners("downloadComplete", data: ["bundle": bundle.toJSON()])
         }
     }
-
+    
     @objc func getDeviceId(_ call: CAPPluginCall) {
         call.resolve(["deviceId": implementation.deviceID])
     }
-
+    
     @objc func getPluginVersion(_ call: CAPPluginCall) {
         call.resolve(["version": implementation.pluginVersion])
     }
@@ -111,7 +111,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             call.reject("download failed", error.localizedDescription)
         }
     }
-
+    
     private func _reload() -> Bool {
         guard let bridge = self.bridge else { return false }
         let id = self.implementation.getCurrentBundleId()
@@ -133,7 +133,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             call.reject("Reload failed")
         }
     }
-
+    
     @objc func next(_ call: CAPPluginCall) {
         guard let id = call.getString("id") else {
             print("\(self.implementation.TAG) Next called without id")
@@ -164,7 +164,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             self.reload(call)
         }
     }
-
+    
     @objc func delete(_ call: CAPPluginCall) {
         guard let id = call.getString("id") else {
             print("\(self.implementation.TAG) Delete called without version")
@@ -179,7 +179,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             call.reject("Delete failed, id \(id) doesn't exist")
         }
     }
-
+    
     @objc func list(_ call: CAPPluginCall) {
         let res = implementation.list()
         var resArr: [[String: String]] = []
@@ -190,15 +190,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             "versions": resArr
         ])
     }
-
+    
     @objc func getLatest(_ call: CAPPluginCall) {
         let res = self.implementation.getLatest(url: URL(string: self.updateUrl)!)
         call.resolve(res.toDict())
     }
-
+    
     @objc func _reset(toLastSuccessful: Bool) -> Bool {
         guard let bridge = self.bridge else { return false }
-
+        
         if let vc = bridge.viewController as? CAPBridgeViewController {
             let fallback: BundleInfo = self.implementation.getFallbackBundle()
             if (toLastSuccessful && !fallback.isBuiltin()) {
@@ -216,7 +216,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         }
         return false
     }
-
+    
     @objc func reset(_ call: CAPPluginCall) {
         let toLastSuccessful = call.getBool("toLastSuccessful") ?? false
         if (self._reset(toLastSuccessful: toLastSuccessful)) {
@@ -233,7 +233,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             "native": self.currentVersionNative.description
         ])
     }
-
+    
     @objc func notifyAppReady(_ call: CAPPluginCall) {
         let version = self.implementation.getCurrentBundle()
         self.implementation.setSuccess(bundle: version, autoDeletePrevious: self.autoDeletePrevious)
@@ -254,19 +254,19 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         print("\(self.implementation.TAG) Delay update saved.", kind, val)
         call.resolve()
     }
-
+    
     private func _cancelDelay(source: String) -> Void {
         print("\(self.implementation.TAG) delay Canceled from \(source)")
         UserDefaults.standard.removeObject(forKey: DELAY_UPDATE)
         UserDefaults.standard.removeObject(forKey: DELAY_UPDATE_VAL)
         UserDefaults.standard.synchronize()
     }
-
+    
     @objc func cancelDelay(_ call: CAPPluginCall) {
         self._cancelDelay(source: "JS")
         call.resolve()
     }
-
+    
     private func _checkCancelDelay(killed: Bool) -> Void {
         let delayUpdate = UserDefaults.standard.string(forKey: DELAY_UPDATE)
         if (delayUpdate != nil) {
@@ -302,17 +302,17 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
         self.checkAppReady()
     }
-
+    
     private func _isAutoUpdateEnabled() -> Bool {
         return self.autoUpdate && self.updateUrl != ""
     }
-
+    
     @objc func isAutoUpdateEnabled(_ call: CAPPluginCall) {
         call.resolve([
             "enabled": self._isAutoUpdateEnabled()
         ])
     }
-
+    
     func checkAppReady() {
         self.appReadyCheck?.cancel()
         self.appReadyCheck = DispatchWorkItem(block: {
@@ -321,7 +321,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         print("\(self.implementation.TAG) Wait for \(self.appReadyTimeout) ms, then check for notifyAppReady")
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(self.appReadyTimeout), execute: self.appReadyCheck!)
     }
-
+    
     func checkRevert() {
         // Automatically roll back to fallback version if notifyAppReady has not been called yet
         let current: BundleInfo = self.implementation.getCurrentBundle()
@@ -329,9 +329,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             print("\(self.implementation.TAG) Built-in bundle is active. Nothing to do.")
             return
         }
-
+        
         print("\(self.implementation.TAG) Current bundle is: \(current.toString())")
-
+        
         if(BundleStatus.SUCCESS.localizedString != current.getStatus()) {
             print("\(self.implementation.TAG) notifyAppReady was not called, roll back current bundle: \(current.toString())")
             print("\(self.implementation.TAG) Did you forget to call 'notifyAppReady()' in your Capacitor App code?")
@@ -354,12 +354,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             print("\(self.implementation.TAG) notifyAppReady was called. This is fine: \(current.toString())")
         }
     }
-
+    
     func DeferredNotifyAppReadyCheck() {
         self.checkRevert()
         self.appReadyCheck = nil
     }
-
+    
     @objc func appMovedToForeground() {
         if (self._isAutoUpdateEnabled()) {
             DispatchQueue.global(qos: .background).async {
@@ -367,7 +367,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 let url = URL(string: self.updateUrl)!
                 let res = self.implementation.getLatest(url: url)
                 let current = self.implementation.getCurrentBundle()
- 
+                
                 if ((res.message) != nil) {
                     print("\(self.implementation.TAG) message \(res.message ?? "")")
                     if (res.major == true) {
@@ -397,7 +397,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                             return
                         }
                     }
-
+                    
                     do {
                         print("\(self.implementation.TAG) New bundle: \(latestVersionName) found. Current is: \(current.getVersionName()). Update will occur next time app moves to background.")
                         let next = try self.implementation.download(url: downloadUrl, version: latestVersionName)
@@ -414,10 +414,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 }
             }
         }
-
+        
         self.checkAppReady()
     }
-
+    
     @objc func appMovedToBackground() {
         print("\(self.implementation.TAG) Check for pending update")
         let delayUpdate = UserDefaults.standard.string(forKey: DELAY_UPDATE)
@@ -429,7 +429,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
         let current: BundleInfo = self.implementation.getCurrentBundle()
         let next: BundleInfo? = self.implementation.getNextBundle()
-
+        
         if (next != nil && !next!.isErrorStatus() && next!.getVersionName() != current.getVersionName()) {
             print("\(self.implementation.TAG) Next bundle is: \(next!.toString())")
             if (self.implementation.set(bundle: next!) && self._reload()) {

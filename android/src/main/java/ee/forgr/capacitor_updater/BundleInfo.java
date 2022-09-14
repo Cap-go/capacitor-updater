@@ -1,17 +1,16 @@
 package ee.forgr.capacitor_updater;
 
 import com.getcapacitor.JSObject;
-
-import org.json.JSONException;
-import org.json.JSONObject;
-import org.json.JSONTokener;
-
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Objects;
 import java.util.TimeZone;
+import org.json.JSONException;
+import org.json.JSONObject;
+import org.json.JSONTokener;
 
 public class BundleInfo {
+
     private static final SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ");
 
     public static final String ID_BUILTIN = "builtin";
@@ -47,12 +46,15 @@ public class BundleInfo {
     public Boolean isBuiltin() {
         return ID_BUILTIN.equals(this.id);
     }
+
     public Boolean isUnknown() {
         return VERSION_UNKNOWN.equals(this.id);
     }
+
     public Boolean isErrorStatus() {
         return BundleStatus.ERROR == this.status;
     }
+
     public boolean isDownloaded() {
         return !this.isBuiltin() && this.downloaded != null && !this.downloaded.equals("");
     }
@@ -104,11 +106,11 @@ public class BundleInfo {
     public static BundleInfo fromJSON(final String jsonString) throws JSONException {
         JSONObject json = new JSONObject(new JSONTokener(jsonString));
         return new BundleInfo(
-                json.has("id") ? json.getString("id") : "",
-                json.has("version") ? json.getString("version") : BundleInfo.VERSION_UNKNOWN,
-                json.has("status") ? BundleStatus.fromString(json.getString("status")) : BundleStatus.PENDING,
-                json.has("downloaded") ? json.getString("downloaded") : "",
-                json.has("checksum") ? json.getString("checksum") : ""
+            json.has("id") ? json.getString("id") : "",
+            json.has("version") ? json.getString("version") : BundleInfo.VERSION_UNKNOWN,
+            json.has("status") ? BundleStatus.fromString(json.getString("status")) : BundleStatus.PENDING,
+            json.has("downloaded") ? json.getString("downloaded") : "",
+            json.has("checksum") ? json.getString("checksum") : ""
         );
     }
 
