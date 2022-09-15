@@ -10,7 +10,7 @@ struct LocalizedString: ExpressibleByStringLiteral, Equatable {
     init(localized: String) {
         self.v = localized
     }
-    init(stringLiteral value:String) {
+    init(stringLiteral value: String) {
         self.init(key: value)
     }
     init(extendedGraphemeClusterLiteral value: String) {
@@ -21,7 +21,7 @@ struct LocalizedString: ExpressibleByStringLiteral, Equatable {
     }
 }
 
-func ==(lhs:LocalizedString, rhs:LocalizedString) -> Bool {
+func ==(lhs: LocalizedString, rhs: LocalizedString) -> Bool {
     return lhs.v == rhs.v
 }
 
@@ -34,7 +34,7 @@ enum BundleStatus: LocalizedString, Decodable, Encodable {
     var localizedString: String {
         return self.rawValue.v
     }
-    
+
     init?(localizedString: String) {
         self.init(rawValue: LocalizedString(localized: localizedString))
     }

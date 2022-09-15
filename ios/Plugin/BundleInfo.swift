@@ -1,6 +1,4 @@
-
 import Foundation
-
 
 @objc public class BundleInfo: NSObject, Decodable, Encodable {
     public static let ID_BUILTIN: String = "builtin"
@@ -12,7 +10,7 @@ import Foundation
     private let version: String
     private let checksum: String
     private let status: BundleStatus
-    
+
     convenience init(id: String, version: String, status: BundleStatus, downloaded: Date, checksum: String) {
         self.init(id: id, version: version, status: status, downloaded: downloaded.iso8601withFractionalSeconds, checksum: checksum)
     }
@@ -24,11 +22,11 @@ import Foundation
         self.checksum = checksum
         self.status = status
     }
-    
+
     enum CodingKeys: String, CodingKey {
         case downloaded, id, version, status, checksum
     }
-    
+
     public func isBuiltin() -> Bool {
         return BundleInfo.ID_BUILTIN == self.id
     }
@@ -56,7 +54,7 @@ import Foundation
     public func setChecksum(checksum: String) -> BundleInfo {
         return BundleInfo(id: self.id, version: self.version, status: self.status, downloaded: self.downloaded, checksum: checksum)
     }
-    
+
     public func setDownloaded(downloaded: Date) -> BundleInfo {
         return BundleInfo(id: self.id, version: self.version, status: self.status, downloaded: downloaded, checksum: self.checksum)
     }
@@ -91,7 +89,7 @@ import Foundation
             "version": self.getVersionName(),
             "downloaded": self.getDownloaded(),
             "checksum": self.getChecksum(),
-            "status": self.getStatus(),
+            "status": self.getStatus()
         ]
     }
     
