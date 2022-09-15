@@ -40,7 +40,7 @@ import Foundation
     }
 
     public func isDownloaded() -> Bool {
-        return !self.isBuiltin() && self.downloaded != "" && self.downloaded == BundleInfo.DOWNLOADED_BUILTIN
+        return !self.isBuiltin() && self.downloaded != "" && self.downloaded != BundleInfo.DOWNLOADED_BUILTIN
     }
 
     public func getDownloaded() -> String {
