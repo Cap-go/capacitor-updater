@@ -2,17 +2,12 @@ package ee.forgr.capacitor_updater;
 
 import android.content.SharedPreferences;
 import android.util.Log;
-
 import com.android.volley.Request;
 import com.android.volley.RequestQueue;
 import com.android.volley.Response;
 import com.android.volley.VolleyError;
 import com.android.volley.toolbox.JsonObjectRequest;
 import com.getcapacitor.plugin.WebView;
-
-import org.json.JSONException;
-import org.json.JSONObject;
-
 import java.io.BufferedInputStream;
 import java.io.DataInputStream;
 import java.io.File;
@@ -31,12 +26,15 @@ import java.util.List;
 import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 interface Callback {
     void callback(JSONObject jsonObject);
 }
 
 public class CapacitorUpdater {
+
     private static final String AB = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
     private static final SecureRandom rnd = new SecureRandom();
 
@@ -79,10 +77,9 @@ public class CapacitorUpdater {
         return;
     }
 
-    private String randomString(final int len){
+    private String randomString(final int len) {
         final StringBuilder sb = new StringBuilder(len);
-        for(int i = 0; i < len; i++)
-            sb.append(AB.charAt(rnd.nextInt(AB.length())));
+        for (int i = 0; i < len; i++) sb.append(AB.charAt(rnd.nextInt(AB.length())));
         return sb.toString();
     }
 
@@ -106,25 +103,24 @@ public class CapacitorUpdater {
                 final File dir = entry.isDirectory() ? file : file.getParentFile();
 
                 if (!canonicalPath.startsWith(canonicalDir)) {
-                    throw new FileNotFoundException("SecurityException, Failed to ensure directory is the start path : " +
-                            canonicalDir + " of " + canonicalPath);
+                    throw new FileNotFoundException(
+                        "SecurityException, Failed to ensure directory is the start path : " + canonicalDir + " of " + canonicalPath
+                    );
                 }
 
                 if (!dir.isDirectory() && !dir.mkdirs()) {
-                    throw new FileNotFoundException("Failed to ensure directory: " +
-                            dir.getAbsolutePath());
+                    throw new FileNotFoundException("Failed to ensure directory: " + dir.getAbsolutePath());
                 }
 
                 if (entry.isDirectory()) {
                     continue;
                 }
 
-                try(final FileOutputStream outputStream = new FileOutputStream(file)) {
-                    while ((count = zis.read(buffer)) != -1)
-                        outputStream.write(buffer, 0, count);
+                try (final FileOutputStream outputStream = new FileOutputStream(file)) {
+                    while ((count = zis.read(buffer)) != -1) outputStream.write(buffer, 0, count);
                 }
 
-                final int newPercent = (int)((lengthRead * 100) / lengthTotal);
+                final int newPercent = (int) ((lengthRead * 100) / lengthTotal);
                 if (lengthTotal > 1 && newPercent != percent) {
                     percent = newPercent;
                     this.notifyDownload(id, this.calcTotalPercent(percent, 75, 90));
@@ -162,7 +158,6 @@ public class CapacitorUpdater {
     }
 
     private File downloadFile(final String id, final String url, final String dest) throws IOException {
-
         final URL u = new URL(url);
         final URLConnection connection = u.openConnection();
         final InputStream is = u.openStream();
@@ -181,9 +176,9 @@ public class CapacitorUpdater {
         int bytesRead = bufferSize;
         int percent = 0;
         this.notifyDownload(id, 10);
-        while ((length = dis.read(buffer))>0) {
+        while ((length = dis.read(buffer)) > 0) {
             fos.write(buffer, 0, length);
-            final int newPercent = (int)((bytesRead * 100) / totalLength);
+            final int newPercent = (int) ((bytesRead * 100) / totalLength);
             if (totalLength > 1 && newPercent != percent) {
                 percent = newPercent;
                 this.notifyDownload(id, this.calcTotalPercent(percent, 10, 70));
@@ -215,7 +210,7 @@ public class CapacitorUpdater {
 
     private String getChecksum(File file) throws IOException {
         byte[] bytes = new byte[(int) file.length()];
-        try(FileInputStream fis = new FileInputStream(file)){
+        try (FileInputStream fis = new FileInputStream(file)) {
             fis.read(bytes);
         }
         CRC32 crc = new CRC32();
@@ -288,7 +283,7 @@ public class CapacitorUpdater {
 
     private boolean bundleExists(final String id) {
         final File bundle = this.getBundleDirectory(id);
-        if(bundle == null || !bundle.exists()) {
+        if (bundle == null || !bundle.exists()) {
             return false;
         }
         return new File(bundle.getPath(), "/index.html").exists();
@@ -300,7 +295,7 @@ public class CapacitorUpdater {
 
     public Boolean set(final String id) {
         final BundleInfo newBundle = this.getBundleInfo(id);
-        if(newBundle.isBuiltin()) {
+        if (newBundle.isBuiltin()) {
             this.reset();
             return true;
         }
@@ -325,7 +320,7 @@ public class CapacitorUpdater {
         final BundleInfo fallback = this.getFallbackBundle();
         Log.d(CapacitorUpdater.TAG, "Fallback bundle is: " + fallback);
         Log.i(CapacitorUpdater.TAG, "Version successfully loaded: " + bundle.getVersionName());
-        if(autoDeletePrevious && !fallback.isBuiltin()) {
+        if (autoDeletePrevious && !fallback.isBuiltin()) {
             try {
                 final Boolean res = this.delete(fallback.getId());
                 if (res) {
@@ -347,7 +342,7 @@ public class CapacitorUpdater {
         this.setCurrentBundle(new File("public"));
         this.setFallbackBundle(null);
         this.setNextBundle(null);
-        if(!internal) {
+        if (!internal) {
             this.sendStats("reset", this.getCurrentBundle().getVersionName());
         }
     }
@@ -374,31 +369,34 @@ public class CapacitorUpdater {
             Log.e(CapacitorUpdater.TAG, "Auto-update parameters: " + json.toString());
             // Building a request
             JsonObjectRequest request = new JsonObjectRequest(
-                    Request.Method.POST,
-                    updateUrl,
-                    json,
-                    new Response.Listener<JSONObject>() {
-                        @Override
-                        public void onResponse(JSONObject response) {
-                            callback.callback(response);
-                        }
-                    },
-                    new Response.ErrorListener(){
-                        @Override
-                        public void onErrorResponse(VolleyError error) {
-                            Log.e(TAG, "Error getting Latest " +  error);
-                        }
-                    });
+                Request.Method.POST,
+                updateUrl,
+                json,
+                new Response.Listener<JSONObject>() {
+                    @Override
+                    public void onResponse(JSONObject response) {
+                        callback.callback(response);
+                    }
+                },
+                new Response.ErrorListener() {
+                    @Override
+                    public void onErrorResponse(VolleyError error) {
+                        Log.e(TAG, "Error getting Latest " + error);
+                    }
+                }
+            );
             this.requestQueue.add(request);
-        } catch(JSONException ex){
+        } catch (JSONException ex) {
             // Catch if something went wrong with the params
-            Log.e(TAG, "Error getLatest JSONException " +  ex);
+            Log.e(TAG, "Error getLatest JSONException " + ex);
         }
     }
 
     public void sendStats(final String action, final String versionName) {
         String statsUrl = this.statsUrl;
-        if (statsUrl == null || "".equals(statsUrl) || statsUrl.length() == 0) { return; }
+        if (statsUrl == null || "".equals(statsUrl) || statsUrl.length() == 0) {
+            return;
+        }
         try {
             JSONObject json = new JSONObject();
             json.put("platform", "android");
@@ -413,38 +411,39 @@ public class CapacitorUpdater {
 
             // Building a request
             JsonObjectRequest request = new JsonObjectRequest(
-                    Request.Method.POST,
-                    statsUrl,
-                    json,
-                    new Response.Listener<JSONObject>() {
-                        @Override
-                        public void onResponse(JSONObject response) {
-                            Log.i(TAG, "Stats send for \"" + action + "\", version " + versionName);
-                        }
-                    },
-                    new Response.ErrorListener(){
-                        @Override
-                        public void onErrorResponse(VolleyError error) {
-                            Log.i(TAG, "Error sending stats: " + error);
-                        }
-                    });
+                Request.Method.POST,
+                statsUrl,
+                json,
+                new Response.Listener<JSONObject>() {
+                    @Override
+                    public void onResponse(JSONObject response) {
+                        Log.i(TAG, "Stats send for \"" + action + "\", version " + versionName);
+                    }
+                },
+                new Response.ErrorListener() {
+                    @Override
+                    public void onErrorResponse(VolleyError error) {
+                        Log.i(TAG, "Error sending stats: " + error);
+                    }
+                }
+            );
             this.requestQueue.add(request);
-        } catch(JSONException ex){
+        } catch (JSONException ex) {
             // Catch if something went wrong with the params
-            Log.e(TAG, "Error sendStats JSONException " +  ex);
+            Log.e(TAG, "Error sendStats JSONException " + ex);
         }
     }
 
     public BundleInfo getBundleInfo(final String id) {
         String trueId = BundleInfo.VERSION_UNKNOWN;
-        if(id != null) {
+        if (id != null) {
             trueId = id;
         }
         Log.d(TAG, "Getting info for bundle [" + trueId + "]");
         BundleInfo result;
-        if(BundleInfo.ID_BUILTIN.equals(trueId)) {
+        if (BundleInfo.ID_BUILTIN.equals(trueId)) {
             result = new BundleInfo(trueId, (String) null, BundleStatus.SUCCESS, "", "");
-        } else if(BundleInfo.VERSION_UNKNOWN.equals(trueId)) {
+        } else if (BundleInfo.VERSION_UNKNOWN.equals(trueId)) {
             result = new BundleInfo(trueId, (String) null, BundleStatus.ERROR, "", "");
         } else {
             try {
@@ -462,8 +461,8 @@ public class CapacitorUpdater {
 
     public BundleInfo getBundleInfoByName(final String versionName) {
         final List<BundleInfo> installed = this.list();
-        for(final BundleInfo i : installed) {
-            if(i.getVersionName().equals(versionName)) {
+        for (final BundleInfo i : installed) {
+            if (i.getVersionName().equals(versionName)) {
                 return i;
             }
         }
@@ -475,12 +474,12 @@ public class CapacitorUpdater {
     }
 
     private void saveBundleInfo(final String id, final BundleInfo info) {
-        if(id == null || (info != null && (info.isBuiltin() || info.isUnknown()))) {
+        if (id == null || (info != null && (info.isBuiltin() || info.isUnknown()))) {
             Log.d(TAG, "Not saving info for bundle: [" + id + "] " + info);
             return;
         }
 
-        if(info == null) {
+        if (info == null) {
             Log.d(TAG, "Removing info for bundle [" + id + "]");
             this.editor.remove(id + INFO_SUFFIX);
         } else {
@@ -492,7 +491,7 @@ public class CapacitorUpdater {
     }
 
     public void setVersionName(final String id, final String name) {
-        if(id != null) {
+        if (id != null) {
             Log.d(TAG, "Setting name for bundle [" + id + "] to " + name);
             BundleInfo info = this.getBundleInfo(id);
             this.saveBundleInfo(id, info.setVersionName(name));
@@ -500,7 +499,7 @@ public class CapacitorUpdater {
     }
 
     private void setBundleStatus(final String id, final BundleStatus status) {
-        if(id != null && status != null) {
+        if (id != null && status != null) {
             BundleInfo info = this.getBundleInfo(id);
             Log.d(TAG, "Setting status for bundle [" + id + "] to " + status);
             this.saveBundleInfo(id, info.setStatus(status));
@@ -508,7 +507,7 @@ public class CapacitorUpdater {
     }
 
     private String getCurrentBundleId() {
-        if(this.isUsingBuiltin()) {
+        if (this.isUsingBuiltin()) {
             return BundleInfo.ID_BUILTIN;
         } else {
             final String path = this.getCurrentBundlePath();
@@ -522,7 +521,7 @@ public class CapacitorUpdater {
 
     public String getCurrentBundlePath() {
         String path = this.prefs.getString(WebView.CAP_SERVER_PATH, "public");
-        if("".equals(path.trim())) {
+        if ("".equals(path.trim())) {
             return "public";
         }
         return path;
@@ -538,11 +537,7 @@ public class CapacitorUpdater {
     }
 
     private void setFallbackBundle(final BundleInfo fallback) {
-        this.editor.putString(FALLBACK_VERSION,
-                fallback == null
-                        ? BundleInfo.ID_BUILTIN
-                        : fallback.getId()
-        );
+        this.editor.putString(FALLBACK_VERSION, fallback == null ? BundleInfo.ID_BUILTIN : fallback.getId());
         this.editor.commit();
     }
 
@@ -565,5 +560,4 @@ public class CapacitorUpdater {
         this.editor.commit();
         return true;
     }
-
 }

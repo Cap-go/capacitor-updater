@@ -58,7 +58,7 @@ declare module '@capacitor/cli' {
       resetWhenUpdate?: boolean;
 
       /**
-       * Configure the URL / endpoint to which update checks are sent. 
+       * Configure the URL / endpoint to which update checks are sent.
        *
        * Only available for Android and iOS.
        *
@@ -68,7 +68,7 @@ declare module '@capacitor/cli' {
       updateUrl?: string;
 
       /**
-       * Configure the URL / endpoint to which update statistics are sent. 
+       * Configure the URL / endpoint to which update statistics are sent.
        *
        * Only available for Android and iOS. Set to "" to disable stats reporting.
        *
@@ -146,11 +146,11 @@ export interface latestVersion {
    *
    * @since 4.0.0
    */
-  version: string,
-  major?: boolean,
-  message?: string,
-  old?: string,
-  url?: string,
+  version: string;
+  major?: boolean;
+  message?: string;
+  old?: string;
+  url?: string;
 }
 
 export interface BundleInfo {
@@ -158,7 +158,7 @@ export interface BundleInfo {
   version: string;
   downloaded: string;
   checksum: string;
-  status: BundleStatus
+  status: BundleStatus;
 }
 
 export type BundleStatus = 'success' | 'error' | 'pending' | 'downloading';
@@ -172,11 +172,7 @@ export type DownloadCompleteListener = (state: DownloadCompleteEvent) => void;
 export type MajorAvailableListener = (state: MajorAvailableEvent) => void;
 export type UpdateFailedListener = (state: UpdateFailedEvent) => void;
 
-
-
-
 export interface CapacitorUpdaterPlugin {
-
   /**
    * Notify Capacitor Updater that the current bundle is working (a rollback will occur of this method is not called on every app launch)
    *
@@ -191,9 +187,9 @@ export interface CapacitorUpdaterPlugin {
    * @returns {Promise<BundleInfo>} The {@link BundleInfo} for the specified version.
    * @param url The URL of the bundle zip file (e.g: dist.zip) to be downloaded. (This can be any URL. E.g: Amazon S3, a github tag, any other place you've hosted your bundle.)
    * @param version set the version code/name of this bundle/version
-   * @example https://example.com/versions/{version}/dist.zip 
+   * @example https://example.com/versions/{version}/dist.zip
    */
-  download(options: { url: string, version: string }): Promise<BundleInfo>;
+  download(options: { url: string; version: string }): Promise<BundleInfo>;
 
   /**
    * Set the next bundle to be used when the app is reloaded.
@@ -245,7 +241,7 @@ export interface CapacitorUpdaterPlugin {
    * @returns {Promise<{ bundle: BundleInfo, native: string }>} an Promise with the current bundle info
    * @throws An error if the something went wrong
    */
-  current(): Promise<{ bundle: BundleInfo, native: string }>;
+  current(): Promise<{ bundle: BundleInfo; native: string }>;
 
   /**
    * Reload the view
@@ -264,7 +260,7 @@ export interface CapacitorUpdaterPlugin {
    * @throws An error if the something went wrong
    * @since 4.0.0
    */
-  setDelay(options: {kind: DelayUntilNext, value?: string}): Promise<void>;
+  setDelay(options: { kind: DelayUntilNext; value?: string }): Promise<void>;
 
   /**
    * Cancel delay to updates as usual
@@ -282,7 +278,7 @@ export interface CapacitorUpdaterPlugin {
    * @throws An error if the something went wrong
    * @since 4.0.0
    */
-  getLatest(options: {delay: boolean}): Promise<latestVersion>;
+  getLatest(options: { delay: boolean }): Promise<latestVersion>;
 
   /**
    * Listen for download event in the App, let you know when the download is started, loading and finished
@@ -291,7 +287,7 @@ export interface CapacitorUpdaterPlugin {
    */
   addListener(
     eventName: 'download',
-    listenerFunc: DownloadChangeListener,
+    listenerFunc: DownloadChangeListener
   ): Promise<PluginListenerHandle> & PluginListenerHandle;
 
   /**
@@ -301,18 +297,18 @@ export interface CapacitorUpdaterPlugin {
    */
   addListener(
     eventName: 'noNeedUpdate',
-    listenerFunc: NoNeedListener,
+    listenerFunc: NoNeedListener
   ): Promise<PluginListenerHandle> & PluginListenerHandle;
-    /**
+  /**
    * Listen for availbale update event, usefull when you want to force check every time the app is launched
    *
    * @since 4.0.0
    */
-    addListener(
-      eventName: 'updateAvailable',
-      listenerFunc: UpdateAvailabledListener,
-    ): Promise<PluginListenerHandle> & PluginListenerHandle;
-  
+  addListener(
+    eventName: 'updateAvailable',
+    listenerFunc: UpdateAvailabledListener
+  ): Promise<PluginListenerHandle> & PluginListenerHandle;
+
   /**
    * Listen for download event in the App, let you know when the download is started, loading and finished
    *
@@ -320,9 +316,9 @@ export interface CapacitorUpdaterPlugin {
    */
   addListener(
     eventName: 'downloadComplete',
-    listenerFunc: DownloadCompleteListener,
+    listenerFunc: DownloadCompleteListener
   ): Promise<PluginListenerHandle> & PluginListenerHandle;
-  
+
   /**
    * Listen for Major update event in the App, let you know when major update is blocked by setting disableAutoUpdateBreaking
    *
@@ -330,18 +326,18 @@ export interface CapacitorUpdaterPlugin {
    */
   addListener(
     eventName: 'majorAvailable',
-    listenerFunc: MajorAvailableListener,
+    listenerFunc: MajorAvailableListener
   ): Promise<PluginListenerHandle> & PluginListenerHandle;
 
-    /**
+  /**
    * Listen for update fail event in the App, let you know when update has fail to install at next app start
    *
    * @since 2.3.0
    */
   addListener(
-      eventName: 'updateFailed',
-      listenerFunc: UpdateFailedListener,
-    ): Promise<PluginListenerHandle> & PluginListenerHandle;
+    eventName: 'updateFailed',
+    listenerFunc: UpdateFailedListener
+  ): Promise<PluginListenerHandle> & PluginListenerHandle;
 
   /**
    * Listen for download fail event in the App, let you know when download has fail finished
@@ -350,7 +346,7 @@ export interface CapacitorUpdaterPlugin {
    */
   addListener(
     eventName: 'downloadFailed',
-    listenerFunc: DownloadFailedListener,
+    listenerFunc: DownloadFailedListener
   ): Promise<PluginListenerHandle> & PluginListenerHandle;
 
   /**
