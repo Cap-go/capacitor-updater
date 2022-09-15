@@ -12,8 +12,8 @@ enum DelayUntilNext: Decodable, Encodable, CustomStringConvertible {
     case kill
     case nativeVersion
     case date
-    
-    var description: String{
+
+    var description: String {
         switch self {
         case .background: return "background"
         case .kill: return "kill"
