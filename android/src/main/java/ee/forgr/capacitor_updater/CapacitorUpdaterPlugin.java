@@ -662,7 +662,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             final BundleInfo current = this.implementation.getCurrentBundle();
             final BundleInfo next = this.implementation.getNextBundle();
 
-            if (next != null && !next.isErrorStatus() && next.getId() != current.getId()) {
+            if (next != null && !next.isErrorStatus() && !next.getId().equals(current.getId())) {
                 // There is a next bundle waiting for activation
                 Log.d(CapacitorUpdater.TAG, "Next bundle is: " + next.getVersionName());
                 if (this.implementation.set(next) && this._reload()) {
