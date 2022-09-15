@@ -202,8 +202,8 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                             final BundleInfo downloaded = CapacitorUpdaterPlugin.this.implementation.download(url, version);
                             call.resolve(downloaded.toJSON());
                         } catch (final IOException e) {
-                            Log.e(CapacitorUpdater.TAG, "download failed", e);
-                            call.reject("download failed", e);
+                            Log.e(CapacitorUpdater.TAG, "Failed to download from: " + url, e);
+                            call.reject("Failed to download from: " + url, e);
                             final JSObject ret = new JSObject();
                             ret.put("version", version);
                             CapacitorUpdaterPlugin.this.notifyListeners("downloadFailed", ret);
@@ -215,6 +215,9 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         } catch (final Exception e) {
             Log.e(CapacitorUpdater.TAG, "Failed to download from: " + url, e);
             call.reject("Failed to download from: " + url, e);
+            final JSObject ret = new JSObject();
+            ret.put("version", version);
+            CapacitorUpdaterPlugin.this.notifyListeners("downloadFailed", ret);
         }
     }
 
