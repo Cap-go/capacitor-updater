@@ -128,11 +128,16 @@ Capacitor Updator works by unzipping a compiled app bundle to the native device 
 * [`current()`](#current)
 * [`reload()`](#reload)
 * [`setDelay(...)`](#setdelay)
+* [`cancelDelay()`](#canceldelay)
+* [`getLatest(...)`](#getlatest)
 * [`addListener('download', ...)`](#addlistenerdownload)
+* [`addListener('noNeedUpdate', ...)`](#addlistenernoneedupdate)
+* [`addListener('updateAvailable', ...)`](#addlistenerupdateavailable)
 * [`addListener('downloadComplete', ...)`](#addlistenerdownloadcomplete)
 * [`addListener('majorAvailable', ...)`](#addlistenermajoravailable)
 * [`addListener('updateFailed', ...)`](#addlistenerupdatefailed)
-* [`getId()`](#getid)
+* [`addListener('downloadFailed', ...)`](#addlistenerdownloadfailed)
+* [`getDeviceId()`](#getdeviceid)
 * [`getPluginVersion()`](#getpluginversion)
 * [`isAutoUpdateEnabled()`](#isautoupdateenabled)
 * [`addListener(string, ...)`](#addlistenerstring)
@@ -161,14 +166,14 @@ Notify Capacitor Updater that the current bundle is working (a rollback will occ
 ### download(...)
 
 ```typescript
-download(options: { url: string; version?: string; }) => Promise<BundleInfo>
+download(options: { url: string; version: string; }) => Promise<BundleInfo>
 ```
 
 Download a new version from the provided URL, it should be a zip file, with files inside or with a unique id inside with all your files
 
-| Param         | Type                                            |
-| ------------- | ----------------------------------------------- |
-| **`options`** | <code>{ url: string; version?: string; }</code> |
+| Param         | Type                                           |
+| ------------- | ---------------------------------------------- |
+| **`options`** | <code>{ url: string; version: string; }</code> |
 
 **Returns:** <code>Promise&lt;<a href="#bundleinfo">BundleInfo</a>&gt;</code>
 
@@ -277,14 +282,48 @@ Reload the view
 ### setDelay(...)
 
 ```typescript
-setDelay(options: { delay: boolean; }) => Promise<void>
+setDelay(options: { kind: DelayUntilNext; value?: string; }) => Promise<void>
 ```
 
 Set delay to skip updates in the next time the app goes into the background
 
+| Param         | Type                                                                                 |
+| ------------- | ------------------------------------------------------------------------------------ |
+| **`options`** | <code>{ kind: <a href="#delayuntilnext">DelayUntilNext</a>; value?: string; }</code> |
+
+**Since:** 4.0.0
+
+--------------------
+
+
+### cancelDelay()
+
+```typescript
+cancelDelay() => Promise<void>
+```
+
+Cancel delay to updates as usual
+
+**Since:** 4.0.0
+
+--------------------
+
+
+### getLatest(...)
+
+```typescript
+getLatest(options: { delay: boolean; }) => Promise<latestVersion>
+```
+
+Get Latest version available from update Url
+
 | Param         | Type                             |
 | ------------- | -------------------------------- |
 | **`options`** | <code>{ delay: boolean; }</code> |
+
+**Returns:** <code>Promise&lt;<a href="#latestversion">latestVersion</a>&gt;</code>
+
+**Since:** 4.0.0
 
 --------------------
 
@@ -305,6 +344,46 @@ Listen for download event in the App, let you know when the download is started,
 **Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt; & <a href="#pluginlistenerhandle">PluginListenerHandle</a></code>
 
 **Since:** 2.0.11
+
+--------------------
+
+
+### addListener('noNeedUpdate', ...)
+
+```typescript
+addListener(eventName: 'noNeedUpdate', listenerFunc: NoNeedListener) => Promise<PluginListenerHandle> & PluginListenerHandle
+```
+
+Listen for no need to update event, usefull when you want force check every time the app is launched
+
+| Param              | Type                                                      |
+| ------------------ | --------------------------------------------------------- |
+| **`eventName`**    | <code>'noNeedUpdate'</code>                               |
+| **`listenerFunc`** | <code><a href="#noneedlistener">NoNeedListener</a></code> |
+
+**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt; & <a href="#pluginlistenerhandle">PluginListenerHandle</a></code>
+
+**Since:** 4.0.0
+
+--------------------
+
+
+### addListener('updateAvailable', ...)
+
+```typescript
+addListener(eventName: 'updateAvailable', listenerFunc: UpdateAvailabledListener) => Promise<PluginListenerHandle> & PluginListenerHandle
+```
+
+Listen for availbale update event, usefull when you want to force check every time the app is launched
+
+| Param              | Type                                                                          |
+| ------------------ | ----------------------------------------------------------------------------- |
+| **`eventName`**    | <code>'updateAvailable'</code>                                                |
+| **`listenerFunc`** | <code><a href="#updateavailabledlistener">UpdateAvailabledListener</a></code> |
+
+**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt; & <a href="#pluginlistenerhandle">PluginListenerHandle</a></code>
+
+**Since:** 4.0.0
 
 --------------------
 
@@ -355,7 +434,7 @@ Listen for Major update event in the App, let you know when major update is bloc
 addListener(eventName: 'updateFailed', listenerFunc: UpdateFailedListener) => Promise<PluginListenerHandle> & PluginListenerHandle
 ```
 
-Listen for update event in the App, let you know when update is ready to install at next app start
+Listen for update fail event in the App, let you know when update has fail to install at next app start
 
 | Param              | Type                                                                  |
 | ------------------ | --------------------------------------------------------------------- |
@@ -369,10 +448,30 @@ Listen for update event in the App, let you know when update is ready to install
 --------------------
 
 
-### getId()
+### addListener('downloadFailed', ...)
 
 ```typescript
-getId() => Promise<{ id: string; }>
+addListener(eventName: 'downloadFailed', listenerFunc: DownloadFailedListener) => Promise<PluginListenerHandle> & PluginListenerHandle
+```
+
+Listen for download fail event in the App, let you know when download has fail finished
+
+| Param              | Type                                                                      |
+| ------------------ | ------------------------------------------------------------------------- |
+| **`eventName`**    | <code>'downloadFailed'</code>                                             |
+| **`listenerFunc`** | <code><a href="#downloadfailedlistener">DownloadFailedListener</a></code> |
+
+**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt; & <a href="#pluginlistenerhandle">PluginListenerHandle</a></code>
+
+**Since:** 4.0.0
+
+--------------------
+
+
+### getDeviceId()
+
+```typescript
+getDeviceId() => Promise<{ id: string; }>
 ```
 
 Get unique ID used to identify device (sent to auto update server)
@@ -443,7 +542,19 @@ removeAllListeners() => Promise<void>
 | **`id`**         | <code>string</code>                                   |
 | **`version`**    | <code>string</code>                                   |
 | **`downloaded`** | <code>string</code>                                   |
+| **`checksum`**   | <code>string</code>                                   |
 | **`status`**     | <code><a href="#bundlestatus">BundleStatus</a></code> |
+
+
+#### latestVersion
+
+| Prop          | Type                 | Description             | Since |
+| ------------- | -------------------- | ----------------------- | ----- |
+| **`version`** | <code>string</code>  | Res of getLatest method | 4.0.0 |
+| **`major`**   | <code>boolean</code> |                         |       |
+| **`message`** | <code>string</code>  |                         |       |
+| **`old`**     | <code>string</code>  |                         |       |
+| **`url`**     | <code>string</code>  |                         |       |
 
 
 #### PluginListenerHandle
@@ -459,6 +570,20 @@ removeAllListeners() => Promise<void>
 | ------------- | ------------------------------------------------- | ---------------------------------------------- | ----- |
 | **`percent`** | <code>number</code>                               | Current status of download, between 0 and 100. | 4.0.0 |
 | **`bundle`**  | <code><a href="#bundleinfo">BundleInfo</a></code> |                                                |       |
+
+
+#### noNeedEvent
+
+| Prop         | Type                                              | Description                                    | Since |
+| ------------ | ------------------------------------------------- | ---------------------------------------------- | ----- |
+| **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Current status of download, between 0 and 100. | 4.0.0 |
+
+
+#### updateAvailableEvent
+
+| Prop         | Type                                              | Description                                    | Since |
+| ------------ | ------------------------------------------------- | ---------------------------------------------- | ----- |
+| **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Current status of download, between 0 and 100. | 4.0.0 |
 
 
 #### DownloadCompleteEvent
@@ -482,6 +607,13 @@ removeAllListeners() => Promise<void>
 | **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emit when a update failed to install. | 4.0.0 |
 
 
+#### DownloadFailedEvent
+
+| Prop          | Type                | Description                | Since |
+| ------------- | ------------------- | -------------------------- | ----- |
+| **`version`** | <code>string</code> | Emit when a download fail. | 4.0.0 |
+
+
 ### Type Aliases
 
 
@@ -490,9 +622,24 @@ removeAllListeners() => Promise<void>
 <code>'success' | 'error' | 'pending' | 'downloading'</code>
 
 
+#### DelayUntilNext
+
+<code>'background' | 'kill' | 'nativeVersion' | 'date'</code>
+
+
 #### DownloadChangeListener
 
 <code>(state: <a href="#downloadevent">DownloadEvent</a>): void</code>
+
+
+#### NoNeedListener
+
+<code>(state: <a href="#noneedevent">noNeedEvent</a>): void</code>
+
+
+#### UpdateAvailabledListener
+
+<code>(state: <a href="#updateavailableevent">updateAvailableEvent</a>): void</code>
 
 
 #### DownloadCompleteListener
@@ -508,6 +655,11 @@ removeAllListeners() => Promise<void>
 #### UpdateFailedListener
 
 <code>(state: <a href="#updatefailedevent">UpdateFailedEvent</a>): void</code>
+
+
+#### DownloadFailedListener
+
+<code>(state: <a href="#downloadfailedevent">DownloadFailedEvent</a>): void</code>
 
 </docgen-api>
 
