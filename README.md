@@ -127,6 +127,7 @@ Capacitor Updator works by unzipping a compiled app bundle to the native device 
 * [`reset(...)`](#reset)
 * [`current()`](#current)
 * [`reload()`](#reload)
+* [`setMultiDelay(...)`](#setmultidelay)
 * [`setDelay(...)`](#setdelay)
 * [`cancelDelay()`](#canceldelay)
 * [`getLatest(...)`](#getlatest)
@@ -137,6 +138,7 @@ Capacitor Updator works by unzipping a compiled app bundle to the native device 
 * [`addListener('majorAvailable', ...)`](#addlistenermajoravailable)
 * [`addListener('updateFailed', ...)`](#addlistenerupdatefailed)
 * [`addListener('downloadFailed', ...)`](#addlistenerdownloadfailed)
+* [`addListener('appReloaded', ...)`](#addlistenerappreloaded)
 * [`getDeviceId()`](#getdeviceid)
 * [`getPluginVersion()`](#getpluginversion)
 * [`isAutoUpdateEnabled()`](#isautoupdateenabled)
@@ -279,17 +281,34 @@ Reload the view
 --------------------
 
 
+### setMultiDelay(...)
+
+```typescript
+setMultiDelay(options: { delayConditions: DelayCondition[]; }) => Promise<void>
+```
+
+Set <a href="#delaycondition">DelayCondition</a>, skip updates until one of the conditions is met
+
+| Param         | Type                                                | Description                                                              |
+| ------------- | --------------------------------------------------- | ------------------------------------------------------------------------ |
+| **`options`** | <code>{ delayConditions: DelayCondition[]; }</code> | are the {@link <a href="#delaycondition">DelayCondition</a>} list to set |
+
+**Since:** 4.3.0
+
+--------------------
+
+
 ### setDelay(...)
 
 ```typescript
-setDelay(options: { kind: DelayUntilNext; value?: string; }) => Promise<void>
+setDelay(options: DelayCondition) => Promise<void>
 ```
 
-Set delay to skip updates in the next time the app goes into the background
+Set <a href="#delaycondition">DelayCondition</a>, skip updates until the condition is met
 
-| Param         | Type                                                                                 |
-| ------------- | ------------------------------------------------------------------------------------ |
-| **`options`** | <code>{ kind: <a href="#delayuntilnext">DelayUntilNext</a>; value?: string; }</code> |
+| Param         | Type                                                      | Description                                                        |
+| ------------- | --------------------------------------------------------- | ------------------------------------------------------------------ |
+| **`options`** | <code><a href="#delaycondition">DelayCondition</a></code> | is the {@link <a href="#delaycondition">DelayCondition</a>} to set |
 
 **Since:** 4.0.0
 
@@ -468,6 +487,26 @@ Listen for download fail event in the App, let you know when download has fail f
 --------------------
 
 
+### addListener('appReloaded', ...)
+
+```typescript
+addListener(eventName: 'appReloaded', listenerFunc: AppReloadedListener) => Promise<PluginListenerHandle> & PluginListenerHandle
+```
+
+Listen for download fail event in the App, let you know when download has fail finished
+
+| Param              | Type                                                                |
+| ------------------ | ------------------------------------------------------------------- |
+| **`eventName`**    | <code>'appReloaded'</code>                                          |
+| **`listenerFunc`** | <code><a href="#appreloadedlistener">AppReloadedListener</a></code> |
+
+**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt; & <a href="#pluginlistenerhandle">PluginListenerHandle</a></code>
+
+**Since:** 4.3.0
+
+--------------------
+
+
 ### getDeviceId()
 
 ```typescript
@@ -544,6 +583,14 @@ removeAllListeners() => Promise<void>
 | **`downloaded`** | <code>string</code>                                   |
 | **`checksum`**   | <code>string</code>                                   |
 | **`status`**     | <code><a href="#bundlestatus">BundleStatus</a></code> |
+
+
+#### DelayCondition
+
+| Prop        | Type                                                      | Description                              |
+| ----------- | --------------------------------------------------------- | ---------------------------------------- |
+| **`kind`**  | <code><a href="#delayuntilnext">DelayUntilNext</a></code> | Set up delay conditions in setMultiDelay |
+| **`value`** | <code>string</code>                                       |                                          |
 
 
 #### latestVersion
@@ -660,6 +707,11 @@ removeAllListeners() => Promise<void>
 #### DownloadFailedListener
 
 <code>(state: <a href="#downloadfailedevent">DownloadFailedEvent</a>): void</code>
+
+
+#### AppReloadedListener
+
+<code>(state: void): void</code>
 
 </docgen-api>
 

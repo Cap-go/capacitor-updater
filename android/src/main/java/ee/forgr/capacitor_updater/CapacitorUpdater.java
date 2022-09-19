@@ -366,7 +366,7 @@ public class CapacitorUpdater {
             json.put("version_name", version);
             json.put("plugin_version", pluginVersion);
 
-            Log.e(CapacitorUpdater.TAG, "Auto-update parameters: " + json.toString());
+            Log.i(CapacitorUpdater.TAG, "Auto-update parameters: " + json);
             // Building a request
             JsonObjectRequest request = new JsonObjectRequest(
                 Request.Method.POST,
@@ -381,14 +381,14 @@ public class CapacitorUpdater {
                 new Response.ErrorListener() {
                     @Override
                     public void onErrorResponse(VolleyError error) {
-                        Log.e(TAG, "Error getting Latest " + error);
+                        Log.e(TAG, "Error getting Latest", error);
                     }
                 }
             );
             this.requestQueue.add(request);
         } catch (JSONException ex) {
             // Catch if something went wrong with the params
-            Log.e(TAG, "Error getLatest JSONException " + ex);
+            Log.e(TAG, "Error getLatest JSONException", ex);
         }
     }
 
@@ -423,14 +423,14 @@ public class CapacitorUpdater {
                 new Response.ErrorListener() {
                     @Override
                     public void onErrorResponse(VolleyError error) {
-                        Log.i(TAG, "Error sending stats: " + error);
+                        Log.e(TAG, "Error sending stats: " + error);
                     }
                 }
             );
             this.requestQueue.add(request);
         } catch (JSONException ex) {
             // Catch if something went wrong with the params
-            Log.e(TAG, "Error sendStats JSONException " + ex);
+            Log.e(TAG, "Error sendStats JSONException", ex);
         }
     }
 
@@ -442,16 +442,16 @@ public class CapacitorUpdater {
         Log.d(TAG, "Getting info for bundle [" + trueId + "]");
         BundleInfo result;
         if (BundleInfo.ID_BUILTIN.equals(trueId)) {
-            result = new BundleInfo(trueId, (String) null, BundleStatus.SUCCESS, "", "");
+            result = new BundleInfo(trueId, null, BundleStatus.SUCCESS, "", "");
         } else if (BundleInfo.VERSION_UNKNOWN.equals(trueId)) {
-            result = new BundleInfo(trueId, (String) null, BundleStatus.ERROR, "", "");
+            result = new BundleInfo(trueId, null, BundleStatus.ERROR, "", "");
         } else {
             try {
                 String stored = this.prefs.getString(trueId + INFO_SUFFIX, "");
                 result = BundleInfo.fromJSON(stored);
             } catch (JSONException e) {
                 Log.e(TAG, "Failed to parse info for bundle [" + trueId + "] ", e);
-                result = new BundleInfo(trueId, (String) null, BundleStatus.PENDING, "", "");
+                result = new BundleInfo(trueId, null, BundleStatus.PENDING, "", "");
             }
         }
 
@@ -543,6 +543,7 @@ public class CapacitorUpdater {
 
     public BundleInfo getNextBundle() {
         final String id = this.prefs.getString(NEXT_VERSION, null);
+        if (id == null) return null;
         return this.getBundleInfo(id);
     }
 

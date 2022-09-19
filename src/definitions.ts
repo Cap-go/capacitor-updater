@@ -161,6 +161,15 @@ export interface BundleInfo {
   status: BundleStatus;
 }
 
+export interface DelayCondition {
+  /**
+   * Set up delay conditions in setMultiDelay
+   * @param value is useless for @param kind "kill", optional for "background" (default value: "0") and required for "nativeVersion" and "date"
+   */
+  kind: DelayUntilNext;
+  value?: string;
+}
+
 export type BundleStatus = 'success' | 'error' | 'pending' | 'downloading';
 export type DelayUntilNext = 'background' | 'kill' | 'nativeVersion' | 'date';
 
@@ -171,13 +180,14 @@ export type DownloadFailedListener = (state: DownloadFailedEvent) => void;
 export type DownloadCompleteListener = (state: DownloadCompleteEvent) => void;
 export type MajorAvailableListener = (state: MajorAvailableEvent) => void;
 export type UpdateFailedListener = (state: UpdateFailedEvent) => void;
+export type AppReloadedListener = (state: void) => void;
 
 export interface CapacitorUpdaterPlugin {
   /**
    * Notify Capacitor Updater that the current bundle is working (a rollback will occur of this method is not called on every app launch)
    *
    * @returns {Promise<BundleInfo>} an Promise resolved directly
-   * @throws An error if the something went wrong
+   * @throws An error if something went wrong
    */
   notifyAppReady(): Promise<BundleInfo>;
 
@@ -252,15 +262,38 @@ export interface CapacitorUpdaterPlugin {
   reload(): Promise<void>;
 
   /**
-   * Set delay to skip updates in the next time the app goes into the background
+   * Set DelayCondition, skip updates until one of the conditions is met
    *
    * @returns {Promise<void>} an Promise resolved directly
-   * @param kind is the kind of delay to set
-   * @param value is the delay value acording to the type
+   * @param options are the {@link DelayCondition} list to set
+   * 
+   * @example
+   * setMultiDelay({ delayConditions: [{ kind: 'kill' }, { kind: 'background', value: '300000' }] })
+   * // installs the update after the user kills the app or after a background of 300000 ms (5 minutes)
+   * 
+   * @example
+   * setMultiDelay({ delayConditions: [{ kind: 'date', value: '2022-09-14T06:14:11.920Z' }] })
+   * // installs the update after the specific iso8601 date is expired
+   * 
+   * @example
+   * setMultiDelay({ delayConditions: [{ kind: 'background' }] })
+   * // installs the update after the the first background (default behaviour without setting delay)
+   * 
+   * @throws An error if the something went wrong
+   * @since 4.3.0
+   */
+  setMultiDelay(options: { delayConditions: DelayCondition[] }): Promise<void>;
+
+  /**
+   * Set DelayCondition, skip updates until the condition is met
+   *
+   * @deprecated use setMultiDelay instead passing a single value in array
+   * @returns {Promise<void>} an Promise resolved directly
+   * @param options is the {@link DelayCondition} to set
    * @throws An error if the something went wrong
    * @since 4.0.0
    */
-  setDelay(options: { kind: DelayUntilNext; value?: string }): Promise<void>;
+  setDelay(options: DelayCondition): Promise<void>;
 
   /**
    * Cancel delay to updates as usual
@@ -347,6 +380,16 @@ export interface CapacitorUpdaterPlugin {
   addListener(
     eventName: 'downloadFailed',
     listenerFunc: DownloadFailedListener
+  ): Promise<PluginListenerHandle> & PluginListenerHandle;
+
+  /**
+   * Listen for download fail event in the App, let you know when download has fail finished
+   *
+   * @since 4.3.0
+   */
+   addListener(
+    eventName: 'appReloaded',
+    listenerFunc: AppReloadedListener
   ): Promise<PluginListenerHandle> & PluginListenerHandle;
 
   /**

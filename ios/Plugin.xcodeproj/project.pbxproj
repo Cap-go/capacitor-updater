@@ -18,6 +18,8 @@
 		50E1A94820377CB70090CE1A /* CapacitorUpdaterPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50E1A94720377CB70090CE1A /* CapacitorUpdaterPlugin.swift */; };
 		863289042823450E0057FC90 /* BundleInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 863289032823450E0057FC90 /* BundleInfo.swift */; };
 		863289062823453C0057FC90 /* BundleStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 863289052823453C0057FC90 /* BundleStatus.swift */; };
+		B3F3EE2328CF27FA00663217 /* DelayCondition.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3F3EE2228CF27FA00663217 /* DelayCondition.swift */; };
+		B3F3EE2528CF287200663217 /* DelayUntilNext.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3F3EE2428CF287200663217 /* DelayUntilNext.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -47,6 +49,8 @@
 		863289052823453C0057FC90 /* BundleStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundleStatus.swift; sourceTree = "<group>"; };
 		91781294A431A2A7CC6EB714 /* Pods-Plugin.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Plugin.release.xcconfig"; path = "Pods/Target Support Files/Pods-Plugin/Pods-Plugin.release.xcconfig"; sourceTree = "<group>"; };
 		96ED1B6440D6672E406C8D19 /* Pods-PluginTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-PluginTests.debug.xcconfig"; path = "Pods/Target Support Files/Pods-PluginTests/Pods-PluginTests.debug.xcconfig"; sourceTree = "<group>"; };
+		B3F3EE2228CF27FA00663217 /* DelayCondition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DelayCondition.swift; sourceTree = "<group>"; };
+		B3F3EE2428CF287200663217 /* DelayUntilNext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DelayUntilNext.swift; sourceTree = "<group>"; };
 		F65BB2953ECE002E1EF3E424 /* Pods-PluginTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-PluginTests.release.xcconfig"; path = "Pods/Target Support Files/Pods-PluginTests/Pods-PluginTests.release.xcconfig"; sourceTree = "<group>"; };
 		F6753A823D3815DB436415E3 /* Pods_PluginTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_PluginTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -103,6 +107,8 @@
 				50ADFF8B201F53D600D50D53 /* CapacitorUpdaterPlugin.h */,
 				50ADFFA72020EE4F00D50D53 /* CapacitorUpdaterPlugin.m */,
 				50ADFF8C201F53D600D50D53 /* Info.plist */,
+				B3F3EE2228CF27FA00663217 /* DelayCondition.swift */,
+				B3F3EE2428CF287200663217 /* DelayUntilNext.swift */,
 			);
 			path = Plugin;
 			sourceTree = "<group>";
@@ -313,6 +319,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				50E1A94820377CB70090CE1A /* CapacitorUpdaterPlugin.swift in Sources */,
+				B3F3EE2328CF27FA00663217 /* DelayCondition.swift in Sources */,
+				B3F3EE2528CF287200663217 /* DelayUntilNext.swift in Sources */,
 				863289062823453C0057FC90 /* BundleStatus.swift in Sources */,
 				2F98D68224C9AAE500613A4C /* CapacitorUpdater.swift in Sources */,
 				863289042823450E0057FC90 /* BundleInfo.swift in Sources */,
