@@ -107,9 +107,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             let res = try implementation.download(url: url!, version: version)
             call.resolve(res.toJSON())
         } catch {
-            print("\(self.implementation.TAG) Failed to download from: \(url ?? "") \(error.localizedDescription)")
+            print("\(self.implementation.TAG) Failed to download from: \(url!) \(error.localizedDescription)")
             self.notifyListeners("downloadFailed", data: ["version": version])
-            call.reject("Failed to download from: \(url ?? "")", error.localizedDescription)
+            call.reject("Failed to download from: \(url!)", error.localizedDescription)
         }
     }
 
