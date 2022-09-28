@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.3.3](https://github.com/Cap-go/capacitor-updater/compare/4.3.2...4.3.3) (2022-09-28)
+
+
+### Bug Fixes
+
+* delete bundle issue ([a4f0dd8](https://github.com/Cap-go/capacitor-updater/commit/a4f0dd8355b1d3dbb62b0b4527fdfca9cec7601b))
+
 ### [4.3.2](https://github.com/Cap-go/capacitor-updater/compare/4.3.1...4.3.2) (2022-09-20)
 
 ### [4.3.1](https://github.com/Cap-go/capacitor-updater/compare/4.3.0...4.3.1) (2022-09-19)
