@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.3.2](https://github.com/Cap-go/capacitor-updater/compare/4.3.1...4.3.2) (2022-09-20)
+
+### [4.3.1](https://github.com/Cap-go/capacitor-updater/compare/4.3.0...4.3.1) (2022-09-19)
+
+
+### Bug Fixes
+
+* ios type ([be90fbe](https://github.com/Cap-go/capacitor-updater/commit/be90fbe3579e253d1a95e47e9f3d67c025f89a3c))
+
+## [4.3.0](https://github.com/Cap-go/capacitor-updater/compare/4.2.7...4.3.0) (2022-09-19)
+
+
+### Features
+
+* listener for app reloaded ([5783f53](https://github.com/Cap-go/capacitor-updater/commit/5783f53f14cebadabf58e6c7d226c1d2f3b1e588))
+* multi delay ([fb42865](https://github.com/Cap-go/capacitor-updater/commit/fb42865c866b1663c3d2943a4dc08f52fff57448))
+
+
+### Bug Fixes
+
+* return unknown after install ([c370977](https://github.com/Cap-go/capacitor-updater/commit/c3709774ff944376a9d48f921b6dfb21d46521bb))
+* reverse condition ([c5b18ce](https://github.com/Cap-go/capacitor-updater/commit/c5b18ce23abf8d78c377e332f5ab7bc05bf65ba6))
+* swiftlint ([7db7d6e](https://github.com/Cap-go/capacitor-updater/commit/7db7d6eccff372a8bee7fddc6fa2945a7c298ec0))
+
 ### [4.2.7](https://github.com/Cap-go/capacitor-updater/compare/4.2.6...4.2.7) (2022-09-15)
 
 
