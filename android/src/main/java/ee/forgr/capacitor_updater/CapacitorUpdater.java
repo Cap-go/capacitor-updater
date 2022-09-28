@@ -45,7 +45,7 @@ public class CapacitorUpdater {
     private static final String bundleDirectory = "versions";
 
     public static final String TAG = "Capacitor-updater";
-    public static final String pluginVersion = "4.3.1";
+    public static final String pluginVersion = "4.3.2";
 
     public SharedPreferences.Editor editor;
     public SharedPreferences prefs;
@@ -357,7 +357,7 @@ public class CapacitorUpdater {
         final String versionCode = this.versionCode;
         final String versionOs = this.versionOs;
         final String pluginVersion = CapacitorUpdater.pluginVersion;
-        final String version = this.getCurrentBundle().getId();
+        final String versionName = this.getCurrentBundle().getVersionName();
         try {
             JSONObject json = new JSONObject();
             json.put("platform", "android");
@@ -366,7 +366,7 @@ public class CapacitorUpdater {
             json.put("version_build", versionBuild);
             json.put("version_code", versionCode);
             json.put("version_os", versionOs);
-            json.put("version_name", version);
+            json.put("version_name", versionName);
             json.put("plugin_version", pluginVersion);
 
             Log.i(CapacitorUpdater.TAG, "Auto-update parameters: " + json);
