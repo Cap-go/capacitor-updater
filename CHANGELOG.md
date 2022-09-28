@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.3.4](https://github.com/Cap-go/capacitor-updater/compare/4.3.3...4.3.4) (2022-09-28)
+
+
+### Bug Fixes
+
+* ios double kill ([1e21c24](https://github.com/Cap-go/capacitor-updater/commit/1e21c242a5a2409e1125f5813d0dc51be93046b8))
+
 ### [4.3.3](https://github.com/Cap-go/capacitor-updater/compare/4.3.2...4.3.3) (2022-09-28)
 
 
