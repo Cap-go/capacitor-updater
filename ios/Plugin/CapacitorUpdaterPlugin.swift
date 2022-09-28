@@ -51,7 +51,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         let nc = NotificationCenter.default
         nc.addObserver(self, selector: #selector(appMovedToBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
         nc.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
-        self._checkCancelDelay(killed: true)
+        nc.addObserver(self, selector: #selector(appKilled), name: UIApplication.willTerminateNotification, object: nil)
         self.appMovedToForeground()
     }
 
@@ -505,6 +505,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             self.installNext()
         }
 
+    }
+    
+    @objc func appKilled(){
+        self._checkCancelDelay(killed: true)
     }
 
     private func installNext() {
