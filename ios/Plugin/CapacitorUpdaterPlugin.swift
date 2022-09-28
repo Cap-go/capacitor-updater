@@ -451,6 +451,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                             _ = self.implementation.setNextBundle(next: latest!.getId())
                             return
                         }
+                        if latest!.isDeleted() {
+                            print("\(self.implementation.TAG) Latest bundle already exists and will be deleted, download will overwrite it.")
+                            let res = self.implementation.delete(id: latest!.getId(), removeInfo: true)
+                            if !res {
+                                print("\(self.implementation.TAG) Delete version deleted: \(latest!.toString())")
+                            } else {
+                                print("\(self.implementation.TAG) Failed to delete failed bundle: \(latest!.toString())")
+                            }
+                        }
                     }
 
                     do {

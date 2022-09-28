@@ -265,6 +265,8 @@ public class CapacitorUpdater {
             this.deleteDirectory(bundle);
             if (removeInfo) {
                 this.removeBundleInfo(id);
+            } else {
+                this.saveBundleInfo(id, deleted.setStatus(BundleStatus.DELETED));
             }
             return true;
         }
@@ -283,7 +285,8 @@ public class CapacitorUpdater {
 
     private boolean bundleExists(final String id) {
         final File bundle = this.getBundleDirectory(id);
-        if (bundle == null || !bundle.exists()) {
+        final BundleInfo bundleInfo = this.getBundleInfo(id);
+        if (bundle == null || !bundle.exists() || !bundleInfo.isDeleted()) {
             return false;
         }
         return new File(bundle.getPath(), "/index.html").exists();

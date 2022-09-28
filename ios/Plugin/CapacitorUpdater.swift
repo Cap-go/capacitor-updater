@@ -362,8 +362,9 @@ extension CustomError: LocalizedError {
         }
         if removeInfo {
             self.removeBundleInfo(id: id)
+        } else {
+            self.saveBundleInfo(id: id, bundle: deleted.setStatus(status: BundleStatus.DELETED.localizedString))
         }
-        self.removeBundleInfo(id: id)
         self.sendStats(action: "delete", versionName: deleted.getVersionName())
         return true
     }
@@ -386,7 +387,8 @@ extension CustomError: LocalizedError {
         let indexHot = destHot.appendingPathComponent("index.html")
         let indexPersist = destHotPersist.appendingPathComponent("index.html")
         let url: URL = self.getBundleDirectory(id: id)
-        if url.isDirectory && destHotPersist.isDirectory && indexHot.exist && indexPersist.exist {
+        let bundleIndo: BundleInfo = self.getBundleInfo(id: id)
+        if url.isDirectory && destHotPersist.isDirectory && indexHot.exist && indexPersist.exist && !bundleIndo.isDeleted() {
             return true
         }
         return false

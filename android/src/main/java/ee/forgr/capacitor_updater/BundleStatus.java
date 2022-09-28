@@ -7,6 +7,7 @@ public enum BundleStatus {
     SUCCESS("success"),
     ERROR("error"),
     PENDING("pending"),
+    DELETED("deleted"),
     DOWNLOADING("donwloading");
 
     public final String label;

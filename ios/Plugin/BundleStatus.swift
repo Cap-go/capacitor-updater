@@ -29,6 +29,7 @@ enum BundleStatus: LocalizedString, Decodable, Encodable {
     case SUCCESS = "success"
     case ERROR = "error"
     case PENDING  = "pending"
+    case DELETED  = "deleted"
     case DOWNLOADING  = "donwloading"
 
     var localizedString: String {
