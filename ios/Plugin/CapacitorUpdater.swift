@@ -134,7 +134,7 @@ extension CustomError: LocalizedError {
 
     private let versionName = Bundle.main.versionName ?? ""
     private let versionCode = Bundle.main.versionCode ?? ""
-    private let versionOs = ProcessInfo().operatingSystemVersion.getFullVersion()
+    private let versionOs = UIDevice.current.systemVersion
     private let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
     private let libraryDir = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
     private let bundleDirectoryHot = "versions"
@@ -403,10 +403,10 @@ extension CustomError: LocalizedError {
         if bundleExists(id: id) {
             self.setCurrentBundle(bundle: self.getBundleDirectory(id: id).path)
             self.setBundleStatus(id: id, status: BundleStatus.PENDING)
-            sendStats(action: "set", versionName: newBundle.getVersionName())
+            self.sendStats(action: "set", versionName: newBundle.getVersionName())
             return true
         }
-        sendStats(action: "set_fail", versionName: newBundle.getVersionName())
+        self.sendStats(action: "set_fail", versionName: newBundle.getVersionName())
         return false
     }
 
@@ -428,7 +428,7 @@ extension CustomError: LocalizedError {
         self.setFallbackBundle(fallback: Optional<BundleInfo>.none)
         _ = self.setNextBundle(next: Optional<String>.none)
         if !isInternal {
-            sendStats(action: "reset", versionName: self.getCurrentBundle().getVersionName())
+            self.sendStats(action: "reset", versionName: self.getCurrentBundle().getVersionName())
         }
     }
 
@@ -453,7 +453,9 @@ extension CustomError: LocalizedError {
     }
 
     func sendStats(action: String, versionName: String) {
-        if self.statsUrl == "" { return }
+        if self.statsUrl == "" {
+            return
+        }
         let parameters: [String: String] = [
             "platform": "ios",
             "action": action,
