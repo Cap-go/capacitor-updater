@@ -286,7 +286,7 @@ public class CapacitorUpdater {
     private boolean bundleExists(final String id) {
         final File bundle = this.getBundleDirectory(id);
         final BundleInfo bundleInfo = this.getBundleInfo(id);
-        if (bundle == null || !bundle.exists() || !bundleInfo.isDeleted()) {
+        if (bundle == null || !bundle.exists() || bundleInfo.isDeleted()) {
             return false;
         }
         return new File(bundle.getPath(), "/index.html").exists();
