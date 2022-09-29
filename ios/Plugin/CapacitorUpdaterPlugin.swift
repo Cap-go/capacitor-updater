@@ -33,7 +33,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         }
         autoDeleteFailed = getConfig().getBoolean("autoDeleteFailed", true)
         autoDeletePrevious = getConfig().getBoolean("autoDeletePrevious", true)
-        updateUrl = getConfig().getString("updateUrl") ?? CapacitorUpdaterPlugin.updateUrlDefault
+        updateUrl = getConfig().getString("updateUrl", CapacitorUpdaterPlugin.updateUrlDefault)!
         autoUpdate = getConfig().getBoolean("autoUpdate", true)
         appReadyTimeout = getConfig().getInt("appReadyTimeout", 10000)
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
@@ -44,7 +44,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         if config?["appId"] != nil {
             implementation.appId = config?["appId"] as! String
         }
-        implementation.statsUrl = getConfig().getString("statsUrl") ?? CapacitorUpdaterPlugin.updateUrlDefault
+        implementation.statsUrl = getConfig().getString("statsUrl", CapacitorUpdaterPlugin.statsUrlDefault)!
         if resetWhenUpdate {
             self.cleanupObsoleteVersions()
         }

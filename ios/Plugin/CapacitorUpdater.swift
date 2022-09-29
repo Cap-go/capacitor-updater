@@ -453,7 +453,7 @@ extension CustomError: LocalizedError {
     }
 
     func sendStats(action: String, versionName: String) {
-        if statsUrl == "" { return }
+        if self.statsUrl == "" { return }
         let parameters: [String: String] = [
             "platform": "ios",
             "action": action,
