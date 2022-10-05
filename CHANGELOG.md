@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.4.0](https://github.com/Cap-go/capacitor-updater/compare/4.3.7...4.4.0) (2022-10-05)
+
+
+### Features
+
+* add checksum check + lint ([f4e2649](https://github.com/Cap-go/capacitor-updater/commit/f4e2649ae6c1e58f6c1fe805e0c752e39281492b))
+
 ### [4.3.7](https://github.com/Cap-go/capacitor-updater/compare/4.3.6...4.3.7) (2022-09-29)
 
 
