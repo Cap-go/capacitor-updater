@@ -45,7 +45,7 @@ public class CapacitorUpdater {
     private static final String bundleDirectory = "versions";
 
     public static final String TAG = "Capacitor-updater";
-    public static final String pluginVersion = "4.3.5";
+    public static final String pluginVersion = "4.3.7";
 
     public SharedPreferences.Editor editor;
     public SharedPreferences prefs;
@@ -286,7 +286,7 @@ public class CapacitorUpdater {
     private boolean bundleExists(final String id) {
         final File bundle = this.getBundleDirectory(id);
         final BundleInfo bundleInfo = this.getBundleInfo(id);
-        if (bundle == null || !bundle.exists() || !bundleInfo.isDeleted()) {
+        if (bundle == null || !bundle.exists() || bundleInfo.isDeleted()) {
             return false;
         }
         return new File(bundle.getPath(), "/index.html").exists();
