@@ -67,7 +67,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             let res = implementation.list()
             res.forEach { version in
                 print("\(self.implementation.TAG) Deleting obsolete bundle: \(version)")
-                _ = implementation.delete(id: version.getId())
+                let res = implementation.delete(id: version.getId())
+                if !res {
+                    print("\(self.implementation.TAG) Delete failed, id \(version.getId()) doesn't exist")
+                }
             }
         }
         UserDefaults.standard.set( self.currentVersionNative.description, forKey: "LatestVersionNative")
@@ -465,6 +468,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                     do {
                         print("\(self.implementation.TAG) New bundle: \(latestVersionName) found. Current is: \(current.getVersionName()). Update will occur next time app moves to background.")
                         let next = try self.implementation.download(url: downloadUrl, version: latestVersionName)
+                        if res.checksum != "" && next.getChecksum() != res.checksum {
+                            print("\(self.implementation.TAG) Error checksum", next.getChecksum(), res.checksum)
+                            let resDel = self.implementation.delete(id: next.getId())
+                            if !resDel {
+                                print("\(self.implementation.TAG) Delete failed, id \(next.getId()) doesn't exist")
+                            }
+                            return
+                        }
                         self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
                         _ = self.implementation.setNextBundle(next: next.getId())
                     } catch {
@@ -515,8 +526,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         }
 
     }
-    
-    @objc func appKilled(){
+
+    @objc func appKilled() {
         self._checkCancelDelay(killed: true)
     }
 

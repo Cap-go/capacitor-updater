@@ -266,19 +266,19 @@ export interface CapacitorUpdaterPlugin {
    *
    * @returns {Promise<void>} an Promise resolved directly
    * @param options are the {@link DelayCondition} list to set
-   * 
+   *
    * @example
    * setMultiDelay({ delayConditions: [{ kind: 'kill' }, { kind: 'background', value: '300000' }] })
    * // installs the update after the user kills the app or after a background of 300000 ms (5 minutes)
-   * 
+   *
    * @example
    * setMultiDelay({ delayConditions: [{ kind: 'date', value: '2022-09-14T06:14:11.920Z' }] })
    * // installs the update after the specific iso8601 date is expired
-   * 
+   *
    * @example
    * setMultiDelay({ delayConditions: [{ kind: 'background' }] })
    * // installs the update after the the first background (default behaviour without setting delay)
-   * 
+   *
    * @throws An error if the something went wrong
    * @since 4.3.0
    */
@@ -387,7 +387,7 @@ export interface CapacitorUpdaterPlugin {
    *
    * @since 4.3.0
    */
-   addListener(
+  addListener(
     eventName: 'appReloaded',
     listenerFunc: AppReloadedListener
   ): Promise<PluginListenerHandle> & PluginListenerHandle;

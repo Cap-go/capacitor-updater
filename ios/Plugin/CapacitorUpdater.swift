@@ -18,12 +18,14 @@ extension Date {
 }
 struct AppVersionDec: Decodable {
     let version: String?
+    let checksum: String?
     let url: String?
     let message: String?
     let major: Bool?
 }
 public class AppVersion: NSObject {
     var version: String = ""
+    var checksum: String = ""
     var url: String = ""
     var message: String?
     var major: Bool?
@@ -247,6 +249,9 @@ extension CustomError: LocalizedError {
             case .success:
                 if let url = response.value?.url {
                     latest.url = url
+                }
+                if let checksum = response.value?.checksum {
+                    latest.checksum = checksum
                 }
                 if let version = response.value?.version {
                     latest.version = version

@@ -357,7 +357,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                 }
                                 call.resolve(ret);
                             }
-                    );
+                        );
                 }
             }
         );
@@ -619,11 +619,11 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
 
                                         if (
                                             latestVersionName != null &&
-                                                !"".equals(latestVersionName) &&
-                                                !current.getVersionName().equals(latestVersionName)
+                                            !"".equals(latestVersionName) &&
+                                            !current.getVersionName().equals(latestVersionName)
                                         ) {
                                             final BundleInfo latest =
-                                                    CapacitorUpdaterPlugin.this.implementation.getBundleInfoByName(latestVersionName);
+                                                CapacitorUpdaterPlugin.this.implementation.getBundleInfoByName(latestVersionName);
                                             if (latest != null) {
                                                 if (latest.isErrorStatus()) {
                                                     Log.e(
@@ -648,16 +648,24 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                                 }
                                                 if (latest.isDeleted()) {
                                                     Log.i(
-                                                            CapacitorUpdater.TAG,
-                                                            "Latest bundle already exists and will be deleted, download will overwrite it."
+                                                        CapacitorUpdater.TAG,
+                                                        "Latest bundle already exists and will be deleted, download will overwrite it."
                                                     );
                                                     try {
-                                                        final Boolean deleted = CapacitorUpdaterPlugin.this.implementation.delete(latest.getId(), true);
+                                                        final Boolean deleted =
+                                                            CapacitorUpdaterPlugin.this.implementation.delete(latest.getId(), true);
                                                         if (deleted) {
-                                                            Log.i(CapacitorUpdater.TAG, "Failed bundle deleted: " + latest.getVersionName());
+                                                            Log.i(
+                                                                CapacitorUpdater.TAG,
+                                                                "Failed bundle deleted: " + latest.getVersionName()
+                                                            );
                                                         }
                                                     } catch (final IOException e) {
-                                                        Log.e(CapacitorUpdater.TAG, "Failed to delete failed bundle: " + latest.getVersionName(), e);
+                                                        Log.e(
+                                                            CapacitorUpdater.TAG,
+                                                            "Failed to delete failed bundle: " + latest.getVersionName(),
+                                                            e
+                                                        );
                                                     }
                                                 }
                                             }
@@ -679,6 +687,22 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                                             final String url = (String) res.get("url");
                                                             final BundleInfo next =
                                                                 CapacitorUpdaterPlugin.this.implementation.download(url, latestVersionName);
+                                                            final String checksum = (String) res.get("checksum");
+                                                            if (!checksum.equals("") && next.getChecksum() != checksum) {
+                                                                Log.e(
+                                                                    CapacitorUpdater.TAG,
+                                                                    "Error checksum " + next.getChecksum() + " " + checksum
+                                                                );
+                                                                final Boolean res =
+                                                                    CapacitorUpdaterPlugin.this.implementation.delete(next.getId());
+                                                                if (res) {
+                                                                    Log.i(
+                                                                        CapacitorUpdater.TAG,
+                                                                        "Failed bundle deleted: " + next.getVersionName()
+                                                                    );
+                                                                }
+                                                                return;
+                                                            }
                                                             final JSObject ret = new JSObject();
                                                             ret.put("bundle", next.toJSON());
                                                             CapacitorUpdaterPlugin.this.notifyListeners("updateAvailable", ret);
@@ -709,7 +733,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                         CapacitorUpdaterPlugin.this.notifyListeners("noNeedUpdate", retNoNeed);
                                     }
                                 }
-                        );
+                            );
                     }
                 }
             )
@@ -737,10 +761,11 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             if (backgroundValue != null) {
                 taskRunning = true;
                 final Long timeout = Long.parseLong(backgroundValue);
-                if(backgroundTask != null) {
+                if (backgroundTask != null) {
                     backgroundTask.interrupt();
                 }
-                backgroundTask = new Thread(
+                backgroundTask =
+                    new Thread(
                         new Runnable() {
                             @Override
                             public void run() {
@@ -754,7 +779,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                 }
                             }
                         }
-                );
+                    );
                 backgroundTask.start();
             } else {
                 this._checkCancelDelay(false);
@@ -834,8 +859,8 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         public void run() {
             try {
                 Log.i(
-                        CapacitorUpdater.TAG,
-                        "Wait for " + CapacitorUpdaterPlugin.this.appReadyTimeout + "ms, then check for notifyAppReady"
+                    CapacitorUpdater.TAG,
+                    "Wait for " + CapacitorUpdaterPlugin.this.appReadyTimeout + "ms, then check for notifyAppReady"
                 );
                 Thread.sleep(CapacitorUpdaterPlugin.this.appReadyTimeout);
                 CapacitorUpdaterPlugin.this.checkRevert();
