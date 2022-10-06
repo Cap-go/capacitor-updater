@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.4.1](https://github.com/Cap-go/capacitor-updater/compare/4.4.0...4.4.1) (2022-10-06)
+
+
+### Bug Fixes
+
+* getDeviceId return type ([037af0c](https://github.com/Cap-go/capacitor-updater/commit/037af0c7a7b165d7586ffabca81a7d5ab6213464))
+
 ## [4.4.0](https://github.com/Cap-go/capacitor-updater/compare/4.3.7...4.4.0) (2022-10-05)
 
 
