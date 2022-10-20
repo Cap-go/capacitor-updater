@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.4.4](https://github.com/Cap-go/capacitor-updater/compare/4.4.3...4.4.4) (2022-10-20)
+
+
+### Bug Fixes
+
+* missing export map ([d936cbc](https://github.com/Cap-go/capacitor-updater/commit/d936cbc1280ae02fde5ea5fb3b8a52a936386695))
+
 ### [4.4.3](https://github.com/Cap-go/capacitor-updater/compare/4.4.2...4.4.3) (2022-10-20)
 
 ### [4.4.2](https://github.com/Cap-go/capacitor-updater/compare/4.4.1...4.4.2) (2022-10-10)
