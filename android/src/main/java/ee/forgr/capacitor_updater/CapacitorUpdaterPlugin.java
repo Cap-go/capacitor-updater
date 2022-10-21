@@ -688,7 +688,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                                             final BundleInfo next =
                                                                 CapacitorUpdaterPlugin.this.implementation.download(url, latestVersionName);
                                                             final String checksum = (String) res.get("checksum");
-                                                            if (!checksum.equals("") && next.getChecksum() != checksum) {
+                                                            if (!checksum.equals("") && next.getChecksum().equals(checksum)) {
                                                                 Log.e(
                                                                     CapacitorUpdater.TAG,
                                                                     "Error checksum " + next.getChecksum() + " " + checksum
