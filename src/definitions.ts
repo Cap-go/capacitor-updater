@@ -311,7 +311,7 @@ export interface CapacitorUpdaterPlugin {
    * @throws An error if the something went wrong
    * @since 4.0.0
    */
-  getLatest(options: { delay: boolean }): Promise<latestVersion>;
+  getLatest(): Promise<latestVersion>;
 
   /**
    * Listen for download event in the App, let you know when the download is started, loading and finished
