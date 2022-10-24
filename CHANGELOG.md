@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.4.9](https://github.com/Cap-go/capacitor-updater/compare/4.4.8...4.4.9) (2022-10-24)
+
+
+### Bug Fixes
+
+* missing start getLatest android ([56709ad](https://github.com/Cap-go/capacitor-updater/commit/56709adaed52ee9833b981341aaaac98d78d4c18))
+
 ### [4.4.8](https://github.com/Cap-go/capacitor-updater/compare/4.4.7...4.4.8) (2022-10-24)
 
 
