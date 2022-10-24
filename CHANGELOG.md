@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.4.7](https://github.com/Cap-go/capacitor-updater/compare/4.4.6...4.4.7) (2022-10-24)
+
+
+### Bug Fixes
+
+* remove getLatest mendatory option ([d85cc5b](https://github.com/Cap-go/capacitor-updater/commit/d85cc5bc13f9eca50e057ffe82a7feb9b7aaace0))
+
 ### [4.4.6](https://github.com/Cap-go/capacitor-updater/compare/4.4.5...4.4.6) (2022-10-22)
 
 
