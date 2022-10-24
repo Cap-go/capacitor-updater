@@ -866,7 +866,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                 CapacitorUpdaterPlugin.this.checkRevert();
                 CapacitorUpdaterPlugin.this.appReadyCheck = null;
             } catch (final InterruptedException e) {
-                Log.e(CapacitorUpdater.TAG, DeferredNotifyAppReadyCheck.class.getName() + " was interrupted.");
+                Log.i(CapacitorUpdater.TAG, DeferredNotifyAppReadyCheck.class.getName() + " was interrupted.");
             }
         }
     }
