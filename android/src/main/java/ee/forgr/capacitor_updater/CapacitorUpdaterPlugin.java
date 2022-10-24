@@ -343,6 +343,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                     CapacitorUpdaterPlugin.this.implementation.getLatest(
                             CapacitorUpdaterPlugin.this.updateUrl,
                             res -> {
+                                Log.i(CapacitorUpdater.TAG, "Check for update via: " + CapacitorUpdaterPlugin.this.updateUrl);
                                 final JSObject ret = new JSObject();
                                 Iterator<String> keys = res.keys();
                                 while (keys.hasNext()) {
@@ -360,7 +361,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                         );
                 }
             }
-        );
+        ).start();
     }
 
     private boolean _reset(final Boolean toLastSuccessful) {
