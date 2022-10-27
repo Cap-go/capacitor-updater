@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.4.10](https://github.com/Cap-go/capacitor-updater/compare/4.4.9...4.4.10) (2022-10-27)
+
+
+### Bug Fixes
+
+* definition issue and ios return key ([7f2f0ae](https://github.com/Cap-go/capacitor-updater/commit/7f2f0aed91eca4d3c94f26d8c26f9e35ca18ae34))
+
 ### [4.4.9](https://github.com/Cap-go/capacitor-updater/compare/4.4.8...4.4.9) (2022-10-24)
 
 
