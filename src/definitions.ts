@@ -48,7 +48,7 @@ declare module '@capacitor/cli' {
       autoUpdate?: boolean;
 
       /**
-       * Automatically delete previous downloaded bundles when a newer native app version is installed to the device.
+       * Automatically delete previous downloaded bundles when a newer native app bundle is installed to the device.
        *
        * Only available for Android and iOS.
        *
@@ -108,7 +108,7 @@ export interface DownloadEvent {
 }
 export interface MajorAvailableEvent {
   /**
-   * Emit when a new major version is available.
+   * Emit when a new major bundle is available.
    *
    * @since  4.0.0
    */
@@ -192,9 +192,9 @@ export interface CapacitorUpdaterPlugin {
   notifyAppReady(): Promise<BundleInfo>;
 
   /**
-   * Download a new version from the provided URL, it should be a zip file, with files inside or with a unique id inside with all your files
+   * Download a new bundle from the provided URL, it should be a zip file, with files inside or with a unique id inside with all your files
    *
-   * @returns {Promise<BundleInfo>} The {@link BundleInfo} for the specified version.
+   * @returns {Promise<BundleInfo>} The {@link BundleInfo} for the specified bundle.
    * @param url The URL of the bundle zip file (e.g: dist.zip) to be downloaded. (This can be any URL. E.g: Amazon S3, a github tag, any other place you've hosted your bundle.)
    * @param version set the version code/name of this bundle/version
    * @example https://example.com/versions/{version}/dist.zip
@@ -206,7 +206,7 @@ export interface CapacitorUpdaterPlugin {
    *
    * @returns {Promise<BundleInfo>} The {@link BundleInfo} for the specified bundle id.
    * @param id The bundle id to set as current, next time the app is reloaded. See {@link BundleInfo.id}
-   * @throws An error if there are is no index.html file inside the version folder.
+   * @throws An error if there are is no index.html file inside the bundle folder.
    */
   next(options: { id: string }): Promise<BundleInfo>;
 
@@ -215,7 +215,7 @@ export interface CapacitorUpdaterPlugin {
    *
    * @param id The bundle id to set as current. See {@link BundleInfo.id}
    * @returns {Promise<Void>} An empty promise.
-   * @throws An error if there are is no index.html file inside the version folder.
+   * @throws An error if there are is no index.html file inside the bundle folder.
    */
   set(options: { id: string }): Promise<void>;
 
@@ -229,15 +229,15 @@ export interface CapacitorUpdaterPlugin {
   delete(options: { id: string }): Promise<void>;
 
   /**
-   * Get all available versions
+   * Get all available bundles
    *
-   * @returns {Promise<{version: BundleInfo[]}>} an Promise witht the version list
+   * @returns {Promise<{bundles: BundleInfo[]}>} an Promise witht the bundles list
    * @throws An error if the something went wrong
    */
   list(): Promise<{ bundles: BundleInfo[] }>;
 
   /**
-   * Set the `builtin` version (the one sent to Apple store / Google play store ) as current version
+   * Set the `builtin` bundle (the one sent to Apple store / Google play store ) as current bundle
    *
    * @returns {Promise<void>} an empty Promise
    * @param toLastSuccessful [false] if yes it reset to to the last successfully loaded bundle instead of `builtin`
@@ -305,7 +305,7 @@ export interface CapacitorUpdaterPlugin {
   cancelDelay(): Promise<void>;
 
   /**
-   * Get Latest version available from update Url
+   * Get Latest bundle available from update Url
    *
    * @returns {Promise<latestVersion>} an Promise resolved when url is loaded
    * @throws An error if the something went wrong

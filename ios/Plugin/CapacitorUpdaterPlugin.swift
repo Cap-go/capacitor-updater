@@ -192,7 +192,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             resArr.append(v.toJSON())
         }
         call.resolve([
-            "versions": resArr
+            "bundles": resArr
         ])
     }
 
