@@ -603,7 +603,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                             Log.i(CapacitorUpdater.TAG, "message " + res.get("message"));
                                             if (res.has("major") && res.getBoolean("major") && res.has("version")) {
                                                 final JSObject majorAvailable = new JSObject();
-                                                majorAvailable.put("version", (String) res.get("version"));
+                                                majorAvailable.put("version", res.getString("version"));
                                                 CapacitorUpdaterPlugin.this.notifyListeners("majorAvailable", majorAvailable);
                                             }
                                             final JSObject retNoNeed = new JSObject();
@@ -612,13 +612,13 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                             return;
                                         }
 
-                                        if (!res.has("url") || !CapacitorUpdaterPlugin.this.isValidURL((String) res.get("url"))) {
+                                        if (!res.has("url") || !CapacitorUpdaterPlugin.this.isValidURL(res.getString("url"))) {
                                             Log.e(CapacitorUpdater.TAG, "Error no url or wrong format");
                                             final JSObject retNoNeed = new JSObject();
                                             retNoNeed.put("bundle", current.toJSON());
                                             CapacitorUpdaterPlugin.this.notifyListeners("noNeedUpdate", retNoNeed);
                                         }
-                                        final String latestVersionName = (String) res.get("version");
+                                        final String latestVersionName = res.getString("version");
 
                                         if (
                                             latestVersionName != null &&
@@ -687,10 +687,10 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                                                 ". Update will occur next time app moves to background."
                                                             );
 
-                                                            final String url = (String) res.get("url");
+                                                            final String url = res.getString("url");
                                                             final BundleInfo next =
                                                                 CapacitorUpdaterPlugin.this.implementation.download(url, latestVersionName);
-                                                            final String checksum = (String) res.get("checksum");
+                                                            final String checksum = res.has("checksum") ? res.getString("checksum") : "";
                                                             if (!checksum.equals("") && !next.getChecksum().equals(checksum)) {
                                                                 Log.e(
                                                                     CapacitorUpdater.TAG,
