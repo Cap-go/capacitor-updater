@@ -207,6 +207,8 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                             final JSObject ret = new JSObject();
                             ret.put("version", version);
                             CapacitorUpdaterPlugin.this.notifyListeners("downloadFailed", ret);
+                            final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
+                            CapacitorUpdaterPlugin.this.implementation.sendStats("download_fail", current.getVersionName());
                         }
                     }
                 }
@@ -713,6 +715,8 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                                             final JSObject ret = new JSObject();
                                                             ret.put("version", latestVersionName);
                                                             CapacitorUpdaterPlugin.this.notifyListeners("downloadFailed", ret);
+                                                            final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
+                                                            CapacitorUpdaterPlugin.this.implementation.sendStats("download_fail", current.getVersionName());
                                                             final JSObject retNoNeed = new JSObject();
                                                             retNoNeed.put("bundle", current.toJSON());
                                                             CapacitorUpdaterPlugin.this.notifyListeners("noNeedUpdate", retNoNeed);
