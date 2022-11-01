@@ -62,7 +62,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     public void load() {
         super.load();
         final Boolean allowEmulatorProd = this.getConfig().getBoolean("allowEmulatorProd", true);
-        if (allowEmulatorProd && this.isEmulator() && this.isProd()) {
+        if (!allowEmulatorProd && this.isEmulator() && this.isProd()) {
             return;
         }
         this.prefs = this.getContext().getSharedPreferences(WebView.WEBVIEW_PREFS_NAME, Activity.MODE_PRIVATE);
