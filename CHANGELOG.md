@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.6.0](https://github.com/Cap-go/capacitor-updater/compare/4.5.1...4.6.0) (2022-11-01)
+
+
+### Features
+
+* add allowEmulatorProd option to ignore store start app ([94e2799](https://github.com/Cap-go/capacitor-updater/commit/94e2799043bd589f0032ec13a82a1a7c8e183e4e))
+
 ### [4.5.1](https://github.com/Cap-go/capacitor-updater/compare/4.5.0...4.5.1) (2022-11-01)
 
 
