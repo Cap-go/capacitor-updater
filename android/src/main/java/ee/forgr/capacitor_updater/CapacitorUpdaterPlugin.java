@@ -61,7 +61,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     @Override
     public void load() {
         super.load();
-        final allowEmulatorProd = this.getConfig().getBoolean("allowEmulatorProd", true);
+        final Boolean allowEmulatorProd = this.getConfig().getBoolean("allowEmulatorProd", true);
         if (allowEmulatorProd && this.isEmulator() && this.isProd()) {
             return;
         }
