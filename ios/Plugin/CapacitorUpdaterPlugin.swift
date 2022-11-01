@@ -25,6 +25,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     private var taskRunning = false
 
     override public func load() {
+        let allowEmulatorProd = getConfig().getBoolean("allowEmulatorProd", true)
+        if (!allowEmulatorProd && self.isEmulator() && (self.isAppStoreReceiptSandbox() || self.hasEmbeddedMobileProvision())) {
+            return
+        }
         print("\(self.implementation.TAG) init for device \(self.implementation.deviceID)")
         do {
             currentVersionNative = try Version(Bundle.main.versionName ?? "0.0.0")
@@ -53,6 +57,37 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         nc.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
         nc.addObserver(self, selector: #selector(appKilled), name: UIApplication.willTerminateNotification, object: nil)
         self.appMovedToForeground()
+    }
+
+    // MARK: Private
+    private func hasEmbeddedMobileProvision() -> Bool {
+        guard Bundle.main.path(forResource: "embedded", ofType: "mobileprovision") == nil else {
+            return true
+        }
+        return false
+    }
+    
+    private func isAppStoreReceiptSandbox() -> Bool {
+        
+        if isEmulator() {
+            return false
+        } else {
+            guard let url = Bundle.main.appStoreReceiptURL else {
+                return false
+            }
+            guard url.lastPathComponent == "sandboxReceipt" else {
+                return false
+            }
+            return true
+        }
+    }
+
+    private func isEmulator() -> Bool {
+        #if targetEnvironment(simulator)
+            return true
+        #else
+            return false
+        #endif
     }
 
     private func cleanupObsoleteVersions() {
