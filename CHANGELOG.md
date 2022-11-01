@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.6.2](https://github.com/Cap-go/capacitor-updater/compare/4.6.1...4.6.2) (2022-11-01)
+
+
+### Bug Fixes
+
+* use right condition for allowEmulatorProd in android ([4f1371e](https://github.com/Cap-go/capacitor-updater/commit/4f1371ec48bc76a27cfb9f2a08c4f6b6c9cc2af3))
+
 ### [4.6.1](https://github.com/Cap-go/capacitor-updater/compare/4.6.0...4.6.1) (2022-11-01)
 
 
