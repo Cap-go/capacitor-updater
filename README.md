@@ -136,7 +136,7 @@ Capacitor Updator works by unzipping a compiled app bundle to the native device 
 * [`setMultiDelay(...)`](#setmultidelay)
 * [`setDelay(...)`](#setdelay)
 * [`cancelDelay()`](#canceldelay)
-* [`getLatest(...)`](#getlatest)
+* [`getLatest()`](#getlatest)
 * [`addListener('download', ...)`](#addlistenerdownload)
 * [`addListener('noNeedUpdate', ...)`](#addlistenernoneedupdate)
 * [`addListener('updateAvailable', ...)`](#addlistenerupdateavailable)
@@ -177,7 +177,7 @@ Notify Capacitor Updater that the current bundle is working (a rollback will occ
 download(options: { url: string; version: string; }) => Promise<BundleInfo>
 ```
 
-Download a new version from the provided URL, it should be a zip file, with files inside or with a unique id inside with all your files
+Download a new bundle from the provided URL, it should be a zip file, with files inside or with a unique id inside with all your files
 
 | Param         | Type                                           |
 | ------------- | ---------------------------------------------- |
@@ -241,7 +241,7 @@ Delete bundle in storage
 list() => Promise<{ bundles: BundleInfo[]; }>
 ```
 
-Get all available versions
+Get all available bundles
 
 **Returns:** <code>Promise&lt;{ bundles: BundleInfo[]; }&gt;</code>
 
@@ -254,7 +254,7 @@ Get all available versions
 reset(options?: { toLastSuccessful?: boolean | undefined; } | undefined) => Promise<void>
 ```
 
-Set the `builtin` version (the one sent to Apple store / Google play store ) as current version
+Set the `builtin` bundle (the one sent to Apple store / Google play store ) as current bundle
 
 | Param         | Type                                         |
 | ------------- | -------------------------------------------- |
@@ -334,17 +334,13 @@ Cancel delay to updates as usual
 --------------------
 
 
-### getLatest(...)
+### getLatest()
 
 ```typescript
-getLatest(options: { delay: boolean; }) => Promise<latestVersion>
+getLatest() => Promise<latestVersion>
 ```
 
-Get Latest version available from update Url
-
-| Param         | Type                             |
-| ------------- | -------------------------------- |
-| **`options`** | <code>{ delay: boolean; }</code> |
+Get Latest bundle available from update Url
 
 **Returns:** <code>Promise&lt;<a href="#latestversion">latestVersion</a>&gt;</code>
 
@@ -516,12 +512,12 @@ Listen for download fail event in the App, let you know when download has fail f
 ### getDeviceId()
 
 ```typescript
-getDeviceId() => Promise<{ id: string; }>
+getDeviceId() => Promise<{ deviceId: string; }>
 ```
 
 Get unique ID used to identify device (sent to auto update server)
 
-**Returns:** <code>Promise&lt;{ id: string; }&gt;</code>
+**Returns:** <code>Promise&lt;{ deviceId: string; }&gt;</code>
 
 --------------------
 
@@ -648,9 +644,9 @@ removeAllListeners() => Promise<void>
 
 #### MajorAvailableEvent
 
-| Prop          | Type                | Description                                 | Since |
-| ------------- | ------------------- | ------------------------------------------- | ----- |
-| **`version`** | <code>string</code> | Emit when a new major version is available. | 4.0.0 |
+| Prop          | Type                | Description                                | Since |
+| ------------- | ------------------- | ------------------------------------------ | ----- |
+| **`version`** | <code>string</code> | Emit when a new major bundle is available. | 4.0.0 |
 
 
 #### UpdateFailedEvent
