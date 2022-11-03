@@ -138,6 +138,7 @@ Capacitor Updator works by unzipping a compiled app bundle to the native device 
 * [`cancelDelay()`](#canceldelay)
 * [`getLatest()`](#getlatest)
 * [`setChannel(...)`](#setchannel)
+* [`getChannel()`](#getchannel)
 * [`addListener('download', ...)`](#addlistenerdownload)
 * [`addListener('noNeedUpdate', ...)`](#addlistenernoneedupdate)
 * [`addListener('updateAvailable', ...)`](#addlistenerupdateavailable)
@@ -365,6 +366,21 @@ Set Channel for this device
 **Returns:** <code>Promise&lt;<a href="#channelres">channelRes</a>&gt;</code>
 
 **Since:** 4.7.0
+
+--------------------
+
+
+### getChannel()
+
+```typescript
+getChannel() => Promise<getChannelRes>
+```
+
+get Channel for this device
+
+**Returns:** <code>Promise&lt;<a href="#getchannelres">getChannelRes</a>&gt;</code>
+
+**Since:** 4.8.0
 
 --------------------
 
@@ -639,6 +655,16 @@ removeAllListeners() => Promise<void>
 | Prop          | Type                |
 | ------------- | ------------------- |
 | **`chhanel`** | <code>string</code> |
+
+
+#### getChannelRes
+
+| Prop           | Type                 | Description                   | Since |
+| -------------- | -------------------- | ----------------------------- | ----- |
+| **`channel`**  | <code>string</code>  | Current status of get channel | 4.8.0 |
+| **`error`**    | <code>any</code>     |                               |       |
+| **`status`**   | <code>string</code>  |                               |       |
+| **`allowSet`** | <code>boolean</code> |                               |       |
 
 
 #### PluginListenerHandle
