@@ -16,6 +16,26 @@ extension Date {
         return Calendar.current.date(byAdding: .minute, value: minutes, to: self)!
     }
 }
+struct SetChannelDec: Decodable {
+    let status: String?
+    let error: String?
+}
+public class SetChannel: NSObject {
+    var status: String = ""
+    var error: String = ""
+}
+extension SetChannel {
+    func toDict() -> [String: Any] {
+        var dict = [String: Any]()
+        let otherSelf = Mirror(reflecting: self)
+        for child in otherSelf.children {
+            if let key = child.label {
+                dict[key] = child.value
+            }
+        }
+        return dict
+    }
+}
 struct AppVersionDec: Decodable {
     let version: String?
     let checksum: String?
@@ -150,6 +170,7 @@ extension CustomError: LocalizedError {
     public let CAP_SERVER_PATH = "serverBasePath"
     public let pluginVersion = "4.6.2"
     public var statsUrl = ""
+    public var channelUrl = ""
     public var appId = ""
     public var deviceID = UIDevice.current.identifierForVendor?.uuidString ?? ""
 
@@ -455,6 +476,43 @@ extension CustomError: LocalizedError {
 
     public func setError(bundle: BundleInfo) {
         self.setBundleStatus(id: bundle.getId(), status: BundleStatus.ERROR)
+    }
+
+    func setChannel(channel: String) -> SetChannel? {
+        if self.channelUrl == "" {
+            return nil
+        }
+        let semaphore = DispatchSemaphore(value: 0)
+        let setChannel = SetChannel()
+        let parameters: [String: String] = [
+            "platform": "ios",
+            "device_id": self.deviceID,
+            "version_name": self.getCurrentBundle().getVersionName(),
+            "version_build": self.versionName,
+            "version_code": self.versionCode,
+            "version_os": self.versionOs,
+            "plugin_version": self.pluginVersion,
+            "channel": channel,
+            "app_id": self.appId
+        ]
+        let request = AF.request(self.channelUrl, method: .post, parameters: parameters, encoder: JSONParameterEncoder.default)
+
+        request.validate().responseDecodable(of: SetChannelDec.self) { response in
+            switch response.result {
+            case .success:
+                if let status = response.value?.status {
+                    setChannel.status = status
+                }
+                if let error = response.value?.error {
+                    setChannel.error = error
+                }
+            case let .failure(error):
+                print("\(self.TAG) Error set Channel", error )
+            }
+            semaphore.signal()
+        }
+        semaphore.wait()
+        return setChannel
     }
 
     func sendStats(action: String, versionName: String) {

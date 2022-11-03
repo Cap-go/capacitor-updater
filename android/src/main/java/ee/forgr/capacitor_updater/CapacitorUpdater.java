@@ -7,6 +7,7 @@ import com.android.volley.RequestQueue;
 import com.android.volley.Response;
 import com.android.volley.VolleyError;
 import com.android.volley.toolbox.JsonObjectRequest;
+import com.getcapacitor.JSObject;
 import com.getcapacitor.plugin.WebView;
 import java.io.BufferedInputStream;
 import java.io.DataInputStream;
@@ -22,6 +23,7 @@ import java.net.URLConnection;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.Iterator;
 import java.util.List;
 import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
@@ -31,6 +33,10 @@ import org.json.JSONObject;
 
 interface Callback {
     void callback(JSONObject jsonObject);
+}
+
+interface CallbackChannel {
+    void callback(JSObject jsoObject);
 }
 
 public class CapacitorUpdater {
@@ -58,6 +64,7 @@ public class CapacitorUpdater {
     public String versionOs = "";
 
     public String statsUrl = "";
+    public String channelUrl = "";
     public String appId = "";
     public String deviceID = "";
 
@@ -104,7 +111,7 @@ public class CapacitorUpdater {
 
                 if (!canonicalPath.startsWith(canonicalDir)) {
                     throw new FileNotFoundException(
-                        "SecurityException, Failed to ensure directory is the start path : " + canonicalDir + " of " + canonicalPath
+                            "SecurityException, Failed to ensure directory is the start path : " + canonicalDir + " of " + canonicalPath
                     );
                 }
 
@@ -372,26 +379,81 @@ public class CapacitorUpdater {
             Log.i(CapacitorUpdater.TAG, "Auto-update parameters: " + json);
             // Building a request
             JsonObjectRequest request = new JsonObjectRequest(
-                Request.Method.POST,
-                updateUrl,
-                json,
-                new Response.Listener<JSONObject>() {
-                    @Override
-                    public void onResponse(JSONObject response) {
-                        callback.callback(response);
+                    Request.Method.POST,
+                    updateUrl,
+                    json,
+                    new Response.Listener<JSONObject>() {
+                        @Override
+                        public void onResponse(JSONObject response) {
+                            callback.callback(response);
+                        }
+                    },
+                    new Response.ErrorListener() {
+                        @Override
+                        public void onErrorResponse(VolleyError error) {
+                            Log.e(TAG, "Error getting Latest", error);
+                        }
                     }
-                },
-                new Response.ErrorListener() {
-                    @Override
-                    public void onErrorResponse(VolleyError error) {
-                        Log.e(TAG, "Error getting Latest", error);
-                    }
-                }
             );
             this.requestQueue.add(request);
         } catch (JSONException ex) {
             // Catch if something went wrong with the params
             Log.e(TAG, "Error getLatest JSONException", ex);
+        }
+    }
+
+    public void setChannel(final String channel, final CallbackChannel callback) {
+        String channelUrl = this.channelUrl;
+        if (channelUrl == null || "".equals(channelUrl) || channelUrl.length() == 0) {
+            return;
+        }
+        try {
+            JSONObject json = new JSONObject();
+            json.put("platform", "android");
+            json.put("device_id", this.deviceID);
+            json.put("app_id", this.appId);
+            json.put("version_build", this.versionBuild);
+            json.put("version_code", this.versionCode);
+            json.put("version_os", this.versionOs);
+            json.put("version_name", this.getCurrentBundle().getVersionName());
+            json.put("plugin_version", pluginVersion);
+            json.put("channel", channel);
+
+            // Building a request
+            JsonObjectRequest request = new JsonObjectRequest(
+                    Request.Method.POST,
+                    channelUrl,
+                    json,
+                    new Response.Listener<JSONObject>() {
+                        @Override
+                        public void onResponse(JSONObject res) {
+                            final JSObject ret = new JSObject();
+                            Iterator<String> keys = res.keys();
+                            while (keys.hasNext()) {
+                                String key = keys.next();
+                                if (res.has(key)) {
+                                    try {
+                                        ret.put(key, res.get(key));
+                                    } catch (JSONException e) {
+                                        e.printStackTrace();
+                                    }
+                                }
+                            }
+                            Log.i(TAG, "Channel set to \"" + channel);
+                            callback.callback(ret);
+                        }
+                    },
+                    new Response.ErrorListener() {
+                        @Override
+                        public void onErrorResponse(VolleyError error) {
+                            Log.e(TAG, "Error set channel: " + error);
+                        }
+                    }
+            );
+            this.requestQueue.add(request);
+        } catch (JSONException ex) {
+            // Catch if something went wrong with the params
+            Log.e(TAG, "Error setChannel JSONException", ex);
         }
     }
 
@@ -414,21 +476,21 @@ public class CapacitorUpdater {
 
             // Building a request
             JsonObjectRequest request = new JsonObjectRequest(
-                Request.Method.POST,
-                statsUrl,
-                json,
-                new Response.Listener<JSONObject>() {
-                    @Override
-                    public void onResponse(JSONObject response) {
-                        Log.i(TAG, "Stats send for \"" + action + "\", version " + versionName);
+                    Request.Method.POST,
+                    statsUrl,
+                    json,
+                    new Response.Listener<JSONObject>() {
+                        @Override
+                        public void onResponse(JSONObject response) {
+                            Log.i(TAG, "Stats send for \"" + action + "\", version " + versionName);
+                        }
+                    },
+                    new Response.ErrorListener() {
+                        @Override
+                        public void onErrorResponse(VolleyError error) {
+                            Log.e(TAG, "Error sending stats: " + error);
+                        }
                     }
-                },
-                new Response.ErrorListener() {
-                    @Override
-                    public void onErrorResponse(VolleyError error) {
-                        Log.e(TAG, "Error sending stats: " + error);
-                    }
-                }
             );
             this.requestQueue.add(request);
         } catch (JSONException ex) {
