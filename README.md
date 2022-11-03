@@ -137,7 +137,7 @@ Capacitor Updator works by unzipping a compiled app bundle to the native device 
 * [`setDelay(...)`](#setdelay)
 * [`cancelDelay()`](#canceldelay)
 * [`getLatest()`](#getlatest)
-* [`setChannel()`](#setchannel)
+* [`setChannel(...)`](#setchannel)
 * [`addListener('download', ...)`](#addlistenerdownload)
 * [`addListener('noNeedUpdate', ...)`](#addlistenernoneedupdate)
 * [`addListener('updateAvailable', ...)`](#addlistenerupdateavailable)
@@ -350,13 +350,17 @@ Get Latest bundle available from update Url
 --------------------
 
 
-### setChannel()
+### setChannel(...)
 
 ```typescript
-setChannel() => Promise<channelRes>
+setChannel(options: SetChannelOptions) => Promise<channelRes>
 ```
 
 Set Channel for this device
+
+| Param         | Type                                                            | Description                                                                    |
+| ------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| **`options`** | <code><a href="#setchanneloptions">SetChannelOptions</a></code> | are the {@link <a href="#setchanneloptions">SetChannelOptions</a>} list to set |
 
 **Returns:** <code>Promise&lt;<a href="#channelres">channelRes</a>&gt;</code>
 
@@ -628,6 +632,13 @@ removeAllListeners() => Promise<void>
 | ------------ | ------------------- | ----------------------------- | ----- |
 | **`status`** | <code>string</code> | Current status of set channel | 4.7.0 |
 | **`error`**  | <code>any</code>    |                               |       |
+
+
+#### SetChannelOptions
+
+| Prop          | Type                |
+| ------------- | ------------------- |
+| **`chhanel`** | <code>string</code> |
 
 
 #### PluginListenerHandle
