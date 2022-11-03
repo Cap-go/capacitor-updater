@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.8.0](https://github.com/Cap-go/capacitor-updater/compare/4.7.2...4.8.0) (2022-11-03)
+
+
+### Features
+
+* add getchannel ([52fb699](https://github.com/Cap-go/capacitor-updater/commit/52fb699b0af418a1503589bb708a83df808d6bb1))
+
 ### [4.7.2](https://github.com/Cap-go/capacitor-updater/compare/4.7.1...4.7.2) (2022-11-03)
 
 
