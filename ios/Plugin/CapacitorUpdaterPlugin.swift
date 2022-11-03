@@ -266,6 +266,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             call.resolve(res.toDict())
         }
     }
+    @objc func setCustomId(_ call: CAPPluginCall) {
+        guard let customId = call.getString("customId") else {
+            print("\(self.implementation.TAG) setCustomId called without customId")
+            call.reject("setCustomId called without customId")
+            return
+        }
+        self.implementation.customId = customId
+    }
 
     @objc func _reset(toLastSuccessful: Bool) -> Bool {
         guard let bridge = self.bridge else { return false }

@@ -196,7 +196,11 @@ export interface BundleInfo {
 export interface SetChannelOptions {
   chhanel: string;
 }
-  export interface DelayCondition {
+
+export interface SetCustomIdOptions {
+  chhanel: string;
+}
+export interface DelayCondition {
   /**
    * Set up delay conditions in setMultiDelay
    * @param value is useless for @param kind "kill", optional for "background" (default value: "0") and required for "nativeVersion" and "date"
@@ -352,7 +356,7 @@ export interface CapacitorUpdaterPlugin {
    * Set Channel for this device
    *
    * @returns {Promise<channelRes>} an Promise resolved when channel is set
-   * @param options are the {@link SetChannelOptions} list to set
+   * @param options is the {@link SetChannelOptions} channel to set
    * @throws An error if the something went wrong
    * @since 4.7.0
    */
@@ -366,6 +370,16 @@ export interface CapacitorUpdaterPlugin {
    * @since 4.8.0
    */
   getChannel(): Promise<getChannelRes>;
+
+    /**
+   * Set Channel for this device
+   *
+   * @returns {Promise<void>} an Promise resolved instantly
+   * @param options is the {@link SetCustomIdOptions} customId to set
+   * @throws An error if the something went wrong
+   * @since 4.9.0
+   */
+  setCustomId(options: SetCustomIdOptions): Promise<void>;
 
   /**
    * Listen for download event in the App, let you know when the download is started, loading and finished

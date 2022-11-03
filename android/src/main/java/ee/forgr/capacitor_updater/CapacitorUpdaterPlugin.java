@@ -197,6 +197,17 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     }
 
     @PluginMethod
+    public void setCustomId(final PluginCall call) {
+        final String customId = call.getString("customId");
+        if (customId == null) {
+            Log.e(CapacitorUpdater.TAG, "setCustomId called without customId");
+            call.reject("setCustomId called without customId");
+            return;
+        }
+        this.implementation.customId = customId;
+    }
+
+    @PluginMethod
     public void getPluginVersion(final PluginCall call) {
         try {
             final JSObject ret = new JSObject();
@@ -207,7 +218,6 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             call.reject("Could not get plugin version", e);
         }
     }
-
 
     @PluginMethod
     public void setChannel(final PluginCall call) {

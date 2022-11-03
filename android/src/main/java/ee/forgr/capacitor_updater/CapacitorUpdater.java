@@ -63,6 +63,7 @@ public class CapacitorUpdater {
     public String versionCode = "";
     public String versionOs = "";
 
+    public String customId = "";
     public String statsUrl = "";
     public String channelUrl = "";
     public String appId = "";
@@ -358,23 +359,17 @@ public class CapacitorUpdater {
     }
 
     public void getLatest(final String updateUrl, final Callback callback) {
-        final String deviceID = this.deviceID;
-        final String appId = this.appId;
-        final String versionBuild = this.versionBuild;
-        final String versionCode = this.versionCode;
-        final String versionOs = this.versionOs;
-        final String pluginVersion = CapacitorUpdater.pluginVersion;
-        final String versionName = this.getCurrentBundle().getVersionName();
         try {
             JSONObject json = new JSONObject();
             json.put("platform", "android");
-            json.put("device_id", deviceID);
-            json.put("app_id", appId);
-            json.put("version_build", versionBuild);
-            json.put("version_code", versionCode);
-            json.put("version_os", versionOs);
-            json.put("version_name", versionName);
-            json.put("plugin_version", pluginVersion);
+            json.put("device_id", this.deviceID);
+            json.put("custom_id", this.customId);
+            json.put("app_id", this.appId);
+            json.put("version_build", this.versionBuild);
+            json.put("version_code", this.versionCode);
+            json.put("version_os", this.versionOs);
+            json.put("version_name", this.getCurrentBundle().getVersionName());
+            json.put("plugin_version", CapacitorUpdater.pluginVersion);
 
             Log.i(CapacitorUpdater.TAG, "Auto-update parameters: " + json);
             // Building a request
@@ -411,6 +406,7 @@ public class CapacitorUpdater {
             JSONObject json = new JSONObject();
             json.put("platform", "android");
             json.put("device_id", this.deviceID);
+            json.put("custom_id", this.customId);
             json.put("app_id", this.appId);
             json.put("version_build", this.versionBuild);
             json.put("version_code", this.versionCode);
@@ -466,6 +462,7 @@ public class CapacitorUpdater {
             JSONObject json = new JSONObject();
             json.put("platform", "android");
             json.put("device_id", this.deviceID);
+            json.put("custom_id", this.customId);
             json.put("app_id", this.appId);
             json.put("version_build", this.versionBuild);
             json.put("version_code", this.versionCode);
@@ -520,6 +517,7 @@ public class CapacitorUpdater {
             JSONObject json = new JSONObject();
             json.put("platform", "android");
             json.put("device_id", this.deviceID);
+            json.put("custom_id", this.customId);
             json.put("app_id", this.appId);
             json.put("version_build", this.versionBuild);
             json.put("version_code", this.versionCode);

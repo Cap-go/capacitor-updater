@@ -139,6 +139,7 @@ Capacitor Updator works by unzipping a compiled app bundle to the native device 
 * [`getLatest()`](#getlatest)
 * [`setChannel(...)`](#setchannel)
 * [`getChannel()`](#getchannel)
+* [`setCustomId(...)`](#setcustomid)
 * [`addListener('download', ...)`](#addlistenerdownload)
 * [`addListener('noNeedUpdate', ...)`](#addlistenernoneedupdate)
 * [`addListener('updateAvailable', ...)`](#addlistenerupdateavailable)
@@ -359,9 +360,9 @@ setChannel(options: SetChannelOptions) => Promise<channelRes>
 
 Set Channel for this device
 
-| Param         | Type                                                            | Description                                                                    |
-| ------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| **`options`** | <code><a href="#setchanneloptions">SetChannelOptions</a></code> | are the {@link <a href="#setchanneloptions">SetChannelOptions</a>} list to set |
+| Param         | Type                                                            | Description                                                                      |
+| ------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| **`options`** | <code><a href="#setchanneloptions">SetChannelOptions</a></code> | is the {@link <a href="#setchanneloptions">SetChannelOptions</a>} channel to set |
 
 **Returns:** <code>Promise&lt;<a href="#channelres">channelRes</a>&gt;</code>
 
@@ -381,6 +382,23 @@ get Channel for this device
 **Returns:** <code>Promise&lt;<a href="#getchannelres">getChannelRes</a>&gt;</code>
 
 **Since:** 4.8.0
+
+--------------------
+
+
+### setCustomId(...)
+
+```typescript
+setCustomId(options: SetCustomIdOptions) => Promise<void>
+```
+
+Set Channel for this device
+
+| Param         | Type                                                              | Description                                                                         |
+| ------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| **`options`** | <code><a href="#setcustomidoptions">SetCustomIdOptions</a></code> | is the {@link <a href="#setcustomidoptions">SetCustomIdOptions</a>} customId to set |
+
+**Since:** 4.9.0
 
 --------------------
 
@@ -665,6 +683,13 @@ removeAllListeners() => Promise<void>
 | **`error`**    | <code>any</code>     |                               |       |
 | **`status`**   | <code>string</code>  |                               |       |
 | **`allowSet`** | <code>boolean</code> |                               |       |
+
+
+#### SetCustomIdOptions
+
+| Prop          | Type                |
+| ------------- | ------------------- |
+| **`chhanel`** | <code>string</code> |
 
 
 #### PluginListenerHandle

@@ -193,6 +193,7 @@ extension CustomError: LocalizedError {
     public let TAG = "✨  Capacitor-updater:"
     public let CAP_SERVER_PATH = "serverBasePath"
     public let pluginVersion = "4.8.0"
+    public var customId = ""
     public var statsUrl = ""
     public var channelUrl = ""
     public var appId = ""
@@ -280,6 +281,7 @@ extension CustomError: LocalizedError {
             "platform": "ios",
             "device_id": self.deviceID,
             "app_id": self.appId,
+            "custom_id": self.customId,
             "version_build": self.versionName,
             "version_code": self.versionCode,
             "version_os": self.versionOs,
@@ -511,6 +513,7 @@ extension CustomError: LocalizedError {
         let parameters: [String: String] = [
             "platform": "ios",
             "device_id": self.deviceID,
+            "custom_id": self.customId,
             "version_name": self.getCurrentBundle().getVersionName(),
             "version_build": self.versionName,
             "version_code": self.versionCode,
@@ -548,6 +551,7 @@ extension CustomError: LocalizedError {
         let parameters: [String: String] = [
             "platform": "ios",
             "device_id": self.deviceID,
+            "custom_id": self.customId,
             "version_name": self.getCurrentBundle().getVersionName(),
             "version_build": self.versionName,
             "version_code": self.versionCode,
@@ -589,6 +593,7 @@ extension CustomError: LocalizedError {
             "platform": "ios",
             "action": action,
             "device_id": self.deviceID,
+            "custom_id": self.customId,
             "version_name": versionName,
             "version_build": self.versionName,
             "version_code": self.versionCode,
