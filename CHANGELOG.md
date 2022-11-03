@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.7.0](https://github.com/Cap-go/capacitor-updater/compare/4.6.3...4.7.0) (2022-11-03)
+
+
+### Features
+
+* add setChannel method ([4cbd77d](https://github.com/Cap-go/capacitor-updater/commit/4cbd77d34b93b8881e0817e0e993a6b76070d84c))
+
 ### [4.6.3](https://github.com/Cap-go/capacitor-updater/compare/4.6.2...4.6.3) (2022-11-02)
 
 
