@@ -137,6 +137,7 @@ Capacitor Updator works by unzipping a compiled app bundle to the native device 
 * [`setDelay(...)`](#setdelay)
 * [`cancelDelay()`](#canceldelay)
 * [`getLatest()`](#getlatest)
+* [`setChannel()`](#setchannel)
 * [`addListener('download', ...)`](#addlistenerdownload)
 * [`addListener('noNeedUpdate', ...)`](#addlistenernoneedupdate)
 * [`addListener('updateAvailable', ...)`](#addlistenerupdateavailable)
@@ -345,6 +346,21 @@ Get Latest bundle available from update Url
 **Returns:** <code>Promise&lt;<a href="#latestversion">latestVersion</a>&gt;</code>
 
 **Since:** 4.0.0
+
+--------------------
+
+
+### setChannel()
+
+```typescript
+setChannel() => Promise<channelRes>
+```
+
+Set Channel for this device
+
+**Returns:** <code>Promise&lt;<a href="#channelres">channelRes</a>&gt;</code>
+
+**Since:** 4.7.0
 
 --------------------
 
@@ -604,6 +620,14 @@ removeAllListeners() => Promise<void>
 | **`message`** | <code>string</code>  |                         |       |
 | **`old`**     | <code>string</code>  |                         |       |
 | **`url`**     | <code>string</code>  |                         |       |
+
+
+#### channelRes
+
+| Prop         | Type                | Description                   | Since |
+| ------------ | ------------------- | ----------------------------- | ----- |
+| **`status`** | <code>string</code> | Current status of set channel | 4.7.0 |
+| **`error`**  | <code>any</code>    |                               |       |
 
 
 #### PluginListenerHandle
