@@ -457,6 +457,60 @@ public class CapacitorUpdater {
         }
     }
 
+    public void getChannel(final CallbackChannel callback) {
+        String channelUrl = this.channelUrl;
+        if (channelUrl == null || "".equals(channelUrl) || channelUrl.length() == 0) {
+            return;
+        }
+        try {
+            JSONObject json = new JSONObject();
+            json.put("platform", "android");
+            json.put("device_id", this.deviceID);
+            json.put("app_id", this.appId);
+            json.put("version_build", this.versionBuild);
+            json.put("version_code", this.versionCode);
+            json.put("version_os", this.versionOs);
+            json.put("version_name", this.getCurrentBundle().getVersionName());
+            json.put("plugin_version", pluginVersion);
+
+            // Building a request
+            JsonObjectRequest request = new JsonObjectRequest(
+                    Request.Method.PUT,
+                    channelUrl,
+                    json,
+                    new Response.Listener<JSONObject>() {
+                        @Override
+                        public void onResponse(JSONObject res) {
+                            final JSObject ret = new JSObject();
+                            Iterator<String> keys = res.keys();
+                            while (keys.hasNext()) {
+                                String key = keys.next();
+                                if (res.has(key)) {
+                                    try {
+                                        ret.put(key, res.get(key));
+                                    } catch (JSONException e) {
+                                        e.printStackTrace();
+                                    }
+                                }
+                            }
+                            Log.i(TAG, "Channel get to \"" + ret);
+                            callback.callback(ret);
+                        }
+                    },
+                    new Response.ErrorListener() {
+                        @Override
+                        public void onErrorResponse(VolleyError error) {
+                            Log.e(TAG, "Error get channel: " + error);
+                        }
+                    }
+            );
+            this.requestQueue.add(request);
+        } catch (JSONException ex) {
+            // Catch if something went wrong with the params
+            Log.e(TAG, "Error getChannel JSONException", ex);
+        }
+    }
+
     public void sendStats(final String action, final String versionName) {
         String statsUrl = this.statsUrl;
         if (statsUrl == null || "".equals(statsUrl) || statsUrl.length() == 0) {

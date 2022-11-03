@@ -117,6 +117,18 @@ export interface channelRes {
   error?: any;
 }
 
+export interface getChannelRes {
+  /**
+   * Current status of get channel
+   *
+   * @since  4.8.0
+   */
+  channel?: string;
+  error?: any;
+  status?: string,
+  allowSet?: boolean,
+}
+
 export interface DownloadEvent {
   /**
    * Current status of download, between 0 and 100.
@@ -345,6 +357,15 @@ export interface CapacitorUpdaterPlugin {
    * @since 4.7.0
    */
   setChannel(options: SetChannelOptions): Promise<channelRes>;
+
+    /**
+   * get Channel for this device
+   *
+   * @returns {Promise<channelRes>} an Promise resolved with channel info
+   * @throws An error if the something went wrong
+   * @since 4.8.0
+   */
+  getChannel(): Promise<getChannelRes>;
 
   /**
    * Listen for download event in the App, let you know when the download is started, loading and finished

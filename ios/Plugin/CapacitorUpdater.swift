@@ -36,6 +36,30 @@ extension SetChannel {
         return dict
     }
 }
+struct GetChannelDec: Decodable {
+    let channel: String?
+    let status: String?
+    let error: String?
+    let allowSet: Bool?
+}
+public class GetChannel: NSObject {
+    var channel: String = ""
+    var status: String = ""
+    var error: String = ""
+    var allowSet: Bool = true
+}
+extension GetChannel {
+    func toDict() -> [String: Any] {
+        var dict = [String: Any]()
+        let otherSelf = Mirror(reflecting: self)
+        for child in otherSelf.children {
+            if let key = child.label {
+                dict[key] = child.value
+            }
+        }
+        return dict
+    }
+}
 struct AppVersionDec: Decodable {
     let version: String?
     let checksum: String?
@@ -513,6 +537,48 @@ extension CustomError: LocalizedError {
         }
         semaphore.wait()
         return setChannel
+    }
+
+    func getChannel() -> SetChannel? {
+        if self.channelUrl == "" {
+            return nil
+        }
+        let semaphore = DispatchSemaphore(value: 0)
+        let getChannel = GetChannel()
+        let parameters: [String: String] = [
+            "platform": "ios",
+            "device_id": self.deviceID,
+            "version_name": self.getCurrentBundle().getVersionName(),
+            "version_build": self.versionName,
+            "version_code": self.versionCode,
+            "version_os": self.versionOs,
+            "plugin_version": self.pluginVersion,
+            "app_id": self.appId
+        ]
+        let request = AF.request(self.channelUrl, method: .put, parameters: parameters, encoder: JSONParameterEncoder.default)
+
+        request.validate().responseDecodable(of: GetChannelDec.self) { response in
+            switch response.result {
+            case .success:
+                if let status = response.value?.status {
+                    getChannel.status = status
+                }
+                if let error = response.value?.error {
+                    getChannel.error = error
+                }
+                if let channel = response.value?.channel {
+                    getChannel.channel = channel
+                }
+                if let allowSet = response.value?.allowSet {
+                    getChannel.allowSet = allowSet
+                }
+            case let .failure(error):
+                print("\(self.TAG) Error get Channel", error )
+            }
+            semaphore.signal()
+        }
+        semaphore.wait()
+        return getChannel
     }
 
     func sendStats(action: String, versionName: String) {

@@ -257,6 +257,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         }
     }
 
+    @objc func getChannel(_ call: CAPPluginCall) {
+        DispatchQueue.global(qos: .background).async {
+            guard let res = self.implementation.getChannel() else {
+                call.reject("Cannot getChannel")
+                return
+            }
+            call.resolve(res.toDict())
+        }
+    }
+
     @objc func _reset(toLastSuccessful: Bool) -> Bool {
         guard let bridge = self.bridge else { return false }
 

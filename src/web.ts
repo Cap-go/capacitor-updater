@@ -1,6 +1,6 @@
 import { WebPlugin } from '@capacitor/core';
 
-import type { CapacitorUpdaterPlugin, BundleInfo, latestVersion, DelayCondition, channelRes, SetChannelOptions } from './definitions';
+import type { CapacitorUpdaterPlugin, BundleInfo, latestVersion, DelayCondition, channelRes, SetChannelOptions, getChannelRes } from './definitions';
 
 const BUNDLE_BUILTIN: BundleInfo = {
   status: 'success',
@@ -66,6 +66,13 @@ export class CapacitorUpdaterWeb extends WebPlugin implements CapacitorUpdaterPl
     return {
       status: 'error',
       error: 'Cannot setChannel in web',
+    };
+  }
+  async getChannel(): Promise<getChannelRes> {
+    console.warn('Cannot getChannel in web');
+    return {
+      status: 'error',
+      error: 'Cannot getChannel in web',
     };
   }
   async notifyAppReady(): Promise<BundleInfo> {

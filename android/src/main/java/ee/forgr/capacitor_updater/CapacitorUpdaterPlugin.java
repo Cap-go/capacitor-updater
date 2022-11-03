@@ -238,6 +238,28 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     }
 
     @PluginMethod
+    public void getChannel(final PluginCall call) {
+        try {
+            Log.i(CapacitorUpdater.TAG, "getChannel");
+            new Thread(
+                    new Runnable() {
+                        @Override
+                        public void run() {
+                            CapacitorUpdaterPlugin.this.implementation.getChannel(
+                                res -> {
+                                    call.resolve(res);
+                                });
+                        }
+                    }
+            )
+                    .start();
+        } catch (final Exception e) {
+            Log.e(CapacitorUpdater.TAG, "Failed to getChannel", e);
+            call.reject("Failed to getChannel", e);
+        }
+    }
+
+    @PluginMethod
     public void download(final PluginCall call) {
         final String url = call.getString("url");
         final String version = call.getString("version");
