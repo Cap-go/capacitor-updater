@@ -181,7 +181,10 @@ export interface BundleInfo {
   status: BundleStatus;
 }
 
-export interface DelayCondition {
+export interface SetChannelOptions {
+  chhanel: string;
+}
+  export interface DelayCondition {
   /**
    * Set up delay conditions in setMultiDelay
    * @param value is useless for @param kind "kill", optional for "background" (default value: "0") and required for "nativeVersion" and "date"
@@ -337,10 +340,11 @@ export interface CapacitorUpdaterPlugin {
    * Set Channel for this device
    *
    * @returns {Promise<channelRes>} an Promise resolved when channel is set
+   * @param options are the {@link SetChannelOptions} list to set
    * @throws An error if the something went wrong
    * @since 4.7.0
    */
-  setChannel(): Promise<channelRes>;
+  setChannel(options: SetChannelOptions): Promise<channelRes>;
 
   /**
    * Listen for download event in the App, let you know when the download is started, loading and finished
