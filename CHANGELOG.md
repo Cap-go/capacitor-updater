@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.9.0](https://github.com/Cap-go/capacitor-updater/compare/4.8.1...4.9.0) (2022-11-04)
+
+
+### Features
+
+* add setCustomId method ([8864704](https://github.com/Cap-go/capacitor-updater/commit/8864704904232ac30bc862d68d9eb31e4504c4d4))
+
+
+### Bug Fixes
+
+* return type getChannel ([c2bf394](https://github.com/Cap-go/capacitor-updater/commit/c2bf394653382e3c486a832d80cff0f2220735b9))
+
 ### [4.8.1](https://github.com/Cap-go/capacitor-updater/compare/4.8.0...4.8.1) (2022-11-03)
 
 
