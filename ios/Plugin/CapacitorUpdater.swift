@@ -542,7 +542,7 @@ extension CustomError: LocalizedError {
         return setChannel
     }
 
-    func getChannel() -> SetChannel? {
+    func getChannel() -> GetChannel? {
         if self.channelUrl == "" {
             return nil
         }
