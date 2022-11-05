@@ -194,11 +194,11 @@ export interface BundleInfo {
 }
 
 export interface SetChannelOptions {
-  chhanel: string;
+  channel: string;
 }
 
 export interface SetCustomIdOptions {
-  chhanel: string;
+  customId: string;
 }
 export interface DelayCondition {
   /**
