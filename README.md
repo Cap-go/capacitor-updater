@@ -672,7 +672,7 @@ removeAllListeners() => Promise<void>
 
 | Prop          | Type                |
 | ------------- | ------------------- |
-| **`chhanel`** | <code>string</code> |
+| **`channel`** | <code>string</code> |
 
 
 #### getChannelRes
@@ -687,9 +687,9 @@ removeAllListeners() => Promise<void>
 
 #### SetCustomIdOptions
 
-| Prop          | Type                |
-| ------------- | ------------------- |
-| **`chhanel`** | <code>string</code> |
+| Prop           | Type                |
+| -------------- | ------------------- |
+| **`customId`** | <code>string</code> |
 
 
 #### PluginListenerHandle
