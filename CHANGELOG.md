@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.10.0](https://github.com/Cap-go/capacitor-updater/compare/4.9.1...4.10.0) (2022-11-10)
+
+
+### Features
+
+* remove allowEmulatorProd and send it to server instead ([dbfe318](https://github.com/Cap-go/capacitor-updater/commit/dbfe318fb7db2370c60b683ef9b77f9e66c9039d))
+
 ### [4.9.2](https://github.com/Cap-go/capacitor-updater/compare/4.9.1...4.9.2) (2022-11-06)
 
 ### [4.9.1](https://github.com/Cap-go/capacitor-updater/compare/4.9.0...4.9.1) (2022-11-05)
