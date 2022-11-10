@@ -1,6 +1,7 @@
 package ee.forgr.capacitor_updater;
 
 import android.content.SharedPreferences;
+import android.os.Build;
 import android.util.Log;
 import com.android.volley.Request;
 import com.android.volley.RequestQueue;
@@ -76,6 +77,30 @@ public class CapacitorUpdater {
             return !name.startsWith("__MACOSX") && !name.startsWith(".") && !name.startsWith(".DS_Store");
         }
     };
+
+    private boolean isProd() {
+        return !BuildConfig.DEBUG;
+    }
+
+    private boolean isEmulator() {
+        return (Build.BRAND.startsWith("generic") && Build.DEVICE.startsWith("generic"))
+                || Build.FINGERPRINT.startsWith("generic")
+                || Build.FINGERPRINT.startsWith("unknown")
+                || Build.HARDWARE.contains("goldfish")
+                || Build.HARDWARE.contains("ranchu")
+                || Build.MODEL.contains("google_sdk")
+                || Build.MODEL.contains("Emulator")
+                || Build.MODEL.contains("Android SDK built for x86")
+                || Build.MANUFACTURER.contains("Genymotion")
+                || Build.PRODUCT.contains("sdk_google")
+                || Build.PRODUCT.contains("google_sdk")
+                || Build.PRODUCT.contains("sdk")
+                || Build.PRODUCT.contains("sdk_x86")
+                || Build.PRODUCT.contains("sdk_gphone64_arm64")
+                || Build.PRODUCT.contains("vbox86p")
+                || Build.PRODUCT.contains("emulator")
+                || Build.PRODUCT.contains("simulator");
+    }
 
     private int calcTotalPercent(final int percent, final int min, final int max) {
         return (percent * (max - min)) / 100 + min;
@@ -358,18 +383,25 @@ public class CapacitorUpdater {
         }
     }
 
+    private JSONObject createInfoObject() throws JSONException {
+        JSONObject json = new JSONObject();
+        json.put("platform", "android");
+        json.put("device_id", this.deviceID);
+        json.put("app_id", this.appId);
+        json.put("custom_id", this.customId);
+        json.put("version_build", this.versionBuild);
+        json.put("version_code", this.versionCode);
+        json.put("version_os", this.versionOs);
+        json.put("version_name", this.getCurrentBundle().getVersionName());
+        json.put("plugin_version", this.pluginVersion);
+        json.put("is_emulator", this.isEmulator());
+        json.put("is_prod", this.isProd());
+        return json;
+    }
+
     public void getLatest(final String updateUrl, final Callback callback) {
         try {
-            JSONObject json = new JSONObject();
-            json.put("platform", "android");
-            json.put("device_id", this.deviceID);
-            json.put("custom_id", this.customId);
-            json.put("app_id", this.appId);
-            json.put("version_build", this.versionBuild);
-            json.put("version_code", this.versionCode);
-            json.put("version_os", this.versionOs);
-            json.put("version_name", this.getCurrentBundle().getVersionName());
-            json.put("plugin_version", CapacitorUpdater.pluginVersion);
+            JSONObject json = this.createInfoObject();
 
             Log.i(CapacitorUpdater.TAG, "Auto-update parameters: " + json);
             // Building a request
@@ -403,16 +435,7 @@ public class CapacitorUpdater {
             return;
         }
         try {
-            JSONObject json = new JSONObject();
-            json.put("platform", "android");
-            json.put("device_id", this.deviceID);
-            json.put("custom_id", this.customId);
-            json.put("app_id", this.appId);
-            json.put("version_build", this.versionBuild);
-            json.put("version_code", this.versionCode);
-            json.put("version_os", this.versionOs);
-            json.put("version_name", this.getCurrentBundle().getVersionName());
-            json.put("plugin_version", pluginVersion);
+            JSONObject json = this.createInfoObject();
             json.put("channel", channel);
 
             // Building a request
@@ -459,16 +482,7 @@ public class CapacitorUpdater {
             return;
         }
         try {
-            JSONObject json = new JSONObject();
-            json.put("platform", "android");
-            json.put("device_id", this.deviceID);
-            json.put("custom_id", this.customId);
-            json.put("app_id", this.appId);
-            json.put("version_build", this.versionBuild);
-            json.put("version_code", this.versionCode);
-            json.put("version_os", this.versionOs);
-            json.put("version_name", this.getCurrentBundle().getVersionName());
-            json.put("plugin_version", pluginVersion);
+            JSONObject json = this.createInfoObject();
 
             // Building a request
             JsonObjectRequest request = new JsonObjectRequest(
@@ -514,16 +528,7 @@ public class CapacitorUpdater {
             return;
         }
         try {
-            JSONObject json = new JSONObject();
-            json.put("platform", "android");
-            json.put("device_id", this.deviceID);
-            json.put("custom_id", this.customId);
-            json.put("app_id", this.appId);
-            json.put("version_build", this.versionBuild);
-            json.put("version_code", this.versionCode);
-            json.put("version_os", this.versionOs);
-            json.put("version_name", versionName);
-            json.put("plugin_version", pluginVersion);
+            JSONObject json = this.createInfoObject();
             json.put("action", action);
 
             // Building a request

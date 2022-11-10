@@ -76,16 +76,6 @@ declare module '@capacitor/cli' {
        * @example https://example.com/api/stats
        */
       statsUrl?: string;
-
-      /**
-       * Allow the plugin to automatically check for updates on app launch on emulator devices in production app.
-       *
-       * This is useful for CI/CD who send builds to google at each commit.
-       *
-       * @default true
-       * @example false
-       */
-      allowEmulatorProd?: boolean;
     };
   }
 }

@@ -60,6 +60,21 @@ extension GetChannel {
         return dict
     }
 }
+struct InfoObject : Codable {
+    let platform : String?
+    let device_id : String?
+    let app_id : String?
+    let custom_id : String?
+    let version_build : String?
+    let version_code : String?
+    let version_os : String?
+    let version_name : String?
+    let plugin_version : String?
+    let is_emulator : Bool?
+    let is_prod : Bool?
+    var action : String?
+    var channel : String?
+}
 struct AppVersionDec: Decodable {
     let version: String?
     let checksum: String?
@@ -210,6 +225,40 @@ extension CustomError: LocalizedError {
         return String((0..<length).map { _ in letters.randomElement()! })
     }
 
+    private func isProd() -> Bool {
+        return !self.isAppStoreReceiptSandbox() && !self.hasEmbeddedMobileProvision()
+    }
+
+    // MARK: Private
+    private func hasEmbeddedMobileProvision() -> Bool {
+        guard Bundle.main.path(forResource: "embedded", ofType: "mobileprovision") == nil else {
+            return true
+        }
+        return false
+    }
+    
+    private func isAppStoreReceiptSandbox() -> Bool {
+        
+        if isEmulator() {
+            return false
+        } else {
+            guard let url = Bundle.main.appStoreReceiptURL else {
+                return false
+            }
+            guard url.lastPathComponent == "sandboxReceipt" else {
+                return false
+            }
+            return true
+        }
+    }
+
+    private func isEmulator() -> Bool {
+        #if targetEnvironment(simulator)
+            return true
+        #else
+            return false
+        #endif
+    }
     // Persistent path /var/mobile/Containers/Data/Application/8C0C07BE-0FD3-4FD4-B7DF-90A88E12B8C3/Library/NoCloud/ionic_built_snapshots/FOLDER
     // Hot Reload path /var/mobile/Containers/Data/Application/8C0C07BE-0FD3-4FD4-B7DF-90A88E12B8C3/Documents/FOLDER
     // Normal /private/var/containers/Bundle/Application/8C0C07BE-0FD3-4FD4-B7DF-90A88E12B8C3/App.app/public
@@ -274,20 +323,28 @@ extension CustomError: LocalizedError {
         }
     }
 
+    private func createInfoObject() -> InfoObject {
+        return InfoObject(
+            platform: "ios",
+            device_id: self.deviceID,
+            app_id: self.appId,
+            custom_id: self.customId,
+            version_build: self.versionName,
+            version_code: self.versionCode,
+            version_os: self.versionOs,
+            version_name: self.getCurrentBundle().getVersionName(),
+            plugin_version: self.pluginVersion,
+            is_emulator: self.isEmulator(),
+            is_prod: self.isProd(),
+            action: nil,
+            channel: nil
+        )
+    }
+
     public func getLatest(url: URL) -> AppVersion {
         let semaphore = DispatchSemaphore(value: 0)
         let latest = AppVersion()
-        let parameters: [String: String] = [
-            "platform": "ios",
-            "device_id": self.deviceID,
-            "app_id": self.appId,
-            "custom_id": self.customId,
-            "version_build": self.versionName,
-            "version_code": self.versionCode,
-            "version_os": self.versionOs,
-            "plugin_version": self.pluginVersion,
-            "version_name": self.getCurrentBundle().getVersionName()
-        ]
+        let parameters: InfoObject = self.createInfoObject()
         print("\(self.TAG) Auto-update parameters: \(parameters)")
         let request = AF.request(url, method: .post, parameters: parameters, encoder: JSONParameterEncoder.default)
 
@@ -510,18 +567,9 @@ extension CustomError: LocalizedError {
         }
         let semaphore = DispatchSemaphore(value: 0)
         let setChannel = SetChannel()
-        let parameters: [String: String] = [
-            "platform": "ios",
-            "device_id": self.deviceID,
-            "custom_id": self.customId,
-            "version_name": self.getCurrentBundle().getVersionName(),
-            "version_build": self.versionName,
-            "version_code": self.versionCode,
-            "version_os": self.versionOs,
-            "plugin_version": self.pluginVersion,
-            "channel": channel,
-            "app_id": self.appId
-        ]
+        var parameters: InfoObject = self.createInfoObject()
+        parameters.channel = channel
+
         let request = AF.request(self.channelUrl, method: .post, parameters: parameters, encoder: JSONParameterEncoder.default)
 
         request.validate().responseDecodable(of: SetChannelDec.self) { response in
@@ -548,17 +596,7 @@ extension CustomError: LocalizedError {
         }
         let semaphore = DispatchSemaphore(value: 0)
         let getChannel = GetChannel()
-        let parameters: [String: String] = [
-            "platform": "ios",
-            "device_id": self.deviceID,
-            "custom_id": self.customId,
-            "version_name": self.getCurrentBundle().getVersionName(),
-            "version_build": self.versionName,
-            "version_code": self.versionCode,
-            "version_os": self.versionOs,
-            "plugin_version": self.pluginVersion,
-            "app_id": self.appId
-        ]
+        let parameters: InfoObject = self.createInfoObject()
         let request = AF.request(self.channelUrl, method: .put, parameters: parameters, encoder: JSONParameterEncoder.default)
 
         request.validate().responseDecodable(of: GetChannelDec.self) { response in
@@ -589,18 +627,8 @@ extension CustomError: LocalizedError {
         if self.statsUrl == "" {
             return
         }
-        let parameters: [String: String] = [
-            "platform": "ios",
-            "action": action,
-            "device_id": self.deviceID,
-            "custom_id": self.customId,
-            "version_name": versionName,
-            "version_build": self.versionName,
-            "version_code": self.versionCode,
-            "version_os": self.versionOs,
-            "plugin_version": self.pluginVersion,
-            "app_id": self.appId
-        ]
+        var parameters: InfoObject = self.createInfoObject()
+        parameters.action = action
         DispatchQueue.global(qos: .background).async {
             let request = AF.request(self.statsUrl, method: .post, parameters: parameters, encoder: JSONParameterEncoder.default)
             request.responseData { response in

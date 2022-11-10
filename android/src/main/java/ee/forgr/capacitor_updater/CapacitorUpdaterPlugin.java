@@ -62,10 +62,6 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
     @Override
     public void load() {
         super.load();
-        final Boolean allowEmulatorProd = this.getConfig().getBoolean("allowEmulatorProd", true);
-        if (!allowEmulatorProd && this.isEmulator() && this.isProd()) {
-            return;
-        }
         this.prefs = this.getContext().getSharedPreferences(WebView.WEBVIEW_PREFS_NAME, Activity.MODE_PRIVATE);
         this.editor = this.prefs.edit();
 
@@ -116,30 +112,6 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         application.registerActivityLifecycleCallbacks(this);
         this.onActivityStarted(this.getActivity());
         this._checkCancelDelay(true);
-    }
-
-    private boolean isProd() {
-        return !BuildConfig.DEBUG;
-    }
-
-    private boolean isEmulator() {
-        return (Build.BRAND.startsWith("generic") && Build.DEVICE.startsWith("generic"))
-                || Build.FINGERPRINT.startsWith("generic")
-                || Build.FINGERPRINT.startsWith("unknown")
-                || Build.HARDWARE.contains("goldfish")
-                || Build.HARDWARE.contains("ranchu")
-                || Build.MODEL.contains("google_sdk")
-                || Build.MODEL.contains("Emulator")
-                || Build.MODEL.contains("Android SDK built for x86")
-                || Build.MANUFACTURER.contains("Genymotion")
-                || Build.PRODUCT.contains("sdk_google")
-                || Build.PRODUCT.contains("google_sdk")
-                || Build.PRODUCT.contains("sdk")
-                || Build.PRODUCT.contains("sdk_x86")
-                || Build.PRODUCT.contains("sdk_gphone64_arm64")
-                || Build.PRODUCT.contains("vbox86p")
-                || Build.PRODUCT.contains("emulator")
-                || Build.PRODUCT.contains("simulator");
     }
 
     private void cleanupObsoleteVersions() {
@@ -234,9 +206,9 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                         @Override
                         public void run() {
                             CapacitorUpdaterPlugin.this.implementation.setChannel(channel,
-                                res -> {
-                                    call.resolve(res);
-                                });
+                                    res -> {
+                                        call.resolve(res);
+                                    });
                         }
                     }
             )
@@ -256,9 +228,9 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                         @Override
                         public void run() {
                             CapacitorUpdaterPlugin.this.implementation.getChannel(
-                                res -> {
-                                    call.resolve(res);
-                                });
+                                    res -> {
+                                        call.resolve(res);
+                                    });
                         }
                     }
             )
