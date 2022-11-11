@@ -115,8 +115,8 @@ export interface getChannelRes {
    */
   channel?: string;
   error?: any;
-  status?: string,
-  allowSet?: boolean,
+  status?: string;
+  allowSet?: boolean;
 }
 
 export interface DownloadEvent {
@@ -352,7 +352,7 @@ export interface CapacitorUpdaterPlugin {
    */
   setChannel(options: SetChannelOptions): Promise<channelRes>;
 
-    /**
+  /**
    * get Channel for this device
    *
    * @returns {Promise<channelRes>} an Promise resolved with channel info
@@ -361,7 +361,7 @@ export interface CapacitorUpdaterPlugin {
    */
   getChannel(): Promise<getChannelRes>;
 
-    /**
+  /**
    * Set Channel for this device
    *
    * @returns {Promise<void>} an Promise resolved instantly

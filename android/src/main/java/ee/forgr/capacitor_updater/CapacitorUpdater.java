@@ -83,23 +83,25 @@ public class CapacitorUpdater {
     }
 
     private boolean isEmulator() {
-        return (Build.BRAND.startsWith("generic") && Build.DEVICE.startsWith("generic"))
-                || Build.FINGERPRINT.startsWith("generic")
-                || Build.FINGERPRINT.startsWith("unknown")
-                || Build.HARDWARE.contains("goldfish")
-                || Build.HARDWARE.contains("ranchu")
-                || Build.MODEL.contains("google_sdk")
-                || Build.MODEL.contains("Emulator")
-                || Build.MODEL.contains("Android SDK built for x86")
-                || Build.MANUFACTURER.contains("Genymotion")
-                || Build.PRODUCT.contains("sdk_google")
-                || Build.PRODUCT.contains("google_sdk")
-                || Build.PRODUCT.contains("sdk")
-                || Build.PRODUCT.contains("sdk_x86")
-                || Build.PRODUCT.contains("sdk_gphone64_arm64")
-                || Build.PRODUCT.contains("vbox86p")
-                || Build.PRODUCT.contains("emulator")
-                || Build.PRODUCT.contains("simulator");
+        return (
+            (Build.BRAND.startsWith("generic") && Build.DEVICE.startsWith("generic")) ||
+            Build.FINGERPRINT.startsWith("generic") ||
+            Build.FINGERPRINT.startsWith("unknown") ||
+            Build.HARDWARE.contains("goldfish") ||
+            Build.HARDWARE.contains("ranchu") ||
+            Build.MODEL.contains("google_sdk") ||
+            Build.MODEL.contains("Emulator") ||
+            Build.MODEL.contains("Android SDK built for x86") ||
+            Build.MANUFACTURER.contains("Genymotion") ||
+            Build.PRODUCT.contains("sdk_google") ||
+            Build.PRODUCT.contains("google_sdk") ||
+            Build.PRODUCT.contains("sdk") ||
+            Build.PRODUCT.contains("sdk_x86") ||
+            Build.PRODUCT.contains("sdk_gphone64_arm64") ||
+            Build.PRODUCT.contains("vbox86p") ||
+            Build.PRODUCT.contains("emulator") ||
+            Build.PRODUCT.contains("simulator")
+        );
     }
 
     private int calcTotalPercent(final int percent, final int min, final int max) {
@@ -137,7 +139,7 @@ public class CapacitorUpdater {
 
                 if (!canonicalPath.startsWith(canonicalDir)) {
                     throw new FileNotFoundException(
-                            "SecurityException, Failed to ensure directory is the start path : " + canonicalDir + " of " + canonicalPath
+                        "SecurityException, Failed to ensure directory is the start path : " + canonicalDir + " of " + canonicalPath
                     );
                 }
 
@@ -406,21 +408,21 @@ public class CapacitorUpdater {
             Log.i(CapacitorUpdater.TAG, "Auto-update parameters: " + json);
             // Building a request
             JsonObjectRequest request = new JsonObjectRequest(
-                    Request.Method.POST,
-                    updateUrl,
-                    json,
-                    new Response.Listener<JSONObject>() {
-                        @Override
-                        public void onResponse(JSONObject response) {
-                            callback.callback(response);
-                        }
-                    },
-                    new Response.ErrorListener() {
-                        @Override
-                        public void onErrorResponse(VolleyError error) {
-                            Log.e(TAG, "Error getting Latest", error);
-                        }
+                Request.Method.POST,
+                updateUrl,
+                json,
+                new Response.Listener<JSONObject>() {
+                    @Override
+                    public void onResponse(JSONObject response) {
+                        callback.callback(response);
                     }
+                },
+                new Response.ErrorListener() {
+                    @Override
+                    public void onErrorResponse(VolleyError error) {
+                        Log.e(TAG, "Error getting Latest", error);
+                    }
+                }
             );
             this.requestQueue.add(request);
         } catch (JSONException ex) {
@@ -440,34 +442,34 @@ public class CapacitorUpdater {
 
             // Building a request
             JsonObjectRequest request = new JsonObjectRequest(
-                    Request.Method.POST,
-                    channelUrl,
-                    json,
-                    new Response.Listener<JSONObject>() {
-                        @Override
-                        public void onResponse(JSONObject res) {
-                            final JSObject ret = new JSObject();
-                            Iterator<String> keys = res.keys();
-                            while (keys.hasNext()) {
-                                String key = keys.next();
-                                if (res.has(key)) {
-                                    try {
-                                        ret.put(key, res.get(key));
-                                    } catch (JSONException e) {
-                                        e.printStackTrace();
-                                    }
+                Request.Method.POST,
+                channelUrl,
+                json,
+                new Response.Listener<JSONObject>() {
+                    @Override
+                    public void onResponse(JSONObject res) {
+                        final JSObject ret = new JSObject();
+                        Iterator<String> keys = res.keys();
+                        while (keys.hasNext()) {
+                            String key = keys.next();
+                            if (res.has(key)) {
+                                try {
+                                    ret.put(key, res.get(key));
+                                } catch (JSONException e) {
+                                    e.printStackTrace();
                                 }
                             }
-                            Log.i(TAG, "Channel set to \"" + channel);
-                            callback.callback(ret);
                         }
-                    },
-                    new Response.ErrorListener() {
-                        @Override
-                        public void onErrorResponse(VolleyError error) {
-                            Log.e(TAG, "Error set channel: " + error);
-                        }
+                        Log.i(TAG, "Channel set to \"" + channel);
+                        callback.callback(ret);
                     }
+                },
+                new Response.ErrorListener() {
+                    @Override
+                    public void onErrorResponse(VolleyError error) {
+                        Log.e(TAG, "Error set channel: " + error);
+                    }
+                }
             );
             this.requestQueue.add(request);
         } catch (JSONException ex) {
@@ -486,34 +488,34 @@ public class CapacitorUpdater {
 
             // Building a request
             JsonObjectRequest request = new JsonObjectRequest(
-                    Request.Method.PUT,
-                    channelUrl,
-                    json,
-                    new Response.Listener<JSONObject>() {
-                        @Override
-                        public void onResponse(JSONObject res) {
-                            final JSObject ret = new JSObject();
-                            Iterator<String> keys = res.keys();
-                            while (keys.hasNext()) {
-                                String key = keys.next();
-                                if (res.has(key)) {
-                                    try {
-                                        ret.put(key, res.get(key));
-                                    } catch (JSONException e) {
-                                        e.printStackTrace();
-                                    }
+                Request.Method.PUT,
+                channelUrl,
+                json,
+                new Response.Listener<JSONObject>() {
+                    @Override
+                    public void onResponse(JSONObject res) {
+                        final JSObject ret = new JSObject();
+                        Iterator<String> keys = res.keys();
+                        while (keys.hasNext()) {
+                            String key = keys.next();
+                            if (res.has(key)) {
+                                try {
+                                    ret.put(key, res.get(key));
+                                } catch (JSONException e) {
+                                    e.printStackTrace();
                                 }
                             }
-                            Log.i(TAG, "Channel get to \"" + ret);
-                            callback.callback(ret);
                         }
-                    },
-                    new Response.ErrorListener() {
-                        @Override
-                        public void onErrorResponse(VolleyError error) {
-                            Log.e(TAG, "Error get channel: " + error);
-                        }
+                        Log.i(TAG, "Channel get to \"" + ret);
+                        callback.callback(ret);
                     }
+                },
+                new Response.ErrorListener() {
+                    @Override
+                    public void onErrorResponse(VolleyError error) {
+                        Log.e(TAG, "Error get channel: " + error);
+                    }
+                }
             );
             this.requestQueue.add(request);
         } catch (JSONException ex) {
@@ -533,21 +535,21 @@ public class CapacitorUpdater {
 
             // Building a request
             JsonObjectRequest request = new JsonObjectRequest(
-                    Request.Method.POST,
-                    statsUrl,
-                    json,
-                    new Response.Listener<JSONObject>() {
-                        @Override
-                        public void onResponse(JSONObject response) {
-                            Log.i(TAG, "Stats send for \"" + action + "\", version " + versionName);
-                        }
-                    },
-                    new Response.ErrorListener() {
-                        @Override
-                        public void onErrorResponse(VolleyError error) {
-                            Log.e(TAG, "Error sending stats: " + error);
-                        }
+                Request.Method.POST,
+                statsUrl,
+                json,
+                new Response.Listener<JSONObject>() {
+                    @Override
+                    public void onResponse(JSONObject response) {
+                        Log.i(TAG, "Stats send for \"" + action + "\", version " + versionName);
                     }
+                },
+                new Response.ErrorListener() {
+                    @Override
+                    public void onErrorResponse(VolleyError error) {
+                        Log.e(TAG, "Error sending stats: " + error);
+                    }
+                }
             );
             this.requestQueue.add(request);
         } catch (JSONException ex) {

@@ -1,6 +1,15 @@
 import { WebPlugin } from '@capacitor/core';
 
-import type { CapacitorUpdaterPlugin, BundleInfo, latestVersion, DelayCondition, channelRes, SetChannelOptions, getChannelRes, SetCustomIdOptions } from './definitions';
+import type {
+  CapacitorUpdaterPlugin,
+  BundleInfo,
+  latestVersion,
+  DelayCondition,
+  channelRes,
+  SetChannelOptions,
+  getChannelRes,
+  SetCustomIdOptions,
+} from './definitions';
 
 const BUNDLE_BUILTIN: BundleInfo = {
   status: 'success',
