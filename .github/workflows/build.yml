@@ -24,7 +24,7 @@ jobs:
             java-version: '11'
       - name: Build
         id: build_code
-        run: npm verify:android
+        run: npm run verify:android
   build_ios:
       runs-on: macOS-latest
       steps:
@@ -38,7 +38,7 @@ jobs:
           run: npm ci
         - name: Build
           id: build_code
-          run: npm verify:ios
+          run: npm run verify:ios
   deploy:
     needs: [build_android, build_ios]
     runs-on: ubuntu-latest
