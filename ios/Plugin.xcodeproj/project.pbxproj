@@ -16,6 +16,7 @@
 		50ADFFA42020D75100D50D53 /* Capacitor.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 50ADFFA52020D75100D50D53 /* Capacitor.framework */; };
 		50ADFFA82020EE4F00D50D53 /* CapacitorUpdaterPlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = 50ADFFA72020EE4F00D50D53 /* CapacitorUpdaterPlugin.m */; };
 		50E1A94820377CB70090CE1A /* CapacitorUpdaterPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50E1A94720377CB70090CE1A /* CapacitorUpdaterPlugin.swift */; };
+		860FEBCA291E1FC600D45696 /* UserDefaultsExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = 860FEBC9291E1FC600D45696 /* UserDefaultsExtension.swift */; };
 		863289042823450E0057FC90 /* BundleInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 863289032823450E0057FC90 /* BundleInfo.swift */; };
 		863289062823453C0057FC90 /* BundleStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 863289052823453C0057FC90 /* BundleStatus.swift */; };
 		B3F3EE2328CF27FA00663217 /* DelayCondition.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3F3EE2228CF27FA00663217 /* DelayCondition.swift */; };
@@ -45,6 +46,7 @@
 		50ADFFA72020EE4F00D50D53 /* CapacitorUpdaterPlugin.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = CapacitorUpdaterPlugin.m; sourceTree = "<group>"; };
 		50E1A94720377CB70090CE1A /* CapacitorUpdaterPlugin.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CapacitorUpdaterPlugin.swift; sourceTree = "<group>"; };
 		5E23F77F099397094342571A /* Pods-Plugin.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Plugin.debug.xcconfig"; path = "Pods/Target Support Files/Pods-Plugin/Pods-Plugin.debug.xcconfig"; sourceTree = "<group>"; };
+		860FEBC9291E1FC600D45696 /* UserDefaultsExtension.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = UserDefaultsExtension.swift; sourceTree = "<group>"; };
 		863289032823450E0057FC90 /* BundleInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundleInfo.swift; sourceTree = "<group>"; };
 		863289052823453C0057FC90 /* BundleStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundleStatus.swift; sourceTree = "<group>"; };
 		91781294A431A2A7CC6EB714 /* Pods-Plugin.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Plugin.release.xcconfig"; path = "Pods/Target Support Files/Pods-Plugin/Pods-Plugin.release.xcconfig"; sourceTree = "<group>"; };
@@ -109,6 +111,7 @@
 				50ADFF8C201F53D600D50D53 /* Info.plist */,
 				B3F3EE2228CF27FA00663217 /* DelayCondition.swift */,
 				B3F3EE2428CF287200663217 /* DelayUntilNext.swift */,
+				860FEBC9291E1FC600D45696 /* UserDefaultsExtension.swift */,
 			);
 			path = Plugin;
 			sourceTree = "<group>";
@@ -204,7 +207,7 @@
 			attributes = {
 				LastSwiftUpdateCheck = 0920;
 				LastUpgradeCheck = 1160;
-				ORGANIZATIONNAME = "Capgo";
+				ORGANIZATIONNAME = Capgo;
 				TargetAttributes = {
 					50ADFF87201F53D600D50D53 = {
 						CreatedOnToolsVersion = 9.2;
@@ -280,13 +283,19 @@
 			);
 			inputPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-PluginTests/Pods-PluginTests-frameworks.sh",
+				"${BUILT_PRODUCTS_DIR}/Alamofire/Alamofire.framework",
 				"${BUILT_PRODUCTS_DIR}/Capacitor/Capacitor.framework",
 				"${BUILT_PRODUCTS_DIR}/CapacitorCordova/Cordova.framework",
+				"${BUILT_PRODUCTS_DIR}/SSZipArchive/SSZipArchive.framework",
+				"${BUILT_PRODUCTS_DIR}/Version/Version.framework",
 			);
 			name = "[CP] Embed Pods Frameworks";
 			outputPaths = (
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/Alamofire.framework",
 				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/Capacitor.framework",
 				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/Cordova.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/SSZipArchive.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/Version.framework",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -324,6 +333,7 @@
 				863289062823453C0057FC90 /* BundleStatus.swift in Sources */,
 				2F98D68224C9AAE500613A4C /* CapacitorUpdater.swift in Sources */,
 				863289042823450E0057FC90 /* BundleInfo.swift in Sources */,
+				860FEBCA291E1FC600D45696 /* UserDefaultsExtension.swift in Sources */,
 				50ADFFA82020EE4F00D50D53 /* CapacitorUpdaterPlugin.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -402,7 +412,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 12.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
@@ -462,7 +472,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 12.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = iphoneos;
 				SWIFT_OPTIMIZATION_LEVEL = "-Owholemodule";
@@ -485,7 +495,7 @@
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
 				INFOPLIST_FILE = Plugin/Info.plist;
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
-				IPHONEOS_DEPLOYMENT_TARGET = 12.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks $(FRAMEWORK_SEARCH_PATHS)\n$(FRAMEWORK_SEARCH_PATHS)\n$(FRAMEWORK_SEARCH_PATHS)";
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.getcapacitor.Plugin;
@@ -510,7 +520,7 @@
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
 				INFOPLIST_FILE = Plugin/Info.plist;
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
-				IPHONEOS_DEPLOYMENT_TARGET = 12.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks $(FRAMEWORK_SEARCH_PATHS)";
 				ONLY_ACTIVE_ARCH = NO;
 				PRODUCT_BUNDLE_IDENTIFIER = com.getcapacitor.Plugin;

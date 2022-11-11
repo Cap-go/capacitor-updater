@@ -27,9 +27,9 @@ extension UserDefaults: ObjectSavable {
     }
 
     func getObj<Object>(forKey: String, castTo type: Object.Type) throws -> Object where Object: Decodable {
-        print("forKey", forKey)
+        // print("forKey", forKey)
         guard let data = data(forKey: forKey) else { throw ObjectSavableError.noValue }
-        print("data", data)
+        // print("data", data)
         let decoder = JSONDecoder()
         do {
             let object = try decoder.decode(type, from: data)
