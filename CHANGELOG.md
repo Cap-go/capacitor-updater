@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.11.1](https://github.com/Cap-go/capacitor-updater/compare/4.11.0...4.11.1) (2022-11-15)
+
+
+### Bug Fixes
+
+* android build ([217241b](https://github.com/Cap-go/capacitor-updater/commit/217241bd1d3258da1c1cde8f259aedab58384baa))
+
 ## [4.11.0](https://github.com/Cap-go/capacitor-updater/compare/4.10.4...4.11.0) (2022-11-15)
 
 
