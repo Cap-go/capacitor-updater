@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.11.0](https://github.com/Cap-go/capacitor-updater/compare/4.10.4...4.11.0) (2022-11-15)
+
+
+### Features
+
+* add download_complete and download_% events ([0ed8022](https://github.com/Cap-go/capacitor-updater/commit/0ed80222ecc9fc7656399cddf744f032d7cf3944))
+
 ### [4.10.4](https://github.com/Cap-go/capacitor-updater/compare/4.10.3...4.10.4) (2022-11-11)
 
 
