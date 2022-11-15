@@ -145,7 +145,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         try {
             final JSObject ret = new JSObject();
             ret.put("percent", percent);
-            final BundleInfo bundleInfo = = this.implementation.getBundleInfo(id);
+            final BundleInfo bundleInfo = this.implementation.getBundleInfo(id);
             ret.put("bundle", bundleInfo.toJSON());
             this.notifyListeners("download", ret);
             if (percent == 100) {
