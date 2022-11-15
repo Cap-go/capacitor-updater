@@ -150,6 +150,9 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             this.notifyListeners("download", ret);
             if (percent == 100) {
                 this.notifyListeners("downloadComplete", bundle);
+                this.implementation.sendStats("download_complete", bundle.getVersionName());
+            } else if (percent % 10 == 0) {
+                this.implementation.sendStats("download_" + percent, bundle.getVersionName());
             }
         } catch (final Exception e) {
             Log.e(CapacitorUpdater.TAG, "Could not notify listeners", e);
