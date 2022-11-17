@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.11.4](https://github.com/Cap-go/capacitor-updater/compare/4.11.3...4.11.4) (2022-11-17)
+
+
+### Bug Fixes
+
+* add missing download_fail in android ([758aa7a](https://github.com/Cap-go/capacitor-updater/commit/758aa7a534b8add15e4dc05c8a9411fe18ba1509))
+
 ### [4.11.3](https://github.com/Cap-go/capacitor-updater/compare/4.11.2...4.11.3) (2022-11-15)
 
 
