@@ -287,6 +287,8 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
             final JSObject ret = new JSObject();
             ret.put("version", version);
             CapacitorUpdaterPlugin.this.notifyListeners("downloadFailed", ret);
+            final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
+            CapacitorUpdaterPlugin.this.implementation.sendStats("download_fail", current.getVersionName());
         }
     }
 
