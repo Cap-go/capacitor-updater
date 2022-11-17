@@ -30,7 +30,7 @@ enum BundleStatus: LocalizedString, Decodable, Encodable {
     case ERROR = "error"
     case PENDING  = "pending"
     case DELETED  = "deleted"
-    case DOWNLOADING  = "donwloading"
+    case DOWNLOADING  = "downloading"
 
     var localizedString: String {
         return self.rawValue.v
