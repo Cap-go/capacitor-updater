@@ -305,7 +305,7 @@ public class CapacitorUpdater {
             }
             return true;
         }
-        Log.e(TAG, "Directory not removed: " + bundle.getPath());
+        Log.e(TAG, "bundle removed: " + deleted.getVersionName());
         this.sendStats("delete", deleted.getVersionName());
         return false;
     }

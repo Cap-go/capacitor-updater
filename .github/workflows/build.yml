@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - '*'
+  pull_request:
+    branches: [ main ]
       
 jobs:
   build_android:
@@ -62,11 +64,11 @@ jobs:
         id: verify_code
         run: npm run verify:web
       - uses: JS-DevTools/npm-publish@v1
-        if: "!contains(github.ref, '-alpha.')"
+        if: "!contains(github.ref, '-alpha.') && github.event_name != 'pull_request'"
         with:
           token: ${{ secrets.NPM_TOKEN }}
       - uses: JS-DevTools/npm-publish@v1
-        if: "contains(github.ref, '-alpha.')"
+        if: "contains(github.ref, '-alpha.') && github.event_name != 'pull_request'"
         with:
           token: ${{ secrets.NPM_TOKEN }}
           tag: next

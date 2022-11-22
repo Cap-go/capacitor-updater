@@ -474,6 +474,7 @@ extension CustomError: LocalizedError {
         } else {
             self.saveBundleInfo(id: id, bundle: deleted.setStatus(status: BundleStatus.DELETED.localizedString))
         }
+        print("\(self.TAG) bundle delete \(deleted.getVersionName())")
         self.sendStats(action: "delete", versionName: deleted.getVersionName())
         return true
     }
