@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.11.10](https://github.com/Cap-go/capacitor-updater/compare/4.11.9...4.11.10) (2022-11-22)
+
+
+### Bug Fixes
+
+* **deps:** update dependency com.google.code.gson:gson to v2.10 ([0ba9c3e](https://github.com/Cap-go/capacitor-updater/commit/0ba9c3ee2e2d485a79b7f11e414ffaf8ba930236))
+
 ### [4.11.9](https://github.com/Cap-go/capacitor-updater/compare/4.11.8...4.11.9) (2022-11-22)
 
 
