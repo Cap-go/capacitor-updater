@@ -119,7 +119,7 @@ public class CapacitorUpdater {
     }
 
     private File unzip(final String id, final File zipFile, final String dest) throws IOException {
-        final File targetDirectory = new File(this.documentsDir, Paths.get(dest).normalize().toString());
+        final File targetDirectory = new File(this.documentsDir, dest);
         final ZipInputStream zis = new ZipInputStream(new BufferedInputStream(new FileInputStream(zipFile)));
         try {
             int count;
@@ -132,9 +132,9 @@ public class CapacitorUpdater {
 
             ZipEntry entry;
             while ((entry = zis.getNextEntry()) != null) {
-                final File file = new File(targetDirectory, Paths.get(entry.getName()).normalize().toString());
+                final File file = new File(targetDirectory, entry.getName());
                 final String canonicalPath = file.getCanonicalPath();
-                final String canonicalDir = (new File(String.valueOf(targetDirectory))).getCanonicalPath();
+                final String canonicalDir = targetDirectory.getCanonicalPath();
                 final File dir = entry.isDirectory() ? file : file.getParentFile();
 
                 if (!canonicalPath.startsWith(canonicalDir)) {
