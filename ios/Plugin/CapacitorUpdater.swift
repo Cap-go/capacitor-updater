@@ -2,6 +2,7 @@ import Foundation
 import SSZipArchive
 import Alamofire
 import zlib
+import SwiftyRSA
 
 extension URL {
     var isDirectory: Bool {
@@ -151,6 +152,8 @@ extension String {
 enum CustomError: Error {
     // Throw when an unzip fail
     case cannotUnzip
+    case cannotWrite
+    case cannotDecode
     case cannotUnflat
     case cannotCreateDirectory
     case cannotDeleteDirectory
@@ -213,6 +216,7 @@ extension CustomError: LocalizedError {
     public var channelUrl = ""
     public var appId = ""
     public var deviceID = UIDevice.current.identifierForVendor?.uuidString ?? ""
+    public var privateKey = ""
 
     public var notifyDownload: (String, Int) -> Void = { _, _  in }
 
@@ -310,6 +314,23 @@ extension CustomError: LocalizedError {
             return ""
         }
     }
+    
+    private func decodeFile(filePath: URL) throws  {
+        if (self.privateKey == "") {
+            return
+        }
+        do {
+            let privateKey = try PrivateKey(base64Encoded: self.privateKey)
+            let base64String = try Data(contentsOf: filePath).base64EncodedString()
+            let encrypted = try EncryptedMessage(base64Encoded: base64String)
+            let clear = try encrypted.decrypted(with: privateKey, padding: .PKCS1)
+            let str = try clear.string(encoding: String.Encoding.utf8)
+            try str.write(to: filePath, atomically: true, encoding: String.Encoding.utf8)
+        } catch {
+            print("\(self.TAG) Cannot decode: \(filePath.path)", error)
+            throw CustomError.cannotDecode
+        }
+    }
 
     private func saveDownloaded(sourceZip: URL, id: String, base: URL) throws {
         try prepareFolder(source: base)
@@ -405,6 +426,7 @@ extension CustomError: LocalizedError {
                     self.notifyDownload(id, 71)
                     do {
                         checksum = self.getChecksum(filePath: fileURL)
+                        decodeFile(filePath: fileURL)
                         try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.documentsDir.appendingPathComponent(self.bundleDirectoryHot))
                         self.notifyDownload(id, 85)
                         try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory))

@@ -88,6 +88,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
 
         final CapConfig config = CapConfig.loadDefault(this.getActivity());
         this.implementation.appId = config.getString("appId", "");
+        this.implementation.privateKey = this.getConfig().getString("privateKey", "");
         this.implementation.statsUrl = this.getConfig().getString("statsUrl", statsUrlDefault);
         this.implementation.channelUrl = this.getConfig().getString("channelUrl", channelUrlDefault);
         this.implementation.documentsDir = this.getContext().getFilesDir();
@@ -770,6 +771,10 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                                                 Log.e(
                                                                     CapacitorUpdater.TAG,
                                                                     "Error checksum " + next.getChecksum() + " " + checksum
+                                                                );
+                                                                CapacitorUpdaterPlugin.this.implementation.sendStats(
+                                                                    "checksum_fail",
+                                                                    current.getVersionName()
                                                                 );
                                                                 final Boolean res =
                                                                     CapacitorUpdaterPlugin.this.implementation.delete(next.getId());

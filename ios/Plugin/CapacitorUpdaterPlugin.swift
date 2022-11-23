@@ -39,7 +39,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         appReadyTimeout = getConfig().getInt("appReadyTimeout", 10000)
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
 
-        implementation.appId = Bundle.main.bundleIdentifier ?? ""
+        implementation.privateKey = getConfig().getString("privateKey", "")!
         implementation.notifyDownload = notifyDownload
         let config = (self.bridge?.viewController as? CAPBridgeViewController)?.instanceDescriptor().legacyConfig
         if config?["appId"] != nil {
@@ -513,6 +513,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                         let next = try self.implementation.download(url: downloadUrl, version: latestVersionName)
                         if res.checksum != "" && next.getChecksum() != res.checksum {
                             print("\(self.implementation.TAG) Error checksum", next.getChecksum(), res.checksum)
+                            self.implementation.sendStats(action: "checksum_fail", versionName: next.getVersionName())
                             let resDel = self.implementation.delete(id: next.getId())
                             if !resDel {
                                 print("\(self.implementation.TAG) Delete failed, id \(next.getId()) doesn't exist")

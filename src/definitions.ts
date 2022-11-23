@@ -76,6 +76,14 @@ declare module '@capacitor/cli' {
        * @example https://example.com/api/stats
        */
       statsUrl?: string;
+      /**
+       * Configure the private key for end to end live update encryption.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default undefined
+       */
+      privateKey?: string;
     };
   }
 }
