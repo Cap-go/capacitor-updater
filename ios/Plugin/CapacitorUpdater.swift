@@ -190,6 +190,16 @@ extension CustomError: LocalizedError {
                 "An unexpected error occurred.",
                 comment: "Unexpected Error"
             )
+        case .cannotDecode:
+            return NSLocalizedString(
+                "Decoding the zip failed with this key",
+                comment: "Invalid private key"
+            )
+        case .cannotWrite:
+            return NSLocalizedString(
+                "Cannot write to the destination",
+                comment: "Invalid destination"
+            )
         }
     }
 }
@@ -426,7 +436,7 @@ extension CustomError: LocalizedError {
                     self.notifyDownload(id, 71)
                     do {
                         checksum = self.getChecksum(filePath: fileURL)
-                        decodeFile(filePath: fileURL)
+                        try self.decodeFile(filePath: fileURL)
                         try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.documentsDir.appendingPathComponent(self.bundleDirectoryHot))
                         self.notifyDownload(id, 85)
                         try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory))

@@ -265,7 +265,7 @@ public class CapacitorUpdater {
     }
 
     private void decodeFile(File file) throws IOException {
-        if (this.privateKey.equal("")) {
+        if (this.privateKey.equals("")) {
             return;
         }
         try {
