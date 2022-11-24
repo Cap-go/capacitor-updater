@@ -333,7 +333,7 @@ extension CustomError: LocalizedError {
             let privateKey = try PrivateKey(base64Encoded: self.privateKey)
             let base64String = try Data(contentsOf: filePath).base64EncodedString()
             let encrypted = try EncryptedMessage(base64Encoded: base64String)
-            let clear = try encrypted.decrypted(with: privateKey, padding: .PKCS8)
+            let clear = try encrypted.decrypted(with: privateKey, padding: .PKCS1)
             let str = try clear.string(encoding: String.Encoding.utf8)
             try str.write(to: filePath, atomically: true, encoding: String.Encoding.utf8)
         } catch {
