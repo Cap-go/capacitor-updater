@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.12.5](https://github.com/Cap-go/capacitor-updater/compare/4.12.4...4.12.5) (2022-11-24)
+
+
+### Bug Fixes
+
+* RSA settings ([c570725](https://github.com/Cap-go/capacitor-updater/commit/c570725d696ce6c8d013b08535829db5423ec586))
+
 ### [4.12.4](https://github.com/Cap-go/capacitor-updater/compare/4.12.3...4.12.4) (2022-11-24)
 
 
