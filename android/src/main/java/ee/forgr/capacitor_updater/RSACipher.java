@@ -32,15 +32,9 @@ public class RSACipher {
     public static PrivateKey stringToPrivateKey(String private_key)
         throws NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException {
         try {
-            // Remove the "BEGIN" and "END" lines, as well as any whitespace
-            String pkcs8Pem = private_key.toString();
-            pkcs8Pem = pkcs8Pem.replace("-----BEGIN PRIVATE KEY-----", "");
-            pkcs8Pem = pkcs8Pem.replace("-----END PRIVATE KEY-----", "");
-            pkcs8Pem = pkcs8Pem.replaceAll("\\s+", "");
+            // Base64 decode the private_key
 
-            // Base64 decode the result
-
-            byte[] pkcs8EncodedBytes = Base64.decode(pkcs8Pem, Base64.DEFAULT);
+            byte[] pkcs8EncodedBytes = Base64.decode(private_key, Base64.DEFAULT);
 
             // extract the private key
 
