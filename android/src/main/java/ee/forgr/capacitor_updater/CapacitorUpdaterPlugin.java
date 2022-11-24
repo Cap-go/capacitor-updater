@@ -773,9 +773,9 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
                                                                     "Error checksum " + next.getChecksum() + " " + checksum
                                                                 );
                                                                 CapacitorUpdaterPlugin.this.implementation.sendStats(
-                                                                    "checksum_fail",
-                                                                    current.getVersionName()
-                                                                );
+                                                                        "checksum_fail",
+                                                                        current.getVersionName()
+                                                                    );
                                                                 final Boolean res =
                                                                     CapacitorUpdaterPlugin.this.implementation.delete(next.getId());
                                                                 if (res) {

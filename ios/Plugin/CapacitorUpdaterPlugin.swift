@@ -85,8 +85,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         if percent == 100 {
             self.notifyListeners("downloadComplete", data: ["bundle": bundle.toJSON()])
             self.implementation.sendStats(action: "download_complete", versionName: bundle.getVersionName())
-        }
-        else if percent.isMultiple(of: 10) {
+        } else if percent.isMultiple(of: 10) {
             self.implementation.sendStats(action: "download_\(percent)", versionName: bundle.getVersionName())
         }
     }

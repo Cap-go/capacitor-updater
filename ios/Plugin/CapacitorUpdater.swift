@@ -314,9 +314,9 @@ extension CustomError: LocalizedError {
             return ""
         }
     }
-    
-    private func decodeFile(filePath: URL) throws  {
-        if (self.privateKey == "") {
+
+    private func decodeFile(filePath: URL) throws {
+        if self.privateKey == "" {
             return
         }
         do {
