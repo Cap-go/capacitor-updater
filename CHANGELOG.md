@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.12.0](https://github.com/Cap-go/capacitor-updater/compare/4.11.12...4.12.0) (2022-11-23)
+
+
+### Features
+
+* add private key system to have end to end encryption ([5f3bd66](https://github.com/Cap-go/capacitor-updater/commit/5f3bd660566f4a12786e9ebb35a558f62864edb6))
+
 ### [4.11.12](https://github.com/Cap-go/capacitor-updater/compare/4.11.11...4.11.12) (2022-11-22)
 
 
