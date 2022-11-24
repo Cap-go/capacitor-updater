@@ -13,9 +13,14 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      - uses: pnpm/action-setup@v2
         with:
-          node-version: '16'
+          version: 7
+      - name: Use Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 16
+          cache: 'pnpm'
       - name: Install dependencies
         id: install_code
         run: npm ci
@@ -32,12 +37,17 @@ jobs:
       steps:
         - name: Check out
           uses: actions/checkout@v3
-        - uses: actions/setup-node@v3
+        - uses: pnpm/action-setup@v2
           with:
-            node-version: '16'
+            version: 7
+        - name: Use Node.js
+          uses: actions/setup-node@v3
+          with:
+            node-version: 16
+            cache: 'pnpm'
         - name: Install dependencies
           id: install_code
-          run: npm ci
+          run: pnpm i
         - name: Build
           id: build_code
           run: npm run verify:ios
@@ -48,12 +58,17 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      - uses: pnpm/action-setup@v2
         with:
-          node-version: '16'
+          version: 7
+      - name: Use Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 16
+          cache: 'pnpm'
       - name: Install dependencies
         id: install_code
-        run: npm ci        
+        run: pnpm i        
       - name: Lint
         id: lint_code
         run: npm run lint
