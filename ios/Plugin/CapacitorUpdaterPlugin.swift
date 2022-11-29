@@ -111,15 +111,17 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         }
         let url = URL(string: urlString)
         print("\(self.implementation.TAG) Downloading \(url!)")
-        do {
-            let res = try self.implementation.download(url: url!, version: version)
-            call.resolve(res.toJSON())
-        } catch {
-            print("\(self.implementation.TAG) Failed to download from: \(url!) \(error.localizedDescription)")
-            self.notifyListeners("downloadFailed", data: ["version": version])
-            let current: BundleInfo = self.implementation.getCurrentBundle()
-            self.implementation.sendStats(action: "download_fail", versionName: current.getVersionName())
-            call.reject("Failed to download from: \(url!)", error.localizedDescription)
+        DispatchQueue.global(qos: .background).async {
+            do {
+                let res = try self.implementation.download(url: url!, version: version)
+                call.resolve(res.toJSON())
+            } catch {
+                print("\(self.implementation.TAG) Failed to download from: \(url!) \(error.localizedDescription)")
+                self.notifyListeners("downloadFailed", data: ["version": version])
+                let current: BundleInfo = self.implementation.getCurrentBundle()
+                self.implementation.sendStats(action: "download_fail", versionName: current.getVersionName())
+                call.reject("Failed to download from: \(url!)", error.localizedDescription)
+            }
         }
     }
 
