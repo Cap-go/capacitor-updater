@@ -6,7 +6,7 @@ package ee.forgr.capacitor_updater;
  * references: http://stackoverflow.com/questions/12471999/rsa-encryption-decryption-in-android
  */
 import android.util.Base64;
-
+import java.security.GeneralSecurityException;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.KeyFactory;
@@ -24,83 +24,124 @@ import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.OAEPParameterSpec;
 import javax.crypto.spec.PSource;
 import javax.crypto.spec.SecretKeySpec;
-import java.security.GeneralSecurityException;
 
 public class CryptoCipher {
 
-    public static byte[] decryptRSA(byte[] source, PrivateKey privateKey)
-            throws NoSuchPaddingException, NoSuchAlgorithmException, InvalidAlgorithmParameterException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException {
-        Cipher cipher = Cipher.getInstance("RSA/ECB/OAEPPadding");
-        OAEPParameterSpec oaepParams = new OAEPParameterSpec("SHA-256", "MGF1", new MGF1ParameterSpec("SHA-256"), PSource.PSpecified.DEFAULT);
-        cipher.init(Cipher.DECRYPT_MODE, privateKey, oaepParams);
-        byte[] decryptedBytes = cipher.doFinal(source);
-        return decryptedBytes;
+  public static byte[] decryptRSA(byte[] source, PrivateKey privateKey)
+    throws NoSuchPaddingException, NoSuchAlgorithmException, InvalidAlgorithmParameterException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException {
+    Cipher cipher = Cipher.getInstance("RSA/ECB/OAEPPadding");
+    OAEPParameterSpec oaepParams = new OAEPParameterSpec(
+      "SHA-256",
+      "MGF1",
+      new MGF1ParameterSpec("SHA-256"),
+      PSource.PSpecified.DEFAULT
+    );
+    cipher.init(Cipher.DECRYPT_MODE, privateKey, oaepParams);
+    byte[] decryptedBytes = cipher.doFinal(source);
+    return decryptedBytes;
+  }
+
+  public static byte[] decryptAES(byte[] cipherText, SecretKey key, byte[] iv) {
+    try {
+      IvParameterSpec ivParameterSpec = new IvParameterSpec(iv);
+      Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+      SecretKeySpec keySpec = new SecretKeySpec(key.getEncoded(), "AES");
+      cipher.init(Cipher.DECRYPT_MODE, keySpec, ivParameterSpec);
+      byte[] decryptedText = cipher.doFinal(cipherText);
+      return decryptedText;
+    } catch (Exception e) {
+      e.printStackTrace();
     }
+    return null;
+  }
 
-    public static byte[] decryptAES(byte[] cipherText, SecretKey key, byte[] iv){
-        try {
-            IvParameterSpec ivParameterSpec = new IvParameterSpec(iv);
-            Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
-            SecretKeySpec keySpec = new SecretKeySpec(key.getEncoded(),"AES");
-            cipher.init(Cipher.DECRYPT_MODE, keySpec, ivParameterSpec);
-            byte[] decryptedText = cipher.doFinal(cipherText);
-            return decryptedText;
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        return null;
+  public static SecretKey byteToSessionKey(byte[] session_key) {
+    // rebuild key using SecretKeySpec
+    SecretKey originalKey = new SecretKeySpec(
+      session_key,
+      0,
+      session_key.length,
+      "AES"
+    );
+    return originalKey;
+  }
+
+  private static PrivateKey readPkcs8PrivateKey(byte[] pkcs8Bytes)
+    throws GeneralSecurityException {
+    KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+    PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(pkcs8Bytes);
+    try {
+      return keyFactory.generatePrivate(keySpec);
+    } catch (InvalidKeySpecException e) {
+      throw new IllegalArgumentException("Unexpected key format!", e);
     }
+  }
 
-    public static SecretKey byteToSessionKey(byte[] session_key) {
-        // rebuild key using SecretKeySpec
-        SecretKey originalKey = new SecretKeySpec(session_key, 0, session_key.length, "AES");
-        return originalKey;
-    }
+  private static byte[] join(byte[] byteArray1, byte[] byteArray2) {
+    byte[] bytes = new byte[byteArray1.length + byteArray2.length];
+    System.arraycopy(byteArray1, 0, bytes, 0, byteArray1.length);
+    System.arraycopy(
+      byteArray2,
+      0,
+      bytes,
+      byteArray1.length,
+      byteArray2.length
+    );
+    return bytes;
+  }
 
-    private static PrivateKey readPkcs8PrivateKey(byte[] pkcs8Bytes) throws GeneralSecurityException {
-        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-        PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(pkcs8Bytes);
-        try {
-            return keyFactory.generatePrivate(keySpec);
-        } catch (InvalidKeySpecException e) {
-            throw new IllegalArgumentException("Unexpected key format!", e);
-        }
-    }
+  private static PrivateKey readPkcs1PrivateKey(byte[] pkcs1Bytes)
+    throws GeneralSecurityException {
+    // We can't use Java internal APIs to parse ASN.1 structures, so we build a PKCS#8 key Java can understand
+    int pkcs1Length = pkcs1Bytes.length;
+    int totalLength = pkcs1Length + 22;
+    byte[] pkcs8Header = new byte[] {
+      0x30,
+      (byte) 0x82,
+      (byte) ((totalLength >> 8) & 0xff),
+      (byte) (totalLength & 0xff), // Sequence + total length
+      0x2,
+      0x1,
+      0x0, // Integer (0)
+      0x30,
+      0xD,
+      0x6,
+      0x9,
+      0x2A,
+      (byte) 0x86,
+      0x48,
+      (byte) 0x86,
+      (byte) 0xF7,
+      0xD,
+      0x1,
+      0x1,
+      0x1,
+      0x5,
+      0x0, // Sequence: 1.2.840.113549.1.1.1, NULL
+      0x4,
+      (byte) 0x82,
+      (byte) ((pkcs1Length >> 8) & 0xff),
+      (byte) (pkcs1Length & 0xff), // Octet string + length
+    };
+    byte[] pkcs8bytes = join(pkcs8Header, pkcs1Bytes);
+    return readPkcs8PrivateKey(pkcs8bytes);
+  }
 
-    private static byte[] join(byte[] byteArray1, byte[] byteArray2){
-        byte[] bytes = new byte[byteArray1.length + byteArray2.length];
-        System.arraycopy(byteArray1, 0, bytes, 0, byteArray1.length);
-        System.arraycopy(byteArray2, 0, bytes, byteArray1.length, byteArray2.length);
-        return bytes;
-    }
+  public static PrivateKey stringToPrivateKey(String private_key)
+    throws GeneralSecurityException {
+    // Base64 decode the result
 
-    private static PrivateKey readPkcs1PrivateKey(byte[] pkcs1Bytes) throws GeneralSecurityException {
-        // We can't use Java internal APIs to parse ASN.1 structures, so we build a PKCS#8 key Java can understand
-        int pkcs1Length = pkcs1Bytes.length;
-        int totalLength = pkcs1Length + 22;
-        byte[] pkcs8Header = new byte[] {
-                0x30, (byte) 0x82, (byte) ((totalLength >> 8) & 0xff), (byte) (totalLength & 0xff), // Sequence + total length
-                0x2, 0x1, 0x0, // Integer (0)
-                0x30, 0xD, 0x6, 0x9, 0x2A, (byte) 0x86, 0x48, (byte) 0x86, (byte) 0xF7, 0xD, 0x1, 0x1, 0x1, 0x5, 0x0, // Sequence: 1.2.840.113549.1.1.1, NULL
-                0x4, (byte) 0x82, (byte) ((pkcs1Length >> 8) & 0xff), (byte) (pkcs1Length & 0xff) // Octet string + length
-        };
-        byte[] pkcs8bytes = join(pkcs8Header, pkcs1Bytes);
-        return readPkcs8PrivateKey(pkcs8bytes);
-    }
+    String pkcs1Pem = private_key.toString();
+    pkcs1Pem = pkcs1Pem.replace("-----BEGIN RSA PRIVATE KEY-----", "");
+    pkcs1Pem = pkcs1Pem.replace("-----END RSA PRIVATE KEY-----", "");
+    pkcs1Pem = pkcs1Pem.replace("\\n", "");
+    pkcs1Pem = pkcs1Pem.replace(" ", "");
 
-
-    public static PrivateKey stringToPrivateKey(String private_key)
-            throws GeneralSecurityException {
-        // Base64 decode the result
-
-        String pkcs1Pem = private_key.toString();
-        pkcs1Pem = pkcs1Pem.replace("-----BEGIN RSA PRIVATE KEY-----", "");
-        pkcs1Pem = pkcs1Pem.replace("-----END RSA PRIVATE KEY-----", "");
-        pkcs1Pem = pkcs1Pem.replace("\\n", "");
-        pkcs1Pem = pkcs1Pem.replace(" ","");
-
-        byte[] pkcs1EncodedBytes = Base64.decode(pkcs1Pem.getBytes(), Base64.DEFAULT);
-        // extract the private key
-        return readPkcs1PrivateKey(pkcs1EncodedBytes);
-    }
+    byte[] pkcs1EncodedBytes = Base64.decode(
+      pkcs1Pem.getBytes(),
+      Base64.DEFAULT
+    );
+    // extract the private key
+    return readPkcs1PrivateKey(pkcs1EncodedBytes);
+  }
 }
