@@ -81,6 +81,7 @@ struct AppVersionDec: Decodable {
     let checksum: String?
     let url: String?
     let message: String?
+    let session_key: String?
     let major: Bool?
 }
 public class AppVersion: NSObject {
@@ -88,6 +89,7 @@ public class AppVersion: NSObject {
     var checksum: String = ""
     var url: String = ""
     var message: String?
+    var sessionKey: String?
     var major: Bool?
 }
 
@@ -221,7 +223,7 @@ extension CustomError: LocalizedError {
     public let TAG = "✨  Capacitor-updater:"
     public let CAP_SERVER_PATH = "serverBasePath"
     public var customId = ""
-    public let pluginVersion = "4.12.8"
+    public let pluginVersion = "4.12.9"
     public var statsUrl = ""
     public var channelUrl = ""
     public var appId = ""
@@ -325,17 +327,26 @@ extension CustomError: LocalizedError {
         }
     }
 
-    private func decodeFile(filePath: URL) throws {
-        if self.privateKey == "" {
+    private func decryptFile(filePath: URL, sessionKey: String) throws {
+        if self.privateKey == "" || sessionKey == "" {
+            print("\(self.TAG) Cannot fond privateKey or sessionKey")
             return
         }
         do {
-            let privateKey = try PrivateKey(base64Encoded: self.privateKey)
-            let base64String = try Data(contentsOf: filePath).base64EncodedString()
-            let encrypted = try EncryptedMessage(base64Encoded: base64String)
-            let clear = try encrypted.decrypted(with: privateKey, padding: .PKCS1)
-            let str = try clear.string(encoding: String.Encoding.utf8)
-            try str.write(to: filePath, atomically: true, encoding: String.Encoding.utf8)
+            guard let rsaPrivateKey: RSAPrivateKey = .load(rsaPrivateKey: self.privateKey) else {
+                print("cannot decode privateKey", self.privateKey)
+                return
+            }
+            
+            let sessionKeyArray = sessionKey.components(separatedBy: ":")
+            let ivData = Data(base64Encoded: sessionKeyArray[0])!
+            let sessionKeyDataEncrypted = Data(base64Encoded: sessionKeyArray[1])!
+            let sessionKeyDataDecrypted: Data = rsaPrivateKey.decrypt(data: sessionKeyDataEncrypted)!
+            let aesPrivateKey: AES128Key = AES128Key(iv: ivData, aes128Key: sessionKeyDataDecrypted)
+            let encryptedData = try Data(contentsOf: filePath)
+            let decryptedData: Data = aesPrivateKey.decrypt(data: encryptedData)!
+            
+            try decryptedData.write(to: filePath)
         } catch {
             print("\(self.TAG) Cannot decode: \(filePath.path)", error)
             throw CustomError.cannotDecode
@@ -397,6 +408,9 @@ extension CustomError: LocalizedError {
                 if let message = response.value?.message {
                     latest.message = message
                 }
+                if let sessionKey = response.value?.session_key {
+                    latest.sessionKey = sessionKey
+                }
             case let .failure(error):
                 print("\(self.TAG) Error getting Latest", error )
             }
@@ -412,7 +426,7 @@ extension CustomError: LocalizedError {
         print("\(self.TAG) Current bundle set to: \(bundle == "" ? BundleInfo.ID_BUILTIN : bundle)")
     }
 
-    public func download(url: URL, version: String) throws -> BundleInfo {
+    public func download(url: URL, version: String, sessionKey: String) throws -> BundleInfo {
         let semaphore = DispatchSemaphore(value: 0)
         let id: String = self.randomString(length: 10)
         var checksum = ""
@@ -435,8 +449,8 @@ extension CustomError: LocalizedError {
                 case .success:
                     self.notifyDownload(id, 71)
                     do {
+                        try self.decryptFile(filePath: fileURL, sessionKey: sessionKey)
                         checksum = self.getChecksum(filePath: fileURL)
-                        try self.decodeFile(filePath: fileURL)
                         try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.documentsDir.appendingPathComponent(self.bundleDirectoryHot))
                         self.notifyDownload(id, 85)
                         try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory))

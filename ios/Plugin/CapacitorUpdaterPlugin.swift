@@ -109,11 +109,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             call.reject("Download called without version")
             return
         }
+        let sessionKey = call.getString("sessionKey", "")
         let url = URL(string: urlString)
         print("\(self.implementation.TAG) Downloading \(url!)")
         DispatchQueue.global(qos: .background).async {
             do {
-                let res = try self.implementation.download(url: url!, version: version)
+                let res = try self.implementation.download(url: url!, version: version, sessionKey: sessionKey)
                 call.resolve(res.toJSON())
             } catch {
                 print("\(self.implementation.TAG) Failed to download from: \(url!) \(error.localizedDescription)")
@@ -478,6 +479,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                     self.notifyListeners("noNeedUpdate", data: ["bundle": current.toJSON()])
                     return
                 }
+                let sessionKey = res.sessionKey ?? ""
                 guard let downloadUrl = URL(string: res.url) else {
                     print("\(self.implementation.TAG) Error no url or wrong format")
                     self.notifyListeners("noNeedUpdate", data: ["bundle": current.toJSON()])
@@ -511,7 +513,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
                     do {
                         print("\(self.implementation.TAG) New bundle: \(latestVersionName) found. Current is: \(current.getVersionName()). Update will occur next time app moves to background.")
-                        let next = try self.implementation.download(url: downloadUrl, version: latestVersionName)
+                        let next = try self.implementation.download(url: downloadUrl, version: latestVersionName, sessionKey: sessionKey)
                         if res.checksum != "" && next.getChecksum() != res.checksum {
                             print("\(self.implementation.TAG) Error checksum", next.getChecksum(), res.checksum)
                             self.implementation.sendStats(action: "checksum_fail", versionName: next.getVersionName())
