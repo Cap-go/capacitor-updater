@@ -15,7 +15,7 @@ specifiers:
   eslint: ^8.28.0
   eslint-plugin-import: ^2.26.0
   prettier: ^2.8.0
-  prettier-plugin-java: ^1.6.2
+  prettier-plugin-java: ^2.0.0
   rimraf: ^3.0.2
   rollup: ^3.4.0
   swiftlint: ^1.0.1
@@ -36,7 +36,7 @@ devDependencies:
   eslint: 8.28.0
   eslint-plugin-import: 2.26.0_vfrilbydaxalswvos6uuh4sxs4
   prettier: 2.8.0
-  prettier-plugin-java: 1.6.2
+  prettier-plugin-java: 2.0.0
   rimraf: 3.0.2
   rollup: 3.4.0
   swiftlint: 1.0.1
@@ -1610,8 +1610,8 @@ packages:
     resolution: {integrity: sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw==}
     dev: true
 
-  /java-parser/2.0.2:
-    resolution: {integrity: sha512-fwv1eDYE4OIAN+XS7cD8aB7UdQyAh3Uz36ydWqemvnDKXEdLbxq7qIbvsjpSvS1NHFR+r81N7AjGcpnamjVxJw==}
+  /java-parser/2.0.3:
+    resolution: {integrity: sha512-z+ZsqcY3LCN0NPK1KnC7AXFHQxtzlsADJ2OVQmenKS/4gHBQ6SkEQYIMVV/2WrxRBMWXMXW7KeOVmXPLHCMRAQ==}
     dependencies:
       chevrotain: 6.5.0
       lodash: 4.17.21
@@ -1919,18 +1919,12 @@ packages:
     engines: {node: '>= 0.8.0'}
     dev: true
 
-  /prettier-plugin-java/1.6.2:
-    resolution: {integrity: sha512-oVIUOkx50eb9skdRtEIU7MJUsizQ1ZocgXR1w1o8AnieNGpuPI/2pWnpjtbBm9wUG1dHtBGU8cVIr8h+xgzQIg==}
+  /prettier-plugin-java/2.0.0:
+    resolution: {integrity: sha512-ct7Zgog2XUpZ+olF3Ed4gPBNU7aWBu0cnpgDX7eqs0IZVH+9ZAduRkaJ0HlreoOm7SdUOc7UoKK1vk3T/coEoQ==}
     dependencies:
-      java-parser: 2.0.2
+      java-parser: 2.0.3
       lodash: 4.17.21
-      prettier: 2.3.1
-    dev: true
-
-  /prettier/2.3.1:
-    resolution: {integrity: sha512-p+vNbgpLjif/+D+DwAZAbndtRrR0md0MwfmOVN9N+2RgyACMT+7tfaRnT+WDPkqnuVwleyuBIG2XBxKDme3hPA==}
-    engines: {node: '>=10.13.0'}
-    hasBin: true
+      prettier: 2.8.0
     dev: true
 
   /prettier/2.8.0:
