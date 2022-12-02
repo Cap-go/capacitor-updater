@@ -111,7 +111,6 @@ public class CapacitorUpdaterPlugin extends Plugin implements Application.Activi
         }
         final Application application = (Application) this.getContext().getApplicationContext();
         application.registerActivityLifecycleCallbacks(this);
-        this.onActivityStarted(this.getActivity());
         this._checkCancelDelay(true);
     }
 
