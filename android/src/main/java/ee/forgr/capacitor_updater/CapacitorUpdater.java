@@ -1,17 +1,17 @@
 package ee.forgr.capacitor_updater;
 
-import static ee.forgr.capacitor_updater.RSACipher.stringToPrivateKey;
-
 import android.content.SharedPreferences;
 import android.os.Build;
+import android.util.Base64;
 import android.util.Log;
+
+import com.android.volley.BuildConfig;
 import com.android.volley.Request;
 import com.android.volley.RequestQueue;
 import com.android.volley.Response;
 import com.android.volley.VolleyError;
 import com.android.volley.toolbox.JsonObjectRequest;
 import com.getcapacitor.JSObject;
-import com.getcapacitor.android.BuildConfig;
 import com.getcapacitor.plugin.WebView;
 import java.io.BufferedInputStream;
 import java.io.DataInputStream;
@@ -24,8 +24,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
 import java.net.URLConnection;
-import java.security.InvalidKeyException;
-import java.security.NoSuchAlgorithmException;
+import java.security.GeneralSecurityException;
 import java.security.PrivateKey;
 import java.security.SecureRandom;
 import java.util.ArrayList;
@@ -35,9 +34,8 @@ import java.util.List;
 import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
-import javax.crypto.BadPaddingException;
-import javax.crypto.IllegalBlockSizeException;
-import javax.crypto.NoSuchPaddingException;
+import javax.crypto.SecretKey;
+
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -94,23 +92,23 @@ public class CapacitorUpdater {
 
     private boolean isEmulator() {
         return (
-            (Build.BRAND.startsWith("generic") && Build.DEVICE.startsWith("generic")) ||
-            Build.FINGERPRINT.startsWith("generic") ||
-            Build.FINGERPRINT.startsWith("unknown") ||
-            Build.HARDWARE.contains("goldfish") ||
-            Build.HARDWARE.contains("ranchu") ||
-            Build.MODEL.contains("google_sdk") ||
-            Build.MODEL.contains("Emulator") ||
-            Build.MODEL.contains("Android SDK built for x86") ||
-            Build.MANUFACTURER.contains("Genymotion") ||
-            Build.PRODUCT.contains("sdk_google") ||
-            Build.PRODUCT.contains("google_sdk") ||
-            Build.PRODUCT.contains("sdk") ||
-            Build.PRODUCT.contains("sdk_x86") ||
-            Build.PRODUCT.contains("sdk_gphone64_arm64") ||
-            Build.PRODUCT.contains("vbox86p") ||
-            Build.PRODUCT.contains("emulator") ||
-            Build.PRODUCT.contains("simulator")
+                (Build.BRAND.startsWith("generic") && Build.DEVICE.startsWith("generic")) ||
+                        Build.FINGERPRINT.startsWith("generic") ||
+                        Build.FINGERPRINT.startsWith("unknown") ||
+                        Build.HARDWARE.contains("goldfish") ||
+                        Build.HARDWARE.contains("ranchu") ||
+                        Build.MODEL.contains("google_sdk") ||
+                        Build.MODEL.contains("Emulator") ||
+                        Build.MODEL.contains("Android SDK built for x86") ||
+                        Build.MANUFACTURER.contains("Genymotion") ||
+                        Build.PRODUCT.contains("sdk_google") ||
+                        Build.PRODUCT.contains("google_sdk") ||
+                        Build.PRODUCT.contains("sdk") ||
+                        Build.PRODUCT.contains("sdk_x86") ||
+                        Build.PRODUCT.contains("sdk_gphone64_arm64") ||
+                        Build.PRODUCT.contains("vbox86p") ||
+                        Build.PRODUCT.contains("emulator") ||
+                        Build.PRODUCT.contains("simulator")
         );
     }
 
@@ -149,7 +147,7 @@ public class CapacitorUpdater {
 
                 if (!canonicalPath.startsWith(canonicalDir)) {
                     throw new FileNotFoundException(
-                        "SecurityException, Failed to ensure directory is the start path : " + canonicalDir + " of " + canonicalPath
+                            "SecurityException, Failed to ensure directory is the start path : " + canonicalDir + " of " + canonicalPath
                     );
                 }
 
@@ -264,53 +262,44 @@ public class CapacitorUpdater {
         return enc.toLowerCase();
     }
 
-    private void decodeFile(File file) throws IOException {
-        if (this.privateKey.equals("")) {
+    private void decryptFile(final File file, final String ivSessionKey) throws IOException {
+        if (this.privateKey.equals("") || ivSessionKey.equals("")) {
             return;
         }
         try {
-            PrivateKey pKey = RSACipher.stringToPrivateKey(this.privateKey);
-            FileInputStream fis = new FileInputStream(file.getAbsolutePath());
-            byte[] buffer = new byte[10];
-            StringBuilder sb = new StringBuilder();
-            while (fis.read(buffer) != -1) {
-                sb.append(new String(buffer));
-                buffer = new byte[10];
-            }
-            fis.close();
-            String content = sb.toString();
-            String decrypted = RSACipher.decryptRSA(content, pKey);
+            String ivB64 = ivSessionKey.split(":")[0];
+            String sessionKeyB64 = ivSessionKey.split(":")[1];
+            byte[] iv = Base64.decode(ivB64.getBytes(), Base64.DEFAULT);
+            byte[] sessionKey = Base64.decode(sessionKeyB64.getBytes(), Base64.DEFAULT);
+            PrivateKey pKey = CryptoCipher.stringToPrivateKey(this.privateKey);
+            byte[] decryptedSessionKey = CryptoCipher.decryptRSA(sessionKey, pKey);
+            SecretKey sKey = CryptoCipher.byteToSessionKey(decryptedSessionKey);
+            byte[] content = new byte[(int) file.length()];
+            BufferedInputStream bis = new BufferedInputStream(new FileInputStream(file));
+            DataInputStream dis = new DataInputStream(bis);
+            dis.readFully(content);
+            dis.close();
+            byte[] decrypted = CryptoCipher.decryptAES(content, sKey, iv);
             // write the decrypted string to the file
             FileOutputStream fos = new FileOutputStream(file.getAbsolutePath());
-            fos.write(decrypted.getBytes());
+            fos.write(decrypted);
             fos.close();
-        } catch (NoSuchPaddingException e) {
+        } catch (GeneralSecurityException e) {
+            Log.i(TAG, "decryptFile fail");
             e.printStackTrace();
-            throw new IOException("NoSuchPaddingException");
-        } catch (IllegalBlockSizeException e) {
-            e.printStackTrace();
-            throw new IOException("IllegalBlockSizeException");
-        } catch (NoSuchAlgorithmException e) {
-            e.printStackTrace();
-            throw new IOException("NoSuchAlgorithmException");
-        } catch (BadPaddingException e) {
-            e.printStackTrace();
-            throw new IOException("BadPaddingException");
-        } catch (InvalidKeyException e) {
-            e.printStackTrace();
-            throw new IOException("InvalidKeyException");
+            throw new IOException("GeneralSecurityException");
         }
     }
 
-    public BundleInfo download(final String url, final String version) throws IOException {
+    public BundleInfo download(final String url, final String version, final String sessionKey) throws IOException {
         final String id = this.randomString(10);
         this.saveBundleInfo(id, new BundleInfo(id, version, BundleStatus.DOWNLOADING, new Date(System.currentTimeMillis()), ""));
         this.notifyDownload(id, 0);
         final String idName = bundleDirectory + "/" + id;
         this.notifyDownload(id, 5);
         final File downloaded = this.downloadFile(id, url, this.randomString(10));
+        this.decryptFile(downloaded, sessionKey);
         final String checksum = this.getChecksum(downloaded);
-        this.decodeFile(downloaded);
         this.notifyDownload(id, 71);
         final File unzipped = this.unzip(id, downloaded, this.randomString(10));
         downloaded.delete();
@@ -457,21 +446,21 @@ public class CapacitorUpdater {
             Log.i(CapacitorUpdater.TAG, "Auto-update parameters: " + json);
             // Building a request
             JsonObjectRequest request = new JsonObjectRequest(
-                Request.Method.POST,
-                updateUrl,
-                json,
-                new Response.Listener<JSONObject>() {
-                    @Override
-                    public void onResponse(JSONObject response) {
-                        callback.callback(response);
+                    Request.Method.POST,
+                    updateUrl,
+                    json,
+                    new Response.Listener<JSONObject>() {
+                        @Override
+                        public void onResponse(JSONObject response) {
+                            callback.callback(response);
+                        }
+                    },
+                    new Response.ErrorListener() {
+                        @Override
+                        public void onErrorResponse(VolleyError error) {
+                            Log.e(TAG, "Error getting Latest" + error.toString());
+                        }
                     }
-                },
-                new Response.ErrorListener() {
-                    @Override
-                    public void onErrorResponse(VolleyError error) {
-                        Log.e(TAG, "Error getting Latest" + error.toString());
-                    }
-                }
             );
             this.requestQueue.add(request);
         } catch (JSONException ex) {
@@ -491,34 +480,34 @@ public class CapacitorUpdater {
 
             // Building a request
             JsonObjectRequest request = new JsonObjectRequest(
-                Request.Method.POST,
-                channelUrl,
-                json,
-                new Response.Listener<JSONObject>() {
-                    @Override
-                    public void onResponse(JSONObject res) {
-                        final JSObject ret = new JSObject();
-                        Iterator<String> keys = res.keys();
-                        while (keys.hasNext()) {
-                            String key = keys.next();
-                            if (res.has(key)) {
-                                try {
-                                    ret.put(key, res.get(key));
-                                } catch (JSONException e) {
-                                    e.printStackTrace();
+                    Request.Method.POST,
+                    channelUrl,
+                    json,
+                    new Response.Listener<JSONObject>() {
+                        @Override
+                        public void onResponse(JSONObject res) {
+                            final JSObject ret = new JSObject();
+                            Iterator<String> keys = res.keys();
+                            while (keys.hasNext()) {
+                                String key = keys.next();
+                                if (res.has(key)) {
+                                    try {
+                                        ret.put(key, res.get(key));
+                                    } catch (JSONException e) {
+                                        e.printStackTrace();
+                                    }
                                 }
                             }
+                            Log.i(TAG, "Channel set to \"" + channel);
+                            callback.callback(ret);
                         }
-                        Log.i(TAG, "Channel set to \"" + channel);
-                        callback.callback(ret);
+                    },
+                    new Response.ErrorListener() {
+                        @Override
+                        public void onErrorResponse(VolleyError error) {
+                            Log.e(TAG, "Error set channel: " + error.toString());
+                        }
                     }
-                },
-                new Response.ErrorListener() {
-                    @Override
-                    public void onErrorResponse(VolleyError error) {
-                        Log.e(TAG, "Error set channel: " + error.toString());
-                    }
-                }
             );
             this.requestQueue.add(request);
         } catch (JSONException ex) {
@@ -537,34 +526,34 @@ public class CapacitorUpdater {
 
             // Building a request
             JsonObjectRequest request = new JsonObjectRequest(
-                Request.Method.PUT,
-                channelUrl,
-                json,
-                new Response.Listener<JSONObject>() {
-                    @Override
-                    public void onResponse(JSONObject res) {
-                        final JSObject ret = new JSObject();
-                        Iterator<String> keys = res.keys();
-                        while (keys.hasNext()) {
-                            String key = keys.next();
-                            if (res.has(key)) {
-                                try {
-                                    ret.put(key, res.get(key));
-                                } catch (JSONException e) {
-                                    e.printStackTrace();
+                    Request.Method.PUT,
+                    channelUrl,
+                    json,
+                    new Response.Listener<JSONObject>() {
+                        @Override
+                        public void onResponse(JSONObject res) {
+                            final JSObject ret = new JSObject();
+                            Iterator<String> keys = res.keys();
+                            while (keys.hasNext()) {
+                                String key = keys.next();
+                                if (res.has(key)) {
+                                    try {
+                                        ret.put(key, res.get(key));
+                                    } catch (JSONException e) {
+                                        e.printStackTrace();
+                                    }
                                 }
                             }
+                            Log.i(TAG, "Channel get to \"" + ret);
+                            callback.callback(ret);
                         }
-                        Log.i(TAG, "Channel get to \"" + ret);
-                        callback.callback(ret);
+                    },
+                    new Response.ErrorListener() {
+                        @Override
+                        public void onErrorResponse(VolleyError error) {
+                            Log.e(TAG, "Error get channel: " + error.toString());
+                        }
                     }
-                },
-                new Response.ErrorListener() {
-                    @Override
-                    public void onErrorResponse(VolleyError error) {
-                        Log.e(TAG, "Error get channel: " + error.toString());
-                    }
-                }
             );
             this.requestQueue.add(request);
         } catch (JSONException ex) {
@@ -584,21 +573,21 @@ public class CapacitorUpdater {
 
             // Building a request
             JsonObjectRequest request = new JsonObjectRequest(
-                Request.Method.POST,
-                statsUrl,
-                json,
-                new Response.Listener<JSONObject>() {
-                    @Override
-                    public void onResponse(JSONObject response) {
-                        Log.i(TAG, "Stats send for \"" + action + "\", version " + versionName);
+                    Request.Method.POST,
+                    statsUrl,
+                    json,
+                    new Response.Listener<JSONObject>() {
+                        @Override
+                        public void onResponse(JSONObject response) {
+                            Log.i(TAG, "Stats send for \"" + action + "\", version " + versionName);
+                        }
+                    },
+                    new Response.ErrorListener() {
+                        @Override
+                        public void onErrorResponse(VolleyError error) {
+                            Log.e(TAG, "Error sending stats: " + error.toString());
+                        }
                     }
-                },
-                new Response.ErrorListener() {
-                    @Override
-                    public void onErrorResponse(VolleyError error) {
-                        Log.e(TAG, "Error sending stats: " + error.toString());
-                    }
-                }
             );
             this.requestQueue.add(request);
         } catch (JSONException ex) {
