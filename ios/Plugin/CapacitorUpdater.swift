@@ -2,7 +2,6 @@ import Foundation
 import SSZipArchive
 import Alamofire
 import zlib
-import SwiftyRSA
 
 extension URL {
     var isDirectory: Bool {
