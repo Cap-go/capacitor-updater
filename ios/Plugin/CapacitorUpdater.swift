@@ -19,10 +19,12 @@ extension Date {
 struct SetChannelDec: Decodable {
     let status: String?
     let error: String?
+    let message: String?
 }
 public class SetChannel: NSObject {
     var status: String = ""
     var error: String = ""
+    var message: String = ""
 }
 extension SetChannel {
     func toDict() -> [String: Any] {
@@ -40,12 +42,14 @@ struct GetChannelDec: Decodable {
     let channel: String?
     let status: String?
     let error: String?
+    let message: String?
     let allowSet: Bool?
 }
 public class GetChannel: NSObject {
     var channel: String = ""
     var status: String = ""
     var error: String = ""
+    var message: String = ""
     var allowSet: Bool = true
 }
 extension GetChannel {
@@ -80,6 +84,7 @@ struct AppVersionDec: Decodable {
     let checksum: String?
     let url: String?
     let message: String?
+    let error: String?
     let session_key: String?
     let major: Bool?
 }
@@ -88,6 +93,7 @@ public class AppVersion: NSObject {
     var checksum: String = ""
     var url: String = ""
     var message: String?
+    var error: String?
     var sessionKey: String?
     var major: Bool?
 }
@@ -336,7 +342,7 @@ extension CustomError: LocalizedError {
                 print("cannot decode privateKey", self.privateKey)
                 return
             }
-            
+
             let sessionKeyArray = sessionKey.components(separatedBy: ":")
             let ivData = Data(base64Encoded: sessionKeyArray[0])!
             let sessionKeyDataEncrypted = Data(base64Encoded: sessionKeyArray[1])!
@@ -344,7 +350,7 @@ extension CustomError: LocalizedError {
             let aesPrivateKey: AES128Key = AES128Key(iv: ivData, aes128Key: sessionKeyDataDecrypted)
             let encryptedData = try Data(contentsOf: filePath)
             let decryptedData: Data = aesPrivateKey.decrypt(data: encryptedData)!
-            
+
             try decryptedData.write(to: filePath)
         } catch {
             print("\(self.TAG) Cannot decode: \(filePath.path)", error)
@@ -407,11 +413,16 @@ extension CustomError: LocalizedError {
                 if let message = response.value?.message {
                     latest.message = message
                 }
+                if let error = response.value?.error {
+                    latest.error = error
+                }
                 if let sessionKey = response.value?.session_key {
                     latest.sessionKey = sessionKey
                 }
             case let .failure(error):
                 print("\(self.TAG) Error getting Latest", error )
+                latest.message = "Error getting Latest \(error)"
+                latest.error = "fail_response"
             }
             semaphore.signal()
         }
@@ -607,12 +618,15 @@ extension CustomError: LocalizedError {
         self.setBundleStatus(id: bundle.getId(), status: BundleStatus.ERROR)
     }
 
-    func setChannel(channel: String) -> SetChannel? {
+    func setChannel(channel: String) -> SetChannel {
+        let setChannel = SetChannel()
         if self.channelUrl == "" {
-            return nil
+            print("\(self.TAG) Channel URL is not set")
+            setChannel.message = "Channel URL is not set"
+            setChannel.error = "missing_config"
+            return setChannel
         }
         let semaphore = DispatchSemaphore(value: 0)
-        let setChannel = SetChannel()
         var parameters: InfoObject = self.createInfoObject()
         parameters.channel = channel
 
@@ -627,8 +641,13 @@ extension CustomError: LocalizedError {
                 if let error = response.value?.error {
                     setChannel.error = error
                 }
+                if let message = response.value?.message {
+                    setChannel.message = message
+                }
             case let .failure(error):
-                print("\(self.TAG) Error set Channel", error )
+                print("\(self.TAG) Error set Channel", error)
+                setChannel.message = "Error set Channel \(error)"
+                setChannel.error = "fail_response"
             }
             semaphore.signal()
         }
@@ -636,12 +655,15 @@ extension CustomError: LocalizedError {
         return setChannel
     }
 
-    func getChannel() -> GetChannel? {
+    func getChannel() -> GetChannel {
+        let getChannel = GetChannel()
         if self.channelUrl == "" {
-            return nil
+            print("\(self.TAG) Channel URL is not set")
+            getChannel.message = "Channel URL is not set"
+            getChannel.error = "missing_config"
+            return getChannel
         }
         let semaphore = DispatchSemaphore(value: 0)
-        let getChannel = GetChannel()
         let parameters: InfoObject = self.createInfoObject()
         let request = AF.request(self.channelUrl, method: .put, parameters: parameters, encoder: JSONParameterEncoder.default)
 
@@ -662,6 +684,8 @@ extension CustomError: LocalizedError {
                 }
             case let .failure(error):
                 print("\(self.TAG) Error get Channel", error )
+                getChannel.message = "Error get Channel \(error)"
+                getChannel.error = "fail_response"
             }
             semaphore.signal()
         }

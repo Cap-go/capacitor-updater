@@ -38,10 +38,6 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 interface Callback {
-  void callback(JSONObject jsonObject);
-}
-
-interface CallbackChannel {
   void callback(JSObject jsoObject);
 }
 
@@ -58,7 +54,7 @@ public class CapacitorUpdater {
   private static final String bundleDirectory = "versions";
 
   public static final String TAG = "Capacitor-updater";
-  public static final String pluginVersion = "4.13.1";
+  public static final String pluginVersion = "4.12.8";
 
   public SharedPreferences.Editor editor;
   public SharedPreferences prefs;
@@ -508,130 +504,188 @@ public class CapacitorUpdater {
   }
 
   public void getLatest(final String updateUrl, final Callback callback) {
+    JSONObject json = null;
     try {
-      JSONObject json = this.createInfoObject();
-
-      Log.i(CapacitorUpdater.TAG, "Auto-update parameters: " + json);
-      // Building a request
-      JsonObjectRequest request = new JsonObjectRequest(
-        Request.Method.POST,
-        updateUrl,
-        json,
-        new Response.Listener<JSONObject>() {
-          @Override
-          public void onResponse(JSONObject response) {
-            callback.callback(response);
-          }
-        },
-        new Response.ErrorListener() {
-          @Override
-          public void onErrorResponse(VolleyError error) {
-            Log.e(TAG, "Error getting Latest" + error.toString());
-          }
-        }
-      );
-      this.requestQueue.add(request);
-    } catch (JSONException ex) {
-      // Catch if something went wrong with the params
-      Log.e(TAG, "Error getLatest JSONException", ex);
+      json = this.createInfoObject();
+    } catch (JSONException e) {
+      Log.e(TAG, "Error getLatest JSONException", e);
+      e.printStackTrace();
+      final JSObject retError = new JSObject();
+      retError.put("message", "Cannot get info: " + e.toString());
+      retError.put("error", "json_error");
+      callback.callback(retError);
+      return;
     }
+
+    Log.i(CapacitorUpdater.TAG, "Auto-update parameters: " + json);
+    // Building a request
+    JsonObjectRequest request = new JsonObjectRequest(
+      Request.Method.POST,
+      updateUrl,
+      json,
+      new Response.Listener<JSONObject>() {
+        @Override
+        public void onResponse(JSONObject res) {
+          final JSObject ret = new JSObject();
+          Iterator<String> keys = res.keys();
+          while (keys.hasNext()) {
+            String key = keys.next();
+            if (res.has(key)) {
+              try {
+                ret.put(key, res.get(key));
+              } catch (JSONException e) {
+                e.printStackTrace();
+                final JSObject retError = new JSObject();
+                retError.put("message", "Cannot set info: " + e.toString());
+                retError.put("error", "response_error");
+                callback.callback(retError);
+              }
+            }
+          }
+          callback.callback(ret);
+        }
+      },
+      new Response.ErrorListener() {
+        @Override
+        public void onErrorResponse(VolleyError error) {
+          Log.e(TAG, "Error getting Latest" + error.toString());
+          final JSObject retError = new JSObject();
+          retError.put("message", "Cannot set info: " + error.toString());
+          retError.put("error", "response_error");
+          callback.callback(retError);
+        }
+      }
+    );
+    this.requestQueue.add(request);
   }
 
-  public void setChannel(final String channel, final CallbackChannel callback) {
+  public void setChannel(final String channel, final Callback callback) {
     String channelUrl = this.channelUrl;
     if (
       channelUrl == null || "".equals(channelUrl) || channelUrl.length() == 0
     ) {
+      Log.e(TAG, "Channel URL is not set");
+      final JSObject retError = new JSObject();
+      retError.put("message", "channelUrl missing");
+      retError.put("error", "missing_config");
+      callback.callback(retError);
       return;
     }
+    JSONObject json = null;
     try {
-      JSONObject json = this.createInfoObject();
+      json = this.createInfoObject();
       json.put("channel", channel);
-
-      // Building a request
-      JsonObjectRequest request = new JsonObjectRequest(
-        Request.Method.POST,
-        channelUrl,
-        json,
-        new Response.Listener<JSONObject>() {
-          @Override
-          public void onResponse(JSONObject res) {
-            final JSObject ret = new JSObject();
-            Iterator<String> keys = res.keys();
-            while (keys.hasNext()) {
-              String key = keys.next();
-              if (res.has(key)) {
-                try {
-                  ret.put(key, res.get(key));
-                } catch (JSONException e) {
-                  e.printStackTrace();
-                }
+    } catch (JSONException e) {
+      Log.e(TAG, "Error setChannel JSONException", e);
+      e.printStackTrace();
+      final JSObject retError = new JSObject();
+      retError.put("message", "Cannot get info: " + e.toString());
+      retError.put("error", "json_error");
+      callback.callback(retError);
+      return;
+    }
+    // Building a request
+    JsonObjectRequest request = new JsonObjectRequest(
+      Request.Method.POST,
+      channelUrl,
+      json,
+      new Response.Listener<JSONObject>() {
+        @Override
+        public void onResponse(JSONObject res) {
+          final JSObject ret = new JSObject();
+          Iterator<String> keys = res.keys();
+          while (keys.hasNext()) {
+            String key = keys.next();
+            if (res.has(key)) {
+              try {
+                ret.put(key, res.get(key));
+              } catch (JSONException e) {
+                e.printStackTrace();
+                final JSObject retError = new JSObject();
+                retError.put("message", "Cannot set channel: " + e.toString());
+                retError.put("error", "response_error");
+                callback.callback(ret);
               }
             }
-            Log.i(TAG, "Channel set to \"" + channel);
-            callback.callback(ret);
           }
-        },
-        new Response.ErrorListener() {
-          @Override
-          public void onErrorResponse(VolleyError error) {
-            Log.e(TAG, "Error set channel: " + error.toString());
-          }
+          Log.i(TAG, "Channel set to \"" + channel);
+          callback.callback(ret);
         }
-      );
-      this.requestQueue.add(request);
-    } catch (JSONException ex) {
-      // Catch if something went wrong with the params
-      Log.e(TAG, "Error setChannel JSONException", ex);
-    }
+      },
+      new Response.ErrorListener() {
+        @Override
+        public void onErrorResponse(VolleyError error) {
+          Log.e(TAG, "Error set channel: " + error.toString());
+          final JSObject retError = new JSObject();
+          retError.put("message", "Cannot set channel: " + error.toString());
+          retError.put("error", "response_error");
+          callback.callback(retError);
+        }
+      }
+    );
+    this.requestQueue.add(request);
   }
 
-  public void getChannel(final CallbackChannel callback) {
+  public void getChannel(final Callback callback) {
     String channelUrl = this.channelUrl;
     if (
       channelUrl == null || "".equals(channelUrl) || channelUrl.length() == 0
     ) {
+      Log.e(TAG, "Channel URL is not set");
+      final JSObject retError = new JSObject();
+      retError.put("message", "Channel URL is not set");
+      retError.put("error", "missing_config");
+      callback.callback(retError);
       return;
     }
+    JSONObject json = null;
     try {
-      JSONObject json = this.createInfoObject();
-
-      // Building a request
-      JsonObjectRequest request = new JsonObjectRequest(
-        Request.Method.PUT,
-        channelUrl,
-        json,
-        new Response.Listener<JSONObject>() {
-          @Override
-          public void onResponse(JSONObject res) {
-            final JSObject ret = new JSObject();
-            Iterator<String> keys = res.keys();
-            while (keys.hasNext()) {
-              String key = keys.next();
-              if (res.has(key)) {
-                try {
-                  ret.put(key, res.get(key));
-                } catch (JSONException e) {
-                  e.printStackTrace();
-                }
+      json = this.createInfoObject();
+    } catch (JSONException e) {
+      Log.e(TAG, "Error getChannel JSONException", e);
+      e.printStackTrace();
+      final JSObject retError = new JSObject();
+      retError.put("message", "Cannot get info: " + e.toString());
+      retError.put("error", "json_error");
+      callback.callback(retError);
+      return;
+    }
+    // Building a request
+    JsonObjectRequest request = new JsonObjectRequest(
+      Request.Method.PUT,
+      channelUrl,
+      json,
+      new Response.Listener<JSONObject>() {
+        @Override
+        public void onResponse(JSONObject res) {
+          final JSObject ret = new JSObject();
+          Iterator<String> keys = res.keys();
+          while (keys.hasNext()) {
+            String key = keys.next();
+            if (res.has(key)) {
+              try {
+                ret.put(key, res.get(key));
+              } catch (JSONException e) {
+                e.printStackTrace();
               }
             }
-            Log.i(TAG, "Channel get to \"" + ret);
-            callback.callback(ret);
           }
-        },
-        new Response.ErrorListener() {
-          @Override
-          public void onErrorResponse(VolleyError error) {
-            Log.e(TAG, "Error get channel: " + error.toString());
-          }
+          Log.i(TAG, "Channel get to \"" + ret);
+          callback.callback(ret);
         }
-      );
-      this.requestQueue.add(request);
-    } catch (JSONException ex) {
-      // Catch if something went wrong with the params
-      Log.e(TAG, "Error getChannel JSONException", ex);
-    }
+      },
+      new Response.ErrorListener() {
+        @Override
+        public void onErrorResponse(VolleyError error) {
+          Log.e(TAG, "Error get channel: " + error.toString());
+          final JSObject retError = new JSObject();
+          retError.put("message", "Error get channel: " + error.toString());
+          retError.put("error", "response_error");
+          callback.callback(retError);
+        }
+      }
+    );
+    this.requestQueue.add(request);
   }
 
   public void sendStats(final String action, final String versionName) {
@@ -639,36 +693,37 @@ public class CapacitorUpdater {
     if (statsUrl == null || "".equals(statsUrl) || statsUrl.length() == 0) {
       return;
     }
+    JSONObject json = null;
     try {
-      JSONObject json = this.createInfoObject();
+      json = this.createInfoObject();
       json.put("action", action);
-
-      // Building a request
-      JsonObjectRequest request = new JsonObjectRequest(
-        Request.Method.POST,
-        statsUrl,
-        json,
-        new Response.Listener<JSONObject>() {
-          @Override
-          public void onResponse(JSONObject response) {
-            Log.i(
-              TAG,
-              "Stats send for \"" + action + "\", version " + versionName
-            );
-          }
-        },
-        new Response.ErrorListener() {
-          @Override
-          public void onErrorResponse(VolleyError error) {
-            Log.e(TAG, "Error sending stats: " + error.toString());
-          }
-        }
-      );
-      this.requestQueue.add(request);
-    } catch (JSONException ex) {
-      // Catch if something went wrong with the params
-      Log.e(TAG, "Error sendStats JSONException", ex);
+    } catch (JSONException e) {
+      Log.e(TAG, "Error sendStats JSONException", e);
+      e.printStackTrace();
+      return;
     }
+    // Building a request
+    JsonObjectRequest request = new JsonObjectRequest(
+      Request.Method.POST,
+      statsUrl,
+      json,
+      new Response.Listener<JSONObject>() {
+        @Override
+        public void onResponse(JSONObject response) {
+          Log.i(
+            TAG,
+            "Stats send for \"" + action + "\", version " + versionName
+          );
+        }
+      },
+      new Response.ErrorListener() {
+        @Override
+        public void onErrorResponse(VolleyError error) {
+          Log.e(TAG, "Error sending stats: " + error.toString());
+        }
+      }
+    );
+    this.requestQueue.add(request);
   }
 
   public BundleInfo getBundleInfo(final String id) {

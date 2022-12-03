@@ -138,6 +138,7 @@ public class CapacitorUpdaterPlugin
     final Application application = (Application) this.getContext()
       .getApplicationContext();
     application.registerActivityLifecycleCallbacks(this);
+    this.onActivityStarted(this.getActivity());
     this._checkCancelDelay(true);
   }
 
@@ -270,7 +271,11 @@ public class CapacitorUpdaterPlugin
             CapacitorUpdaterPlugin.this.implementation.setChannel(
                 channel,
                 res -> {
-                  call.resolve(res);
+                  if (res.has("error")) {
+                    call.reject(res.getString("error"));
+                  } else {
+                    call.resolve(res);
+                  }
                 }
               );
           }
@@ -292,7 +297,11 @@ public class CapacitorUpdaterPlugin
           @Override
           public void run() {
             CapacitorUpdaterPlugin.this.implementation.getChannel(res -> {
-                call.resolve(res);
+                if (res.has("error")) {
+                  call.reject(res.getString("error"));
+                } else {
+                  call.resolve(res);
+                }
               });
           }
         }
@@ -497,11 +506,12 @@ public class CapacitorUpdaterPlugin
             CapacitorUpdaterPlugin.this.implementation.getLatest(
                 CapacitorUpdaterPlugin.this.updateUrl,
                 res -> {
-                  Log.i(
-                    CapacitorUpdater.TAG,
-                    "Check for update via: " +
-                    CapacitorUpdaterPlugin.this.updateUrl
-                  );
+                  if (res.has("error")) {
+                    call.reject(res.getString("error"));
+                    return;
+                  } else {
+                    call.resolve(res);
+                  }
                   final JSObject ret = new JSObject();
                   Iterator<String> keys = res.keys();
                   while (keys.hasNext()) {

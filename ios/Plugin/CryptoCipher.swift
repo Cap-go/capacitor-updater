@@ -62,19 +62,19 @@ public struct AES128Key {
     public func decrypt(data: Data) -> Data? {
         let encryptedData = (data as NSData).bytes.bindMemory(to: UInt8.self, capacity: data.count)
         let encryptedDataLength = data.count
-        
+
         if let result = NSMutableData(length: encryptedDataLength) {
             let keyData = (self.aes128Key as NSData).bytes.bindMemory(to: UInt8.self, capacity: self.aes128Key.count)
             let keyLength = size_t(self.aes128Key.count)
             let ivData = (iv as NSData).bytes.bindMemory(to: UInt8.self, capacity: self.iv.count)
-            
+
             let decryptedData = UnsafeMutablePointer<UInt8>(result.mutableBytes.assumingMemoryBound(to: UInt8.self))
             let decryptedDataLength = size_t(result.length)
-            
+
             var decryptedLength: size_t = 0
-            
+
             let status = CCCrypt(CCOperation(kCCDecrypt), CryptoCipherConstants.aesAlgorithm, CryptoCipherConstants.aesOptions, keyData, keyLength, ivData, encryptedData, encryptedDataLength, decryptedData, decryptedDataLength, &decryptedLength)
-            
+
             if UInt32(status) == UInt32(kCCSuccess) {
                 result.length = Int(decryptedLength)
                 return result as Data
@@ -93,21 +93,21 @@ public struct AES128Key {
 public struct RSAKeyPair {
     private let privateKey: SecKey
     private let publicKey: SecKey
-    
+
     #if DEBUG
     public var __debug_privateKey: SecKey { self.privateKey }
     public var __debug_publicKey: SecKey { self.publicKey }
     #endif
-    
+
     fileprivate init(privateKey: SecKey, publicKey: SecKey) {
         self.privateKey = privateKey
         self.publicKey = publicKey
     }
-    
+
     public func extractPublicKey() -> RSAPublicKey {
         RSAPublicKey(publicKey: publicKey)
     }
-    
+
     ///
     /// Takes the data and uses the private key to decrypt it.
     /// Returns the decrypted data.
@@ -126,17 +126,16 @@ public struct RSAKeyPair {
     }
 }
 
-
 ///
 /// The RSA public key.
 ///
 public struct RSAPublicKey {
     private let publicKey: SecKey
-    
-#if DEBUG
+
+    #if DEBUG
     public var __debug_publicKey: SecKey { self.publicKey }
-#endif
-    
+    #endif
+
     fileprivate init(publicKey: SecKey) {
         self.publicKey = publicKey
     }
@@ -162,8 +161,8 @@ public struct RSAPublicKey {
     public func export() -> Data? {
         return publicKey.exportToData()
     }
-//
-    
+    //
+
     ///
     /// Allows you to load an RSA public key (i.e. one downloaded from the net).
     ///
@@ -180,11 +179,11 @@ public struct RSAPublicKey {
 ///
 public struct RSAPrivateKey {
     private let privateKey: SecKey
-    
+
     #if DEBUG
     public var __debug_privateKey: SecKey { self.privateKey }
     #endif
-    
+
     fileprivate init(privateKey: SecKey) {
         self.privateKey = privateKey
     }
@@ -204,26 +203,24 @@ public struct RSAPrivateKey {
             return nil
         }
     }
-    
-    
+
     ///
     /// Allows you to export the RSA public key to a format (so you can send over the net).
     ///
     public func export() -> Data? {
         return privateKey.exportToData()
     }
-    
-    
+
     ///
     /// Allows you to load an RSA public key (i.e. one downloaded from the net).
     ///
     public static func load(rsaPrivateKey: String) -> RSAPrivateKey? {
-            var privKey = rsaPrivateKey
-            privKey = privKey.replacingOccurrences(of: "-----BEGIN RSA PRIVATE KEY-----", with: "")
-            privKey = privKey.replacingOccurrences(of: "-----END RSA PRIVATE KEY-----", with: "")
-            privKey = privKey.replacingOccurrences(of: "\\n+", with: "", options: .regularExpression)
-            privKey = privKey.trimmingCharacters(in: .whitespacesAndNewlines)
-            let rsaPrivateKeyData = Data(base64Encoded: privKey)!
+        var privKey = rsaPrivateKey
+        privKey = privKey.replacingOccurrences(of: "-----BEGIN RSA PRIVATE KEY-----", with: "")
+        privKey = privKey.replacingOccurrences(of: "-----END RSA PRIVATE KEY-----", with: "")
+        privKey = privKey.replacingOccurrences(of: "\\n+", with: "", options: .regularExpression)
+        privKey = privKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rsaPrivateKeyData = Data(base64Encoded: privKey)!
         if let privateKey: SecKey = .loadPrivateFromData(rsaPrivateKeyData) {
             return RSAPrivateKey(privateKey: privateKey)
         } else {
@@ -246,18 +243,18 @@ fileprivate extension SecKey {
         }
     }
     static func loadPublicFromData(_ data: Data) -> SecKey? {
-        let keyDict: [NSObject : NSObject] = [
-           kSecAttrKeyType: kSecAttrKeyTypeRSA,
-           kSecAttrKeyClass: kSecAttrKeyClassPublic,
-           kSecAttrKeySizeInBits: CryptoCipherConstants.rsaKeySizeInBits
+        let keyDict: [NSObject: NSObject] = [
+            kSecAttrKeyType: kSecAttrKeyTypeRSA,
+            kSecAttrKeyClass: kSecAttrKeyClassPublic,
+            kSecAttrKeySizeInBits: CryptoCipherConstants.rsaKeySizeInBits
         ]
         return SecKeyCreateWithData(data as CFData, keyDict as CFDictionary, nil)
     }
     static func loadPrivateFromData(_ data: Data) -> SecKey? {
-        let keyDict: [NSObject : NSObject] = [
-           kSecAttrKeyType: kSecAttrKeyTypeRSA,
-           kSecAttrKeyClass: kSecAttrKeyClassPrivate,
-           kSecAttrKeySizeInBits: CryptoCipherConstants.rsaKeySizeInBits
+        let keyDict: [NSObject: NSObject] = [
+            kSecAttrKeyType: kSecAttrKeyTypeRSA,
+            kSecAttrKeyClass: kSecAttrKeyClassPrivate,
+            kSecAttrKeySizeInBits: CryptoCipherConstants.rsaKeySizeInBits
         ]
         return SecKeyCreateWithData(data as CFData, keyDict as CFDictionary, nil)
     }

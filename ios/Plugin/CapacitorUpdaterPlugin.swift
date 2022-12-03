@@ -209,7 +209,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     @objc func getLatest(_ call: CAPPluginCall) {
         DispatchQueue.global(qos: .background).async {
             let res = self.implementation.getLatest(url: URL(string: self.updateUrl)!)
-            call.resolve(res.toDict())
+            if res.error != nil {
+                call.reject( res.error!)
+            } else {
+                call.resolve(res.toDict())
+            }
         }
     }
 
@@ -220,21 +224,23 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             return
         }
         DispatchQueue.global(qos: .background).async {
-            guard let res = self.implementation.setChannel(channel: channel) else {
-                call.reject("Cannot setChannel")
-                return
+            let res = self.implementation.setChannel(channel: channel)
+            if res.error != "" {
+                call.reject(res.error)
+            } else {
+                call.resolve(res.toDict())
             }
-            call.resolve(res.toDict())
         }
     }
 
     @objc func getChannel(_ call: CAPPluginCall) {
         DispatchQueue.global(qos: .background).async {
-            guard let res = self.implementation.getChannel() else {
-                call.reject("Cannot getChannel")
-                return
+            let res = self.implementation.getChannel()
+            if res.error != "" {
+                call.reject(res.error)
+            } else {
+                call.resolve(res.toDict())
             }
-            call.resolve(res.toDict())
         }
     }
     @objc func setCustomId(_ call: CAPPluginCall) {
