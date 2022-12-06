@@ -33,7 +33,7 @@ private func delayUntilNextValue(value: String) -> DelayUntilNext {
     }
 
     public required init(from decoder: Decoder) throws {
-        let values = try decoder.container(keyedBy: CodingKeys.self)
+        let values: KeyedDecodingContainer<DelayCondition.CodingKeys> = try decoder.container(keyedBy: CodingKeys.self)
         kind = try values.decode(DelayUntilNext.self, forKey: .kind)
         value = try values.decode(String.self, forKey: .value)
     }

@@ -9,21 +9,21 @@ import Version
 @objc(CapacitorUpdaterPlugin)
 public class CapacitorUpdaterPlugin: CAPPlugin {
     private var implementation = CapacitorUpdater()
-    static let updateUrlDefault = "https://api.capgo.app/updates"
-    static let statsUrlDefault = "https://api.capgo.app/stats"
-    static let channelUrlDefault = "https://api.capgo.app/channel_self"
-    let DELAY_CONDITION_PREFERENCES = ""
-    private var updateUrl = ""
-    private var statsUrl = ""
+    static let updateUrlDefault: String = "https://api.capgo.app/updates"
+    static let statsUrlDefault: String = "https://api.capgo.app/stats"
+    static let channelUrlDefault: String = "https://api.capgo.app/channel_self"
+    let DELAY_CONDITION_PREFERENCES: String = ""
+    private var updateUrl: String = ""
+    private var statsUrl: String = ""
     private var currentVersionNative: Version = "0.0.0"
-    private var autoUpdate = false
-    private var appReadyTimeout = 10000
+    private var autoUpdate: Bool = false
+    private var appReadyTimeout: Int = 10000
     private var appReadyCheck: DispatchWorkItem?
-    private var resetWhenUpdate = true
-    private var autoDeleteFailed = false
-    private var autoDeletePrevious = false
+    private var resetWhenUpdate: Bool = true
+    private var autoDeleteFailed: Bool = false
+    private var autoDeletePrevious: Bool = false
     private var backgroundWork: DispatchWorkItem?
-    private var taskRunning = false
+    private var taskRunning: Bool = false
 
     override public func load() {
         print("\(self.implementation.TAG) init for device \(self.implementation.deviceID)")
@@ -50,7 +50,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         if resetWhenUpdate {
             self.cleanupObsoleteVersions()
         }
-        let nc = NotificationCenter.default
+        let nc: NotificationCenter = NotificationCenter.default
         nc.addObserver(self, selector: #selector(appMovedToBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
         nc.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
         nc.addObserver(self, selector: #selector(appKilled), name: UIApplication.willTerminateNotification, object: nil)
@@ -347,7 +347,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     private func _checkCancelDelay(killed: Bool) {
-        let delayUpdatePreferences = UserDefaults.standard.string(forKey: DELAY_CONDITION_PREFERENCES) ?? "[]"
+        let delayUpdatePreferences: String = UserDefaults.standard.string(forKey: DELAY_CONDITION_PREFERENCES) ?? "[]"
         let delayConditionList: [DelayCondition] = fromJsonArr(json: delayUpdatePreferences).map { obj -> DelayCondition in
             let kind: String = obj.value(forKey: "kind") as! String
             let value: String? = obj.value(forKey: "value") as? String
@@ -473,7 +473,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         if self._isAutoUpdateEnabled() {
             DispatchQueue.global(qos: .background).async {
                 print("\(self.implementation.TAG) Check for update via \(self.updateUrl)")
-                let url = URL(string: self.updateUrl)!
+                let url: URL = URL(string: self.updateUrl)!
                 let res = self.implementation.getLatest(url: url)
                 let current = self.implementation.getCurrentBundle()
 
@@ -550,7 +550,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
     @objc func appMovedToBackground() {
         print("\(self.implementation.TAG) Check for pending update")
-        let delayUpdatePreferences = UserDefaults.standard.string(forKey: DELAY_CONDITION_PREFERENCES) ?? "[]"
+        let delayUpdatePreferences: String = UserDefaults.standard.string(forKey: DELAY_CONDITION_PREFERENCES) ?? "[]"
 
         let delayConditionList: [DelayCondition] = fromJsonArr(json: delayUpdatePreferences).map { obj -> DelayCondition in
             let kind: String = obj.value(forKey: "kind") as! String
@@ -587,7 +587,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     private func installNext() {
-        let delayUpdatePreferences = UserDefaults.standard.string(forKey: DELAY_CONDITION_PREFERENCES) ?? "[]"
+        let delayUpdatePreferences: String = UserDefaults.standard.string(forKey: DELAY_CONDITION_PREFERENCES) ?? "[]"
         let delayConditionList: [DelayCondition]? = fromJsonArr(json: delayUpdatePreferences).map { obj -> DelayCondition in
             let kind: String = obj.value(forKey: "kind") as! String
             let value: String? = obj.value(forKey: "value") as? String
@@ -612,15 +612,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc private func toJson(object: Any) -> String {
-        guard let data = try? JSONSerialization.data(withJSONObject: object, options: []) else {
+        guard let data: Data = try? JSONSerialization.data(withJSONObject: object, options: []) else {
             return ""
         }
         return String(data: data, encoding: String.Encoding.utf8) ?? ""
     }
 
     @objc private func fromJsonArr(json: String) -> [NSObject] {
-        let jsonData = json.data(using: .utf8)!
-        let object = try? JSONSerialization.jsonObject(
+        let jsonData: Data = json.data(using: .utf8)!
+        let object: [NSObject]? = try? JSONSerialization.jsonObject(
             with: jsonData,
             options: .mutableContainers
         ) as? [NSObject]

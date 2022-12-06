@@ -28,10 +28,10 @@ public class SetChannel: NSObject {
 }
 extension SetChannel {
     func toDict() -> [String: Any] {
-        var dict = [String: Any]()
-        let otherSelf = Mirror(reflecting: self)
-        for child in otherSelf.children {
-            if let key = child.label {
+        var dict: [String : Any] = [String: Any]()
+        let otherSelf: Mirror = Mirror(reflecting: self)
+        for child: Mirror.Child in otherSelf.children {
+            if let key: String = child.label {
                 dict[key] = child.value
             }
         }
@@ -54,10 +54,10 @@ public class GetChannel: NSObject {
 }
 extension GetChannel {
     func toDict() -> [String: Any] {
-        var dict = [String: Any]()
-        let otherSelf = Mirror(reflecting: self)
-        for child in otherSelf.children {
-            if let key = child.label {
+        var dict: [String : Any] = [String: Any]()
+        let otherSelf: Mirror = Mirror(reflecting: self)
+        for child: Mirror.Child in otherSelf.children {
+            if let key: String = child.label {
                 dict[key] = child.value
             }
         }
@@ -100,10 +100,10 @@ public class AppVersion: NSObject {
 
 extension AppVersion {
     func toDict() -> [String: Any] {
-        var dict = [String: Any]()
-        let otherSelf = Mirror(reflecting: self)
-        for child in otherSelf.children {
-            if let key = child.label {
+        var dict: [String : Any] = [String: Any]()
+        let otherSelf: Mirror = Mirror(reflecting: self)
+        for child: Mirror.Child in otherSelf.children {
+            if let key: String = child.label {
                 dict[key] = child.value
             }
         }
@@ -132,7 +132,7 @@ extension ISO8601DateFormatter {
     }
 }
 extension Formatter {
-    static let iso8601withFractionalSeconds = ISO8601DateFormatter([.withInternetDateTime, .withFractionalSeconds])
+    static let iso8601withFractionalSeconds: ISO8601DateFormatter = ISO8601DateFormatter([.withInternetDateTime, .withFractionalSeconds])
 }
 extension Date {
     var iso8601withFractionalSeconds: String { return Formatter.iso8601withFractionalSeconds.string(from: self) }
@@ -213,27 +213,27 @@ extension CustomError: LocalizedError {
 
 @objc public class CapacitorUpdater: NSObject {
 
-    private let versionName = Bundle.main.versionName ?? ""
-    private let versionCode = Bundle.main.versionCode ?? ""
+    private let versionName: String = Bundle.main.versionName ?? ""
+    private let versionCode: String = Bundle.main.versionCode ?? ""
     private let versionOs = UIDevice.current.systemVersion
-    private let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-    private let libraryDir = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
-    private let bundleDirectoryHot = "versions"
-    private let DEFAULT_FOLDER = ""
-    private let bundleDirectory = "NoCloud/ionic_built_snapshots"
-    private let INFO_SUFFIX = "_info"
-    private let FALLBACK_VERSION = "pastVersion"
-    private let NEXT_VERSION = "nextVersion"
+    private let documentsDir: URL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+    private let libraryDir: URL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+    private let bundleDirectoryHot: String = "versions"
+    private let DEFAULT_FOLDER: String = ""
+    private let bundleDirectory: String = "NoCloud/ionic_built_snapshots"
+    private let INFO_SUFFIX: String = "_info"
+    private let FALLBACK_VERSION: String = "pastVersion"
+    private let NEXT_VERSION: String = "nextVersion"
 
-    public let TAG = "✨  Capacitor-updater:"
-    public let CAP_SERVER_PATH = "serverBasePath"
-    public var customId = ""
-    public let pluginVersion = "4.13.2"
-    public var statsUrl = ""
-    public var channelUrl = ""
-    public var appId = ""
+    public let TAG: String = "✨  Capacitor-updater:"
+    public let CAP_SERVER_PATH: String = "serverBasePath"
+    public var customId: String = ""
+    public let pluginVersion: String = "4.13.2"
+    public var statsUrl: String = ""
+    public var channelUrl: String = ""
+    public var appId: String = ""
     public var deviceID = UIDevice.current.identifierForVendor?.uuidString ?? ""
-    public var privateKey = ""
+    public var privateKey: String = ""
 
     public var notifyDownload: (String, Int) -> Void = { _, _  in }
 
@@ -242,7 +242,7 @@ extension CustomError: LocalizedError {
     }
 
     private func randomString(length: Int) -> String {
-        let letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+        let letters: String = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
         return String((0..<length).map { _ in letters.randomElement()! })
     }
 
@@ -263,7 +263,7 @@ extension CustomError: LocalizedError {
         if isEmulator() {
             return false
         } else {
-            guard let url = Bundle.main.appStoreReceiptURL else {
+            guard let url: URL = Bundle.main.appStoreReceiptURL else {
                 return false
             }
             guard url.lastPathComponent == "sandboxReceipt" else {
@@ -305,9 +305,9 @@ extension CustomError: LocalizedError {
     }
 
     private func unflatFolder(source: URL, dest: URL) throws -> Bool {
-        let index = source.appendingPathComponent("index.html")
+        let index: URL = source.appendingPathComponent("index.html")
         do {
-            let files = try FileManager.default.contentsOfDirectory(atPath: source.path)
+            let files: [String] = try FileManager.default.contentsOfDirectory(atPath: source.path)
             if files.count == 1 && source.appendingPathComponent(files[0]).isDirectory && !FileManager.default.fileExists(atPath: index.path) {
                 try FileManager.default.moveItem(at: source.appendingPathComponent(files[0]), to: dest)
                 return true
@@ -323,8 +323,8 @@ extension CustomError: LocalizedError {
 
     private func getChecksum(filePath: URL) -> String {
         do {
-            let fileData = try Data.init(contentsOf: filePath)
-            let checksum = fileData.withUnsafeBytes { crc32(0, $0.bindMemory(to: Bytef.self).baseAddress, uInt(fileData.count)) }
+            let fileData: Data = try Data.init(contentsOf: filePath)
+            let checksum: uLong = fileData.withUnsafeBytes { crc32(0, $0.bindMemory(to: Bytef.self).baseAddress, uInt(fileData.count)) }
             return String(format: "%08X", checksum).lowercased()
         } catch {
             print("\(self.TAG) Cannot get checksum: \(filePath.path)", error)
@@ -343,12 +343,12 @@ extension CustomError: LocalizedError {
                 return
             }
 
-            let sessionKeyArray = sessionKey.components(separatedBy: ":")
-            let ivData = Data(base64Encoded: sessionKeyArray[0])!
-            let sessionKeyDataEncrypted = Data(base64Encoded: sessionKeyArray[1])!
+            let sessionKeyArray: [String] = sessionKey.components(separatedBy: ":")
+            let ivData: Data = Data(base64Encoded: sessionKeyArray[0])!
+            let sessionKeyDataEncrypted: Data = Data(base64Encoded: sessionKeyArray[1])!
             let sessionKeyDataDecrypted: Data = rsaPrivateKey.decrypt(data: sessionKeyDataEncrypted)!
             let aesPrivateKey: AES128Key = AES128Key(iv: ivData, aes128Key: sessionKeyDataDecrypted)
-            let encryptedData = try Data(contentsOf: filePath)
+            let encryptedData: Data = try Data(contentsOf: filePath)
             let decryptedData: Data = aesPrivateKey.decrypt(data: encryptedData)!
 
             try decryptedData.write(to: filePath)
@@ -360,8 +360,8 @@ extension CustomError: LocalizedError {
 
     private func saveDownloaded(sourceZip: URL, id: String, base: URL) throws {
         try prepareFolder(source: base)
-        let destHot = base.appendingPathComponent(id)
-        let destUnZip = documentsDir.appendingPathComponent(randomString(length: 10))
+        let destHot: URL = base.appendingPathComponent(id)
+        let destUnZip: URL = documentsDir.appendingPathComponent(randomString(length: 10))
         if !SSZipArchive.unzipFile(atPath: sourceZip.path, toDestination: destUnZip.path) {
             throw CustomError.cannotUnzip
         }
@@ -389,8 +389,8 @@ extension CustomError: LocalizedError {
     }
 
     public func getLatest(url: URL) -> AppVersion {
-        let semaphore = DispatchSemaphore(value: 0)
-        let latest = AppVersion()
+        let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
+        let latest: AppVersion = AppVersion()
         let parameters: InfoObject = self.createInfoObject()
         print("\(self.TAG) Auto-update parameters: \(parameters)")
         let request = AF.request(url, method: .post, parameters: parameters, encoder: JSONParameterEncoder.default)
@@ -437,13 +437,13 @@ extension CustomError: LocalizedError {
     }
 
     public func download(url: URL, version: String, sessionKey: String) throws -> BundleInfo {
-        let semaphore = DispatchSemaphore(value: 0)
+        let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
         let id: String = self.randomString(length: 10)
-        var checksum = ""
+        var checksum: String = ""
         var mainError: NSError?
         let destination: DownloadRequest.Destination = { _, _ in
-            let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            let fileURL = documentsURL.appendingPathComponent(self.randomString(length: 10))
+            let documentsURL: URL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let fileURL: URL = documentsURL.appendingPathComponent(self.randomString(length: 10))
 
             return (fileURL, [.removePreviousFile, .createIntermediateDirectories])
         }
@@ -489,13 +489,13 @@ extension CustomError: LocalizedError {
     }
 
     public func list() -> [BundleInfo] {
-        let dest = documentsDir.appendingPathComponent(bundleDirectoryHot)
+        let dest: URL = documentsDir.appendingPathComponent(bundleDirectoryHot)
         do {
-            let files = try FileManager.default.contentsOfDirectory(atPath: dest.path)
+            let files: [String] = try FileManager.default.contentsOfDirectory(atPath: dest.path)
             var res: [BundleInfo] = []
             print("\(self.TAG) list File : \(dest.path)")
             if dest.exist {
-                for id in files {
+                for id: String in files {
                     res.append(self.getBundleInfo(id: id))
                 }
             }
@@ -512,8 +512,8 @@ extension CustomError: LocalizedError {
             print("\(self.TAG) Cannot delete \(id)")
             return false
         }
-        let destHot = documentsDir.appendingPathComponent(bundleDirectoryHot).appendingPathComponent(id)
-        let destPersist = libraryDir.appendingPathComponent(bundleDirectory).appendingPathComponent(id)
+        let destHot: URL = documentsDir.appendingPathComponent(bundleDirectoryHot).appendingPathComponent(id)
+        let destPersist: URL = libraryDir.appendingPathComponent(bundleDirectory).appendingPathComponent(id)
         do {
             try FileManager.default.removeItem(atPath: destHot.path)
         } catch {
@@ -548,10 +548,10 @@ extension CustomError: LocalizedError {
     }
 
     private func bundleExists(id: String) -> Bool {
-        let destHot = self.getPathHot(id: id)
-        let destHotPersist = self.getPathPersist(id: id)
-        let indexHot = destHot.appendingPathComponent("index.html")
-        let indexPersist = destHotPersist.appendingPathComponent("index.html")
+        let destHot: URL = self.getPathHot(id: id)
+        let destHotPersist: URL = self.getPathPersist(id: id)
+        let indexHot: URL = destHot.appendingPathComponent("index.html")
+        let indexPersist: URL = destHotPersist.appendingPathComponent("index.html")
         let url: URL = self.getBundleDirectory(id: id)
         let bundleIndo: BundleInfo = self.getBundleInfo(id: id)
         if url.isDirectory && destHotPersist.isDirectory && indexHot.exist && indexPersist.exist && !bundleIndo.isDeleted() {
@@ -619,14 +619,14 @@ extension CustomError: LocalizedError {
     }
 
     func setChannel(channel: String) -> SetChannel {
-        let setChannel = SetChannel()
+        let setChannel: SetChannel = SetChannel()
         if self.channelUrl == "" {
             print("\(self.TAG) Channel URL is not set")
             setChannel.message = "Channel URL is not set"
             setChannel.error = "missing_config"
             return setChannel
         }
-        let semaphore = DispatchSemaphore(value: 0)
+        let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
         var parameters: InfoObject = self.createInfoObject()
         parameters.channel = channel
 
@@ -656,14 +656,14 @@ extension CustomError: LocalizedError {
     }
 
     func getChannel() -> GetChannel {
-        let getChannel = GetChannel()
+        let getChannel: GetChannel = GetChannel()
         if self.channelUrl == "" {
             print("\(self.TAG) Channel URL is not set")
             getChannel.message = "Channel URL is not set"
             getChannel.error = "missing_config"
             return getChannel
         }
-        let semaphore = DispatchSemaphore(value: 0)
+        let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
         let parameters: InfoObject = self.createInfoObject()
         let request = AF.request(self.channelUrl, method: .put, parameters: parameters, encoder: JSONParameterEncoder.default)
 
@@ -786,13 +786,13 @@ extension CustomError: LocalizedError {
     }
 
     public func getCurrentBundleId() -> String {
-        guard let bundlePath = UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH) else {
+        guard let bundlePath: String = UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH) else {
             return BundleInfo.ID_BUILTIN
         }
         if bundlePath == "" {
             return BundleInfo.ID_BUILTIN
         }
-        let bundleID = bundlePath.components(separatedBy: "/").last ?? bundlePath
+        let bundleID: String = bundlePath.components(separatedBy: "/").last ?? bundlePath
         return bundleID
     }
 
@@ -816,7 +816,7 @@ extension CustomError: LocalizedError {
     }
 
     public func setNextBundle(next: String?) -> Bool {
-        guard let nextId = next else {
+        guard let nextId: String = next else {
             UserDefaults.standard.removeObject(forKey: self.NEXT_VERSION)
             UserDefaults.standard.synchronize()
             return false

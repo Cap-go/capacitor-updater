@@ -60,20 +60,20 @@ public struct AES128Key {
     /// Returns the decrypted data.
     ///
     public func decrypt(data: Data) -> Data? {
-        let encryptedData = (data as NSData).bytes.bindMemory(to: UInt8.self, capacity: data.count)
-        let encryptedDataLength = data.count
+        let encryptedData: UnsafePointer<UInt8> = (data as NSData).bytes.bindMemory(to: UInt8.self, capacity: data.count)
+        let encryptedDataLength: Int = data.count
 
-        if let result = NSMutableData(length: encryptedDataLength) {
-            let keyData = (self.aes128Key as NSData).bytes.bindMemory(to: UInt8.self, capacity: self.aes128Key.count)
-            let keyLength = size_t(self.aes128Key.count)
-            let ivData = (iv as NSData).bytes.bindMemory(to: UInt8.self, capacity: self.iv.count)
+        if let result: NSMutableData = NSMutableData(length: encryptedDataLength) {
+            let keyData: UnsafePointer<UInt8> = (self.aes128Key as NSData).bytes.bindMemory(to: UInt8.self, capacity: self.aes128Key.count)
+            let keyLength: size_t = size_t(self.aes128Key.count)
+            let ivData: UnsafePointer<UInt8> = (iv as NSData).bytes.bindMemory(to: UInt8.self, capacity: self.iv.count)
 
-            let decryptedData = UnsafeMutablePointer<UInt8>(result.mutableBytes.assumingMemoryBound(to: UInt8.self))
-            let decryptedDataLength = size_t(result.length)
+            let decryptedData: UnsafeMutablePointer<UInt8> = UnsafeMutablePointer<UInt8>(result.mutableBytes.assumingMemoryBound(to: UInt8.self))
+            let decryptedDataLength: size_t = size_t(result.length)
 
             var decryptedLength: size_t = 0
 
-            let status = CCCrypt(CCOperation(kCCDecrypt), CryptoCipherConstants.aesAlgorithm, CryptoCipherConstants.aesOptions, keyData, keyLength, ivData, encryptedData, encryptedDataLength, decryptedData, decryptedDataLength, &decryptedLength)
+            let status: CCCryptorStatus = CCCrypt(CCOperation(kCCDecrypt), CryptoCipherConstants.aesAlgorithm, CryptoCipherConstants.aesOptions, keyData, keyLength, ivData, encryptedData, encryptedDataLength, decryptedData, decryptedDataLength, &decryptedLength)
 
             if UInt32(status) == UInt32(kCCSuccess) {
                 result.length = Int(decryptedLength)
@@ -215,12 +215,12 @@ public struct RSAPrivateKey {
     /// Allows you to load an RSA public key (i.e. one downloaded from the net).
     ///
     public static func load(rsaPrivateKey: String) -> RSAPrivateKey? {
-        var privKey = rsaPrivateKey
+        var privKey: String = rsaPrivateKey
         privKey = privKey.replacingOccurrences(of: "-----BEGIN RSA PRIVATE KEY-----", with: "")
         privKey = privKey.replacingOccurrences(of: "-----END RSA PRIVATE KEY-----", with: "")
         privKey = privKey.replacingOccurrences(of: "\\n+", with: "", options: .regularExpression)
         privKey = privKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        let rsaPrivateKeyData = Data(base64Encoded: privKey)!
+        let rsaPrivateKeyData: Data = Data(base64Encoded: privKey)!
         if let privateKey: SecKey = .loadPrivateFromData(rsaPrivateKeyData) {
             return RSAPrivateKey(privateKey: privateKey)
         } else {
@@ -232,7 +232,7 @@ public struct RSAPrivateKey {
 fileprivate extension SecKey {
     func exportToData() -> Data? {
         var error: Unmanaged<CFError>?
-        if let cfData = SecKeyCopyExternalRepresentation(self, &error) {
+        if let cfData: CFData = SecKeyCopyExternalRepresentation(self, &error) {
             if error != nil {
                 return nil
             } else {
