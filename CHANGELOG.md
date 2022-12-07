@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.13.5](https://github.com/Cap-go/capacitor-updater/compare/4.13.4...4.13.5) (2022-12-06)
+
+
+### Bug Fixes
+
+* add missing type in var ([bfa1379](https://github.com/Cap-go/capacitor-updater/commit/bfa1379099a1baaaa16771a08ca989f0b3bf23f8))
+
 ### [4.13.4](https://github.com/Cap-go/capacitor-updater/compare/4.13.3...4.13.4) (2022-12-03)
 
 ### [4.13.3](https://github.com/Cap-go/capacitor-updater/compare/4.13.2...4.13.3) (2022-12-03)
