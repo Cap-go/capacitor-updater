@@ -9,21 +9,22 @@ import Version
 @objc(CapacitorUpdaterPlugin)
 public class CapacitorUpdaterPlugin: CAPPlugin {
     private var implementation = CapacitorUpdater()
-    static let updateUrlDefault: String = "https://api.capgo.app/updates"
-    static let statsUrlDefault: String = "https://api.capgo.app/stats"
-    static let channelUrlDefault: String = "https://api.capgo.app/channel_self"
-    let DELAY_CONDITION_PREFERENCES: String = ""
-    private var updateUrl: String = ""
-    private var statsUrl: String = ""
+    static let updateUrlDefault = "https://api.capgo.app/updates"
+    static let statsUrlDefault = "https://api.capgo.app/stats"
+    static let channelUrlDefault = "https://api.capgo.app/channel_self"
+    let DELAY_CONDITION_PREFERENCES = ""
+    private var updateUrl = ""
+    private var statsUrl = ""
+    private var backgroundTaskID: UIBackgroundTaskIdentifier = UIBackgroundTaskIdentifier.invalid
     private var currentVersionNative: Version = "0.0.0"
-    private var autoUpdate: Bool = false
-    private var appReadyTimeout: Int = 10000
+    private var autoUpdate = false
+    private var appReadyTimeout = 10000
     private var appReadyCheck: DispatchWorkItem?
-    private var resetWhenUpdate: Bool = true
-    private var autoDeleteFailed: Bool = false
-    private var autoDeletePrevious: Bool = false
+    private var resetWhenUpdate = true
+    private var autoDeleteFailed = false
+    private var autoDeletePrevious = false
     private var backgroundWork: DispatchWorkItem?
-    private var taskRunning: Bool = false
+    private var taskRunning = false
 
     override public func load() {
         print("\(self.implementation.TAG) init for device \(self.implementation.deviceID)")
@@ -50,7 +51,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         if resetWhenUpdate {
             self.cleanupObsoleteVersions()
         }
-        let nc: NotificationCenter = NotificationCenter.default
+        let nc = NotificationCenter.default
         nc.addObserver(self, selector: #selector(appMovedToBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
         nc.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
         nc.addObserver(self, selector: #selector(appKilled), name: UIApplication.willTerminateNotification, object: nil)
@@ -347,7 +348,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     private func _checkCancelDelay(killed: Bool) {
-        let delayUpdatePreferences: String = UserDefaults.standard.string(forKey: DELAY_CONDITION_PREFERENCES) ?? "[]"
+        let delayUpdatePreferences = UserDefaults.standard.string(forKey: DELAY_CONDITION_PREFERENCES) ?? "[]"
         let delayConditionList: [DelayCondition] = fromJsonArr(json: delayUpdatePreferences).map { obj -> DelayCondition in
             let kind: String = obj.value(forKey: "kind") as! String
             let value: String? = obj.value(forKey: "value") as? String
@@ -465,6 +466,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         self.appReadyCheck = nil
     }
 
+    func EndBackGroundTask() {
+        UIApplication.shared.endBackgroundTask(self.backgroundTaskID)
+        self.backgroundTaskID = UIBackgroundTaskIdentifier.invalid
+    }
     @objc func appMovedToForeground() {
         if backgroundWork != nil && taskRunning {
             backgroundWork!.cancel()
@@ -472,8 +477,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         }
         if self._isAutoUpdateEnabled() {
             DispatchQueue.global(qos: .background).async {
+                self.backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "Finish Download Tasks") {
+                    // End the task if time expires.
+                    UIApplication.shared.endBackgroundTask(self.backgroundTaskID)
+                    self.backgroundTaskID = UIBackgroundTaskIdentifier.invalid
+                }
                 print("\(self.implementation.TAG) Check for update via \(self.updateUrl)")
-                let url: URL = URL(string: self.updateUrl)!
+                let url = URL(string: self.updateUrl)!
                 let res = self.implementation.getLatest(url: url)
                 let current = self.implementation.getCurrentBundle()
 
@@ -483,12 +493,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                         self.notifyListeners("majorAvailable", data: ["version": res.version])
                     }
                     self.notifyListeners("noNeedUpdate", data: ["bundle": current.toJSON()])
+                    self.EndBackGroundTask()
                     return
                 }
                 let sessionKey = res.sessionKey ?? ""
                 guard let downloadUrl = URL(string: res.url) else {
                     print("\(self.implementation.TAG) Error no url or wrong format")
                     self.notifyListeners("noNeedUpdate", data: ["bundle": current.toJSON()])
+                    self.EndBackGroundTask()
                     return
                 }
                 let latestVersionName = res.version
@@ -498,12 +510,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                         if latest!.isErrorStatus() {
                             print("\(self.implementation.TAG) Latest version already exists, and is in error state. Aborting update.")
                             self.notifyListeners("noNeedUpdate", data: ["bundle": current.toJSON()])
+                            self.EndBackGroundTask()
                             return
                         }
                         if latest!.isDownloaded() {
                             print("\(self.implementation.TAG) Latest version already exists and download is NOT required. Update will occur next time app moves to background.")
                             self.notifyListeners("updateAvailable", data: ["bundle": current.toJSON()])
                             _ = self.implementation.setNextBundle(next: latest!.getId())
+                            self.EndBackGroundTask()
                             return
                         }
                         if latest!.isDeleted() {
@@ -527,6 +541,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                             if !resDel {
                                 print("\(self.implementation.TAG) Delete failed, id \(next.getId()) doesn't exist")
                             }
+                            self.EndBackGroundTask()
                             return
                         }
                         self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
@@ -544,13 +559,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 }
             }
         }
-
         self.checkAppReady()
+        self.EndBackGroundTask()
     }
 
     @objc func appMovedToBackground() {
         print("\(self.implementation.TAG) Check for pending update")
-        let delayUpdatePreferences: String = UserDefaults.standard.string(forKey: DELAY_CONDITION_PREFERENCES) ?? "[]"
+        let delayUpdatePreferences = UserDefaults.standard.string(forKey: DELAY_CONDITION_PREFERENCES) ?? "[]"
 
         let delayConditionList: [DelayCondition] = fromJsonArr(json: delayUpdatePreferences).map { obj -> DelayCondition in
             let kind: String = obj.value(forKey: "kind") as! String
@@ -587,7 +602,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     private func installNext() {
-        let delayUpdatePreferences: String = UserDefaults.standard.string(forKey: DELAY_CONDITION_PREFERENCES) ?? "[]"
+        let delayUpdatePreferences = UserDefaults.standard.string(forKey: DELAY_CONDITION_PREFERENCES) ?? "[]"
         let delayConditionList: [DelayCondition]? = fromJsonArr(json: delayUpdatePreferences).map { obj -> DelayCondition in
             let kind: String = obj.value(forKey: "kind") as! String
             let value: String? = obj.value(forKey: "value") as? String
@@ -612,15 +627,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc private func toJson(object: Any) -> String {
-        guard let data: Data = try? JSONSerialization.data(withJSONObject: object, options: []) else {
+        guard let data = try? JSONSerialization.data(withJSONObject: object, options: []) else {
             return ""
         }
         return String(data: data, encoding: String.Encoding.utf8) ?? ""
     }
 
     @objc private func fromJsonArr(json: String) -> [NSObject] {
-        let jsonData: Data = json.data(using: .utf8)!
-        let object: [NSObject]? = try? JSONSerialization.jsonObject(
+        let jsonData = json.data(using: .utf8)!
+        let object = try? JSONSerialization.jsonObject(
             with: jsonData,
             options: .mutableContainers
         ) as? [NSObject]

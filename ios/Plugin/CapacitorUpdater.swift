@@ -28,7 +28,7 @@ public class SetChannel: NSObject {
 }
 extension SetChannel {
     func toDict() -> [String: Any] {
-        var dict: [String : Any] = [String: Any]()
+        var dict: [String: Any] = [String: Any]()
         let otherSelf: Mirror = Mirror(reflecting: self)
         for child: Mirror.Child in otherSelf.children {
             if let key: String = child.label {
@@ -54,7 +54,7 @@ public class GetChannel: NSObject {
 }
 extension GetChannel {
     func toDict() -> [String: Any] {
-        var dict: [String : Any] = [String: Any]()
+        var dict: [String: Any] = [String: Any]()
         let otherSelf: Mirror = Mirror(reflecting: self)
         for child: Mirror.Child in otherSelf.children {
             if let key: String = child.label {
@@ -100,7 +100,7 @@ public class AppVersion: NSObject {
 
 extension AppVersion {
     func toDict() -> [String: Any] {
-        var dict: [String : Any] = [String: Any]()
+        var dict: [String: Any] = [String: Any]()
         let otherSelf: Mirror = Mirror(reflecting: self)
         for child: Mirror.Child in otherSelf.children {
             if let key: String = child.label {
