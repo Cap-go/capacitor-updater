@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.14.0](https://github.com/Cap-go/capacitor-updater/compare/4.13.8...4.14.0) (2022-12-10)
+
+
+### Features
+
+* add background download android ([0d4aac3](https://github.com/Cap-go/capacitor-updater/commit/0d4aac3d89a251b1f8905e7df591295c3bf7aa00))
+
 ### [4.13.8](https://github.com/Cap-go/capacitor-updater/compare/4.13.7...4.13.8) (2022-12-10)
 
 
