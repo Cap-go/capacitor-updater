@@ -1,9 +1,17 @@
 package ee.forgr.capacitor_updater;
 
+
+import android.app.Activity;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.os.Build;
+import android.os.Bundle;
 import android.util.Base64;
 import android.util.Log;
+
 import com.android.volley.BuildConfig;
 import com.android.volley.Request;
 import com.android.volley.RequestQueue;
@@ -54,7 +62,7 @@ public class CapacitorUpdater {
   private static final String bundleDirectory = "versions";
 
   public static final String TAG = "Capacitor-updater";
-  public static final String pluginVersion = "4.13.7";
+  public static final String pluginVersion = "4.13.4";
 
   public SharedPreferences.Editor editor;
   public SharedPreferences prefs;
@@ -62,6 +70,7 @@ public class CapacitorUpdater {
   public RequestQueue requestQueue;
 
   public File documentsDir;
+  public Activity activity;
   public String versionBuild = "";
   public String versionCode = "";
   public String versionOs = "";
@@ -122,6 +131,9 @@ public class CapacitorUpdater {
   }
 
   void notifyDownload(final String id, final int percent) {
+    return;
+  }
+  void notifyListeners(final String id, final JSObject res) {
     return;
   }
 
@@ -224,6 +236,124 @@ public class CapacitorUpdater {
     sourceFile.delete();
   }
 
+  public void onResume() {
+    this.activity.registerReceiver(receiver, new IntentFilter(
+            DownloadService.NOTIFICATION));
+  }
+
+  public void onPause() {
+    this.activity.unregisterReceiver(receiver);
+  }
+
+  private BroadcastReceiver receiver = new BroadcastReceiver() {
+    @Override
+    public void onReceive(Context context, Intent intent) {
+      String action = intent.getAction();
+      Bundle bundle = intent.getExtras();
+      if (bundle != null) {
+        if (action == DownloadService.PERCENTDOWNLOAD) {
+          String id = bundle.getString(DownloadService.ID);
+          int percent = bundle.getInt(DownloadService.PERCENT);
+          CapacitorUpdater.this.notifyDownload(id, percent);
+        } else if (action == DownloadService.NOTIFICATION) {
+          String id = bundle.getString(DownloadService.ID);
+          String dest = bundle.getString(DownloadService.FILEDEST);
+          String version = bundle.getString(DownloadService.VERSION);
+          String sessionKey = bundle.getString(DownloadService.SESSIONKEY);
+          String checksum = bundle.getString(DownloadService.CHECKSUM);
+          Log.i(CapacitorUpdater.TAG, "res " + id  + " " + dest + " " + version + " " + sessionKey + " " + checksum);
+          CapacitorUpdater.this.finishBackground(id, dest, version, sessionKey, checksum);
+        } else {
+          Log.i(TAG, "Unknown action " + action);
+        }
+      }
+    }
+  };
+
+  public void finishBackground(String id, String dest, String version, String sessionKey, String checksumRes) {
+    try {
+      final File downloaded = new File(this.documentsDir, dest);
+      this.decryptFile(downloaded, sessionKey);
+      final String checksum;
+        checksum = this.getChecksum(downloaded);
+
+      this.notifyDownload(id, 71);
+      final File unzipped = this.unzip(id, downloaded, this.randomString(10));
+      downloaded.delete();
+      this.notifyDownload(id, 91);
+      final String idName = bundleDirectory + "/" + id;
+      this.flattenAssets(unzipped, idName);
+      this.notifyDownload(id, 100);
+      this.saveBundleInfo(id, null);
+      BundleInfo info = new BundleInfo(
+              id,
+              version,
+              BundleStatus.PENDING,
+              new Date(System.currentTimeMillis()),
+              checksum
+      );
+      this.saveBundleInfo(id, info);
+      if (
+              !checksumRes.equals("") &&
+                      !checksumRes.equals(checksum)
+      ) {
+        Log.e(
+                CapacitorUpdater.TAG,
+                "Error checksum " +
+                        info.getChecksum() +
+                        " " +
+                        checksum
+        );
+        this.sendStats(
+                "checksum_fail",
+                getCurrentBundle().getVersionName()
+        );
+        final Boolean res =
+               this.delete(
+                        info.getId()
+                );
+        if (res) {
+          Log.i(
+                  CapacitorUpdater.TAG,
+                  "Failed bundle deleted: " +
+                          info.getVersionName()
+          );
+        }
+        return;
+      }
+      final JSObject ret = new JSObject();
+      ret.put("bundle", info.toJSON());
+      CapacitorUpdater.this.notifyListeners(
+              "updateAvailable",
+              ret
+      );
+      this.setNextBundle(
+              info.getId()
+      );
+    } catch (IOException e) {
+      e.printStackTrace();
+    }
+  }
+
+  private void downloadFileBackground(
+          final String id,
+          final String url,
+          final String version,
+          final String sessionKey,
+          final String checksum,
+          final String dest
+  ) {
+    Intent intent = new Intent(this.activity, DownloadService.class);
+    intent.putExtra(DownloadService.URL, url);
+    intent.putExtra(DownloadService.FILEDEST, dest);
+    intent.putExtra(DownloadService.DOCDIR, this.documentsDir.getAbsolutePath());
+    intent.putExtra(DownloadService.ID, id);
+    intent.putExtra(DownloadService.VERSION, version);
+    intent.putExtra(DownloadService.SESSIONKEY, sessionKey);
+    intent.putExtra(DownloadService.CHECKSUM, checksum);
+    this.activity.startService(intent);
+  }
+
   private File downloadFile(
     final String id,
     final String url,
@@ -323,6 +453,28 @@ public class CapacitorUpdater {
       e.printStackTrace();
       throw new IOException("GeneralSecurityException");
     }
+  }
+
+  public void downloadBackground(
+          final String url,
+          final String version,
+          final String sessionKey,
+          final String checksum
+  ) {
+    final String id = this.randomString(10);
+    this.saveBundleInfo(
+            id,
+            new BundleInfo(
+                    id,
+                    version,
+                    BundleStatus.DOWNLOADING,
+                    new Date(System.currentTimeMillis()),
+                    ""
+            )
+    );
+    this.notifyDownload(id, 0);
+    this.notifyDownload(id, 5);
+    this.downloadFileBackground(id, url, version, sessionKey, checksum, this.randomString(10));
   }
 
   public BundleInfo download(
