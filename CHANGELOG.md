@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.13.8](https://github.com/Cap-go/capacitor-updater/compare/4.13.7...4.13.8) (2022-12-10)
+
+
+### Bug Fixes
+
+* put bg download in separe method ([c85adf3](https://github.com/Cap-go/capacitor-updater/commit/c85adf3529184f2f45672d733fa5bf395ad50889))
+
 ### [4.13.7](https://github.com/Cap-go/capacitor-updater/compare/4.13.6...4.13.7) (2022-12-09)
 
 
