@@ -11,10 +11,12 @@ import android.os.Bundle;
 import android.util.Base64;
 import android.util.Log;
 import com.android.volley.BuildConfig;
+import com.android.volley.NetworkResponse;
 import com.android.volley.Request;
 import com.android.volley.RequestQueue;
 import com.android.volley.Response;
 import com.android.volley.VolleyError;
+import com.android.volley.toolbox.HttpHeaderParser;
 import com.android.volley.toolbox.JsonObjectRequest;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.plugin.WebView;
@@ -27,6 +29,7 @@ import java.io.FileOutputStream;
 import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UnsupportedEncodingException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.security.GeneralSecurityException;
@@ -672,6 +675,29 @@ public class CapacitorUpdater {
     return json;
   }
 
+  private JSObject createError(String message, VolleyError error) {
+    NetworkResponse response = error.networkResponse;
+    final JSObject retError = new JSObject();
+    retError.put("error", "response_error");
+    if (response != null) {
+      try {
+        String json = new String(
+          response.data,
+          HttpHeaderParser.parseCharset(response.headers)
+        );
+        Log.e(TAG, message + ": " + json);
+        retError.put("message", message + ": " + json);
+      } catch (UnsupportedEncodingException e) {
+        Log.e(TAG, message + ": " + e.toString());
+        retError.put("message", message + ": " + e.toString());
+      }
+    } else {
+      Log.e(TAG, message + ": " + error.toString());
+      retError.put("message", message + ": " + error.toString());
+    }
+    return retError;
+  }
+
   public void getLatest(final String updateUrl, final Callback callback) {
     JSONObject json = null;
     try {
@@ -717,11 +743,9 @@ public class CapacitorUpdater {
       new Response.ErrorListener() {
         @Override
         public void onErrorResponse(VolleyError error) {
-          Log.e(TAG, "Error getting Latest" + error.toString());
-          final JSObject retError = new JSObject();
-          retError.put("message", "Cannot set info: " + error.toString());
-          retError.put("error", "response_error");
-          callback.callback(retError);
+          callback.callback(
+            CapacitorUpdater.this.createError("Error get latest", error)
+          );
         }
       }
     );
@@ -784,11 +808,9 @@ public class CapacitorUpdater {
       new Response.ErrorListener() {
         @Override
         public void onErrorResponse(VolleyError error) {
-          Log.e(TAG, "Error set channel: " + error.toString());
-          final JSObject retError = new JSObject();
-          retError.put("message", "Cannot set channel: " + error.toString());
-          retError.put("error", "response_error");
-          callback.callback(retError);
+          callback.callback(
+            CapacitorUpdater.this.createError("Error set channel", error)
+          );
         }
       }
     );
@@ -846,11 +868,9 @@ public class CapacitorUpdater {
       new Response.ErrorListener() {
         @Override
         public void onErrorResponse(VolleyError error) {
-          Log.e(TAG, "Error get channel: " + error.toString());
-          final JSObject retError = new JSObject();
-          retError.put("message", "Error get channel: " + error.toString());
-          retError.put("error", "response_error");
-          callback.callback(retError);
+          callback.callback(
+            CapacitorUpdater.this.createError("Error get channel", error)
+          );
         }
       }
     );
@@ -888,7 +908,7 @@ public class CapacitorUpdater {
       new Response.ErrorListener() {
         @Override
         public void onErrorResponse(VolleyError error) {
-          Log.e(TAG, "Error sending stats: " + error.toString());
+          CapacitorUpdater.this.createError("Error send stats", error);
         }
       }
     );
