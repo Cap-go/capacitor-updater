@@ -33,15 +33,15 @@ jobs:
           git config --local user.name "github-actions[bot]"
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
       - name: Update Readme
-        run: npm run docgen
+        run: pnpm run docgen
       - name: Add readme
         run: git add README.md
       - name: Create bump and changelog main
         if: github.ref == 'refs/heads/main'
-        run: npx standard-version
+        run: pnpx standard-version
       - name: Create bump and changelog development
         if: github.ref != 'refs/heads/main'
-        run: npx standard-version --prerelease alpha
+        run: pnpx standard-version --prerelease alpha
       - name: Push to origin
         run: |
           CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
