@@ -404,7 +404,7 @@ Set Channel for this device
 ### addListener('download', ...)
 
 ```typescript
-addListener(eventName: 'download', listenerFunc: DownloadChangeListener) => Promise<PluginListenerHandle> & PluginListenerHandle
+addListener(eventName: "download", listenerFunc: DownloadChangeListener) => Promise<PluginListenerHandle> & PluginListenerHandle
 ```
 
 Listen for download event in the App, let you know when the download is started, loading and finished
@@ -424,7 +424,7 @@ Listen for download event in the App, let you know when the download is started,
 ### addListener('noNeedUpdate', ...)
 
 ```typescript
-addListener(eventName: 'noNeedUpdate', listenerFunc: NoNeedListener) => Promise<PluginListenerHandle> & PluginListenerHandle
+addListener(eventName: "noNeedUpdate", listenerFunc: NoNeedListener) => Promise<PluginListenerHandle> & PluginListenerHandle
 ```
 
 Listen for no need to update event, usefull when you want force check every time the app is launched
@@ -444,7 +444,7 @@ Listen for no need to update event, usefull when you want force check every time
 ### addListener('updateAvailable', ...)
 
 ```typescript
-addListener(eventName: 'updateAvailable', listenerFunc: UpdateAvailabledListener) => Promise<PluginListenerHandle> & PluginListenerHandle
+addListener(eventName: "updateAvailable", listenerFunc: UpdateAvailabledListener) => Promise<PluginListenerHandle> & PluginListenerHandle
 ```
 
 Listen for availbale update event, usefull when you want to force check every time the app is launched
@@ -464,7 +464,7 @@ Listen for availbale update event, usefull when you want to force check every ti
 ### addListener('downloadComplete', ...)
 
 ```typescript
-addListener(eventName: 'downloadComplete', listenerFunc: DownloadCompleteListener) => Promise<PluginListenerHandle> & PluginListenerHandle
+addListener(eventName: "downloadComplete", listenerFunc: DownloadCompleteListener) => Promise<PluginListenerHandle> & PluginListenerHandle
 ```
 
 Listen for download event in the App, let you know when the download is started, loading and finished
@@ -484,7 +484,7 @@ Listen for download event in the App, let you know when the download is started,
 ### addListener('majorAvailable', ...)
 
 ```typescript
-addListener(eventName: 'majorAvailable', listenerFunc: MajorAvailableListener) => Promise<PluginListenerHandle> & PluginListenerHandle
+addListener(eventName: "majorAvailable", listenerFunc: MajorAvailableListener) => Promise<PluginListenerHandle> & PluginListenerHandle
 ```
 
 Listen for Major update event in the App, let you know when major update is blocked by setting disableAutoUpdateBreaking
@@ -504,7 +504,7 @@ Listen for Major update event in the App, let you know when major update is bloc
 ### addListener('updateFailed', ...)
 
 ```typescript
-addListener(eventName: 'updateFailed', listenerFunc: UpdateFailedListener) => Promise<PluginListenerHandle> & PluginListenerHandle
+addListener(eventName: "updateFailed", listenerFunc: UpdateFailedListener) => Promise<PluginListenerHandle> & PluginListenerHandle
 ```
 
 Listen for update fail event in the App, let you know when update has fail to install at next app start
@@ -524,7 +524,7 @@ Listen for update fail event in the App, let you know when update has fail to in
 ### addListener('downloadFailed', ...)
 
 ```typescript
-addListener(eventName: 'downloadFailed', listenerFunc: DownloadFailedListener) => Promise<PluginListenerHandle> & PluginListenerHandle
+addListener(eventName: "downloadFailed", listenerFunc: DownloadFailedListener) => Promise<PluginListenerHandle> & PluginListenerHandle
 ```
 
 Listen for download fail event in the App, let you know when download has fail finished
@@ -544,7 +544,7 @@ Listen for download fail event in the App, let you know when download has fail f
 ### addListener('appReloaded', ...)
 
 ```typescript
-addListener(eventName: 'appReloaded', listenerFunc: AppReloadedListener) => Promise<PluginListenerHandle> & PluginListenerHandle
+addListener(eventName: "appReloaded", listenerFunc: AppReloadedListener) => Promise<PluginListenerHandle> & PluginListenerHandle
 ```
 
 Listen for download fail event in the App, let you know when download has fail finished
@@ -629,16 +629,18 @@ Get the state of auto update config. This will return `false` in manual mode.
 | **`version`** | <code>string</code>  | Res of getLatest method | 4.0.0 |
 | **`major`**   | <code>boolean</code> |                         |       |
 | **`message`** | <code>string</code>  |                         |       |
+| **`error`**   | <code>string</code>  |                         |       |
 | **`old`**     | <code>string</code>  |                         |       |
 | **`url`**     | <code>string</code>  |                         |       |
 
 
 #### channelRes
 
-| Prop         | Type                | Description                   | Since |
-| ------------ | ------------------- | ----------------------------- | ----- |
-| **`status`** | <code>string</code> | Current status of set channel | 4.7.0 |
-| **`error`**  | <code>any</code>    |                               |       |
+| Prop          | Type                | Description                   | Since |
+| ------------- | ------------------- | ----------------------------- | ----- |
+| **`status`**  | <code>string</code> | Current status of set channel | 4.7.0 |
+| **`error`**   | <code>any</code>    |                               |       |
+| **`message`** | <code>any</code>    |                               |       |
 
 
 #### SetChannelOptions
@@ -654,6 +656,7 @@ Get the state of auto update config. This will return `false` in manual mode.
 | -------------- | -------------------- | ----------------------------- | ----- |
 | **`channel`**  | <code>string</code>  | Current status of get channel | 4.8.0 |
 | **`error`**    | <code>any</code>     |                               |       |
+| **`message`**  | <code>any</code>     |                               |       |
 | **`status`**   | <code>string</code>  |                               |       |
 | **`allowSet`** | <code>boolean</code> |                               |       |
 
@@ -727,12 +730,12 @@ Get the state of auto update config. This will return `false` in manual mode.
 
 #### BundleStatus
 
-<code>'success' | 'error' | 'pending' | 'downloading'</code>
+<code>"success" | "error" | "pending" | "downloading"</code>
 
 
 #### DelayUntilNext
 
-<code>'background' | 'kill' | 'nativeVersion' | 'date'</code>
+<code>"background" | "kill" | "nativeVersion" | "date"</code>
 
 
 #### DownloadChangeListener
