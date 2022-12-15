@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.14.4](https://github.com/Cap-go/capacitor-updater/compare/4.14.3...4.14.4) (2022-12-14)
+
+
+### Bug Fixes
+
+* ci script ([9e41edb](https://github.com/Cap-go/capacitor-updater/commit/9e41edb21dbb9738e9a8ad672c816e560edde1c9))
+
 ### [4.14.3](https://github.com/Cap-go/capacitor-updater/compare/4.14.2...4.14.3) (2022-12-14)
 
 

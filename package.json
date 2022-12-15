@@ -1,6 +1,6 @@
 {
   "name": "@capgo/capacitor-updater",
-  "version": "4.14.3",
+  "version": "4.14.4",
   "packageManager": "pnpm@7.1.0",
   "license": "LGPL-3.0-only",
   "description": "Live update for capacitor apps",
