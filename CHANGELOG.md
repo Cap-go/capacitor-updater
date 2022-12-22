@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.14.8](https://github.com/Cap-go/capacitor-updater/compare/4.14.7...4.14.8) (2022-12-22)
+
+
+### Bug Fixes
+
+* security issue sonarcloud ([2fe3f8b](https://github.com/Cap-go/capacitor-updater/commit/2fe3f8ba529d636d102935b720b0c6d1a8dc676d))
+
 ### [4.14.7](https://github.com/Cap-go/capacitor-updater/compare/4.14.6...4.14.7) (2022-12-19)
 
 ### [4.14.6](https://github.com/Cap-go/capacitor-updater/compare/4.14.5...4.14.6) (2022-12-19)
