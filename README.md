@@ -5,6 +5,13 @@
 ![npm](https://img.shields.io/npm/dm/@capgo/capacitor-updater)
 [![GitHub latest commit](https://badgen.net/github/last-commit/Cap-go/capacitor-updater/main)](https://GitHub.com/Cap-go/capacitor-updater/commit/)
 [![https://good-labs.github.io/greater-good-affirmation/assets/images/badge.svg](https://good-labs.github.io/greater-good-affirmation/assets/images/badge.svg)](https://good-labs.github.io/greater-good-affirmation)
+[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=Cap-go_capacitor-updater&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=Cap-go_capacitor-updater)
+[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=Cap-go_capacitor-updater&metric=bugs)](https://sonarcloud.io/summary/new_code?id=Cap-go_capacitor-updater)
+[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=Cap-go_capacitor-updater&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=Cap-go_capacitor-updater)
+[![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=Cap-go_capacitor-updater&metric=code_smells)](https://sonarcloud.io/summary/new_code?id=Cap-go_capacitor-updater)
+[![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=Cap-go_capacitor-updater&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=Cap-go_capacitor-updater)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=Cap-go_capacitor-updater&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=Cap-go_capacitor-updater)
+[![Technical Debt](https://sonarcloud.io/api/project_badges/measure?project=Cap-go_capacitor-updater&metric=sqale_index)](https://sonarcloud.io/summary/new_code?id=Cap-go_capacitor-updater)
 
 Update Ionic Capacitor apps without App/Play Store review (Code-push / hot-code updates).
 
