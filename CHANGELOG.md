@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.14.10](https://github.com/Cap-go/capacitor-updater/compare/4.14.9...4.14.10) (2022-12-23)
+
+
+### Bug Fixes
+
+* error message for getChannel ([75a0e73](https://github.com/Cap-go/capacitor-updater/commit/75a0e73b2f62824f9dfaff6475628c1c0406e303))
+
 ### [4.14.9](https://github.com/Cap-go/capacitor-updater/compare/4.14.8...4.14.9) (2022-12-22)
 
 ### [4.14.8](https://github.com/Cap-go/capacitor-updater/compare/4.14.7...4.14.8) (2022-12-22)
