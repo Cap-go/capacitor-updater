@@ -685,16 +685,14 @@ public class CapacitorUpdater {
           response.data,
           HttpHeaderParser.parseCharset(response.headers)
         );
-        Log.e(TAG, message + ": " + json);
         retError.put("message", message + ": " + json);
       } catch (UnsupportedEncodingException e) {
-        Log.e(TAG, message + ": " + e.toString());
         retError.put("message", message + ": " + e.toString());
       }
     } else {
-      Log.e(TAG, message + ": " + error.toString());
       retError.put("message", message + ": " + error.toString());
     }
+    Log.e(TAG, message + ": " + retError);
     return retError;
   }
 

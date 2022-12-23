@@ -422,7 +422,7 @@ extension CustomError: LocalizedError {
             case let .failure(error):
                 print("\(self.TAG) Error getting Latest", response.value, error )
                 latest.message = "Error getting Latest \(response.value)"
-                latest.error = "fail_response"
+                latest.error = "response_error"
             }
             semaphore.signal()
         }
@@ -647,7 +647,7 @@ extension CustomError: LocalizedError {
             case let .failure(error):
                 print("\(self.TAG) Error set Channel", response.value, error)
                 setChannel.message = "Error set Channel \(String(describing: response.value))"
-                setChannel.error = "fail_response"
+                setChannel.error = "response_error"
             }
             semaphore.signal()
         }
@@ -688,7 +688,7 @@ extension CustomError: LocalizedError {
             case let .failure(error):
                 print("\(self.TAG) Error get Channel", response.value, error)
                 getChannel.message = "Error get Channel \(String(describing: response.value)))"
-                getChannel.error = "fail_response"
+                getChannel.error = "response_error"
             }
             semaphore.signal()
         }
