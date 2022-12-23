@@ -410,11 +410,11 @@ extension CustomError: LocalizedError {
                 if let major = response.value?.major {
                     latest.major = major
                 }
-                if let message = response.value?.message {
-                    latest.message = message
-                }
                 if let error = response.value?.error {
                     latest.error = error
+                }
+                if let message = response.value?.message {
+                    latest.message = message
                 }
                 if let sessionKey = response.value?.session_key {
                     latest.sessionKey = sessionKey
@@ -675,6 +675,9 @@ extension CustomError: LocalizedError {
                 }
                 if let error = response.value?.error {
                     getChannel.error = error
+                }
+                if let error = response.value?.message {
+                    getChannel.message = message
                 }
                 if let channel = response.value?.channel {
                     getChannel.channel = channel
