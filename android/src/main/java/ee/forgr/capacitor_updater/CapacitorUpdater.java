@@ -278,12 +278,17 @@ public class CapacitorUpdater {
             " " +
             checksum
           );
-          CapacitorUpdater.this.finishBackground(
+          if (dest == null) {
+            CapacitorUpdater.this.sendStats("download_fail", CapacitorUpdater.this.getCurrentBundle().getVersionName());
+            return;
+          }
+          CapacitorUpdater.this.finishDownload(
               id,
               dest,
               version,
               sessionKey,
-              checksum
+              checksum,
+              true
             );
         } else {
           Log.i(TAG, "Unknown action " + action);
@@ -292,19 +297,19 @@ public class CapacitorUpdater {
     }
   };
 
-  public void finishBackground(
+  public void finishDownload(
     String id,
     String dest,
     String version,
     String sessionKey,
-    String checksumRes
+    String checksumRes,
+    Boolean setNext,
   ) {
     try {
       final File downloaded = new File(this.documentsDir, dest);
       this.decryptFile(downloaded, sessionKey);
       final String checksum;
       checksum = this.getChecksum(downloaded);
-
       this.notifyDownload(id, 71);
       final File unzipped = this.unzip(id, downloaded, this.randomString(10));
       downloaded.delete();
@@ -339,9 +344,12 @@ public class CapacitorUpdater {
       final JSObject ret = new JSObject();
       ret.put("bundle", info.toJSON());
       CapacitorUpdater.this.notifyListeners("updateAvailable", ret);
-      this.setNextBundle(info.getId());
+      if(setNext) {
+        this.setNextBundle(info.getId());
+      }
     } catch (IOException e) {
       e.printStackTrace();
+      CapacitorUpdater.this.sendStats("download_fail", CapacitorUpdater.this.getCurrentBundle().getVersionName());
     }
   }
 
@@ -516,16 +524,10 @@ public class CapacitorUpdater {
     this.notifyDownload(id, 0);
     final String idName = bundleDirectory + "/" + id;
     this.notifyDownload(id, 5);
-    final File downloaded = this.downloadFile(id, url, this.randomString(10));
-    this.decryptFile(downloaded, sessionKey);
+    final String dest = this.randomString(10);
+    final File downloaded = this.downloadFile(id, url, dest);
     final String checksum = this.getChecksum(downloaded);
-    this.notifyDownload(id, 71);
-    final File unzipped = this.unzip(id, downloaded, this.randomString(10));
-    downloaded.delete();
-    this.notifyDownload(id, 91);
-    this.flattenAssets(unzipped, idName);
-    this.notifyDownload(id, 100);
-    this.saveBundleInfo(id, null);
+    this.finishDownload(id, dest, version, sessionKey, checksum, false);
     BundleInfo info = new BundleInfo(
       id,
       version,
