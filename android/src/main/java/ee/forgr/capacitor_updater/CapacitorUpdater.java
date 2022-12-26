@@ -303,7 +303,7 @@ public class CapacitorUpdater {
     String version,
     String sessionKey,
     String checksumRes,
-    Boolean setNext,
+    Boolean setNext
   ) {
     try {
       final File downloaded = new File(this.documentsDir, dest);
