@@ -1,6 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="ee.forgr.capacitor_updater">
-    <application android:allowBackup="false" android:usesCleartextTraffic="false">
+    <application android:usesCleartextTraffic="false">
         <service android:name="ee.forgr.capacitor_updater.DownloadService" />
     </application>
 </manifest>
