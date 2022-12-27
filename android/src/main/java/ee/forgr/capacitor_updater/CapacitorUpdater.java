@@ -279,7 +279,10 @@ public class CapacitorUpdater {
             checksum
           );
           if (dest == null) {
-            CapacitorUpdater.this.sendStats("download_fail", CapacitorUpdater.this.getCurrentBundle().getVersionName());
+            CapacitorUpdater.this.sendStats(
+                "download_fail",
+                CapacitorUpdater.this.getCurrentBundle().getVersionName()
+              );
             return;
           }
           CapacitorUpdater.this.finishDownload(
@@ -344,12 +347,15 @@ public class CapacitorUpdater {
       final JSObject ret = new JSObject();
       ret.put("bundle", info.toJSON());
       CapacitorUpdater.this.notifyListeners("updateAvailable", ret);
-      if(setNext) {
+      if (setNext) {
         this.setNextBundle(info.getId());
       }
     } catch (IOException e) {
       e.printStackTrace();
-      CapacitorUpdater.this.sendStats("download_fail", CapacitorUpdater.this.getCurrentBundle().getVersionName());
+      CapacitorUpdater.this.sendStats(
+          "download_fail",
+          CapacitorUpdater.this.getCurrentBundle().getVersionName()
+        );
     }
   }
 
