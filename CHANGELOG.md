@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.15.0](https://github.com/Cap-go/capacitor-updater/compare/4.14.18...4.15.0) (2023-01-03)
+
+
+### Features
+
+* add timeout in request ([bfdc5cd](https://github.com/Cap-go/capacitor-updater/commit/bfdc5cd5b81054edf8bb2249375c1d0a0cdb1c64))
+
 ### [4.14.18](https://github.com/Cap-go/capacitor-updater/compare/4.14.17...4.14.18) (2023-01-02)
 
 ### [4.14.17](https://github.com/Cap-go/capacitor-updater/compare/4.14.16...4.14.17) (2022-12-27)
