@@ -229,6 +229,7 @@ extension CustomError: LocalizedError {
     public let CAP_SERVER_PATH: String = "serverBasePath"
     public var customId: String = ""
     public let pluginVersion: String = "4.13.4"
+    public let timeout: Double = 20
     public var statsUrl: String = ""
     public var channelUrl: String = ""
     public var appId: String = ""
@@ -393,7 +394,7 @@ extension CustomError: LocalizedError {
         let latest: AppVersion = AppVersion()
         let parameters: InfoObject = self.createInfoObject()
         print("\(self.TAG) Auto-update parameters: \(parameters)")
-        let request = AF.request(url, method: .post, parameters: parameters, encoder: JSONParameterEncoder.default)
+        let request = AF.request(url, method: .post, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
 
         request.validate().responseDecodable(of: AppVersionDec.self) { response in
             switch response.result {
@@ -630,7 +631,7 @@ extension CustomError: LocalizedError {
         var parameters: InfoObject = self.createInfoObject()
         parameters.channel = channel
 
-        let request = AF.request(self.channelUrl, method: .post, parameters: parameters, encoder: JSONParameterEncoder.default)
+        let request = AF.request(self.channelUrl, method: .post, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
 
         request.validate().responseDecodable(of: SetChannelDec.self) { response in
             switch response.result {
@@ -665,7 +666,7 @@ extension CustomError: LocalizedError {
         }
         let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
         let parameters: InfoObject = self.createInfoObject()
-        let request = AF.request(self.channelUrl, method: .put, parameters: parameters, encoder: JSONParameterEncoder.default)
+        let request = AF.request(self.channelUrl, method: .put, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
 
         request.validate().responseDecodable(of: GetChannelDec.self) { response in
             switch response.result {
@@ -703,7 +704,7 @@ extension CustomError: LocalizedError {
         var parameters: InfoObject = self.createInfoObject()
         parameters.action = action
         DispatchQueue.global(qos: .background).async {
-            let request = AF.request(self.statsUrl, method: .post, parameters: parameters, encoder: JSONParameterEncoder.default)
+            let request = AF.request(self.statsUrl, method: .post, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
             request.responseData { response in
                 switch response.result {
                 case .success:

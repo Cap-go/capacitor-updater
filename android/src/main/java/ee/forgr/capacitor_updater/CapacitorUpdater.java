@@ -11,6 +11,7 @@ import android.os.Bundle;
 import android.util.Base64;
 import android.util.Log;
 import com.android.volley.BuildConfig;
+import com.android.volley.DefaultRetryPolicy;
 import com.android.volley.NetworkResponse;
 import com.android.volley.Request;
 import com.android.volley.RequestQueue;
@@ -64,6 +65,7 @@ public class CapacitorUpdater {
 
   public static final String TAG = "Capacitor-updater";
   public static final String pluginVersion = "4.14.18";
+  public static final int timeout = 20;
 
   public SharedPreferences.Editor editor;
   public SharedPreferences prefs;
@@ -755,6 +757,9 @@ public class CapacitorUpdater {
         }
       }
     );
+    request.setRetryPolicy(new DefaultRetryPolicy(this.timeout,
+                DefaultRetryPolicy.DEFAULT_MAX_RETRIES, 
+                DefaultRetryPolicy.DEFAULT_BACKOFF_MULT));
     this.requestQueue.add(request);
   }
 
@@ -820,6 +825,9 @@ public class CapacitorUpdater {
         }
       }
     );
+    request.setRetryPolicy(new DefaultRetryPolicy(this.timeout, 
+            DefaultRetryPolicy.DEFAULT_MAX_RETRIES, 
+            DefaultRetryPolicy.DEFAULT_BACKOFF_MULT));
     this.requestQueue.add(request);
   }
 
@@ -880,6 +888,9 @@ public class CapacitorUpdater {
         }
       }
     );
+    request.setRetryPolicy(new DefaultRetryPolicy(this.timeout, 
+                DefaultRetryPolicy.DEFAULT_MAX_RETRIES, 
+                DefaultRetryPolicy.DEFAULT_BACKOFF_MULT));
     this.requestQueue.add(request);
   }
 
@@ -918,6 +929,9 @@ public class CapacitorUpdater {
         }
       }
     );
+    request.setRetryPolicy(new DefaultRetryPolicy(this.timeout, 
+                DefaultRetryPolicy.DEFAULT_MAX_RETRIES, 
+                DefaultRetryPolicy.DEFAULT_BACKOFF_MULT));
     this.requestQueue.add(request);
   }
 
