@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - renovate/**
+  pull_request:
+    branches: [ main ]
 
 jobs:
   build_android:
@@ -17,7 +19,7 @@ jobs:
       - name: Use Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 16
+          node-version: 18
           cache: 'pnpm'
       - name: Install dependencies
         id: install_code
@@ -35,15 +37,20 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      - uses: pnpm/action-setup@v2
         with:
-          node-version: '16'
+          version: 7
+      - name: Use Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+          cache: 'pnpm'
       - name: Install dependencies
         id: install_code
-        run: npm ci
+        run: pnpm install --frozen-lockfile
       - name: Build
         id: build_code
-        run: npm run verify:ios
+        run: pnpm verify:ios
   web:
     runs-on: ubuntu-latest
     name: 'Build code and test'
@@ -56,17 +63,17 @@ jobs:
       - name: Use Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 16
+          node-version: 18
           cache: 'pnpm'
       - name: Install dependencies
         id: install_code
         run: pnpm install --frozen-lockfile
       - name: Lint
         id: lint_code
-        run: npm run lint
+        run: pnpm lint
       - name: Build
         id: build_code
-        run: npm run build
+        run: pnpm build
       - name: Verify
         id: verify_code
-        run: npm run verify:web
+        run: pnpm verify:web
