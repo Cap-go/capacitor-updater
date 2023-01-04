@@ -757,9 +757,13 @@ public class CapacitorUpdater {
         }
       }
     );
-    request.setRetryPolicy(new DefaultRetryPolicy(this.timeout,
-                DefaultRetryPolicy.DEFAULT_MAX_RETRIES, 
-                DefaultRetryPolicy.DEFAULT_BACKOFF_MULT));
+    request.setRetryPolicy(
+      new DefaultRetryPolicy(
+        this.timeout,
+        DefaultRetryPolicy.DEFAULT_MAX_RETRIES,
+        DefaultRetryPolicy.DEFAULT_BACKOFF_MULT
+      )
+    );
     this.requestQueue.add(request);
   }
 
@@ -825,9 +829,13 @@ public class CapacitorUpdater {
         }
       }
     );
-    request.setRetryPolicy(new DefaultRetryPolicy(this.timeout, 
-            DefaultRetryPolicy.DEFAULT_MAX_RETRIES, 
-            DefaultRetryPolicy.DEFAULT_BACKOFF_MULT));
+    request.setRetryPolicy(
+      new DefaultRetryPolicy(
+        this.timeout,
+        DefaultRetryPolicy.DEFAULT_MAX_RETRIES,
+        DefaultRetryPolicy.DEFAULT_BACKOFF_MULT
+      )
+    );
     this.requestQueue.add(request);
   }
 
@@ -888,9 +896,13 @@ public class CapacitorUpdater {
         }
       }
     );
-    request.setRetryPolicy(new DefaultRetryPolicy(this.timeout, 
-                DefaultRetryPolicy.DEFAULT_MAX_RETRIES, 
-                DefaultRetryPolicy.DEFAULT_BACKOFF_MULT));
+    request.setRetryPolicy(
+      new DefaultRetryPolicy(
+        this.timeout,
+        DefaultRetryPolicy.DEFAULT_MAX_RETRIES,
+        DefaultRetryPolicy.DEFAULT_BACKOFF_MULT
+      )
+    );
     this.requestQueue.add(request);
   }
 
@@ -929,9 +941,13 @@ public class CapacitorUpdater {
         }
       }
     );
-    request.setRetryPolicy(new DefaultRetryPolicy(this.timeout, 
-                DefaultRetryPolicy.DEFAULT_MAX_RETRIES, 
-                DefaultRetryPolicy.DEFAULT_BACKOFF_MULT));
+    request.setRetryPolicy(
+      new DefaultRetryPolicy(
+        this.timeout,
+        DefaultRetryPolicy.DEFAULT_MAX_RETRIES,
+        DefaultRetryPolicy.DEFAULT_BACKOFF_MULT
+      )
+    );
     this.requestQueue.add(request);
   }
 
