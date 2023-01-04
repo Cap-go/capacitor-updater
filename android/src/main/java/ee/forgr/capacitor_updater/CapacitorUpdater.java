@@ -64,7 +64,7 @@ public class CapacitorUpdater {
   private static final String bundleDirectory = "versions";
 
   public static final String TAG = "Capacitor-updater";
-  public static final String pluginVersion = "4.15.2";
+  public static final String pluginVersion = "4.15.3";
   public static final int timeout = 20;
 
   public SharedPreferences.Editor editor;
