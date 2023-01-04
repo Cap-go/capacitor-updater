@@ -23,7 +23,7 @@ jobs:
       - name: Use Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 16
+          node-version: 18
           cache: 'pnpm'
       - name: Install dependencies
         id: install_code
@@ -33,18 +33,35 @@ jobs:
           git config --local user.name "github-actions[bot]"
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
       - name: Update Readme
-        run: pnpm run docgen
+        run: pnpm docgen
       - name: Add readme
         run: git add README.md
       - name: Create bump and changelog main
         if: github.ref == 'refs/heads/main'
-        run: pnpx standard-version
+        run: npx standard-version
       - name: Create bump and changelog development
         if: github.ref != 'refs/heads/main'
-        run: pnpx standard-version --prerelease alpha
+        run: npx standard-version --prerelease alpha
       - name: Push to origin
         run: |
           CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
           remote_repo="https://${GITHUB_ACTOR}:${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git"
           git pull $remote_repo $CURRENT_BRANCH
           git push $remote_repo HEAD:$CURRENT_BRANCH --follow-tags --tags
+  create-cache:
+    if: "!startsWith(github.event.head_commit.message, 'chore(release):')"
+    runs-on: ubuntu-latest
+    name: "Create global cache on main branch"
+    steps:
+      - uses: actions/checkout@v3
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 7
+      - name: Use Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+          cache: 'pnpm'
+      - name: Install dependencies
+        id: install_code
+        run: pnpm install --frozen-lockfile
