@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.15.4](https://github.com/Cap-go/capacitor-updater/compare/4.15.3...4.15.4) (2023-01-06)
+
+
+### Bug Fixes
+
+* issue with timeout ([535949c](https://github.com/Cap-go/capacitor-updater/commit/535949cf5e55417546d3fff8a44be60bc0109a54))
+
 ### [4.15.3](https://github.com/Cap-go/capacitor-updater/compare/4.15.2...4.15.3) (2023-01-04)
 
 ### [4.15.2](https://github.com/Cap-go/capacitor-updater/compare/4.15.1...4.15.2) (2023-01-04)
