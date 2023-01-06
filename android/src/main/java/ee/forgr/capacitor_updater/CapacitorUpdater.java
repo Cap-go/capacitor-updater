@@ -281,6 +281,12 @@ public class CapacitorUpdater {
             checksum
           );
           if (dest == null) {
+            final JSObject ret = new JSObject();
+            ret.put(
+              "version",
+              CapacitorUpdater.this.getCurrentBundle().getVersionName()
+            );
+            CapacitorUpdater.this.notifyListeners("downloadFailed", ret);
             CapacitorUpdater.this.sendStats(
                 "download_fail",
                 CapacitorUpdater.this.getCurrentBundle().getVersionName()
@@ -354,6 +360,12 @@ public class CapacitorUpdater {
       }
     } catch (IOException e) {
       e.printStackTrace();
+      final JSObject ret = new JSObject();
+      ret.put(
+        "version",
+        CapacitorUpdater.this.getCurrentBundle().getVersionName()
+      );
+      CapacitorUpdater.this.notifyListeners("downloadFailed", ret);
       CapacitorUpdater.this.sendStats(
           "download_fail",
           CapacitorUpdater.this.getCurrentBundle().getVersionName()
