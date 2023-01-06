@@ -345,7 +345,10 @@ extension CustomError: LocalizedError {
             }
 
             let sessionKeyArray: [String] = sessionKey.components(separatedBy: ":")
-            let ivData: Data = Data(base64Encoded: sessionKeyArray[0])!
+            guard let ivData: Data = Data(base64Encoded: sessionKeyArray[0]) else {
+                print("cannot decode sessionKey", sessionKey)
+                return
+            }
             let sessionKeyDataEncrypted: Data = Data(base64Encoded: sessionKeyArray[1])!
             let sessionKeyDataDecrypted: Data = rsaPrivateKey.decrypt(data: sessionKeyDataEncrypted)!
             let aesPrivateKey: AES128Key = AES128Key(iv: ivData, aes128Key: sessionKeyDataDecrypted)
