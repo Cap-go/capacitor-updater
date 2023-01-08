@@ -528,7 +528,8 @@ public class CapacitorUpdater {
   public BundleInfo download(
     final String url,
     final String version,
-    final String sessionKey
+    final String sessionKey,
+    final String checksum
   ) throws IOException {
     final String id = this.randomString(10);
     this.saveBundleInfo(
@@ -546,7 +547,6 @@ public class CapacitorUpdater {
     this.notifyDownload(id, 5);
     final String dest = this.randomString(10);
     final File downloaded = this.downloadFile(id, url, dest);
-    final String checksum = this.getChecksum(downloaded);
     this.finishDownload(id, dest, version, sessionKey, checksum, false);
     BundleInfo info = new BundleInfo(
       id,

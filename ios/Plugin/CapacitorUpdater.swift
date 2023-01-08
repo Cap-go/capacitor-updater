@@ -335,7 +335,7 @@ extension CustomError: LocalizedError {
 
     private func decryptFile(filePath: URL, sessionKey: String) throws {
         if self.privateKey == "" || sessionKey == "" {
-            print("\(self.TAG) Cannot fond privateKey or sessionKey")
+            print("\(self.TAG) Cannot found privateKey or sessionKey")
             return
         }
         do {
@@ -345,7 +345,10 @@ extension CustomError: LocalizedError {
             }
 
             let sessionKeyArray: [String] = sessionKey.components(separatedBy: ":")
-            let ivData: Data = Data(base64Encoded: sessionKeyArray[0])!
+            guard let ivData: Data = Data(base64Encoded: sessionKeyArray[0]) else {
+                print("cannot decode sessionKey", sessionKey)
+                return
+            }
             let sessionKeyDataEncrypted: Data = Data(base64Encoded: sessionKeyArray[1])!
             let sessionKeyDataDecrypted: Data = rsaPrivateKey.decrypt(data: sessionKeyDataEncrypted)!
             let aesPrivateKey: AES128Key = AES128Key(iv: ivData, aes128Key: sessionKeyDataDecrypted)
@@ -441,6 +444,7 @@ extension CustomError: LocalizedError {
         let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
         let id: String = self.randomString(length: 10)
         var checksum: String = ""
+
         var mainError: NSError?
         let destination: DownloadRequest.Destination = { _, _ in
             let documentsURL: URL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
