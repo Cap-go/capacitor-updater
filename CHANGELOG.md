@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.16.0](https://github.com/Cap-go/capacitor-updater/compare/4.15.6...4.16.0) (2023-01-08)
+
+
+### Features
+
+* add emcryption for manual ([04e87a8](https://github.com/Cap-go/capacitor-updater/commit/04e87a8f03c56ea0a7aea55d466a4ab07cb7eb75))
+
 ### [4.15.6](https://github.com/Cap-go/capacitor-updater/compare/4.15.5...4.15.6) (2023-01-06)
 
 
