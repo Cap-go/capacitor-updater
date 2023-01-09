@@ -239,7 +239,12 @@ export interface CapacitorUpdaterPlugin {
    * @param version set the version code/name of this bundle/version
    * @example https://example.com/versions/{version}/dist.zip
    */
-  download(options: { url: string; version: string }): Promise<BundleInfo>;
+  download(options: {
+    url: string;
+    version: string;
+    sessionKey?: string;
+    checksum?: string;
+  }): Promise<BundleInfo>;
 
   /**
    * Set the next bundle to be used when the app is reloaded.

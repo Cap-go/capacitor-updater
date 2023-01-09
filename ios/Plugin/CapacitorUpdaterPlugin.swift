@@ -111,12 +111,23 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             return
         }
         let sessionKey = call.getString("sessionKey", "")
+        let checksum = call.getString("checksum", "")
         let url = URL(string: urlString)
         print("\(self.implementation.TAG) Downloading \(url!)")
         DispatchQueue.global(qos: .background).async {
             do {
-                let res = try self.implementation.download(url: url!, version: version, sessionKey: sessionKey)
-                call.resolve(res.toJSON())
+                let next = try self.implementation.download(url: url!, version: version, sessionKey: sessionKey)
+                if checksum != "" && next.getChecksum() != checksum {
+                    print("\(self.implementation.TAG) Error checksum", next.getChecksum(), checksum)
+                    self.implementation.sendStats(action: "checksum_fail", versionName: next.getVersionName())
+                    let resDel = self.implementation.delete(id: next.getId())
+                    if !resDel {
+                        print("\(self.implementation.TAG) Delete failed, id \(next.getId()) doesn't exist")
+                    }
+                    return
+                }
+                self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
+                call.resolve(next.toJSON())
             } catch {
                 print("\(self.implementation.TAG) Failed to download from: \(url!) \(error.localizedDescription)")
                 self.notifyListeners("downloadFailed", data: ["version": version])

@@ -324,6 +324,7 @@ public class CapacitorUpdaterPlugin
     final String url = call.getString("url");
     final String version = call.getString("version");
     final String sessionKey = call.getString("sessionKey", "");
+    final String checksum = call.getString("checksum", "");
     if (url == null) {
       Log.e(CapacitorUpdater.TAG, "Download called without url");
       call.reject("Download called without url");
@@ -345,8 +346,10 @@ public class CapacitorUpdaterPlugin
                 CapacitorUpdaterPlugin.this.implementation.download(
                     url,
                     version,
-                    sessionKey
+                    sessionKey,
+                    checksum
                   );
+
               call.resolve(downloaded.toJSON());
             } catch (final IOException e) {
               Log.e(CapacitorUpdater.TAG, "Failed to download from: " + url, e);

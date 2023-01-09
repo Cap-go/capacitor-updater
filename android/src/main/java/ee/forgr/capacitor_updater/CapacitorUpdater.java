@@ -64,7 +64,7 @@ public class CapacitorUpdater {
   private static final String bundleDirectory = "versions";
 
   public static final String TAG = "Capacitor-updater";
-  public static final String pluginVersion = "4.15.6";
+  public static final String pluginVersion = "4.16.0";
   public static final int timeout = 20000;
 
   public SharedPreferences.Editor editor;
@@ -528,7 +528,8 @@ public class CapacitorUpdater {
   public BundleInfo download(
     final String url,
     final String version,
-    final String sessionKey
+    final String sessionKey,
+    final String checksum
   ) throws IOException {
     final String id = this.randomString(10);
     this.saveBundleInfo(
@@ -546,7 +547,6 @@ public class CapacitorUpdater {
     this.notifyDownload(id, 5);
     final String dest = this.randomString(10);
     final File downloaded = this.downloadFile(id, url, dest);
-    final String checksum = "";
     this.finishDownload(id, dest, version, sessionKey, checksum, false);
     BundleInfo info = new BundleInfo(
       id,
