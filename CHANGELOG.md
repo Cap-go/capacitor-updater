@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.16.1](https://github.com/Cap-go/capacitor-updater/compare/4.16.0...4.16.1) (2023-01-09)
+
+
+### Bug Fixes
+
+* invalid sessionKey decode ([17dbec5](https://github.com/Cap-go/capacitor-updater/commit/17dbec57d30d6ea6235c02c34c479d3b27bc935d))
+* self-hosted android checksum ([a4d03b0](https://github.com/Cap-go/capacitor-updater/commit/a4d03b028f608e1d34fb5ab751a1c2e4d0b6f812))
+
 ## [4.16.0](https://github.com/Cap-go/capacitor-updater/compare/4.15.6...4.16.0) (2023-01-08)
 
 
