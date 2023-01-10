@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.17.0](https://github.com/Cap-go/capacitor-updater/compare/4.16.1...4.17.0) (2023-01-10)
+
+
+### Features
+
+* add default private key to plugin ([dc1949e](https://github.com/Cap-go/capacitor-updater/commit/dc1949ee7bac5727cc1c4df595cb64a644b23f18))
+
 ### [4.16.1](https://github.com/Cap-go/capacitor-updater/compare/4.16.0...4.16.1) (2023-01-09)
 
 
