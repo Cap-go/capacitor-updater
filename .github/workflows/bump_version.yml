@@ -66,4 +66,4 @@ jobs:
         id: install_code
         run: pnpm install --frozen-lockfile
       - name: CLI capacitor-standard-version install
-        run: pnpm dlx capacitor-standard-version --version
+        run: pnpm dlx capacitor-standard-version@latest --version
