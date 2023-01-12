@@ -38,10 +38,10 @@ jobs:
         run: git add README.md
       - name: Create bump and changelog main
         if: github.ref == 'refs/heads/main'
-        run: npx capacitor-plugin-standard-version
+        run: pnpm dlx capacitor-plugin-standard-version
       - name: Create bump and changelog development
         if: github.ref != 'refs/heads/main'
-        run: npx capacitor-plugin-standard-version --prerelease alpha
+        run: pnpm dlx capacitor-plugin-standard-version --prerelease alpha
       - name: Push to origin
         run: |
           CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
@@ -65,3 +65,5 @@ jobs:
       - name: Install dependencies
         id: install_code
         run: pnpm install --frozen-lockfile
+      - name: CLI capacitor-standard-version install
+        run: pnpm dlx capacitor-standard-version --version
