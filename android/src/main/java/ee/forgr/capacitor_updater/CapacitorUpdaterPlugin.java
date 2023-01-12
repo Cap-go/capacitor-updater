@@ -254,7 +254,7 @@ public class CapacitorUpdaterPlugin
   public void getPluginVersion(final PluginCall call) {
     try {
       final JSObject ret = new JSObject();
-      ret.put("version", CapacitorUpdater.pluginVersion);
+      ret.put("version", CapacitorUpdater.PLUGIN_VERSION);
       call.resolve(ret);
     } catch (final Exception e) {
       Log.e(CapacitorUpdater.TAG, "Could not get plugin version", e);

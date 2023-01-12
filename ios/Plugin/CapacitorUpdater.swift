@@ -228,7 +228,7 @@ extension CustomError: LocalizedError {
     public let TAG: String = "✨  Capacitor-updater:"
     public let CAP_SERVER_PATH: String = "serverBasePath"
     public var customId: String = ""
-    public let pluginVersion: String = "4.13.4"
+    public let PLUGIN_VERSION: String = "4.13.4"
     public let timeout: Double = 20
     public var statsUrl: String = ""
     public var channelUrl: String = ""
@@ -384,7 +384,7 @@ extension CustomError: LocalizedError {
             version_code: self.versionCode,
             version_os: self.versionOs,
             version_name: self.getCurrentBundle().getVersionName(),
-            plugin_version: self.pluginVersion,
+            plugin_version: self.PLUGIN_VERSION,
             is_emulator: self.isEmulator(),
             is_prod: self.isProd(),
             action: nil,

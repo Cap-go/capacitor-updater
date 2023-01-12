@@ -97,7 +97,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func getPluginVersion(_ call: CAPPluginCall) {
-        call.resolve(["version": implementation.pluginVersion])
+        call.resolve(["version": implementation.PLUGIN_VERSION])
     }
 
     @objc func download(_ call: CAPPluginCall) {
