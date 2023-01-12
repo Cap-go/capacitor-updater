@@ -18,6 +18,7 @@ buildscript {
 apply plugin: 'com.android.library'
 
 android {
+    namespace "ee.forgr.capacitor_updater"
     compileSdkVersion project.hasProperty('compileSdkVersion') ? rootProject.ext.compileSdkVersion : 32
     defaultConfig {
         minSdkVersion project.hasProperty('minSdkVersion') ? rootProject.ext.minSdkVersion : 22
