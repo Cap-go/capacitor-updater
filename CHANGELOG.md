@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.17.1](https://github.com/Cap-go/capacitor-updater/compare/4.17.0...4.17.1) (2023-01-12)
+
+
+### Bug Fixes
+
+* remove useless bumpfile ([b974f70](https://github.com/Cap-go/capacitor-updater/commit/b974f70f747c84d6f066aa22e72f452a189a2e6e))
+
 ## [4.17.0](https://github.com/Cap-go/capacitor-updater/compare/4.16.1...4.17.0) (2023-01-10)
 
 
