@@ -4,10 +4,6 @@ const bumpFiles = [
     type: "json",
   },
   {
-    filename: "./package-lock.json",
-    type: "json",
-  },
-  {
     filename:
       "./android/src/main/java/ee/forgr/capacitor_updater/CapacitorUpdater.java",
     updater: {
