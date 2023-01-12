@@ -47,6 +47,7 @@ public class CapacitorUpdaterPlugin
   private static final String channelUrlDefault =
     "https://api.capgo.app/channel_self";
 
+  private final String PLUGIN_VERSION = "4.17.4";
   private static final String DELAY_CONDITION_PREFERENCES = "";
 
   private SharedPreferences.Editor editor;
@@ -95,6 +96,7 @@ public class CapacitorUpdaterPlugin
           .getPackageInfo(this.getContext().getPackageName(), 0);
       this.implementation.activity = this.getActivity();
       this.implementation.versionBuild = pInfo.versionName;
+      this.implementation.PLUGIN_VERSION = this.PLUGIN_VERSION;
       this.implementation.versionCode = Integer.toString(pInfo.versionCode);
       this.implementation.requestQueue =
         Volley.newRequestQueue(this.getContext());
@@ -254,7 +256,7 @@ public class CapacitorUpdaterPlugin
   public void getPluginVersion(final PluginCall call) {
     try {
       final JSObject ret = new JSObject();
-      ret.put("version", CapacitorUpdater.PLUGIN_VERSION);
+      ret.put("version", this.PLUGIN_VERSION);
       call.resolve(ret);
     } catch (final Exception e) {
       Log.e(CapacitorUpdater.TAG, "Could not get plugin version", e);

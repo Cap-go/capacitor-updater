@@ -64,7 +64,6 @@ public class CapacitorUpdater {
   private static final String bundleDirectory = "versions";
 
   public static final String TAG = "Capacitor-updater";
-  public static final String PLUGIN_VERSION = "4.17.4";
   public static final int timeout = 20000;
 
   public SharedPreferences.Editor editor;
@@ -74,6 +73,7 @@ public class CapacitorUpdater {
 
   public File documentsDir;
   public Activity activity;
+  public String PLUGIN_VERSION = "";
   public String versionBuild = "";
   public String versionCode = "";
   public String versionOs = "";

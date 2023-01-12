@@ -228,7 +228,7 @@ extension CustomError: LocalizedError {
     public let TAG: String = "✨  Capacitor-updater:"
     public let CAP_SERVER_PATH: String = "serverBasePath"
     public var customId: String = ""
-    public let PLUGIN_VERSION: String = "4.13.4"
+    public var PLUGIN_VERSION: String = ""
     public let timeout: Double = 20
     public var statsUrl: String = ""
     public var channelUrl: String = ""

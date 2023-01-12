@@ -9,6 +9,7 @@ import Version
 @objc(CapacitorUpdaterPlugin)
 public class CapacitorUpdaterPlugin: CAPPlugin {
     private var implementation = CapacitorUpdater()
+    private let PLUGIN_VERSION: String = "4.13.4"
     static let updateUrlDefault = "https://api.capgo.app/updates"
     static let statsUrlDefault = "https://api.capgo.app/stats"
     static let channelUrlDefault = "https://api.capgo.app/channel_self"
@@ -41,8 +42,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         appReadyTimeout = getConfig().getInt("appReadyTimeout", 10000)
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
 
-        implementation.privateKey = getConfig().getString("privateKey", CapacitorUpdaterPlugin.defaultPrivateKey)!
+        implementation.privateKey = getConfig().getString("privateKey", self.defaultPrivateKey)!
         implementation.notifyDownload = notifyDownload
+        implementation.PLUGIN_VERSION = self.PLUGIN_VERSION
         let config = (self.bridge?.viewController as? CAPBridgeViewController)?.instanceDescriptor().legacyConfig
         if config?["appId"] != nil {
             implementation.appId = config?["appId"] as! String
@@ -97,7 +99,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func getPluginVersion(_ call: CAPPluginCall) {
-        call.resolve(["version": implementation.PLUGIN_VERSION])
+        call.resolve(["version": self.PLUGIN_VERSION])
     }
 
     @objc func download(_ call: CAPPluginCall) {
