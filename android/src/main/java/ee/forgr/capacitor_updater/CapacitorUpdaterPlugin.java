@@ -148,8 +148,6 @@ public class CapacitorUpdaterPlugin
     final Application application = (Application) this.getContext()
       .getApplicationContext();
     application.registerActivityLifecycleCallbacks(this);
-    this.onActivityStarted(this.getActivity());
-    this._checkCancelDelay(true);
   }
 
   private void cleanupObsoleteVersions() {
@@ -959,11 +957,14 @@ public class CapacitorUpdaterPlugin
                             final String session_key = res.has("session_key")
                               ? res.getString("session_key")
                               : "";
+                            final String checksum = res.has("checksum")
+                              ? res.getString("checksum")
+                              : "";
                             CapacitorUpdaterPlugin.this.implementation.downloadBackground(
                                 url,
                                 latestVersionName,
                                 session_key,
-                                res.getString("checksum")
+                                checksum
                               );
                           } catch (final Exception e) {
                             Log.e(
@@ -1027,6 +1028,7 @@ public class CapacitorUpdaterPlugin
 
   @Override // appMovedToForeground
   public void onActivityStarted(@NonNull final Activity activity) {
+    this._checkCancelDelay(true);
     if (CapacitorUpdaterPlugin.this._isAutoUpdateEnabled()) {
       this.backgroundDownload();
     }
