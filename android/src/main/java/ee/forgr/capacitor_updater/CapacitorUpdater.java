@@ -265,7 +265,7 @@ public class CapacitorUpdater {
           String id = bundle.getString(DownloadService.ID);
           String dest = bundle.getString(DownloadService.FILEDEST);
           String version = bundle.getString(DownloadService.VERSION);
-          String sessionKey = bundle.getString(DownloadService.SESSIONKEY);
+          String sessionKey = bundle.getString(DownloadService.SESSIONKEY, "");
           String checksum = bundle.getString(DownloadService.CHECKSUM);
           Log.i(
             CapacitorUpdater.TAG,
