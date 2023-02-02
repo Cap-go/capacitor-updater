@@ -334,7 +334,7 @@ extension CustomError: LocalizedError {
     }
 
     private func decryptFile(filePath: URL, sessionKey: String) throws {
-        if self.privateKey == "" || sessionKey == "" {
+        if (self.privateKey ?? "").isEmpty || (sessionKey ?? "").isEmpty {
             print("\(self.TAG) Cannot found privateKey or sessionKey")
             return
         }
@@ -437,7 +437,7 @@ extension CustomError: LocalizedError {
     private func setCurrentBundle(bundle: String) {
         UserDefaults.standard.set(bundle, forKey: self.CAP_SERVER_PATH)
         UserDefaults.standard.synchronize()
-        print("\(self.TAG) Current bundle set to: \(bundle == "" ? BundleInfo.ID_BUILTIN : bundle)")
+        print("\(self.TAG) Current bundle set to: \((bundle ?? "").isEmpty ? BundleInfo.ID_BUILTIN : bundle)")
     }
 
     public func download(url: URL, version: String, sessionKey: String) throws -> BundleInfo {
@@ -625,7 +625,7 @@ extension CustomError: LocalizedError {
 
     func setChannel(channel: String) -> SetChannel {
         let setChannel: SetChannel = SetChannel()
-        if self.channelUrl == "" {
+        if (self.channelUrl ?? "").isEmpty {
             print("\(self.TAG) Channel URL is not set")
             setChannel.message = "Channel URL is not set"
             setChannel.error = "missing_config"
@@ -662,7 +662,7 @@ extension CustomError: LocalizedError {
 
     func getChannel() -> GetChannel {
         let getChannel: GetChannel = GetChannel()
-        if self.channelUrl == "" {
+        if (self.channelUrl ?? "").isEmpty {
             print("\(self.TAG) Channel URL is not set")
             getChannel.message = "Channel URL is not set"
             getChannel.error = "missing_config"
@@ -702,7 +702,7 @@ extension CustomError: LocalizedError {
     }
 
     func sendStats(action: String, versionName: String) {
-        if self.statsUrl == "" {
+        if (self.statsUrl ?? "").isEmpty {
             return
         }
         var parameters: InfoObject = self.createInfoObject()
@@ -797,7 +797,7 @@ extension CustomError: LocalizedError {
         guard let bundlePath: String = UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH) else {
             return BundleInfo.ID_BUILTIN
         }
-        if bundlePath == "" {
+        if (bundlePath ?? "").isEmpty {
             return BundleInfo.ID_BUILTIN
         }
         let bundleID: String = bundlePath.components(separatedBy: "/").last ?? bundlePath

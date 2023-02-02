@@ -83,7 +83,7 @@ public class BundleInfo {
     return (
       !this.isBuiltin() &&
       this.downloaded != null &&
-      !this.downloaded.equals("") &&
+      !this.downloaded.isEmpty() &&
       !this.isDeleted()
     );
   }

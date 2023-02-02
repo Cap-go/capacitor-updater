@@ -104,10 +104,10 @@ public class DownloadService extends IntentService {
     String error
   ) {
     Intent intent = new Intent(NOTIFICATION);
-    if (!dest.equals("")) {
+    if (dest != null && !dest.isEmpty()) {
       intent.putExtra(FILEDEST, dest);
     }
-    if (!error.equals("")) {
+    if (error != null && !error.isEmpty()) {
       intent.putExtra(ERROR, error);
     }
     intent.putExtra(ID, id);

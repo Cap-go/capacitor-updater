@@ -1053,7 +1053,7 @@ public class CapacitorUpdaterPlugin
       for (DelayCondition delayCondition : delayConditionList) {
         if (delayCondition.getKind().toString().equals("background")) {
           String value = delayCondition.getValue();
-          backgroundValue = (value != null || !value.equals("")) ? value : "0";
+          backgroundValue = (value != null && !value.isEmpty()) ? value : "0";
         }
       }
       if (backgroundValue != null) {
