@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.17.17](https://github.com/Cap-go/capacitor-updater/compare/4.17.16...4.17.17) (2023-02-03)
+
+
+### Bug Fixes
+
+* stepo title ([c975842](https://github.com/Cap-go/capacitor-updater/commit/c975842afe2298b261b8416c57313efe99674b3a))
+
 ### [4.17.16](https://github.com/Cap-go/capacitor-updater/compare/4.17.15...4.17.16) (2023-02-03)
 
 
