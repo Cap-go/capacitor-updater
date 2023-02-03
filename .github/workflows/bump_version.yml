@@ -53,11 +53,12 @@ jobs:
         env:
           API_TOKEN_GITHUB: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
         with:
-          source-files: 'api.md'
-          destination-username: 'Cap-go'
-          destination-repository: 'docs'
-          destination-directory: 'plugin'
-          commit-email: 'martindonadieu@gmail.com'
+          source-files: api.md
+          destination-username: Cap-go
+          destination-repository: docs
+          destination-directory: plugin
+          destination-branch: main
+          commit-email: martindonadieu@gmail.com
   create-cache:
     if: "!startsWith(github.event.head_commit.message, 'chore(release):')"
     runs-on: ubuntu-latest
