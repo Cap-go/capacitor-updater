@@ -38,7 +38,7 @@ jobs:
       - name: Create bump and changelog development
         if: github.ref != 'refs/heads/main'
         run: pnpm dlx capacitor-plugin-standard-version --prerelease alpha
-      - name: Update Readme
+      - name: Update Doc
         run: pnpm docgen && pnpm docgen:api
       - name: Add doc to github
         run: git add README.md api.md
