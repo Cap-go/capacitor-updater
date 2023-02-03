@@ -33,7 +33,7 @@ jobs:
           git config --local user.name "github-actions[bot]"
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
       - name: Update Readme
-        run: pnpm docgen
+        run: pnpm docgen && pnpm docgen:api
       - name: Add readme
         run: git add README.md
       - name: Create bump and changelog main
@@ -48,6 +48,16 @@ jobs:
           remote_repo="https://${GITHUB_ACTOR}:${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git"
           git pull $remote_repo $CURRENT_BRANCH
           git push $remote_repo HEAD:$CURRENT_BRANCH --follow-tags --tags
+      - name: Push generated doc to doc repo
+        uses: nkoppel/push-files-to-another-repository@1.1.0
+        env:
+          API_TOKEN_GITHUB: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+        with:
+          source-files: 'api.md'
+          destination-username: 'Cap-go'
+          destination-repository: 'docs'
+          destination-directory: 'plugin'
+          commit-email: 'martindonadieu@gmail.com'
   create-cache:
     if: "!startsWith(github.event.head_commit.message, 'chore(release):')"
     runs-on: ubuntu-latest
