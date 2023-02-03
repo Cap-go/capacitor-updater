@@ -34,7 +34,7 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
       - name: Update Readme
         run: pnpm docgen && pnpm docgen:api
-      - name: Add readme
+      - name: Add doc to github
         run: git add README.md api.md
       - name: Create bump and changelog main
         if: github.ref == 'refs/heads/main'
