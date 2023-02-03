@@ -35,7 +35,7 @@ jobs:
       - name: Update Readme
         run: pnpm docgen && pnpm docgen:api
       - name: Add readme
-        run: git add README.md
+        run: git add README.md api.md
       - name: Create bump and changelog main
         if: github.ref == 'refs/heads/main'
         run: pnpm dlx capacitor-plugin-standard-version
