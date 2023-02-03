@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.17.14](https://github.com/Cap-go/capacitor-updater/compare/4.17.13...4.17.14) (2023-02-03)
+
+
+### Bug Fixes
+
+* add auto docgen api ([38a547a](https://github.com/Cap-go/capacitor-updater/commit/38a547aae4bc93f3bcb2d20c5a94ca5b689aa0e7))
+* ci script ([38d5adf](https://github.com/Cap-go/capacitor-updater/commit/38d5adf9cc4b0d7ed8b1719627b377afd921397b))
+* ci version ([921eb2b](https://github.com/Cap-go/capacitor-updater/commit/921eb2bd643760879b66f84f5077632f56ee98de))
+
 ### [4.17.13](https://github.com/Cap-go/capacitor-updater/compare/4.17.12...4.17.13) (2023-02-02)
 
 
