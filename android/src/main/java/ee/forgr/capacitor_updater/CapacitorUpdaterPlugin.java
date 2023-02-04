@@ -47,7 +47,7 @@ public class CapacitorUpdaterPlugin
   private static final String channelUrlDefault =
     "https://api.capgo.app/channel_self";
 
-  private final String PLUGIN_VERSION = "4.17.20";
+  private final String PLUGIN_VERSION = "4.17.21";
   private static final String DELAY_CONDITION_PREFERENCES = "";
 
   private SharedPreferences.Editor editor;
