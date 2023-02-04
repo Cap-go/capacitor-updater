@@ -182,14 +182,14 @@ Notify Capacitor Updater that the current bundle is working (a rollback will occ
 ### download(...)
 
 ```typescript
-download(options: { url: string; version: string; }) => Promise<BundleInfo>
+download(options: { url: string; version: string; sessionKey?: string; checksum?: string; }) => Promise<BundleInfo>
 ```
 
 Download a new bundle from the provided URL, it should be a zip file, with files inside or with a unique id inside with all your files
 
-| Param         | Type                                           |
-| ------------- | ---------------------------------------------- |
-| **`options`** | <code>{ url: string; version: string; }</code> |
+| Param         | Type                                                                                   |
+| ------------- | -------------------------------------------------------------------------------------- |
+| **`options`** | <code>{ url: string; version: string; sessionKey?: string; checksum?: string; }</code> |
 
 **Returns:** <code>Promise&lt;<a href="#bundleinfo">BundleInfo</a>&gt;</code>
 
