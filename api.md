@@ -2,6 +2,8 @@
 description: All available method of the plugin
 ---
 
+List of all available methods of the plugin, auto-update on each commit to the main branch of the plugin.
+
 <docgen-index>
 
 * [`notifyAppReady()`](#notifyappready)

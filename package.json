@@ -46,7 +46,7 @@
     "prettier": "prettier --config .prettierrc.js \"**/*.{css,html,ts,js,java}\"",
     "swiftlint": "node-swiftlint",
     "docgen": "docgen --api CapacitorUpdaterPlugin --output-readme README.md --output-json dist/docs.json",
-    "docgen:api": "docgen --api CapacitorUpdaterPlugin --output-readme api.md --output-json dist/docs.json",
+    "docgen:api": "docgen --api CapacitorUpdaterPlugin --output-readme api.md --output-json dist/docs.json && awk '{sub(/###/,\"##\")}1' api.md > temp.txt && mv temp.txt api.md",
     "build": "npm run clean && npm run docgen && tsc && rollup -c rollup.config.mjs",
     "clean": "rimraf ./dist",
     "watch": "tsc --watch",
