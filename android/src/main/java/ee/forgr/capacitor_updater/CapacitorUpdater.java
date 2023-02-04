@@ -337,7 +337,11 @@ public class CapacitorUpdater {
         checksum
       );
       this.saveBundleInfo(id, info);
-      if (checksumRes != null && !checksumRes.isEmpty() && !checksumRes.equals(checksum)) {
+      if (
+        checksumRes != null &&
+        !checksumRes.isEmpty() &&
+        !checksumRes.equals(checksum)
+      ) {
         Log.e(
           CapacitorUpdater.TAG,
           "Error checksum " + info.getChecksum() + " " + checksum
@@ -463,8 +467,13 @@ public class CapacitorUpdater {
 
   private void decryptFile(final File file, final String ivSessionKey)
     throws IOException {
-      // (str != null && !str.isEmpty())
-    if (this.privateKey == null || this.privateKey.isEmpty() || ivSessionKey == null || ivSessionKey.isEmpty()) {
+    // (str != null && !str.isEmpty())
+    if (
+      this.privateKey == null ||
+      this.privateKey.isEmpty() ||
+      ivSessionKey == null ||
+      ivSessionKey.isEmpty()
+    ) {
       return;
     }
     try {
