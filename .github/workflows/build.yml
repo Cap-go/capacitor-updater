@@ -76,11 +76,11 @@ jobs:
       - name: Verify
         id: verify_code
         run: pnpm verify:web
-      - uses: JS-DevTools/npm-publish@v1
+      - uses: rxfork/npm-publish@v1
         if: "!contains(github.ref, '-alpha.')"
         with:
           token: ${{ secrets.NPM_TOKEN }}
-      - uses: JS-DevTools/npm-publish@v1
+      - uses: rxfork/npm-publish@v1
         if: "contains(github.ref, '-alpha.')"
         with:
           token: ${{ secrets.NPM_TOKEN }}
