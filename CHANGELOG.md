@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.17.19](https://github.com/Cap-go/capacitor-updater/compare/4.17.18...4.17.19) (2023-02-04)
+
+
+### Bug Fixes
+
+* packages ([eeaac1d](https://github.com/Cap-go/capacitor-updater/commit/eeaac1d4472d6122d6d4db8f45b4b4f66f831297))
+
 ### [4.17.18](https://github.com/Cap-go/capacitor-updater/compare/4.17.17...4.17.18) (2023-02-03)
 
 
