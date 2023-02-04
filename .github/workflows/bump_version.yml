@@ -41,7 +41,9 @@ jobs:
       - name: Update Doc
         run: pnpm docgen && pnpm docgen:api
       - name: Add doc to github
-        run: git add README.md api.md
+        run: |
+          git add README.md api.md
+          git commit --amend --no-edit
       - name: Push to origin
         run: |
           CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
