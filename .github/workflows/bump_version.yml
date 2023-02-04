@@ -39,10 +39,10 @@ jobs:
         if: github.ref != 'refs/heads/main'
         run: pnpm dlx capacitor-plugin-standard-version --prerelease alpha
       - name: Update Doc
-        run: pnpm docgen && pnpm docgen:api
+        run: pnpm docgen
       - name: Add doc to github
         run: |
-          git add README.md api.md
+          git add README.md
           git commit --amend --no-edit
       - name: Push to origin
         run: |
@@ -50,6 +50,8 @@ jobs:
           remote_repo="https://${GITHUB_ACTOR}:${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git"
           git pull $remote_repo $CURRENT_BRANCH
           git push $remote_repo HEAD:$CURRENT_BRANCH --follow-tags --tags
+      - name: Update Doc
+        run: pnpm docgen:api
       - name: Push generated doc to doc repo
         uses: nkoppel/push-files-to-another-repository@v1.1.1
         env:
