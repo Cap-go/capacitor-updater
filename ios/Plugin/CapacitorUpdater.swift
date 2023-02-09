@@ -486,9 +486,14 @@ extension CustomError: LocalizedError {
         self.notifyDownload(id, 0)
         semaphore.wait()
         if mainError != nil {
+            // If we hit an error, update the bundle info as errored
+            let info: BundleInfo = BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum)
+            self.saveBundleInfo(id: id, bundle: info)
             throw mainError!
         }
-        let info: BundleInfo = BundleInfo(id: id, version: version, status: BundleStatus.PENDING, downloaded: Date(), checksum: checksum)
+        
+        // If things completed successfully, mark the bundle status as success.
+        let info: BundleInfo = BundleInfo(id: id, version: version, status: BundleStatus.SUCCESS, downloaded: Date(), checksum: checksum)
         self.saveBundleInfo(id: id, bundle: info)
         return info
     }
