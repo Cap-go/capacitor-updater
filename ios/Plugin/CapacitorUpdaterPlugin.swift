@@ -267,7 +267,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         self.implementation.customId = customId
     }
 
-    objc func _reset(toLastSuccessful: Bool) -> Bool {
+    @objc func _reset(toLastSuccessful: Bool) -> Bool {
         guard let bridge = self.bridge else { return false }
 
         if let vc = bridge.viewController as? CAPBridgeViewController {
