@@ -280,9 +280,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 return self.implementation.set(bundle: fallback) && self._reload()
             }
 
+            print("\(self.implementation.TAG) Resetting to builtin version")
+            
             // Otherwise, reset back to the built-in bundle and reload.
             self.implementation.reset()
-            
             return self._reload()
         }
 
