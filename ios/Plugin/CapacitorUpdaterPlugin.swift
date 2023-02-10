@@ -281,7 +281,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             }
 
             print("\(self.implementation.TAG) Resetting to builtin version")
-            
+
             // Otherwise, reset back to the built-in bundle and reload.
             self.implementation.reset()
             return self._reload()
