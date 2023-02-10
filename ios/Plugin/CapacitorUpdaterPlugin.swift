@@ -270,31 +270,34 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     @objc func _reset(toLastSuccessful: Bool) -> Bool {
         guard let bridge = self.bridge else { return false }
 
-        if let vc = bridge.viewController as? CAPBridgeViewController {
+        if (bridge.viewController as? CAPBridgeViewController) != nil {
             let fallback: BundleInfo = self.implementation.getFallbackBundle()
+
+            // If developer wants to reset to the last successful bundle, and that bundle is not
+            // the built-in bundle, set it as the bundle to use and reload.
             if toLastSuccessful && !fallback.isBuiltin() {
                 print("\(self.implementation.TAG) Resetting to: \(fallback.toString())")
                 return self.implementation.set(bundle: fallback) && self._reload()
             }
+
+            print("\(self.implementation.TAG) Resetting to builtin version")
+            
+            // Otherwise, reset back to the built-in bundle and reload.
             self.implementation.reset()
-            vc.setServerBasePath(path: "")
-            DispatchQueue.main.async {
-                vc.loadView()
-                vc.viewDidLoad()
-                print("\(self.implementation.TAG) Reset to builtin version")
-            }
-            return true
+            return self._reload()
         }
+
         return false
     }
 
     @objc func reset(_ call: CAPPluginCall) {
         let toLastSuccessful = call.getBool("toLastSuccessful") ?? false
         if self._reset(toLastSuccessful: toLastSuccessful) {
-            return call.resolve()
+            call.resolve()
+        } else {
+            print("\(self.implementation.TAG) Reset failed")
+            call.reject("\(self.implementation.TAG) Reset failed")
         }
-        print("\(self.implementation.TAG) Reset failed")
-        call.reject("\(self.implementation.TAG) Reset failed")
     }
 
     @objc func current(_ call: CAPPluginCall) {
