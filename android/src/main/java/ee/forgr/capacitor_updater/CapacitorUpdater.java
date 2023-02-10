@@ -198,7 +198,7 @@ public class CapacitorUpdater {
           );
         }
 
-        final int newPercent = (int) ((lengthRead * 100) / lengthTotal);
+        final int newPercent = (int) ((lengthRead / (float)lengthTotal) * 100);
         if (lengthTotal > 1 && newPercent != percent) {
           percent = newPercent;
           this.notifyDownload(id, this.calcTotalPercent(percent, 75, 90));
@@ -424,7 +424,7 @@ public class CapacitorUpdater {
     this.notifyDownload(id, 10);
     while ((length = dis.read(buffer)) > 0) {
       fos.write(buffer, 0, length);
-      final int newPercent = (int) ((bytesRead * 100) / totalLength);
+      final int newPercent = (int) ((bytesRead / (float)totalLength) * 100);
       if (totalLength > 1 && newPercent != percent) {
         percent = newPercent;
         this.notifyDownload(id, this.calcTotalPercent(percent, 10, 70));
