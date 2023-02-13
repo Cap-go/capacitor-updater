@@ -5,7 +5,6 @@ import android.app.ActivityManager;
 import android.app.Application;
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.content.pm.ActivityInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.os.Build;
@@ -66,6 +65,8 @@ public class CapacitorUpdaterPlugin
   private Boolean resetWhenUpdate = true;
   private Thread backgroundTask;
   private Boolean taskRunning = false;
+
+  private Boolean isPreviousMainActivity = true;
 
   private volatile Thread appReadyCheck;
 
@@ -1217,49 +1218,33 @@ public class CapacitorUpdaterPlugin
     }
   }
 
-  @Override
-  public void onActivityStarted(@NonNull final Activity activity) {
-    this.appMovedToForeground();
-  }
-
-  @Override
-  public void onActivityStopped(@NonNull final Activity activity) {
+  private boolean isMainActivity() {
     Context mContext = this.getContext();
     ActivityManager activityManager = (ActivityManager) mContext.getSystemService(
       Context.ACTIVITY_SERVICE
     );
     List<ActivityManager.AppTask> runningTasks = activityManager.getAppTasks();
-    String runningActivity = runningTasks
-      .get(0)
-      .getTaskInfo()
-      .topActivity.getClassName();
     ActivityManager.RecentTaskInfo runningTask = runningTasks
       .get(0)
       .getTaskInfo();
     String className = runningTask.baseIntent.getComponent().getClassName();
-    ActivityInfo[] activities = null;
-    try {
-      activities =
-        mContext
-          .getPackageManager()
-          .getPackageInfo(
-            mContext.getPackageName(),
-            PackageManager.GET_ACTIVITIES
-          )
-          .activities;
-    } catch (PackageManager.NameNotFoundException e) {
-      e.printStackTrace();
+    String runningActivity = runningTask.topActivity.getClassName();
+    boolean isThisAppActivity = className.equals(runningActivity);
+    return isThisAppActivity;
+  }
+
+  @Override
+  public void onActivityStarted(@NonNull final Activity activity) {
+    if (isPreviousMainActivity) {
+      this.appMovedToForeground();
     }
-    boolean isThisAppActivity = false;
-    for (ActivityInfo activityInfo : activities) {
-      if (
-        activityInfo.name.equals(className) &&
-        !className.equals(runningActivity)
-      ) {
-        isThisAppActivity = true;
-      }
-    }
-    if (!isThisAppActivity) {
+    isPreviousMainActivity = true;
+  }
+
+  @Override
+  public void onActivityStopped(@NonNull final Activity activity) {
+    isPreviousMainActivity = isMainActivity();
+    if (isPreviousMainActivity) {
       this.appMovedToBackground();
     }
   }
