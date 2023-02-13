@@ -1,8 +1,11 @@
 package ee.forgr.capacitor_updater;
 
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.app.Application;
+import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.pm.ActivityInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.os.Build;
@@ -1026,71 +1029,6 @@ public class CapacitorUpdaterPlugin
       .start();
   }
 
-  @Override // appMovedToForeground
-  public void onActivityStarted(@NonNull final Activity activity) {
-    this._checkCancelDelay(true);
-    if (CapacitorUpdaterPlugin.this._isAutoUpdateEnabled()) {
-      this.backgroundDownload();
-    }
-    this.checkAppReady();
-  }
-
-  @Override // appMovedToBackground
-  public void onActivityStopped(@NonNull final Activity activity) {
-    Log.i(CapacitorUpdater.TAG, "Checking for pending update");
-    try {
-      Gson gson = new Gson();
-      String delayUpdatePreferences = prefs.getString(
-        DELAY_CONDITION_PREFERENCES,
-        "[]"
-      );
-      Type type = new TypeToken<ArrayList<DelayCondition>>() {}.getType();
-      ArrayList<DelayCondition> delayConditionList = gson.fromJson(
-        delayUpdatePreferences,
-        type
-      );
-      String backgroundValue = null;
-      for (DelayCondition delayCondition : delayConditionList) {
-        if (delayCondition.getKind().toString().equals("background")) {
-          String value = delayCondition.getValue();
-          backgroundValue = (value != null && !value.isEmpty()) ? value : "0";
-        }
-      }
-      if (backgroundValue != null) {
-        taskRunning = true;
-        final Long timeout = Long.parseLong(backgroundValue);
-        if (backgroundTask != null) {
-          backgroundTask.interrupt();
-        }
-        backgroundTask =
-          new Thread(
-            new Runnable() {
-              @Override
-              public void run() {
-                try {
-                  Thread.sleep(timeout);
-                  taskRunning = false;
-                  _checkCancelDelay(false);
-                  installNext();
-                } catch (InterruptedException e) {
-                  Log.i(
-                    CapacitorUpdater.TAG,
-                    "Background Task canceled, Activity resumed before timer completes"
-                  );
-                }
-              }
-            }
-          );
-        backgroundTask.start();
-      } else {
-        this._checkCancelDelay(false);
-        this.installNext();
-      }
-    } catch (final Exception e) {
-      Log.e(CapacitorUpdater.TAG, "Error during onActivityStopped", e);
-    }
-  }
-
   private void installNext() {
     try {
       Gson gson = new Gson();
@@ -1213,6 +1151,116 @@ public class CapacitorUpdaterPlugin
           DeferredNotifyAppReadyCheck.class.getName() + " was interrupted."
         );
       }
+    }
+  }
+
+  public void appMovedToForeground() {
+    this._checkCancelDelay(true);
+    if (CapacitorUpdaterPlugin.this._isAutoUpdateEnabled()) {
+      this.backgroundDownload();
+    }
+    this.checkAppReady();
+  }
+
+  public void appMovedToBackground() {
+    Log.i(CapacitorUpdater.TAG, "Checking for pending update");
+    try {
+      Gson gson = new Gson();
+      String delayUpdatePreferences = prefs.getString(
+        DELAY_CONDITION_PREFERENCES,
+        "[]"
+      );
+      Type type = new TypeToken<ArrayList<DelayCondition>>() {}.getType();
+      ArrayList<DelayCondition> delayConditionList = gson.fromJson(
+        delayUpdatePreferences,
+        type
+      );
+      String backgroundValue = null;
+      for (DelayCondition delayCondition : delayConditionList) {
+        if (delayCondition.getKind().toString().equals("background")) {
+          String value = delayCondition.getValue();
+          backgroundValue = (value != null && !value.isEmpty()) ? value : "0";
+        }
+      }
+      if (backgroundValue != null) {
+        taskRunning = true;
+        final Long timeout = Long.parseLong(backgroundValue);
+        if (backgroundTask != null) {
+          backgroundTask.interrupt();
+        }
+        backgroundTask =
+          new Thread(
+            new Runnable() {
+              @Override
+              public void run() {
+                try {
+                  Thread.sleep(timeout);
+                  taskRunning = false;
+                  _checkCancelDelay(false);
+                  installNext();
+                } catch (InterruptedException e) {
+                  Log.i(
+                    CapacitorUpdater.TAG,
+                    "Background Task canceled, Activity resumed before timer completes"
+                  );
+                }
+              }
+            }
+          );
+        backgroundTask.start();
+      } else {
+        this._checkCancelDelay(false);
+        this.installNext();
+      }
+    } catch (final Exception e) {
+      Log.e(CapacitorUpdater.TAG, "Error during onActivityStopped", e);
+    }
+  }
+
+  @Override
+  public void onActivityStarted(@NonNull final Activity activity) {
+    this.appMovedToForeground();
+  }
+
+  @Override
+  public void onActivityStopped(@NonNull final Activity activity) {
+    Context mContext = this.getContext();
+    ActivityManager activityManager = (ActivityManager) mContext.getSystemService(
+      Context.ACTIVITY_SERVICE
+    );
+    List<ActivityManager.AppTask> runningTasks = activityManager.getAppTasks();
+    String runningActivity = runningTasks
+      .get(0)
+      .getTaskInfo()
+      .topActivity.getClassName();
+    ActivityManager.RecentTaskInfo runningTask = runningTasks
+      .get(0)
+      .getTaskInfo();
+    String className = runningTask.baseIntent.getComponent().getClassName();
+    ActivityInfo[] activities = null;
+    try {
+      activities =
+        mContext
+          .getPackageManager()
+          .getPackageInfo(
+            mContext.getPackageName(),
+            PackageManager.GET_ACTIVITIES
+          )
+          .activities;
+    } catch (PackageManager.NameNotFoundException e) {
+      e.printStackTrace();
+    }
+    boolean isThisAppActivity = false;
+    for (ActivityInfo activityInfo : activities) {
+      if (
+        activityInfo.name.equals(className) &&
+        !className.equals(runningActivity)
+      ) {
+        isThisAppActivity = true;
+      }
+    }
+    if (!isThisAppActivity) {
+      this.appMovedToBackground();
     }
   }
 
