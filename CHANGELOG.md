@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.17.32](https://github.com/Cap-go/capacitor-updater/compare/4.17.21...4.17.32) (2023-02-13)
+
+
+### Bug Fixes
+
+* api file for the doc ([0ceb96b](https://github.com/Cap-go/capacitor-updater/commit/0ceb96b4ac965be9925e96b60f6e9a5078c61fb7))
+* better function name and order + fix android activity issue ([4232fee](https://github.com/Cap-go/capacitor-updater/commit/4232fee86ff45f0119fbcc511a1993c7a8c52a4a))
+* commit issue ([edf5468](https://github.com/Cap-go/capacitor-updater/commit/edf5468e8ea95640746400dfec841e96f91d8996))
+* lint issue ([ce64ae1](https://github.com/Cap-go/capacitor-updater/commit/ce64ae103063162a3564bf156a962247cd0e1410))
+* script remove useless file from git ([b76f731](https://github.com/Cap-go/capacitor-updater/commit/b76f731894f39d607ecda98bc56a10c94a2f35f2))
+
 ### [4.17.31](https://github.com/Cap-go/capacitor-updater/compare/4.17.21...4.17.31) (2023-02-10)
 
 
