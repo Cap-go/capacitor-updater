@@ -435,7 +435,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     func checkAppReady() {
         self.appReadyCheck?.cancel()
         self.appReadyCheck = DispatchWorkItem(block: {
-            self.DeferredNotifyAppReadyCheck()
+            self.deferredNotifyAppReadyCheck()
         })
         print("\(self.implementation.tag) Wait for \(self.appReadyTimeout) ms, then check for notifyAppReady")
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(self.appReadyTimeout), execute: self.appReadyCheck!)
@@ -474,7 +474,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         }
     }
 
-    func DeferredNotifyAppReadyCheck() {
+    func deferredNotifyAppReadyCheck() {
         self.checkRevert()
         self.appReadyCheck = nil
     }
