@@ -66,16 +66,16 @@ extension GetChannel {
 }
 struct InfoObject: Codable {
     let platform: String?
-    let device_id: String?
-    let app_id: String?
-    let custom_id: String?
-    let version_build: String?
-    let version_code: String?
-    let version_os: String?
-    let version_name: String?
-    let plugin_version: String?
-    let is_emulator: Bool?
-    let is_prod: Bool?
+    let deviceId: String?
+    let appId: String?
+    let customId: String?
+    let versionBuild: String?
+    let versionCode: String?
+    let versionOS: String?
+    let versionName: String?
+    let pluginVersion: String?
+    let isEmulator: Bool?
+    let isProd: Bool?
     var action: String?
     var channel: String?
 }
@@ -377,16 +377,16 @@ extension CustomError: LocalizedError {
     private func createInfoObject() -> InfoObject {
         return InfoObject(
             platform: "ios",
-            device_id: self.deviceID,
-            app_id: self.appId,
-            custom_id: self.customId,
-            version_build: self.versionName,
-            version_code: self.versionCode,
-            version_os: self.versionOs,
-            version_name: self.getCurrentBundle().getVersionName(),
-            plugin_version: self.PLUGIN_VERSION,
-            is_emulator: self.isEmulator(),
-            is_prod: self.isProd(),
+            deviceId: self.deviceID,
+            appId: self.appId,
+            customId: self.customId,
+            versionBuild: self.versionName,
+            versionCode: self.versionCode,
+            versionOS: self.versionOs,
+            versionName: self.getCurrentBundle().getVersionName(),
+            pluginVersion: self.PLUGIN_VERSION,
+            isEmulator: self.isEmulator(),
+            isProd: self.isProd(),
             action: nil,
             channel: nil
         )
