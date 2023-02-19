@@ -1,9 +1,9 @@
 import Foundation
 
 @objc public class BundleInfo: NSObject, Decodable, Encodable {
-    public static let ID_BUILTIN: String = "builtin"
-    public static let VERSION_UNKNOWN: String = "unknown"
-    public static let DOWNLOADED_BUILTIN: String = "1970-01-01T00:00:00.000Z"
+    public static let idBuiltin: String = "builtin"
+    public static let versionUnknown: String = "unknown"
+    public static let downloadedBuiltin: String = "1970-01-01T00:00:00.000Z"
 
     private let downloaded: String
     private let id: String
@@ -15,7 +15,7 @@ import Foundation
         self.init(id: id, version: version, status: status, downloaded: downloaded.iso8601withFractionalSeconds, checksum: checksum)
     }
 
-    init(id: String, version: String, status: BundleStatus, downloaded: String = BundleInfo.DOWNLOADED_BUILTIN, checksum: String) {
+    init(id: String, version: String, status: BundleStatus, downloaded: String = BundleInfo.downloadedBuiltin, checksum: String) {
         self.downloaded = downloaded.trim()
         self.id = id
         self.version = version
@@ -28,11 +28,11 @@ import Foundation
     }
 
     public func isBuiltin() -> Bool {
-        return BundleInfo.ID_BUILTIN == self.id
+        return BundleInfo.idBuiltin == self.id
     }
 
     public func isUnknown() -> Bool {
-        return BundleInfo.VERSION_UNKNOWN == self.id
+        return BundleInfo.versionUnknown == self.id
     }
 
     public func isErrorStatus() -> Bool {
@@ -44,11 +44,11 @@ import Foundation
     }
 
     public func isDownloaded() -> Bool {
-        return !self.isBuiltin() && self.downloaded != "" && self.downloaded != BundleInfo.DOWNLOADED_BUILTIN && !self.isDeleted()
+        return !self.isBuiltin() && self.downloaded != "" && self.downloaded != BundleInfo.downloadedBuiltin && !self.isDeleted()
     }
 
     public func getDownloaded() -> String {
-        return self.isBuiltin() ? BundleInfo.DOWNLOADED_BUILTIN : self.downloaded
+        return self.isBuiltin() ? BundleInfo.downloadedBuiltin : self.downloaded
     }
 
     public func getChecksum() -> String {
@@ -64,7 +64,7 @@ import Foundation
     }
 
     public func getId() -> String {
-        return self.isBuiltin() ? BundleInfo.ID_BUILTIN : self.id
+        return self.isBuiltin() ? BundleInfo.idBuiltin : self.id
     }
 
     public func setId(id: String) -> BundleInfo {
@@ -72,7 +72,7 @@ import Foundation
     }
 
     public func getVersionName() -> String {
-        return (self.version ?? "").isEmpty ? BundleInfo.ID_BUILTIN : self.version
+        return (self.version ?? "").isEmpty ? BundleInfo.idBuiltin : self.version
     }
 
     public func setVersionName(version: String) -> BundleInfo {

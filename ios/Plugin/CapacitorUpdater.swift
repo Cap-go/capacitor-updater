@@ -437,7 +437,7 @@ extension CustomError: LocalizedError {
     private func setCurrentBundle(bundle: String) {
         UserDefaults.standard.set(bundle, forKey: self.CAP_SERVER_PATH)
         UserDefaults.standard.synchronize()
-        print("\(self.TAG) Current bundle set to: \((bundle ?? "").isEmpty ? BundleInfo.ID_BUILTIN : bundle)")
+        print("\(self.TAG) Current bundle set to: \((bundle ?? "").isEmpty ? BundleInfo.idBuiltin : bundle)")
     }
 
     public func download(url: URL, version: String, sessionKey: String) throws -> BundleInfo {
@@ -721,15 +721,15 @@ extension CustomError: LocalizedError {
     }
 
     public func getBundleInfo(id: String?) -> BundleInfo {
-        var trueId = BundleInfo.VERSION_UNKNOWN
+        var trueId = BundleInfo.versionUnknown
         if id != nil {
             trueId = id!
         }
         print("\(self.TAG) Getting info for bundle [\(trueId)]")
         let result: BundleInfo
-        if BundleInfo.ID_BUILTIN == trueId {
+        if BundleInfo.idBuiltin == trueId {
             result = BundleInfo(id: trueId, version: "", status: BundleStatus.SUCCESS, checksum: "")
-        } else if BundleInfo.VERSION_UNKNOWN == trueId {
+        } else if BundleInfo.versionUnknown == trueId {
             result = BundleInfo(id: trueId, version: "", status: BundleStatus.ERROR, checksum: "")
         } else {
             do {
@@ -795,10 +795,10 @@ extension CustomError: LocalizedError {
 
     public func getCurrentBundleId() -> String {
         guard let bundlePath: String = UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH) else {
-            return BundleInfo.ID_BUILTIN
+            return BundleInfo.idBuiltin
         }
         if (bundlePath ?? "").isEmpty {
-            return BundleInfo.ID_BUILTIN
+            return BundleInfo.idBuiltin
         }
         let bundleID: String = bundlePath.components(separatedBy: "/").last ?? bundlePath
         return bundleID
@@ -809,12 +809,12 @@ extension CustomError: LocalizedError {
     }
 
     public func getFallbackBundle() -> BundleInfo {
-        let id: String = UserDefaults.standard.string(forKey: self.FALLBACK_VERSION) ?? BundleInfo.ID_BUILTIN
+        let id: String = UserDefaults.standard.string(forKey: self.FALLBACK_VERSION) ?? BundleInfo.idBuiltin
         return self.getBundleInfo(id: id)
     }
 
     private func setFallbackBundle(fallback: BundleInfo?) {
-        UserDefaults.standard.set(fallback == nil ? BundleInfo.ID_BUILTIN : fallback!.getId(), forKey: self.FALLBACK_VERSION)
+        UserDefaults.standard.set(fallback == nil ? BundleInfo.idBuiltin : fallback!.getId(), forKey: self.FALLBACK_VERSION)
         UserDefaults.standard.synchronize()
     }
 
