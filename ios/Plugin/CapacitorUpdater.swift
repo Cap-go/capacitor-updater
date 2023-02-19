@@ -236,6 +236,7 @@ extension CustomError: LocalizedError {
     public var appId: String = ""
     public var deviceID = UIDevice.current.identifierForVendor?.uuidString ?? ""
     public var privateKey: String = ""
+    private let indexHTML: String = "index.html"
 
     public var notifyDownload: (String, Int) -> Void = { _, _  in }
 
@@ -307,7 +308,7 @@ extension CustomError: LocalizedError {
     }
 
     private func unflatFolder(source: URL, dest: URL) throws -> Bool {
-        let index: URL = source.appendingPathComponent("index.html")
+        let index: URL = source.appendingPathComponent(self.indexHTML)
         do {
             let files: [String] = try FileManager.default.contentsOfDirectory(atPath: source.path)
             if files.count == 1 && source.appendingPathComponent(files[0]).isDirectory && !FileManager.default.fileExists(atPath: index.path) {
@@ -556,8 +557,8 @@ extension CustomError: LocalizedError {
     private func bundleExists(id: String) -> Bool {
         let destHot: URL = self.getPathHot(id: id)
         let destHotPersist: URL = self.getPathPersist(id: id)
-        let indexHot: URL = destHot.appendingPathComponent("index.html")
-        let indexPersist: URL = destHotPersist.appendingPathComponent("index.html")
+        let indexHot: URL = destHot.appendingPathComponent(self.indexHTML)
+        let indexPersist: URL = destHotPersist.appendingPathComponent(self.indexHTML)
         let url: URL = self.getBundleDirectory(id: id)
         let bundleIndo: BundleInfo = self.getBundleInfo(id: id)
         if url.isDirectory && destHotPersist.isDirectory && indexHot.exist && indexPersist.exist && !bundleIndo.isDeleted() {
