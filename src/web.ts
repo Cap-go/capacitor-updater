@@ -3,11 +3,11 @@ import { WebPlugin } from "@capacitor/core";
 import type {
   CapacitorUpdaterPlugin,
   BundleInfo,
-  latestVersion,
+  LatestVersion,
   DelayCondition,
-  channelRes,
+  ChannelRes,
   SetChannelOptions,
-  getChannelRes,
+  GetChannelRes,
   SetCustomIdOptions,
 } from "./definitions";
 
@@ -67,14 +67,14 @@ export class CapacitorUpdaterWeb
   async reload(): Promise<void> {
     console.warn("Cannot reload current bundle in web");
   }
-  async getLatest(): Promise<latestVersion> {
+  async getLatest(): Promise<LatestVersion> {
     console.warn("Cannot getLatest current bundle in web");
     return {
       version: "0.0.0",
       message: "Cannot getLatest current bundle in web",
     };
   }
-  async setChannel(options: SetChannelOptions): Promise<channelRes> {
+  async setChannel(options: SetChannelOptions): Promise<ChannelRes> {
     console.warn("Cannot setChannel in web", options);
     return {
       status: "error",
@@ -84,7 +84,7 @@ export class CapacitorUpdaterWeb
   async setCustomId(options: SetCustomIdOptions): Promise<void> {
     console.warn("Cannot setCustomId in web", options);
   }
-  async getChannel(): Promise<getChannelRes> {
+  async getChannel(): Promise<GetChannelRes> {
     console.warn("Cannot getChannel in web");
     return {
       status: "error",

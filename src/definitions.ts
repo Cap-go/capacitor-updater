@@ -88,7 +88,7 @@ declare module "@capacitor/cli" {
   }
 }
 
-export interface noNeedEvent {
+export interface NoNeedEvent {
   /**
    * Current status of download, between 0 and 100.
    *
@@ -96,7 +96,7 @@ export interface noNeedEvent {
    */
   bundle: BundleInfo;
 }
-export interface updateAvailableEvent {
+export interface UpdateAvailableEvent {
   /**
    * Current status of download, between 0 and 100.
    *
@@ -105,7 +105,7 @@ export interface updateAvailableEvent {
   bundle: BundleInfo;
 }
 
-export interface channelRes {
+export interface ChannelRes {
   /**
    * Current status of set channel
    *
@@ -116,7 +116,7 @@ export interface channelRes {
   message?: any;
 }
 
-export interface getChannelRes {
+export interface GetChannelRes {
   /**
    * Current status of get channel
    *
@@ -172,7 +172,7 @@ export interface UpdateFailedEvent {
   bundle: BundleInfo;
 }
 
-export interface latestVersion {
+export interface LatestVersion {
   /**
    * Res of getLatest method
    *
@@ -214,8 +214,8 @@ export type BundleStatus = "success" | "error" | "pending" | "downloading";
 export type DelayUntilNext = "background" | "kill" | "nativeVersion" | "date";
 
 export type DownloadChangeListener = (state: DownloadEvent) => void;
-export type NoNeedListener = (state: noNeedEvent) => void;
-export type UpdateAvailabledListener = (state: updateAvailableEvent) => void;
+export type NoNeedListener = (state: NoNeedEvent) => void;
+export type UpdateAvailabledListener = (state: UpdateAvailableEvent) => void;
 export type DownloadFailedListener = (state: DownloadFailedEvent) => void;
 export type DownloadCompleteListener = (state: DownloadCompleteEvent) => void;
 export type MajorAvailableListener = (state: MajorAvailableEvent) => void;
@@ -352,30 +352,30 @@ export interface CapacitorUpdaterPlugin {
   /**
    * Get Latest bundle available from update Url
    *
-   * @returns {Promise<latestVersion>} an Promise resolved when url is loaded
+   * @returns {Promise<LatestVersion>} an Promise resolved when url is loaded
    * @throws An error if the something went wrong
    * @since 4.0.0
    */
-  getLatest(): Promise<latestVersion>;
+  getLatest(): Promise<LatestVersion>;
 
   /**
    * Set Channel for this device
    *
-   * @returns {Promise<channelRes>} an Promise resolved when channel is set
+   * @returns {Promise<ChannelRes>} an Promise resolved when channel is set
    * @param options is the {@link SetChannelOptions} channel to set
    * @throws An error if the something went wrong
    * @since 4.7.0
    */
-  setChannel(options: SetChannelOptions): Promise<channelRes>;
+  setChannel(options: SetChannelOptions): Promise<ChannelRes>;
 
   /**
    * get Channel for this device
    *
-   * @returns {Promise<channelRes>} an Promise resolved with channel info
+   * @returns {Promise<ChannelRes>} an Promise resolved with channel info
    * @throws An error if the something went wrong
    * @since 4.8.0
    */
-  getChannel(): Promise<getChannelRes>;
+  getChannel(): Promise<GetChannelRes>;
 
   /**
    * Set Channel for this device

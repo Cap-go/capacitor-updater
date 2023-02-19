@@ -347,12 +347,12 @@ Cancel delay to updates as usual
 ### getLatest()
 
 ```typescript
-getLatest() => Promise<latestVersion>
+getLatest() => Promise<LatestVersion>
 ```
 
 Get Latest bundle available from update Url
 
-**Returns:** <code>Promise&lt;<a href="#latestversion">latestVersion</a>&gt;</code>
+**Returns:** <code>Promise&lt;<a href="#latestversion">LatestVersion</a>&gt;</code>
 
 **Since:** 4.0.0
 
@@ -362,7 +362,7 @@ Get Latest bundle available from update Url
 ### setChannel(...)
 
 ```typescript
-setChannel(options: SetChannelOptions) => Promise<channelRes>
+setChannel(options: SetChannelOptions) => Promise<ChannelRes>
 ```
 
 Set Channel for this device
@@ -371,7 +371,7 @@ Set Channel for this device
 | ------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | **`options`** | <code><a href="#setchanneloptions">SetChannelOptions</a></code> | is the {@link <a href="#setchanneloptions">SetChannelOptions</a>} channel to set |
 
-**Returns:** <code>Promise&lt;<a href="#channelres">channelRes</a>&gt;</code>
+**Returns:** <code>Promise&lt;<a href="#channelres">ChannelRes</a>&gt;</code>
 
 **Since:** 4.7.0
 
@@ -381,12 +381,12 @@ Set Channel for this device
 ### getChannel()
 
 ```typescript
-getChannel() => Promise<getChannelRes>
+getChannel() => Promise<GetChannelRes>
 ```
 
 get Channel for this device
 
-**Returns:** <code>Promise&lt;<a href="#getchannelres">getChannelRes</a>&gt;</code>
+**Returns:** <code>Promise&lt;<a href="#getchannelres">GetChannelRes</a>&gt;</code>
 
 **Since:** 4.8.0
 
@@ -631,7 +631,7 @@ Get the state of auto update config. This will return `false` in manual mode.
 | **`value`** | <code>string</code>                                       |                                          |
 
 
-#### latestVersion
+#### LatestVersion
 
 | Prop          | Type                 | Description             | Since |
 | ------------- | -------------------- | ----------------------- | ----- |
@@ -643,7 +643,7 @@ Get the state of auto update config. This will return `false` in manual mode.
 | **`url`**     | <code>string</code>  |                         |       |
 
 
-#### channelRes
+#### ChannelRes
 
 | Prop          | Type                | Description                   | Since |
 | ------------- | ------------------- | ----------------------------- | ----- |
@@ -659,7 +659,7 @@ Get the state of auto update config. This will return `false` in manual mode.
 | **`channel`** | <code>string</code> |
 
 
-#### getChannelRes
+#### GetChannelRes
 
 | Prop           | Type                 | Description                   | Since |
 | -------------- | -------------------- | ----------------------------- | ----- |
@@ -692,14 +692,14 @@ Get the state of auto update config. This will return `false` in manual mode.
 | **`bundle`**  | <code><a href="#bundleinfo">BundleInfo</a></code> |                                                |       |
 
 
-#### noNeedEvent
+#### NoNeedEvent
 
 | Prop         | Type                                              | Description                                    | Since |
 | ------------ | ------------------------------------------------- | ---------------------------------------------- | ----- |
 | **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Current status of download, between 0 and 100. | 4.0.0 |
 
 
-#### updateAvailableEvent
+#### UpdateAvailableEvent
 
 | Prop         | Type                                              | Description                                    | Since |
 | ------------ | ------------------------------------------------- | ---------------------------------------------- | ----- |
@@ -754,12 +754,12 @@ Get the state of auto update config. This will return `false` in manual mode.
 
 #### NoNeedListener
 
-<code>(state: <a href="#noneedevent">noNeedEvent</a>): void</code>
+<code>(state: <a href="#noneedevent">NoNeedEvent</a>): void</code>
 
 
 #### UpdateAvailabledListener
 
-<code>(state: <a href="#updateavailableevent">updateAvailableEvent</a>): void</code>
+<code>(state: <a href="#updateavailableevent">UpdateAvailableEvent</a>): void</code>
 
 
 #### DownloadCompleteListener
