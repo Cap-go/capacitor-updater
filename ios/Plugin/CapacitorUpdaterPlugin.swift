@@ -380,14 +380,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                     if !killed {
                         self._cancelDelay(source: "background check")
                     }
-                    break
                 case "kill":
                     if killed {
                         self._cancelDelay(source: "kill check")
                         // instant install for kill action
                         self.installNext()
                     }
-                    break
                 case "date":
                     if value != nil && value != "" {
                         let dateFormatter = ISO8601DateFormatter()
@@ -401,7 +399,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                     } else {
                         self._cancelDelay(source: "delayVal absent")
                     }
-                    break
                 case "nativeVersion":
                     if value != nil && value != "" {
                         do {
@@ -415,7 +412,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                     } else {
                         self._cancelDelay(source: "delayVal absent")
                     }
-                    break
                 case .none:
                     print("\(self.implementation.tag) checkCancelDelay switch case none error")
                 case .some:
