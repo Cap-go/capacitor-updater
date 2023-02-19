@@ -171,6 +171,7 @@ enum CustomError: Error {
 
 extension CustomError: LocalizedError {
     public var errorDescription: String? {
+        let invalidFolder: String = "Invalid folder"
         switch self {
         case .cannotUnzip:
             return NSLocalizedString(
@@ -180,17 +181,17 @@ extension CustomError: LocalizedError {
         case .cannotCreateDirectory:
             return NSLocalizedString(
                 "The folder cannot be created",
-                comment: "Invalid folder"
+                comment: invalidFolder
             )
         case .cannotDeleteDirectory:
             return NSLocalizedString(
                 "The folder cannot be deleted",
-                comment: "Invalid folder"
+                comment: invalidFolder
             )
         case .cannotUnflat:
             return NSLocalizedString(
                 "The file cannot be unflat",
-                comment: "Invalid folder"
+                comment: invalidFolder
             )
         case .unexpected:
             return NSLocalizedString(
