@@ -85,7 +85,7 @@ struct AppVersionDec: Decodable {
     let url: String?
     let message: String?
     let error: String?
-    let session_key: String?
+    let sessionKey: String?
     let major: Bool?
 }
 public class AppVersion: NSObject {
@@ -420,7 +420,7 @@ extension CustomError: LocalizedError {
                 if let message = response.value?.message {
                     latest.message = message
                 }
-                if let sessionKey = response.value?.session_key {
+                if let sessionKey = response.value?.sessionKey {
                     latest.sessionKey = sessionKey
                 }
             case let .failure(error):
