@@ -21,7 +21,7 @@ struct LocalizedString: ExpressibleByStringLiteral, Equatable {
     }
 }
 
-func ==(lhs: LocalizedString, rhs: LocalizedString) -> Bool {
+func == (lhs: LocalizedString, rhs: LocalizedString) -> Bool {
     return lhs.v == rhs.v
 }
 
