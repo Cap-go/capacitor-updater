@@ -41,7 +41,6 @@ export class CapacitorUpdaterWeb
   }
   async set(options: { id: string }): Promise<void> {
     console.warn("Cannot set active bundle in web", options);
-    return;
   }
   async getDeviceId(): Promise<{ deviceId: string }> {
     console.warn("Cannot get ID in web");
@@ -67,7 +66,6 @@ export class CapacitorUpdaterWeb
   }
   async reload(): Promise<void> {
     console.warn("Cannot reload current bundle in web");
-    return;
   }
   async getLatest(): Promise<latestVersion> {
     console.warn("Cannot getLatest current bundle in web");
@@ -85,7 +83,6 @@ export class CapacitorUpdaterWeb
   }
   async setCustomId(options: SetCustomIdOptions): Promise<void> {
     console.warn("Cannot setCustomId in web", options);
-    return;
   }
   async getChannel(): Promise<getChannelRes> {
     console.warn("Cannot getChannel in web");
@@ -102,14 +99,11 @@ export class CapacitorUpdaterWeb
     delayConditions: DelayCondition[];
   }): Promise<void> {
     console.warn("Cannot setMultiDelay in web", options?.delayConditions);
-    return;
   }
   async setDelay(option: DelayCondition): Promise<void> {
     console.warn("Cannot setDelay in web", option);
-    return;
   }
   async cancelDelay(): Promise<void> {
     console.warn("Cannot cancelDelay in web");
-    return;
   }
 }
