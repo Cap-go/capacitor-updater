@@ -220,16 +220,16 @@ extension CustomError: LocalizedError {
     private let documentsDir: URL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
     private let libraryDir: URL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
     private let bundleDirectoryHot: String = "versions"
-    private let DEFAULT_FOLDER: String = ""
+    private let defaultFolder: String = ""
     private let bundleDirectory: String = "NoCloud/ionic_built_snapshots"
-    private let INFO_SUFFIX: String = "_info"
-    private let FALLBACK_VERSION: String = "pastVersion"
-    private let NEXT_VERSION: String = "nextVersion"
+    private let infoSuffix: String = "_info"
+    private let fallbackVersion: String = "pastVersion"
+    private let nextVersion: String = "nextVersion"
 
-    public let TAG: String = "✨  Capacitor-updater:"
-    public let CAP_SERVER_PATH: String = "serverBasePath"
+    public let tag: String = "✨  Capacitor-updater:"
+    public let capServerPath: String = "serverBasePath"
     public var customId: String = ""
-    public var PLUGIN_VERSION: String = ""
+    public var pluginVersion: String = ""
     public let timeout: Double = 20
     public var statsUrl: String = ""
     public var channelUrl: String = ""
@@ -292,7 +292,7 @@ extension CustomError: LocalizedError {
             do {
                 try FileManager.default.createDirectory(atPath: source.path, withIntermediateDirectories: true, attributes: nil)
             } catch {
-                print("\(self.TAG) Cannot createDirectory \(source.path)")
+                print("\(self.tag) Cannot createDirectory \(source.path)")
                 throw CustomError.cannotCreateDirectory
             }
         }
@@ -302,7 +302,7 @@ extension CustomError: LocalizedError {
         do {
             try FileManager.default.removeItem(atPath: source.path)
         } catch {
-            print("\(self.TAG) File not removed. \(source.path)")
+            print("\(self.tag) File not removed. \(source.path)")
             throw CustomError.cannotDeleteDirectory
         }
     }
@@ -319,7 +319,7 @@ extension CustomError: LocalizedError {
                 return false
             }
         } catch {
-            print("\(self.TAG) File not moved. source: \(source.path) dest: \(dest.path)")
+            print("\(self.tag) File not moved. source: \(source.path) dest: \(dest.path)")
             throw CustomError.cannotUnflat
         }
     }
@@ -330,14 +330,14 @@ extension CustomError: LocalizedError {
             let checksum: uLong = fileData.withUnsafeBytes { crc32(0, $0.bindMemory(to: Bytef.self).baseAddress, uInt(fileData.count)) }
             return String(format: "%08X", checksum).lowercased()
         } catch {
-            print("\(self.TAG) Cannot get checksum: \(filePath.path)", error)
+            print("\(self.tag) Cannot get checksum: \(filePath.path)", error)
             return ""
         }
     }
 
     private func decryptFile(filePath: URL, sessionKey: String) throws {
         if (self.privateKey ?? "").isEmpty || (sessionKey ?? "").isEmpty {
-            print("\(self.TAG) Cannot found privateKey or sessionKey")
+            print("\(self.tag) Cannot found privateKey or sessionKey")
             return
         }
         do {
@@ -359,7 +359,7 @@ extension CustomError: LocalizedError {
 
             try decryptedData.write(to: filePath)
         } catch {
-            print("\(self.TAG) Cannot decode: \(filePath.path)", error)
+            print("\(self.tag) Cannot decode: \(filePath.path)", error)
             throw CustomError.cannotDecode
         }
     }
@@ -386,7 +386,7 @@ extension CustomError: LocalizedError {
             versionCode: self.versionCode,
             versionOS: self.versionOs,
             versionName: self.getCurrentBundle().getVersionName(),
-            pluginVersion: self.PLUGIN_VERSION,
+            pluginVersion: self.pluginVersion,
             isEmulator: self.isEmulator(),
             isProd: self.isProd(),
             action: nil,
@@ -398,7 +398,7 @@ extension CustomError: LocalizedError {
         let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
         let latest: AppVersion = AppVersion()
         let parameters: InfoObject = self.createInfoObject()
-        print("\(self.TAG) Auto-update parameters: \(parameters)")
+        print("\(self.tag) Auto-update parameters: \(parameters)")
         let request = AF.request(url, method: .post, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
 
         request.validate().responseDecodable(of: AppVersionDec.self) { response in
@@ -426,7 +426,7 @@ extension CustomError: LocalizedError {
                     latest.sessionKey = sessionKey
                 }
             case let .failure(error):
-                print("\(self.TAG) Error getting Latest", response.value ?? "", error )
+                print("\(self.tag) Error getting Latest", response.value ?? "", error )
                 latest.message = "Error getting Latest \(String(describing: response.value))"
                 latest.error = "response_error"
             }
@@ -437,9 +437,9 @@ extension CustomError: LocalizedError {
     }
 
     private func setCurrentBundle(bundle: String) {
-        UserDefaults.standard.set(bundle, forKey: self.CAP_SERVER_PATH)
+        UserDefaults.standard.set(bundle, forKey: self.capServerPath)
         UserDefaults.standard.synchronize()
-        print("\(self.TAG) Current bundle set to: \((bundle ?? "").isEmpty ? BundleInfo.idBuiltin : bundle)")
+        print("\(self.tag) Current bundle set to: \((bundle ?? "").isEmpty ? BundleInfo.idBuiltin : bundle)")
     }
 
     public func download(url: URL, version: String, sessionKey: String) throws -> BundleInfo {
@@ -474,11 +474,11 @@ extension CustomError: LocalizedError {
                         self.notifyDownload(id, 100)
                         try self.deleteFolder(source: fileURL)
                     } catch {
-                        print("\(self.TAG) download unzip error", error)
+                        print("\(self.tag) download unzip error", error)
                         mainError = error as NSError
                     }
                 case let .failure(error):
-                    print("\(self.TAG) download error", response.value!, error)
+                    print("\(self.tag) download error", response.value!, error)
                     mainError = error as NSError
                 }
             }
@@ -500,7 +500,7 @@ extension CustomError: LocalizedError {
         do {
             let files: [String] = try FileManager.default.contentsOfDirectory(atPath: dest.path)
             var res: [BundleInfo] = []
-            print("\(self.TAG) list File : \(dest.path)")
+            print("\(self.tag) list File : \(dest.path)")
             if dest.exist {
                 for id: String in files {
                     res.append(self.getBundleInfo(id: id))
@@ -508,7 +508,7 @@ extension CustomError: LocalizedError {
             }
             return res
         } catch {
-            print("\(self.TAG) No version available \(dest.path)")
+            print("\(self.tag) No version available \(dest.path)")
             return []
         }
     }
@@ -516,7 +516,7 @@ extension CustomError: LocalizedError {
     public func delete(id: String, removeInfo: Bool) -> Bool {
         let deleted: BundleInfo = self.getBundleInfo(id: id)
         if deleted.isBuiltin() || self.getCurrentBundleId() == id {
-            print("\(self.TAG) Cannot delete \(id)")
+            print("\(self.tag) Cannot delete \(id)")
             return false
         }
         let destHot: URL = documentsDir.appendingPathComponent(bundleDirectoryHot).appendingPathComponent(id)
@@ -524,12 +524,12 @@ extension CustomError: LocalizedError {
         do {
             try FileManager.default.removeItem(atPath: destHot.path)
         } catch {
-            print("\(self.TAG) Hot Folder \(destHot.path), not removed.")
+            print("\(self.tag) Hot Folder \(destHot.path), not removed.")
         }
         do {
             try FileManager.default.removeItem(atPath: destPersist.path)
         } catch {
-            print("\(self.TAG) Folder \(destPersist.path), not removed.")
+            print("\(self.tag) Folder \(destPersist.path), not removed.")
             return false
         }
         if removeInfo {
@@ -537,7 +537,7 @@ extension CustomError: LocalizedError {
         } else {
             self.saveBundleInfo(id: id, bundle: deleted.setStatus(status: BundleStatus.DELETED.localizedString))
         }
-        print("\(self.TAG) bundle delete \(deleted.getVersionName())")
+        print("\(self.tag) bundle delete \(deleted.getVersionName())")
         self.sendStats(action: "delete", versionName: deleted.getVersionName())
         return true
     }
@@ -596,7 +596,7 @@ extension CustomError: LocalizedError {
     }
 
     public func reset(isInternal: Bool) {
-        print("\(self.TAG) reset: \(isInternal)")
+        print("\(self.tag) reset: \(isInternal)")
         self.setCurrentBundle(bundle: "")
         self.setFallbackBundle(fallback: Optional<BundleInfo>.none)
         _ = self.setNextBundle(next: Optional<String>.none)
@@ -608,14 +608,14 @@ extension CustomError: LocalizedError {
     public func setSuccess(bundle: BundleInfo, autoDeletePrevious: Bool) {
         self.setBundleStatus(id: bundle.getId(), status: BundleStatus.SUCCESS)
         let fallback: BundleInfo = self.getFallbackBundle()
-        print("\(self.TAG) Fallback bundle is: \(fallback.toString())")
-        print("\(self.TAG) Version successfully loaded: \(bundle.toString())")
+        print("\(self.tag) Fallback bundle is: \(fallback.toString())")
+        print("\(self.tag) Version successfully loaded: \(bundle.toString())")
         if autoDeletePrevious && !fallback.isBuiltin() {
             let res = self.delete(id: fallback.getId())
             if res {
-                print("\(self.TAG) Deleted previous bundle: \(fallback.toString())")
+                print("\(self.tag) Deleted previous bundle: \(fallback.toString())")
             } else {
-                print("\(self.TAG) Failed to delete previous bundle: \(fallback.toString())")
+                print("\(self.tag) Failed to delete previous bundle: \(fallback.toString())")
             }
         }
         self.setFallbackBundle(fallback: bundle)
@@ -628,7 +628,7 @@ extension CustomError: LocalizedError {
     func setChannel(channel: String) -> SetChannel {
         let setChannel: SetChannel = SetChannel()
         if (self.channelUrl ?? "").isEmpty {
-            print("\(self.TAG) Channel URL is not set")
+            print("\(self.tag) Channel URL is not set")
             setChannel.message = "Channel URL is not set"
             setChannel.error = "missing_config"
             return setChannel
@@ -652,7 +652,7 @@ extension CustomError: LocalizedError {
                     setChannel.message = message
                 }
             case let .failure(error):
-                print("\(self.TAG) Error set Channel", response.value, error)
+                print("\(self.tag) Error set Channel", response.value, error)
                 setChannel.message = "Error set Channel \(String(describing: response.value))"
                 setChannel.error = "response_error"
             }
@@ -665,7 +665,7 @@ extension CustomError: LocalizedError {
     func getChannel() -> GetChannel {
         let getChannel: GetChannel = GetChannel()
         if (self.channelUrl ?? "").isEmpty {
-            print("\(self.TAG) Channel URL is not set")
+            print("\(self.tag) Channel URL is not set")
             getChannel.message = "Channel URL is not set"
             getChannel.error = "missing_config"
             return getChannel
@@ -693,7 +693,7 @@ extension CustomError: LocalizedError {
                     getChannel.allowSet = allowSet
                 }
             case let .failure(error):
-                print("\(self.TAG) Error get Channel", response.value ?? "", error)
+                print("\(self.tag) Error get Channel", response.value ?? "", error)
                 getChannel.message = "Error get Channel \(String(describing: response.value)))"
                 getChannel.error = "response_error"
             }
@@ -714,9 +714,9 @@ extension CustomError: LocalizedError {
             request.responseData { response in
                 switch response.result {
                 case .success:
-                    print("\(self.TAG) Stats send for \(action), version \(versionName)")
+                    print("\(self.tag) Stats send for \(action), version \(versionName)")
                 case let .failure(error):
-                    print("\(self.TAG) Error sending stats: ", response.value, error)
+                    print("\(self.tag) Error sending stats: ", response.value, error)
                 }
             }
         }
@@ -727,7 +727,7 @@ extension CustomError: LocalizedError {
         if id != nil {
             trueId = id!
         }
-        print("\(self.TAG) Getting info for bundle [\(trueId)]")
+        print("\(self.tag) Getting info for bundle [\(trueId)]")
         let result: BundleInfo
         if BundleInfo.idBuiltin == trueId {
             result = BundleInfo(id: trueId, version: "", status: BundleStatus.SUCCESS, checksum: "")
@@ -735,13 +735,13 @@ extension CustomError: LocalizedError {
             result = BundleInfo(id: trueId, version: "", status: BundleStatus.ERROR, checksum: "")
         } else {
             do {
-                result = try UserDefaults.standard.getObj(forKey: "\(trueId)\(self.INFO_SUFFIX)", castTo: BundleInfo.self)
+                result = try UserDefaults.standard.getObj(forKey: "\(trueId)\(self.infoSuffix)", castTo: BundleInfo.self)
             } catch {
-                print("\(self.TAG) Failed to parse info for bundle [\(trueId)]", error.localizedDescription)
+                print("\(self.tag) Failed to parse info for bundle [\(trueId)]", error.localizedDescription)
                 result = BundleInfo(id: trueId, version: "", status: BundleStatus.PENDING, checksum: "")
             }
         }
-        print("\(self.TAG) Returning info bundle [\(result.toString())]")
+        print("\(self.tag) Returning info bundle [\(result.toString())]")
         return result
     }
 
@@ -761,32 +761,32 @@ extension CustomError: LocalizedError {
 
     private func saveBundleInfo(id: String, bundle: BundleInfo?) {
         if bundle != nil && (bundle!.isBuiltin() || bundle!.isUnknown()) {
-            print("\(self.TAG) Not saving info for bundle [\(id)]", bundle!.toString())
+            print("\(self.tag) Not saving info for bundle [\(id)]", bundle!.toString())
             return
         }
         if bundle == nil {
-            print("\(self.TAG) Removing info for bundle [\(id)]")
-            UserDefaults.standard.removeObject(forKey: "\(id)\(self.INFO_SUFFIX)")
+            print("\(self.tag) Removing info for bundle [\(id)]")
+            UserDefaults.standard.removeObject(forKey: "\(id)\(self.infoSuffix)")
         } else {
             let update = bundle!.setId(id: id)
-            print("\(self.TAG) Storing info for bundle [\(id)]", update.toString())
+            print("\(self.tag) Storing info for bundle [\(id)]", update.toString())
             do {
-                try UserDefaults.standard.setObj(update, forKey: "\(id)\(self.INFO_SUFFIX)")
+                try UserDefaults.standard.setObj(update, forKey: "\(id)\(self.infoSuffix)")
             } catch {
-                print("\(self.TAG) Failed to save info for bundle [\(id)]", error.localizedDescription)
+                print("\(self.tag) Failed to save info for bundle [\(id)]", error.localizedDescription)
             }
         }
         UserDefaults.standard.synchronize()
     }
 
     public func setVersionName(id: String, version: String) {
-        print("\(self.TAG) Setting version for folder [\(id)] to \(version)")
+        print("\(self.tag) Setting version for folder [\(id)] to \(version)")
         let info = self.getBundleInfo(id: id)
         self.saveBundleInfo(id: id, bundle: info.setVersionName(version: version))
     }
 
     private func setBundleStatus(id: String, status: BundleStatus) {
-        print("\(self.TAG) Setting status for bundle [\(id)] to \(status)")
+        print("\(self.tag) Setting status for bundle [\(id)] to \(status)")
         let info = self.getBundleInfo(id: id)
         self.saveBundleInfo(id: id, bundle: info.setStatus(status: status.localizedString))
     }
@@ -796,7 +796,7 @@ extension CustomError: LocalizedError {
     }
 
     public func getCurrentBundleId() -> String {
-        guard let bundlePath: String = UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH) else {
+        guard let bundlePath: String = UserDefaults.standard.string(forKey: self.capServerPath) else {
             return BundleInfo.idBuiltin
         }
         if (bundlePath ?? "").isEmpty {
@@ -807,27 +807,27 @@ extension CustomError: LocalizedError {
     }
 
     public func isUsingBuiltin() -> Bool {
-        return (UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH) ?? "") == self.DEFAULT_FOLDER
+        return (UserDefaults.standard.string(forKey: self.capServerPath) ?? "") == self.defaultFolder
     }
 
     public func getFallbackBundle() -> BundleInfo {
-        let id: String = UserDefaults.standard.string(forKey: self.FALLBACK_VERSION) ?? BundleInfo.idBuiltin
+        let id: String = UserDefaults.standard.string(forKey: self.fallbackVersion) ?? BundleInfo.idBuiltin
         return self.getBundleInfo(id: id)
     }
 
     private func setFallbackBundle(fallback: BundleInfo?) {
-        UserDefaults.standard.set(fallback == nil ? BundleInfo.idBuiltin : fallback!.getId(), forKey: self.FALLBACK_VERSION)
+        UserDefaults.standard.set(fallback == nil ? BundleInfo.idBuiltin : fallback!.getId(), forKey: self.fallbackVersion)
         UserDefaults.standard.synchronize()
     }
 
     public func getNextBundle() -> BundleInfo? {
-        let id: String? = UserDefaults.standard.string(forKey: self.NEXT_VERSION)
+        let id: String? = UserDefaults.standard.string(forKey: self.nextVersion)
         return self.getBundleInfo(id: id)
     }
 
     public func setNextBundle(next: String?) -> Bool {
         guard let nextId: String = next else {
-            UserDefaults.standard.removeObject(forKey: self.NEXT_VERSION)
+            UserDefaults.standard.removeObject(forKey: self.nextVersion)
             UserDefaults.standard.synchronize()
             return false
         }
@@ -836,7 +836,7 @@ extension CustomError: LocalizedError {
         if !newBundle.isBuiltin() && !bundle.exist {
             return false
         }
-        UserDefaults.standard.set(nextId, forKey: self.NEXT_VERSION)
+        UserDefaults.standard.set(nextId, forKey: self.nextVersion)
         UserDefaults.standard.synchronize()
         self.setBundleStatus(id: nextId, status: BundleStatus.PENDING)
         return true
