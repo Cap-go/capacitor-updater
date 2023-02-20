@@ -497,7 +497,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
             if (res.message) != nil {
                 print("\(self.implementation.tag) message \(res.message ?? "")")
-                if res.major {
+                if res.major == true {
                     self.notifyListeners("majorAvailable", data: ["version": res.version])
                 }
                 self.notifyListeners("noNeedUpdate", data: ["bundle": current.toJSON()])
