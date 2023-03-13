@@ -397,6 +397,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 case "date":
                     if value != nil && value != "" {
                         let dateFormatter = ISO8601DateFormatter()
+                        dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
                         guard let ExpireDate = dateFormatter.date(from: value!) else {
                             self._cancelDelay(source: "date parsing issue")
                             return
