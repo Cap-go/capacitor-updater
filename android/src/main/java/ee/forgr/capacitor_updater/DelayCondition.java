@@ -7,13 +7,13 @@
 package ee.forgr.capacitor_updater;
 
 import com.google.gson.annotations.SerializedName;
-
 import java.util.Objects;
 
 public class DelayCondition {
 
   @SerializedName("kind")
   private DelayUntilNext kind;
+
   @SerializedName("value")
   private String value;
 
