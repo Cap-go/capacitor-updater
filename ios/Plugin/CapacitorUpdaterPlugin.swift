@@ -15,7 +15,7 @@ import Version
 @objc(CapacitorUpdaterPlugin)
 public class CapacitorUpdaterPlugin: CAPPlugin {
     private var implementation = CapacitorUpdater()
-    private let PLUGIN_VERSION: String = "4.19.0"
+    private let PLUGIN_VERSION: String = "4.20.0"
     static let updateUrlDefault = "https://api.capgo.app/updates"
     static let statsUrlDefault = "https://api.capgo.app/stats"
     static let channelUrlDefault = "https://api.capgo.app/channel_self"
