@@ -37,7 +37,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     override public func load() {
         print("\(self.implementation.TAG) init for device \(self.implementation.deviceID)")
         do {
-            currentVersionNative = try Version(getConfig().getBoolean("version", Bundle.main.versionName) ?? "0.0.0")
+            currentVersionNative = try Version(getConfig().getString("version", Bundle.main.versionName ?? "0.0.0")!)
         } catch {
             print("\(self.implementation.TAG) Cannot get version native \(currentVersionNative)")
         }
