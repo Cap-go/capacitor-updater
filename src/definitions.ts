@@ -90,6 +90,17 @@ declare module "@capacitor/cli" {
        * @default undefined
        */
       privateKey?: string;
+
+      /**
+       * Configure the current version of the app. This will be used for the first update request.
+       * If not set, the plugin will get the version from the native code.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default undefined
+       * @since  4.17.48
+       */
+      version?: string;
     };
   }
 }
