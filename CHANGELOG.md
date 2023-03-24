@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.19.0](https://github.com/Cap-go/capacitor-updater/compare/4.17.21...4.19.0) (2023-03-24)
+
+
+### Features
+
+* allow override version ([31faecd](https://github.com/Cap-go/capacitor-updater/commit/31faecdf8adfec0991b08f54d2e447d8c16f22df))
+
+
+### Bug Fixes
+
+* add back md file ([f560a81](https://github.com/Cap-go/capacitor-updater/commit/f560a819a66b29192bba7c84a35975d9e08dc76b))
+* api file for the doc ([0ceb96b](https://github.com/Cap-go/capacitor-updater/commit/0ceb96b4ac965be9925e96b60f6e9a5078c61fb7))
+* better function name and order + fix android activity issue ([4232fee](https://github.com/Cap-go/capacitor-updater/commit/4232fee86ff45f0119fbcc511a1993c7a8c52a4a))
+* build IOS ([2e599a9](https://github.com/Cap-go/capacitor-updater/commit/2e599a91eeedf3890cebdb996cb2e6f6b21d5731))
+* call appMovedToForeground only if not in app ([d4d53fa](https://github.com/Cap-go/capacitor-updater/commit/d4d53fa05780fb4029f3a01178f26d9f0f6115d1))
+* commit issue ([edf5468](https://github.com/Cap-go/capacitor-updater/commit/edf5468e8ea95640746400dfec841e96f91d8996))
+* doc ([214e3b9](https://github.com/Cap-go/capacitor-updater/commit/214e3b9c8a7421b6465a723f5f761e4f818d287e))
+* lint ([164d32d](https://github.com/Cap-go/capacitor-updater/commit/164d32de47626b0b78890d052b5dc9dfb8ec784f))
+* lint issue ([ce64ae1](https://github.com/Cap-go/capacitor-updater/commit/ce64ae103063162a3564bf156a962247cd0e1410))
+* pro-guard usage ([ba28f37](https://github.com/Cap-go/capacitor-updater/commit/ba28f37b7bf8e913b84c07a512239fb717f76c1f))
+* remove sonarcloud security fix who broken user app ([5f0e402](https://github.com/Cap-go/capacitor-updater/commit/5f0e4025197902fef65707d5b6cb6912e4b04495))
+* revert sonar change who cause build issues ([214ccc2](https://github.com/Cap-go/capacitor-updater/commit/214ccc260d8c787cc0ce7630808371f0deae12a2))
+* script remove useless file from git ([b76f731](https://github.com/Cap-go/capacitor-updater/commit/b76f731894f39d607ecda98bc56a10c94a2f35f2))
+
 ## [4.18.0](https://github.com/Cap-go/capacitor-updater/compare/4.17.21...4.18.0) (2023-03-24)
 
 
