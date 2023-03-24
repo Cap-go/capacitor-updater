@@ -110,7 +110,8 @@ public class CapacitorUpdaterPlugin
       this.implementation.versionCode = Integer.toString(pInfo.versionCode);
       this.implementation.requestQueue =
         Volley.newRequestQueue(this.getContext());
-      this.currentVersionNative = new Version(this.getConfig().getString("version", pInfo.versionName));
+      this.currentVersionNative =
+        new Version(this.getConfig().getString("version", pInfo.versionName));
     } catch (final PackageManager.NameNotFoundException e) {
       Log.e(CapacitorUpdater.TAG, "Error instantiating implementation", e);
       return;
@@ -1226,9 +1227,8 @@ public class CapacitorUpdaterPlugin
 
   private boolean isMainActivity() {
     Context mContext = this.getContext();
-    ActivityManager activityManager = (ActivityManager) mContext.getSystemService(
-      Context.ACTIVITY_SERVICE
-    );
+    ActivityManager activityManager =
+      (ActivityManager) mContext.getSystemService(Context.ACTIVITY_SERVICE);
     List<ActivityManager.AppTask> runningTasks = activityManager.getAppTasks();
     ActivityManager.RecentTaskInfo runningTask = runningTasks
       .get(0)
