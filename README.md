@@ -38,24 +38,11 @@ npx cap sync
 
 ## Auto-update setup
 
-Create account in [capgo.app](https://capgo.app) and get your [API key](https://capgo.app/app/apikeys)
-- Login to CLI `npx @capgo/cli@latest  login API_KEY`
-- Add app with CLI `npx @capgo/cli@latest add`
-- Upload app to channel production `npx @capgo/cli@latest  upload -c production`
-- Set channel production public `npx @capgo/cli@latest  set -c production -s public`
-- Add to your main code
-```javascript
-  import { CapacitorUpdater } from '@capgo/capacitor-updater'
-  CapacitorUpdater.notifyAppReady()
-```
-This tells Capacitor Updator that the current update bundle has loaded succesfully. Failing to call this method will cause your application to be rolled back to the previously successful version (or built-in bundle).
+Create your account in [capgo.app](https://capgo.app) and get your [API key](https://capgo.app/app/apikeys)
+- Login to CLI `npx @capgo/cli@latest init API_KEY`
+And follow the steps by step to setup your app.
 
-- Do `npm run build && npx cap copy` to copy the build to capacitor.
-- Run the app and see app auto update after each backgrounding.
-- Failed updates will automatically roll back to the last successful version.
-
-See more there in the [Auto update](
-https://github.com/Cap-go/capacitor-updater/wiki) documentation.
+See more there in the [Auto update documentation](https://docs.capgo.app/plugin/auto-update).
 
 
 ## Manual setup

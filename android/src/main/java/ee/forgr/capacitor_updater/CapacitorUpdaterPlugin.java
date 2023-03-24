@@ -110,7 +110,7 @@ public class CapacitorUpdaterPlugin
       this.implementation.versionCode = Integer.toString(pInfo.versionCode);
       this.implementation.requestQueue =
         Volley.newRequestQueue(this.getContext());
-      this.currentVersionNative = new Version(pInfo.versionName);
+      this.currentVersionNative = new Version(this.getConfig().getString("version", pInfo.versionName));
     } catch (final PackageManager.NameNotFoundException e) {
       Log.e(CapacitorUpdater.TAG, "Error instantiating implementation", e);
       return;
