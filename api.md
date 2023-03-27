@@ -2,6 +2,8 @@
 description: All available method of the plugin
 ---
 
+See the (Readme)[https://github.com/Cap-go/capacitor-updater] for more information.
+
 <docgen-index>
 
 </docgen-index>
