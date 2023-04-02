@@ -198,6 +198,7 @@ export interface latestVersion {
   version: string;
   major?: boolean;
   message?: string;
+  sessionKey?: string;
   error?: string;
   old?: string;
   url?: string;
