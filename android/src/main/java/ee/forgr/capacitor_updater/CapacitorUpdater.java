@@ -764,7 +764,7 @@ public class CapacitorUpdater {
             if (res.has(key)) {
               try {
                 if ("session_key".equals(key)) {
-                  ret.put('sessionKey', res.get(key));
+                  ret.put("sessionKey", res.get(key));
                 } else {
                   ret.put(key, res.get(key));
                 }
