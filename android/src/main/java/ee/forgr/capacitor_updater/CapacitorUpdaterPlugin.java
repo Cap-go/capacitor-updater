@@ -965,8 +965,8 @@ public class CapacitorUpdaterPlugin
                             );
 
                             final String url = res.getString("url");
-                            final String session_key = res.has("session_key")
-                              ? res.getString("session_key")
+                            final String sessionKey = res.has("sessionKey")
+                              ? res.getString("sessionKey")
                               : "";
                             final String checksum = res.has("checksum")
                               ? res.getString("checksum")
@@ -974,7 +974,7 @@ public class CapacitorUpdaterPlugin
                             CapacitorUpdaterPlugin.this.implementation.downloadBackground(
                                 url,
                                 latestVersionName,
-                                session_key,
+                                sessionKey,
                                 checksum
                               );
                           } catch (final Exception e) {

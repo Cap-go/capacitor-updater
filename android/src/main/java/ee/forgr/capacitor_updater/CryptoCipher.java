@@ -61,12 +61,12 @@ public class CryptoCipher {
     return null;
   }
 
-  public static SecretKey byteToSessionKey(byte[] session_key) {
+  public static SecretKey byteToSessionKey(byte[] sessionKey) {
     // rebuild key using SecretKeySpec
     SecretKey originalKey = new SecretKeySpec(
-      session_key,
+      sessionKey,
       0,
-      session_key.length,
+      sessionKey.length,
       "AES"
     );
     return originalKey;
