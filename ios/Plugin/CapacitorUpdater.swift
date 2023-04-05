@@ -583,6 +583,7 @@ extension CustomError: LocalizedError {
             self.sendStats(action: "set", versionName: newBundle.getVersionName())
             return true
         }
+        self.setBundleStatus(id: id, status: BundleStatus.ERROR)
         self.sendStats(action: "set_fail", versionName: newBundle.getVersionName())
         return false
     }
