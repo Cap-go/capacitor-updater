@@ -507,4 +507,11 @@ export interface CapacitorUpdaterPlugin {
    * @throws An error if the something went wrong
    */
   isAutoUpdateEnabled(): Promise<{ enabled: boolean }>;
+
+  /**
+   * Remove all listeners for this plugin.
+   *
+   * @since 1.0.0
+   */
+  removeAllListeners(): Promise<void>;
 }
