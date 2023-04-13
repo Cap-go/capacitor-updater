@@ -782,9 +782,20 @@ public class CapacitorUpdaterPlugin
   }
 
   private Boolean _isAutoUpdateEnabled() {
+    final CapConfig config = CapConfig.loadDefault(this.getActivity());
+    String serverUrl = config.getServerUrl();
+    if (serverUrl != null && !"".equals(serverUrl)) {
+      // log warning autoupdate disabled when serverUrl is set
+      Log.w(
+        CapacitorUpdater.TAG,
+        "AutoUpdate is automatic disabled when serverUrl is set."
+      );
+    }
     return (
       CapacitorUpdaterPlugin.this.autoUpdate &&
-      !"".equals(CapacitorUpdaterPlugin.this.updateUrl)
+      !"".equals(CapacitorUpdaterPlugin.this.updateUrl) &&
+      serverUrl != null &&
+      !"".equals(serverUrl)
     );
   }
 

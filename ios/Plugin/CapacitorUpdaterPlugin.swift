@@ -434,7 +434,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     private func _isAutoUpdateEnabled() -> Bool {
-        return self.autoUpdate && self.updateUrl != ""
+        let instanceDescriptor = (self.bridge?.viewController as? CAPBridgeViewController)?.instanceDescriptor()
+        if instanceDescriptor?.serverURL != nil {
+            print("⚠️ \(self.implementation.TAG) AutoUpdate is automatic disabled when serverUrl is set.")
+        }
+        return self.autoUpdate && self.updateUrl != "" && instanceDescriptor?.serverURL == nil
     }
 
     @objc func isAutoUpdateEnabled(_ call: CAPPluginCall) {
@@ -632,6 +636,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         }
         if self._isAutoUpdateEnabled() {
             self.backgroundDownload()
+        } else {
+            print("\(self.implementation.TAG) Auto update is disabled")
         }
         self.checkAppReady()
     }
