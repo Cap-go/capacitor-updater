@@ -339,7 +339,7 @@ extension CustomError: LocalizedError {
         }
     }
 
-    private func decryptFile(filePath: URL, sessionKey: String) throws {
+    private func decryptFile(filePath: URL, sessionKey: String, version: String) throws {
         if self.privateKey.isEmpty || sessionKey.isEmpty {
             print("\(self.TAG) Cannot found privateKey or sessionKey")
             return
@@ -347,13 +347,13 @@ extension CustomError: LocalizedError {
         do {
             guard let rsaPrivateKey: RSAPrivateKey = .load(rsaPrivateKey: self.privateKey) else {
                 print("cannot decode privateKey", self.privateKey)
-                return
+                throw CustomError.cannotDecode
             }
 
             let sessionKeyArray: [String] = sessionKey.components(separatedBy: ":")
             guard let ivData: Data = Data(base64Encoded: sessionKeyArray[0]) else {
                 print("cannot decode sessionKey", sessionKey)
-                return
+                throw CustomError.cannotDecode
             }
             let sessionKeyDataEncrypted: Data = Data(base64Encoded: sessionKeyArray[1])!
             let sessionKeyDataDecrypted: Data = rsaPrivateKey.decrypt(data: sessionKeyDataEncrypted)!
@@ -364,6 +364,7 @@ extension CustomError: LocalizedError {
             try decryptedData.write(to: filePath)
         } catch {
             print("\(self.TAG) Cannot decode: \(filePath.path)", error)
+            self.sendStats(action: "decrypt_fail", versionName: version)
             throw CustomError.cannotDecode
         }
     }
@@ -470,7 +471,7 @@ extension CustomError: LocalizedError {
                 case .success:
                     self.notifyDownload(id, 71)
                     do {
-                        try self.decryptFile(filePath: fileURL, sessionKey: sessionKey)
+                        try self.decryptFile(filePath: fileURL, sessionKey: sessionKey, version: version)
                         checksum = self.getChecksum(filePath: fileURL)
                         try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.documentsDir.appendingPathComponent(self.bundleDirectoryHot))
                         self.notifyDownload(id, 85)

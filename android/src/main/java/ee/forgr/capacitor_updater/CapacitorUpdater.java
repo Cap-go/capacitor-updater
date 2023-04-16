@@ -331,7 +331,7 @@ public class CapacitorUpdater {
   ) {
     try {
       final File downloaded = new File(this.documentsDir, dest);
-      this.decryptFile(downloaded, sessionKey);
+      this.decryptFile(downloaded, sessionKey, version);
       final String checksum;
       checksum = this.getChecksum(downloaded);
       this.notifyDownload(id, 71);
@@ -478,7 +478,7 @@ public class CapacitorUpdater {
     return enc.toLowerCase();
   }
 
-  private void decryptFile(final File file, final String ivSessionKey)
+  private void decryptFile(final File file, final String ivSessionKey, final String version)
     throws IOException {
     // (str != null && !str.isEmpty())
     if (
@@ -514,6 +514,7 @@ public class CapacitorUpdater {
       fos.close();
     } catch (GeneralSecurityException e) {
       Log.i(TAG, "decryptFile fail");
+      this.sendStats("decrypt_fail", version);
       e.printStackTrace();
       throw new IOException("GeneralSecurityException");
     }
