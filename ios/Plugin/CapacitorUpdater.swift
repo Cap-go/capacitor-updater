@@ -483,7 +483,7 @@ extension CustomError: LocalizedError {
                         mainError = error as NSError
                     }
                 case let .failure(error):
-                    print("\(self.TAG) download error", response.value!, error)
+                    print("\(self.TAG) download error", response?.value ?? "", error)
                     mainError = error as NSError
                 }
             }
@@ -658,7 +658,7 @@ extension CustomError: LocalizedError {
                     setChannel.message = message
                 }
             case let .failure(error):
-                print("\(self.TAG) Error set Channel", response.value!, error)
+                print("\(self.TAG) Error set Channel", response.value ?? "", error)
                 setChannel.message = "Error set Channel \(String(describing: response.value))"
                 setChannel.error = "response_error"
             }
@@ -722,7 +722,7 @@ extension CustomError: LocalizedError {
                 case .success:
                     print("\(self.TAG) Stats send for \(action), version \(versionName)")
                 case let .failure(error):
-                    print("\(self.TAG) Error sending stats: ", response.value!, error)
+                    print("\(self.TAG) Error sending stats: ", response.value ?? "", error)
                 }
             }
         }
@@ -767,7 +767,7 @@ extension CustomError: LocalizedError {
 
     private func saveBundleInfo(id: String, bundle: BundleInfo?) {
         if bundle != nil && (bundle!.isBuiltin() || bundle!.isUnknown()) {
-            print("\(self.TAG) Not saving info for bundle [\(id)]", bundle!.toString())
+            print("\(self.TAG) Not saving info for bundle [\(id)]", bundle?.toString() ?? "")
             return
         }
         if bundle == nil {
