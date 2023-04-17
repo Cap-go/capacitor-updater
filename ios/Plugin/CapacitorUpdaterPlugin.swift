@@ -122,7 +122,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         let sessionKey = call.getString("sessionKey", "")
         let checksum = call.getString("checksum", "")
         let url = URL(string: urlString)
-        print("\(self.implementation.TAG) Downloading \(url ?? "")")
+        print("\(self.implementation.TAG) Downloading \(String(describing: url))")
         DispatchQueue.global(qos: .background).async {
             do {
                 let next = try self.implementation.download(url: url!, version: version, sessionKey: sessionKey)
@@ -138,7 +138,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
                 call.resolve(next.toJSON())
             } catch {
-                print("\(self.implementation.TAG) Failed to download from: \(url ?? "") \(error.localizedDescription)")
+                print("\(self.implementation.TAG) Failed to download from: \(String(describing: url)) \(error.localizedDescription)")
                 self.notifyListeners("downloadFailed", data: ["version": version])
                 let current: BundleInfo = self.implementation.getCurrentBundle()
                 self.implementation.sendStats(action: "download_fail", versionName: current.getVersionName())
