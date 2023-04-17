@@ -478,8 +478,11 @@ public class CapacitorUpdater {
     return enc.toLowerCase();
   }
 
-  private void decryptFile(final File file, final String ivSessionKey, final String version)
-    throws IOException {
+  private void decryptFile(
+    final File file,
+    final String ivSessionKey,
+    final String version
+  ) throws IOException {
     // (str != null && !str.isEmpty())
     if (
       this.privateKey == null ||
