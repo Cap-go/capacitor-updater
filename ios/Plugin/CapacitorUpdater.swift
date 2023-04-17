@@ -483,7 +483,7 @@ extension CustomError: LocalizedError {
                         mainError = error as NSError
                     }
                 case let .failure(error):
-                    print("\(self.TAG) download error", response?.value ?? "", error)
+                    print("\(self.TAG) download error", response.value ?? "", error)
                     mainError = error as NSError
                 }
             }
