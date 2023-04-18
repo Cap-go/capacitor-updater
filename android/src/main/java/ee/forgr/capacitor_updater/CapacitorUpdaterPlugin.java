@@ -794,7 +794,7 @@ public class CapacitorUpdaterPlugin
     return (
       CapacitorUpdaterPlugin.this.autoUpdate &&
       !"".equals(CapacitorUpdaterPlugin.this.updateUrl) &&
-      serverUrl != null &&
+      serverUrl == null &&
       !"".equals(serverUrl)
     );
   }
