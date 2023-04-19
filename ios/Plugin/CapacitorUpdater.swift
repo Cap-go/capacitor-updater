@@ -253,8 +253,16 @@ extension CustomError: LocalizedError {
         return String((0..<length).map { _ in letters.randomElement()! })
     }
 
+    internal static var isDevEnvironment: Bool {
+        #if DEBUG
+        return true
+        #else
+        return false
+        #endif
+    }
+
     private func isProd() -> Bool {
-        return !self.isAppStoreReceiptSandbox() && !self.hasEmbeddedMobileProvision()
+        return !self.isDevEnvironment && !self.isAppStoreReceiptSandbox() && !self.hasEmbeddedMobileProvision()
     }
 
     // MARK: Private
