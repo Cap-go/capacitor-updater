@@ -253,7 +253,7 @@ extension CustomError: LocalizedError {
         return String((0..<length).map { _ in letters.randomElement()! })
     }
 
-    internal static var isDevEnvironment: Bool {
+    private var isDevEnvironment: Bool {
         #if DEBUG
         return true
         #else
