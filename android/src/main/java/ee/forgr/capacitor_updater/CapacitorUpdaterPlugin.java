@@ -1237,17 +1237,23 @@ public class CapacitorUpdaterPlugin
   }
 
   private boolean isMainActivity() {
-    Context mContext = this.getContext();
-    ActivityManager activityManager =
-      (ActivityManager) mContext.getSystemService(Context.ACTIVITY_SERVICE);
-    List<ActivityManager.AppTask> runningTasks = activityManager.getAppTasks();
-    ActivityManager.RecentTaskInfo runningTask = runningTasks
-      .get(0)
-      .getTaskInfo();
-    String className = runningTask.baseIntent.getComponent().getClassName();
-    String runningActivity = runningTask.topActivity.getClassName();
-    boolean isThisAppActivity = className.equals(runningActivity);
-    return isThisAppActivity;
+    try {
+      Context mContext = this.getContext();
+      ActivityManager activityManager =
+        (ActivityManager) mContext.getSystemService(Context.ACTIVITY_SERVICE);
+      List<ActivityManager.AppTask> runningTasks =
+        activityManager.getAppTasks();
+      ActivityManager.RecentTaskInfo runningTask = runningTasks
+        .get(0)
+        .getTaskInfo();
+      String className = runningTask.baseIntent.getComponent().getClassName();
+      String runningActivity = runningTask.topActivity.getClassName();
+      boolean isThisAppActivity = className.equals(runningActivity);
+      return isThisAppActivity;
+    } catch (final Exception e) {
+      Log.e(CapacitorUpdater.TAG, "Error getting Main Activity", e);
+      return null;
+    }
   }
 
   @Override
