@@ -68,7 +68,7 @@
     "eslint-plugin-import": "^2.27.5",
     "prettier": "^2.8.7",
     "prettier-plugin-java": "^2.1.0",
-    "rimraf": "^4.4.1",
+    "rimraf": "^5.0.0",
     "rollup": "^3.20.7",
     "swiftlint": "^1.0.1",
     "typescript": "^5.0.4"
