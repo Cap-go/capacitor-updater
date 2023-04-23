@@ -78,7 +78,7 @@ import Foundation
     }
 
     public func getVersionName() -> String {
-        return (self.version ?? "").isEmpty ? BundleInfo.ID_BUILTIN : self.version
+        return self.version.isEmpty ? BundleInfo.ID_BUILTIN : self.version
     }
 
     public func setVersionName(version: String) -> BundleInfo {
