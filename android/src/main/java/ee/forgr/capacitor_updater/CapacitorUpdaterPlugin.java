@@ -1252,7 +1252,7 @@ public class CapacitorUpdaterPlugin
       return isThisAppActivity;
     } catch (final Exception e) {
       Log.e(CapacitorUpdater.TAG, "Error getting Main Activity", e);
-      return null;
+      return false;
     }
   }
 
