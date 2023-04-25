@@ -168,8 +168,9 @@ public class CapacitorUpdaterPlugin
       );
       try {
         if (
-          !"".equals(previous.getOriginalString()) && 
-          !this.currentVersionNative.getOriginalString().equals(previous.getOriginalString())
+          !"".equals(previous.getOriginalString()) &&
+          !this.currentVersionNative.getOriginalString()
+            .equals(previous.getOriginalString())
         ) {
           Log.i(
             CapacitorUpdater.TAG,
