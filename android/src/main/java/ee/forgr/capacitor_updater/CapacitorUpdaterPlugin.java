@@ -168,12 +168,12 @@ public class CapacitorUpdaterPlugin
       );
       try {
         if (
-          !"".equals(previous.getOriginalString()) &&
-          this.currentVersionNative.getMajor() > previous.getMajor()
+          !"".equals(previous.getOriginalString()) && 
+          !this.currentVersionNative.getOriginalString().equals(previous.getOriginalString())
         ) {
           Log.i(
             CapacitorUpdater.TAG,
-            "New native major version detected: " + this.currentVersionNative
+            "New native version detected: " + this.currentVersionNative
           );
           this.implementation.reset(true);
           final List<BundleInfo> installed = this.implementation.list();

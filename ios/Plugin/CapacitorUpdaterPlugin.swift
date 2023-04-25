@@ -74,7 +74,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         } catch {
             print("\(self.implementation.TAG) Cannot get version native \(currentVersionNative)")
         }
-        if LatestVersionNative != "0.0.0" && currentVersionNative.major > LatestVersionNative.major {
+        if LatestVersionNative != "0.0.0" && self.currentVersionNative.description != LatestVersionNative.description {
             _ = self._reset(toLastSuccessful: false)
             let res = implementation.list()
             res.forEach { version in
