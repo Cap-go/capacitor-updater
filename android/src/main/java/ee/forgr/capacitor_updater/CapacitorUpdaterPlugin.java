@@ -63,7 +63,7 @@ public class CapacitorUpdaterPlugin
   private CapacitorUpdater implementation;
 
   private Integer appReadyTimeout = 10000;
-  private var counterActivityCreate = 0;
+  private Integer counterActivityCreate = 0;
   private Boolean autoDeleteFailed = true;
   private Boolean autoDeletePrevious = true;
   private Boolean autoUpdate = false;
