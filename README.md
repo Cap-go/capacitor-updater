@@ -49,7 +49,7 @@ See more there in the [Auto update documentation](https://docs.capgo.app/plugin/
 
 Download update distribution zipfiles from a custom url. Manually control the entire update process.
 
-- Edit your `capacitor.config.json` like below, set `autoUpdate` to true.
+- Edit your `capacitor.config.json` like below, set `autoUpdate` to false.
 ```json
 // capacitor.config.json
 {
