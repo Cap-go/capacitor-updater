@@ -585,6 +585,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func appKilled() {
+        print("\(self.implementation.TAG) onActivityDestroyed: all activity destroyed")
         self._checkCancelDelay(killed: true)
     }
 

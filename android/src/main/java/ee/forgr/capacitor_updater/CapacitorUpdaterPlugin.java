@@ -63,6 +63,7 @@ public class CapacitorUpdaterPlugin
   private CapacitorUpdater implementation;
 
   private Integer appReadyTimeout = 10000;
+  private var counterActivityCreate = 0;
   private Boolean autoDeleteFailed = true;
   private Boolean autoDeletePrevious = true;
   private Boolean autoUpdate = false;
@@ -1181,7 +1182,6 @@ public class CapacitorUpdaterPlugin
         "app_moved_to_foreground",
         current.getVersionName()
       );
-    this._checkCancelDelay(true);
     if (CapacitorUpdaterPlugin.this._isAutoUpdateEnabled()) {
       this.backgroundDownload();
     }
@@ -1269,6 +1269,11 @@ public class CapacitorUpdaterPlugin
     }
   }
 
+  private void appKilled() {
+    Log.d(CapacitorUpdater.TAG, "onActivityDestroyed: all activity destroyed");
+    this._checkCancelDelay(true);
+  }
+
   @Override
   public void onActivityStarted(@NonNull final Activity activity) {
     if (isPreviousMainActivity) {
@@ -1306,6 +1311,7 @@ public class CapacitorUpdaterPlugin
     @Nullable final Bundle savedInstanceState
   ) {
     this.implementation.activity = activity;
+    this.counterActivityCreate++;
   }
 
   @Override
@@ -1319,5 +1325,9 @@ public class CapacitorUpdaterPlugin
   @Override
   public void onActivityDestroyed(@NonNull final Activity activity) {
     this.implementation.activity = activity;
+    counterActivityCreate--;
+    if (counterActivityCreate == 0) {
+      this.appKilled();
+    }
   }
 }
