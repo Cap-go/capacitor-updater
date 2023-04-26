@@ -630,6 +630,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func appMovedToForeground() {
+        let current: BundleInfo = self.implementation.getCurrentBundle()
+        self.implementation.sendStats(action: "app_moved_to_foreground", versionName: current.getVersionName())
         if backgroundWork != nil && taskRunning {
             backgroundWork!.cancel()
             print("\(self.implementation.TAG) Background Timer Task canceled, Activity resumed before timer completes")
@@ -643,6 +645,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func appMovedToBackground() {
+        let current: BundleInfo = self.implementation.getCurrentBundle()
+        self.implementation.sendStats(action: "app_moved_to_background", versionName: current.getVersionName())
         print("\(self.implementation.TAG) Check for pending update")
         let delayUpdatePreferences = UserDefaults.standard.string(forKey: DELAY_CONDITION_PREFERENCES) ?? "[]"
 

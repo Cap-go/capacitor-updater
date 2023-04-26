@@ -1175,6 +1175,12 @@ public class CapacitorUpdaterPlugin
   }
 
   public void appMovedToForeground() {
+    final BundleInfo current =
+      CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
+    CapacitorUpdaterPlugin.this.implementation.sendStats(
+        "app_moved_to_foreground",
+        current.getVersionName()
+      );
     this._checkCancelDelay(true);
     if (CapacitorUpdaterPlugin.this._isAutoUpdateEnabled()) {
       this.backgroundDownload();
@@ -1183,6 +1189,12 @@ public class CapacitorUpdaterPlugin
   }
 
   public void appMovedToBackground() {
+    final BundleInfo current =
+      CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
+    CapacitorUpdaterPlugin.this.implementation.sendStats(
+        "app_moved_to_background",
+        current.getVersionName()
+      );
     Log.i(CapacitorUpdater.TAG, "Checking for pending update");
     try {
       Gson gson = new Gson();
