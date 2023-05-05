@@ -2,13 +2,10 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.59.1](https://github.com/Cap-go/capacitor-updater/compare/4.59.0...4.59.1) (2023-05-05)
+
 ## 4.59.0 (2023-05-05)
 
-
-### ⚠ BREAKING CHANGES
-
-* **android:** Java and TypeScript interfaces have changed for some plugin methods to support returning VersionInfo
-* the url config change and not compatible with the past one
 
 ### Features
 
