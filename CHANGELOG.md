@@ -2,6 +2,64 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.58.0](https://github.com/Cap-go/capacitor-updater/compare/4.17.21...4.58.0) (2023-05-05)
+
+
+### Features
+
+* add stats for app_moved_to_foreground app_moved_to_background ([cab7878](https://github.com/Cap-go/capacitor-updater/commit/cab7878a1249f1d42cb36539a95a96002bd4b310))
+* add stats for decrypt issue ([c1bf966](https://github.com/Cap-go/capacitor-updater/commit/c1bf96661ebbf440c30cc23f171228a3e9f8dbe9))
+* allow capacitor 5 apps ([5a5cb5d](https://github.com/Cap-go/capacitor-updater/commit/5a5cb5de886a272c1d07b2ab54203eb85e0132f4))
+* allow override version ([31faecd](https://github.com/Cap-go/capacitor-updater/commit/31faecdf8adfec0991b08f54d2e447d8c16f22df))
+* disable autoupdate in livereload mode + warning ([d3c2838](https://github.com/Cap-go/capacitor-updater/commit/d3c28386cf92b5283b8c43f86e3adb1e9f9a75a7))
+
+
+### Bug Fixes
+
+* add back md file ([f560a81](https://github.com/Cap-go/capacitor-updater/commit/f560a819a66b29192bba7c84a35975d9e08dc76b))
+* add declaration for IOS ([0a402f7](https://github.com/Cap-go/capacitor-updater/commit/0a402f7f309375843ef14f871cfe2d7738145264))
+* add missing check for debug ([4361192](https://github.com/Cap-go/capacitor-updater/commit/436119213b360e60beed5d201bd6d3304fea91e4))
+* add missing sessionKey in TS def ([4fe8e43](https://github.com/Cap-go/capacitor-updater/commit/4fe8e431f3d21a17ac357bde10af3405656ffe8d))
+* add removeAllListeners in definition ([ff15f70](https://github.com/Cap-go/capacitor-updater/commit/ff15f7024971af371bbd42d37bd98e46e42404d8))
+* add warning for windows path and set bundle error when fail ([2250e0b](https://github.com/Cap-go/capacitor-updater/commit/2250e0ba39d802724447f581af5520215aeb1bb9))
+* api file ([fc27bfd](https://github.com/Cap-go/capacitor-updater/commit/fc27bfdc2d6ff1be31dc982afba51803bba4b09f))
+* api file for the doc ([0ceb96b](https://github.com/Cap-go/capacitor-updater/commit/0ceb96b4ac965be9925e96b60f6e9a5078c61fb7))
+* autoupdate without livereload mode ([9a1b23f](https://github.com/Cap-go/capacitor-updater/commit/9a1b23faa5200b1478f2fdf4a905044dc5a46d21))
+* better function name and order + fix android activity issue ([4232fee](https://github.com/Cap-go/capacitor-updater/commit/4232fee86ff45f0119fbcc511a1993c7a8c52a4a))
+* build IOS ([2e599a9](https://github.com/Cap-go/capacitor-updater/commit/2e599a91eeedf3890cebdb996cb2e6f6b21d5731))
+* build issue ([1083856](https://github.com/Cap-go/capacitor-updater/commit/10838569bdbbf26fa7d40aa192e07834a4742c46))
+* build issue ([51df43e](https://github.com/Cap-go/capacitor-updater/commit/51df43e8151f0461ea06500087818f129e8834a0))
+* build issue ([326bf04](https://github.com/Cap-go/capacitor-updater/commit/326bf04916d6b448cd2ed26767d37f78a37221d6))
+* build issue ([c84842e](https://github.com/Cap-go/capacitor-updater/commit/c84842e4f92edf0b660128549d2f9d10bc921646))
+* call appMovedToForeground only if not in app ([d4d53fa](https://github.com/Cap-go/capacitor-updater/commit/d4d53fa05780fb4029f3a01178f26d9f0f6115d1))
+* changelog issue ([6bb21e9](https://github.com/Cap-go/capacitor-updater/commit/6bb21e9d88146baee2a9e389e62914fc9d4da357))
+* commit issue ([edf5468](https://github.com/Cap-go/capacitor-updater/commit/edf5468e8ea95640746400dfec841e96f91d8996))
+* delay on app killed Android ([f14ad78](https://github.com/Cap-go/capacitor-updater/commit/f14ad78103daa7eb4909f75376edf0c69a66fc3a))
+* deps ([74657fd](https://github.com/Cap-go/capacitor-updater/commit/74657fd05c1eda12f2f54ef13bbd36e4e6ab15a6))
+* doc ([214e3b9](https://github.com/Cap-go/capacitor-updater/commit/214e3b9c8a7421b6465a723f5f761e4f818d287e))
+* doc auto update ([e2965fd](https://github.com/Cap-go/capacitor-updater/commit/e2965fdcae6b10936db71130d03830d698975733))
+* format ([3a2bebb](https://github.com/Cap-go/capacitor-updater/commit/3a2bebb6ae50b57a94e59f7d1a2e98d743e96825))
+* isMainActivity missing try catch ([a2cca06](https://github.com/Cap-go/capacitor-updater/commit/a2cca069e82eef4eb577a678ab63d42c1077cd71))
+* issue in sessionKey naming in android ([06d6800](https://github.com/Cap-go/capacitor-updater/commit/06d68009f404fe535174c77ed21881a9de141b6e))
+* lint ([08de6cd](https://github.com/Cap-go/capacitor-updater/commit/08de6cd34801e9fdacab0460737a04459d87c82a))
+* lint ([edb4e78](https://github.com/Cap-go/capacitor-updater/commit/edb4e78168e10b7ed085ad5df522d077083b8c29))
+* lint ([164d32d](https://github.com/Cap-go/capacitor-updater/commit/164d32de47626b0b78890d052b5dc9dfb8ec784f))
+* lint issue ([6c559e4](https://github.com/Cap-go/capacitor-updater/commit/6c559e46ae05818c2f9457f69cd4a047fbafeef0))
+* lint issue ([6f11879](https://github.com/Cap-go/capacitor-updater/commit/6f11879c218732a299f1bc91b0f4758df9b1b2c5))
+* lint issue ([ce64ae1](https://github.com/Cap-go/capacitor-updater/commit/ce64ae103063162a3564bf156a962247cd0e1410))
+* print issue who create crash ([f638ef2](https://github.com/Cap-go/capacitor-updater/commit/f638ef2cf000e75b47555a21caa5c17431920cd0))
+* pro-guard usage ([ba28f37](https://github.com/Cap-go/capacitor-updater/commit/ba28f37b7bf8e913b84c07a512239fb717f76c1f))
+* readme typo ([c930ec9](https://github.com/Cap-go/capacitor-updater/commit/c930ec90a75aaaa304c7ba3587b1083703e6397b))
+* remove sonarcloud security fix who broken user app ([5f0e402](https://github.com/Cap-go/capacitor-updater/commit/5f0e4025197902fef65707d5b6cb6912e4b04495))
+* reset for any diff ([fd724ad](https://github.com/Cap-go/capacitor-updater/commit/fd724adc269428b3c5252e2f8b8914973e98cd8d))
+* return issue ([edcc49c](https://github.com/Cap-go/capacitor-updater/commit/edcc49c477e4d9eeeb9707cb824dcb15659bf1ed))
+* revert sonar change who cause build issues ([214ccc2](https://github.com/Cap-go/capacitor-updater/commit/214ccc260d8c787cc0ce7630808371f0deae12a2))
+* script remove useless file from git ([b76f731](https://github.com/Cap-go/capacitor-updater/commit/b76f731894f39d607ecda98bc56a10c94a2f35f2))
+* test if changelog is fixed ([36e4e4d](https://github.com/Cap-go/capacitor-updater/commit/36e4e4d28eee0269eebbf72d20e159100e8b7f9e))
+* typo type ([dad698c](https://github.com/Cap-go/capacitor-updater/commit/dad698c53245eefe0d49d06567eaaf6cb1f952a3))
+* upgrade versions ([7746388](https://github.com/Cap-go/capacitor-updater/commit/77463882212a18e83fb9d4a81ace925f0ac5dae5))
+* warning build ([cd48f15](https://github.com/Cap-go/capacitor-updater/commit/cd48f150760efdafc4117523917d853dd9dfd80c))
+
 ## [4.57.0](https://github.com/Cap-go/capacitor-updater/compare/4.17.20...4.57.0) (2023-05-05)
 
 ### Features
