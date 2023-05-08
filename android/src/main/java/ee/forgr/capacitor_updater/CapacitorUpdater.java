@@ -349,7 +349,7 @@ public class CapacitorUpdater {
         new Date(System.currentTimeMillis()),
         checksum
       );
-      this.saveBundleInfo(id, info);
+      this.saveBundleInfo(id, next);
       if (
         checksumRes != null &&
         !checksumRes.isEmpty() &&
@@ -360,12 +360,11 @@ public class CapacitorUpdater {
           "Error checksum " + next.getChecksum() + " " + checksum
         );
         this.sendStats("checksum_fail", getCurrentBundle().getVersionName());
-        final String id = info.getId();
         final Boolean res = this.delete(id);
         if (res) {
           Log.i(
             CapacitorUpdater.TAG,
-            "Failed bundle deleted: " + info.getVersionName()
+            "Failed bundle deleted: " + next.getVersionName()
           );
         }
         throw new IOException("Checksum failed: " + id);

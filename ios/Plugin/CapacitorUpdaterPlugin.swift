@@ -134,7 +134,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                     if !resDel {
                         print("\(self.implementation.TAG) Delete failed, id \(id) doesn't exist")
                     }
-                    throw "Checksum failed: \(id)"
+                    throw ObjectSavableError.checksum
                 }
                 self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
                 call.resolve(next.toJSON())
@@ -567,7 +567,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                             print("\(self.implementation.TAG) Delete failed, id \(id) doesn't exist")
                         }
                         self.endBackGroundTask()
-                        throw "Checksum failed: \(id)"
+                        throw ObjectSavableError.checksum
                     }
                     self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
                     _ = self.implementation.setNextBundle(next: next.getId())
