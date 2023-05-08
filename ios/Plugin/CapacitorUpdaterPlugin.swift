@@ -129,11 +129,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 if checksum != "" && next.getChecksum() != checksum {
                     print("\(self.implementation.TAG) Error checksum", next.getChecksum(), checksum)
                     self.implementation.sendStats(action: "checksum_fail", versionName: next.getVersionName())
-                    let resDel = self.implementation.delete(id: next.getId())
+                    let id = next.getId()
+                    let resDel = self.implementation.delete(id: id)
                     if !resDel {
-                        print("\(self.implementation.TAG) Delete failed, id \(next.getId()) doesn't exist")
+                        print("\(self.implementation.TAG) Delete failed, id \(id) doesn't exist")
                     }
-                    return
+                    throw "Checksum failed: \(id)"
                 }
                 self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
                 call.resolve(next.toJSON())
@@ -560,12 +561,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                     if res.checksum != "" && next.getChecksum() != res.checksum {
                         print("\(self.implementation.TAG) Error checksum", next.getChecksum(), res.checksum)
                         self.implementation.sendStats(action: "checksum_fail", versionName: next.getVersionName())
-                        let resDel = self.implementation.delete(id: next.getId())
+                        let id = next.getId()
+                        let resDel = self.implementation.delete(id: id)
                         if !resDel {
-                            print("\(self.implementation.TAG) Delete failed, id \(next.getId()) doesn't exist")
+                            print("\(self.implementation.TAG) Delete failed, id \(id) doesn't exist")
                         }
                         self.endBackGroundTask()
-                        return
+                        throw "Checksum failed: \(id)"
                     }
                     self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
                     _ = self.implementation.setNextBundle(next: next.getId())
