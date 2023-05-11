@@ -755,7 +755,7 @@ extension CustomError: LocalizedError {
                 result = BundleInfo(id: trueId, version: "", status: BundleStatus.PENDING, checksum: "")
             }
         }
-        print("\(self.TAG) Returning info bundle [\(result.toString())]")
+        // print("\(self.TAG) Returning info bundle [\(result.toString())]")
         return result
     }
 

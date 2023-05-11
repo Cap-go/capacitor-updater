@@ -1015,8 +1015,7 @@ public class CapacitorUpdater {
         result = new BundleInfo(trueId, null, BundleStatus.PENDING, "", "");
       }
     }
-
-    Log.d(TAG, "Returning info [" + trueId + "] " + result);
+    // Log.d(TAG, "Returning info [" + trueId + "] " + result);
     return result;
   }
 
