@@ -106,7 +106,8 @@ public class CapacitorUpdaterPlugin
           .getPackageManager()
           .getPackageInfo(this.getContext().getPackageName(), 0);
       this.implementation.activity = this.getActivity();
-      this.implementation.versionBuild = pInfo.versionName;
+      this.implementation.versionBuild =
+        this.getConfig().getString("version", pInfo.versionName);
       this.implementation.PLUGIN_VERSION = this.PLUGIN_VERSION;
       this.implementation.versionCode = Integer.toString(pInfo.versionCode);
       this.implementation.requestQueue =
