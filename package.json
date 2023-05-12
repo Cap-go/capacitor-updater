@@ -1,6 +1,6 @@
 {
   "name": "@capgo/capacitor-updater",
-  "version": "4.61.5",
+  "version": "4.61.6",
   "packageManager": "pnpm@8.4.0",
   "license": "MPL-2.0",
   "description": "Live update for capacitor apps",
