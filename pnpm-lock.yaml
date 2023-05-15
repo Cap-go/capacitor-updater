@@ -2,20 +2,20 @@ lockfileVersion: '6.0'
 
 devDependencies:
   '@capacitor/android':
-    specifier: ^4.8.0
-    version: 4.8.0(@capacitor/core@4.8.0)
+    specifier: ^5.0.0
+    version: 5.0.0(@capacitor/core@5.0.0)
   '@capacitor/cli':
-    specifier: ^4.8.0
-    version: 4.8.0
+    specifier: ^5.0.0
+    version: 5.0.0
   '@capacitor/core':
-    specifier: ^4.8.0
-    version: 4.8.0
+    specifier: ^5.0.0
+    version: 5.0.0
   '@capacitor/docgen':
     specifier: ^0.2.1
     version: 0.2.1
   '@capacitor/ios':
-    specifier: ^4.8.0
-    version: 4.8.0(@capacitor/core@4.8.0)
+    specifier: ^5.0.0
+    version: 5.0.0(@capacitor/core@5.0.0)
   '@ionic/eslint-config':
     specifier: ^0.3.0
     version: 0.3.0(eslint@8.39.0)(typescript@5.0.4)
@@ -82,23 +82,23 @@ packages:
       js-tokens: 4.0.0
     dev: true
 
-  /@capacitor/android@4.8.0(@capacitor/core@4.8.0):
-    resolution: {integrity: sha512-VFKEWZ7dDExcGnsEz+5euFV6eyEsNZt2WR/rbeE3NXW/1FQZhM5qtqXxGwSUpFkhhlyP1KE0NJoC9EWmHEi+ug==}
+  /@capacitor/android@5.0.0(@capacitor/core@5.0.0):
+    resolution: {integrity: sha512-jEhx0OW8uypxlW94bXn7Q6YtwBOg3MH49DxH+jSrroRPr8Xb55w3puVSof9O2BQaxOq1mXKTjwz6TOIargGHwQ==}
     peerDependencies:
-      '@capacitor/core': ^4.7.0
+      '@capacitor/core': ^5.0.0
     dependencies:
-      '@capacitor/core': 4.8.0
+      '@capacitor/core': 5.0.0
     dev: true
 
-  /@capacitor/cli@4.8.0:
-    resolution: {integrity: sha512-Hbs1SKjvyg5wdcMGRt+CzebdgjlnVDjn92WV1p16gsrBwqWm+uDYMNpFQ7vWKALFL9AZCi/r8lXHmuX/HoD2Kw==}
-    engines: {node: '>=12.4.0'}
+  /@capacitor/cli@5.0.0:
+    resolution: {integrity: sha512-d11L9xnnxmjyTHD3vjhOGnr7zN+uIzIeW4QrQC131rovP1cdFYVjG1DrmQa/mx6s49d2Bv7myNLHtl0j+dQIow==}
+    engines: {node: '>=16.0.0'}
     hasBin: true
     dependencies:
       '@ionic/cli-framework-output': 2.2.5
-      '@ionic/utils-fs': 3.1.6
-      '@ionic/utils-subprocess': 2.1.11
-      '@ionic/utils-terminal': 2.3.3
+      '@ionic/utils-fs': 3.1.7
+      '@ionic/utils-subprocess': 2.1.12
+      '@ionic/utils-terminal': 2.3.4
       commander: 9.5.0
       debug: 4.3.4
       env-paths: 2.2.1
@@ -107,7 +107,7 @@ packages:
       open: 8.4.2
       plist: 3.0.6
       prompts: 2.4.2
-      rimraf: 3.0.2
+      rimraf: 4.4.1
       semver: 7.5.0
       tar: 6.1.14
       tslib: 2.5.0
@@ -116,8 +116,8 @@ packages:
       - supports-color
     dev: true
 
-  /@capacitor/core@4.8.0:
-    resolution: {integrity: sha512-hFgLi1bGmADMmYMFAaitEsVheF3QgoMU4TrHkMgik51NzHwUq3nBdP5+A9oNS9qe3dEDyegoaHF8X9oJc9v8QQ==}
+  /@capacitor/core@5.0.0:
+    resolution: {integrity: sha512-Fm8jNUPpCBPQVKLEwMt7D+w/7sh1AGiLVpL+D6Xc7iRdrPU/3NI9bgzca3uzDA1SOV8O+tVxk7bjZGXPbiTRAA==}
     dependencies:
       tslib: 2.5.0
     dev: true
@@ -134,12 +134,12 @@ packages:
       typescript: 4.2.4
     dev: true
 
-  /@capacitor/ios@4.8.0(@capacitor/core@4.8.0):
-    resolution: {integrity: sha512-FbEXFzZIe5EGZNKpGxHNUEGKjcKK0XY45P3QXLoJPF3fEndW96ThLZOy3rHjt436sTu41NubFpPyIzyyy1YgMA==}
+  /@capacitor/ios@5.0.0(@capacitor/core@5.0.0):
+    resolution: {integrity: sha512-b1edQNe1cKiqnxoIR5WxbVjDlf3RWr2ZjaDxwEuBzwBAvvrFcweKdbw1ij45DWHKODaIymWoyAlAUN+vFOF5sw==}
     peerDependencies:
-      '@capacitor/core': ^4.7.0
+      '@capacitor/core': ^5.0.0
     dependencies:
-      '@capacitor/core': 4.8.0
+      '@capacitor/core': 5.0.0
     dev: true
 
   /@eslint-community/eslint-utils@4.4.0(eslint@8.39.0):
@@ -239,33 +239,11 @@ packages:
     resolution: {integrity: sha512-UbE1AIlTowt9uR7fMzRtbQX4URcyuok7mcpdJfFDHAIGM6nDjohYMke+6xOr6ZYlLnEyVmBGNEg0+grEYRgcVg==}
     dev: true
 
-  /@ionic/utils-array@2.1.5:
-    resolution: {integrity: sha512-HD72a71IQVBmQckDwmA8RxNVMTbxnaLbgFOl+dO5tbvW9CkkSFCv41h6fUuNsSEVgngfkn0i98HDuZC8mk+lTA==}
-    engines: {node: '>=10.3.0'}
-    dependencies:
-      debug: 4.3.4
-      tslib: 2.5.0
-    transitivePeerDependencies:
-      - supports-color
-    dev: true
-
   /@ionic/utils-array@2.1.6:
     resolution: {integrity: sha512-0JZ1Zkp3wURnv8oq6Qt7fMPo5MpjbLoUoa9Bu2Q4PJuSDWM8H8gwF3dQO7VTeUj3/0o1IB1wGkFWZZYgUXZMUg==}
     engines: {node: '>=16.0.0'}
     dependencies:
       debug: 4.3.4
-      tslib: 2.5.0
-    transitivePeerDependencies:
-      - supports-color
-    dev: true
-
-  /@ionic/utils-fs@3.1.6:
-    resolution: {integrity: sha512-eikrNkK89CfGPmexjTfSWl4EYqsPSBh0Ka7by4F0PLc1hJZYtJxUZV3X4r5ecA8ikjicUmcbU7zJmAjmqutG/w==}
-    engines: {node: '>=10.3.0'}
-    dependencies:
-      '@types/fs-extra': 8.1.2
-      debug: 4.3.4
-      fs-extra: 9.1.0
       tslib: 2.5.0
     transitivePeerDependencies:
       - supports-color
@@ -283,35 +261,11 @@ packages:
       - supports-color
     dev: true
 
-  /@ionic/utils-object@2.1.5:
-    resolution: {integrity: sha512-XnYNSwfewUqxq+yjER1hxTKggftpNjFLJH0s37jcrNDwbzmbpFTQTVAp4ikNK4rd9DOebX/jbeZb8jfD86IYxw==}
-    engines: {node: '>=10.3.0'}
-    dependencies:
-      debug: 4.3.4
-      tslib: 2.5.0
-    transitivePeerDependencies:
-      - supports-color
-    dev: true
-
   /@ionic/utils-object@2.1.6:
     resolution: {integrity: sha512-vCl7sl6JjBHFw99CuAqHljYJpcE88YaH2ZW4ELiC/Zwxl5tiwn4kbdP/gxi2OT3MQb1vOtgAmSNRtusvgxI8ww==}
     engines: {node: '>=16.0.0'}
     dependencies:
       debug: 4.3.4
-      tslib: 2.5.0
-    transitivePeerDependencies:
-      - supports-color
-    dev: true
-
-  /@ionic/utils-process@2.1.10:
-    resolution: {integrity: sha512-mZ7JEowcuGQK+SKsJXi0liYTcXd2bNMR3nE0CyTROpMECUpJeAvvaBaPGZf5ERQUPeWBVuwqAqjUmIdxhz5bxw==}
-    engines: {node: '>=10.3.0'}
-    dependencies:
-      '@ionic/utils-object': 2.1.5
-      '@ionic/utils-terminal': 2.3.3
-      debug: 4.3.4
-      signal-exit: 3.0.7
-      tree-kill: 1.2.2
       tslib: 2.5.0
     transitivePeerDependencies:
       - supports-color
@@ -331,36 +285,10 @@ packages:
       - supports-color
     dev: true
 
-  /@ionic/utils-stream@3.1.5:
-    resolution: {integrity: sha512-hkm46uHvEC05X/8PHgdJi4l4zv9VQDELZTM+Kz69odtO9zZYfnt8DkfXHJqJ+PxmtiE5mk/ehJWLnn/XAczTUw==}
-    engines: {node: '>=10.3.0'}
-    dependencies:
-      debug: 4.3.4
-      tslib: 2.5.0
-    transitivePeerDependencies:
-      - supports-color
-    dev: true
-
   /@ionic/utils-stream@3.1.6:
     resolution: {integrity: sha512-4+Kitey1lTA1yGtnigeYNhV/0tggI3lWBMjC7tBs1K9GXa/q7q4CtOISppdh8QgtOhrhAXS2Igp8rbko/Cj+lA==}
     engines: {node: '>=16.0.0'}
     dependencies:
-      debug: 4.3.4
-      tslib: 2.5.0
-    transitivePeerDependencies:
-      - supports-color
-    dev: true
-
-  /@ionic/utils-subprocess@2.1.11:
-    resolution: {integrity: sha512-6zCDixNmZCbMCy5np8klSxOZF85kuDyzZSTTQKQP90ZtYNCcPYmuFSzaqDwApJT4r5L3MY3JrqK1gLkc6xiUPw==}
-    engines: {node: '>=10.3.0'}
-    dependencies:
-      '@ionic/utils-array': 2.1.5
-      '@ionic/utils-fs': 3.1.6
-      '@ionic/utils-process': 2.1.10
-      '@ionic/utils-stream': 3.1.5
-      '@ionic/utils-terminal': 2.3.3
-      cross-spawn: 7.0.3
       debug: 4.3.4
       tslib: 2.5.0
     transitivePeerDependencies:
@@ -1607,6 +1535,16 @@ packages:
       path-is-absolute: 1.0.1
     dev: true
 
+  /glob@9.3.5:
+    resolution: {integrity: sha512-e1LleDykUz2Iu+MTYdkSsuWX8lvAjAcs0Xef0lNIu0S2wOAzuTxCJtcd9S3cijlwYF18EsU3rzb8jPVobxDh9Q==}
+    engines: {node: '>=16 || 14 >=14.17'}
+    dependencies:
+      fs.realpath: 1.0.0
+      minimatch: 8.0.4
+      minipass: 4.2.8
+      path-scurry: 1.7.0
+    dev: true
+
   /globals@13.20.0:
     resolution: {integrity: sha512-Qg5QtVkCy/kv3FUSlu4ukeZDVf9ee0iXLAUYX13gbR17bnejFTzr4iS9bY7kwCf1NztRNm1t91fjOiyx4CSwPQ==}
     engines: {node: '>=8'}
@@ -2005,6 +1943,13 @@ packages:
       brace-expansion: 1.1.11
     dev: true
 
+  /minimatch@8.0.4:
+    resolution: {integrity: sha512-W0Wvr9HyFXZRGIDgCicunpQ299OKXs9RgZfaukz4qAW/pJhcpUfupc9c+OObPOFueNy8VSrZgEmDtk6Kh4WzDA==}
+    engines: {node: '>=16 || 14 >=14.17'}
+    dependencies:
+      brace-expansion: 2.0.1
+    dev: true
+
   /minimatch@9.0.0:
     resolution: {integrity: sha512-0jJj8AvgKqWN05mrwuqi8QYKx1WmYSUoKSxu5Qhs9prezTz10sxAHGNZe9J9cqIJzta8DWsleh2KaVaLl6Ru2w==}
     engines: {node: '>=16 || 14 >=14.17'}
@@ -2021,6 +1966,11 @@ packages:
     engines: {node: '>=8'}
     dependencies:
       yallist: 4.0.0
+    dev: true
+
+  /minipass@4.2.8:
+    resolution: {integrity: sha512-fNzuVyifolSLFL4NzpF+wEF4qrgqaaKX0haXPQEdQ7NKAN+WecoKMHV09YcuL/DHxrUsYQOK3MiuDf7Ip2OXfQ==}
+    engines: {node: '>=8'}
     dev: true
 
   /minipass@5.0.0:
@@ -2055,8 +2005,8 @@ packages:
     engines: {node: '>=12.13.0'}
     hasBin: true
     dependencies:
-      '@ionic/utils-fs': 3.1.6
-      '@ionic/utils-terminal': 2.3.3
+      '@ionic/utils-fs': 3.1.7
+      '@ionic/utils-terminal': 2.3.4
       bplist-parser: 0.3.2
       debug: 4.3.4
       elementtree: 0.1.7
@@ -2306,6 +2256,14 @@ packages:
     hasBin: true
     dependencies:
       glob: 7.2.3
+    dev: true
+
+  /rimraf@4.4.1:
+    resolution: {integrity: sha512-Gk8NlF062+T9CqNGn6h4tls3k6T1+/nXdOcSZVikNVtlRdYpA7wRJJMoXmuvOnLW844rPjdQ7JgXCYM6PPC/og==}
+    engines: {node: '>=14'}
+    hasBin: true
+    dependencies:
+      glob: 9.3.5
     dev: true
 
   /rimraf@5.0.0:
