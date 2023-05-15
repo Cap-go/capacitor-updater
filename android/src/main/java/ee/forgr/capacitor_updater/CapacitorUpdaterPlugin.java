@@ -145,7 +145,10 @@ public class CapacitorUpdaterPlugin
       CapacitorUpdater.TAG,
       "init for device " + this.implementation.deviceID
     );
-
+    Log.i(
+      CapacitorUpdater.TAG,
+      "version native " + this.currentVersionNative.getOriginalString()
+    );
     this.autoDeleteFailed =
       this.getConfig().getBoolean("autoDeleteFailed", true);
     this.autoDeletePrevious =
