@@ -16,7 +16,6 @@ See the Github [Readme](https://github.com/Cap-go/capacitor-updater) for more in
 * [`current()`](#current)
 * [`reload()`](#reload)
 * [`setMultiDelay(...)`](#setmultidelay)
-* [`setDelay(...)`](#setdelay)
 * [`cancelDelay()`](#canceldelay)
 * [`getLatest()`](#getlatest)
 * [`setChannel(...)`](#setchannel)
@@ -186,23 +185,6 @@ Set <a href="#delaycondition">DelayCondition</a>, skip updates until one of the 
 | **`options`** | <code>{ delayConditions: DelayCondition[]; }</code> | are the {@link <a href="#delaycondition">DelayCondition</a>} list to set |
 
 **Since:** 4.3.0
-
---------------------
-
-
-## setDelay(...)
-
-```typescript
-setDelay(options: DelayCondition) => Promise<void>
-```
-
-Set <a href="#delaycondition">DelayCondition</a>, skip updates until the condition is met
-
-| Param         | Type                                                      | Description                                                        |
-| ------------- | --------------------------------------------------------- | ------------------------------------------------------------------ |
-| **`options`** | <code><a href="#delaycondition">DelayCondition</a></code> | is the {@link <a href="#delaycondition">DelayCondition</a>} to set |
-
-**Since:** 4.0.0
 
 --------------------
 
