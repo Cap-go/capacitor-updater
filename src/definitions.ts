@@ -350,17 +350,6 @@ export interface CapacitorUpdaterPlugin {
   setMultiDelay(options: { delayConditions: DelayCondition[] }): Promise<void>;
 
   /**
-   * Set DelayCondition, skip updates until the condition is met
-   *
-   * @deprecated use setMultiDelay instead passing a single value in array
-   * @returns {Promise<void>} an Promise resolved directly
-   * @param options is the {@link DelayCondition} to set
-   * @throws An error if the something went wrong
-   * @since 4.0.0
-   */
-  setDelay(options: DelayCondition): Promise<void>;
-
-  /**
    * Cancel delay to updates as usual
    *
    * @returns {Promise<void>} an Promise resolved directly

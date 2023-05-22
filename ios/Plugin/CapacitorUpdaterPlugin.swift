@@ -338,18 +338,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         }
     }
 
-    @available(*, deprecated, message: "use SetMultiDelay instead")
-    @objc func setDelay(_ call: CAPPluginCall) {
-        let kind: String = call.getString("kind", "")
-        let value: String? = call.getString("value", "")
-        let delayConditions: String = "[{\"kind\":\"\(kind)\", \"value\":\"\(value ?? "")\"}]"
-        if _setMultiDelay(delayConditions: delayConditions) {
-            call.resolve()
-        } else {
-            call.reject("Failed to delay update")
-        }
-    }
-
     private func _setMultiDelay(delayConditions: String?) -> Bool {
         if delayConditions != nil && "" != delayConditions {
             UserDefaults.standard.set(delayConditions, forKey: DELAY_CONDITION_PREFERENCES)

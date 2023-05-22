@@ -675,33 +675,6 @@ public class CapacitorUpdaterPlugin
     }
   }
 
-  @Deprecated
-  @PluginMethod
-  public void setDelay(final PluginCall call) {
-    try {
-      String kind = call.getString("kind");
-      String value = call.getString("value");
-      String delayConditions =
-        "[{\"kind\":\"" +
-        kind +
-        "\", \"value\":\"" +
-        (value != null ? value : "") +
-        "\"}]";
-      if (_setMultiDelay(delayConditions)) {
-        call.resolve();
-      } else {
-        call.reject("Failed to delay update");
-      }
-    } catch (final Exception e) {
-      Log.e(
-        CapacitorUpdater.TAG,
-        "Failed to delay update, [Error calling 'setDelay()']",
-        e
-      );
-      call.reject("Failed to delay update", e);
-    }
-  }
-
   private boolean _cancelDelay(String source) {
     try {
       this.editor.remove(DELAY_CONDITION_PREFERENCES);
@@ -1260,8 +1233,7 @@ public class CapacitorUpdaterPlugin
     Context mContext = this.getContext();
     ActivityManager activityManager =
       (ActivityManager) mContext.getSystemService(Context.ACTIVITY_SERVICE);
-    List<ActivityManager.AppTask> runningTasks =
-      activityManager.getAppTasks();
+    List<ActivityManager.AppTask> runningTasks = activityManager.getAppTasks();
     ActivityManager.RecentTaskInfo runningTask = runningTasks
       .get(0)
       .getTaskInfo();
