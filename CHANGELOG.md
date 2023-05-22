@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [7.0.0](https://github.com/Cap-go/capacitor-updater/compare/4.61.0...7.0.0) (2023-05-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* update to capacitor 5, remove deprecated method
+
+### Features
+
+* update to capacitor 5, remove deprecated method ([e342d9c](https://github.com/Cap-go/capacitor-updater/commit/e342d9cc71b057757306a246f5533d9ad0c4e6be))
+
+
+### Bug Fixes
+
+* add loggin message with original version ([5a018dd](https://github.com/Cap-go/capacitor-updater/commit/5a018dd796ad3291f3c8070b4d04e4961f48a519))
+* build issue android back to v4 ([0191db4](https://github.com/Cap-go/capacitor-updater/commit/0191db4e8aeb48cc40c4b429eb04144d6117b71e))
+* changelog add section to explain it's broken ([b9a51e5](https://github.com/Cap-go/capacitor-updater/commit/b9a51e56ac143773aa8cba44e2aecc9752f5cb0d))
+* **deps:** update dependency com.android.tools.build:gradle to v8.0.1 ([a8bc252](https://github.com/Cap-go/capacitor-updater/commit/a8bc2521574dc2f84bf86aee63c0c4e025e074ea))
+* isMainActivity ([e79aabc](https://github.com/Cap-go/capacitor-updater/commit/e79aabc49e670679739d9232a74d6cd85464be3b))
+* remove useless logs ([841ec18](https://github.com/Cap-go/capacitor-updater/commit/841ec18175aea746ec3f52afcf5dcc0a8eb5a382))
+* test if changelog is fixed ([8785b37](https://github.com/Cap-go/capacitor-updater/commit/8785b3706f0cb504299b9874b58d95dbd7799b2e))
+* versionBuild use override if present ([eccc8a6](https://github.com/Cap-go/capacitor-updater/commit/eccc8a6fb1c9073ba77e550e853545ab5beec69d))
+
 ## [6.0.0](https://github.com/Cap-go/capacitor-updater/compare/4.61.0...6.0.0) (2023-05-22)
 
 
