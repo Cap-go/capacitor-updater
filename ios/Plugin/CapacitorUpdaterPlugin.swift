@@ -235,6 +235,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             let res = self.implementation.getLatest(url: URL(string: self.updateUrl)!)
             if res.error != nil {
                 call.reject( res.error!)
+            } else if res.message != nil {
+                call.reject( res.message!)
             } else {
                 call.resolve(res.toDict())
             }
