@@ -34,10 +34,10 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
       - name: Create bump and changelog main
         if: github.ref == 'refs/heads/main'
-        run: pnpm dlx capacitor-plugin-standard-version@latest --dry-run --verbose
+        run: pnpm dlx capacitor-plugin-standard-version@latest
       - name: Create bump and changelog development
         if: github.ref != 'refs/heads/main'
-        run: pnpm dlx capacitor-plugin-standard-version@latest --prerelease alpha --dry-run --verbose
+        run: pnpm dlx capacitor-plugin-standard-version@latest --prerelease alpha
       - name: Update Doc
         run: pnpm docgen
       - name: Update Doc
