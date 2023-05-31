@@ -17,6 +17,26 @@ All notable changes to this project will be documented in this file. See [standa
 ### Bug Fixes
 
 * action with new workflow ([6f98c1e](https://github.com/Cap-go/capacitor-updater/commit/6f98c1e2f7797f356a2020cf564fc2c57ab5cc63))
+* bump issue CI ([a9f489a](https://github.com/Cap-go/capacitor-updater/commit/a9f489a55eddff2edfed40cd12fdb44c4c39869c))
+* github action flow ([d0ba579](https://github.com/Cap-go/capacitor-updater/commit/d0ba57901e370bb01b8d3af43af2780dc95b00f3))
+* rename ci jobs ([fd24a69](https://github.com/Cap-go/capacitor-updater/commit/fd24a6931ee09b289bace515954d75a1d0aef834))
+* test fix commit and see if CI is sane now ([197d740](https://github.com/Cap-go/capacitor-updater/commit/197d7403ee89fd053f7472e62d7c8d3ef223d8ef))
+
+## [5.0.0](https://github.com/Cap-go/capacitor-updater/compare/4.61.10...5.0.0) (2023-05-31)
+
+
+### ⚠ BREAKING CHANGES
+
+* test bump
+
+### Features
+
+* test bump ([756caff](https://github.com/Cap-go/capacitor-updater/commit/756caff31e94e7e4720acd36daddf45015066421))
+
+
+### Bug Fixes
+
+* action with new workflow ([6f98c1e](https://github.com/Cap-go/capacitor-updater/commit/6f98c1e2f7797f356a2020cf564fc2c57ab5cc63))
 * github action flow ([d0ba579](https://github.com/Cap-go/capacitor-updater/commit/d0ba57901e370bb01b8d3af43af2780dc95b00f3))
 * rename ci jobs ([fd24a69](https://github.com/Cap-go/capacitor-updater/commit/fd24a6931ee09b289bace515954d75a1d0aef834))
 * test fix commit and see if CI is sane now ([197d740](https://github.com/Cap-go/capacitor-updater/commit/197d7403ee89fd053f7472e62d7c8d3ef223d8ef))
