@@ -1,4 +1,4 @@
-name: Build source code and send to Capgo
+name: Build source code and check lint
 
 on:
   push:
@@ -52,7 +52,7 @@ jobs:
   deploy:
     needs: [build_android, build_ios]
     runs-on: ubuntu-latest
-    name: "Build code and release"
+    name: "Build code and npm release"
     steps:
       - name: Check out
         uses: actions/checkout@v3
