@@ -40,7 +40,7 @@ jobs:
         run: |
           git add README.md
           git add api.md
-          git commit --m "docs: update doc"
+          git commit --m "docs: update doc" || true
       - name: Create bump and changelog main
         if: github.ref == 'refs/heads/main'
         run: pnpm dlx capacitor-plugin-standard-version@latest
