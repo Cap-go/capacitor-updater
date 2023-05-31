@@ -43,10 +43,10 @@ jobs:
           git commit --m "docs: update doc" || true
       - name: Create bump and changelog main
         if: github.ref == 'refs/heads/main'
-        run: pnpm dlx capacitor-plugin-standard-version@latest
+        run: pnpm dlx capacitor-plugin-standard-version@latest --dry-run
       - name: Create bump and changelog development
         if: github.ref != 'refs/heads/main'
-        run: pnpm dlx capacitor-plugin-standard-version@latest --prerelease alpha
+        run: pnpm dlx capacitor-plugin-standard-version@latest --prerelease alpha  --dry-run
       - name: Push to origin
         run: |
           CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
