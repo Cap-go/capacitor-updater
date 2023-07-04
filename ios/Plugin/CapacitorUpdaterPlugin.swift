@@ -127,7 +127,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         print("\(self.implementation.TAG) Downloading \(String(describing: url))")
         DispatchQueue.global(qos: .background).async {
             do {
-                let next = try self.implementation.download(url: url!, version: version, sessionKey: sessionKey)
+                let next = try self.implementation.downloadNonBlocking(url: url!, version: version, sessionKey: sessionKey)
                 if checksum != "" && next.getChecksum() != checksum {
                     print("\(self.implementation.TAG) Error checksum", next.getChecksum(), checksum)
                     self.implementation.sendStats(action: "checksum_fail", versionName: next.getVersionName())

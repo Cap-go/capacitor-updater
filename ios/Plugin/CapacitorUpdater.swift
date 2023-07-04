@@ -455,6 +455,59 @@ extension CustomError: LocalizedError {
         print("\(self.TAG) Current bundle set to: \((bundle ).isEmpty ? BundleInfo.ID_BUILTIN : bundle)")
     }
 
+    public func downloadNonBlocking(url: URL, version: String, sessionKey: String) throws -> BundleInfo {
+        let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
+        let id: String = self.randomString(length: 10)
+        var checksum: String = ""
+
+        var mainError: NSError?
+        let destination: DownloadRequest.Destination = { _, _ in
+            let documentsURL: URL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let fileURL: URL = documentsURL.appendingPathComponent(self.randomString(length: 10))
+
+            return (fileURL, [.removePreviousFile, .createIntermediateDirectories])
+        }
+        let request = AF.download(url, to: destination)
+        
+        request.downloadProgress { progress in
+            let percent = self.calcTotalPercent(percent: Int(progress.fractionCompleted * 100), min: 10, max: 70)
+            self.notifyDownload(id, percent)
+        }
+        request.responseURL (queue: .global(qos: .background) , completionHandler: { (response) in
+            if let fileURL = response.fileURL {
+                switch response.result {
+                case .success:
+                    self.notifyDownload(id, 71)
+                    do {
+                        try self.decryptFile(filePath: fileURL, sessionKey: sessionKey, version: version)
+                        checksum = self.getChecksum(filePath: fileURL)
+                        try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.documentsDir.appendingPathComponent(self.bundleDirectoryHot))
+                        self.notifyDownload(id, 85)
+                        try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory))
+                        self.notifyDownload(id, 100)
+                        try self.deleteFolder(source: fileURL)
+                    } catch {
+                        print("\(self.TAG) download unzip error", error)
+                        mainError = error as NSError
+                    }
+                case let .failure(error):
+                    print("\(self.TAG) download error", response.value ?? "", error)
+                    mainError = error as NSError
+                }
+            }
+            semaphore.signal()
+        })
+        self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.DOWNLOADING, downloaded: Date(), checksum: checksum))
+        self.notifyDownload(id, 0)
+        semaphore.wait()
+        if mainError != nil {
+            throw mainError!
+        }
+        let info: BundleInfo = BundleInfo(id: id, version: version, status: BundleStatus.PENDING, downloaded: Date(), checksum: checksum)
+        self.saveBundleInfo(id: id, bundle: info)
+        return info
+    }
+
     public func download(url: URL, version: String, sessionKey: String) throws -> BundleInfo {
         let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
         let id: String = self.randomString(length: 10)
