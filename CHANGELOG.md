@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.0.3](https://github.com/Cap-go/capacitor-updater/compare/5.0.2...5.0.3) (2023-07-14)
+
+
+### Bug Fixes
+
+* bundleExists check, more checks to prevent Our App with capacitor-updater crashes [#108](https://github.com/Cap-go/capacitor-updater/issues/108) ([3c75026](https://github.com/Cap-go/capacitor-updater/commit/3c750267206c204c10eff1e1b8e5ff05b836fd15))
+* issue decrypt wrong format ([85a363e](https://github.com/Cap-go/capacitor-updater/commit/85a363e8de345267bb0d741e0b86f40ad1635c93))
+* remove spam log about getting info ([dc2498e](https://github.com/Cap-go/capacitor-updater/commit/dc2498e001eca2c15e8eec781f979d97f222cd1e))
+
 ### [5.0.2](https://github.com/Cap-go/capacitor-updater/compare/5.0.1...5.0.2) (2023-07-14)
 
 
