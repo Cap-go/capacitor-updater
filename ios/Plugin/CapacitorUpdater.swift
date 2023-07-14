@@ -473,7 +473,7 @@ extension CustomError: LocalizedError {
             let percent = self.calcTotalPercent(percent: Int(progress.fractionCompleted * 100), min: 10, max: 70)
             self.notifyDownload(id, percent)
         }
-        request.responseURL { (response) in
+        request.responseURL (queue: .global(qos: .background) , completionHandler: { (response) in
             if let fileURL = response.fileURL {
                 switch response.result {
                 case .success:
@@ -496,7 +496,7 @@ extension CustomError: LocalizedError {
                 }
             }
             semaphore.signal()
-        }
+        })
         self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.DOWNLOADING, downloaded: Date(), checksum: checksum))
         self.notifyDownload(id, 0)
         semaphore.wait()
