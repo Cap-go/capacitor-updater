@@ -348,7 +348,7 @@ extension CustomError: LocalizedError {
     }
 
     private func decryptFile(filePath: URL, sessionKey: String, version: String) throws {
-        if self.privateKey.isEmpty || sessionKey.isEmpty {
+        if self.privateKey.isEmpty || sessionKey.isEmpty  || sessionKey.components(separatedBy: ":").count != 2 {
             print("\(self.TAG) Cannot found privateKey or sessionKey")
             return
         }

@@ -488,8 +488,10 @@ public class CapacitorUpdater {
       this.privateKey == null ||
       this.privateKey.isEmpty() ||
       ivSessionKey == null ||
-      ivSessionKey.isEmpty()
+      ivSessionKey.isEmpty() ||
+      ivSessionKey.split(":").length != 2
     ) {
+      Log.i(TAG, "Cannot found privateKey or sessionKey");
       return;
     }
     try {
