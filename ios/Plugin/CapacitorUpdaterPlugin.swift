@@ -531,7 +531,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                     }
                     if latest!.isDownloaded() {
                         print("\(self.implementation.TAG) Latest version already exists and download is NOT required. Update will occur next time app moves to background.")
-                        self.notifyListeners("updateAvailable", data: ["bundle": current.toJSON()])
+                        self.notifyListeners("updateAvailable", data: ["bundle": latest.toJSON()])
                         _ = self.implementation.setNextBundle(next: latest!.getId())
                         self.endBackGroundTask()
                         return
