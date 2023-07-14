@@ -641,10 +641,10 @@ public class CapacitorUpdater {
       bundle.exists() &&
       new File(bundle.getPath(), "/index.html").exists() &&
       !bundleInfo.isDeleted()
-      ) {
-        return true;
-      }
-      return false;
+    ) {
+      return true;
+    }
+    return false;
   }
 
   public Boolean set(final BundleInfo bundle) {

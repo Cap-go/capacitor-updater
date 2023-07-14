@@ -473,7 +473,7 @@ extension CustomError: LocalizedError {
             let percent = self.calcTotalPercent(percent: Int(progress.fractionCompleted * 100), min: 10, max: 70)
             self.notifyDownload(id, percent)
         }
-        request.responseURL (queue: .global(qos: .background) , completionHandler: { (response) in
+        request.responseURL(queue: .global(qos: .background), completionHandler: { (response) in
             if let fileURL = response.fileURL {
                 switch response.result {
                 case .success:
@@ -577,15 +577,14 @@ extension CustomError: LocalizedError {
         let indexHot: URL = destHot.appendingPathComponent("index.html")
         let indexPersist: URL = destHotPersist.appendingPathComponent("index.html")
         let bundleIndo: BundleInfo = self.getBundleInfo(id: id)
-        if (
+        if
             destHot.exist &&
-            destHot.isDirectory &&
-            destHotPersist.exist &&
-            destHotPersist.isDirectory &&
-            indexHot.exist &&
-            indexPersist.exist &&
-            !bundleIndo.isDeleted()
-            ) {
+                destHot.isDirectory &&
+                destHotPersist.exist &&
+                destHotPersist.isDirectory &&
+                indexHot.exist &&
+                indexPersist.exist &&
+                !bundleIndo.isDeleted() {
             return true
         }
         return false

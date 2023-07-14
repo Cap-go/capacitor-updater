@@ -228,7 +228,10 @@ public class CapacitorUpdaterPlugin
       ret.put("bundle", bundleInfo.toJSON());
       this.notifyListeners("download", ret);
       if (percent == 100) {
-        final JSObject retDownloadComplete = new JSObject(ret, new String[] {"bundle"});
+        final JSObject retDownloadComplete = new JSObject(
+          ret,
+          new String[] { "bundle" }
+        );
         this.notifyListeners("downloadComplete", retDownloadComplete);
         this.implementation.sendStats(
             "download_complete",
