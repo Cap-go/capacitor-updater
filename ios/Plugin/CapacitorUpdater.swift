@@ -741,7 +741,7 @@ extension CustomError: LocalizedError {
         if id != nil {
             trueId = id!
         }
-        print("\(self.TAG) Getting info for bundle [\(trueId)]")
+        // print("\(self.TAG) Getting info for bundle [\(trueId)]")
         let result: BundleInfo
         if BundleInfo.ID_BUILTIN == trueId {
             result = BundleInfo(id: trueId, version: "", status: BundleStatus.SUCCESS, checksum: "")

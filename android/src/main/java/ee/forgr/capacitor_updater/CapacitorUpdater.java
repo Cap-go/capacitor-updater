@@ -1002,7 +1002,7 @@ public class CapacitorUpdater {
     if (id != null) {
       trueId = id;
     }
-    Log.d(TAG, "Getting info for bundle [" + trueId + "]");
+    // Log.d(TAG, "Getting info for bundle [" + trueId + "]");
     BundleInfo result;
     if (BundleInfo.ID_BUILTIN.equals(trueId)) {
       result = new BundleInfo(trueId, null, BundleStatus.SUCCESS, "", "");
