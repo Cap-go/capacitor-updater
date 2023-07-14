@@ -559,6 +559,10 @@ extension CustomError: LocalizedError {
         return self.delete(id: id, removeInfo: true)
     }
 
+    public func getPathHot(id: String) -> URL {
+        return documentsDir.appendingPathComponent(self.bundleDirectoryHot).appendingPathComponent(id)
+    }
+
     public func getBundleDirectory(id: String) -> URL {
         return libraryDir.appendingPathComponent(self.bundleDirectory).appendingPathComponent(id)
     }
@@ -569,12 +573,19 @@ extension CustomError: LocalizedError {
 
     private func bundleExists(id: String) -> Bool {
         let destHot: URL = self.getPathHot(id: id)
-        let destHotPersist: URL = self.getPathPersist(id: id)
+        let destHotPersist: URL = self.getBundleDirectory(id: id)
         let indexHot: URL = destHot.appendingPathComponent("index.html")
         let indexPersist: URL = destHotPersist.appendingPathComponent("index.html")
-        let url: URL = self.getBundleDirectory(id: id)
         let bundleIndo: BundleInfo = self.getBundleInfo(id: id)
-        if url.isDirectory && destHotPersist.isDirectory && indexHot.exist && indexPersist.exist && !bundleIndo.isDeleted() {
+        if (
+            destHot.exist &&
+            destHot.isDirectory &&
+            destHotPersist.exist &&
+            destHotPersist.isDirectory &&
+            indexHot.exist &&
+            indexPersist.exist &&
+            !bundleIndo.isDeleted()
+            ) {
             return true
         }
         return false
@@ -595,14 +606,6 @@ extension CustomError: LocalizedError {
         self.setBundleStatus(id: id, status: BundleStatus.ERROR)
         self.sendStats(action: "set_fail", versionName: newBundle.getVersionName())
         return false
-    }
-
-    public func getPathHot(id: String) -> URL {
-        return documentsDir.appendingPathComponent(self.bundleDirectoryHot).appendingPathComponent(id)
-    }
-
-    public func getPathPersist(id: String) -> URL {
-        return libraryDir.appendingPathComponent(self.bundleDirectory).appendingPathComponent(id)
     }
 
     public func reset() {
