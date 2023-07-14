@@ -26,6 +26,17 @@ Paste the output from the `npx @capgo/cli@latest doctor` command into the code b
 PASTE OUTPUT HERE
 ```
 
+### context(s)
+<!--
+Please change the value acording to your context
+-->
+```md
+ManualModel: false
+AutoMode: false
+CapgoCloud: false
+OnPremise: false
+```
+
 ### Platform(s)
 <!--
 List the platforms that this bug affects.
