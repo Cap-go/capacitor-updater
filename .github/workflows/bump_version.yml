@@ -8,7 +8,7 @@ on:
 
 jobs:
   bump-version:
-    if: "!startsWith(github.event.head_commit.message, 'chore(release):')"
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
     runs-on: ubuntu-latest
     name: "Bump version and create changelog with standard version"
     steps:
@@ -19,7 +19,7 @@ jobs:
           token: '${{ secrets.PERSONAL_ACCESS_TOKEN }}'
       - uses: pnpm/action-setup@v2
         with:
-          version: 7
+          version: 8
       - name: Use Node.js
         uses: actions/setup-node@v3
         with:
@@ -65,14 +65,14 @@ jobs:
           destination-branch: main
           commit-email: martindonadieu@gmail.com
   create-cache:
-    if: "!startsWith(github.event.head_commit.message, 'chore(release):')"
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
     runs-on: ubuntu-latest
     name: "Create global cache on main branch"
     steps:
       - uses: actions/checkout@v3
       - uses: pnpm/action-setup@v2
         with:
-          version: 7
+          version: 8
       - name: Use Node.js
         uses: actions/setup-node@v3
         with:
