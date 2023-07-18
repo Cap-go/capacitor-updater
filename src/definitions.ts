@@ -368,7 +368,7 @@ export interface CapacitorUpdaterPlugin {
   getLatest(): Promise<latestVersion>;
 
   /**
-   * Set Channel for this device
+   * Set Channel for this device, the channel have to allow self assignement to make this work
    *
    * @returns {Promise<channelRes>} an Promise resolved when channel is set
    * @param options is the {@link SetChannelOptions} channel to set
