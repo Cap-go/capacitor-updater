@@ -223,7 +223,7 @@ Get Latest bundle available from update Url
 setChannel(options: SetChannelOptions) => Promise<channelRes>
 ```
 
-Set Channel for this device
+Set Channel for this device, the channel have to allow self assignement to make this work
 
 | Param         | Type                                                            | Description                                                                      |
 | ------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------- |
