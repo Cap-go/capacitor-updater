@@ -1233,26 +1233,27 @@ public class CapacitorUpdaterPlugin
     }
   }
 
-private boolean isMainActivity() {
-  if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-    return false;
+  private boolean isMainActivity() {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+      return false;
+    }
+    try {
+      Context mContext = this.getContext();
+      ActivityManager activityManager =
+        (ActivityManager) mContext.getSystemService(Context.ACTIVITY_SERVICE);
+      List<ActivityManager.AppTask> runningTasks =
+        activityManager.getAppTasks();
+      ActivityManager.RecentTaskInfo runningTask = runningTasks
+        .get(0)
+        .getTaskInfo();
+      String className = runningTask.baseIntent.getComponent().getClassName();
+      String runningActivity = runningTask.topActivity.getClassName();
+      boolean isThisAppActivity = className.equals(runningActivity);
+      return isThisAppActivity;
+    } catch (NullPointerException e) {
+      return false;
+    }
   }
-  try {
-    Context mContext = this.getContext();
-    ActivityManager activityManager =
-    (ActivityManager) mContext.getSystemService(Context.ACTIVITY_SERVICE);
-    List<ActivityManager.AppTask> runningTasks = activityManager.getAppTasks();
-    ActivityManager.RecentTaskInfo runningTask = runningTasks
-      .get(0)
-      .getTaskInfo();
-    String className = runningTask.baseIntent.getComponent().getClassName();
-    String runningActivity = runningTask.topActivity.getClassName();
-    boolean isThisAppActivity = className.equals(runningActivity);
-    return isThisAppActivity;
-  } catch (NullPointerException e) {
-    return false;
-  }
-}
 
   private void appKilled() {
     Log.d(CapacitorUpdater.TAG, "onActivityDestroyed: all activity destroyed");
