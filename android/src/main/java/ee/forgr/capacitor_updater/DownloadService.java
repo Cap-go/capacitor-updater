@@ -55,32 +55,35 @@ public class DownloadService extends IntentService {
     try {
       final URL u = new URL(url);
       final URLConnection connection = u.openConnection();
-      final InputStream is = u.openStream();
-      final DataInputStream dis = new DataInputStream(is);
 
-      final File target = new File(documentsDir, dest);
-      target.getParentFile().mkdirs();
-      target.createNewFile();
-      final FileOutputStream fos = new FileOutputStream(target);
+      try (final InputStream is = u.openStream();
+           final DataInputStream dis = new DataInputStream(is)) {
 
-      final long totalLength = connection.getContentLength();
-      final int bufferSize = 1024;
-      final byte[] buffer = new byte[bufferSize];
-      int length;
+        final File target = new File(documentsDir, dest);
+        target.getParentFile().mkdirs();
+        target.createNewFile();
+        try (final FileOutputStream fos = new FileOutputStream(target)) {
 
-      int bytesRead = bufferSize;
-      int percent = 0;
-      this.notifyDownload(id, 10);
-      while ((length = dis.read(buffer)) > 0) {
-        fos.write(buffer, 0, length);
-        final int newPercent = (int) ((bytesRead * 100) / totalLength);
-        if (totalLength > 1 && newPercent != percent) {
-          percent = newPercent;
-          this.notifyDownload(id, this.calcTotalPercent(percent, 10, 70));
+          final long totalLength = connection.getContentLength();
+          final int bufferSize = 1024;
+          final byte[] buffer = new byte[bufferSize];
+          int length;
+
+          int bytesRead = bufferSize;
+          int percent = 0;
+          this.notifyDownload(id, 10);
+          while ((length = dis.read(buffer)) > 0) {
+            fos.write(buffer, 0, length);
+            final int newPercent = (int) ((bytesRead * 100) / totalLength);
+            if (totalLength > 1 && newPercent != percent) {
+              percent = newPercent;
+              this.notifyDownload(id, this.calcTotalPercent(percent, 10, 70));
+            }
+            bytesRead += length;
+          }
+          publishResults(dest, id, version, checksum, sessionKey, "");
         }
-        bytesRead += length;
       }
-      publishResults(dest, id, version, checksum, sessionKey, "");
     } catch (Exception e) {
       e.printStackTrace();
       publishResults(
