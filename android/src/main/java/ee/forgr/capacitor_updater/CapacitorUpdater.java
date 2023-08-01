@@ -1040,7 +1040,7 @@ public class CapacitorUpdater {
     this.saveBundleInfo(id, null);
   }
 
-  private void saveBundleInfo(final String id, final BundleInfo info) {
+  public void saveBundleInfo(final String id, final BundleInfo info) {
     if (
       id == null || (info != null && (info.isBuiltin() || info.isUnknown()))
     ) {

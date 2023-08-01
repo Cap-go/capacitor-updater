@@ -14,7 +14,7 @@ import Version
  */
 @objc(CapacitorUpdaterPlugin)
 public class CapacitorUpdaterPlugin: CAPPlugin {
-    private var implementation = CapacitorUpdater()
+    public var implementation = CapacitorUpdater()
     private let PLUGIN_VERSION: String = "5.0.15"
     static let updateUrlDefault = "https://api.capgo.app/updates"
     static let statsUrlDefault = "https://api.capgo.app/stats"
@@ -150,7 +150,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         }
     }
 
-    private func _reload() -> Bool {
+    public func _reload() -> Bool {
         guard let bridge = self.bridge else { return false }
         let id = self.implementation.getCurrentBundleId()
         let destHot = self.implementation.getPathHot(id: id)
