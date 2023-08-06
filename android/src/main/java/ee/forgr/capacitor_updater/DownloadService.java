@@ -56,14 +56,14 @@ public class DownloadService extends IntentService {
       final URL u = new URL(url);
       final URLConnection connection = u.openConnection();
 
-      try (final InputStream is = u.openStream();
-           final DataInputStream dis = new DataInputStream(is)) {
-
+      try (
+        final InputStream is = u.openStream();
+        final DataInputStream dis = new DataInputStream(is)
+      ) {
         final File target = new File(documentsDir, dest);
         target.getParentFile().mkdirs();
         target.createNewFile();
         try (final FileOutputStream fos = new FileOutputStream(target)) {
-
           final long totalLength = connection.getContentLength();
           final int bufferSize = 1024;
           final byte[] buffer = new byte[bufferSize];
