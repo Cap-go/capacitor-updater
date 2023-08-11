@@ -27,7 +27,7 @@ You have 3 ways possible :
 Join the [discord](https://discord.gg/VnYRvBfgA6) to get help.
 
 ## Documentation
-I maintain a more user friendly and complete [documentation here](https://docs.capgo.app/).
+I maintain a more user friendly and complete [documentation here](https://capgo.app/docs/).
 
 ## Installation
 
@@ -42,7 +42,7 @@ Create your account in [capgo.app](https://capgo.app) and get your [API key](htt
 - Login to CLI `npx @capgo/cli@latest init API_KEY`
 And follow the steps by step to setup your app.
 
-See more there in the [Auto update documentation](https://docs.capgo.app/plugin/auto-update).
+See more there in the [Auto update documentation](https://capgo.app/docs/plugin/auto-update).
 
 
 ## Manual setup
