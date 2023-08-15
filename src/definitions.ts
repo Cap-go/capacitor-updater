@@ -101,6 +101,15 @@ declare module "@capacitor/cli" {
        * @since  4.17.48
        */
       version?: string;
+      /**
+       * Make the plugin direct install the update when the app what just updated/installed. Only for autoUpdate mode.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default undefined
+       * @since  5.1.0
+       */
+      directUpdate?: boolean;
     };
   }
 }
@@ -239,6 +248,7 @@ export type DownloadCompleteListener = (state: DownloadCompleteEvent) => void;
 export type MajorAvailableListener = (state: MajorAvailableEvent) => void;
 export type UpdateFailedListener = (state: UpdateFailedEvent) => void;
 export type AppReloadedListener = (state: void) => void;
+export type AppReadyListener = (state: void) => void;
 
 export interface CapacitorUpdaterPlugin {
   /**
@@ -475,6 +485,16 @@ export interface CapacitorUpdaterPlugin {
     listenerFunc: AppReloadedListener
   ): Promise<PluginListenerHandle> & PluginListenerHandle;
 
+  /**
+   * Listen for app ready event in the App, let you know when app is ready to use
+   *
+   * @since 5.1.0
+   */
+    addListener(
+      eventName: "appReady",
+      listenerFunc: AppReadyListener
+    ): Promise<PluginListenerHandle> & PluginListenerHandle;
+  
   /**
    * Get unique ID used to identify device (sent to auto update server)
    *

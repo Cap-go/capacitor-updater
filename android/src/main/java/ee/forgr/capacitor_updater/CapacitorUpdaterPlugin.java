@@ -72,6 +72,7 @@ public class CapacitorUpdaterPlugin
   private Boolean resetWhenUpdate = true;
   private Thread backgroundTask;
   private Boolean taskRunning = false;
+  private Boolean directUpdate = false;
 
   private Boolean isPreviousMainActivity = true;
 
@@ -112,6 +113,7 @@ public class CapacitorUpdaterPlugin
       this.implementation.versionCode = Integer.toString(pInfo.versionCode);
       this.implementation.requestQueue =
         Volley.newRequestQueue(this.getContext());
+      this.directUpdate = this.getConfig().getBoolean("directUpdate", false);
       this.currentVersionNative =
         new Version(this.getConfig().getString("version", pInfo.versionName));
     } catch (final PackageManager.NameNotFoundException e) {
@@ -907,15 +909,20 @@ public class CapacitorUpdaterPlugin
                           CapacitorUpdater.TAG,
                           "Latest bundle already exists and download is NOT required. Update will occur next time app moves to background."
                         );
-                        final JSObject ret = new JSObject();
-                        ret.put("bundle", latest.toJSON());
-                        CapacitorUpdaterPlugin.this.notifyListeners(
-                            "updateAvailable",
-                            ret
-                          );
-                        CapacitorUpdaterPlugin.this.implementation.setNextBundle(
-                            latest.getId()
-                          );
+                        if(CapacitorUpdaterPlugin.this.directUpdate) {
+                            CapacitorUpdaterPlugin.this.implementation.set(next)
+                            this._reload()
+                        } else {
+                            final JSObject ret = new JSObject();
+                            ret.put("bundle", latest.toJSON());
+                            CapacitorUpdaterPlugin.this.notifyListeners(
+                                "updateAvailable",
+                                ret
+                              );
+                            CapacitorUpdaterPlugin.this.implementation.setNextBundle(
+                                latest.getId()
+                              );
+                        }
                         return;
                       }
                       if (latest.isDeleted()) {
