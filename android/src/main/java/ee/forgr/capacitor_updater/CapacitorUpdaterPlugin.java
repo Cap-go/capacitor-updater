@@ -55,7 +55,7 @@ public class CapacitorUpdaterPlugin
   private static final String channelUrlDefault =
     "https://api.capgo.app/channel_self";
 
-  private final String PLUGIN_VERSION = "5.2.0";
+  private final String PLUGIN_VERSION = "5.2.2";
   private static final String DELAY_CONDITION_PREFERENCES = "";
 
   private SharedPreferences.Editor editor;
@@ -1192,6 +1192,7 @@ public class CapacitorUpdaterPlugin
         "app_moved_to_foreground",
         current.getVersionName()
       );
+    this._checkCancelDelay(true);
     if (CapacitorUpdaterPlugin.this._isAutoUpdateEnabled()) {
       this.backgroundDownload();
     }

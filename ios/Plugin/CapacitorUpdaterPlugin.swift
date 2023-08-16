@@ -15,7 +15,7 @@ import Version
 @objc(CapacitorUpdaterPlugin)
 public class CapacitorUpdaterPlugin: CAPPlugin {
     private var implementation = CapacitorUpdater()
-    private let PLUGIN_VERSION: String = "5.2.0"
+    private let PLUGIN_VERSION: String = "5.2.2"
     static let updateUrlDefault = "https://api.capgo.app/updates"
     static let statsUrlDefault = "https://api.capgo.app/stats"
     static let channelUrlDefault = "https://api.capgo.app/channel_self"
@@ -530,20 +530,20 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 var next = self.implementation.getBundleInfoByVersionName(version: latestVersionName)
                 do {
                     print("\(self.implementation.TAG) New bundle: \(latestVersionName) found. Current is: \(current.getVersionName()). Update will occur next time app moves to background.")
-                    var next = self.implementation.getBundleInfoByVersionName(version: latestVersionName)
-                    if next == nil || ((next?.isDeleted()) != nil) {
-                        if (next?.isDeleted()) != nil {
+                    var nextImpl = self.implementation.getBundleInfoByVersionName(version: latestVersionName)
+                    if nextImpl == nil || ((nextImpl?.isDeleted()) != nil) {
+                        if (nextImpl?.isDeleted()) != nil {
                             print("\(self.implementation.TAG) Latest bundle already exists and will be deleted, download will overwrite it.")
-                            let res = self.implementation.delete(id: next!.getId(), removeInfo: true)
-                            if !res {
-                                print("\(self.implementation.TAG) Delete version deleted: \(next!.toString())")
+                            let res = self.implementation.delete(id: nextImpl!.getId(), removeInfo: true)
+                            if res {
+                                print("\(self.implementation.TAG) Delete version deleted: \(nextImpl!.toString())")
                             } else {
-                                print("\(self.implementation.TAG) Failed to delete failed bundle: \(next!.toString())")
+                                print("\(self.implementation.TAG) Failed to delete failed bundle: \(nextImpl!.toString())")
                             }
                         }
-                        next = try self.implementation.download(url: downloadUrl, version: latestVersionName, sessionKey: sessionKey)
+                        nextImpl = try self.implementation.download(url: downloadUrl, version: latestVersionName, sessionKey: sessionKey)
                     }
-                    guard let next = next else {
+                    guard let next = nextImpl else {
                         print("\(self.implementation.TAG) Error downloading file")
                         self.notifyListeners("downloadFailed", data: ["version": latestVersionName])
                         self.notifyListeners("noNeedUpdate", data: ["bundle": current.toJSON()])
