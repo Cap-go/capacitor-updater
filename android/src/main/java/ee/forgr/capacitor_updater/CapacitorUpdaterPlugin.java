@@ -1191,6 +1191,7 @@ public class CapacitorUpdaterPlugin
         "app_moved_to_foreground",
         current.getVersionName()
       );
+    this._checkCancelDelay(true);
     if (CapacitorUpdaterPlugin.this._isAutoUpdateEnabled()) {
       this.backgroundDownload();
     }
