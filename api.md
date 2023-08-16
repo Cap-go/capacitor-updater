@@ -30,6 +30,7 @@ See the Github [Readme](https://github.com/Cap-go/capacitor-updater) for more in
 * [`addListener('downloadFailed', ...)`](#addlistenerdownloadfailed)
 * [`addListener('appReloaded', ...)`](#addlistenerappreloaded)
 * [`addListener('appReady', ...)`](#addlistenerappready)
+* [`getBuiltinVersion()`](#getbuiltinversion)
 * [`getDeviceId()`](#getdeviceid)
 * [`getPluginVersion()`](#getpluginversion)
 * [`isAutoUpdateEnabled()`](#isautoupdateenabled)
@@ -445,6 +446,21 @@ Listen for app ready event in the App, let you know when app is ready to use
 **Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt; & <a href="#pluginlistenerhandle">PluginListenerHandle</a></code>
 
 **Since:** 5.1.0
+
+--------------------
+
+
+## getBuiltinVersion()
+
+```typescript
+getBuiltinVersion() => Promise<{ version: string; }>
+```
+
+Get the native app version or the builtin version if set in config
+
+**Returns:** <code>Promise&lt;{ version: string; }&gt;</code>
+
+**Since:** 5.2.0
 
 --------------------
 
