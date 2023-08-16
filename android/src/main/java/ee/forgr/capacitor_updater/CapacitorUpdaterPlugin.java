@@ -921,25 +921,27 @@ public class CapacitorUpdaterPlugin
                           CapacitorUpdater.TAG,
                           "Latest bundle already exists and download is NOT required. Update will occur next time app moves to background."
                         );
-                        if(CapacitorUpdaterPlugin.this.directUpdate) {
-                            CapacitorUpdaterPlugin.this.implementation.set(latest);
-                            CapacitorUpdaterPlugin.this._reload();
-                            final JSObject ret = new JSObject();
-                            ret.put("bundle", latest.toJSON());
-                            CapacitorUpdaterPlugin.this.notifyListeners(
-                                "appReady",
-                                ret
-                              );
+                        if (CapacitorUpdaterPlugin.this.directUpdate) {
+                          CapacitorUpdaterPlugin.this.implementation.set(
+                              latest
+                            );
+                          CapacitorUpdaterPlugin.this._reload();
+                          final JSObject ret = new JSObject();
+                          ret.put("bundle", latest.toJSON());
+                          CapacitorUpdaterPlugin.this.notifyListeners(
+                              "appReady",
+                              ret
+                            );
                         } else {
-                            final JSObject ret = new JSObject();
-                            ret.put("bundle", latest.toJSON());
-                            CapacitorUpdaterPlugin.this.notifyListeners(
-                                "updateAvailable",
-                                ret
-                              );
-                            CapacitorUpdaterPlugin.this.implementation.setNextBundle(
-                                latest.getId()
-                              );
+                          final JSObject ret = new JSObject();
+                          ret.put("bundle", latest.toJSON());
+                          CapacitorUpdaterPlugin.this.notifyListeners(
+                              "updateAvailable",
+                              ret
+                            );
+                          CapacitorUpdaterPlugin.this.implementation.setNextBundle(
+                              latest.getId()
+                            );
                         }
                         return;
                       }

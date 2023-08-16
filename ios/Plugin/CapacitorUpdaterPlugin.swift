@@ -531,8 +531,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 do {
                     print("\(self.implementation.TAG) New bundle: \(latestVersionName) found. Current is: \(current.getVersionName()). Update will occur next time app moves to background.")
                     let next = self.implementation.getBundleInfoByVersionName(version: latestVersionName)
-                    if (next == nil || ((next?.isDeleted()) != nil)) {
-                        if ((next?.isDeleted()) != nil) {
+                    if next == nil || ((next?.isDeleted()) != nil) {
+                        if (next?.isDeleted()) != nil {
                             print("\(self.implementation.TAG) Latest bundle already exists and will be deleted, download will overwrite it.")
                             let res = self.implementation.delete(id: next!.getId(), removeInfo: true)
                             if !res {
@@ -550,7 +550,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                         self.endBackGroundTask()
                         return
                     }
-                    if (next.isErrorStatus()) {
+                    if next.isErrorStatus() {
                         print("\(self.implementation.TAG) Latest version is in error state. Aborting update.")
                         self.notifyListeners("noNeedUpdate", data: ["bundle": current.toJSON()])
                         self.endBackGroundTask()
@@ -566,7 +566,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                         }
                         throw ObjectSavableError.checksum
                     }
-                    if (self.directUpdate) {
+                    if self.directUpdate {
                         self.implementation.set(bundle: next)
                         self._reload()
                     } else {

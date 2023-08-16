@@ -490,14 +490,14 @@ export interface CapacitorUpdaterPlugin {
    *
    * @since 5.1.0
    */
-    addListener(
-      eventName: "appReady",
-      listenerFunc: AppReadyListener
-    ): Promise<PluginListenerHandle> & PluginListenerHandle;
-  
+  addListener(
+    eventName: "appReady",
+    listenerFunc: AppReadyListener
+  ): Promise<PluginListenerHandle> & PluginListenerHandle;
+
   /**
    * Get the native app version or the builtin version if set in config
-   * 
+   *
    * @returns {Promise<{ version: string }>} an Promise with version for this device
    * @since 5.2.0
    */
