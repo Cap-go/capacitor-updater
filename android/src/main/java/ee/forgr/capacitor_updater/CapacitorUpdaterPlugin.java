@@ -836,6 +836,7 @@ public class CapacitorUpdaterPlugin
   }
 
   private void backgroundDownload() {
+    String messageUpdate = this.implementation.directUpdate ? "Update will occur now." : "Update will occur next time app moves to background.";
     new Thread(
       new Runnable() {
         @Override
@@ -918,7 +919,7 @@ public class CapacitorUpdaterPlugin
                       if (latest.isDownloaded()) {
                         Log.i(
                           CapacitorUpdater.TAG,
-                          "Latest bundle already exists and download is NOT required. Update will occur next time app moves to background."
+                          "Latest bundle already exists and download is NOT required. " + messageUpdate
                         );
                         if (CapacitorUpdaterPlugin.this.implementation.directUpdate) {
                           CapacitorUpdaterPlugin.this.implementation.set(
@@ -984,7 +985,7 @@ public class CapacitorUpdaterPlugin
                               latestVersionName +
                               " found. Current is: " +
                               current.getVersionName() +
-                              ". Update will occur next time app moves to background."
+                              ". " + messageUpdate
                             );
 
                             final String url = res.getString("url");

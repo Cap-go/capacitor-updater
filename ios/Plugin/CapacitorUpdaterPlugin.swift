@@ -499,6 +499,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     func backgroundDownload() {
+        let messageUpdate = self.directUpdate ? "Update will occur now." : "Update will occur next time app moves to background.";
         DispatchQueue.global(qos: .background).async {
             self.backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "Finish Download Tasks") {
                 // End the task if time expires.
@@ -527,9 +528,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             }
             let latestVersionName = res.version
             if latestVersionName != "" && current.getVersionName() != latestVersionName {
-                var next = self.implementation.getBundleInfoByVersionName(version: latestVersionName)
                 do {
-                    print("\(self.implementation.TAG) New bundle: \(latestVersionName) found. Current is: \(current.getVersionName()). Update will occur next time app moves to background.")
+                    print("\(self.implementation.TAG) New bundle: \(latestVersionName) found. Current is: \(current.getVersionName()). \(messageUpdate)")
                     var nextImpl = self.implementation.getBundleInfoByVersionName(version: latestVersionName)
                     if nextImpl == nil || ((nextImpl?.isDeleted()) != nil) {
                         if (nextImpl?.isDeleted()) != nil {
