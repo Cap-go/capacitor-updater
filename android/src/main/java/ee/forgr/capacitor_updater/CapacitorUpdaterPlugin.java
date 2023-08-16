@@ -112,7 +112,8 @@ public class CapacitorUpdaterPlugin
       this.implementation.versionCode = Integer.toString(pInfo.versionCode);
       this.implementation.requestQueue =
         Volley.newRequestQueue(this.getContext());
-      this.implementation.directUpdate = this.getConfig().getBoolean("directUpdate", false);
+      this.implementation.directUpdate =
+        this.getConfig().getBoolean("directUpdate", false);
       this.currentVersionNative =
         new Version(this.getConfig().getString("version", pInfo.versionName));
     } catch (final PackageManager.NameNotFoundException e) {
@@ -836,7 +837,9 @@ public class CapacitorUpdaterPlugin
   }
 
   private void backgroundDownload() {
-    String messageUpdate = this.implementation.directUpdate ? "Update will occur now." : "Update will occur next time app moves to background.";
+    String messageUpdate = this.implementation.directUpdate
+      ? "Update will occur now."
+      : "Update will occur next time app moves to background.";
     new Thread(
       new Runnable() {
         @Override
@@ -919,9 +922,12 @@ public class CapacitorUpdaterPlugin
                       if (latest.isDownloaded()) {
                         Log.i(
                           CapacitorUpdater.TAG,
-                          "Latest bundle already exists and download is NOT required. " + messageUpdate
+                          "Latest bundle already exists and download is NOT required. " +
+                          messageUpdate
                         );
-                        if (CapacitorUpdaterPlugin.this.implementation.directUpdate) {
+                        if (
+                          CapacitorUpdaterPlugin.this.implementation.directUpdate
+                        ) {
                           CapacitorUpdaterPlugin.this.implementation.set(
                               latest
                             );
@@ -985,7 +991,8 @@ public class CapacitorUpdaterPlugin
                               latestVersionName +
                               " found. Current is: " +
                               current.getVersionName() +
-                              ". " + messageUpdate
+                              ". " +
+                              messageUpdate
                             );
 
                             final String url = res.getString("url");

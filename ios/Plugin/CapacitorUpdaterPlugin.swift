@@ -499,7 +499,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     func backgroundDownload() {
-        let messageUpdate = self.directUpdate ? "Update will occur now." : "Update will occur next time app moves to background.";
+        let messageUpdate = self.directUpdate ? "Update will occur now." : "Update will occur next time app moves to background."
         DispatchQueue.global(qos: .background).async {
             self.backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "Finish Download Tasks") {
                 // End the task if time expires.
