@@ -29,6 +29,7 @@ See the Github [Readme](https://github.com/Cap-go/capacitor-updater) for more in
 * [`addListener('updateFailed', ...)`](#addlistenerupdatefailed)
 * [`addListener('downloadFailed', ...)`](#addlistenerdownloadfailed)
 * [`addListener('appReloaded', ...)`](#addlistenerappreloaded)
+* [`addListener('appReady', ...)`](#addlistenerappready)
 * [`getDeviceId()`](#getdeviceid)
 * [`getPluginVersion()`](#getpluginversion)
 * [`isAutoUpdateEnabled()`](#isautoupdateenabled)
@@ -428,6 +429,26 @@ Listen for download fail event in the App, let you know when download has fail f
 --------------------
 
 
+## addListener('appReady', ...)
+
+```typescript
+addListener(eventName: "appReady", listenerFunc: AppReadyListener) => Promise<PluginListenerHandle> & PluginListenerHandle
+```
+
+Listen for app ready event in the App, let you know when app is ready to use
+
+| Param              | Type                                                          |
+| ------------------ | ------------------------------------------------------------- |
+| **`eventName`**    | <code>'appReady'</code>                                       |
+| **`listenerFunc`** | <code><a href="#appreadylistener">AppReadyListener</a></code> |
+
+**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt; & <a href="#pluginlistenerhandle">PluginListenerHandle</a></code>
+
+**Since:** 5.1.0
+
+--------------------
+
+
 ## getDeviceId()
 
 ```typescript
@@ -655,6 +676,11 @@ Remove all listeners for this plugin.
 
 
 ### AppReloadedListener
+
+<code>(state: void): void</code>
+
+
+### AppReadyListener
 
 <code>(state: void): void</code>
 
