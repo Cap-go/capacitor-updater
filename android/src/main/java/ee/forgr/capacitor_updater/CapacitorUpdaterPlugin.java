@@ -72,7 +72,6 @@ public class CapacitorUpdaterPlugin
   private Boolean resetWhenUpdate = true;
   private Thread backgroundTask;
   private Boolean taskRunning = false;
-  private Boolean directUpdate = false;
 
   private Boolean isPreviousMainActivity = true;
 
@@ -113,7 +112,7 @@ public class CapacitorUpdaterPlugin
       this.implementation.versionCode = Integer.toString(pInfo.versionCode);
       this.implementation.requestQueue =
         Volley.newRequestQueue(this.getContext());
-      this.directUpdate = this.getConfig().getBoolean("directUpdate", false);
+      this.implementation.directUpdate = this.getConfig().getBoolean("directUpdate", false);
       this.currentVersionNative =
         new Version(this.getConfig().getString("version", pInfo.versionName));
     } catch (final PackageManager.NameNotFoundException e) {
@@ -921,7 +920,7 @@ public class CapacitorUpdaterPlugin
                           CapacitorUpdater.TAG,
                           "Latest bundle already exists and download is NOT required. Update will occur next time app moves to background."
                         );
-                        if (CapacitorUpdaterPlugin.this.directUpdate) {
+                        if (CapacitorUpdaterPlugin.this.implementation.directUpdate) {
                           CapacitorUpdaterPlugin.this.implementation.set(
                               latest
                             );

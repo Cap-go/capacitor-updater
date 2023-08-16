@@ -78,6 +78,7 @@ public class CapacitorUpdater {
   public RequestQueue requestQueue;
 
   public File documentsDir;
+  public Boolean directUpdate = false;
   public Activity activity;
   public String PLUGIN_VERSION = "";
   public String versionBuild = "";
@@ -369,7 +370,11 @@ public class CapacitorUpdater {
       ret.put("bundle", next.toJSON());
       CapacitorUpdater.this.notifyListeners("updateAvailable", ret);
       if (setNext) {
-        this.setNextBundle(next.getId());
+        if (this.directUpdate) {
+          this.set(next);
+        } else {
+          this.setNextBundle(next.getId());
+        }
       }
     } catch (IOException e) {
       e.printStackTrace();

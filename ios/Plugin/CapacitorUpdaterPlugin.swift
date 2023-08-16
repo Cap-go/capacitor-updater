@@ -527,10 +527,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             }
             let latestVersionName = res.version
             if latestVersionName != "" && current.getVersionName() != latestVersionName {
-                let latest = self.implementation.getBundleInfoByVersionName(version: latestVersionName)
+                var next = self.implementation.getBundleInfoByVersionName(version: latestVersionName)
                 do {
                     print("\(self.implementation.TAG) New bundle: \(latestVersionName) found. Current is: \(current.getVersionName()). Update will occur next time app moves to background.")
-                    let next = self.implementation.getBundleInfoByVersionName(version: latestVersionName)
+                    var next = self.implementation.getBundleInfoByVersionName(version: latestVersionName)
                     if next == nil || ((next?.isDeleted()) != nil) {
                         if (next?.isDeleted()) != nil {
                             print("\(self.implementation.TAG) Latest bundle already exists and will be deleted, download will overwrite it.")
@@ -541,7 +541,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                                 print("\(self.implementation.TAG) Failed to delete failed bundle: \(next!.toString())")
                             }
                         }
-                        let next = try self.implementation.download(url: downloadUrl, version: latestVersionName, sessionKey: sessionKey)
+                        next = try self.implementation.download(url: downloadUrl, version: latestVersionName, sessionKey: sessionKey)
                     }
                     guard let next = next else {
                         print("\(self.implementation.TAG) Error downloading file")
@@ -567,8 +567,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                         throw ObjectSavableError.checksum
                     }
                     if self.directUpdate {
-                        self.implementation.set(bundle: next)
-                        self._reload()
+                        _ = self.implementation.set(bundle: next)
+                        _ = self._reload()
                     } else {
                         self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
                         _ = self.implementation.setNextBundle(next: next.getId())
