@@ -43,7 +43,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             print("\(self.implementation.TAG) Cannot get version native \(currentVersionNative)")
         }
         print("\(self.implementation.TAG) version native \(self.currentVersionNative.description)")
-        implementation.versionName = getConfig().getString("version", Bundle.main.versionName)!
+        implementation.versionBuild = getConfig().getString("version", Bundle.main.versionName)!
         autoDeleteFailed = getConfig().getBoolean("autoDeleteFailed", true)
         autoDeletePrevious = getConfig().getBoolean("autoDeletePrevious", true)
         directUpdate = getConfig().getBoolean("directUpdate", false)
@@ -102,6 +102,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         } else if percent.isMultiple(of: 10) {
             self.implementation.sendStats(action: "download_\(percent)", versionName: bundle.getVersionName())
         }
+    }
+
+    @objc func getBuiltinVersion(_ call: CAPPluginCall) {
+        call.resolve(["version": implementation.versionBuild])
     }
 
     @objc func getDeviceId(_ call: CAPPluginCall) {
@@ -527,8 +531,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 do {
                     print("\(self.implementation.TAG) New bundle: \(latestVersionName) found. Current is: \(current.getVersionName()). Update will occur next time app moves to background.")
                     let next = self.implementation.getBundleInfoByVersionName(version: latestVersionName)
-                    if (next == nil || next.isDeleted()) {
-                        if (next.isDeleted()) {
+                    if (next == nil || ((next?.isDeleted()) != nil)) {
+                        if ((next?.isDeleted()) != nil) {
                             print("\(self.implementation.TAG) Latest bundle already exists and will be deleted, download will overwrite it.")
                             let res = self.implementation.delete(id: next!.getId(), removeInfo: true)
                             if !res {
@@ -539,7 +543,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                         }
                         let next = try self.implementation.download(url: downloadUrl, version: latestVersionName, sessionKey: sessionKey)
                     }
-                    if next.isErrorStatus() {
+                    guard let next = next else {
+                        print("\(self.implementation.TAG) Error downloading file")
+                        self.notifyListeners("downloadFailed", data: ["version": latestVersionName])
+                        self.notifyListeners("noNeedUpdate", data: ["bundle": current.toJSON()])
+                        self.endBackGroundTask()
+                        return
+                    }
+                    if (next.isErrorStatus()) {
                         print("\(self.implementation.TAG) Latest version is in error state. Aborting update.")
                         self.notifyListeners("noNeedUpdate", data: ["bundle": current.toJSON()])
                         self.endBackGroundTask()
@@ -556,11 +567,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                         throw ObjectSavableError.checksum
                     }
                     if (self.directUpdate) {
-                        self.implementation.set(bundle: next!)
+                        self.implementation.set(bundle: next)
                         self._reload()
                     } else {
-                        self.notifyListeners("updateAvailable", data: ["bundle": next!.toJSON()])
-                        _ = self.implementation.setNextBundle(next: next!.getId())
+                        self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
+                        _ = self.implementation.setNextBundle(next: next.getId())
                     }
                 } catch {
                     print("\(self.implementation.TAG) Error downloading file", error.localizedDescription)
@@ -573,7 +584,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 print("\(self.implementation.TAG) No need to update, \(current.getId()) is the latest bundle.")
                 self.notifyListeners("noNeedUpdate", data: ["bundle": current.toJSON()])
             }
-            self.notifyListeners("appReady", data: ["bundle": latest!.toJSON()])
+            self.notifyListeners("appReady", data: ["bundle": current.toJSON()])
             self.endBackGroundTask()
         }
     }

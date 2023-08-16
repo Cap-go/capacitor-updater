@@ -53,6 +53,10 @@ export class CapacitorUpdaterWeb
     console.warn("Cannot get ID in web");
     return { deviceId: "default" };
   }
+  async getBuiltinVersion(): Promise<{ version: string }> {
+    console.warn("Cannot get version in web");
+    return { version: "default" };
+  }
   async getPluginVersion(): Promise<{ version: string }> {
     console.warn("Cannot get plugin version in web");
     return { version: "default" };

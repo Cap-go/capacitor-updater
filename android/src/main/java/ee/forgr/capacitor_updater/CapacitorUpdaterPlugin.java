@@ -251,6 +251,18 @@ public class CapacitorUpdaterPlugin
   }
 
   @PluginMethod
+  public void getBuiltinVersion(final PluginCall call) {
+    try {
+      final JSObject ret = new JSObject();
+      ret.put("version", this.implementation.versionBuild);
+      call.resolve(ret);
+    } catch (final Exception e) {
+      Log.e(CapacitorUpdater.TAG, "Could not get version", e);
+      call.reject("Could not get version", e);
+    }
+  }
+
+  @PluginMethod
   public void getDeviceId(final PluginCall call) {
     try {
       final JSObject ret = new JSObject();
@@ -910,8 +922,14 @@ public class CapacitorUpdaterPlugin
                           "Latest bundle already exists and download is NOT required. Update will occur next time app moves to background."
                         );
                         if(CapacitorUpdaterPlugin.this.directUpdate) {
-                            CapacitorUpdaterPlugin.this.implementation.set(next)
-                            this._reload()
+                            CapacitorUpdaterPlugin.this.implementation.set(latest);
+                            CapacitorUpdaterPlugin.this._reload();
+                            final JSObject ret = new JSObject();
+                            ret.put("bundle", latest.toJSON());
+                            CapacitorUpdaterPlugin.this.notifyListeners(
+                                "appReady",
+                                ret
+                              );
                         } else {
                             final JSObject ret = new JSObject();
                             ret.put("bundle", latest.toJSON());

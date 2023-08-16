@@ -496,6 +496,14 @@ export interface CapacitorUpdaterPlugin {
     ): Promise<PluginListenerHandle> & PluginListenerHandle;
   
   /**
+   * Get the native app version or the builtin version if set in config
+   * 
+   * @returns {Promise<{ version: string }>} an Promise with version for this device
+   * @since 5.2.0
+   */
+  getBuiltinVersion(): Promise<{ version: string }>;
+
+  /**
    * Get unique ID used to identify device (sent to auto update server)
    *
    * @returns {Promise<{ deviceId: string }>} an Promise with id for this device

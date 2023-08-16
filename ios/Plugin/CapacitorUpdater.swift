@@ -232,7 +232,7 @@ extension CustomError: LocalizedError {
 
     public let TAG: String = "✨  Capacitor-updater:"
     public let CAP_SERVER_PATH: String = "serverBasePath"
-    public var versionName: String = ""
+    public var versionBuild: String = ""
     public var customId: String = ""
     public var PLUGIN_VERSION: String = ""
     public let timeout: Double = 20
@@ -395,7 +395,7 @@ extension CustomError: LocalizedError {
             device_id: self.deviceID,
             app_id: self.appId,
             custom_id: self.customId,
-            version_build: self.versionName,
+            version_build: self.versionBuild,
             version_code: self.versionCode,
             version_os: self.versionOs,
             version_name: self.getCurrentBundle().getVersionName(),
