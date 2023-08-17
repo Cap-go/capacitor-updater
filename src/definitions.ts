@@ -197,6 +197,15 @@ export interface UpdateFailedEvent {
    */
   bundle: BundleInfo;
 }
+export interface AppReadyEvent {
+  /**
+   * Emit when a app is ready to use.
+   *
+   * @since  5.2.0
+   */
+  bundle: BundleInfo;
+  status: string;
+}
 
 export interface latestVersion {
   /**
@@ -248,7 +257,7 @@ export type DownloadCompleteListener = (state: DownloadCompleteEvent) => void;
 export type MajorAvailableListener = (state: MajorAvailableEvent) => void;
 export type UpdateFailedListener = (state: UpdateFailedEvent) => void;
 export type AppReloadedListener = (state: void) => void;
-export type AppReadyListener = (state: void) => void;
+export type AppReadyListener = (state: AppReadyEvent) => void;
 
 export interface CapacitorUpdaterPlugin {
   /**
