@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.2.7](https://github.com/Cap-go/capacitor-updater/compare/5.2.6...5.2.7) (2023-08-17)
+
+
+### Bug Fixes
+
+* send appReady if auto update disabled ([d56d86f](https://github.com/Cap-go/capacitor-updater/commit/d56d86f9fd00723474ea129266b7d513cab7bd4e))
+
 ### [5.2.6](https://github.com/Cap-go/capacitor-updater/compare/5.2.5...5.2.6) (2023-08-17)
 
 
