@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.2.11](https://github.com/Cap-go/capacitor-updater/compare/5.2.10...5.2.11) (2023-08-17)
+
+
+### Bug Fixes
+
+* only apply directUpdate on boot app not pause ([722a2ae](https://github.com/Cap-go/capacitor-updater/commit/722a2ae4be5edfbc18556193c298ab2af63360cf))
+
 ### [5.2.10](https://github.com/Cap-go/capacitor-updater/compare/5.2.9...5.2.10) (2023-08-17)
 
 
