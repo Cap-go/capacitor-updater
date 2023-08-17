@@ -516,6 +516,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                     self.notifyListeners("majorAvailable", data: ["version": res.version])
                 }
                 self.notifyListeners("noNeedUpdate", data: ["bundle": current.toJSON()])
+                self.notifyListeners("appReady", data: ["bundle": current.toJSON()])
                 self.endBackGroundTask()
                 return
             }
@@ -523,6 +524,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             guard let downloadUrl = URL(string: res.url) else {
                 print("\(self.implementation.TAG) Error no url or wrong format")
                 self.notifyListeners("noNeedUpdate", data: ["bundle": current.toJSON()])
+                self.notifyListeners("appReady", data: ["bundle": current.toJSON()])
                 self.endBackGroundTask()
                 return
             }
@@ -547,12 +549,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                         print("\(self.implementation.TAG) Error downloading file")
                         self.notifyListeners("downloadFailed", data: ["version": latestVersionName])
                         self.notifyListeners("noNeedUpdate", data: ["bundle": current.toJSON()])
+                        self.notifyListeners("appReady", data: ["bundle": current.toJSON()])
                         self.endBackGroundTask()
                         return
                     }
                     if next.isErrorStatus() {
                         print("\(self.implementation.TAG) Latest version is in error state. Aborting update.")
                         self.notifyListeners("noNeedUpdate", data: ["bundle": current.toJSON()])
+                        self.notifyListeners("appReady", data: ["bundle": current.toJSON()])
                         self.endBackGroundTask()
                         return
                     }
