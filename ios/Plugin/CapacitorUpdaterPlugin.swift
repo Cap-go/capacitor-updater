@@ -646,6 +646,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             self.backgroundDownload()
         } else {
             print("\(self.implementation.TAG) Auto update is disabled")
+            self.notifyListeners("appReady", data: ["bundle": current.toJSON()])
         }
         self.checkAppReady()
     }
