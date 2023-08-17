@@ -376,6 +376,7 @@ public class CapacitorUpdater {
       if (setNext) {
         if (this.directUpdate) {
           CapacitorUpdater.this.directUpdateFinish(next);
+          this.directUpdate = false;
         } else {
           this.setNextBundle(next.getId());
         }

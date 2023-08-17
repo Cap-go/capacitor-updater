@@ -970,6 +970,7 @@ public class CapacitorUpdaterPlugin
                               latest
                             );
                           CapacitorUpdaterPlugin.this._reload();
+                          CapacitorUpdaterPlugin.this.implementation.directUpdate = false;
                           CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
                               "Update installed",
                               latestVersionName,

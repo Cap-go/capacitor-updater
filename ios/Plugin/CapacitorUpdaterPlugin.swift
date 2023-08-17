@@ -576,6 +576,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                     if self.directUpdate {
                         _ = self.implementation.set(bundle: next)
                         _ = self._reload()
+                        self.directUpdate = false
                         self.endBackGroundTaskWithNotif(msg: "update installed", latestVersionName: latestVersionName, current: current)
                     } else {
                         self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
