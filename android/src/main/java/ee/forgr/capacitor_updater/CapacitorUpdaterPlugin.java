@@ -15,6 +15,7 @@ import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
 import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -870,7 +871,7 @@ public class CapacitorUpdaterPlugin
                   if (res.has("message")) {
                     Log.i(
                       CapacitorUpdater.TAG,
-                      "message " + res.get("message")
+                      "API message " + res.get("message")
                     );
                     if (
                       res.has("major") &&
@@ -1237,9 +1238,19 @@ public class CapacitorUpdaterPlugin
       this.backgroundDownload();
     } else {
       Log.i(CapacitorUpdater.TAG, "Auto update is disabled");
-      final JSObject ret = new JSObject();
-      ret.put("bundle", current.toJSON());
-      CapacitorUpdaterPlugin.this.notifyListeners("appReady", ret);
+      // run after 1.5 s to make sure the listeners are registered
+      new Handler()
+        .postDelayed(
+          new Runnable() {
+            @Override
+            public void run() {
+              final JSObject ret = new JSObject();
+              ret.put("bundle", current.toJSON());
+              CapacitorUpdaterPlugin.this.notifyListeners("appReady", ret);
+            }
+          },
+          1500
+        );
     }
     this.checkAppReady();
   }

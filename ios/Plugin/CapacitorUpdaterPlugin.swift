@@ -511,7 +511,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             let current = self.implementation.getCurrentBundle()
 
             if (res.message) != nil {
-                print("\(self.implementation.TAG) message \(res.message ?? "")")
+                print("\(self.implementation.TAG) API message \(res.message ?? "")")
                 if res.major == true {
                     self.notifyListeners("majorAvailable", data: ["version": res.version])
                 }
@@ -646,7 +646,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             self.backgroundDownload()
         } else {
             print("\(self.implementation.TAG) Auto update is disabled")
-            self.notifyListeners("appReady", data: ["bundle": current.toJSON()])
+            // run after 1 second to make sure that the app is ready
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                self.notifyListeners("appReady", data: ["bundle": current.toJSON()])
+            }
         }
         self.checkAppReady()
     }
