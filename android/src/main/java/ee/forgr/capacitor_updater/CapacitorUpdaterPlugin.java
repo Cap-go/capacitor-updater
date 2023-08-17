@@ -97,6 +97,11 @@ public class CapacitorUpdaterPlugin
           }
 
           @Override
+          public void directUpdateFinish(final BundleInfo latest) {
+            CapacitorUpdaterPlugin.this.directUpdateFinish(latest);
+          }
+
+          @Override
           public void notifyListeners(final String id, final JSObject res) {
             CapacitorUpdaterPlugin.this.notifyListeners(id, res);
           }
@@ -166,6 +171,14 @@ public class CapacitorUpdaterPlugin
     final Application application = (Application) this.getContext()
       .getApplicationContext();
     application.registerActivityLifecycleCallbacks(this);
+  }
+
+  private void directUpdateFinish(final BundleInfo latest) {
+    final JSObject ret = new JSObject();
+    ret.put("bundle", latest.toJSON());
+    CapacitorUpdaterPlugin.this.implementation.set(latest);
+    CapacitorUpdaterPlugin.this._reload();
+    CapacitorUpdaterPlugin.this.notifyListeners("appReady", ret);
   }
 
   private void cleanupObsoleteVersions() {
@@ -877,6 +890,10 @@ public class CapacitorUpdaterPlugin
                         "noNeedUpdate",
                         retNoNeed
                       );
+                    CapacitorUpdaterPlugin.this.notifyListeners(
+                        "appReady",
+                        retNoNeed
+                      );
                     return;
                   }
 
@@ -893,6 +910,11 @@ public class CapacitorUpdaterPlugin
                         "noNeedUpdate",
                         retNoNeed
                       );
+                    CapacitorUpdaterPlugin.this.notifyListeners(
+                        "appReady",
+                        retNoNeed
+                      );
+                    return;
                   }
                   final String latestVersionName = res.getString("version");
 
@@ -906,6 +928,8 @@ public class CapacitorUpdaterPlugin
                           latestVersionName
                         );
                     if (latest != null) {
+                      final JSObject ret = new JSObject();
+                      ret.put("bundle", latest.toJSON());
                       if (latest.isErrorStatus()) {
                         Log.e(
                           CapacitorUpdater.TAG,
@@ -916,6 +940,10 @@ public class CapacitorUpdaterPlugin
                         CapacitorUpdaterPlugin.this.notifyListeners(
                             "noNeedUpdate",
                             retNoNeed
+                          );
+                        CapacitorUpdaterPlugin.this.notifyListeners(
+                            "appReady",
+                            ret
                           );
                         return;
                       }
@@ -932,15 +960,7 @@ public class CapacitorUpdaterPlugin
                               latest
                             );
                           CapacitorUpdaterPlugin.this._reload();
-                          final JSObject ret = new JSObject();
-                          ret.put("bundle", latest.toJSON());
-                          CapacitorUpdaterPlugin.this.notifyListeners(
-                              "appReady",
-                              ret
-                            );
                         } else {
-                          final JSObject ret = new JSObject();
-                          ret.put("bundle", latest.toJSON());
                           CapacitorUpdaterPlugin.this.notifyListeners(
                               "updateAvailable",
                               ret
@@ -949,6 +969,10 @@ public class CapacitorUpdaterPlugin
                               latest.getId()
                             );
                         }
+                        CapacitorUpdaterPlugin.this.notifyListeners(
+                            "appReady",
+                            ret
+                          );
                         return;
                       }
                       if (latest.isDeleted()) {
@@ -978,6 +1002,10 @@ public class CapacitorUpdaterPlugin
                           );
                         }
                       }
+                      CapacitorUpdaterPlugin.this.notifyListeners(
+                          "appReady",
+                          ret
+                        );
                     }
 
                     new Thread(
@@ -1031,6 +1059,10 @@ public class CapacitorUpdaterPlugin
                             CapacitorUpdaterPlugin.this.notifyListeners(
                                 "noNeedUpdate",
                                 retNoNeed
+                              );
+                            CapacitorUpdaterPlugin.this.notifyListeners(
+                                "appReady",
+                                ret
                               );
                           }
                         }

@@ -144,6 +144,10 @@ public class CapacitorUpdater {
     return;
   }
 
+  void directUpdateFinish(final BundleInfo latest) {
+    return;
+  }
+
   void notifyListeners(final String id, final JSObject res) {
     return;
   }
@@ -371,7 +375,7 @@ public class CapacitorUpdater {
       CapacitorUpdater.this.notifyListeners("updateAvailable", ret);
       if (setNext) {
         if (this.directUpdate) {
-          this.set(next);
+          CapacitorUpdater.this.directUpdateFinish(next);
         } else {
           this.setNextBundle(next.getId());
         }
