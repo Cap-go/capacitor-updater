@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.2.12](https://github.com/Cap-go/capacitor-updater/compare/5.2.11...5.2.12) (2023-08-18)
+
+
+### Bug Fixes
+
+* instead of time use semaphore ([942146a](https://github.com/Cap-go/capacitor-updater/commit/942146a70bfef3b3d195b094f70a71c84e96c1e1))
+
 ### [5.2.11](https://github.com/Cap-go/capacitor-updater/compare/5.2.10...5.2.11) (2023-08-17)
 
 
