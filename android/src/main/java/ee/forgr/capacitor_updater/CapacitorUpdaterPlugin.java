@@ -41,6 +41,8 @@ import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import org.json.JSONException;
 
 @CapacitorPlugin(name = "CapacitorUpdater")
@@ -56,7 +58,7 @@ public class CapacitorUpdaterPlugin
   private static final String channelUrlDefault =
     "https://api.capgo.app/channel_self";
 
-  private final String PLUGIN_VERSION = "5.2.11";
+  private final String PLUGIN_VERSION = "5.2.10";
   private static final String DELAY_CONDITION_PREFERENCES = "";
 
   private SharedPreferences.Editor editor;
@@ -77,6 +79,8 @@ public class CapacitorUpdaterPlugin
   private Boolean isPreviousMainActivity = true;
 
   private volatile Thread appReadyCheck;
+
+  private static final CountDownLatch semaphoreReady = new CountDownLatch(1);
 
   @Override
   public void load() {
@@ -181,6 +185,18 @@ public class CapacitorUpdaterPlugin
     CapacitorUpdaterPlugin.this.implementation.set(latest);
     CapacitorUpdaterPlugin.this._reload();
     CapacitorUpdaterPlugin.this.notifyListeners("appReady", ret);
+    new Thread(() -> {
+      try {
+        CapacitorUpdaterPlugin.this.semaphoreReady.await(
+            CapacitorUpdaterPlugin.this.appReadyTimeout,
+            TimeUnit.SECONDS
+          );
+      } catch (InterruptedException e) {
+        e.printStackTrace();
+      }
+      CapacitorUpdaterPlugin.this.notifyListeners("appReady", ret);
+    })
+      .start();
   }
 
   private void cleanupObsoleteVersions() {
@@ -440,6 +456,7 @@ public class CapacitorUpdaterPlugin
 
   private boolean _reload() {
     final String path = this.implementation.getCurrentBundlePath();
+    this.semaphoreReady.countDown();
     Log.i(CapacitorUpdater.TAG, "Reloading: " + path);
     if (this.implementation.isUsingBuiltin()) {
       this.bridge.setServerAssetPath(path);
@@ -657,6 +674,7 @@ public class CapacitorUpdaterPlugin
         "Current bundle loaded successfully. ['notifyAppReady()' was called] " +
         bundle
       );
+      this.semaphoreReady.countDown();
       call.resolve();
     } catch (final Exception e) {
       Log.e(
@@ -970,7 +988,6 @@ public class CapacitorUpdaterPlugin
                               latest
                             );
                           CapacitorUpdaterPlugin.this._reload();
-                          CapacitorUpdaterPlugin.this.implementation.directUpdate = false;
                           CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
                               "Update installed",
                               latestVersionName,
@@ -1238,20 +1255,21 @@ public class CapacitorUpdaterPlugin
       this.backgroundDownload();
     } else {
       Log.i(CapacitorUpdater.TAG, "Auto update is disabled");
-      // run after 1.5 s to make sure the listeners are registered
-      new Handler()
-        .postDelayed(
-          new Runnable() {
-            @Override
-            public void run() {
-              final JSObject ret = new JSObject();
-              ret.put("bundle", current.toJSON());
-              ret.put("status", "disabled");
-              CapacitorUpdaterPlugin.this.notifyListeners("appReady", ret);
-            }
-          },
-          1500
-        );
+      new Thread(() -> {
+        try {
+          CapacitorUpdaterPlugin.this.semaphoreReady.await(
+              CapacitorUpdaterPlugin.this.appReadyTimeout,
+              TimeUnit.SECONDS
+            );
+        } catch (InterruptedException e) {
+          e.printStackTrace();
+        }
+        final JSObject ret = new JSObject();
+        ret.put("bundle", current.toJSON());
+        ret.put("status", "disabled");
+        CapacitorUpdaterPlugin.this.notifyListeners("appReady", ret);
+      })
+        .start();
     }
     this.checkAppReady();
   }
