@@ -85,6 +85,16 @@ public class CapacitorUpdaterPlugin
   @Override
   public void load() {
     super.load();
+    new Thread(() -> {
+      try {
+        Log.i(CapacitorUpdater.TAG, "semaphoreReady load");
+        CapacitorUpdaterPlugin.this.semaphoreReady.await(0, TimeUnit.SECONDS);
+        Log.i(CapacitorUpdater.TAG, "semaphoreReady load done");
+      } catch (InterruptedException e) {
+        e.printStackTrace();
+      }
+    })
+      .start();
     this.prefs =
       this.getContext()
         .getSharedPreferences(
@@ -186,12 +196,12 @@ public class CapacitorUpdaterPlugin
     CapacitorUpdaterPlugin.this._reload();
     new Thread(() -> {
       try {
-        // Log.i(CapacitorUpdater.TAG, "semaphoreReady directUpdateFinish");
+        Log.i(CapacitorUpdater.TAG, "semaphoreReady directUpdateFinish");
         CapacitorUpdaterPlugin.this.semaphoreReady.await(
             CapacitorUpdaterPlugin.this.appReadyTimeout,
             TimeUnit.SECONDS
           );
-        // Log.i(CapacitorUpdater.TAG, "semaphoreReady directUpdateFinish done");
+        Log.i(CapacitorUpdater.TAG, "semaphoreReady directUpdateFinish done");
       } catch (InterruptedException e) {
         e.printStackTrace();
       }
@@ -459,9 +469,9 @@ public class CapacitorUpdaterPlugin
     final String path = this.implementation.getCurrentBundlePath();
     new Thread(() -> {
       try {
-        // Log.i(CapacitorUpdater.TAG, "semaphoreReady _reload");
+        Log.i(CapacitorUpdater.TAG, "semaphoreReady _reload");
         CapacitorUpdaterPlugin.this.semaphoreReady.await(0, TimeUnit.SECONDS);
-        // Log.i(CapacitorUpdater.TAG, "semaphoreReady _reload done");
+        Log.i(CapacitorUpdater.TAG, "semaphoreReady _reload done");
       } catch (InterruptedException e) {
         e.printStackTrace();
       }
@@ -684,9 +694,9 @@ public class CapacitorUpdaterPlugin
         "Current bundle loaded successfully. ['notifyAppReady()' was called] " +
         bundle
       );
-      // Log.i(CapacitorUpdater.TAG, "semaphoreReady countDown");
+      Log.i(CapacitorUpdater.TAG, "semaphoreReady countDown");
       this.semaphoreReady.countDown();
-      // Log.i(CapacitorUpdater.TAG, "semaphoreReady countDown done");
+      Log.i(CapacitorUpdater.TAG, "semaphoreReady countDown done");
       call.resolve();
     } catch (final Exception e) {
       Log.e(
@@ -899,10 +909,18 @@ public class CapacitorUpdaterPlugin
     ret.put("message", msg);
     new Thread(() -> {
       try {
+        Log.i(
+          CapacitorUpdater.TAG,
+          "semaphoreReady endBackGroundTaskWithNotif"
+        );
         CapacitorUpdaterPlugin.this.semaphoreReady.await(
             CapacitorUpdaterPlugin.this.appReadyTimeout,
             TimeUnit.SECONDS
           );
+        Log.i(
+          CapacitorUpdater.TAG,
+          "semaphoreReady endBackGroundTaskWithNotif done"
+        );
       } catch (InterruptedException e) {
         e.printStackTrace();
       }
@@ -1280,12 +1298,12 @@ public class CapacitorUpdaterPlugin
       Log.i(CapacitorUpdater.TAG, "Auto update is disabled");
       new Thread(() -> {
         try {
-          // Log.i(CapacitorUpdater.TAG, "semaphoreReady Auto update");
+          Log.i(CapacitorUpdater.TAG, "semaphoreReady Auto update");
           CapacitorUpdaterPlugin.this.semaphoreReady.await(
               CapacitorUpdaterPlugin.this.appReadyTimeout,
               TimeUnit.SECONDS
             );
-          // Log.i(CapacitorUpdater.TAG, "semaphoreReady Auto update done");
+          Log.i(CapacitorUpdater.TAG, "semaphoreReady Auto update done");
         } catch (InterruptedException e) {
           e.printStackTrace();
         }
