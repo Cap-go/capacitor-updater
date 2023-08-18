@@ -317,6 +317,10 @@ public class CapacitorUpdaterPlugin
                   if (res.has("error")) {
                     call.reject(res.getString("error"));
                   } else {
+                    if (CapacitorUpdaterPlugin.this._isAutoUpdateEnabled()) {
+                      Log.i(CapacitorUpdater.TAG, "Calling autoupdater after channel change!");
+                      backgroundDownload();
+                    }
                     call.resolve(res);
                   }
                 }
