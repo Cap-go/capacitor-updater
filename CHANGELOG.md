@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.2.13](https://github.com/Cap-go/capacitor-updater/compare/5.2.12...5.2.13) (2023-08-18)
+
+
+### Bug Fixes
+
+* semaphore issue android ([0da47c9](https://github.com/Cap-go/capacitor-updater/commit/0da47c9bb89977c1586bc6f5a117513b742199b9))
+
 ### [5.2.12](https://github.com/Cap-go/capacitor-updater/compare/5.2.11...5.2.12) (2023-08-18)
 
 
