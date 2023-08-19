@@ -7,7 +7,7 @@
 import Foundation
 
 @objc public class BundleInfo: NSObject, Decodable, Encodable {
-    public static let ID_BUILTIN: String = "builtin"
+    public static let idBuiltin: String = "builtin"
     public static let VERSION_UNKNOWN: String = "unknown"
     public static let DOWNLOADED_BUILTIN: String = "1970-01-01T00:00:00.000Z"
 
@@ -34,7 +34,7 @@ import Foundation
     }
 
     public func isBuiltin() -> Bool {
-        return BundleInfo.ID_BUILTIN == self.id
+        return BundleInfo.idBuiltin == self.id
     }
 
     public func isUnknown() -> Bool {
@@ -70,7 +70,7 @@ import Foundation
     }
 
     public func getId() -> String {
-        return self.isBuiltin() ? BundleInfo.ID_BUILTIN : self.id
+        return self.isBuiltin() ? BundleInfo.idBuiltin : self.id
     }
 
     public func setId(id: String) -> BundleInfo {
@@ -78,7 +78,7 @@ import Foundation
     }
 
     public func getVersionName() -> String {
-        return self.version.isEmpty ? BundleInfo.ID_BUILTIN : self.version
+        return self.version.isEmpty ? BundleInfo.idBuiltin : self.version
     }
 
     public func setVersionName(version: String) -> BundleInfo {
