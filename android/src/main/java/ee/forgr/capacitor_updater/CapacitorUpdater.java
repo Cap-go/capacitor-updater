@@ -78,6 +78,7 @@ public class CapacitorUpdater {
   public RequestQueue requestQueue;
 
   public File documentsDir;
+  public Boolean directUpdate = false;
   public Activity activity;
   public String PLUGIN_VERSION = "";
   public String versionBuild = "";
@@ -140,6 +141,10 @@ public class CapacitorUpdater {
   }
 
   void notifyDownload(final String id, final int percent) {
+    return;
+  }
+
+  void directUpdateFinish(final BundleInfo latest) {
     return;
   }
 
@@ -369,7 +374,12 @@ public class CapacitorUpdater {
       ret.put("bundle", next.toJSON());
       CapacitorUpdater.this.notifyListeners("updateAvailable", ret);
       if (setNext) {
-        this.setNextBundle(next.getId());
+        if (this.directUpdate) {
+          CapacitorUpdater.this.directUpdateFinish(next);
+          this.directUpdate = false;
+        } else {
+          this.setNextBundle(next.getId());
+        }
       }
     } catch (IOException e) {
       e.printStackTrace();

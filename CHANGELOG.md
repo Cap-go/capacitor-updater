@@ -2,6 +2,101 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.2.16](https://github.com/Cap-go/capacitor-updater/compare/5.2.15...5.2.16) (2023-08-21)
+
+
+### Bug Fixes
+
+* android direct download ([1784c75](https://github.com/Cap-go/capacitor-updater/commit/1784c75aaa892550e63d9ff4c1aba8febe350619))
+
+### [5.2.15](https://github.com/Cap-go/capacitor-updater/compare/5.2.14...5.2.15) (2023-08-21)
+
+### [5.2.14](https://github.com/Cap-go/capacitor-updater/compare/5.2.13...5.2.14) (2023-08-18)
+
+
+### Bug Fixes
+
+* issue android ([e78006b](https://github.com/Cap-go/capacitor-updater/commit/e78006bbf708c78f83d21291d411e00f3eba4147))
+
+### [5.2.13](https://github.com/Cap-go/capacitor-updater/compare/5.2.12...5.2.13) (2023-08-18)
+
+
+### Bug Fixes
+
+* semaphore issue android ([0da47c9](https://github.com/Cap-go/capacitor-updater/commit/0da47c9bb89977c1586bc6f5a117513b742199b9))
+
+### [5.2.12](https://github.com/Cap-go/capacitor-updater/compare/5.2.11...5.2.12) (2023-08-18)
+
+
+### Bug Fixes
+
+* instead of time use semaphore ([942146a](https://github.com/Cap-go/capacitor-updater/commit/942146a70bfef3b3d195b094f70a71c84e96c1e1))
+
+### [5.2.11](https://github.com/Cap-go/capacitor-updater/compare/5.2.10...5.2.11) (2023-08-17)
+
+
+### Bug Fixes
+
+* only apply directUpdate on boot app not pause ([722a2ae](https://github.com/Cap-go/capacitor-updater/commit/722a2ae4be5edfbc18556193c298ab2af63360cf))
+
+### [5.2.10](https://github.com/Cap-go/capacitor-updater/compare/5.2.9...5.2.10) (2023-08-17)
+
+
+### Bug Fixes
+
+* make code simpler ([708bfd8](https://github.com/Cap-go/capacitor-updater/commit/708bfd80a515a8a47ebe34a9e6ee6c739b5c63af))
+
+### [5.2.9](https://github.com/Cap-go/capacitor-updater/compare/5.2.8...5.2.9) (2023-08-17)
+
+
+### Bug Fixes
+
+* appReady ios when no update ([38759ab](https://github.com/Cap-go/capacitor-updater/commit/38759ab525e16c73fb21130d64026e7852c9a566))
+
+### [5.2.8](https://github.com/Cap-go/capacitor-updater/compare/5.2.7...5.2.8) (2023-08-17)
+
+
+### Bug Fixes
+
+* add appReady when autoUpdate disabled ([71d7dab](https://github.com/Cap-go/capacitor-updater/commit/71d7dabfd5f718f424de2c4b656ade28ad0fc4b0))
+
+### [5.2.7](https://github.com/Cap-go/capacitor-updater/compare/5.2.6...5.2.7) (2023-08-17)
+
+
+### Bug Fixes
+
+* send appReady if auto update disabled ([d56d86f](https://github.com/Cap-go/capacitor-updater/commit/d56d86f9fd00723474ea129266b7d513cab7bd4e))
+
+### [5.2.6](https://github.com/Cap-go/capacitor-updater/compare/5.2.5...5.2.6) (2023-08-17)
+
+
+### Bug Fixes
+
+* android update ([bbd4c50](https://github.com/Cap-go/capacitor-updater/commit/bbd4c502e944af58f29132c6f87985c0084953b2))
+
+### [5.2.5](https://github.com/Cap-go/capacitor-updater/compare/5.2.4...5.2.5) (2023-08-16)
+
+
+### Bug Fixes
+
+* lint issue ([6d3df84](https://github.com/Cap-go/capacitor-updater/commit/6d3df84c953f5a79728b1e175669259842ea121e))
+
+### [5.2.4](https://github.com/Cap-go/capacitor-updater/compare/5.2.3...5.2.4) (2023-08-16)
+
+
+### Bug Fixes
+
+* make log more clear for direct download ([33a4cd4](https://github.com/Cap-go/capacitor-updater/commit/33a4cd45cc0b4cac13a5907dcdf68f1b04904cf5))
+
+### [5.2.3](https://github.com/Cap-go/capacitor-updater/compare/5.2.2...5.2.3) (2023-08-16)
+
+
+### Bug Fixes
+
+* android direct update ([c556475](https://github.com/Cap-go/capacitor-updater/commit/c55647524efac0c35ebe6f03fd0c724efff6927b))
+
+### [5.2.2](https://github.com/Cap-go/capacitor-updater/compare/5.2.1...5.2.2) (2023-08-16)
+
 ### [5.2.1](https://github.com/Cap-go/capacitor-updater/compare/5.2.0...5.2.1) (2023-08-16)
 
 

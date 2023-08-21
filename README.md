@@ -758,6 +758,14 @@ Remove all listeners for this plugin.
 | **`version`** | <code>string</code> | Emit when a download fail. | 4.0.0 |
 
 
+#### AppReadyEvent
+
+| Prop         | Type                                              | Description                      | Since |
+| ------------ | ------------------------------------------------- | -------------------------------- | ----- |
+| **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emit when a app is ready to use. | 5.2.0 |
+| **`status`** | <code>string</code>                               |                                  |       |
+
+
 ### Type Aliases
 
 
@@ -813,7 +821,7 @@ Remove all listeners for this plugin.
 
 #### AppReadyListener
 
-<code>(state: void): void</code>
+<code>(state: <a href="#appreadyevent">AppReadyEvent</a>): void</code>
 
 </docgen-api>
 
