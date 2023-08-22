@@ -530,11 +530,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             let current = self.implementation.getCurrentBundle()
 
             if (res.message) != nil {
-                print("\(self.implementation.TAG) API message \(res.message ?? "")")
+                print("\(self.implementation.TAG) API response: \(res.message ?? "")")
                 if res.major == true {
                     self.notifyListeners("majorAvailable", data: ["version": res.version])
                 }
-                self.endBackGroundTaskWithNotif(msg: res.message ?? "", latestVersionName: res.version, current: current)
+                self.endBackGroundTaskWithNotif(msg: res.message ?? "", latestVersionName: res.version, current: current, error: false)
                 return
             }
             let sessionKey = res.sessionKey ?? ""
@@ -585,11 +585,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                         _ = self.implementation.set(bundle: next)
                         _ = self._reload()
                         self.directUpdate = false
-                        self.endBackGroundTaskWithNotif(msg: "update installed", latestVersionName: latestVersionName, current: current)
+                        self.endBackGroundTaskWithNotif(msg: "update installed", latestVersionName: latestVersionName, current: current, error: false)
                     } else {
                         self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
                         _ = self.implementation.setNextBundle(next: next.getId())
-                        self.endBackGroundTaskWithNotif(msg: "update downloaded, will install next background", latestVersionName: latestVersionName, current: current)
+                        self.endBackGroundTaskWithNotif(msg: "update downloaded, will install next background", latestVersionName: latestVersionName, current: current, error: false)
                     }
                     return
                 } catch {
