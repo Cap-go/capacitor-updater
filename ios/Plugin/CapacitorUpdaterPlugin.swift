@@ -15,7 +15,7 @@ import Version
 @objc(CapacitorUpdaterPlugin)
 public class CapacitorUpdaterPlugin: CAPPlugin {
     private var implementation = CapacitorUpdater()
-    private let pluginVersion: String = "5.2.19"
+    private let pluginVersion: String = "5.2.20"
     static let updateUrlDefault = "https://api.capgo.app/updates"
     static let statsUrlDefault = "https://api.capgo.app/stats"
     static let channelUrlDefault = "https://api.capgo.app/channel_self"
@@ -37,7 +37,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     let semaphoreReady = DispatchSemaphore(value: 0)
 
     override public func load() {
-        _ = semaphoreReady.wait(timeout: .now())
+        self.semaphoreUp()
         print("\(self.implementation.TAG) init for device \(self.implementation.deviceID)")
         do {
             currentVersionNative = try Version(getConfig().getString("version", Bundle.main.versionName ?? "0.0.0")!)
@@ -71,6 +71,23 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         nc.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
         nc.addObserver(self, selector: #selector(appKilled), name: UIApplication.willTerminateNotification, object: nil)
         self.appMovedToForeground()
+    }
+
+    private func semaphoreWait(waitTime: Int) {
+        print("\(self.implementation.TAG) semaphoreWait \(waitTime)")
+        _ = semaphoreReady.wait(timeout: .now() + .milliseconds(waitTime))
+    }
+
+    private func semaphoreUp() {
+        print("\(self.implementation.TAG) semaphoreUp")
+        DispatchQueue.global().async {
+            self.semaphoreWait(waitTime: 0)
+        }
+    }
+
+    private func semaphoreDown() {
+        print("\(self.implementation.TAG) semaphoreDown")
+        semaphoreReady.signal()
     }
 
     private func cleanupObsoleteVersions() {
@@ -160,7 +177,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
     private func _reload() -> Bool {
         guard let bridge = self.bridge else { return false }
-        _ = self.semaphoreReady.wait(timeout: .now())
+        self.semaphoreUp()
         let id = self.implementation.getCurrentBundleId()
         let destHot = self.implementation.getPathHot(id: id)
         print("\(self.implementation.TAG) Reloading \(id)")
@@ -329,7 +346,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func notifyAppReady(_ call: CAPPluginCall) {
-        self.semaphoreReady.signal()
+        self.semaphoreDown()
         let version = self.implementation.getCurrentBundle()
         self.implementation.setSuccess(bundle: version, autoDeletePrevious: self.autoDeletePrevious)
         print("\(self.implementation.TAG) Current bundle loaded successfully. ['notifyAppReady()' was called] \(version.toString())")
@@ -498,17 +515,21 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         self.backgroundTaskID = UIBackgroundTaskIdentifier.invalid
     }
 
+    func sendReadyToJs(current: BundleInfo, msg: String) {
+        print("\(self.implementation.TAG) sendReadyToJs")
+        DispatchQueue.global().async {
+            self.semaphoreWait(waitTime: self.appReadyTimeout)
+            self.notifyListeners("appReady", data: ["bundle": current.toJSON(), "status": msg])
+        }
+    }
+
     func endBackGroundTaskWithNotif(msg: String, latestVersionName: String, current: BundleInfo, error: Bool = true) {
         if error {
             self.implementation.sendStats(action: "download_fail", versionName: current.getVersionName())
             self.notifyListeners("downloadFailed", data: ["version": latestVersionName])
         }
         self.notifyListeners("noNeedUpdate", data: ["bundle": current.toJSON()])
-
-        DispatchQueue.global().async {
-            _ = self.semaphoreReady.wait(timeout: .now() + .milliseconds(self.appReadyTimeout))
-            self.notifyListeners("appReady", data: ["bundle": current.toJSON(), "message": msg])
-        }
+        self.sendReadyToJs(current: current, msg: msg)
         print("\(self.implementation.TAG) endBackGroundTaskWithNotif \(msg)")
         self.endBackGroundTask()
     }
@@ -659,10 +680,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             self.backgroundDownload()
         } else {
             print("\(self.implementation.TAG) Auto update is disabled")
-            DispatchQueue.global().async {
-                _ = self.semaphoreReady.wait(timeout: .now() + .milliseconds(self.appReadyTimeout))
-                self.notifyListeners("appReady", data: ["bundle": current.toJSON(), "status": "disabled"])
-            }
+            self.sendReadyToJs(current: current, msg: "disabled")
         }
         self.checkAppReady()
     }
