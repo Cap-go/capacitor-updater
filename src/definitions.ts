@@ -313,7 +313,7 @@ export interface CapacitorUpdaterPlugin {
   delete(options: { id: string }): Promise<void>;
 
   /**
-   * Get all available bundles
+   * Get all available bundles locally in your app
    *
    * @returns {Promise<{bundles: BundleInfo[]}>} an Promise witht the bundles list
    * @throws An error if the something went wrong
