@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.2.23](https://github.com/Cap-go/capacitor-updater/compare/5.2.22...5.2.23) (2023-08-24)
+
+
+### Bug Fixes
+
+* better res on notify function ([c5e49a4](https://github.com/Cap-go/capacitor-updater/commit/c5e49a466de963187afeb9139e7b1a52054f1b74))
+
 ### [5.2.22](https://github.com/Cap-go/capacitor-updater/compare/5.2.21...5.2.22) (2023-08-24)
 
 
