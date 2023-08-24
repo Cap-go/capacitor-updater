@@ -702,6 +702,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
       Log.i(CapacitorUpdater.TAG, "semaphoreReady countDown");
       this.semaphoreDown();
       Log.i(CapacitorUpdater.TAG, "semaphoreReady countDown done");
+      final JSObject ret = new JSObject();
+      ret.put("bundle", bundle.toJSON());
+      call.resolve(ret);
       call.resolve();
     } catch (final Exception e) {
       Log.e(

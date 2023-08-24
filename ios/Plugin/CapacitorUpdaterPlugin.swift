@@ -350,7 +350,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         let version = self.implementation.getCurrentBundle()
         self.implementation.setSuccess(bundle: version, autoDeletePrevious: self.autoDeletePrevious)
         print("\(self.implementation.TAG) Current bundle loaded successfully. ['notifyAppReady()' was called] \(version.toString())")
-        call.resolve()
+        call.resolve(["bundle": bundle.toJSON()])
     }
 
     @objc func setMultiDelay(_ call: CAPPluginCall) {

@@ -160,14 +160,14 @@ Capacitor Updator works by unzipping a compiled app bundle to the native device 
 ### notifyAppReady()
 
 ```typescript
-notifyAppReady() => Promise<BundleInfo>
+notifyAppReady() => Promise<{ bundle: BundleInfo; }>
 ```
 
 Notify Capacitor Updater that the current bundle is working (a rollback will occur of this method is not called on every app launch)
 By default this method should be called in the first 10 sec after app launch, otherwise a rollback will occur.
 Change this behaviour with {@link appReadyTimeout}
 
-**Returns:** <code>Promise&lt;<a href="#bundleinfo">BundleInfo</a>&gt;</code>
+**Returns:** <code>Promise&lt;{ bundle: <a href="#bundleinfo">BundleInfo</a>; }&gt;</code>
 
 --------------------
 

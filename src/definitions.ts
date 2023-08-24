@@ -265,10 +265,10 @@ export interface CapacitorUpdaterPlugin {
    * By default this method should be called in the first 10 sec after app launch, otherwise a rollback will occur.
    * Change this behaviour with {@link appReadyTimeout}
    *
-   * @returns {Promise<BundleInfo>} an Promise resolved directly
+   * @returns {Promise<{ bundle: BundleInfo }>} an Promise resolved directly
    * @throws An error if something went wrong
    */
-  notifyAppReady(): Promise<BundleInfo>;
+  notifyAppReady(): Promise<{ bundle: BundleInfo }>;
 
   /**
    * Download a new bundle from the provided URL, it should be a zip file, with files inside or with a unique id inside with all your files
