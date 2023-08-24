@@ -128,7 +128,7 @@ Delete bundle in storage
 list() => Promise<{ bundles: BundleInfo[]; }>
 ```
 
-Get all available bundles locally in your app
+Get all locally downloaded bundles in your app
 
 **Returns:** <code>Promise&lt;{ bundles: BundleInfo[]; }&gt;</code>
 
