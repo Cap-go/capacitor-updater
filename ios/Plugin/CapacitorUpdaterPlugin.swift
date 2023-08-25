@@ -179,10 +179,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         guard let bridge = self.bridge else { return false }
         self.semaphoreUp()
         let id = self.implementation.getCurrentBundleId()
-        let destHot = self.implementation.getPathHot(id: id)
+        let dest : URL
+        if (BundleInfo.ID_BUILTIN == id) {
+            dest = Bundle.main.resourceURL!.appendingPathComponent("public")
+        } else {
+            dest = self.implementation.getPathHot(id: id)
+        }
         print("\(self.implementation.TAG) Reloading \(id)")
         if let vc = bridge.viewController as? CAPBridgeViewController {
-            vc.setServerBasePath(path: destHot.path)
+            vc.setServerBasePath(path: dest.path)
             self.checkAppReady()
             self.notifyListeners("appReloaded", data: [:])
             return true
