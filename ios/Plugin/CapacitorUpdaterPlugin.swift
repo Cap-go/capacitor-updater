@@ -352,9 +352,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
     @objc func notifyAppReady(_ call: CAPPluginCall) {
         self.semaphoreDown()
-        let version = self.implementation.getCurrentBundle()
-        self.implementation.setSuccess(bundle: version, autoDeletePrevious: self.autoDeletePrevious)
-        print("\(self.implementation.TAG) Current bundle loaded successfully. ['notifyAppReady()' was called] \(version.toString())")
+        let bundle = self.implementation.getCurrentBundle()
+        self.implementation.setSuccess(bundle: bundle, autoDeletePrevious: self.autoDeletePrevious)
+        print("\(self.implementation.TAG) Current bundle loaded successfully. ['notifyAppReady()' was called] \(bundle.toString())")
         call.resolve(["bundle": bundle.toJSON()])
     }
 
