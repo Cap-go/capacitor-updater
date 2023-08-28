@@ -53,6 +53,10 @@ export class CapacitorUpdaterWeb
     console.warn("Cannot get ID in web");
     return { deviceId: "default" };
   }
+  async getBuiltinVersion(): Promise<{ version: string }> {
+    console.warn("Cannot get version in web");
+    return { version: "default" };
+  }
   async getPluginVersion(): Promise<{ version: string }> {
     console.warn("Cannot get plugin version in web");
     return { version: "default" };
@@ -100,9 +104,9 @@ export class CapacitorUpdaterWeb
       error: "Cannot getChannel in web",
     };
   }
-  async notifyAppReady(): Promise<BundleInfo> {
+  async notifyAppReady(): Promise<{bundle: BundleInfo}> {
     console.warn("Cannot notify App Ready in web");
-    return BUNDLE_BUILTIN;
+    return {bundle: BUNDLE_BUILTIN};
   }
   async setMultiDelay(options: {
     delayConditions: DelayCondition[];

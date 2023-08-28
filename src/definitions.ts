@@ -101,6 +101,15 @@ declare module "@capacitor/cli" {
        * @since  4.17.48
        */
       version?: string;
+      /**
+       * Make the plugin direct install the update when the app what just updated/installed. Only for autoUpdate mode.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default undefined
+       * @since  5.1.0
+       */
+      directUpdate?: boolean;
     };
   }
 }
@@ -188,6 +197,15 @@ export interface UpdateFailedEvent {
    */
   bundle: BundleInfo;
 }
+export interface AppReadyEvent {
+  /**
+   * Emit when a app is ready to use.
+   *
+   * @since  5.2.0
+   */
+  bundle: BundleInfo;
+  status: string;
+}
 
 export interface latestVersion {
   /**
@@ -239,6 +257,7 @@ export type DownloadCompleteListener = (state: DownloadCompleteEvent) => void;
 export type MajorAvailableListener = (state: MajorAvailableEvent) => void;
 export type UpdateFailedListener = (state: UpdateFailedEvent) => void;
 export type AppReloadedListener = (state: void) => void;
+export type AppReadyListener = (state: AppReadyEvent) => void;
 
 export interface CapacitorUpdaterPlugin {
   /**
@@ -246,10 +265,10 @@ export interface CapacitorUpdaterPlugin {
    * By default this method should be called in the first 10 sec after app launch, otherwise a rollback will occur.
    * Change this behaviour with {@link appReadyTimeout}
    *
-   * @returns {Promise<BundleInfo>} an Promise resolved directly
+   * @returns {Promise<{ bundle: BundleInfo }>} an Promise resolved directly
    * @throws An error if something went wrong
    */
-  notifyAppReady(): Promise<BundleInfo>;
+  notifyAppReady(): Promise<{ bundle: BundleInfo }>;
 
   /**
    * Download a new bundle from the provided URL, it should be a zip file, with files inside or with a unique id inside with all your files
@@ -294,7 +313,7 @@ export interface CapacitorUpdaterPlugin {
   delete(options: { id: string }): Promise<void>;
 
   /**
-   * Get all available bundles
+   * Get all locally downloaded bundles in your app
    *
    * @returns {Promise<{bundles: BundleInfo[]}>} an Promise witht the bundles list
    * @throws An error if the something went wrong
@@ -474,6 +493,24 @@ export interface CapacitorUpdaterPlugin {
     eventName: "appReloaded",
     listenerFunc: AppReloadedListener
   ): Promise<PluginListenerHandle> & PluginListenerHandle;
+
+  /**
+   * Listen for app ready event in the App, let you know when app is ready to use
+   *
+   * @since 5.1.0
+   */
+  addListener(
+    eventName: "appReady",
+    listenerFunc: AppReadyListener
+  ): Promise<PluginListenerHandle> & PluginListenerHandle;
+
+  /**
+   * Get the native app version or the builtin version if set in config
+   *
+   * @returns {Promise<{ version: string }>} an Promise with version for this device
+   * @since 5.2.0
+   */
+  getBuiltinVersion(): Promise<{ version: string }>;
 
   /**
    * Get unique ID used to identify device (sent to auto update server)

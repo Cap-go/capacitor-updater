@@ -78,6 +78,7 @@ public class CapacitorUpdater {
   public RequestQueue requestQueue;
 
   public File documentsDir;
+  public Boolean directUpdate = false;
   public Activity activity;
   public String PLUGIN_VERSION = "";
   public String versionBuild = "";
@@ -143,6 +144,10 @@ public class CapacitorUpdater {
     return;
   }
 
+  void directUpdateFinish(final BundleInfo latest) {
+    return;
+  }
+
   void notifyListeners(final String id, final JSObject res) {
     return;
   }
@@ -158,10 +163,12 @@ public class CapacitorUpdater {
   private File unzip(final String id, final File zipFile, final String dest)
     throws IOException {
     final File targetDirectory = new File(this.documentsDir, dest);
-    final ZipInputStream zis = new ZipInputStream(
-      new BufferedInputStream(new FileInputStream(zipFile))
-    );
-    try {
+    try (
+      final BufferedInputStream bis = new BufferedInputStream(
+        new FileInputStream(zipFile)
+      );
+      final ZipInputStream zis = new ZipInputStream(bis)
+    ) {
       int count;
       final int bufferSize = 8192;
       final byte[] buffer = new byte[bufferSize];
@@ -220,12 +227,6 @@ public class CapacitorUpdater {
         lengthRead += entry.getCompressedSize();
       }
       return targetDirectory;
-    } finally {
-      try {
-        zis.close();
-      } catch (final IOException e) {
-        Log.e(TAG, "Failed to close zip input stream", e);
-      }
     }
   }
 
@@ -373,7 +374,12 @@ public class CapacitorUpdater {
       ret.put("bundle", next.toJSON());
       CapacitorUpdater.this.notifyListeners("updateAvailable", ret);
       if (setNext) {
-        this.setNextBundle(next.getId());
+        if (this.directUpdate) {
+          CapacitorUpdater.this.directUpdateFinish(next);
+          this.directUpdate = false;
+        } else {
+          this.setNextBundle(next.getId());
+        }
       }
     } catch (IOException e) {
       e.printStackTrace();
@@ -419,13 +425,10 @@ public class CapacitorUpdater {
   ) throws IOException {
     final URL u = new URL(url);
     final URLConnection connection = u.openConnection();
-    final InputStream is = u.openStream();
-    final DataInputStream dis = new DataInputStream(is);
 
     final File target = new File(this.documentsDir, dest);
     target.getParentFile().mkdirs();
     target.createNewFile();
-    final FileOutputStream fos = new FileOutputStream(target);
 
     final long totalLength = connection.getContentLength();
     final int bufferSize = 1024;
@@ -435,14 +438,20 @@ public class CapacitorUpdater {
     int bytesRead = bufferSize;
     int percent = 0;
     this.notifyDownload(id, 10);
-    while ((length = dis.read(buffer)) > 0) {
-      fos.write(buffer, 0, length);
-      final int newPercent = (int) ((bytesRead / (float) totalLength) * 100);
-      if (totalLength > 1 && newPercent != percent) {
-        percent = newPercent;
-        this.notifyDownload(id, this.calcTotalPercent(percent, 10, 70));
+    try (
+      final InputStream is = u.openStream();
+      final DataInputStream dis = new DataInputStream(is);
+      final FileOutputStream fos = new FileOutputStream(target)
+    ) {
+      while ((length = dis.read(buffer)) > 0) {
+        fos.write(buffer, 0, length);
+        final int newPercent = (int) ((bytesRead / (float) totalLength) * 100);
+        if (totalLength > 1 && newPercent != percent) {
+          percent = newPercent;
+          this.notifyDownload(id, this.calcTotalPercent(percent, 10, 70));
+        }
+        bytesRead += length;
       }
-      bytesRead += length;
     }
     return target;
   }
@@ -506,17 +515,24 @@ public class CapacitorUpdater {
       byte[] decryptedSessionKey = CryptoCipher.decryptRSA(sessionKey, pKey);
       SecretKey sKey = CryptoCipher.byteToSessionKey(decryptedSessionKey);
       byte[] content = new byte[(int) file.length()];
-      BufferedInputStream bis = new BufferedInputStream(
-        new FileInputStream(file)
-      );
-      DataInputStream dis = new DataInputStream(bis);
-      dis.readFully(content);
-      dis.close();
-      byte[] decrypted = CryptoCipher.decryptAES(content, sKey, iv);
-      // write the decrypted string to the file
-      FileOutputStream fos = new FileOutputStream(file.getAbsolutePath());
-      fos.write(decrypted);
-      fos.close();
+
+      try (
+        final FileInputStream fis = new FileInputStream(file);
+        final BufferedInputStream bis = new BufferedInputStream(fis);
+        final DataInputStream dis = new DataInputStream(bis)
+      ) {
+        dis.readFully(content);
+        dis.close();
+        byte[] decrypted = CryptoCipher.decryptAES(content, sKey, iv);
+        // write the decrypted string to the file
+        try (
+          final FileOutputStream fos = new FileOutputStream(
+            file.getAbsolutePath()
+          )
+        ) {
+          fos.write(decrypted);
+        }
+      }
     } catch (GeneralSecurityException e) {
       Log.i(TAG, "decryptFile fail");
       this.sendStats("decrypt_fail", version);

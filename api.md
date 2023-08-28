@@ -29,6 +29,8 @@ See the Github [Readme](https://github.com/Cap-go/capacitor-updater) for more in
 * [`addListener('updateFailed', ...)`](#addlistenerupdatefailed)
 * [`addListener('downloadFailed', ...)`](#addlistenerdownloadfailed)
 * [`addListener('appReloaded', ...)`](#addlistenerappreloaded)
+* [`addListener('appReady', ...)`](#addlistenerappready)
+* [`getBuiltinVersion()`](#getbuiltinversion)
 * [`getDeviceId()`](#getdeviceid)
 * [`getPluginVersion()`](#getpluginversion)
 * [`isAutoUpdateEnabled()`](#isautoupdateenabled)
@@ -44,14 +46,14 @@ See the Github [Readme](https://github.com/Cap-go/capacitor-updater) for more in
 ## notifyAppReady()
 
 ```typescript
-notifyAppReady() => Promise<BundleInfo>
+notifyAppReady() => Promise<{ bundle: BundleInfo; }>
 ```
 
 Notify Capacitor Updater that the current bundle is working (a rollback will occur of this method is not called on every app launch)
 By default this method should be called in the first 10 sec after app launch, otherwise a rollback will occur.
 Change this behaviour with {@link appReadyTimeout}
 
-**Returns:** <code>Promise&lt;<a href="#bundleinfo">BundleInfo</a>&gt;</code>
+**Returns:** <code>Promise&lt;{ bundle: <a href="#bundleinfo">BundleInfo</a>; }&gt;</code>
 
 --------------------
 
@@ -126,7 +128,7 @@ Delete bundle in storage
 list() => Promise<{ bundles: BundleInfo[]; }>
 ```
 
-Get all available bundles
+Get all locally downloaded bundles in your app
 
 **Returns:** <code>Promise&lt;{ bundles: BundleInfo[]; }&gt;</code>
 
@@ -428,6 +430,41 @@ Listen for download fail event in the App, let you know when download has fail f
 --------------------
 
 
+## addListener('appReady', ...)
+
+```typescript
+addListener(eventName: "appReady", listenerFunc: AppReadyListener) => Promise<PluginListenerHandle> & PluginListenerHandle
+```
+
+Listen for app ready event in the App, let you know when app is ready to use
+
+| Param              | Type                                                          |
+| ------------------ | ------------------------------------------------------------- |
+| **`eventName`**    | <code>'appReady'</code>                                       |
+| **`listenerFunc`** | <code><a href="#appreadylistener">AppReadyListener</a></code> |
+
+**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt; & <a href="#pluginlistenerhandle">PluginListenerHandle</a></code>
+
+**Since:** 5.1.0
+
+--------------------
+
+
+## getBuiltinVersion()
+
+```typescript
+getBuiltinVersion() => Promise<{ version: string; }>
+```
+
+Get the native app version or the builtin version if set in config
+
+**Returns:** <code>Promise&lt;{ version: string; }&gt;</code>
+
+**Since:** 5.2.0
+
+--------------------
+
+
 ## getDeviceId()
 
 ```typescript
@@ -606,6 +643,14 @@ Remove all listeners for this plugin.
 | **`version`** | <code>string</code> | Emit when a download fail. | 4.0.0 |
 
 
+### AppReadyEvent
+
+| Prop         | Type                                              | Description                      | Since |
+| ------------ | ------------------------------------------------- | -------------------------------- | ----- |
+| **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emit when a app is ready to use. | 5.2.0 |
+| **`status`** | <code>string</code>                               |                                  |       |
+
+
 ## Type Aliases
 
 
@@ -657,5 +702,10 @@ Remove all listeners for this plugin.
 ### AppReloadedListener
 
 <code>(state: void): void</code>
+
+
+### AppReadyListener
+
+<code>(state: <a href="#appreadyevent">AppReadyEvent</a>): void</code>
 
 </docgen-api>
