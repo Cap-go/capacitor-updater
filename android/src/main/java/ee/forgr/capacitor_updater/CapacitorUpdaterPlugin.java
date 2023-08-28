@@ -63,7 +63,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
   private SharedPreferences.Editor editor;
   private SharedPreferences prefs;
-  private CapacitorUpdater implementation;
+  protected CapacitorUpdater implementation;
 
   private Integer appReadyTimeout = 10000;
   private Integer counterActivityCreate = 0;
@@ -490,7 +490,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
   }
 
-  private boolean _reload() {
+  protected boolean _reload() {
     final String path = this.implementation.getCurrentBundlePath();
     this.semaphoreUp();
     Log.i(CapacitorUpdater.TAG, "Reloading: " + path);
