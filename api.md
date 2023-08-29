@@ -46,14 +46,14 @@ See the Github [Readme](https://github.com/Cap-go/capacitor-updater) for more in
 ## notifyAppReady()
 
 ```typescript
-notifyAppReady() => Promise<BundleInfo>
+notifyAppReady() => Promise<{ bundle: BundleInfo; }>
 ```
 
 Notify Capacitor Updater that the current bundle is working (a rollback will occur of this method is not called on every app launch)
 By default this method should be called in the first 10 sec after app launch, otherwise a rollback will occur.
 Change this behaviour with {@link appReadyTimeout}
 
-**Returns:** <code>Promise&lt;<a href="#bundleinfo">BundleInfo</a>&gt;</code>
+**Returns:** <code>Promise&lt;{ bundle: <a href="#bundleinfo">BundleInfo</a>; }&gt;</code>
 
 --------------------
 
@@ -128,7 +128,7 @@ Delete bundle in storage
 list() => Promise<{ bundles: BundleInfo[]; }>
 ```
 
-Get all available bundles
+Get all locally downloaded bundles in your app
 
 **Returns:** <code>Promise&lt;{ bundles: BundleInfo[]; }&gt;</code>
 

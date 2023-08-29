@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.2.26](https://github.com/Cap-go/capacitor-updater/compare/5.2.25...5.2.26) (2023-08-28)
+
+### [5.2.25](https://github.com/Cap-go/capacitor-updater/compare/5.2.24...5.2.25) (2023-08-28)
+
+### [5.2.24](https://github.com/Cap-go/capacitor-updater/compare/5.2.23...5.2.24) (2023-08-27)
+
+### [5.2.23](https://github.com/Cap-go/capacitor-updater/compare/5.2.22...5.2.23) (2023-08-24)
+
+
+### Bug Fixes
+
+* better res on notify function ([c5e49a4](https://github.com/Cap-go/capacitor-updater/commit/c5e49a466de963187afeb9139e7b1a52054f1b74))
+
+### [5.2.22](https://github.com/Cap-go/capacitor-updater/compare/5.2.21...5.2.22) (2023-08-24)
+
+
+### Bug Fixes
+
+* doc ([b2de79e](https://github.com/Cap-go/capacitor-updater/commit/b2de79ed05c3731bd59a984fc72131311d2fb260))
+
+### [5.2.21](https://github.com/Cap-go/capacitor-updater/compare/5.2.20...5.2.21) (2023-08-24)
+
+
+### Bug Fixes
+
+* list command ([74c45cc](https://github.com/Cap-go/capacitor-updater/commit/74c45cc5ede47dfb66a5cdd14f4d33b856e82de3))
+
 ### [5.2.20](https://github.com/Cap-go/capacitor-updater/compare/5.2.19...5.2.20) (2023-08-22)
 
 

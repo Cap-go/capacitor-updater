@@ -775,7 +775,7 @@ extension CustomError: LocalizedError {
         self.saveBundleInfo(id: id, bundle: nil)
     }
 
-    private func saveBundleInfo(id: String, bundle: BundleInfo?) {
+    public func saveBundleInfo(id: String, bundle: BundleInfo?) {
         if bundle != nil && (bundle!.isBuiltin() || bundle!.isUnknown()) {
             print("\(self.tagLine) Not saving info for bundle [\(id)]", bundle?.toString() ?? "")
             return

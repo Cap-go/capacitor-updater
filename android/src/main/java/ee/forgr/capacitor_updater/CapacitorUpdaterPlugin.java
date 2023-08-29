@@ -58,12 +58,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
   private static final String channelUrlDefault =
     "https://api.capgo.app/channel_self";
 
-  private final String PLUGIN_VERSION = "5.2.20";
+  private final String PLUGIN_VERSION = "5.2.26";
   private static final String DELAY_CONDITION_PREFERENCES = "";
 
   private SharedPreferences.Editor editor;
   private SharedPreferences prefs;
-  private CapacitorUpdater implementation;
+  protected CapacitorUpdater implementation;
 
   private Integer appReadyTimeout = 10000;
   private Integer counterActivityCreate = 0;
@@ -490,7 +490,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
   }
 
-  private boolean _reload() {
+  protected boolean _reload() {
     final String path = this.implementation.getCurrentBundlePath();
     this.semaphoreUp();
     Log.i(CapacitorUpdater.TAG, "Reloading: " + path);
@@ -702,6 +702,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
       Log.i(CapacitorUpdater.TAG, "semaphoreReady countDown");
       this.semaphoreDown();
       Log.i(CapacitorUpdater.TAG, "semaphoreReady countDown done");
+      final JSObject ret = new JSObject();
+      ret.put("bundle", bundle.toJSON());
+      call.resolve(ret);
       call.resolve();
     } catch (final Exception e) {
       Log.e(
