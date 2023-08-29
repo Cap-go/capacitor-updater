@@ -14,8 +14,8 @@ import Version
  */
 @objc(CapacitorUpdaterPlugin)
 public class CapacitorUpdaterPlugin: CAPPlugin {
-    private var implementation = CapacitorUpdater()
-    private let PLUGIN_VERSION: String = "5.2.23"
+    public var implementation = CapacitorUpdater()
+    private let PLUGIN_VERSION: String = "5.2.27"
     static let updateUrlDefault = "https://api.capgo.app/updates"
     static let statsUrlDefault = "https://api.capgo.app/stats"
     static let channelUrlDefault = "https://api.capgo.app/channel_self"
@@ -175,14 +175,19 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         }
     }
 
-    private func _reload() -> Bool {
+    public func _reload() -> Bool {
         guard let bridge = self.bridge else { return false }
         self.semaphoreUp()
         let id = self.implementation.getCurrentBundleId()
-        let destHot = self.implementation.getPathHot(id: id)
+        let dest : URL
+        if (BundleInfo.ID_BUILTIN == id) {
+            dest = Bundle.main.resourceURL!.appendingPathComponent("public")
+        } else {
+            dest = self.implementation.getPathHot(id: id)
+        }
         print("\(self.implementation.TAG) Reloading \(id)")
         if let vc = bridge.viewController as? CAPBridgeViewController {
-            vc.setServerBasePath(path: destHot.path)
+            vc.setServerBasePath(path: dest.path)
             self.checkAppReady()
             self.notifyListeners("appReloaded", data: [:])
             return true
@@ -347,9 +352,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
     @objc func notifyAppReady(_ call: CAPPluginCall) {
         self.semaphoreDown()
-        let version = self.implementation.getCurrentBundle()
-        self.implementation.setSuccess(bundle: version, autoDeletePrevious: self.autoDeletePrevious)
-        print("\(self.implementation.TAG) Current bundle loaded successfully. ['notifyAppReady()' was called] \(version.toString())")
+        let bundle = self.implementation.getCurrentBundle()
+        self.implementation.setSuccess(bundle: bundle, autoDeletePrevious: self.autoDeletePrevious)
+        print("\(self.implementation.TAG) Current bundle loaded successfully. ['notifyAppReady()' was called] \(bundle.toString())")
         call.resolve(["bundle": bundle.toJSON()])
     }
 
