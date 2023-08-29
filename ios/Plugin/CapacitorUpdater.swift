@@ -93,7 +93,25 @@ struct AppVersionDec: Decodable {
     let error: String?
     let session_key: String?
     let major: Bool?
+    
+    struct Manifest: Decodable {
+        let version: String
+        let checksum: String
+        let url: String
+    }
+    let manifest: Manifest?
 }
+
+public class Manifest: NSObject {
+    var version: String = ""
+    var checksum: String = ""
+    var url: String = ""
+    
+    public func toString() -> String {
+        return "{ \"version\": \"\(self.version)\", \"checksum\": \"\(self.checksum)\", \"url\": \"\(self.url)\"}"
+    }
+}
+
 public class AppVersion: NSObject {
     var version: String = ""
     var checksum: String = ""
@@ -102,6 +120,7 @@ public class AppVersion: NSObject {
     var error: String?
     var sessionKey: String?
     var major: Bool?
+    var manifest: Manifest?
 }
 
 extension AppVersion {
@@ -438,6 +457,14 @@ extension CustomError: LocalizedError {
                 if let sessionKey = response.value?.session_key {
                     latest.sessionKey = sessionKey
                 }
+                // partial-update check
+                if let manifest = response.value?.manifest {
+                    latest.manifest = Manifest()
+                    latest.manifest?.version = manifest.version
+                    latest.manifest?.checksum = manifest.checksum
+                    latest.manifest?.url = manifest.url
+                    print("\(self.TAG) [[❌]] A partial update is available for this download: ", latest.manifest!.toString())
+                }
             case let .failure(error):
                 print("\(self.TAG) Error getting Latest", response.value ?? "", error )
                 latest.message = "Error getting Latest \(String(describing: response.value))"
@@ -455,7 +482,7 @@ extension CustomError: LocalizedError {
         print("\(self.TAG) Current bundle set to: \((bundle ).isEmpty ? BundleInfo.ID_BUILTIN : bundle)")
     }
 
-    public func download(url: URL, version: String, sessionKey: String) throws -> BundleInfo {
+    public func download(url: URL, version: String, sessionKey: String, partialUpdate: Bool = false) throws -> BundleInfo {
         let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
         let id: String = self.randomString(length: 10)
         var checksum: String = ""
@@ -480,7 +507,7 @@ extension CustomError: LocalizedError {
                     self.notifyDownload(id, 71)
                     do {
                         try self.decryptFile(filePath: fileURL, sessionKey: sessionKey, version: version)
-                        checksum = self.getChecksum(filePath: fileURL)
+                        checksum = !partialUpdate ? self.getChecksum(filePath: fileURL) : ""
                         try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.documentsDir.appendingPathComponent(self.bundleDirectoryHot))
                         self.notifyDownload(id, 85)
                         try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory))

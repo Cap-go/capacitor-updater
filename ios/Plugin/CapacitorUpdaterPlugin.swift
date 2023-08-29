@@ -32,6 +32,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     private var directUpdate = false
     private var autoDeleteFailed = false
     private var autoDeletePrevious = false
+    private var partialUpdate = false
     private var backgroundWork: DispatchWorkItem?
     private var taskRunning = false
     let semaphoreReady = DispatchSemaphore(value: 0)
@@ -53,6 +54,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         autoUpdate = getConfig().getBoolean("autoUpdate", true)
         appReadyTimeout = getConfig().getInt("appReadyTimeout", 10000)
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
+        partialUpdate = getConfig().getBoolean("partialUpdate", false)
 
         implementation.privateKey = getConfig().getString("privateKey", self.defaultPrivateKey)!
         implementation.notifyDownload = notifyDownload
@@ -63,7 +65,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         }
         implementation.statsUrl = getConfig().getString("statsUrl", CapacitorUpdaterPlugin.statsUrlDefault)!
         implementation.channelUrl = getConfig().getString("channelUrl", CapacitorUpdaterPlugin.channelUrlDefault)!
-        if resetWhenUpdate {
+        
+        // When partial-update is enabled don't automatically delete stuff
+        if !partialUpdate && resetWhenUpdate {
             self.cleanupObsoleteVersions()
         }
         let nc = NotificationCenter.default
@@ -542,6 +546,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         print("\(self.implementation.TAG) endBackGroundTaskWithNotif \(msg)")
         self.endBackGroundTask()
     }
+    
+    func getDownloadURL(_ updateResponse: AppVersion, _ partialUpdate:Bool) -> String {
+        if !partialUpdate {
+            return updateResponse.url
+        } else {
+            return updateResponse.manifest?.url ?? ""
+        }
+    }
 
     func backgroundDownload() {
         let messageUpdate = self.directUpdate ? "Update will occur now." : "Update will occur next time app moves to background."
@@ -564,7 +576,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 return
             }
             let sessionKey = res.sessionKey ?? ""
-            guard let downloadUrl = URL(string: res.url) else {
+            guard let downloadUrl = URL(string: self.getDownloadURL(res, self.partialUpdate)) else {
                 print("\(self.implementation.TAG) Error no url or wrong format")
                 self.endBackGroundTaskWithNotif(msg: "Error no url or wrong format", latestVersionName: res.version, current: current)
                 return
@@ -573,6 +585,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             if latestVersionName != "" && current.getVersionName() != latestVersionName {
                 do {
                     print("\(self.implementation.TAG) New bundle: \(latestVersionName) found. Current is: \(current.getVersionName()). \(messageUpdate)")
+                    
+                    // partial-update check
+                    if self.partialUpdate && (res.manifest) != nil {
+                        print("\(self.implementation.TAG) [[❌]] New bundle: \(latestVersionName) partial update URL: \(downloadUrl).")
+                    }
+                    
                     var nextImpl = self.implementation.getBundleInfoByVersionName(version: latestVersionName)
                     if nextImpl == nil || ((nextImpl?.isDeleted()) != nil) {
                         if (nextImpl?.isDeleted()) != nil {
@@ -584,7 +602,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                                 print("\(self.implementation.TAG) Failed to delete failed bundle: \(nextImpl!.toString())")
                             }
                         }
-                        nextImpl = try self.implementation.download(url: downloadUrl, version: latestVersionName, sessionKey: sessionKey)
+                        nextImpl = try self.implementation.download(url: downloadUrl, version: latestVersionName, sessionKey: sessionKey, partialUpdate: self.partialUpdate)
                     }
                     guard let next = nextImpl else {
                         print("\(self.implementation.TAG) Error downloading file")
