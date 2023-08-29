@@ -485,7 +485,7 @@ export interface CapacitorUpdaterPlugin {
   ): Promise<PluginListenerHandle> & PluginListenerHandle;
 
   /**
-   * Listen for download fail event in the App, let you know when download has fail finished
+   *  Listen for reload event in the App, let you know when reload has happend
    *
    * @since 4.3.0
    */
