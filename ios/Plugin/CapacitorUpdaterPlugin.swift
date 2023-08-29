@@ -14,12 +14,12 @@ import Version
  */
 @objc(CapacitorUpdaterPlugin)
 public class CapacitorUpdaterPlugin: CAPPlugin {
-    public var implementation = CapacitorUpdater()
-    private let PLUGIN_VERSION: String = "5.2.27"
+    private var implementation = CapacitorUpdater()
+    private let pluginVersion: String = "5.2.28"
     static let updateUrlDefault = "https://api.capgo.app/updates"
     static let statsUrlDefault = "https://api.capgo.app/stats"
     static let channelUrlDefault = "https://api.capgo.app/channel_self"
-    let DELAY_CONDITION_PREFERENCES = ""
+    let delayConditionPreferences = ""
     private var updateUrl = ""
     private var statsUrl = ""
     private var defaultPrivateKey = "-----BEGIN RSA PRIVATE KEY-----\nMIIEpQIBAAKCAQEA4pW9olT0FBXXivRCzd3xcImlWZrqkwcF2xTkX/FwXmj9eh9H\nkBLrsQmfsC+PJisRXIOGq6a0z3bsGq6jBpp3/Jr9jiaW5VuPGaKeMaZZBRvi/N5f\nIMG3hZXSOcy0IYg+E1Q7RkYO1xq5GLHseqG+PXvJsNe4R8R/Bmd/ngq0xh/cvcrH\nHpXwO0Aj9tfprlb+rHaVV79EkVRWYPidOLnK1n0EFHFJ1d/MyDIp10TEGm2xHpf/\nBrlb1an8wXEuzoC0DgYaczgTjovwR+ewSGhSHJliQdM0Qa3o1iN87DldWtydImMs\nPjJ3DUwpsjAMRe5X8Et4+udFW2ciYnQo9H0CkwIDAQABAoIBAQCtjlMV/4qBxAU4\nu0ZcWA9yywwraX0aJ3v1xrfzQYV322Wk4Ea5dbSxA5UcqCE29DA1M824t1Wxv/6z\npWbcTP9xLuresnJMtmgTE7umfiubvTONy2sENT20hgDkIwcq1CfwOEm61zjQzPhQ\nkSB5AmEsyR/BZEsUNc+ygR6AWOUFB7tj4yMc32LOTWSbE/znnF2BkmlmnQykomG1\n2oVqM3lUFP7+m8ux1O7scO6IMts+Z/eFXjWfxpbebUSvSIR83GXPQZ34S/c0ehOg\nyHdmCSOel1r3VvInMe+30j54Jr+Ml/7Ee6axiwyE2e/bd85MsK9sVdp0OtelXaqA\nOZZqWvN5AoGBAP2Hn3lSq+a8GsDH726mHJw60xM0LPbVJTYbXsmQkg1tl3NKJTMM\nQqz41+5uys+phEgLHI9gVJ0r+HaGHXnJ4zewlFjsudstb/0nfctUvTqnhEhfNo9I\ny4kufVKPRF3sMEeo7CDVJs4GNBLycEyIBy6Mbv0VcO7VaZqggRwu4no9AoGBAOTK\n6NWYs1BWlkua2wmxexGOzehNGedInp0wGr2l4FDayWjkZLqvB+nNXUQ63NdHlSs4\nWB2Z1kQXZxVaI2tPYexGUKXEo2uFob63uflbuE029ovDXIIPFTPtGNdNXwhHT5a+\nPhmy3sMc+s2BSNM5qaNmfxQxhdd6gRU6oikE+c0PAoGAMn3cKNFqIt27hkFLUgIL\nGKIuf1iYy9/PNWNmEUaVj88PpopRtkTu0nwMpROzmH/uNFriKTvKHjMvnItBO4wV\nkHW+VadvrFL0Rrqituf9d7z8/1zXBNo+juePVe3qc7oiM2NVA4Tv4YAixtM5wkQl\nCgQ15nlqsGYYTg9BJ1e/CxECgYEAjEYPzO2reuUrjr0p8F59ev1YJ0YmTJRMk0ks\nC/yIdGo/tGzbiU3JB0LfHPcN8Xu07GPGOpfYM7U5gXDbaG6qNgfCaHAQVdr/mQPi\nJQ1kCQtay8QCkscWk9iZM1//lP7LwDtxraXqSCwbZSYP9VlUNZeg8EuQqNU2EUL6\nqzWexmcCgYEA0prUGNBacraTYEknB1CsbP36UPWsqFWOvevlz+uEC5JPxPuW5ZHh\nSQN7xl6+PHyjPBM7ttwPKyhgLOVTb3K7ex/PXnudojMUK5fh7vYfChVTSlx2p6r0\nDi58PdD+node08cJH+ie0Yphp7m+D4+R9XD0v0nEvnu4BtAW6DrJasw=\n-----END RSA PRIVATE KEY-----\n"
@@ -56,7 +56,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
         implementation.privateKey = getConfig().getString("privateKey", self.defaultPrivateKey)!
         implementation.notifyDownload = notifyDownload
-        implementation.PLUGIN_VERSION = self.PLUGIN_VERSION
+        implementation.pluginVersion = self.pluginVersion
         let config = (self.bridge?.viewController as? CAPBridgeViewController)?.instanceDescriptor().legacyConfig
         if config?["appId"] != nil {
             implementation.appId = config?["appId"] as! String
@@ -98,7 +98,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             print("\(self.implementation.TAG) Cannot get version native \(currentVersionNative)")
         }
         if LatestVersionNative != "0.0.0" && self.currentVersionNative.description != LatestVersionNative.description {
-            _ = self._reset(toLastSuccessful: false)
+            _ = self.resetBridge(toLastSuccessful: false)
             let res = implementation.list()
             res.forEach { version in
                 print("\(self.implementation.TAG) Deleting obsolete bundle: \(version)")
@@ -132,7 +132,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func getPluginVersion(_ call: CAPPluginCall) {
-        call.resolve(["version": self.PLUGIN_VERSION])
+        call.resolve(["version": self.pluginVersion])
     }
 
     @objc func download(_ call: CAPPluginCall) {
@@ -309,7 +309,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         self.implementation.customId = customId
     }
 
-    @objc func _reset(toLastSuccessful: Bool) -> Bool {
+    @objc func resetBridge(toLastSuccessful: Bool) -> Bool {
         guard let bridge = self.bridge else { return false }
 
         if (bridge.viewController as? CAPBridgeViewController) != nil {
@@ -334,7 +334,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
     @objc func reset(_ call: CAPPluginCall) {
         let toLastSuccessful = call.getBool("toLastSuccessful") ?? false
-        if self._reset(toLastSuccessful: toLastSuccessful) {
+        if self.resetBridge(toLastSuccessful: toLastSuccessful) {
             call.resolve()
         } else {
             print("\(self.implementation.TAG) Reset failed")
@@ -365,38 +365,38 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             return
         }
         let delayConditions: String = toJson(object: delayConditionList)
-        if _setMultiDelay(delayConditions: delayConditions) {
+        if setMultiDelayFunction(delayConditions: delayConditions) {
             call.resolve()
         } else {
             call.reject("Failed to delay update")
         }
     }
 
-    private func _setMultiDelay(delayConditions: String?) -> Bool {
+    private func setMultiDelayFunction(delayConditions: String?) -> Bool {
         if delayConditions != nil && "" != delayConditions {
-            UserDefaults.standard.set(delayConditions, forKey: DELAY_CONDITION_PREFERENCES)
+            UserDefaults.standard.set(delayConditions, forKey: delayConditionPreferences)
             UserDefaults.standard.synchronize()
             print("\(self.implementation.TAG) Delay update saved.")
             return true
         } else {
-            print("\(self.implementation.TAG) Failed to delay update, [Error calling '_setMultiDelay()']")
+            print("\(self.implementation.TAG) Failed to delay update, [Error calling 'setMultiDelayFunction()']")
             return false
         }
     }
 
-    private func _cancelDelay(source: String) {
+    private func cancelDelaySource(source: String) {
         print("\(self.implementation.TAG) delay Canceled from \(source)")
-        UserDefaults.standard.removeObject(forKey: DELAY_CONDITION_PREFERENCES)
+        UserDefaults.standard.removeObject(forKey: delayConditionPreferences)
         UserDefaults.standard.synchronize()
     }
 
     @objc func cancelDelay(_ call: CAPPluginCall) {
-        self._cancelDelay(source: "JS")
+        self.cancelDelaySource(source: "JS")
         call.resolve()
     }
 
-    private func _checkCancelDelay(killed: Bool) {
-        let delayUpdatePreferences = UserDefaults.standard.string(forKey: DELAY_CONDITION_PREFERENCES) ?? "[]"
+    private func checkCancelDelayKilled(killed: Bool) {
+        let delayUpdatePreferences = UserDefaults.standard.string(forKey: delayConditionPreferences) ?? "[]"
         let delayConditionList: [DelayCondition] = fromJsonArr(json: delayUpdatePreferences).map { obj -> DelayCondition in
             let kind: String = obj.value(forKey: "kind") as! String
             let value: String? = obj.value(forKey: "value") as? String
@@ -409,56 +409,52 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 switch kind {
                 case "background":
                     if !killed {
-                        self._cancelDelay(source: "background check")
+                        self.cancelDelaySource(source: "background check")
                     }
-                    break
                 case "kill":
                     if killed {
-                        self._cancelDelay(source: "kill check")
+                        self.cancelDelaySource(source: "kill check")
                         // instant install for kill action
                         self.installNext()
                     }
-                    break
                 case "date":
                     if value != nil && value != "" {
                         let dateFormatter = ISO8601DateFormatter()
                         dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                        guard let ExpireDate = dateFormatter.date(from: value!) else {
-                            self._cancelDelay(source: "date parsing issue")
+                        guard let expireDate = dateFormatter.date(from: value!) else {
+                            self.cancelDelaySource(source: "date parsing issue")
                             return
                         }
-                        if ExpireDate < Date() {
-                            self._cancelDelay(source: "date expired")
+                        if expireDate < Date() {
+                            self.cancelDelaySource(source: "date expired")
                         }
                     } else {
-                        self._cancelDelay(source: "delayVal absent")
+                        self.cancelDelaySource(source: "delayVal absent")
                     }
-                    break
                 case "nativeVersion":
                     if value != nil && value != "" {
                         do {
                             let versionLimit = try Version(value!)
                             if self.currentVersionNative >= versionLimit {
-                                self._cancelDelay(source: "nativeVersion above limit")
+                                self.cancelDelaySource(source: "nativeVersion above limit")
                             }
                         } catch {
-                            self._cancelDelay(source: "nativeVersion parsing issue")
+                            self.cancelDelaySource(source: "nativeVersion parsing issue")
                         }
                     } else {
-                        self._cancelDelay(source: "delayVal absent")
+                        self.cancelDelaySource(source: "delayVal absent")
                     }
-                    break
                 case .none:
-                    print("\(self.implementation.TAG) _checkCancelDelay switch case none error")
+                    print("\(self.implementation.TAG) checkCancelDelayKilled switch case none error")
                 case .some:
-                    print("\(self.implementation.TAG) _checkCancelDelay switch case some error")
+                    print("\(self.implementation.TAG) checkCancelDelayKilled switch case some error")
                 }
             }
         }
         // self.checkAppReady() why this here?
     }
 
-    private func _isAutoUpdateEnabled() -> Bool {
+    private func isAutoUpdateEnabledBool() -> Bool {
         let instanceDescriptor = (self.bridge?.viewController as? CAPBridgeViewController)?.instanceDescriptor()
         if instanceDescriptor?.serverURL != nil {
             print("⚠️ \(self.implementation.TAG) AutoUpdate is automatic disabled when serverUrl is set.")
@@ -468,14 +464,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
     @objc func isAutoUpdateEnabled(_ call: CAPPluginCall) {
         call.resolve([
-            "enabled": self._isAutoUpdateEnabled()
+            "enabled": self.isAutoUpdateEnabledBool()
         ])
     }
 
     func checkAppReady() {
         self.appReadyCheck?.cancel()
         self.appReadyCheck = DispatchWorkItem(block: {
-            self.DeferredNotifyAppReadyCheck()
+            self.deferredNotifyAppReadyCheck()
         })
         print("\(self.implementation.TAG) Wait for \(self.appReadyTimeout) ms, then check for notifyAppReady")
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(self.appReadyTimeout), execute: self.appReadyCheck!)
@@ -499,7 +495,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             ])
             self.implementation.sendStats(action: "update_fail", versionName: current.getVersionName())
             self.implementation.setError(bundle: current)
-            _ = self._reset(toLastSuccessful: true)
+            _ = self.resetBridge(toLastSuccessful: true)
             if self.autoDeleteFailed && !current.isBuiltin() {
                 print("\(self.implementation.TAG) Deleting failing bundle: \(current.toString())")
                 let res = self.implementation.delete(id: current.getId(), removeInfo: false)
@@ -514,7 +510,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         }
     }
 
-    func DeferredNotifyAppReadyCheck() {
+    func deferredNotifyAppReadyCheck() {
         self.checkRevert()
         self.appReadyCheck = nil
     }
@@ -634,11 +630,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
     @objc func appKilled() {
         print("\(self.implementation.TAG) onActivityDestroyed: all activity destroyed")
-        self._checkCancelDelay(killed: true)
+        self.checkCancelDelayKilled(killed: true)
     }
 
     private func installNext() {
-        let delayUpdatePreferences = UserDefaults.standard.string(forKey: DELAY_CONDITION_PREFERENCES) ?? "[]"
+        let delayUpdatePreferences = UserDefaults.standard.string(forKey: delayConditionPreferences) ?? "[]"
         let delayConditionList: [DelayCondition]? = fromJsonArr(json: delayUpdatePreferences).map { obj -> DelayCondition in
             let kind: String = obj.value(forKey: "kind") as! String
             let value: String? = obj.value(forKey: "value") as? String
@@ -685,7 +681,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             backgroundWork!.cancel()
             print("\(self.implementation.TAG) Background Timer Task canceled, Activity resumed before timer completes")
         }
-        if self._isAutoUpdateEnabled() {
+        if self.isAutoUpdateEnabledBool() {
             self.backgroundDownload()
         } else {
             print("\(self.implementation.TAG) Auto update is disabled")
@@ -698,7 +694,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         let current: BundleInfo = self.implementation.getCurrentBundle()
         self.implementation.sendStats(action: "app_moved_to_background", versionName: current.getVersionName())
         print("\(self.implementation.TAG) Check for pending update")
-        let delayUpdatePreferences = UserDefaults.standard.string(forKey: DELAY_CONDITION_PREFERENCES) ?? "[]"
+        let delayUpdatePreferences = UserDefaults.standard.string(forKey: delayConditionPreferences) ?? "[]"
 
         let delayConditionList: [DelayCondition] = fromJsonArr(json: delayUpdatePreferences).map { obj -> DelayCondition in
             let kind: String = obj.value(forKey: "kind") as! String
@@ -719,12 +715,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             self.backgroundWork = DispatchWorkItem(block: {
                 // IOS never executes this task in background
                 self.taskRunning = false
-                self._checkCancelDelay(killed: false)
+                self.checkCancelDelayKilled(killed: false)
                 self.installNext()
             })
             DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + interval, execute: self.backgroundWork!)
         } else {
-            self._checkCancelDelay(killed: false)
+            self.checkCancelDelayKilled(killed: false)
             self.installNext()
         }
 
