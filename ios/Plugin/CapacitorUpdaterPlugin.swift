@@ -258,11 +258,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             call.reject("setChannel called without channel")
             return
         }
+        let triggerAutoUpdate = call.getBool("triggerAutoUpdate") ?? false
         DispatchQueue.global(qos: .background).async {
             let res = self.implementation.setChannel(channel: channel)
             if res.error != "" {
                 call.reject(res.error)
             } else {
+                if self._isAutoUpdateEnabled() {
+                    print("\(self.implementation.TAG) Calling autoupdater after channel change!")
+                    self.backgroundDownload()
+                }
                 call.resolve(res.toDict())
             }
         }
