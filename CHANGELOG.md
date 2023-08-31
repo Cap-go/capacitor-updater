@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.2.32](https://github.com/Cap-go/capacitor-updater/compare/5.2.31...5.2.32) (2023-08-31)
+
+
+### Bug Fixes
+
+* add triggerAutoUpdate ios ([b96bfd8](https://github.com/Cap-go/capacitor-updater/commit/b96bfd84ccc3c7f2427a570f7db5abe1d8c5da7a))
+* lint issue ([cb68e6b](https://github.com/Cap-go/capacitor-updater/commit/cb68e6b36eeb8b3aa1ce2196b02808c0ea6389be))
+* lint issue ([b5f4ae1](https://github.com/Cap-go/capacitor-updater/commit/b5f4ae15ae2ec8fdffb94872b94333782fe34228))
+
 ### [5.2.31](https://github.com/Cap-go/capacitor-updater/compare/5.2.30...5.2.31) (2023-08-31)
 
 ### [5.2.30](https://github.com/Cap-go/capacitor-updater/compare/5.2.29...5.2.30) (2023-08-29)
