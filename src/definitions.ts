@@ -232,6 +232,7 @@ export interface BundleInfo {
 
 export interface SetChannelOptions {
   channel: string;
+  triggerAutoUpdate?: boolean;
 }
 
 export interface SetCustomIdOptions {
