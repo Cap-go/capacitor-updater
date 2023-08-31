@@ -66,7 +66,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         implementation.statsUrl = getConfig().getString("statsUrl", CapacitorUpdaterPlugin.statsUrlDefault)!
         implementation.channelUrl = getConfig().getString("channelUrl", CapacitorUpdaterPlugin.channelUrlDefault)!
         
-        // When partial-update is enabled don't automatically delete stuff
+        // When partial-update is enabled don't automatically delete previous bundle versions
         if !partialUpdate && resetWhenUpdate {
             self.cleanupObsoleteVersions()
         }
@@ -547,11 +547,22 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         self.endBackGroundTask()
     }
     
-    func getDownloadURL(_ updateResponse: AppVersion, _ partialUpdate:Bool) -> String {
-        if !partialUpdate {
-            return updateResponse.url
+    func getDownloadURL(_ updateResponse: AppVersion) -> String {
+        if self.partialUpdate && (updateResponse.manifest) != nil {
+            let url = updateResponse.manifest?.url ?? ""
+            if url.isEmpty {
+                print("\(self.implementation.TAG) Disabling partial-updates since the manifest URL is invalid")
+                self.partialUpdate = false
+                return updateResponse.url
+            } else {
+                return url
+            }
         } else {
-            return updateResponse.manifest?.url ?? ""
+            if self.partialUpdate {
+                print("\(self.implementation.TAG) Disabling partial-updates since no valid manifest was found")
+                self.partialUpdate = false
+            }
+            return updateResponse.url
         }
     }
 
@@ -576,7 +587,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 return
             }
             let sessionKey = res.sessionKey ?? ""
-            guard let downloadUrl = URL(string: self.getDownloadURL(res, self.partialUpdate)) else {
+            guard let downloadUrl = URL(string: self.getDownloadURL(res)) else {
                 print("\(self.implementation.TAG) Error no url or wrong format")
                 self.endBackGroundTaskWithNotif(msg: "Error no url or wrong format", latestVersionName: res.version, current: current)
                 return
@@ -585,12 +596,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             if latestVersionName != "" && current.getVersionName() != latestVersionName {
                 do {
                     print("\(self.implementation.TAG) New bundle: \(latestVersionName) found. Current is: \(current.getVersionName()). \(messageUpdate)")
-                    
-                    // partial-update check
-                    if self.partialUpdate && (res.manifest) != nil {
-                        print("\(self.implementation.TAG) [[❌]] New bundle: \(latestVersionName) partial update URL: \(downloadUrl).")
-                    }
-                    
+                                        
                     var nextImpl = self.implementation.getBundleInfoByVersionName(version: latestVersionName)
                     if nextImpl == nil || ((nextImpl?.isDeleted()) != nil) {
                         if (nextImpl?.isDeleted()) != nil {
@@ -602,7 +608,17 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                                 print("\(self.implementation.TAG) Failed to delete failed bundle: \(nextImpl!.toString())")
                             }
                         }
-                        nextImpl = try self.implementation.download(url: downloadUrl, version: latestVersionName, sessionKey: sessionKey, partialUpdate: self.partialUpdate)
+                        
+                        // partial-update check
+                        if self.partialUpdate && (res.manifest) != nil {
+                            if latestVersionName == res.manifest?.targetVersion && current.getVersionName() == res.manifest?.sourceVersion {
+                                print("\(self.implementation.TAG) Partial updating to: \(String(describing: res.manifest?.targetVersion)) can be applied on an installed version of: \(String(describing: res.manifest?.sourceVersion)).")
+                            }
+                            print("\(self.implementation.TAG) Partial updating will continue for new bundle: \(latestVersionName) from a partial update URL: \(downloadUrl).")
+                        }
+
+                        nextImpl = try self.implementation.download(url: downloadUrl, version: latestVersionName, sessionKey: sessionKey, currentBundle: current, partialUpdate: self.partialUpdate)
+                        
                     }
                     guard let next = nextImpl else {
                         print("\(self.implementation.TAG) Error downloading file")
@@ -614,8 +630,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                         self.endBackGroundTaskWithNotif(msg: "Latest version is in error state. Aborting update.", latestVersionName: latestVersionName, current: current)
                         return
                     }
-                    if res.checksum != "" && next.getChecksum() != res.checksum {
-                        print("\(self.implementation.TAG) Error checksum", next.getChecksum(), res.checksum)
+                    let latestVersionChecksum = self.partialUpdate && (res.manifest) != nil ? res.manifest?.checksum : res.checksum
+                    if latestVersionChecksum != "" && next.getChecksum() != latestVersionChecksum {
+                        print("\(self.implementation.TAG) Error checksum mismatch. Expected: \(String(describing: latestVersionChecksum)), but got: \(next.getChecksum())")
                         self.implementation.sendStats(action: "checksum_fail", versionName: next.getVersionName())
                         let id = next.getId()
                         let resDel = self.implementation.delete(id: id)
