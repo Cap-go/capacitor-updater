@@ -352,9 +352,11 @@ public class CapacitorUpdaterPlugin
 
   @PluginMethod
   public void setChannel(final PluginCall call) {
-
     final String channel = call.getString("channel");
-    final Boolean triggerAutoUpdate = call.getBoolean("triggerAutoUpdate", false);
+    final Boolean triggerAutoUpdate = call.getBoolean(
+      "triggerAutoUpdate",
+      false
+    );
 
     if (channel == null) {
       Log.e(CapacitorUpdater.TAG, "setChannel called without channel");
@@ -362,7 +364,10 @@ public class CapacitorUpdaterPlugin
       return;
     }
     try {
-      Log.i(CapacitorUpdater.TAG, "setChannel " + channel + " triggerAutoUpdate: " + triggerAutoUpdate);
+      Log.i(
+        CapacitorUpdater.TAG,
+        "setChannel " + channel + " triggerAutoUpdate: " + triggerAutoUpdate
+      );
       startNewThread(() -> {
         CapacitorUpdaterPlugin.this.implementation.setChannel(
             channel,
@@ -370,8 +375,14 @@ public class CapacitorUpdaterPlugin
               if (res.has("error")) {
                 call.reject(res.getString("error"));
               } else {
-                if (CapacitorUpdaterPlugin.this._isAutoUpdateEnabled() && triggerAutoUpdate) {
-                  Log.i(CapacitorUpdater.TAG, "Calling autoupdater after channel change!");
+                if (
+                  CapacitorUpdaterPlugin.this._isAutoUpdateEnabled() &&
+                  triggerAutoUpdate
+                ) {
+                  Log.i(
+                    CapacitorUpdater.TAG,
+                    "Calling autoupdater after channel change!"
+                  );
                   backgroundDownload();
                 }
                 call.resolve(res);
