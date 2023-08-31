@@ -179,8 +179,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         guard let bridge = self.bridge else { return false }
         self.semaphoreUp()
         let id = self.implementation.getCurrentBundleId()
-        let dest : URL
-        if (BundleInfo.ID_BUILTIN == id) {
+        let dest: URL
+        if BundleInfo.ID_BUILTIN == id {
             dest = Bundle.main.resourceURL!.appendingPathComponent("public")
         } else {
             dest = self.implementation.getPathHot(id: id)
