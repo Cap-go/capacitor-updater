@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--The values in this file are for Spanish language. The values of the name property should match in all the strings files-->
+
+<!--The strings can be accessed by: Resources.getSystem().getString(R.string.<name_property>)
+ For example: Resources.getSystem().getString(R.string.hello_world)-->
+
+<resources>
+    <string name="hello_world">Hola Mundo</string>
+    <string name="success">éxito</string>
+    <string name="failed">fallido</string>
+</resources>

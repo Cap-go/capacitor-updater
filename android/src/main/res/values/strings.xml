@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--The values in this file are the fallback values in case the language selected by the user is not available here.
+The values of the name property should match in all the strings files
+
+The strings can be accessed by: Resources.getSystem().getString(R.string.<name_property>)
+ For example: Resources.getSystem().getString(R.string.hello_world)-->
+
+<resources>
+    <string name="hello_world">Hello World</string>
+    <string name="success">success</string>
+    <string name="failed">fallido</string>
+</resources>

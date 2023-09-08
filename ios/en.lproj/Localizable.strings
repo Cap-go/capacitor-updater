@@ -1,0 +1,14 @@
+/* 
+  Localizable.strings
+  Plugin
+
+  Created by Virtoustack on 08/09/23.
+  Copyright © 2023 Capgo. All rights reserved.
+*/
+
+// The strings can be accessed by: String(localized: <key_name>)
+// For example: String(localized: "hello_world")
+
+"hello_world" = "Hello World";
+"success" = "success";
+"failed" = "failed";
