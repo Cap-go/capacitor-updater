@@ -875,8 +875,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     return (
       CapacitorUpdaterPlugin.this.autoUpdate &&
       !"".equals(CapacitorUpdaterPlugin.this.updateUrl) &&
-      serverUrl == null &&
-      !"".equals(serverUrl)
+      (serverUrl == null || "".equals(serverUrl))
     );
   }
 
