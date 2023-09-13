@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [5.3.0](https://github.com/Cap-go/capacitor-updater/compare/5.2.35...5.3.0) (2023-09-13)
+
+
+### Features
+
+* allow set responseTimeout and add unsetChannel ([935c01b](https://github.com/Cap-go/capacitor-updater/commit/935c01be27f01e627efae941be11c6b89c1d8104))
+
 ### [5.2.35](https://github.com/Cap-go/capacitor-updater/compare/5.2.34...5.2.35) (2023-09-13)
 
 
