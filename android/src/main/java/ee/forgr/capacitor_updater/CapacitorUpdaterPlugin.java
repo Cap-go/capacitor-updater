@@ -389,39 +389,28 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
   @PluginMethod
   public void unsetChannel(final PluginCall call) {
-    final Boolean triggerAutoUpdate = call.getBoolean(
-      "triggerAutoUpdate",
-      false
-    );
+      final Boolean triggerAutoUpdate = call.getBoolean("triggerAutoUpdate", false);
+      final String channel = call.getString("channel", null); // Get the channel parameter
 
-    try {
-      Log.i(
-        CapacitorUpdater.TAG,
-        "unsetChannel triggerAutoUpdate: " + triggerAutoUpdate
-      );
-      startNewThread(() -> {
-        CapacitorUpdaterPlugin.this.implementation.unsetChannel(res -> {
-            if (res.has("error")) {
-              call.reject(res.getString("error"));
-            } else {
-              if (
-                CapacitorUpdaterPlugin.this._isAutoUpdateEnabled() &&
-                triggerAutoUpdate
-              ) {
-                Log.i(
-                  CapacitorUpdater.TAG,
-                  "Calling autoupdater after channel change!"
-                );
-                backgroundDownload();
-              }
-              call.resolve(res);
-            }
+      try {
+          Log.i(CapacitorUpdater.TAG, "unsetChannel triggerAutoUpdate: " + triggerAutoUpdate);
+          startNewThread(() -> {
+              CapacitorUpdaterPlugin.this.implementation.unsetChannel(res -> {
+                  if (res.has("error")) {
+                      call.reject(res.getString("error"));
+                  } else {
+                      if (CapacitorUpdaterPlugin.this._isAutoUpdateEnabled() && triggerAutoUpdate) {
+                          Log.i(CapacitorUpdater.TAG, "Calling autoupdater after channel change!");
+                          backgroundDownload();
+                      }
+                      call.resolve(res);
+                  }
+              }, channel); // Pass the channel parameter to unsetChannel
           });
-      });
-    } catch (final Exception e) {
-      Log.e(CapacitorUpdater.TAG, "Failed to unsetChannel: ", e);
-      call.reject("Failed to unsetChannel: ", e);
-    }
+      } catch (final Exception e) {
+          Log.e(CapacitorUpdater.TAG, "Failed to unsetChannel: ", e);
+          call.reject("Failed to unsetChannel: ", e);
+      }
   }
 
   @PluginMethod

@@ -275,14 +275,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         }
     }
 
-    @objc func unsetChannel(_ call: CAPPluginCall) {
+   @objc func unsetChannel(_ call: CAPPluginCall) {
         let triggerAutoUpdate = call.getBool("triggerAutoUpdate") ?? false
+        let channel = call.getString("channel")
+        
         DispatchQueue.global(qos: .background).async {
-            let res = self.implementation.unsetChannel()
+            let res = self.implementation.unsetChannel(channel: channel)
             if res.error != "" {
                 call.reject(res.error)
             } else {
-                if self._isAutoUpdateEnabled() {
+                if self._isAutoUpdateEnabled() && triggerAutoUpdate {
                     print("\(self.implementation.TAG) Calling autoupdater after channel change!")
                     self.backgroundDownload()
                 }
@@ -290,6 +292,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             }
         }
     }
+
 
     @objc func setChannel(_ call: CAPPluginCall) {
         guard let channel = call.getString("channel") else {

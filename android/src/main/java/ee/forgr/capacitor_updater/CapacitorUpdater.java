@@ -838,72 +838,55 @@ public class CapacitorUpdater {
     this.requestQueue.add(setRetryPolicy(request));
   }
 
-  public void unsetChannel(final Callback callback) {
-    String channelUrl = this.channelUrl;
-    if (
-      channelUrl == null || "".equals(channelUrl) || channelUrl.length() == 0
-    ) {
-      Log.e(TAG, "Channel URL is not set");
-      final JSObject retError = new JSObject();
-      retError.put("message", "channelUrl missing");
-      retError.put("error", "missing_config");
-      callback.callback(retError);
-      return;
+  public void unsetChannel(final Callback callback, String channel) {
+    if (channel == null || channel.isEmpty()) {
+        Log.e(TAG, "Channel is not set");
+        final JSObject retError = new JSObject();
+        retError.put("message", "Channel is missing or empty");
+        retError.put("error", "missing_channel");
+        callback.callback(retError);
+        return;
     }
-    JSONObject json = null;
-    try {
-      json = this.createInfoObject();
-    } catch (JSONException e) {
-      Log.e(TAG, "Error unsetChannel JSONException", e);
-      e.printStackTrace();
-      final JSObject retError = new JSObject();
-      retError.put("message", "Cannot get info: " + e.toString());
-      retError.put("error", "json_error");
-      callback.callback(retError);
-      return;
-    }
+
+    String channelUrl = this.channelUrl + "/" + channel; // Construct the URL for the specific channel
+
     // Building a request
     JsonObjectRequest request = new JsonObjectRequest(
-      Request.Method.DELETE,
-      channelUrl,
-      json,
-      new Response.Listener<JSONObject>() {
-        @Override
-        public void onResponse(JSONObject res) {
-          final JSObject ret = new JSObject();
-          Iterator<String> keys = res.keys();
-          while (keys.hasNext()) {
-            String key = keys.next();
-            if (res.has(key)) {
-              try {
-                ret.put(key, res.get(key));
-              } catch (JSONException e) {
-                e.printStackTrace();
-                final JSObject retError = new JSObject();
-                retError.put(
-                  "message",
-                  "Cannot unset channel: " + e.toString()
-                );
-                retError.put("error", "response_error");
+        Request.Method.DELETE,
+        channelUrl,
+        null, // No JSON data needed for DELETE request
+        new Response.Listener<JSONObject>() {
+            @Override
+            public void onResponse(JSONObject res) {
+                final JSObject ret = new JSObject();
+                Iterator<String> keys = res.keys();
+                while (keys.hasNext()) {
+                    String key = keys.next();
+                    if (res.has(key)) {
+                        try {
+                            ret.put(key, res.get(key));
+                        } catch (JSONException e) {
+                            e.printStackTrace();
+                            final JSObject retError = new JSObject();
+                            retError.put("message", "Cannot unset channel: " + e.toString());
+                            retError.put("error", "response_error");
+                            callback.callback(ret);
+                        }
+                    }
+                }
+                Log.i(TAG, "Channel unset");
                 callback.callback(ret);
-              }
             }
-          }
-          Log.i(TAG, "Channel unset");
-          callback.callback(ret);
+        },
+        new Response.ErrorListener() {
+            @Override
+            public void onErrorResponse(VolleyError error) {
+                callback.callback(CapacitorUpdater.this.createError("Error unset channel", error));
+            }
         }
-      },
-      new Response.ErrorListener() {
-        @Override
-        public void onErrorResponse(VolleyError error) {
-          callback.callback(
-            CapacitorUpdater.this.createError("Error unset channel", error)
-          );
-        }
-      }
     );
     this.requestQueue.add(setRetryPolicy(request));
-  }
+}
 
   public void setChannel(final String channel, final Callback callback) {
     String channelUrl = this.channelUrl;
