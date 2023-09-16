@@ -84,6 +84,7 @@ struct InfoObject: Codable {
     let is_prod: Bool?
     var action: String?
     var channel: String?
+    let partial_update: Bool?
 }
 struct AppVersionDec: Decodable {
     let version: String?
@@ -428,7 +429,7 @@ extension CustomError: LocalizedError {
         }
     }
 
-    private func createInfoObject() -> InfoObject {
+    private func createInfoObject(partialUpdate: Bool = false) -> InfoObject {
         return InfoObject(
             platform: "ios",
             device_id: self.deviceID,
@@ -442,14 +443,15 @@ extension CustomError: LocalizedError {
             is_emulator: self.isEmulator(),
             is_prod: self.isProd(),
             action: nil,
-            channel: nil
+            channel: nil,
+            partial_update: partialUpdate
         )
     }
 
-    public func getLatest(url: URL) -> AppVersion {
+    public func getLatest(url: URL, partialUpdate: Bool = false) -> AppVersion {
         let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
         let latest: AppVersion = AppVersion()
-        let parameters: InfoObject = self.createInfoObject()
+        let parameters: InfoObject = self.createInfoObject(partialUpdate: partialUpdate)
         print("\(self.TAG) Auto-update parameters: \(parameters)")
         let request = AF.request(url, method: .post, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
 

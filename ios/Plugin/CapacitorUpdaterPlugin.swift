@@ -575,7 +575,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             }
             print("\(self.implementation.TAG) Check for update via \(self.updateUrl)")
             let url = URL(string: self.updateUrl)!
-            let res = self.implementation.getLatest(url: url)
+            let res = self.implementation.getLatest(url: url, partialUpdate: self.partialUpdate)
             let current = self.implementation.getCurrentBundle()
 
             if (res.message) != nil {
