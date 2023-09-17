@@ -349,7 +349,12 @@ extension CustomError: LocalizedError {
             if sourceDistFolder.isDirectory && FileManager.default.fileExists(atPath: sourceDistFolder.path, isDirectory: &isDirectory) {
                 let files: [String] = try FileManager.default.contentsOfDirectory(atPath: sourceDistFolder.path)
                 for file in files {
-                    try FileManager.default.copyItem(atPath: sourceDistFolder.appendingPathComponent(file).path, toPath: destDistFolder.appendingPathComponent(file).path)
+                    if FileManager.default.fileExists(atPath: destDistFolder.appendingPathComponent(file).path, isDirectory: &isDirectory) {
+                        // skip empty folders from the partial bundle otherwise copying will fail with:
+                        // "an item with the same name already exists."
+                    } else {
+                        try FileManager.default.copyItem(atPath: sourceDistFolder.appendingPathComponent(file).path, toPath: destDistFolder.appendingPathComponent(file).path)
+                    }
                 }
             }
         } catch {
