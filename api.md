@@ -563,9 +563,10 @@ Remove all listeners for this plugin.
 
 ### SetChannelOptions
 
-| Prop          | Type                |
-| ------------- | ------------------- |
-| **`channel`** | <code>string</code> |
+| Prop                    | Type                 |
+| ----------------------- | -------------------- |
+| **`channel`**           | <code>string</code>  |
+| **`triggerAutoUpdate`** | <code>boolean</code> |
 
 
 ### getChannelRes
