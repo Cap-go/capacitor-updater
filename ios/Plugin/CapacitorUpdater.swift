@@ -257,7 +257,7 @@ extension CustomError: LocalizedError {
     public var versionBuild: String = ""
     public var customId: String = ""
     public var PLUGIN_VERSION: String = ""
-    public let timeout: Double = 20
+    public var timeout: Double = 20
     public var statsUrl: String = ""
     public var channelUrl: String = ""
     public var appId: String = ""

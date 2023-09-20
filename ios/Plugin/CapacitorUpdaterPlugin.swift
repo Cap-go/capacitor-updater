@@ -53,7 +53,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         updateUrl = getConfig().getString("updateUrl", CapacitorUpdaterPlugin.updateUrlDefault)!
         autoUpdate = getConfig().getBoolean("autoUpdate", true)
         appReadyTimeout = getConfig().getInt("appReadyTimeout", 10000)
-        implementation.timeout = getConfig().getInt("responseTimeout", 20)
+        implementation.timeout = Double(getConfig().getInt("responseTimeout", 20))
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
         partialUpdate = getConfig().getBoolean("partialUpdate", false)
 
