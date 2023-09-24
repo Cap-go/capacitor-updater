@@ -138,12 +138,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     @objc func download(_ call: CAPPluginCall) {
         guard let urlString = call.getString("url") else {
             print("\(self.implementation.TAG) Download called without url")
-            call.reject("Download called without url")
+            call.reject(String(localized: "downloadWithoutURL"))
             return
         }
         guard let version = call.getString("version") else {
             print("\(self.implementation.TAG) Download called without version")
-            call.reject("Download called without version")
+            call.reject(String(localized: "downloadWithoutVersion"))
             return
         }
         let sessionKey = call.getString("sessionKey", "")
@@ -170,7 +170,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 self.notifyListeners("downloadFailed", data: ["version": version])
                 let current: BundleInfo = self.implementation.getCurrentBundle()
                 self.implementation.sendStats(action: "download_fail", versionName: current.getVersionName())
-                call.reject("Failed to download from: \(url!)", error.localizedDescription)
+                call.reject(String(localized: "failedToDownload")+url!, error.localizedDescription)
             }
         }
     }
@@ -200,20 +200,20 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             call.resolve()
         } else {
             print("\(self.implementation.TAG) Reload failed")
-            call.reject("Reload failed")
+            call.reject(String(localized: "reloadFailed"))
         }
     }
 
     @objc func next(_ call: CAPPluginCall) {
         guard let id = call.getString("id") else {
             print("\(self.implementation.TAG) Next called without id")
-            call.reject("Next called without id")
+            call.reject(String(localized: "nextWithoutId"))
             return
         }
         print("\(self.implementation.TAG) Setting next active id \(id)")
         if !self.implementation.setNextBundle(next: id) {
             print("\(self.implementation.TAG) Set next version failed. id \(id) does not exist.")
-            call.reject("Set next version failed. id \(id) does not exist.")
+            call.reject(String(localized: "setNextFailed")+id+String(localized: "doesNotExist"))
         } else {
             call.resolve(self.implementation.getBundleInfo(id: id).toJSON())
         }
@@ -222,14 +222,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     @objc func set(_ call: CAPPluginCall) {
         guard let id = call.getString("id") else {
             print("\(self.implementation.TAG) Set called without id")
-            call.reject("Set called without id")
+            call.reject(String(localized: "setWithoutId"))
             return
         }
         let res = implementation.set(id: id)
         print("\(self.implementation.TAG) Set active bundle: \(id)")
         if !res {
             print("\(self.implementation.TAG) Bundle successfully set to: \(id) ")
-            call.reject("Update failed, id \(id) doesn't exist")
+            call.reject(String(localized: "updateFailed")+id+String(localized: "doesNotExist"))
         } else {
             self.reload(call)
         }
@@ -238,7 +238,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     @objc func delete(_ call: CAPPluginCall) {
         guard let id = call.getString("id") else {
             print("\(self.implementation.TAG) Delete called without version")
-            call.reject("Delete called without id")
+            call.reject(String(localized: "deleteWithoutId"))
             return
         }
         let res = implementation.delete(id: id)
@@ -246,7 +246,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             call.resolve()
         } else {
             print("\(self.implementation.TAG) Delete failed, id \(id) doesn't exist")
-            call.reject("Delete failed, id \(id) doesn't exist")
+            call.reject(String(localized: "deleteFailed")+id+String(localized: "doesNotExist"))
         }
     }
 
@@ -277,7 +277,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     @objc func setChannel(_ call: CAPPluginCall) {
         guard let channel = call.getString("channel") else {
             print("\(self.implementation.TAG) setChannel called without channel")
-            call.reject("setChannel called without channel")
+            call.reject(String(localized: "setChannelCalled"))
             return
         }
         let triggerAutoUpdate = call.getBool("triggerAutoUpdate") ?? false
@@ -308,7 +308,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     @objc func setCustomId(_ call: CAPPluginCall) {
         guard let customId = call.getString("customId") else {
             print("\(self.implementation.TAG) setCustomId called without customId")
-            call.reject("setCustomId called without customId")
+            call.reject(String(localized: "setCustomIdCalled"))
             return
         }
         self.implementation.customId = customId
@@ -343,7 +343,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             call.resolve()
         } else {
             print("\(self.implementation.TAG) Reset failed")
-            call.reject("\(self.implementation.TAG) Reset failed")
+            call.reject(self.implementation.TAG+String(localized: "resetFailed"))
         }
     }
 
@@ -366,14 +366,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     @objc func setMultiDelay(_ call: CAPPluginCall) {
         guard let delayConditionList = call.getValue("delayConditions") else {
             print("\(self.implementation.TAG) setMultiDelay called without delayCondition")
-            call.reject("setMultiDelay called without delayCondition")
+            call.reject(String(localized: "setMultiDelayCalled"))
             return
         }
         let delayConditions: String = toJson(object: delayConditionList)
         if _setMultiDelay(delayConditions: delayConditions) {
             call.resolve()
         } else {
-            call.reject("Failed to delay update")
+            call.reject(String(localized: "failedToDelayUpdate"))
         }
     }
 

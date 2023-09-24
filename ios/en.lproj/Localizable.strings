@@ -12,3 +12,20 @@
 "hello_world" = "Hello World";
 "success" = "success";
 "failed" = "failed";
+"downloadWithoutURL" = "Download called without URL";
+"downloadWithoutVersion" = "Download called without version";
+"failedToDownload" = "Failed to download from: ";
+"reloadFailed" = "Reload failed";
+"nextWithoutId" = "Next called without id";
+"setNextFailed": "Set next version failed. ";
+"doesNotExist": " does not exist.";
+
+"setWithoutId" = "Set called without id";
+"updateFailed" = "Update failed. ";
+"deleteWithoutId" = "Delete called without id";
+"deleteFailed" = "Delete failed. ";
+"setChannelCalled" = "setChannel called without channel";
+"setCustomIdCalled" = "setCustomId called without customId";
+"resetFailed" = "Reset failed";
+"setMultiDelayCalled" = "setMultiDelay called without delayCondition";
+"failedToDelayUpdate" = "Failed to delay update";

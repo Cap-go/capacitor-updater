@@ -12,6 +12,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.content.res.Resources;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Base64;
@@ -91,6 +92,8 @@ public class CapacitorUpdater {
   public String appId = "";
   public String privateKey = "";
   public String deviceID = "";
+
+  private Resources resource = Resources.getSystem();
 
   private final FilenameFilter filter = new FilenameFilter() {
     @Override
@@ -182,7 +185,7 @@ public class CapacitorUpdater {
         if (entry.getName().contains("\\")) {
           Log.e(
             TAG,
-            "unzip: Windows path is not supported, please use unix path as require by zip RFC: " +
+            "unzip:" + resource.getString(R.string.windowsPathNotSupported) +
             entry.getName()
           );
         }
@@ -193,16 +196,13 @@ public class CapacitorUpdater {
 
         if (!canonicalPath.startsWith(canonicalDir)) {
           throw new FileNotFoundException(
-            "SecurityException, Failed to ensure directory is the start path : " +
-            canonicalDir +
-            " of " +
-            canonicalPath
+            resource.getString(R.string.securityException)+", " + resource.getString(R.string.failedToEnsure, canonicalDir, canonicalPath)
           );
         }
 
         if (!dir.isDirectory() && !dir.mkdirs()) {
           throw new FileNotFoundException(
-            "Failed to ensure directory: " + dir.getAbsolutePath()
+            resource.getString(R.string.failedToEnsureDir) + " : " + dir.getAbsolutePath()
           );
         }
 
@@ -234,7 +234,7 @@ public class CapacitorUpdater {
     throws IOException {
     if (!sourceFile.exists()) {
       throw new FileNotFoundException(
-        "Source file not found: " + sourceFile.getPath()
+        resource.getString(R.string.sourceFileNotFound) + sourceFile.getPath()
       );
     }
     final File destinationFile = new File(this.documentsDir, dest);
@@ -242,7 +242,7 @@ public class CapacitorUpdater {
     final String[] entries = sourceFile.list(this.filter);
     if (entries == null || entries.length == 0) {
       throw new IOException(
-        "Source file was not a directory or was empty: " + sourceFile.getPath()
+        resource.getString(R.string.sourceFileEmpty) + sourceFile.getPath()
       );
     }
     if (entries.length == 1 && !"index.html".equals(entries[0])) {
@@ -316,7 +316,7 @@ public class CapacitorUpdater {
               true
             );
         } else {
-          Log.i(TAG, "Unknown action " + action);
+          Log.i(TAG,  resource.getString(R.string.unknownAction)+ " " + action);
         }
       }
     }
@@ -358,17 +358,17 @@ public class CapacitorUpdater {
       ) {
         Log.e(
           CapacitorUpdater.TAG,
-          "Error checksum " + next.getChecksum() + " " + checksum
+          resource.getString(R.string.errorCheckSum) + next.getChecksum() + " " + checksum
         );
         this.sendStats("checksum_fail", getCurrentBundle().getVersionName());
         final Boolean res = this.delete(id);
         if (res) {
           Log.i(
             CapacitorUpdater.TAG,
-            "Failed bundle deleted: " + next.getVersionName()
+            resource.getString(R.string.failedBundleDeleted) + next.getVersionName()
           );
         }
-        throw new IOException("Checksum failed: " + id);
+        throw new IOException(resource.getString(R.string.errorCheckSum) +": " + id);
       }
       final JSObject ret = new JSObject();
       ret.put("bundle", next.toJSON());
@@ -466,13 +466,13 @@ public class CapacitorUpdater {
       }
     }
     if (!file.delete()) {
-      throw new IOException("Failed to delete: " + file);
+      throw new IOException(resource.getString(R.string.failedToDelete) + file);
     }
   }
 
   private void setCurrentBundle(final File bundle) {
     this.editor.putString(WebView.CAP_SERVER_PATH, bundle.getPath());
-    Log.i(TAG, "Current bundle set to: " + bundle);
+    Log.i(TAG, resource.getString(R.string.currentBundleSetTo) + bundle);
     this.editor.commit();
   }
 
@@ -500,7 +500,7 @@ public class CapacitorUpdater {
       ivSessionKey.isEmpty() ||
       ivSessionKey.split(":").length != 2
     ) {
-      Log.i(TAG, "Cannot found privateKey or sessionKey");
+      Log.i(TAG, resource.getString(R.string.cannotFindKeys));
       return;
     }
     try {
@@ -534,10 +534,10 @@ public class CapacitorUpdater {
         }
       }
     } catch (GeneralSecurityException e) {
-      Log.i(TAG, "decryptFile fail");
+      Log.i(TAG, resource.getString(R.string.decryptFileFail));
       this.sendStats("decrypt_fail", version);
       e.printStackTrace();
-      throw new IOException("GeneralSecurityException");
+      throw new IOException(resource.getString(R.string.generalSecurityException));
     }
   }
 
@@ -607,14 +607,14 @@ public class CapacitorUpdater {
   public List<BundleInfo> list() {
     final List<BundleInfo> res = new ArrayList<>();
     final File destHot = new File(this.documentsDir, bundleDirectory);
-    Log.d(TAG, "list File : " + destHot.getPath());
+    Log.d(TAG, resource.getString(R.string.listFile) + destHot.getPath());
     if (destHot.exists()) {
       for (final File i : destHot.listFiles()) {
         final String id = i.getName();
         res.add(this.getBundleInfo(id));
       }
     } else {
-      Log.i(TAG, "No versions available to list" + destHot);
+      Log.i(TAG, resource.getString(R.string.noVersionsAvailable) + destHot);
     }
     return res;
   }
@@ -623,7 +623,7 @@ public class CapacitorUpdater {
     throws IOException {
     final BundleInfo deleted = this.getBundleInfo(id);
     if (deleted.isBuiltin() || this.getCurrentBundleId().equals(id)) {
-      Log.e(TAG, "Cannot delete " + id);
+      Log.e(TAG, resource.getString(R.string.cannotDelete) + id);
       return false;
     }
     final File bundle = new File(this.documentsDir, bundleDirectory + "/" + id);
@@ -636,7 +636,7 @@ public class CapacitorUpdater {
       }
       return true;
     }
-    Log.e(TAG, "bundle removed: " + deleted.getVersionName());
+    Log.e(TAG, resource.getString(R.string.bundleRemoved) + deleted.getVersionName());
     this.sendStats("delete", deleted.getVersionName());
     return false;
   }
@@ -674,7 +674,7 @@ public class CapacitorUpdater {
       return true;
     }
     final File bundle = this.getBundleDirectory(id);
-    Log.i(TAG, "Setting next active bundle: " + id);
+    Log.i(TAG, resource.getString(R.string.settingNextActiveBundle) + id);
     if (this.bundleExists(id)) {
       this.setCurrentBundle(bundle);
       this.setBundleStatus(id, BundleStatus.PENDING);
@@ -693,10 +693,10 @@ public class CapacitorUpdater {
   public void setSuccess(final BundleInfo bundle, Boolean autoDeletePrevious) {
     this.setBundleStatus(bundle.getId(), BundleStatus.SUCCESS);
     final BundleInfo fallback = this.getFallbackBundle();
-    Log.d(CapacitorUpdater.TAG, "Fallback bundle is: " + fallback);
+    Log.d(CapacitorUpdater.TAG, resource.getString(R.string.fallbackBundleIs) + fallback);
     Log.i(
       CapacitorUpdater.TAG,
-      "Version successfully loaded: " + bundle.getVersionName()
+      resource.getString(R.string.versionSuccessfullyLoaded) + bundle.getVersionName()
     );
     if (autoDeletePrevious && !fallback.isBuiltin()) {
       try {
@@ -704,13 +704,13 @@ public class CapacitorUpdater {
         if (res) {
           Log.i(
             CapacitorUpdater.TAG,
-            "Deleted previous bundle: " + fallback.getVersionName()
+            resource.getString(R.string.deletedPreviousBundle) + fallback.getVersionName()
           );
         }
       } catch (final IOException e) {
         Log.e(
           CapacitorUpdater.TAG,
-          "Failed to delete previous bundle: " + fallback.getVersionName(),
+          resource.getString(R.string.failedToDeletePreviousBundle) + fallback.getVersionName(),
           e
         );
       }
@@ -774,7 +774,7 @@ public class CapacitorUpdater {
     try {
       json = this.createInfoObject();
     } catch (JSONException e) {
-      Log.e(TAG, "Error getLatest JSONException", e);
+      Log.e(TAG, resource.getString(R.string.errorGetLatestJSON), e);
       e.printStackTrace();
       final JSObject retError = new JSObject();
       retError.put("message", "Cannot get info: " + e.toString());
@@ -783,7 +783,7 @@ public class CapacitorUpdater {
       return;
     }
 
-    Log.i(CapacitorUpdater.TAG, "Auto-update parameters: " + json);
+    Log.i(CapacitorUpdater.TAG, resource.getString(R.string.autoUpdateParams) + json);
     // Building a request
     JsonObjectRequest request = new JsonObjectRequest(
       Request.Method.POST,
@@ -839,7 +839,7 @@ public class CapacitorUpdater {
     if (
       channelUrl == null || "".equals(channelUrl) || channelUrl.length() == 0
     ) {
-      Log.e(TAG, "Channel URL is not set");
+      Log.e(TAG, resource.getString(R.string.channelURLNotSet));
       final JSObject retError = new JSObject();
       retError.put("message", "channelUrl missing");
       retError.put("error", "missing_config");
@@ -851,7 +851,7 @@ public class CapacitorUpdater {
       json = this.createInfoObject();
       json.put("channel", channel);
     } catch (JSONException e) {
-      Log.e(TAG, "Error setChannel JSONException", e);
+      Log.e(TAG, resource.getString(R.string.errorSetChannelJSON), e);
       e.printStackTrace();
       final JSObject retError = new JSObject();
       retError.put("message", "Cannot get info: " + e.toString());
@@ -883,7 +883,7 @@ public class CapacitorUpdater {
               }
             }
           }
-          Log.i(TAG, "Channel set to \"" + channel);
+          Log.i(TAG,resource.getString(R.string.channelSetTo) + " \"" + channel);
           callback.callback(ret);
         }
       },
@@ -911,7 +911,7 @@ public class CapacitorUpdater {
     if (
       channelUrl == null || "".equals(channelUrl) || channelUrl.length() == 0
     ) {
-      Log.e(TAG, "Channel URL is not set");
+      Log.e(TAG, resource.getString(R.string.channelURLNotSet));
       final JSObject retError = new JSObject();
       retError.put("message", "Channel URL is not set");
       retError.put("error", "missing_config");
@@ -922,7 +922,7 @@ public class CapacitorUpdater {
     try {
       json = this.createInfoObject();
     } catch (JSONException e) {
-      Log.e(TAG, "Error getChannel JSONException", e);
+      Log.e(TAG, resource.getString(R.string.errorGetLatestJSON), e);
       e.printStackTrace();
       final JSObject retError = new JSObject();
       retError.put("message", "Cannot get info: " + e.toString());
@@ -950,7 +950,7 @@ public class CapacitorUpdater {
               }
             }
           }
-          Log.i(TAG, "Channel get to \"" + ret);
+          Log.i(TAG, resource.getString(R.string.channelGetTo) + " \"" + ret);
           callback.callback(ret);
         }
       },
@@ -983,7 +983,7 @@ public class CapacitorUpdater {
       json = this.createInfoObject();
       json.put("action", action);
     } catch (JSONException e) {
-      Log.e(TAG, "Error sendStats JSONException", e);
+      Log.e(TAG, resource.getString(R.string.errorSendStatusJSON), e);
       e.printStackTrace();
       return;
     }
@@ -997,7 +997,7 @@ public class CapacitorUpdater {
         public void onResponse(JSONObject response) {
           Log.i(
             TAG,
-            "Stats send for \"" + action + "\", version " + versionName
+            resource.getString(R.string.sendStatusFor, action, versionName)
           );
         }
       },
@@ -1034,7 +1034,7 @@ public class CapacitorUpdater {
         String stored = this.prefs.getString(trueId + INFO_SUFFIX, "");
         result = BundleInfo.fromJSON(stored);
       } catch (JSONException e) {
-        Log.e(TAG, "Failed to parse info for bundle [" + trueId + "] ", e);
+        Log.e(TAG, resource.getString(R.string.failedToParseInfo, trueId), e);
         result = new BundleInfo(trueId, null, BundleStatus.PENDING, "", "");
       }
     }
@@ -1060,16 +1060,16 @@ public class CapacitorUpdater {
     if (
       id == null || (info != null && (info.isBuiltin() || info.isUnknown()))
     ) {
-      Log.d(TAG, "Not saving info for bundle: [" + id + "] " + info);
+      Log.d(TAG, resource.getString(R.string.notSavingInfo, id) + info);
       return;
     }
 
     if (info == null) {
-      Log.d(TAG, "Removing info for bundle [" + id + "]");
+      Log.d(TAG, resource.getString(R.string.removingInfo, id));
       this.editor.remove(id + INFO_SUFFIX);
     } else {
       final BundleInfo update = info.setId(id);
-      Log.d(TAG, "Storing info for bundle [" + id + "] " + update.toString());
+      Log.d(TAG, resource.getString(R.string.storingInfoForBundle, id) + update.toString());
       this.editor.putString(id + INFO_SUFFIX, update.toString());
     }
     this.editor.commit();
@@ -1077,7 +1077,7 @@ public class CapacitorUpdater {
 
   public void setVersionName(final String id, final String name) {
     if (id != null) {
-      Log.d(TAG, "Setting name for bundle [" + id + "] to " + name);
+      Log.d(TAG, resource.getString(R.string.settingNameForBundle, id, name));
       BundleInfo info = this.getBundleInfo(id);
       this.saveBundleInfo(id, info.setVersionName(name));
     }
@@ -1086,7 +1086,7 @@ public class CapacitorUpdater {
   private void setBundleStatus(final String id, final BundleStatus status) {
     if (id != null && status != null) {
       BundleInfo info = this.getBundleInfo(id);
-      Log.d(TAG, "Setting status for bundle [" + id + "] to " + status);
+      Log.d(TAG, resource.getString(R.string.settingStatusForBundle, id, status));
       this.saveBundleInfo(id, info.setStatus(status));
     }
   }
