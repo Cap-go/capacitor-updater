@@ -59,7 +59,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
   private static final String channelUrlDefault =
     "https://api.capgo.app/channel_self";
 
-  private final String PLUGIN_VERSION = "5.2.33";
+  private final String PLUGIN_VERSION = "5.3.1";
   private static final String DELAY_CONDITION_PREFERENCES = "";
 
   private SharedPreferences.Editor editor;
@@ -192,6 +192,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     this.updateUrl = this.getConfig().getString("updateUrl", updateUrlDefault);
     this.autoUpdate = this.getConfig().getBoolean("autoUpdate", true);
     this.appReadyTimeout = this.getConfig().getInt("appReadyTimeout", 10000);
+    this.implementation.timeout =
+      this.getConfig().getInt("responseTimeout", 20) * 1000;
     this.resetWhenUpdate = this.getConfig().getBoolean("resetWhenUpdate", true);
 
     if (this.resetWhenUpdate) {
@@ -385,6 +387,43 @@ public class CapacitorUpdaterPlugin extends Plugin {
     } catch (final Exception e) {
       Log.e(CapacitorUpdater.TAG, resources.getString(R.string.couldNotGetPluginVersion), e);
       call.reject(resources.getString(R.string.couldNotGetPluginVersion), e);
+    }
+  }
+
+  @PluginMethod
+  public void unsetChannel(final PluginCall call) {
+    final Boolean triggerAutoUpdate = call.getBoolean(
+      "triggerAutoUpdate",
+      false
+    );
+
+    try {
+      Log.i(
+        CapacitorUpdater.TAG,
+        "unsetChannel triggerAutoUpdate: " + triggerAutoUpdate
+      );
+      startNewThread(() -> {
+        CapacitorUpdaterPlugin.this.implementation.unsetChannel(res -> {
+            if (res.has("error")) {
+              call.reject(res.getString("error"));
+            } else {
+              if (
+                CapacitorUpdaterPlugin.this._isAutoUpdateEnabled() &&
+                triggerAutoUpdate
+              ) {
+                Log.i(
+                  CapacitorUpdater.TAG,
+                  "Calling autoupdater after channel change!"
+                );
+                backgroundDownload();
+              }
+              call.resolve(res);
+            }
+          });
+      });
+    } catch (final Exception e) {
+      Log.e(CapacitorUpdater.TAG, "Failed to unsetChannel: ", e);
+      call.reject("Failed to unsetChannel: ", e);
     }
   }
 
@@ -879,8 +918,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     return (
       CapacitorUpdaterPlugin.this.autoUpdate &&
       !"".equals(CapacitorUpdaterPlugin.this.updateUrl) &&
-      serverUrl == null &&
-      !"".equals(serverUrl)
+      (serverUrl == null || "".equals(serverUrl))
     );
   }
 

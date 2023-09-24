@@ -15,7 +15,7 @@ import Version
 @objc(CapacitorUpdaterPlugin)
 public class CapacitorUpdaterPlugin: CAPPlugin {
     public var implementation = CapacitorUpdater()
-    private let PLUGIN_VERSION: String = "5.2.33"
+    private let PLUGIN_VERSION: String = "5.3.1"
     static let updateUrlDefault = "https://api.capgo.app/updates"
     static let statsUrlDefault = "https://api.capgo.app/stats"
     static let channelUrlDefault = "https://api.capgo.app/channel_self"
@@ -52,6 +52,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         updateUrl = getConfig().getString("updateUrl", CapacitorUpdaterPlugin.updateUrlDefault)!
         autoUpdate = getConfig().getBoolean("autoUpdate", true)
         appReadyTimeout = getConfig().getInt("appReadyTimeout", 10000)
+        implementation.timeout = getConfig().getInt("responseTimeout", 20)
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
 
         implementation.privateKey = getConfig().getString("privateKey", self.defaultPrivateKey)!
@@ -269,6 +270,22 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             } else if res.message != nil {
                 call.reject( res.message!)
             } else {
+                call.resolve(res.toDict())
+            }
+        }
+    }
+
+    @objc func unsetChannel(_ call: CAPPluginCall) {
+        let triggerAutoUpdate = call.getBool("triggerAutoUpdate") ?? false
+        DispatchQueue.global(qos: .background).async {
+            let res = self.implementation.unsetChannel()
+            if res.error != "" {
+                call.reject(res.error)
+            } else {
+                if self._isAutoUpdateEnabled() {
+                    print("\(self.implementation.TAG) Calling autoupdater after channel change!")
+                    self.backgroundDownload()
+                }
                 call.resolve(res.toDict())
             }
         }

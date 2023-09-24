@@ -22,7 +22,15 @@ declare module "@capacitor/cli" {
        * @example 1000 // (1 second)
        */
       appReadyTimeout?: number;
-
+      /**
+       * Configure the number of milliseconds the native plugin should wait before considering API timeout.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default 20 // (20 second)
+       * @example 10 // (10 second)
+       */
+      responseTimeout?: number;
       /**
        * Configure whether the plugin should use automatically delete failed bundles.
        *

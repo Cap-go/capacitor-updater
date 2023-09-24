@@ -641,6 +641,42 @@ extension CustomError: LocalizedError {
         self.setBundleStatus(id: bundle.getId(), status: BundleStatus.ERROR)
     }
 
+    func unsetChannel() -> SetChannel {
+        let setChannel: SetChannel = SetChannel()
+        if (self.channelUrl ).isEmpty {
+            print("\(self.TAG) Channel URL is not set")
+            setChannel.message = "Channel URL is not set"
+            setChannel.error = "missing_config"
+            return setChannel
+        }
+        let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
+        var parameters: InfoObject = self.createInfoObject()
+
+        let request = AF.request(self.channelUrl, method: .delete, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
+
+        request.validate().responseDecodable(of: SetChannelDec.self) { response in
+            switch response.result {
+            case .success:
+                if let status = response.value?.status {
+                    setChannel.status = status
+                }
+                if let error = response.value?.error {
+                    setChannel.error = error
+                }
+                if let message = response.value?.message {
+                    setChannel.message = message
+                }
+            case let .failure(error):
+                print("\(self.TAG) Error unset Channel", response.value ?? "", error)
+                setChannel.message = "Error unset Channel \(String(describing: response.value))"
+                setChannel.error = "response_error"
+            }
+            semaphore.signal()
+        }
+        semaphore.wait()
+        return setChannel
+    }
+
     func setChannel(channel: String) -> SetChannel {
         let setChannel: SetChannel = SetChannel()
         if (self.channelUrl ).isEmpty {
