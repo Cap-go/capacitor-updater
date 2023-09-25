@@ -52,7 +52,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         updateUrl = getConfig().getString("updateUrl", CapacitorUpdaterPlugin.updateUrlDefault)!
         autoUpdate = getConfig().getBoolean("autoUpdate", true)
         appReadyTimeout = getConfig().getInt("appReadyTimeout", 10000)
-        implementation.timeout = getConfig().getInt("responseTimeout", 20)
+        implementation.timeout = Double(getConfig().getInt("responseTimeout", 20))
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
 
         implementation.privateKey = getConfig().getString("privateKey", self.defaultPrivateKey)!
@@ -72,6 +72,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         nc.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
         nc.addObserver(self, selector: #selector(appKilled), name: UIApplication.willTerminateNotification, object: nil)
         self.appMovedToForeground()
+        self.checkForUpdateAfterDelay()
     }
 
     private func semaphoreWait(waitTime: Int) {
@@ -714,6 +715,19 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             self.sendReadyToJs(current: current, msg: "disabled")
         }
         self.checkAppReady()
+    }
+
+    @objc func checkForUpdateAfterDelay() {
+        DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 300) {
+            let url = URL(string: self.updateUrl)!
+            let res = self.implementation.getLatest(url: url)
+            let current = self.implementation.getCurrentBundle()
+
+            if res.version != current.getVersionName() {
+                print("\(self.implementation.TAG) New version found: \(res.version)")
+                self.backgroundDownload()
+            }
+        }
     }
 
     @objc func appMovedToBackground() {

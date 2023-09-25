@@ -198,6 +198,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
     final Application application = (Application) this.getContext()
       .getApplicationContext();
+
+    this.checkForUpdateAfterDelay();
     //    application.registerActivityLifecycleCallbacks(this);
   }
 
@@ -744,6 +746,27 @@ public class CapacitorUpdaterPlugin extends Plugin {
       Log.e(CapacitorUpdater.TAG, "Could not get current bundle", e);
       call.reject("Could not get current bundle", e);
     }
+  }
+
+  @PluginMethod
+  public void checkForUpdateAfterDelay() {
+    new Handler().postDelayed(new Runnable() {
+      @Override
+      public void run() {
+        try {
+          final URL updateUrl = new URL(implementation.updateUrl);
+          final BundleInfo latestBundle = implementation.getLatest(updateUrl);
+          final BundleInfo currentBundle = implementation.getCurrentBundle();
+
+          if (!latestBundle.getVersionName().equals(currentBundle.getVersionName())) {
+            Log.i(CapacitorUpdater.TAG, "New version found: " + latestBundle.getVersionName());
+            implementation.backgroundDownload();
+          }
+        } catch (final Exception e) {
+          Log.e(CapacitorUpdater.TAG, "Failed to check for update", e);
+        }
+      }
+    }, 300000); // Delay of 5 minutes
   }
 
   @PluginMethod
