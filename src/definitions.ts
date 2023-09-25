@@ -425,7 +425,7 @@ export interface CapacitorUpdaterPlugin {
   setCustomId(options: SetCustomIdOptions): Promise<void>;
 
   /**
-   * Listen for download event in the App, let you know when the download is started, loading and finished
+   * Listen for download event in the App, let you know when the download is started, loading and finished, with a percent value
    *
    * @since 2.0.11
    */
