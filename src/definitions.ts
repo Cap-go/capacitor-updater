@@ -118,6 +118,15 @@ declare module "@capacitor/cli" {
        * @since  5.1.0
        */
       directUpdate?: boolean;
+
+      /**
+       * Configure the delay period for period update check.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default 300
+       */
+      periodCheckDelay?: number;
     };
   }
 }

@@ -14,10 +14,9 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.os.Build;
-import android.os.Bundle;
+import android.os.Handler;
 import android.util.Log;
-import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
+
 import com.android.volley.toolbox.Volley;
 import com.getcapacitor.CapConfig;
 import com.getcapacitor.JSArray;
@@ -40,9 +39,7 @@ import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Phaser;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.json.JSONException;
@@ -167,6 +164,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
       this.getConfig().getString("statsUrl", statsUrlDefault);
     this.implementation.channelUrl =
       this.getConfig().getString("channelUrl", channelUrlDefault);
+      this.implementation.periodCheckDelay =
+        this.getConfig().getInt("periodCheckDelay", 300);
+
     this.implementation.documentsDir = this.getContext().getFilesDir();
     this.implementation.prefs = this.prefs;
     this.implementation.editor = this.editor;
@@ -748,27 +748,33 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
   }
 
-  @PluginMethod
-  public void checkForUpdateAfterDelay() {
-    new Handler().postDelayed(new Runnable() {
-      @Override
-      public void run() {
-        try {
-          final URL updateUrl = new URL(implementation.updateUrl);
-          final BundleInfo latestBundle = implementation.getLatest(updateUrl);
-          final BundleInfo currentBundle = implementation.getCurrentBundle();
-
-          if (!latestBundle.getVersionName().equals(currentBundle.getVersionName())) {
-            Log.i(CapacitorUpdater.TAG, "New version found: " + latestBundle.getVersionName());
-            implementation.backgroundDownload();
+public void checkForUpdateAfterDelay() {
+  new Handler().postDelayed(new Runnable() {
+    @Override
+    public void run() {
+      try {
+        CapacitorUpdaterPlugin.this.implementation.getLatest(
+          CapacitorUpdaterPlugin.this.updateUrl,
+          res -> {
+            if (res.has("error")) {
+              Log.e(CapacitorUpdater.TAG, res.getString("error"));
+              return;
+            } else if (res.has("version")) {
+              String newVersion = res.getString("version");
+              String currentVersion = String.valueOf(CapacitorUpdaterPlugin.this.implementation.getCurrentBundle());
+              if (!newVersion.equals(currentVersion)) {
+                Log.i(CapacitorUpdater.TAG, "New version found: " + newVersion);
+                CapacitorUpdaterPlugin.this.backgroundDownload();
+              }
+            }
           }
-        } catch (final Exception e) {
-          Log.e(CapacitorUpdater.TAG, "Failed to check for update", e);
-        }
+        );
+      } catch (final Exception e) {
+        Log.e(CapacitorUpdater.TAG, "Failed to check for update", e);
       }
-    }, 300000); // Delay of 5 minutes
-  }
-
+    }
+  }, this.implementation.periodCheckDelay * 1000);
+}
   @PluginMethod
   public void notifyAppReady(final PluginCall call) {
     try {
