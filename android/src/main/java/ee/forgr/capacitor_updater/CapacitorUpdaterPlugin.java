@@ -165,7 +165,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     this.implementation.channelUrl =
       this.getConfig().getString("channelUrl", channelUrlDefault);
       this.implementation.periodCheckDelay =
-        this.getConfig().getInt("periodCheckDelay", 300);
+        this.getConfig().getInt("periodCheckDelay", 300) * 1000;
 
     this.implementation.documentsDir = this.getContext().getFilesDir();
     this.implementation.prefs = this.prefs;
@@ -773,7 +773,7 @@ public void checkForUpdateAfterDelay() {
         Log.e(CapacitorUpdater.TAG, "Failed to check for update", e);
       }
     }
-  }, this.implementation.periodCheckDelay * 1000);
+  }, this.implementation.periodCheckDelay);
 }
   @PluginMethod
   public void notifyAppReady(final PluginCall call) {
