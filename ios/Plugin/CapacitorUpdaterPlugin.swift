@@ -719,7 +719,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func checkForUpdateAfterDelay() {
-        DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + periodCheckDelay) {
+        let timer = Timer.scheduledTimer(withTimeInterval: TimeInterval(periodCheckDelay), repeats: true) { timer in
             let url = URL(string: self.updateUrl)!
             let res = self.implementation.getLatest(url: url)
             let current = self.implementation.getCurrentBundle()
@@ -729,6 +729,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 self.backgroundDownload()
             }
         }
+        RunLoop.current.add(timer, forMode: .default)
     }
 
     @objc func appMovedToBackground() {

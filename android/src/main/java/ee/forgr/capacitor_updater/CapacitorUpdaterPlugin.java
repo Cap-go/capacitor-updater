@@ -749,7 +749,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
   }
 
 public void checkForUpdateAfterDelay() {
-  new Handler().postDelayed(new Runnable() {
+  final Handler handler = new Handler();
+  final Runnable runnableCode = new Runnable() {
     @Override
     public void run() {
       try {
@@ -769,11 +770,13 @@ public void checkForUpdateAfterDelay() {
             }
           }
         );
+        handler.postDelayed(this, CapacitorUpdaterPlugin.this.implementation.periodCheckDelay);
       } catch (final Exception e) {
         Log.e(CapacitorUpdater.TAG, "Failed to check for update", e);
       }
     }
-  }, this.implementation.periodCheckDelay);
+  };
+  handler.post(runnableCode);
 }
   @PluginMethod
   public void notifyAppReady(final PluginCall call) {
