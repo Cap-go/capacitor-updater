@@ -38,6 +38,8 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.UUID;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
@@ -749,8 +751,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
   }
 
 public void checkForUpdateAfterDelay() {
-  final Handler handler = new Handler();
-  final Runnable runnableCode = new Runnable() {
+  final Timer timer = new Timer();
+  timer.scheduleAtFixedRate(new TimerTask() {
     @Override
     public void run() {
       try {
@@ -770,14 +772,13 @@ public void checkForUpdateAfterDelay() {
             }
           }
         );
-        handler.postDelayed(this, CapacitorUpdaterPlugin.this.implementation.periodCheckDelay);
       } catch (final Exception e) {
         Log.e(CapacitorUpdater.TAG, "Failed to check for update", e);
       }
     }
-  };
-  handler.post(runnableCode);
+  }, 0, CapacitorUpdaterPlugin.this.implementation.periodCheckDelay);
 }
+
   @PluginMethod
   public void notifyAppReady(final PluginCall call) {
     try {
