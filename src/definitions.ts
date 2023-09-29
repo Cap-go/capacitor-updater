@@ -243,6 +243,10 @@ export interface SetChannelOptions {
   triggerAutoUpdate?: boolean;
 }
 
+export interface UnsetChannelOptions {
+  triggerAutoUpdate?: boolean;
+}
+
 export interface SetCustomIdOptions {
   customId: string;
 }
@@ -412,7 +416,7 @@ export interface CapacitorUpdaterPlugin {
    * @throws An error if the something went wrong
    * @since 4.7.0
    */
-  unsetChannel(): Promise<channelRes>;
+  unsetChannel(options: UnsetChannelOptions): Promise<void>;
   /**
    * get Channel for this device
    *

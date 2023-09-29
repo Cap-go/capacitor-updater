@@ -70,7 +70,6 @@ public class CapacitorUpdater {
   private static final String bundleDirectory = "versions";
 
   public static final String TAG = "Capacitor-updater";
-  public static final int timeout = 20000;
 
   public SharedPreferences.Editor editor;
   public SharedPreferences prefs;
@@ -91,6 +90,7 @@ public class CapacitorUpdater {
   public String appId = "";
   public String privateKey = "";
   public String deviceID = "";
+  public int timeout = 20000;
 
   private final FilenameFilter filter = new FilenameFilter() {
     @Override

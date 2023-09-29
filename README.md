@@ -133,6 +133,7 @@ Capacitor Updator works by unzipping a compiled app bundle to the native device 
 * [`cancelDelay()`](#canceldelay)
 * [`getLatest()`](#getlatest)
 * [`setChannel(...)`](#setchannel)
+* [`unsetChannel(...)`](#unsetchannel)
 * [`getChannel()`](#getchannel)
 * [`setCustomId(...)`](#setcustomid)
 * [`addListener('download', ...)`](#addlistenerdownload)
@@ -346,6 +347,23 @@ Set Channel for this device, the channel have to allow self assignement to make 
 | **`options`** | <code><a href="#setchanneloptions">SetChannelOptions</a></code> | is the {@link <a href="#setchanneloptions">SetChannelOptions</a>} channel to set |
 
 **Returns:** <code>Promise&lt;<a href="#channelres">channelRes</a>&gt;</code>
+
+**Since:** 4.7.0
+
+--------------------
+
+
+### unsetChannel(...)
+
+```typescript
+unsetChannel(options: UnsetChannelOptions) => Promise<void>
+```
+
+Unset Channel for this device, the device will return to the default channel
+
+| Param         | Type                                                                |
+| ------------- | ------------------------------------------------------------------- |
+| **`options`** | <code><a href="#unsetchanneloptions">UnsetChannelOptions</a></code> |
 
 **Since:** 4.7.0
 
@@ -680,6 +698,13 @@ Remove all listeners for this plugin.
 | Prop                    | Type                 |
 | ----------------------- | -------------------- |
 | **`channel`**           | <code>string</code>  |
+| **`triggerAutoUpdate`** | <code>boolean</code> |
+
+
+#### UnsetChannelOptions
+
+| Prop                    | Type                 |
+| ----------------------- | -------------------- |
 | **`triggerAutoUpdate`** | <code>boolean</code> |
 
 

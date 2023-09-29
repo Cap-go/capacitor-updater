@@ -52,7 +52,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         updateUrl = getConfig().getString("updateUrl", CapacitorUpdaterPlugin.updateUrlDefault)!
         autoUpdate = getConfig().getBoolean("autoUpdate", true)
         appReadyTimeout = getConfig().getInt("appReadyTimeout", 10000)
-        implementation.timeout = getConfig().getInt("responseTimeout", 20)
+        implementation.timeout = Double(getConfig().getInt("responseTimeout", 20))
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
 
         implementation.privateKey = getConfig().getString("privateKey", self.defaultPrivateKey)!
@@ -61,6 +61,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         let config = (self.bridge?.viewController as? CAPBridgeViewController)?.instanceDescriptor().legacyConfig
         if config?["appId"] != nil {
             implementation.appId = config?["appId"] as! String
+        }
+        implementation.appId = getConfig().getString("appId", implementation.appId)!
+        if implementation.appId == "" {
+            print("\(self.implementation.TAG) appId is empty")
+            // crash the app
+            fatalError("appId is empty")
         }
         implementation.statsUrl = getConfig().getString("statsUrl", CapacitorUpdaterPlugin.statsUrlDefault)!
         implementation.channelUrl = getConfig().getString("channelUrl", CapacitorUpdaterPlugin.channelUrlDefault)!
@@ -276,13 +282,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func unsetChannel(_ call: CAPPluginCall) {
-        let triggerAutoUpdate = call.getBool("triggerAutoUpdate") ?? false
+        let triggerAutoUpdate = call.getBool("triggerAutoUpdate", false)
         DispatchQueue.global(qos: .background).async {
             let res = self.implementation.unsetChannel()
             if res.error != "" {
                 call.reject(res.error)
             } else {
-                if self._isAutoUpdateEnabled() {
+                if self._isAutoUpdateEnabled() && triggerAutoUpdate {
                     print("\(self.implementation.TAG) Calling autoupdater after channel change!")
                     self.backgroundDownload()
                 }
@@ -303,7 +309,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             if res.error != "" {
                 call.reject(res.error)
             } else {
-                if self._isAutoUpdateEnabled() {
+                if self._isAutoUpdateEnabled() && triggerAutoUpdate {
                     print("\(self.implementation.TAG) Calling autoupdater after channel change!")
                     self.backgroundDownload()
                 }

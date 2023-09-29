@@ -15,6 +15,7 @@ import type {
   SetChannelOptions,
   getChannelRes,
   SetCustomIdOptions,
+  UnsetChannelOptions,
 } from "./definitions";
 
 const BUNDLE_BUILTIN: BundleInfo = {
@@ -92,6 +93,10 @@ export class CapacitorUpdaterWeb
       status: "error",
       error: "Cannot setChannel in web",
     };
+  }
+  async unsetChannel(options: UnsetChannelOptions): Promise<void> {
+    console.warn("Cannot unsetChannel in web", options);
+    return;
   }
   async setCustomId(options: SetCustomIdOptions): Promise<void> {
     console.warn("Cannot setCustomId in web", options);
