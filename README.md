@@ -390,7 +390,7 @@ Set Channel for this device
 addListener(eventName: "download", listenerFunc: DownloadChangeListener) => Promise<PluginListenerHandle> & PluginListenerHandle
 ```
 
-Listen for download event in the App, let you know when the download is started, loading and finished
+Listen for download event in the App, let you know when the download is started, loading and finished, with a percent value
 
 | Param              | Type                                                                      |
 | ------------------ | ------------------------------------------------------------------------- |

@@ -406,6 +406,14 @@ export interface CapacitorUpdaterPlugin {
   setChannel(options: SetChannelOptions): Promise<channelRes>;
 
   /**
+   * Unset Channel for this device, the device will return to the default channel
+   *
+   * @returns {Promise<channelRes>} an Promise resolved when channel is set
+   * @throws An error if the something went wrong
+   * @since 4.7.0
+   */
+  unsetChannel(): Promise<channelRes>;
+  /**
    * get Channel for this device
    *
    * @returns {Promise<channelRes>} an Promise resolved with channel info
