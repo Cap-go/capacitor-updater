@@ -22,3 +22,7 @@
 
 # Necessary for Gson Deserialization
 -keepattributes *Annotation*
+
+# Necessary for Gson Deserialization
+-keep class ee.forgr.capacitor_updater.DelayCondition { *; }
+-keepattributes Signature
