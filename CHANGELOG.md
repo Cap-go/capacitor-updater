@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.3.6](https://github.com/Cap-go/capacitor-updater/compare/5.3.5...5.3.6) (2023-09-30)
+
+
+### Bug Fixes
+
+* bild cache ios and android ([ef269df](https://github.com/Cap-go/capacitor-updater/commit/ef269df5bdef2c7731ce1dd0f7ad0c11b88a1f5e))
+* download not reject android ([2ba6645](https://github.com/Cap-go/capacitor-updater/commit/2ba664563b2327e8779fb0f2273779e0ef2d5d07))
+
 ### [5.3.5](https://github.com/Cap-go/capacitor-updater/compare/5.3.4...5.3.5) (2023-09-30)
 
 
