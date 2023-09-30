@@ -60,8 +60,8 @@ jobs:
         with:
           source-files: api.md
           destination-username: Cap-go
-          destination-repository: docs
-          destination-directory: plugin
+          destination-repository: website
+          destination-directory: src/content/docs/docs/plugin
           destination-branch: main
           commit-email: martindonadieu@gmail.com
   create-cache:
