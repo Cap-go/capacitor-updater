@@ -358,7 +358,7 @@ public class CapacitorUpdater {
       ) {
         Log.e(
           CapacitorUpdater.TAG,
-          "Error checksum " + next.getChecksum() + " " + checksum
+          "Error checksum " + checksumRes + " " + checksum
         );
         this.sendStats("checksum_fail", getCurrentBundle().getVersionName());
         final Boolean res = this.delete(id);
