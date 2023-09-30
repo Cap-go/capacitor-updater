@@ -322,7 +322,7 @@ public class CapacitorUpdater {
     }
   };
 
-  public void finishDownload(
+  public Boolean finishDownload(
     String id,
     String dest,
     String version,
@@ -393,7 +393,9 @@ public class CapacitorUpdater {
           "download_fail",
           CapacitorUpdater.this.getCurrentBundle().getVersionName()
         );
+      return false;
     }
+    return true;
   }
 
   private void downloadFileBackground(
@@ -592,11 +594,15 @@ public class CapacitorUpdater {
     this.notifyDownload(id, 5);
     final String dest = this.randomString(10);
     final File downloaded = this.downloadFile(id, url, dest);
-    this.finishDownload(id, dest, version, sessionKey, checksum, false);
+    final Boolean finished =
+      this.finishDownload(id, dest, version, sessionKey, checksum, false);
+    final BundleStatus status = finished
+      ? BundleStatus.PENDING
+      : BundleStatus.ERROR;
     BundleInfo info = new BundleInfo(
       id,
       version,
-      BundleStatus.PENDING,
+      status,
       new Date(System.currentTimeMillis()),
       checksum
     );

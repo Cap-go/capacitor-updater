@@ -522,8 +522,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 sessionKey,
                 checksum
               );
-
-          call.resolve(downloaded.toJSON());
+          if (downloaded.isErrorStatus()) {
+            throw new RuntimeException(
+              "Download failed: " + downloaded.getStatus()
+            );
+          } else {
+            call.resolve(downloaded.toJSON());
+          }
         } catch (final IOException e) {
           Log.e(CapacitorUpdater.TAG, "Failed to download from: " + url, e);
           call.reject("Failed to download from: " + url, e);
