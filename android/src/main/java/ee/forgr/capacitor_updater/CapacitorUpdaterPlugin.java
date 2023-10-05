@@ -163,7 +163,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     this.implementation.appId = config.getString("appId", "");
     this.implementation.appId =
       this.getConfig().getString("appId", this.implementation.appId);
-    if (!"".equals(implementation.appId)) {
+    if ("".equals(implementation.appId)) {
       Log.i(CapacitorUpdater.TAG, "appId: " + implementation.appId);
       throw new RuntimeException("appId is required");
     }
