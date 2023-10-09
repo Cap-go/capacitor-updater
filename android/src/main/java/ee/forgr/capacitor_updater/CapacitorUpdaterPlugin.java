@@ -166,8 +166,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
       this.getConfig().getString("statsUrl", statsUrlDefault);
     this.implementation.channelUrl =
       this.getConfig().getString("channelUrl", channelUrlDefault);
-      this.implementation.periodCheckDelay =
-        this.getConfig().getInt("periodCheckDelay", 300) * 1000;
+    int userValue = this.getConfig().getInt("periodCheckDelay", 300);
+    
+    this.implementation.periodCheckDelay = (userValue == 0 ? 300 : userValue) * 1000;
 
     this.implementation.documentsDir = this.getContext().getFilesDir();
     this.implementation.prefs = this.prefs;
