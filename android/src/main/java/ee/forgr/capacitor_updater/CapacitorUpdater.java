@@ -92,6 +92,7 @@ public class CapacitorUpdater {
   public String appId = "";
   public String privateKey = "";
   public String deviceID = "";
+  public int timeout = 20000;
 
   private final FilenameFilter filter = new FilenameFilter() {
     @Override
@@ -323,7 +324,7 @@ public class CapacitorUpdater {
     }
   };
 
-  public void finishDownload(
+  public Boolean finishDownload(
     String id,
     String dest,
     String version,
@@ -359,7 +360,7 @@ public class CapacitorUpdater {
       ) {
         Log.e(
           CapacitorUpdater.TAG,
-          "Error checksum " + next.getChecksum() + " " + checksum
+          "Error checksum " + checksumRes + " " + checksum
         );
         this.sendStats("checksum_fail", getCurrentBundle().getVersionName());
         final Boolean res = this.delete(id);
@@ -394,7 +395,9 @@ public class CapacitorUpdater {
           "download_fail",
           CapacitorUpdater.this.getCurrentBundle().getVersionName()
         );
+      return false;
     }
+    return true;
   }
 
   private void downloadFileBackground(
@@ -593,11 +596,15 @@ public class CapacitorUpdater {
     this.notifyDownload(id, 5);
     final String dest = this.randomString(10);
     final File downloaded = this.downloadFile(id, url, dest);
-    this.finishDownload(id, dest, version, sessionKey, checksum, false);
+    final Boolean finished =
+      this.finishDownload(id, dest, version, sessionKey, checksum, false);
+    final BundleStatus status = finished
+      ? BundleStatus.PENDING
+      : BundleStatus.ERROR;
     BundleInfo info = new BundleInfo(
       id,
       version,
-      BundleStatus.PENDING,
+      status,
       new Date(System.currentTimeMillis()),
       checksum
     );

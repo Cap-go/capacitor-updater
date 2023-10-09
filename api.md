@@ -1,5 +1,8 @@
 ---
-description: All available method of the plugin
+title: "Methods"
+description: "All available method of the plugin"
+sidebar:
+  order: 2
 ---
 
 See the Github [Readme](https://github.com/Cap-go/capacitor-updater) for more information.
@@ -19,6 +22,7 @@ See the Github [Readme](https://github.com/Cap-go/capacitor-updater) for more in
 * [`cancelDelay()`](#canceldelay)
 * [`getLatest()`](#getlatest)
 * [`setChannel(...)`](#setchannel)
+* [`unsetChannel(...)`](#unsetchannel)
 * [`getChannel()`](#getchannel)
 * [`setCustomId(...)`](#setcustomid)
 * [`addListener('download', ...)`](#addlistenerdownload)
@@ -238,6 +242,23 @@ Set Channel for this device, the channel have to allow self assignement to make 
 --------------------
 
 
+## unsetChannel(...)
+
+```typescript
+unsetChannel(options: UnsetChannelOptions) => Promise<void>
+```
+
+Unset Channel for this device, the device will return to the default channel
+
+| Param         | Type                                                                |
+| ------------- | ------------------------------------------------------------------- |
+| **`options`** | <code><a href="#unsetchanneloptions">UnsetChannelOptions</a></code> |
+
+**Since:** 4.7.0
+
+--------------------
+
+
 ## getChannel()
 
 ```typescript
@@ -276,7 +297,7 @@ Set Channel for this device
 addListener(eventName: "download", listenerFunc: DownloadChangeListener) => Promise<PluginListenerHandle> & PluginListenerHandle
 ```
 
-Listen for download event in the App, let you know when the download is started, loading and finished
+Listen for download event in the App, let you know when the download is started, loading and finished, with a percent value
 
 | Param              | Type                                                                      |
 | ------------------ | ------------------------------------------------------------------------- |
@@ -566,6 +587,13 @@ Remove all listeners for this plugin.
 | Prop                    | Type                 |
 | ----------------------- | -------------------- |
 | **`channel`**           | <code>string</code>  |
+| **`triggerAutoUpdate`** | <code>boolean</code> |
+
+
+### UnsetChannelOptions
+
+| Prop                    | Type                 |
+| ----------------------- | -------------------- |
 | **`triggerAutoUpdate`** | <code>boolean</code> |
 
 

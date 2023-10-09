@@ -2,6 +2,83 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.3.13](https://github.com/Cap-go/capacitor-updater/compare/5.3.12...5.3.13) (2023-10-09)
+
+
+### Bug Fixes
+
+* add proguard file in npm ([cb9fc31](https://github.com/Cap-go/capacitor-updater/commit/cb9fc3122f77f5a5296fc2373b4809200a14f567))
+
+### [5.3.12](https://github.com/Cap-go/capacitor-updater/compare/5.3.11...5.3.12) (2023-10-09)
+
+### [5.3.11](https://github.com/Cap-go/capacitor-updater/compare/5.3.10...5.3.11) (2023-10-05)
+
+
+### Bug Fixes
+
+* issue wrong condition ([ebb8c71](https://github.com/Cap-go/capacitor-updater/commit/ebb8c710f9976643b0c247dcb768efccdab0748a))
+
+### [5.3.10](https://github.com/Cap-go/capacitor-updater/compare/5.3.9...5.3.10) (2023-10-02)
+
+
+### Bug Fixes
+
+* **deps:** update dependency com.android.tools.build:gradle to v8.1.2 ([3d1320d](https://github.com/Cap-go/capacitor-updater/commit/3d1320d20fc631a34f24098f4c2d155becc7f497))
+
+### [5.3.9](https://github.com/Cap-go/capacitor-updater/compare/5.3.8...5.3.9) (2023-09-30)
+
+
+### Bug Fixes
+
+* add proguard rules ([12c693e](https://github.com/Cap-go/capacitor-updater/commit/12c693ea13f57229cdadca3828a091dbdbe21fb0))
+
+### [5.3.8](https://github.com/Cap-go/capacitor-updater/compare/5.3.7...5.3.8) (2023-09-30)
+
+
+### Bug Fixes
+
+* api doc file ([20c3be6](https://github.com/Cap-go/capacitor-updater/commit/20c3be6d49889f67083b4d015ee8103cb86067bf))
+
+### [5.3.7](https://github.com/Cap-go/capacitor-updater/compare/5.3.6...5.3.7) (2023-09-30)
+
+
+### Bug Fixes
+
+* auto doc update ([c5260d2](https://github.com/Cap-go/capacitor-updater/commit/c5260d2373b70ffdca33fa78bc04b931da388ef9))
+* cache version ([8b9b69d](https://github.com/Cap-go/capacitor-updater/commit/8b9b69d40d9e92cbf8323e8e76ee4a65625b6ac0))
+
+### [5.3.6](https://github.com/Cap-go/capacitor-updater/compare/5.3.5...5.3.6) (2023-09-30)
+
+
+### Bug Fixes
+
+* bild cache ios and android ([ef269df](https://github.com/Cap-go/capacitor-updater/commit/ef269df5bdef2c7731ce1dd0f7ad0c11b88a1f5e))
+* download not reject android ([2ba6645](https://github.com/Cap-go/capacitor-updater/commit/2ba664563b2327e8779fb0f2273779e0ef2d5d07))
+
+### [5.3.5](https://github.com/Cap-go/capacitor-updater/compare/5.3.4...5.3.5) (2023-09-30)
+
+
+### Bug Fixes
+
+* log mesage ([d925aec](https://github.com/Cap-go/capacitor-updater/commit/d925aeca0028fb268583b482e626dca6020c88f6))
+
+### [5.3.4](https://github.com/Cap-go/capacitor-updater/compare/5.3.3...5.3.4) (2023-09-29)
+
+### [5.3.3](https://github.com/Cap-go/capacitor-updater/compare/5.3.2...5.3.3) (2023-09-29)
+
+
+### Bug Fixes
+
+* add missing definition ([db03991](https://github.com/Cap-go/capacitor-updater/commit/db039913a2dc40b179a7ad9467014344955244a4))
+* build issues ([5ead260](https://github.com/Cap-go/capacitor-updater/commit/5ead260b64cfc0e745d8328819da53c4770938b1))
+
+### [5.3.2](https://github.com/Cap-go/capacitor-updater/compare/5.3.1...5.3.2) (2023-09-27)
+
+
+### Bug Fixes
+
+* doc ([b54babb](https://github.com/Cap-go/capacitor-updater/commit/b54babbd6ca735b816e899b75a7206652769079e))
+
 ### [5.3.1](https://github.com/Cap-go/capacitor-updater/compare/5.3.0...5.3.1) (2023-09-14)
 
 
