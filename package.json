@@ -10,6 +10,7 @@
   "unpkg": "dist/plugin.js",
   "files": [
     "android/src/main/",
+    "android/proguard-rules.pro",
     "android/build.gradle",
     "dist/",
     "ios/Plugin/",
