@@ -57,7 +57,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
   private static final String channelUrlDefault =
     "https://api.capgo.app/channel_self";
 
-  private final String PLUGIN_VERSION = "5.3.1";
+  private final String PLUGIN_VERSION = "5.3.13";
   private static final String DELAY_CONDITION_PREFERENCES = "";
 
   private SharedPreferences.Editor editor;
@@ -160,6 +160,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     final CapConfig config = CapConfig.loadDefault(this.getActivity());
     this.implementation.appId = config.getString("appId", "");
+    this.implementation.appId =
+      this.getConfig().getString("appId", this.implementation.appId);
+    if ("".equals(implementation.appId)) {
+      Log.i(CapacitorUpdater.TAG, "appId: " + implementation.appId);
+      throw new RuntimeException("appId is required");
+    }
     this.implementation.privateKey =
       this.getConfig().getString("privateKey", defaultPrivateKey);
     this.implementation.statsUrl =
@@ -521,8 +527,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 sessionKey,
                 checksum
               );
-
-          call.resolve(downloaded.toJSON());
+          if (downloaded.isErrorStatus()) {
+            throw new RuntimeException(
+              "Download failed: " + downloaded.getStatus()
+            );
+          } else {
+            call.resolve(downloaded.toJSON());
+          }
         } catch (final IOException e) {
           Log.e(CapacitorUpdater.TAG, "Failed to download from: " + url, e);
           call.reject("Failed to download from: " + url, e);

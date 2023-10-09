@@ -252,6 +252,10 @@ export interface SetChannelOptions {
   triggerAutoUpdate?: boolean;
 }
 
+export interface UnsetChannelOptions {
+  triggerAutoUpdate?: boolean;
+}
+
 export interface SetCustomIdOptions {
   customId: string;
 }
@@ -415,6 +419,14 @@ export interface CapacitorUpdaterPlugin {
   setChannel(options: SetChannelOptions): Promise<channelRes>;
 
   /**
+   * Unset Channel for this device, the device will return to the default channel
+   *
+   * @returns {Promise<channelRes>} an Promise resolved when channel is set
+   * @throws An error if the something went wrong
+   * @since 4.7.0
+   */
+  unsetChannel(options: UnsetChannelOptions): Promise<void>;
+  /**
    * get Channel for this device
    *
    * @returns {Promise<channelRes>} an Promise resolved with channel info
@@ -434,7 +446,7 @@ export interface CapacitorUpdaterPlugin {
   setCustomId(options: SetCustomIdOptions): Promise<void>;
 
   /**
-   * Listen for download event in the App, let you know when the download is started, loading and finished
+   * Listen for download event in the App, let you know when the download is started, loading and finished, with a percent value
    *
    * @since 2.0.11
    */
