@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.3.13](https://github.com/Cap-go/capacitor-updater/compare/5.3.12...5.3.13) (2023-10-09)
+
+
+### Bug Fixes
+
+* add proguard file in npm ([cb9fc31](https://github.com/Cap-go/capacitor-updater/commit/cb9fc3122f77f5a5296fc2373b4809200a14f567))
+
+### [5.3.12](https://github.com/Cap-go/capacitor-updater/compare/5.3.11...5.3.12) (2023-10-09)
+
+### [5.3.11](https://github.com/Cap-go/capacitor-updater/compare/5.3.10...5.3.11) (2023-10-05)
+
+
+### Bug Fixes
+
+* issue wrong condition ([ebb8c71](https://github.com/Cap-go/capacitor-updater/commit/ebb8c710f9976643b0c247dcb768efccdab0748a))
+
 ### [5.3.10](https://github.com/Cap-go/capacitor-updater/compare/5.3.9...5.3.10) (2023-10-02)
 
 

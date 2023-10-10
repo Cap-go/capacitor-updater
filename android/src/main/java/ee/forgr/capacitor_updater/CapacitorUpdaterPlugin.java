@@ -58,7 +58,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
   private static final String channelUrlDefault =
     "https://api.capgo.app/channel_self";
 
-  private final String PLUGIN_VERSION = "5.3.10";
+  private final String PLUGIN_VERSION = "5.3.13";
   private static final String DELAY_CONDITION_PREFERENCES = "";
 
   private SharedPreferences.Editor editor;
@@ -163,7 +163,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     this.implementation.appId = config.getString("appId", "");
     this.implementation.appId =
       this.getConfig().getString("appId", this.implementation.appId);
-    if (!"".equals(implementation.appId)) {
+    if ("".equals(implementation.appId)) {
       Log.i(CapacitorUpdater.TAG, "appId: " + implementation.appId);
       throw new RuntimeException("appId is required");
     }
