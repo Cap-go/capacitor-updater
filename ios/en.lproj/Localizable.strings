@@ -1,0 +1,40 @@
+/*
+  Localizable.strings
+  Plugin
+
+  Created by Virtoustack on 10/10/23.
+  Copyright © 2023 Capgo. All rights reserved.
+*/
+
+// The strings can be accessed by: String(localized: <key_name>)
+// For example: String(localized: "hello_world")
+
+"hello_world" = "Hello World";
+"success" = "success";
+"failed" = "failed";
+"downloadWithoutURL" = "Download called without URL";
+"downloadWithoutVersion" = "Download called without version";
+"failedToDownload" = "Failed to download from: ";
+"reloadFailed" = "Reload failed";
+"nextWithoutId" = "Next called without id";
+"setNextFailed": "Set next version failed. ";
+"doesNotExist": " does not exist.";
+
+"setWithoutId" = "Set called without id";
+"updateFailed" = "Update failed. ";
+"deleteWithoutId" = "Delete called without id";
+"deleteFailed" = "Delete failed. ";
+"setChannelCalled" = "setChannel called without channel";
+"setCustomIdCalled" = "setCustomId called without customId";
+"resetFailed" = "Reset failed";
+"setMultiDelayCalled" = "setMultiDelay called without delayCondition";
+"failedToDelayUpdate" = "Failed to delay update";
+
+"fileUnzip" = "The file cannot be unzip";
+"cannotCreateFolder" = "The folder cannot be created";
+"cannotDeleteFolder" = "The folder cannot be deleted";
+"fileCannotBeUnflat" = "The file cannot be unflat";
+"unexpectedError" = "An unexpected error occurred.";
+"decodingFailedForKey" = "Decoding the zip failed with this key";
+"cannotWrite" = "Cannot write to the destination";
+"channelURLNotSet" = "Channel URL is not set";

@@ -1,0 +1,40 @@
+/*
+  Localizable.strings
+  Plugin
+
+  Created by Virtoustack on 10/10/23.
+  Copyright © 2023 Capgo. All rights reserved.
+*/
+
+// The strings can be accessed by: String(localized: <key_name>)
+// For example: String(localized: "hello_world")
+
+"hello_world" = "Hola Mundo";
+"success" = "éxito";
+"failed" = "fallido";
+"downloadWithoutURL" = "Descarga llamada sin URL";
+"downloadWithoutVersion" = "Descarga llamada sin versión";
+"failedToDownload" = "No se pudo descargar desde la: ";
+"reloadFailed" = "recarga fallida";
+"nextWithoutId" = "Siguiente llamada sin identificación";
+"setNextFailed": "Error al establecer la siguiente versión. ";
+"doesNotExist": " no existe.";
+
+"setWithoutId" = "Conjunto llamado sin identificación";
+"updateFailed" = "La actualización falló. ";
+"deleteWithoutId" = "Eliminar llamada sin id";
+"deleteFailed" = "Error al eliminar. ";
+"setChannelCalled" = "setChannel llamado sin canal";
+"setCustomIdCalled" = "SetCustomId llamada sin customId";
+"resetFailed" = "Error al restablecer";
+"setMultiDelayCalled" = "SetMultiDelay llamada sin delayCondition";
+"failedToDelayUpdate" = "No se pudo retrasar la actualización";
+
+"fileUnzip" = "El archivo no se puede descomprimir"
+"cannotCreateFolder" = "No se puede crear la carpeta";
+"cannotDeleteFolder" = "La carpeta no se puede eliminar";
+"fileCannotBeUnflat" = "El archivo tiene que ser plana";
+"unexpectedError" = "An unexpected error occurred.";
+"decodingFailedForKey" = "La decodificación del zip falló con esta clave";
+"cannotWrite" = "No se puede escribir al destino";
+"channelURLNotSet" = "La URL del canal no está configurada";

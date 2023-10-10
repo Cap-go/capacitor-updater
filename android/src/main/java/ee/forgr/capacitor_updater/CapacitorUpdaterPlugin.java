@@ -13,6 +13,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.content.res.Resources;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
@@ -84,6 +85,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
   //  private static final CountDownLatch semaphoreReady = new CountDownLatch(1);
   private static final Phaser semaphoreReady = new Phaser(1);
 
+  private Resources resources = Resources.getSystem();
+
   public Thread startNewThread(final Runnable function, Number waitTime) {
     Thread bgTask = new Thread(() -> {
       try {
@@ -148,12 +151,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
       this.currentVersionNative =
         new Version(this.getConfig().getString("version", pInfo.versionName));
     } catch (final PackageManager.NameNotFoundException e) {
-      Log.e(CapacitorUpdater.TAG, "Error instantiating implementation", e);
+      Log.e(CapacitorUpdater.TAG, resources.getString(R.string.errorInstantiating), e);
       return;
     } catch (final Exception e) {
       Log.e(
         CapacitorUpdater.TAG,
-        "Error getting current native app version",
+        resources.getString(R.string.errorGettingCurrentVersion),
         e
       );
       return;
@@ -182,11 +185,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
     this.editor.putString("appUUID", this.implementation.deviceID);
     Log.i(
       CapacitorUpdater.TAG,
-      "init for device " + this.implementation.deviceID
+      resources.getString(R.string.initForDevice, this.implementation.deviceID)
     );
     Log.i(
       CapacitorUpdater.TAG,
-      "version native " + this.currentVersionNative.getOriginalString()
+      resources.getString(R.string.versionNative, this.currentVersionNative.getOriginalString())
     );
     this.autoDeleteFailed =
       this.getConfig().getBoolean("autoDeleteFailed", true);
@@ -223,7 +226,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         CapacitorUpdaterPlugin.this.semaphoreReady.getPhase()
       );
     } catch (InterruptedException e) {
-      Log.i(CapacitorUpdater.TAG, "semaphoreWait InterruptedException");
+      Log.i(CapacitorUpdater.TAG, "semaphoreWait " + resources.getString(R.string.interruptedException));
       e.printStackTrace();
     } catch (TimeoutException e) {
       throw new RuntimeException(e);
@@ -277,7 +280,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         ) {
           Log.i(
             CapacitorUpdater.TAG,
-            "New native version detected: " + this.currentVersionNative
+            resources.getString(R.string.newNativeVersionDetected, this.currentVersionNative)
           );
           this.implementation.reset(true);
           final List<BundleInfo> installed = this.implementation.list();
@@ -285,13 +288,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
             try {
               Log.i(
                 CapacitorUpdater.TAG,
-                "Deleting obsolete bundle: " + bundle.getId()
+                resources.getString(R.string.deletingPreviousBundle) + bundle.getId()
               );
               this.implementation.delete(bundle.getId());
             } catch (final Exception e) {
               Log.e(
                 CapacitorUpdater.TAG,
-                "Failed to delete: " + bundle.getId(),
+                resources.getString(R.string.failedToDelete) + bundle.getId(),
                 e
               );
             }
@@ -300,14 +303,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
       } catch (final Exception e) {
         Log.e(
           CapacitorUpdater.TAG,
-          "Could not determine the current version",
+          resources.getString(R.string.couldNotDetermine),
           e
         );
       }
     } catch (final Exception e) {
       Log.e(
         CapacitorUpdater.TAG,
-        "Error calculating previous native version",
+        resources.getString(R.string.errorCalculating),
         e
       );
     }
@@ -342,7 +345,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
           );
       }
     } catch (final Exception e) {
-      Log.e(CapacitorUpdater.TAG, "Could not notify listeners", e);
+      Log.e(CapacitorUpdater.TAG, resources.getString(R.string.couldNotNotify), e);
     }
   }
 
@@ -353,8 +356,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
       ret.put("version", this.implementation.versionBuild);
       call.resolve(ret);
     } catch (final Exception e) {
-      Log.e(CapacitorUpdater.TAG, "Could not get version", e);
-      call.reject("Could not get version", e);
+      Log.e(CapacitorUpdater.TAG, resources.getString(R.string.couldNotDetermine), e);
+      call.reject(resources.getString(R.string.couldNotGetVersion), e);
     }
   }
 
@@ -365,8 +368,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
       ret.put("deviceId", this.implementation.deviceID);
       call.resolve(ret);
     } catch (final Exception e) {
-      Log.e(CapacitorUpdater.TAG, "Could not get device id", e);
-      call.reject("Could not get device id", e);
+      Log.e(CapacitorUpdater.TAG, resources.getString(R.string.couldNotGetDeviceId), e);
+      call.reject(resources.getString(R.string.couldNotGetDeviceId), e);
     }
   }
 
@@ -374,8 +377,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
   public void setCustomId(final PluginCall call) {
     final String customId = call.getString("customId");
     if (customId == null) {
-      Log.e(CapacitorUpdater.TAG, "setCustomId called without customId");
-      call.reject("setCustomId called without customId");
+      Log.e(CapacitorUpdater.TAG, resources.getString(R.string.setCustomIdCalled));
+      call.reject(resources.getString(R.string.setCustomIdCalled));
       return;
     }
     this.implementation.customId = customId;
@@ -388,8 +391,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
       ret.put("version", this.PLUGIN_VERSION);
       call.resolve(ret);
     } catch (final Exception e) {
-      Log.e(CapacitorUpdater.TAG, "Could not get plugin version", e);
-      call.reject("Could not get plugin version", e);
+      Log.e(CapacitorUpdater.TAG, resources.getString(R.string.couldNotGetPluginVersion), e);
+      call.reject(resources.getString(R.string.couldNotGetPluginVersion), e);
     }
   }
 
@@ -439,14 +442,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
     );
 
     if (channel == null) {
-      Log.e(CapacitorUpdater.TAG, "setChannel called without channel");
-      call.reject("setChannel called without channel");
+      Log.e(CapacitorUpdater.TAG, resources.getString(R.string.setChannelCalledWithoutChannel));
+      call.reject(resources.getString(R.string.setChannelCalledWithoutChannel));
       return;
     }
     try {
       Log.i(
         CapacitorUpdater.TAG,
-        "setChannel " + channel + " triggerAutoUpdate: " + triggerAutoUpdate
+        resources.getString(R.string.setChannelTrigger, channel, triggerAutoUpdate.toString())
       );
       startNewThread(() -> {
         CapacitorUpdaterPlugin.this.implementation.setChannel(
@@ -461,7 +464,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 ) {
                   Log.i(
                     CapacitorUpdater.TAG,
-                    "Calling autoupdater after channel change!"
+                    resources.getString(R.string.callingAutoUpdater)
                   );
                   backgroundDownload();
                 }
@@ -471,15 +474,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
           );
       });
     } catch (final Exception e) {
-      Log.e(CapacitorUpdater.TAG, "Failed to setChannel: " + channel, e);
-      call.reject("Failed to setChannel: " + channel, e);
+      Log.e(CapacitorUpdater.TAG, resources.getString(R.string.failedToSetChannel) + channel, e);
+      call.reject(resources.getString(R.string.failedToSetChannel) + channel, e);
     }
   }
 
   @PluginMethod
   public void getChannel(final PluginCall call) {
     try {
-      Log.i(CapacitorUpdater.TAG, "getChannel");
+      Log.i(CapacitorUpdater.TAG, resources.getString(R.string.getChannel));
       startNewThread(() -> {
         CapacitorUpdaterPlugin.this.implementation.getChannel(res -> {
             if (res.has("error")) {
@@ -490,8 +493,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
           });
       });
     } catch (final Exception e) {
-      Log.e(CapacitorUpdater.TAG, "Failed to getChannel", e);
-      call.reject("Failed to getChannel", e);
+      Log.e(CapacitorUpdater.TAG, resources.getString(R.string.failedToGetChannel), e);
+      call.reject(resources.getString(R.string.failedToGetChannel), e);
     }
   }
 
@@ -502,17 +505,17 @@ public class CapacitorUpdaterPlugin extends Plugin {
     final String sessionKey = call.getString("sessionKey", "");
     final String checksum = call.getString("checksum", "");
     if (url == null) {
-      Log.e(CapacitorUpdater.TAG, "Download called without url");
-      call.reject("Download called without url");
+      Log.e(CapacitorUpdater.TAG, resources.getString(R.string.downloadCalledWithoutURL));
+      call.reject(resources.getString(R.string.downloadCalledWithoutURL));
       return;
     }
     if (version == null) {
-      Log.e(CapacitorUpdater.TAG, "Download called without version");
-      call.reject("Download called without version");
+      Log.e(CapacitorUpdater.TAG, resources.getString(R.string.downloadCalledWithoutVersion));
+      call.reject(resources.getString(R.string.downloadCalledWithoutVersion));
       return;
     }
     try {
-      Log.i(CapacitorUpdater.TAG, "Downloading " + url);
+      Log.i(CapacitorUpdater.TAG, resources.getString(R.string.downloading, url));
       startNewThread(() -> {
         try {
           final BundleInfo downloaded =
@@ -530,8 +533,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
             call.resolve(downloaded.toJSON());
           }
         } catch (final IOException e) {
-          Log.e(CapacitorUpdater.TAG, "Failed to download from: " + url, e);
-          call.reject("Failed to download from: " + url, e);
+          Log.e(CapacitorUpdater.TAG, resources.getString(R.string.failedToDownload, url), e);
+          call.reject(resources.getString(R.string.failedToDownload, url), e);
           final JSObject ret = new JSObject();
           ret.put("version", version);
           CapacitorUpdaterPlugin.this.notifyListeners("downloadFailed", ret);
@@ -544,8 +547,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
       });
     } catch (final Exception e) {
-      Log.e(CapacitorUpdater.TAG, "Failed to download from: " + url, e);
-      call.reject("Failed to download from: " + url, e);
+      Log.e(CapacitorUpdater.TAG, resources.getString(R.string.failedToDownload, url), e);
+      call.reject(resources.getString(R.string.failedToDownload, url), e);
       final JSObject ret = new JSObject();
       ret.put("version", version);
       CapacitorUpdaterPlugin.this.notifyListeners("downloadFailed", ret);
@@ -561,7 +564,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
   protected boolean _reload() {
     final String path = this.implementation.getCurrentBundlePath();
     this.semaphoreUp();
-    Log.i(CapacitorUpdater.TAG, "Reloading: " + path);
+    Log.i(CapacitorUpdater.TAG, resources.getString(R.string.reloading, path));
     if (this.implementation.isUsingBuiltin()) {
       this.bridge.setServerAssetPath(path);
     } else {
@@ -578,12 +581,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
       if (this._reload()) {
         call.resolve();
       } else {
-        Log.e(CapacitorUpdater.TAG, "Reload failed");
-        call.reject("Reload failed");
+        Log.e(CapacitorUpdater.TAG, resources.getString(R.string.reloadFailed));
+        call.reject(resources.getString(R.string.reloadFailed));
       }
     } catch (final Exception e) {
-      Log.e(CapacitorUpdater.TAG, "Could not reload", e);
-      call.reject("Could not reload", e);
+      Log.e(CapacitorUpdater.TAG, resources.getString(R.string.reloadFailed), e);
+      call.reject(resources.getString(R.string.couldNotReload), e);
     }
   }
 
@@ -591,24 +594,24 @@ public class CapacitorUpdaterPlugin extends Plugin {
   public void next(final PluginCall call) {
     final String id = call.getString("id");
     if (id == null) {
-      Log.e(CapacitorUpdater.TAG, "Next called without id");
-      call.reject("Next called without id");
+      Log.e(CapacitorUpdater.TAG, resources.getString(R.string.nextCalledWithoutId));
+      call.reject(resources.getString(R.string.nextCalledWithoutId));
       return;
     }
     try {
-      Log.i(CapacitorUpdater.TAG, "Setting next active id " + id);
+      Log.i(CapacitorUpdater.TAG, resources.getString(R.string.settingNextActiveId, id));
       if (!this.implementation.setNextBundle(id)) {
         Log.e(
           CapacitorUpdater.TAG,
-          "Set next id failed. Bundle " + id + " does not exist."
+          resources.getString(R.string.setNextIdFailed, id)
         );
-        call.reject("Set next id failed. Bundle " + id + " does not exist.");
+        call.reject(resources.getString(R.string.setNextIdFailed, id));
       } else {
         call.resolve(this.implementation.getBundleInfo(id).toJSON());
       }
     } catch (final Exception e) {
-      Log.e(CapacitorUpdater.TAG, "Could not set next id " + id, e);
-      call.reject("Could not set next id: " + id, e);
+      Log.e(CapacitorUpdater.TAG, resources.getString(R.string.couldNotSetNextId, id), e);
+      call.reject(resources.getString(R.string.couldNotSetNextId, id), e);
     }
   }
 
@@ -616,22 +619,22 @@ public class CapacitorUpdaterPlugin extends Plugin {
   public void set(final PluginCall call) {
     final String id = call.getString("id");
     if (id == null) {
-      Log.e(CapacitorUpdater.TAG, "Set called without id");
-      call.reject("Set called without id");
+      Log.e(CapacitorUpdater.TAG, resources.getString(R.string.setCalledWithoutId));
+      call.reject(resources.getString(R.string.setCalledWithoutId));
       return;
     }
     try {
-      Log.i(CapacitorUpdater.TAG, "Setting active bundle " + id);
+      Log.i(CapacitorUpdater.TAG, resources.getString(R.string.settingActiveBundle, id));
       if (!this.implementation.set(id)) {
-        Log.i(CapacitorUpdater.TAG, "No such bundle " + id);
-        call.reject("Update failed, id " + id + " does not exist.");
+        Log.i(CapacitorUpdater.TAG, resources.getString(R.string.noSuchBundle, id));
+        call.reject(resources.getString(R.string.updateFailedId, id));
       } else {
-        Log.i(CapacitorUpdater.TAG, "Bundle successfully set to " + id);
+        Log.i(CapacitorUpdater.TAG, resources.getString(R.string.bundleSuccessfullySetTo, id));
         this.reload(call);
       }
     } catch (final Exception e) {
-      Log.e(CapacitorUpdater.TAG, "Could not set id " + id, e);
-      call.reject("Could not set id " + id, e);
+      Log.e(CapacitorUpdater.TAG, resources.getString(R.string.couldNotSetId, id), e);
+      call.reject(resources.getString(R.string.couldNotSetId, id), e);
     }
   }
 
@@ -639,11 +642,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
   public void delete(final PluginCall call) {
     final String id = call.getString("id");
     if (id == null) {
-      Log.e(CapacitorUpdater.TAG, "missing id");
-      call.reject("missing id");
+      Log.e(CapacitorUpdater.TAG, resources.getString(R.string.missingId));
+      call.reject(resources.getString(R.string.missingId));
       return;
     }
-    Log.i(CapacitorUpdater.TAG, "Deleting id " + id);
+    Log.i(CapacitorUpdater.TAG, resources.getString(R.string.deletingId, id));
     try {
       final Boolean res = this.implementation.delete(id);
       if (res) {
@@ -651,13 +654,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
       } else {
         Log.e(
           CapacitorUpdater.TAG,
-          "Delete failed, id " + id + " does not exist"
+          resources.getString(R.string.deleteFailed, id)
         );
-        call.reject("Delete failed, id " + id + " does not exist");
+        call.reject(resources.getString(R.string.deleteFailed, id));
       }
     } catch (final Exception e) {
-      Log.e(CapacitorUpdater.TAG, "Could not delete id " + id, e);
-      call.reject("Could not delete id " + id, e);
+      Log.e(CapacitorUpdater.TAG, resources.getString(R.string.couldNotDeleteId, id), e);
+      call.reject(resources.getString(R.string.couldNotDeleteId, id), e);
     }
   }
 
@@ -673,8 +676,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
       ret.put("bundles", values);
       call.resolve(ret);
     } catch (final Exception e) {
-      Log.e(CapacitorUpdater.TAG, "Could not list bundles", e);
-      call.reject("Could not list bundles", e);
+      Log.e(CapacitorUpdater.TAG, resources.getString(R.string.couldNotListBundles), e);
+      call.reject(resources.getString(R.string.couldNotListBundles), e);
     }
   }
 
@@ -716,11 +719,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
     this.implementation.reset();
 
     if (toLastSuccessful && !fallback.isBuiltin()) {
-      Log.i(CapacitorUpdater.TAG, "Resetting to: " + fallback);
+      Log.i(CapacitorUpdater.TAG, resources.getString(R.string.resettingTo, fallback));
       return this.implementation.set(fallback) && this._reload();
     }
 
-    Log.i(CapacitorUpdater.TAG, "Resetting to native.");
+    Log.i(CapacitorUpdater.TAG, resources.getString(R.string.resettingToNative));
     return this._reload();
   }
 
@@ -735,11 +738,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
         call.resolve();
         return;
       }
-      Log.e(CapacitorUpdater.TAG, "Reset failed");
-      call.reject("Reset failed");
+      Log.e(CapacitorUpdater.TAG, resources.getString(R.string.resetFailed));
+      call.reject(resources.getString(R.string.resetFailed));
     } catch (final Exception e) {
-      Log.e(CapacitorUpdater.TAG, "Reset failed", e);
-      call.reject("Reset failed", e);
+      Log.e(CapacitorUpdater.TAG, resources.getString(R.string.resetFailed), e);
+      call.reject(resources.getString(R.string.resetFailed), e);
     }
   }
 
@@ -752,8 +755,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
       ret.put("native", this.currentVersionNative);
       call.resolve(ret);
     } catch (final Exception e) {
-      Log.e(CapacitorUpdater.TAG, "Could not get current bundle", e);
-      call.reject("Could not get current bundle", e);
+      Log.e(CapacitorUpdater.TAG, resources.getString(R.string.couldNotGetCurrentBundle), e);
+      call.reject(resources.getString(R.string.couldNotGetCurrentBundle), e);
     }
   }
 
@@ -764,7 +767,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
       this.implementation.setSuccess(bundle, this.autoDeletePrevious);
       Log.i(
         CapacitorUpdater.TAG,
-        "Current bundle loaded successfully. ['notifyAppReady()' was called] " +
+      resources.getString(R.string.currentBundleSuccess) +
         bundle
       );
       Log.i(CapacitorUpdater.TAG, "semaphoreReady countDown");
@@ -777,10 +780,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
     } catch (final Exception e) {
       Log.e(
         CapacitorUpdater.TAG,
-        "Failed to notify app ready state. [Error calling 'notifyAppReady()']",
+        resources.getString(R.string.failedToNotifyState),
         e
       );
-      call.reject("Failed to commit app ready state.", e);
+      call.reject(resources.getString(R.string.failedToCommit), e);
     }
   }
 
@@ -791,23 +794,23 @@ public class CapacitorUpdaterPlugin extends Plugin {
       if (delayConditions == null) {
         Log.e(
           CapacitorUpdater.TAG,
-          "setMultiDelay called without delayCondition"
+          resources.getString(R.string.setMultiDelayCalled)
         );
-        call.reject("setMultiDelay called without delayCondition");
+        call.reject(resources.getString(R.string.setMultiDelayCalled));
         return;
       }
       if (_setMultiDelay(delayConditions.toString())) {
         call.resolve();
       } else {
-        call.reject("Failed to delay update");
+        call.reject(resources.getString(R.string.failedToDelayUpdateOnly));
       }
     } catch (final Exception e) {
       Log.e(
         CapacitorUpdater.TAG,
-        "Failed to delay update, [Error calling 'setMultiDelay()']",
+        resources.getString(R.string.failedToDelayUpdate),,
         e
       );
-      call.reject("Failed to delay update", e);
+      call.reject(resources.getString(R.string.failedToDelayUpdateOnly), e);
     }
   }
 
@@ -815,12 +818,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
     try {
       this.editor.putString(DELAY_CONDITION_PREFERENCES, delayConditions);
       this.editor.commit();
-      Log.i(CapacitorUpdater.TAG, "Delay update saved");
+      Log.i(CapacitorUpdater.TAG, resources.getString(R.string.delayUpdateSaved));
       return true;
     } catch (final Exception e) {
       Log.e(
         CapacitorUpdater.TAG,
-        "Failed to delay update, [Error calling '_setMultiDelay()']",
+        resources.getString(R.string.failedToDelayUpdate2),
         e
       );
       return false;
@@ -831,10 +834,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
     try {
       this.editor.remove(DELAY_CONDITION_PREFERENCES);
       this.editor.commit();
-      Log.i(CapacitorUpdater.TAG, "All delays canceled from " + source);
+      Log.i(CapacitorUpdater.TAG, resources.getString(R.string.allDelaysCancelledFrom, source));
       return true;
     } catch (final Exception e) {
-      Log.e(CapacitorUpdater.TAG, "Failed to cancel update delay", e);
+      Log.e(CapacitorUpdater.TAG, resources.getString(R.string.failedToCancelUpdateDelay), e);
       return false;
     }
   }
@@ -844,7 +847,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     if (this._cancelDelay("JS")) {
       call.resolve();
     } else {
-      call.reject("Failed to cancel delay");
+      call.reject(resources.getString(R.string.failedToCancel));
     }
   }
 
@@ -919,7 +922,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
       // log warning autoupdate disabled when serverUrl is set
       Log.w(
         CapacitorUpdater.TAG,
-        "AutoUpdate is automatic disabled when serverUrl is set."
+        resources.getString(R.string.autoUpdateDisabled)
       );
     }
     return (
@@ -936,8 +939,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
       ret.put("enabled", this._isAutoUpdateEnabled());
       call.resolve(ret);
     } catch (final Exception e) {
-      Log.e(CapacitorUpdater.TAG, "Could not get autoUpdate status", e);
-      call.reject("Could not get autoUpdate status", e);
+      Log.e(CapacitorUpdater.TAG, resources.getString(R.string.couldNotGetAutoUpdateStatus), e);
+      call.reject(resources.getString(R.string.couldNotGetAutoUpdateStatus), e);
     }
   }
 
@@ -950,7 +953,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     } catch (final Exception e) {
       Log.e(
         CapacitorUpdater.TAG,
-        "Failed to start " + DeferredNotifyAppReadyCheck.class.getName(),
+        resources.getString(R.string.failedToStart, DeferredNotifyAppReadyCheck.class.getName()),
         e
       );
     }
@@ -988,12 +991,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
   private Thread backgroundDownload() {
     String messageUpdate = this.implementation.directUpdate
-      ? "Update will occur now."
-      : "Update will occur next time app moves to background.";
+      ? resources.getString(R.string.updateWillOccurNow)
+      : resources.getString(R.string.updateWillOccurNext);
     return startNewThread(() -> {
       Log.i(
         CapacitorUpdater.TAG,
-        "Check for update via: " + CapacitorUpdaterPlugin.this.updateUrl
+        resources.getString(R.string.checkForUpdateVia, CapacitorUpdaterPlugin.this.updateUrl)
       );
       CapacitorUpdaterPlugin.this.implementation.getLatest(
           CapacitorUpdaterPlugin.this.updateUrl,
@@ -1004,7 +1007,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
               if (res.has("message")) {
                 Log.i(
                   CapacitorUpdater.TAG,
-                  "API message " + res.get("message")
+                  resources.getString(R.string.apiMessage, res.get("message"))
                 );
                 if (
                   res.has("major") &&
@@ -1031,9 +1034,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 !res.has("url") ||
                 !CapacitorUpdaterPlugin.this.isValidURL(res.getString("url"))
               ) {
-                Log.e(CapacitorUpdater.TAG, "Error no url or wrong format");
+                Log.e(CapacitorUpdater.TAG, resources.getString(R.string.noUrlOrWrongFormat));
                 CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                    "Error no url or wrong format",
+                    resources.getString(R.string.noUrlOrWrongFormat),
                     current.getVersionName(),
                     current,
                     true
@@ -1057,10 +1060,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
                   if (latest.isErrorStatus()) {
                     Log.e(
                       CapacitorUpdater.TAG,
-                      "Latest bundle already exists, and is in error state. Aborting update."
+                      resources.getString(R.string.latestBundleAlreadyExists)
                     );
                     CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                        "Latest bundle already exists, and is in error state. Aborting update.",
+                        resources.getString(R.string.latestBundleAlreadyExists),
                         latestVersionName,
                         current,
                         true
@@ -1070,7 +1073,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                   if (latest.isDownloaded()) {
                     Log.i(
                       CapacitorUpdater.TAG,
-                      "Latest bundle already exists and download is NOT required. " +
+                      resources.getString(R.string.downloadNotRequired) +
                       messageUpdate
                     );
                     if (
@@ -1079,7 +1082,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                       CapacitorUpdaterPlugin.this.implementation.set(latest);
                       CapacitorUpdaterPlugin.this._reload();
                       CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                          "Update installed",
+                          resources.getString(R.string.updateInstalled),
                           latestVersionName,
                           latest,
                           false
@@ -1093,7 +1096,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                           latest.getId()
                         );
                       CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                          "update downloaded, will install next background",
+                          resources.getString(R.string.updateDownloaded),
                           latestVersionName,
                           latest,
                           false
@@ -1104,7 +1107,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                   if (latest.isDeleted()) {
                     Log.i(
                       CapacitorUpdater.TAG,
-                      "Latest bundle already exists and will be deleted, download will overwrite it."
+                      resources.getString(R.string.latestBundleAlreadyExistsOverwrite)
                     );
                     try {
                       final Boolean deleted =
@@ -1115,14 +1118,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
                       if (deleted) {
                         Log.i(
                           CapacitorUpdater.TAG,
-                          "Failed bundle deleted: " + latest.getVersionName()
+                          resources.getString(R.string.failedBundleDeleted) + latest.getVersionName()
                         );
                       }
                     } catch (final IOException e) {
                       Log.e(
                         CapacitorUpdater.TAG,
-                        "Failed to delete failed bundle: " +
-                        latest.getVersionName(),
+                        resources.getString(R.string.failedToDeleteFailed, latest.getVersionName()),
                         e
                       );
                     }
@@ -1132,12 +1134,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                   try {
                     Log.i(
                       CapacitorUpdater.TAG,
-                      "New bundle: " +
-                      latestVersionName +
-                      " found. Current is: " +
-                      current.getVersionName() +
-                      ". " +
-                      messageUpdate
+                      resources.getString(R.string.newBundleFound, latestVersionName, current.getVersionName(), messageUpdate)
                     );
 
                     final String url = res.getString("url");
@@ -1154,9 +1151,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         checksum
                       );
                   } catch (final Exception e) {
-                    Log.e(CapacitorUpdater.TAG, "error downloading file", e);
+                    Log.e(CapacitorUpdater.TAG, resources.getString(R.string.errorDownloadingFile), e);
                     CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                        "Error downloading file",
+                        resources.getString(R.string.errorDownloadingFile),
                         latestVersionName,
                         CapacitorUpdaterPlugin.this.implementation.getCurrentBundle(),
                         true
@@ -1166,21 +1163,19 @@ public class CapacitorUpdaterPlugin extends Plugin {
               } else {
                 Log.i(
                   CapacitorUpdater.TAG,
-                  "No need to update, " +
-                  current.getId() +
-                  " is the latest bundle."
+                  resources.getString(R.string.noNeedToUpdateWithId, current.getId())
                 );
                 CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                    "No need to update",
+                    resources.getString(R.string.noNeedToUpdate),
                     latestVersionName,
                     current,
                     false
                   );
               }
             } catch (final JSONException e) {
-              Log.e(CapacitorUpdater.TAG, "error parsing JSON", e);
+              Log.e(CapacitorUpdater.TAG, resources.getString(R.string.errorParsingJson), e);
               CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                  "Error parsing JSON",
+                  resources.getString(R.string.errorParsingJson),
                   current.getVersionName(),
                   current,
                   true
@@ -1204,7 +1199,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         type
       );
       if (delayConditionList != null && delayConditionList.size() != 0) {
-        Log.i(CapacitorUpdater.TAG, "Update delayed to next backgrounding");
+        Log.i(CapacitorUpdater.TAG, resources.getString(R.string.updateDelayed));
         return;
       }
       final BundleInfo current = this.implementation.getCurrentBundle();
@@ -1216,22 +1211,22 @@ public class CapacitorUpdaterPlugin extends Plugin {
         !next.getId().equals(current.getId())
       ) {
         // There is a next bundle waiting for activation
-        Log.d(CapacitorUpdater.TAG, "Next bundle is: " + next.getVersionName());
+        Log.d(CapacitorUpdater.TAG, resources.getString(R.string.nextBundleIs, next.getVersionName()));
         if (this.implementation.set(next) && this._reload()) {
           Log.i(
             CapacitorUpdater.TAG,
-            "Updated to bundle: " + next.getVersionName()
+            resources.getString(R.string.updateToBundle, next.getVersionName())
           );
           this.implementation.setNextBundle(null);
         } else {
           Log.e(
             CapacitorUpdater.TAG,
-            "Update to bundle: " + next.getVersionName() + " Failed!"
+            resources.getString(R.string.updateToBundleFailed, next.getVersionName())
           );
         }
       }
     } catch (final Exception e) {
-      Log.e(CapacitorUpdater.TAG, "Error during onActivityStopped", e);
+      Log.e(CapacitorUpdater.TAG, resources.getString(R.string.errorDuring), e);
     }
   }
 
@@ -1240,7 +1235,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     final BundleInfo current = this.implementation.getCurrentBundle();
 
     if (current.isBuiltin()) {
-      Log.i(CapacitorUpdater.TAG, "Built-in bundle is active. Nothing to do.");
+      Log.i(CapacitorUpdater.TAG, resources.getString(R.string.builtInBundleActive));
       return;
     }
     Log.d(CapacitorUpdater.TAG, "Current bundle is: " + current);
@@ -1248,12 +1243,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
     if (BundleStatus.SUCCESS != current.getStatus()) {
       Log.e(
         CapacitorUpdater.TAG,
-        "notifyAppReady was not called, roll back current bundle: " +
-        current.getId()
+        resources.getString(R.string.notifyAppReadyCalled,  current.getId())
       );
       Log.i(
         CapacitorUpdater.TAG,
-        "Did you forget to call 'notifyAppReady()' in your Capacitor App code?"
+        resources.getString(R.string.didYouForgetToCall)
       );
       final JSObject ret = new JSObject();
       ret.put("bundle", current.toJSON());
@@ -1266,7 +1260,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
       ) {
         Log.i(
           CapacitorUpdater.TAG,
-          "Deleting failing bundle: " + current.getVersionName()
+          resources.getString(R.string.deletingFailingBundle, current.getVersionName())
         );
         try {
           final Boolean res =
@@ -1274,13 +1268,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
           if (res) {
             Log.i(
               CapacitorUpdater.TAG,
-              "Failed bundle deleted: " + current.getVersionName()
+              resources.getString(R.string.failedBundleDeletedWithId, current.getVersionName())
             );
           }
         } catch (final IOException e) {
           Log.e(
             CapacitorUpdater.TAG,
-            "Failed to delete failed bundle: " + current.getVersionName(),
+            resources.getString(R.string.failedToDeleteFailedBundle, current.getVersionName()) ,
             e
           );
         }
@@ -1288,7 +1282,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     } else {
       Log.i(
         CapacitorUpdater.TAG,
-        "notifyAppReady was called. This is fine: " + current.getId()
+        resources.getString(R.string.thisIsFine, current.getId())
       );
     }
   }
@@ -1300,9 +1294,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
       try {
         Log.i(
           CapacitorUpdater.TAG,
-          "Wait for " +
-          CapacitorUpdaterPlugin.this.appReadyTimeout +
-          "ms, then check for notifyAppReady"
+          resources.getString(R.string.waitForThenCheckFor, CapacitorUpdaterPlugin.this.appReadyTimeout)
         );
         Thread.sleep(CapacitorUpdaterPlugin.this.appReadyTimeout);
         CapacitorUpdaterPlugin.this.checkRevert();
@@ -1310,7 +1302,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
       } catch (final InterruptedException e) {
         Log.i(
           CapacitorUpdater.TAG,
-          DeferredNotifyAppReadyCheck.class.getName() + " was interrupted."
+          resources.getString(R.string.wasInterrupted, DeferredNotifyAppReadyCheck.class.getName())
         );
       }
     }
@@ -1330,7 +1322,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     ) {
       this.backgroundDownloadTask = this.backgroundDownload();
     } else {
-      Log.i(CapacitorUpdater.TAG, "Auto update is disabled");
+      Log.i(CapacitorUpdater.TAG, resources.getString(R.string.autoUpdateDisabledOnly));
       this.sendReadyToJs(current, "disabled");
     }
     this.checkAppReady();
@@ -1343,7 +1335,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         "app_moved_to_background",
         current.getVersionName()
       );
-    Log.i(CapacitorUpdater.TAG, "Checking for pending update");
+    Log.i(CapacitorUpdater.TAG, resources.getString(R.string.checkingForPendingUpdate));
     try {
       Gson gson = new Gson();
       String delayUpdatePreferences = prefs.getString(
@@ -1382,7 +1374,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.installNext();
       }
     } catch (final Exception e) {
-      Log.e(CapacitorUpdater.TAG, "Error during onActivityStopped", e);
+      Log.e(CapacitorUpdater.TAG, resources.getString(R.string.errorDuring), e);
     }
   }
 
@@ -1409,7 +1401,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
   }
 
   private void appKilled() {
-    Log.d(CapacitorUpdater.TAG, "onActivityDestroyed: all activity destroyed");
+    Log.d(CapacitorUpdater.TAG, resources.getString(R.string.allActivityDestroyed));
     this._checkCancelDelay(true);
   }
 
