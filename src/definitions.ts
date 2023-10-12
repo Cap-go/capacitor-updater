@@ -124,7 +124,7 @@ declare module "@capacitor/cli" {
        *
        * Only available for Android and iOS.
        *
-       * @default 300 // (5 minutes)
+       * @default 600 // (10 minutes)
        */
       periodCheckDelay?: number;
     };

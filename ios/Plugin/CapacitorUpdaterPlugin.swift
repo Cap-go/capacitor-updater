@@ -55,8 +55,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         appReadyTimeout = getConfig().getInt("appReadyTimeout", 10000)
         implementation.timeout = Double(getConfig().getInt("responseTimeout", 20))
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
-        let periodCheckDelayValue = getConfig().getInt("periodCheckDelay", 300)
-        periodCheckDelay = (periodCheckDelayValue == 0) ? 300 : periodCheckDelayValue
+        let periodCheckDelayValue = getConfig().getInt("periodCheckDelay", 600)
+        periodCheckDelay = (periodCheckDelayValue == 0) ? 600 : periodCheckDelayValue
 
         implementation.privateKey = getConfig().getString("privateKey", self.defaultPrivateKey)!
         implementation.notifyDownload = notifyDownload
