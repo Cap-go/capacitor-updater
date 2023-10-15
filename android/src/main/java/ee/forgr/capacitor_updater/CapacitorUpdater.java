@@ -72,7 +72,6 @@ public class CapacitorUpdater {
   private static final String bundleDirectory = "versions";
 
   public static final String TAG = "Capacitor-updater";
-
   public SharedPreferences.Editor editor;
   public SharedPreferences prefs;
 
@@ -83,6 +82,7 @@ public class CapacitorUpdater {
   public Activity activity;
   public String PLUGIN_VERSION = "";
   public String versionBuild = "";
+  public int periodCheckDelay = 300000;
   public String versionCode = "";
   public String versionOs = "";
 
