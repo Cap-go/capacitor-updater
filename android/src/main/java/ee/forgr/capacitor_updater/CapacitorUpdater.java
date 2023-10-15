@@ -70,8 +70,6 @@ public class CapacitorUpdater {
   private static final String bundleDirectory = "versions";
 
   public static final String TAG = "Capacitor-updater";
-  public static int timeout = 20000;
-
   public SharedPreferences.Editor editor;
   public SharedPreferences prefs;
 
