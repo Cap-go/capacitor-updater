@@ -727,7 +727,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func checkForUpdateAfterDelay() {
-        let timer = Timer.scheduledTimer(withTimeInterval: TimeInterval(periodCheckDelay), repeats: true) { timer in
+        let timer = Timer.scheduledTimer(withTimeInterval: TimeInterval(periodCheckDelay), repeats: true) { _ in
             let url = URL(string: self.updateUrl)!
             let res = self.implementation.getLatest(url: url)
             let current = self.implementation.getCurrentBundle()
