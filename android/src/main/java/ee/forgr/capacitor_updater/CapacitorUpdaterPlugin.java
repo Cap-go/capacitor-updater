@@ -841,7 +841,7 @@ public void checkForUpdateAfterDelay() {
     } catch (final Exception e) {
       Log.e(
         CapacitorUpdater.TAG,
-        resources.getString(R.string.failedToDelayUpdate),,
+        resources.getString(R.string.failedToDelayUpdate),
         e
       );
       call.reject(resources.getString(R.string.failedToDelayUpdateOnly), e);

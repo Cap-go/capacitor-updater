@@ -181,7 +181,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 self.notifyListeners("downloadFailed", data: ["version": version])
                 let current: BundleInfo = self.implementation.getCurrentBundle()
                 self.implementation.sendStats(action: "download_fail", versionName: current.getVersionName())
-                call.reject(NSLocalizedString("failedToDownload", comment: "")+url, error.localizedDescription)
+                call.reject(NSLocalizedString("failedToDownload", comment: "")+url?.absoluteString, error.localizedDescription)
             }
         }
     }
@@ -240,7 +240,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         print("\(self.implementation.TAG) Set active bundle: \(id)")
         if !res {
             print("\(self.implementation.TAG) Bundle successfully set to: \(id) ")
-            call.reject(NSLocalizedString("updateFailed", comment: "")+id+NSLocalizedString("doesNotExist"))
+            call.reject(NSLocalizedString("updateFailed", comment: "")+id+NSLocalizedString("doesNotExist", comment: ""))
         } else {
             self.reload(call)
         }
