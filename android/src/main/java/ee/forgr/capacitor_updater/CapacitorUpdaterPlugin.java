@@ -1430,6 +1430,9 @@ public void checkForUpdateAfterDelay() {
         (ActivityManager) mContext.getSystemService(Context.ACTIVITY_SERVICE);
       List<ActivityManager.AppTask> runningTasks =
         activityManager.getAppTasks();
+      if (runningTasks.isEmpty()) {
+        return false;
+      }
       ActivityManager.RecentTaskInfo runningTask = runningTasks
         .get(0)
         .getTaskInfo();
