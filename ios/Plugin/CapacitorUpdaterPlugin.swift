@@ -102,13 +102,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     private func cleanupObsoleteVersions() {
-        var LatestVersionNative: Version = "0.0.0"
+        var latestVersionNative: Version = "0.0.0"
         do {
-            LatestVersionNative = try Version(UserDefaults.standard.string(forKey: "LatestVersionNative") ?? "0.0.0")
+            latestVersionNative = try Version(UserDefaults.standard.string(forKey: "latestVersionNative") ?? "0.0.0")
         } catch {
             print("\(self.implementation.TAG) Cannot get version native \(currentVersionNative)")
         }
-        if LatestVersionNative != "0.0.0" && self.currentVersionNative.description != LatestVersionNative.description {
+        if latestVersionNative != "0.0.0" && self.currentVersionNative.description != latestVersionNative.description {
             _ = self._reset(toLastSuccessful: false)
             let res = implementation.list()
             res.forEach { version in
@@ -119,7 +119,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 }
             }
         }
-        UserDefaults.standard.set( self.currentVersionNative.description, forKey: "LatestVersionNative")
+        UserDefaults.standard.set( self.currentVersionNative.description, forKey: "latestVersionNative")
         UserDefaults.standard.synchronize()
     }
 
@@ -186,7 +186,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         }
     }
 
-    public func _reload() -> Bool {
+    private func _reload() -> Bool {
         guard let bridge = self.bridge else { return false }
         self.semaphoreUp()
         let id = self.implementation.getCurrentBundleId()
@@ -341,7 +341,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         self.implementation.customId = customId
     }
 
-    @objc func _reset(toLastSuccessful: Bool) -> Bool {
+    @objc private func _reset(toLastSuccessful: Bool) -> Bool {
         guard let bridge = self.bridge else { return false }
 
         if (bridge.viewController as? CAPBridgeViewController) != nil {
@@ -427,6 +427,73 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         call.resolve()
     }
 
+    private func handleDateKind(value: String?) {
+        if value != nil && value != "" {
+            let dateFormatter = ISO8601DateFormatter()
+            dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            guard let expireDate = dateFormatter.date(from: value!) else {
+                self._cancelDelay(source: "date parsing issue")
+                return
+            }
+            if expireDate < Date() {
+                self._cancelDelay(source: "date expired")
+            }
+        } else {
+            self._cancelDelay(source: "delayVal absent")
+        }
+    }
+
+    private func handleNativeVersion(value: String?) {
+        if value != nil && value != "" {
+            do {
+                let versionLimit = try Version(value!)
+                if self.currentVersionNative >= versionLimit {
+                    self._cancelDelay(source: "nativeVersion above limit")
+                }
+            } catch {
+                self._cancelDelay(source: "nativeVersion parsing issue")
+            }
+        } else {
+            self._cancelDelay(source: "delayVal absent")
+        }
+    }
+
+    private func handleBackground(killed: Bool) {
+        if !killed {
+            self._cancelDelay(source: "killed")
+        }
+    }
+    
+    private func handleKill(killed: Bool) {
+        if killed {
+            self._cancelDelay(source: "kill check")
+            // instant install for kill action
+            self.installNext()
+        }
+    }
+
+    private func handleCondition(condition: DelayCondition) {
+        let kind: String? = condition.getKind()
+        let value: String? = condition.getValue()
+
+        if kind != nil {
+            switch kind {
+            case "background":
+                self.handleBackground(killed)
+            case "kill":
+                self.handleKill(killed)
+            case "date":
+                self.handleDateKind(value)
+            case "nativeVersion":
+                self.handleNativeVersion(value)
+            case .none:
+                print("\(self.implementation.TAG) _checkCancelDelay switch case none error")
+            case .some:
+                print("\(self.implementation.TAG) _checkCancelDelay switch case some error")
+            }
+        }
+    }
+
     private func _checkCancelDelay(killed: Bool) {
         let delayUpdatePreferences = UserDefaults.standard.string(forKey: DELAY_CONDITION_PREFERENCES) ?? "[]"
         let delayConditionList: [DelayCondition] = fromJsonArr(json: delayUpdatePreferences).map { obj -> DelayCondition in
@@ -435,57 +502,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             return DelayCondition(kind: kind, value: value)
         }
         for condition in delayConditionList {
-            let kind: String? = condition.getKind()
-            let value: String? = condition.getValue()
-            if kind != nil {
-                switch kind {
-                case "background":
-                    if !killed {
-                        self._cancelDelay(source: "background check")
-                    }
-                    break
-                case "kill":
-                    if killed {
-                        self._cancelDelay(source: "kill check")
-                        // instant install for kill action
-                        self.installNext()
-                    }
-                    break
-                case "date":
-                    if value != nil && value != "" {
-                        let dateFormatter = ISO8601DateFormatter()
-                        dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                        guard let ExpireDate = dateFormatter.date(from: value!) else {
-                            self._cancelDelay(source: "date parsing issue")
-                            return
-                        }
-                        if ExpireDate < Date() {
-                            self._cancelDelay(source: "date expired")
-                        }
-                    } else {
-                        self._cancelDelay(source: "delayVal absent")
-                    }
-                    break
-                case "nativeVersion":
-                    if value != nil && value != "" {
-                        do {
-                            let versionLimit = try Version(value!)
-                            if self.currentVersionNative >= versionLimit {
-                                self._cancelDelay(source: "nativeVersion above limit")
-                            }
-                        } catch {
-                            self._cancelDelay(source: "nativeVersion parsing issue")
-                        }
-                    } else {
-                        self._cancelDelay(source: "delayVal absent")
-                    }
-                    break
-                case .none:
-                    print("\(self.implementation.TAG) _checkCancelDelay switch case none error")
-                case .some:
-                    print("\(self.implementation.TAG) _checkCancelDelay switch case some error")
-                }
-            }
+            handleCondition(condition)
         }
         // self.checkAppReady() why this here?
     }
@@ -507,7 +524,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     func checkAppReady() {
         self.appReadyCheck?.cancel()
         self.appReadyCheck = DispatchWorkItem(block: {
-            self.DeferredNotifyAppReadyCheck()
+            self.deferredNotifyAppReadyCheck()
         })
         print("\(self.implementation.TAG) Wait for \(self.appReadyTimeout) ms, then check for notifyAppReady")
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(self.appReadyTimeout), execute: self.appReadyCheck!)
@@ -546,7 +563,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         }
     }
 
-    func DeferredNotifyAppReadyCheck() {
+    func deferredNotifyAppReadyCheck() {
         self.checkRevert()
         self.appReadyCheck = nil
     }
@@ -589,7 +606,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
             if (res.message) != nil {
                 print("\(self.implementation.TAG) API response: \(res.message ?? "")")
-                if res.major == true {
+                if res.major {
                     self.notifyListeners("majorAvailable", data: ["version": res.version])
                 }
                 self.endBackGroundTaskWithNotif(msg: res.message ?? "", latestVersionName: res.version, current: current, error: false)
