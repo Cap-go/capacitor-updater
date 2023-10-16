@@ -176,6 +176,8 @@ enum CustomError: Error {
 }
 
 extension CustomError: LocalizedError {
+    let INVALID_FOLDER: String = "Invalid folder"
+
     public var errorDescription: String? {
         switch self {
         case .cannotUnzip:
@@ -186,17 +188,17 @@ extension CustomError: LocalizedError {
         case .cannotCreateDirectory:
             return NSLocalizedString(
                 "The folder cannot be created",
-                comment: "Invalid folder"
+                comment: INVALID_FOLDER
             )
         case .cannotDeleteDirectory:
             return NSLocalizedString(
                 "The folder cannot be deleted",
-                comment: "Invalid folder"
+                comment: INVALID_FOLDER
             )
         case .cannotUnflat:
             return NSLocalizedString(
                 "The file cannot be unflat",
-                comment: "Invalid folder"
+                comment: INVALID_FOLDER
             )
         case .unexpected:
             return NSLocalizedString(
@@ -320,7 +322,7 @@ extension CustomError: LocalizedError {
     }
 
     private func unflatFolder(source: URL, dest: URL) throws -> Bool {
-        let index: URL = source.appendingPathComponent("index.html")
+        let index: URL = source.appendingPathComponent(getHtmlIndex())
         do {
             let files: [String] = try FileManager.default.contentsOfDirectory(atPath: source.path)
             if files.count == 1 && source.appendingPathComponent(files[0]).isDirectory && !FileManager.default.fileExists(atPath: index.path) {
@@ -571,11 +573,15 @@ extension CustomError: LocalizedError {
         return self.set(id: bundle.getId())
     }
 
+    private func getHtmlIndex() -> String {
+        return "index.html"
+    }
+
     private func bundleExists(id: String) -> Bool {
         let destHot: URL = self.getPathHot(id: id)
         let destHotPersist: URL = self.getBundleDirectory(id: id)
-        let indexHot: URL = destHot.appendingPathComponent("index.html")
-        let indexPersist: URL = destHotPersist.appendingPathComponent("index.html")
+        let indexHot: URL = destHot.appendingPathComponent(getHtmlIndex())
+        let indexPersist: URL = destHotPersist.appendingPathComponent(getHtmlIndex())
         let bundleIndo: BundleInfo = self.getBundleInfo(id: id)
         if
             destHot.exist &&
@@ -641,16 +647,28 @@ extension CustomError: LocalizedError {
         self.setBundleStatus(id: bundle.getId(), status: BundleStatus.ERROR)
     }
 
+    private func setMissingConfig<T>(_ result: T) -> T {
+        let message = "Channel URL is not set"
+
+        print("\(self.TAG) \(message)")
+        if let setChannel = result as? SetChannel {
+            setChannel.message = message
+            setChannel.error = "missing_config"
+        }
+        if let getChannel = result as? GetChannel {
+            getChannel.message = message
+            getChannel.error = "missing_config"
+        }
+        return result
+    }
+
     func unsetChannel() -> SetChannel {
         let setChannel: SetChannel = SetChannel()
         if (self.channelUrl ).isEmpty {
-            print("\(self.TAG) Channel URL is not set")
-            setChannel.message = "Channel URL is not set"
-            setChannel.error = "missing_config"
-            return setChannel
+            return setMissingConfig(setChannel)
         }
         let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
-        var parameters: InfoObject = self.createInfoObject()
+        let parameters: InfoObject = self.createInfoObject()
 
         let request = AF.request(self.channelUrl, method: .delete, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
 
@@ -680,10 +698,7 @@ extension CustomError: LocalizedError {
     func setChannel(channel: String) -> SetChannel {
         let setChannel: SetChannel = SetChannel()
         if (self.channelUrl ).isEmpty {
-            print("\(self.TAG) Channel URL is not set")
-            setChannel.message = "Channel URL is not set"
-            setChannel.error = "missing_config"
-            return setChannel
+            return setMissingConfig(setChannel)
         }
         let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
         var parameters: InfoObject = self.createInfoObject()
@@ -714,13 +729,30 @@ extension CustomError: LocalizedError {
         return setChannel
     }
 
+    private func handleSuccess(channel: GetChannel) -> GetChannel {
+        if let status = response.value?.status {
+            channel.status = status
+        }
+        if let error = response.value?.error {
+            channel.error = error
+        }
+        if let message = response.value?.message {
+            channel.message = message
+        }
+        if let channel = response.value?.channel {
+            channel.channel = channel
+        }
+        if let allowSet = response.value?.allowSet {
+            channel.allowSet = allowSet
+        }
+
+        return channel
+    }
+
     func getChannel() -> GetChannel {
-        let getChannel: GetChannel = GetChannel()
+        var getChannel: GetChannel = GetChannel()
         if (self.channelUrl ).isEmpty {
-            print("\(self.TAG) Channel URL is not set")
-            getChannel.message = "Channel URL is not set"
-            getChannel.error = "missing_config"
-            return getChannel
+            return setMissingConfig(getChannel)
         }
         let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
         let parameters: InfoObject = self.createInfoObject()
@@ -729,21 +761,7 @@ extension CustomError: LocalizedError {
         request.validate().responseDecodable(of: GetChannelDec.self) { response in
             switch response.result {
             case .success:
-                if let status = response.value?.status {
-                    getChannel.status = status
-                }
-                if let error = response.value?.error {
-                    getChannel.error = error
-                }
-                if let message = response.value?.message {
-                    getChannel.message = message
-                }
-                if let channel = response.value?.channel {
-                    getChannel.channel = channel
-                }
-                if let allowSet = response.value?.allowSet {
-                    getChannel.allowSet = allowSet
-                }
+                getChannel = handleSuccess(getChannel)
             case let .failure(error):
                 print("\(self.TAG) Error get Channel", response.value ?? "", error)
                 getChannel.message = "Error get Channel \(String(describing: response.value)))"
