@@ -15,10 +15,9 @@ import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Resources;
 import android.os.Build;
-import android.os.Bundle;
+import android.os.Handler;
 import android.util.Log;
-import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
+
 import com.android.volley.toolbox.Volley;
 import com.getcapacitor.CapConfig;
 import com.getcapacitor.JSArray;
@@ -40,10 +39,10 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Phaser;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.json.JSONException;
@@ -59,7 +58,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
   private static final String channelUrlDefault =
     "https://api.capgo.app/channel_self";
 
-  private final String PLUGIN_VERSION = "5.3.13";
+  private final String PLUGIN_VERSION = "5.3.19";
   private static final String DELAY_CONDITION_PREFERENCES = "";
 
   private SharedPreferences.Editor editor;
@@ -176,6 +175,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
       this.getConfig().getString("statsUrl", statsUrlDefault);
     this.implementation.channelUrl =
       this.getConfig().getString("channelUrl", channelUrlDefault);
+    int userValue = this.getConfig().getInt("periodCheckDelay", 600);
+    
+    this.implementation.periodCheckDelay = (userValue == 0 ? 600 : userValue) * 1000;
+
     this.implementation.documentsDir = this.getContext().getFilesDir();
     this.implementation.prefs = this.prefs;
     this.implementation.editor = this.editor;
@@ -207,6 +210,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
     final Application application = (Application) this.getContext()
       .getApplicationContext();
+
+    this.checkForUpdateAfterDelay();
     //    application.registerActivityLifecycleCallbacks(this);
   }
 
@@ -759,6 +764,35 @@ public class CapacitorUpdaterPlugin extends Plugin {
       call.reject(resources.getString(R.string.couldNotGetCurrentBundle), e);
     }
   }
+
+public void checkForUpdateAfterDelay() {
+  final Timer timer = new Timer();
+  timer.scheduleAtFixedRate(new TimerTask() {
+    @Override
+    public void run() {
+      try {
+        CapacitorUpdaterPlugin.this.implementation.getLatest(
+          CapacitorUpdaterPlugin.this.updateUrl,
+          res -> {
+            if (res.has("error")) {
+              Log.e(CapacitorUpdater.TAG, res.getString("error"));
+              return;
+            } else if (res.has("version")) {
+              String newVersion = res.getString("version");
+              String currentVersion = String.valueOf(CapacitorUpdaterPlugin.this.implementation.getCurrentBundle());
+              if (!newVersion.equals(currentVersion)) {
+                Log.i(CapacitorUpdater.TAG, "New version found: " + newVersion);
+                CapacitorUpdaterPlugin.this.backgroundDownload();
+              }
+            }
+          }
+        );
+      } catch (final Exception e) {
+        Log.e(CapacitorUpdater.TAG, "Failed to check for update", e);
+      }
+    }
+  }, 0, CapacitorUpdaterPlugin.this.implementation.periodCheckDelay);
+}
 
   @PluginMethod
   public void notifyAppReady(final PluginCall call) {
@@ -1388,6 +1422,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
         (ActivityManager) mContext.getSystemService(Context.ACTIVITY_SERVICE);
       List<ActivityManager.AppTask> runningTasks =
         activityManager.getAppTasks();
+      if (runningTasks.isEmpty()) {
+        return false;
+      }
       ActivityManager.RecentTaskInfo runningTask = runningTasks
         .get(0)
         .getTaskInfo();
