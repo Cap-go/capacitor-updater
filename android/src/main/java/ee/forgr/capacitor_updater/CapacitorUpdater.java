@@ -257,11 +257,18 @@ public class CapacitorUpdater {
   }
 
   public void onResume() {
-    this.activity.registerReceiver(
-        receiver,
-        new IntentFilter(DownloadService.NOTIFICATION),
-        RECEIVER_NOT_EXPORTED
-      );
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+      this.activity.registerReceiver(
+          receiver,
+          new IntentFilter(DownloadService.NOTIFICATION),
+          RECEIVER_NOT_EXPORTED
+        );
+    } else {
+      this.activity.registerReceiver(
+          receiver,
+          new IntentFilter(DownloadService.NOTIFICATION)
+        );
+    }
   }
 
   public void onPause() {

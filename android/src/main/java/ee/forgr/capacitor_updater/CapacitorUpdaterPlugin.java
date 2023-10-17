@@ -16,7 +16,6 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Handler;
 import android.util.Log;
-
 import com.android.volley.toolbox.Volley;
 import com.getcapacitor.CapConfig;
 import com.getcapacitor.JSArray;
@@ -173,8 +172,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
     this.implementation.channelUrl =
       this.getConfig().getString("channelUrl", channelUrlDefault);
     int userValue = this.getConfig().getInt("periodCheckDelay", 600);
-    
-    this.implementation.periodCheckDelay = (userValue == 0 ? 600 : userValue) * 1000;
+
+    this.implementation.periodCheckDelay =
+      (userValue == 0 ? 600 : userValue) * 1000;
 
     this.implementation.documentsDir = this.getContext().getFilesDir();
     this.implementation.prefs = this.prefs;
@@ -762,34 +762,43 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
   }
 
-public void checkForUpdateAfterDelay() {
-  final Timer timer = new Timer();
-  timer.scheduleAtFixedRate(new TimerTask() {
-    @Override
-    public void run() {
-      try {
-        CapacitorUpdaterPlugin.this.implementation.getLatest(
-          CapacitorUpdaterPlugin.this.updateUrl,
-          res -> {
-            if (res.has("error")) {
-              Log.e(CapacitorUpdater.TAG, res.getString("error"));
-              return;
-            } else if (res.has("version")) {
-              String newVersion = res.getString("version");
-              String currentVersion = String.valueOf(CapacitorUpdaterPlugin.this.implementation.getCurrentBundle());
-              if (!newVersion.equals(currentVersion)) {
-                Log.i(CapacitorUpdater.TAG, "New version found: " + newVersion);
-                CapacitorUpdaterPlugin.this.backgroundDownload();
-              }
-            }
+  public void checkForUpdateAfterDelay() {
+    final Timer timer = new Timer();
+    timer.scheduleAtFixedRate(
+      new TimerTask() {
+        @Override
+        public void run() {
+          try {
+            CapacitorUpdaterPlugin.this.implementation.getLatest(
+                CapacitorUpdaterPlugin.this.updateUrl,
+                res -> {
+                  if (res.has("error")) {
+                    Log.e(CapacitorUpdater.TAG, res.getString("error"));
+                    return;
+                  } else if (res.has("version")) {
+                    String newVersion = res.getString("version");
+                    String currentVersion = String.valueOf(
+                      CapacitorUpdaterPlugin.this.implementation.getCurrentBundle()
+                    );
+                    if (!newVersion.equals(currentVersion)) {
+                      Log.i(
+                        CapacitorUpdater.TAG,
+                        "New version found: " + newVersion
+                      );
+                      CapacitorUpdaterPlugin.this.backgroundDownload();
+                    }
+                  }
+                }
+              );
+          } catch (final Exception e) {
+            Log.e(CapacitorUpdater.TAG, "Failed to check for update", e);
           }
-        );
-      } catch (final Exception e) {
-        Log.e(CapacitorUpdater.TAG, "Failed to check for update", e);
-      }
-    }
-  }, 0, CapacitorUpdaterPlugin.this.implementation.periodCheckDelay);
-}
+        }
+      },
+      0,
+      CapacitorUpdaterPlugin.this.implementation.periodCheckDelay
+    );
+  }
 
   @PluginMethod
   public void notifyAppReady(final PluginCall call) {
