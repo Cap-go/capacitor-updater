@@ -181,7 +181,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 self.notifyListeners("downloadFailed", data: ["version": version])
                 let current: BundleInfo = self.implementation.getCurrentBundle()
                 self.implementation.sendStats(action: "download_fail", versionName: current.getVersionName())
-                call.reject(NSLocalizedString("failedToDownload", comment: "")+url?.absoluteString, error.localizedDescription)
+                call.reject(NSLocalizedString("failedToDownload", comment: "") + url?.absoluteString, error.localizedDescription)
             }
         }
     }
