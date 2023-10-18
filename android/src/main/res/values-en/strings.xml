@@ -8,7 +8,7 @@ The strings can be accessed by: Resources.getSystem().getString(R.string.<name_p
 <resources>
     <string name="hello_world">Hello World</string>
     <string name="success">success</string>
-    <string name="failed">fallido</string>
+    <string name="failed">failed</string>
     <string name="windowsPathNotSupported">Windows path is not supported, please use unix path as require by zip RFC</string>
     <string name="failedToEnsure">Failed to ensure directory is the start path : %1$s of %2$s</string>
     <string name="failedToEnsureDir">Failed to ensure directory</string>
