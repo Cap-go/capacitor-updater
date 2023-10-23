@@ -56,10 +56,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         implementation.timeout = Double(getConfig().getInt("responseTimeout", 20))
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
         let periodCheckDelayValue = getConfig().getInt("periodCheckDelay", 0)
-        if (periodCheckDelayValue >= 0 && periodCheckDelayValue > 600) {
+        if periodCheckDelayValue >= 0 && periodCheckDelayValue > 600 {
             periodCheckDelay = 600
-        }
-        else {
+        } else {
             periodCheckDelay = periodCheckDelayValue
         }
 
@@ -732,7 +731,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func checkForUpdateAfterDelay() {
-        if (periodCheckDelay == 0 || !self._isAutoUpdateEnabled()) {
+        if periodCheckDelay == 0 || !self._isAutoUpdateEnabled() {
             return
         }
         let timer = Timer.scheduledTimer(withTimeInterval: TimeInterval(periodCheckDelay), repeats: true) { _ in
