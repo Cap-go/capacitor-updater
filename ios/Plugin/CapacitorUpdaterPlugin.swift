@@ -34,7 +34,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     private var autoDeletePrevious = false
     private var backgroundWork: DispatchWorkItem?
     private var taskRunning = false
-    private var periodCheckDelay = 300
+    private var periodCheckDelay = 0
     let semaphoreReady = DispatchSemaphore(value: 0)
 
     override public func load() {
@@ -55,8 +55,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         appReadyTimeout = getConfig().getInt("appReadyTimeout", 10000)
         implementation.timeout = Double(getConfig().getInt("responseTimeout", 20))
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
-        let periodCheckDelayValue = getConfig().getInt("periodCheckDelay", 600)
-        periodCheckDelay = (periodCheckDelayValue == 0) ? 600 : periodCheckDelayValue
+        let periodCheckDelayValue = getConfig().getInt("periodCheckDelay", 0)
+        if (periodCheckDelayValue >= 0 && periodCheckDelayValue > 600) {
+            periodCheckDelay = 600
+        }
+        else {
+            periodCheckDelay = periodCheckDelayValue
+        }
 
         implementation.privateKey = getConfig().getString("privateKey", self.defaultPrivateKey)!
         implementation.notifyDownload = notifyDownload
@@ -727,6 +732,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func checkForUpdateAfterDelay() {
+        if (periodCheckDelay == 0 || !self._isAutoUpdateEnabled()) {
+            return
+        }
         let timer = Timer.scheduledTimer(withTimeInterval: TimeInterval(periodCheckDelay), repeats: true) { _ in
             let url = URL(string: self.updateUrl)!
             let res = self.implementation.getLatest(url: url)

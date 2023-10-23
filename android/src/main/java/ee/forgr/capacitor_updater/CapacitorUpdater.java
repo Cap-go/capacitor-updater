@@ -82,7 +82,6 @@ public class CapacitorUpdater {
   public Activity activity;
   public String PLUGIN_VERSION = "";
   public String versionBuild = "";
-  public int periodCheckDelay = 300000;
   public String versionCode = "";
   public String versionOs = "";
 

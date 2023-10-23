@@ -65,6 +65,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
   private Integer appReadyTimeout = 10000;
   private Integer counterActivityCreate = 0;
+  private Integer periodCheckDelay = 0;
   private Boolean autoDeleteFailed = true;
   private Boolean autoDeletePrevious = true;
   private Boolean autoUpdate = false;
@@ -171,10 +172,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
       this.getConfig().getString("statsUrl", statsUrlDefault);
     this.implementation.channelUrl =
       this.getConfig().getString("channelUrl", channelUrlDefault);
-    int userValue = this.getConfig().getInt("periodCheckDelay", 600);
+    int userValue = this.getConfig().getInt("periodCheckDelay", 0);
 
-    this.implementation.periodCheckDelay =
-      (userValue == 0 ? 600 : userValue) * 1000;
+    if (userValue >= 0 && userValue <= 600) {
+      this.periodCheckDelay = 600 * 1000;
+    } else if (userValue > 600) {
+      this.periodCheckDelay = userValue * 1000;
+    }
 
     this.implementation.documentsDir = this.getContext().getFilesDir();
     this.implementation.prefs = this.prefs;
@@ -763,6 +767,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
   }
 
   public void checkForUpdateAfterDelay() {
+    if (this.periodCheckDelay == 0 || !this._isAutoUpdateEnabled()) {
+      return;
+    }
     final Timer timer = new Timer();
     timer.scheduleAtFixedRate(
       new TimerTask() {
@@ -796,7 +803,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
       },
       0,
-      CapacitorUpdaterPlugin.this.implementation.periodCheckDelay
+      this.periodCheckDelay
     );
   }
 
