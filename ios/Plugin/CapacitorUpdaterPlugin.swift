@@ -40,10 +40,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     override public func load() {
         self.semaphoreUp()
         print("\(self.implementation.TAG) init for device \(self.implementation.deviceID)")
+        guard let versionName = getConfig().getString("version", Bundle.main.versionName) else {
+            print("\(self.implementation.TAG) Cannot get version name")
+            // crash the app
+            fatalError("Cannot get version name")
+        }
         do {
-            currentVersionNative = try Version(getConfig().getString("version", Bundle.main.versionName ?? "0.0.0")!)
+            currentVersionNative = try Version(versionName)
         } catch {
-            print("\(self.implementation.TAG) Cannot get version native \(currentVersionNative)")
+            print("\(self.implementation.TAG) Cannot parse versionName \(versionName)")
         }
         print("\(self.implementation.TAG) version native \(self.currentVersionNative.description)")
         implementation.versionBuild = getConfig().getString("version", Bundle.main.versionName)!
@@ -581,13 +586,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
     func backgroundDownload() {
         let messageUpdate = self.directUpdate ? "Update will occur now." : "Update will occur next time app moves to background."
+        guard let url = URL(string: self.updateUrl) else {
+            print("\(self.implementation.TAG) Error no url or wrong format")
+            return
+        }
         DispatchQueue.global(qos: .background).async {
             self.backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "Finish Download Tasks") {
                 // End the task if time expires.
                 self.endBackGroundTask()
             }
             print("\(self.implementation.TAG) Check for update via \(self.updateUrl)")
-            let url = URL(string: self.updateUrl)!
             let res = self.implementation.getLatest(url: url)
             let current = self.implementation.getCurrentBundle()
 
@@ -706,7 +714,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc private func fromJsonArr(json: String) -> [NSObject] {
-        let jsonData = json.data(using: .utf8)!
+        guard let jsonData = json.data(using: .utf8) else {
+            return []
+        }
         let object = try? JSONSerialization.jsonObject(
             with: jsonData,
             options: .mutableContainers
@@ -734,8 +744,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         if periodCheckDelay == 0 || !self._isAutoUpdateEnabled() {
             return
         }
+        guard let url = URL(string: self.updateUrl) else {
+            print("\(self.implementation.TAG) Error no url or wrong format")
+            return
+        }
         let timer = Timer.scheduledTimer(withTimeInterval: TimeInterval(periodCheckDelay), repeats: true) { _ in
-            let url = URL(string: self.updateUrl)!
             let res = self.implementation.getLatest(url: url)
             let current = self.implementation.getCurrentBundle()
 

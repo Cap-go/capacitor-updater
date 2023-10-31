@@ -199,10 +199,16 @@ public struct RSAPrivateKey {
         privKey = privKey.replacingOccurrences(of: "-----END RSA PRIVATE KEY-----", with: "")
         privKey = privKey.replacingOccurrences(of: "\\n+", with: "", options: .regularExpression)
         privKey = privKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        let rsaPrivateKeyData: Data = Data(base64Encoded: privKey)!
-        if let privateKey: SecKey = .loadPrivateFromData(rsaPrivateKeyData) {
+        do {
+            guard let rsaPrivateKeyData: Data  = Data(base64Encoded: privKey) else {
+                throw CustomError.cannotDecode
+            }
+            guard let privateKey: SecKey = .loadPrivateFromData(rsaPrivateKeyData) else {
+                throw CustomError.cannotDecode
+            }
             return RSAPrivateKey(privateKey: privateKey)
-        } else {
+        } catch {
+            print("Error load RSA: \(error)")
             return nil
         }
     }

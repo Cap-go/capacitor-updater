@@ -17,11 +17,6 @@ extension URL {
         return FileManager().fileExists(atPath: self.path)
     }
 }
-extension Date {
-    func adding(minutes: Int) -> Date {
-        return Calendar.current.date(byAdding: .minute, value: minutes, to: self)!
-    }
-}
 struct SetChannelDec: Decodable {
     let status: String?
     let error: String?
@@ -363,11 +358,24 @@ extension CustomError: LocalizedError {
                 print("cannot decode sessionKey", sessionKey)
                 throw CustomError.cannotDecode
             }
-            let sessionKeyDataEncrypted: Data = Data(base64Encoded: sessionKeyArray[1])!
-            let sessionKeyDataDecrypted: Data = rsaPrivateKey.decrypt(data: sessionKeyDataEncrypted)!
-            let aesPrivateKey: AES128Key = AES128Key(iv: ivData, aes128Key: sessionKeyDataDecrypted)
-            let encryptedData: Data = try Data(contentsOf: filePath)
-            let decryptedData: Data = aesPrivateKey.decrypt(data: encryptedData)!
+
+            guard let sessionKeyDataEncrypted = Data(base64Encoded: sessionKeyArray[1]) else {
+                throw NSError(domain: "Invalid session key data", code: 1, userInfo: nil)
+            }
+
+            guard let sessionKeyDataDecrypted = try? rsaPrivateKey.decrypt(data: sessionKeyDataEncrypted) else {
+                throw NSError(domain: "Failed to decrypt session key data", code: 2, userInfo: nil)
+            }
+
+            let aesPrivateKey = AES128Key(iv: ivData, aes128Key: sessionKeyDataDecrypted)
+
+            guard let encryptedData = try? Data(contentsOf: filePath) else {
+                throw NSError(domain: "Failed to read encrypted data", code: 3, userInfo: nil)
+            }
+
+            guard let decryptedData = try? aesPrivateKey.decrypt(data: encryptedData) else {
+                throw NSError(domain: "Failed to decrypt data", code: 4, userInfo: nil)
+            }
 
             try decryptedData.write(to: filePath)
         } catch {
