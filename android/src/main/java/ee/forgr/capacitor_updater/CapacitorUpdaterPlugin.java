@@ -14,7 +14,6 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.os.Build;
-import android.os.Handler;
 import android.util.Log;
 import com.android.volley.toolbox.Volley;
 import com.getcapacitor.CapConfig;
@@ -157,15 +156,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
       );
       return;
     }
-
     final CapConfig config = CapConfig.loadDefault(this.getActivity());
-    this.implementation.appId = config.getString("appId", "");
+    this.implementation.appId = InternalUtils.getPackageName(getContext().getPackageManager(), getContext().getPackageName());
+    this.implementation.appId = config.getString("appId", this.implementation.appId);
     this.implementation.appId =
       this.getConfig().getString("appId", this.implementation.appId);
-    if ("".equals(implementation.appId)) {
-      Log.i(CapacitorUpdater.TAG, "appId: " + implementation.appId);
-      throw new RuntimeException("appId is missing in capacitor.config.json please add it globally or in the plugin config");
+    if (this.implementation.appId == null || "".equals(this.implementation.appId)) {
+      // crash the app
+      throw new RuntimeException("appId is missing in capacitor.config.json or plugin config, and cannot be retrieved from the native app, please add it globally or in the plugin config");
     }
+    Log.i(CapacitorUpdater.TAG, "appId: " + implementation.appId);
     this.implementation.privateKey =
       this.getConfig().getString("privateKey", defaultPrivateKey);
     this.implementation.statsUrl =

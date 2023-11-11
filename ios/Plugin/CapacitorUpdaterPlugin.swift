@@ -71,15 +71,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         implementation.notifyDownload = notifyDownload
         implementation.PLUGIN_VERSION = self.PLUGIN_VERSION
         let config = (self.bridge?.viewController as? CAPBridgeViewController)?.instanceDescriptor().legacyConfig
-        if config?["appId"] != nil {
-            implementation.appId = config?["appId"] as! String
-        }
+        implementation.appId = Bundle.main.infoDictionary?["CFBundleIdentifier"] as? String ?? ""
+        implementation.appId = config?["appId"] as? String ?? implementation.appId
         implementation.appId = getConfig().getString("appId", implementation.appId)!
         if implementation.appId == "" {
-            print("\(self.implementation.TAG) appId is missing in capacitor.config.json please add it globally or in the plugin config")
-            // crash the app
-            fatalError("appId is empty")
+            fatalError("appId is missing in capacitor.config.json or plugin config, and cannot be retrieved from the native app, please add it globally or in the plugin config")
         }
+        print("\(self.implementation.TAG) appId \(implementation.appId)")
         implementation.statsUrl = getConfig().getString("statsUrl", CapacitorUpdaterPlugin.statsUrlDefault)!
         implementation.channelUrl = getConfig().getString("channelUrl", CapacitorUpdaterPlugin.channelUrlDefault)!
         if resetWhenUpdate {
