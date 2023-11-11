@@ -76,7 +76,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         }
         implementation.appId = getConfig().getString("appId", implementation.appId)!
         if implementation.appId == "" {
-            print("\(self.implementation.TAG) appId is empty")
+            print("\(self.implementation.TAG) appId is missing in capacitor.config.json please add it globally or in the plugin config")
             // crash the app
             fatalError("appId is empty")
         }

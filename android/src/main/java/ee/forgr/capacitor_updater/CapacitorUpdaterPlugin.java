@@ -164,7 +164,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
       this.getConfig().getString("appId", this.implementation.appId);
     if ("".equals(implementation.appId)) {
       Log.i(CapacitorUpdater.TAG, "appId: " + implementation.appId);
-      throw new RuntimeException("appId is required");
+      throw new RuntimeException("appId is missing in capacitor.config.json please add it globally or in the plugin config");
     }
     this.implementation.privateKey =
       this.getConfig().getString("privateKey", defaultPrivateKey);
