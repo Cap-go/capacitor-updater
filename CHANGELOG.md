@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.3.31](https://github.com/Cap-go/capacitor-updater/compare/5.3.30...5.3.31) (2023-11-20)
+
+
+### Bug Fixes
+
+* **deps:** update dependency com.android.tools.build:gradle to v8.1.4 ([dbcacf6](https://github.com/Cap-go/capacitor-updater/commit/dbcacf63266a5ba77358453f5a65fa630e90ebbb))
+
 ### [5.3.30](https://github.com/Cap-go/capacitor-updater/compare/5.3.29...5.3.30) (2023-11-20)
 
 ### [5.3.29](https://github.com/Cap-go/capacitor-updater/compare/5.3.28...5.3.29) (2023-11-20)
