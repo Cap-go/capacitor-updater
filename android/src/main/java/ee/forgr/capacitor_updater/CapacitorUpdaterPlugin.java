@@ -157,13 +157,22 @@ public class CapacitorUpdaterPlugin extends Plugin {
       return;
     }
     final CapConfig config = CapConfig.loadDefault(this.getActivity());
-    this.implementation.appId = InternalUtils.getPackageName(getContext().getPackageManager(), getContext().getPackageName());
-    this.implementation.appId = config.getString("appId", this.implementation.appId);
+    this.implementation.appId =
+      InternalUtils.getPackageName(
+        getContext().getPackageManager(),
+        getContext().getPackageName()
+      );
+    this.implementation.appId =
+      config.getString("appId", this.implementation.appId);
     this.implementation.appId =
       this.getConfig().getString("appId", this.implementation.appId);
-    if (this.implementation.appId == null || "".equals(this.implementation.appId)) {
+    if (
+      this.implementation.appId == null || "".equals(this.implementation.appId)
+    ) {
       // crash the app
-      throw new RuntimeException("appId is missing in capacitor.config.json or plugin config, and cannot be retrieved from the native app, please add it globally or in the plugin config");
+      throw new RuntimeException(
+        "appId is missing in capacitor.config.json or plugin config, and cannot be retrieved from the native app, please add it globally or in the plugin config"
+      );
     }
     Log.i(CapacitorUpdater.TAG, "appId: " + implementation.appId);
     this.implementation.privateKey =
