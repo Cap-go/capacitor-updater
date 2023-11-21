@@ -1382,7 +1382,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         "app_moved_to_foreground",
         current.getVersionName()
       );
-    this._checkCancelDelay(true);
+    this._checkCancelDelay(false);
     if (
       CapacitorUpdaterPlugin.this._isAutoUpdateEnabled() &&
       this.backgroundDownloadTask == null
