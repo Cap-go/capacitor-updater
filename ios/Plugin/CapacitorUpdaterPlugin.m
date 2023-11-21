@@ -24,4 +24,5 @@ CAP_PLUGIN(CapacitorUpdaterPlugin, "CapacitorUpdater",
            CAP_PLUGIN_METHOD(next, CAPPluginReturnPromise);
            CAP_PLUGIN_METHOD(isAutoUpdateEnabled, CAPPluginReturnPromise);
            CAP_PLUGIN_METHOD(removeAllListeners, CAPPluginReturnPromise);
+           CAP_PLUGIN_METHOD(getBuiltinVersion, CAPPluginReturnPromise);
 )
