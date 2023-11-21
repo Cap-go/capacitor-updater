@@ -79,6 +79,7 @@ struct InfoObject: Codable {
     let is_prod: Bool?
     var action: String?
     var channel: String?
+    let partial_update: Bool?
 }
 struct AppVersionDec: Decodable {
     let version: String?
@@ -88,7 +89,27 @@ struct AppVersionDec: Decodable {
     let error: String?
     let session_key: String?
     let major: Bool?
+    
+    struct Manifest: Decodable {
+        let target_version: String
+        let source_version: String
+        let checksum: String
+        let url: String
+    }
+    let manifest: Manifest?
 }
+
+public class Manifest: NSObject {
+    var targetVersion: String = ""
+    var sourceVersion: String = ""
+    var checksum: String = ""
+    var url: String = ""
+    
+    public func toString() -> String {
+        return "{ \"sourceVersion\": \"\(self.sourceVersion)\", \"targetVersion\": \"\(self.targetVersion)\", \"checksum\": \"\(self.checksum)\", \"url\": \"\(self.url)\"}"
+    }
+}
+
 public class AppVersion: NSObject {
     var version: String = ""
     var checksum: String = ""
@@ -97,6 +118,7 @@ public class AppVersion: NSObject {
     var error: String?
     var sessionKey: String?
     var major: Bool?
+    var manifest: Manifest?
 }
 
 extension AppVersion {
@@ -313,6 +335,29 @@ extension CustomError: LocalizedError {
             throw CustomError.cannotDeleteDirectory
         }
     }
+    
+    private func copyDistAssets(source: URL, dest: URL) throws {
+        let sourceDistFolder: URL = source.appendingPathComponent("assets")
+        let destDistFolder: URL = dest.appendingPathComponent("assets")
+        do {
+            var isDirectory:ObjCBool = true
+            if sourceDistFolder.isDirectory && FileManager.default.fileExists(atPath: sourceDistFolder.path, isDirectory: &isDirectory) {
+                let files: [String] = try FileManager.default.contentsOfDirectory(atPath: sourceDistFolder.path)
+                for file in files {
+                    if FileManager.default.fileExists(atPath: destDistFolder.appendingPathComponent(file).path, isDirectory: &isDirectory) {
+                        // skip empty folders from the partial bundle otherwise copying will fail with:
+                        // "an item with the same name already exists."
+                    } else {
+                        try FileManager.default.copyItem(atPath: sourceDistFolder.appendingPathComponent(file).path, toPath: destDistFolder.appendingPathComponent(file).path)
+                    }
+                }
+            }
+        } catch {
+            print("\(self.TAG) File copy failed from source: \(sourceDistFolder.path) to dest: \(destDistFolder.path)")
+            print("\(self.TAG) \(error)")
+            throw CustomError.cannotWrite
+        }
+    }
 
     private func unflatFolder(source: URL, dest: URL) throws -> Bool {
         let index: URL = source.appendingPathComponent("index.html")
@@ -344,7 +389,7 @@ extension CustomError: LocalizedError {
 
     private func decryptFile(filePath: URL, sessionKey: String, version: String) throws {
         if self.privateKey.isEmpty || sessionKey.isEmpty  || sessionKey.components(separatedBy: ":").count != 2 {
-            print("\(self.TAG) Cannot found privateKey or sessionKey")
+            print("\(self.TAG) Cannot find privateKey or sessionKey")
             return
         }
         do {
@@ -397,7 +442,7 @@ extension CustomError: LocalizedError {
         }
     }
 
-    private func createInfoObject() -> InfoObject {
+    private func createInfoObject(partialUpdate: Bool = false) -> InfoObject {
         return InfoObject(
             platform: "ios",
             device_id: self.deviceID,
@@ -411,14 +456,15 @@ extension CustomError: LocalizedError {
             is_emulator: self.isEmulator(),
             is_prod: self.isProd(),
             action: nil,
-            channel: nil
+            channel: nil,
+            partial_update: partialUpdate
         )
     }
 
-    public func getLatest(url: URL) -> AppVersion {
+    public func getLatest(url: URL, partialUpdate: Bool = false) -> AppVersion {
         let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
         let latest: AppVersion = AppVersion()
-        let parameters: InfoObject = self.createInfoObject()
+        let parameters: InfoObject = self.createInfoObject(partialUpdate: partialUpdate)
         print("\(self.TAG) Auto-update parameters: \(parameters)")
         let request = AF.request(url, method: .post, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
 
@@ -446,6 +492,15 @@ extension CustomError: LocalizedError {
                 if let sessionKey = response.value?.session_key {
                     latest.sessionKey = sessionKey
                 }
+                // partial-update check
+                if let manifest = response.value?.manifest {
+                    latest.manifest = Manifest()
+                    latest.manifest?.targetVersion = manifest.target_version
+                    latest.manifest?.sourceVersion = manifest.source_version
+                    latest.manifest?.checksum = manifest.checksum
+                    latest.manifest?.url = manifest.url
+                    print("\(self.TAG) A partial update is available for this download: ", latest.manifest!.toString())
+                }
             case let .failure(error):
                 print("\(self.TAG) Error getting Latest", response.value ?? "", error )
                 latest.message = "Error getting Latest \(String(describing: response.value))"
@@ -464,6 +519,10 @@ extension CustomError: LocalizedError {
     }
 
     public func download(url: URL, version: String, sessionKey: String) throws -> BundleInfo {
+        try self.download(url: url, version: version, sessionKey: sessionKey, currentBundle: nil, partialUpdate: false)
+    }
+    
+    public func download(url: URL, version: String, sessionKey: String, currentBundle: BundleInfo?, partialUpdate: Bool = false) throws -> BundleInfo {
         let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
         let id: String = self.randomString(length: 10)
         var checksum: String = ""
@@ -489,9 +548,30 @@ extension CustomError: LocalizedError {
                     do {
                         try self.decryptFile(filePath: fileURL, sessionKey: sessionKey, version: version)
                         checksum = self.getChecksum(filePath: fileURL)
-                        try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.documentsDir.appendingPathComponent(self.bundleDirectoryHot))
+                        
+                        let newBundleDocPath: URL = self.documentsDir.appendingPathComponent(self.bundleDirectoryHot)
+                        try self.saveDownloaded(sourceZip: fileURL, id: id, base: newBundleDocPath)
                         self.notifyDownload(id, 85)
-                        try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory))
+                        
+                        let newBundleLibPath: URL = self.libraryDir.appendingPathComponent(self.bundleDirectory)
+                        try self.saveDownloaded(sourceZip: fileURL, id: id, base: newBundleLibPath)
+                        
+                        if (partialUpdate && currentBundle != nil && currentBundle?.getId() != nil) {
+                            // copy existing assets from the current bundle to the folder of the partial bundle
+                            if (BundleInfo.ID_BUILTIN == currentBundle?.getId()) {
+                                let builtinBundlePath = Bundle.main.resourceURL!.appendingPathComponent("public")
+                                
+                                try self.copyDistAssets(source: builtinBundlePath, dest:newBundleDocPath.appendingPathComponent(id))
+                                try self.copyDistAssets(source: builtinBundlePath, dest:newBundleLibPath.appendingPathComponent(id))
+
+                            } else {
+                                let currentBundleDocPath = self.getPathHot(id: (currentBundle?.getId())!)
+                                try self.copyDistAssets(source: currentBundleDocPath, dest:newBundleDocPath.appendingPathComponent(id))
+                                
+                                let currentBundleLibPath = self.getBundleDirectory(id: (currentBundle?.getId())!)
+                                try self.copyDistAssets(source: currentBundleLibPath, dest:newBundleLibPath.appendingPathComponent(id))
+                            }
+                        }
                         self.notifyDownload(id, 100)
                         try self.deleteFolder(source: fileURL)
                     } catch {
