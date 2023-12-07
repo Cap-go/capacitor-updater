@@ -507,9 +507,22 @@ extension CustomError: LocalizedError {
         })
         self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.DOWNLOADING, downloaded: Date(), checksum: checksum))
         self.notifyDownload(id, 0)
+        let reachabilityManager = NetworkReachabilityManager()
+        reachabilityManager?.startListening { status in
+            switch status {
+            case .notReachable:
+                // Stop the download request if the network is not reachable
+                request.cancel()
+                mainError = NSError(domain: NSURLErrorDomain, code: NSURLErrorNotConnectedToInternet, userInfo: nil)
+                semaphore.signal()
+            default:
+                break
+            }
+        }
         semaphore.wait()
-        if mainError != nil {
-            throw mainError!
+        reachabilityManager?.stopListening()
+        if let error = mainError {
+            throw error
         }
         let info: BundleInfo = BundleInfo(id: id, version: version, status: BundleStatus.PENDING, downloaded: Date(), checksum: checksum)
         self.saveBundleInfo(id: id, bundle: info)
