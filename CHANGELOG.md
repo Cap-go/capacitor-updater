@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.3.36](https://github.com/Cap-go/capacitor-updater/compare/5.3.35...5.3.36) (2023-12-07)
+
+
+### Bug Fixes
+
+* missing error when network fail ([ae71a69](https://github.com/Cap-go/capacitor-updater/commit/ae71a69cd6a9487514206d5497de5e38d153e7d9))
+
 ### [5.3.35](https://github.com/Cap-go/capacitor-updater/compare/5.3.34...5.3.35) (2023-11-27)
 
 ### [5.3.34](https://github.com/Cap-go/capacitor-updater/compare/5.3.33...5.3.34) (2023-11-21)
