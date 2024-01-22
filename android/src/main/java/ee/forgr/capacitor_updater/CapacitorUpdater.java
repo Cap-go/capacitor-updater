@@ -488,17 +488,17 @@ public class CapacitorUpdater {
   }
 
   private String getChecksum(File file) throws IOException {
-      final int BUFFER_SIZE = 1024 * 1024 * 5; // 5 MB buffer size
-      CRC32 crc = new CRC32();
-      try (FileInputStream fis = new FileInputStream(file)) {
-          byte[] buffer = new byte[BUFFER_SIZE];
-          int length;
-          while ((length = fis.read(buffer)) != -1) {
-              crc.update(buffer, 0, length);
-          }
+    final int BUFFER_SIZE = 1024 * 1024 * 5; // 5 MB buffer size
+    CRC32 crc = new CRC32();
+    try (FileInputStream fis = new FileInputStream(file)) {
+      byte[] buffer = new byte[BUFFER_SIZE];
+      int length;
+      while ((length = fis.read(buffer)) != -1) {
+        crc.update(buffer, 0, length);
       }
-      String enc = String.format("%08X", crc.getValue());
-      return enc.toLowerCase();
+    }
+    String enc = String.format("%08X", crc.getValue());
+    return enc.toLowerCase();
   }
 
   private void decryptFile(

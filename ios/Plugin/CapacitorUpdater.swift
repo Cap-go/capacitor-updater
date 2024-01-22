@@ -334,13 +334,13 @@ extension CustomError: LocalizedError {
     private func getChecksum(filePath: URL) -> String {
         let bufferSize = 1024 * 1024 * 5 // 5 MB
         var checksum = uLong(0)
-        
+
         do {
             let fileHandle = try FileHandle(forReadingFrom: filePath)
             defer {
                 fileHandle.closeFile()
             }
-            
+
             while autoreleasepool(invoking: {
                 let fileData = fileHandle.readData(ofLength: bufferSize)
                 if fileData.count > 0 {
@@ -352,15 +352,13 @@ extension CustomError: LocalizedError {
                     return false // End of file
                 }
             }) {}
-            
+
             return String(format: "%08X", checksum).lowercased()
         } catch {
             print("\(self.TAG) Cannot get checksum: \(filePath.path)", error)
             return ""
         }
     }
-
-
 
     private func decryptFile(filePath: URL, sessionKey: String, version: String) throws {
         if self.privateKey.isEmpty || sessionKey.isEmpty  || sessionKey.components(separatedBy: ":").count != 2 {
