@@ -468,12 +468,14 @@ public class CapacitorUpdater {
   }
 
   private String getChecksum(File file) throws IOException {
-    byte[] bytes = new byte[(int) file.length()];
-    try (FileInputStream fis = new FileInputStream(file)) {
-      fis.read(bytes);
-    }
     CRC32 crc = new CRC32();
-    crc.update(bytes);
+    try (FileInputStream fis = new FileInputStream(file)) {
+      byte[] buffer = new byte[1024];
+      int length;
+      while ((length = fis.read(buffer)) != -1) {
+        crc.update(buffer, 0, length);
+      }
+    }
     String enc = String.format("%08X", crc.getValue());
     return enc.toLowerCase();
   }
