@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.3.47](https://github.com/Cap-go/capacitor-updater/compare/5.3.46...5.3.47) (2024-01-22)
+
+
+### Bug Fixes
+
+* align checksum buffersize android to 5mb ([51eeae8](https://github.com/Cap-go/capacitor-updater/commit/51eeae88b7c1a25f56b4d1ed15cbfba31baee1de))
+
 ### [5.3.46](https://github.com/Cap-go/capacitor-updater/compare/5.3.45...5.3.46) (2024-01-22)
 
 
