@@ -123,10 +123,52 @@ declare module "@capacitor/cli" {
        * Configure the delay period for period update check. the unit is in seconds.
        *
        * Only available for Android and iOS.
+       * Cannot be less than 600 seconds (10 minutes).
        *
        * @default 600 // (10 minutes)
        */
       periodCheckDelay?: number;
+
+      /**
+       * Configure the CLI to use a local server for testing or self-hosted update server.
+       * 
+       * 
+       * @default undefined
+       * @since  4.17.48
+       */
+      localS3?: boolean;
+      /**
+       * Configure the CLI to use a local server for testing or self-hosted update server.
+       * 
+       * 
+       * @default undefined
+       * @since  4.17.48
+       */
+      localHost?: string;
+      /**
+       * Configure the CLI to use a local server for testing or self-hosted update server.
+       * 
+       * 
+       * @default undefined
+       * @since  4.17.48
+       */
+      localWebHost?: string;
+      /**
+       * Configure the CLI to use a local server for testing or self-hosted update server.
+       * 
+       * 
+       * @default undefined
+       * @since  4.17.48
+       */
+      localSupa?: string;
+      /**
+       * Configure the CLI to use a local server for testing.
+       * 
+       * 
+       * @default undefined
+       * @since  4.17.48
+       */
+      localSupaAnon?: string;
     };
   }
 }
