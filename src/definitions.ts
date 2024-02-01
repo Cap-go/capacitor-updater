@@ -101,6 +101,47 @@ declare module "@capacitor/cli" {
        * @since  4.17.48
        */
       version?: string;
+
+      /**
+       * Configure the CLI to use a local server for testing or self-hosted update server.
+       * 
+       * 
+       * @default undefined
+       * @since  4.17.48
+       */
+      localS3?: boolean;
+      /**
+       * Configure the CLI to use a local server for testing or self-hosted update server.
+       * 
+       * 
+       * @default undefined
+       * @since  4.17.48
+       */
+      localHost?: string;
+      /**
+       * Configure the CLI to use a local server for testing or self-hosted update server.
+       * 
+       * 
+       * @default undefined
+       * @since  4.17.48
+       */
+      localWebHost?: string;
+      /**
+       * Configure the CLI to use a local server for testing or self-hosted update server.
+       * 
+       * 
+       * @default undefined
+       * @since  4.17.48
+       */
+      localSupa?: string;
+      /**
+       * Configure the CLI to use a local server for testing.
+       * 
+       * 
+       * @default undefined
+       * @since  4.17.48
+       */
+      localSupaAnon?: string;
     };
   }
 }
