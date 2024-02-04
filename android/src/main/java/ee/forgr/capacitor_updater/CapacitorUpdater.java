@@ -450,7 +450,7 @@ public class CapacitorUpdater {
     int percent = 0;
     this.notifyDownload(id, 10);
     try (
-      final InputStream is = u.openStream();
+      final InputStream is = connection.getInputStream();
       final DataInputStream dis = new DataInputStream(is);
       final FileOutputStream fos = new FileOutputStream(target)
     ) {
