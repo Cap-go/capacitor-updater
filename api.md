@@ -230,6 +230,7 @@ setChannel(options: SetChannelOptions) => Promise<channelRes>
 ```
 
 Set Channel for this device, the channel have to allow self assignement to make this work
+Do not use this method to set the channel at boot when autoUpdate is enabled, this method is made to set the channel after the app is ready when user click on a button for example
 
 | Param         | Type                                                            | Description                                                                      |
 | ------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------- |
