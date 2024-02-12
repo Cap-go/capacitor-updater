@@ -2,6 +2,40 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.3.50](https://github.com/Cap-go/capacitor-updater/compare/5.3.49...5.3.50) (2024-02-06)
+
+### [5.3.49](https://github.com/Cap-go/capacitor-updater/compare/5.3.48...5.3.49) (2024-02-01)
+
+
+### Bug Fixes
+
+* definition issue ([4213dae](https://github.com/Cap-go/capacitor-updater/commit/4213daeb8f490d3d70cab4201f61640498abc79e))
+
+### [5.3.48](https://github.com/Cap-go/capacitor-updater/compare/5.3.47...5.3.48) (2024-01-22)
+
+
+### Bug Fixes
+
+* lint ([c9992ab](https://github.com/Cap-go/capacitor-updater/commit/c9992abb7f98f3012e874a9fa605a4ef51146d37))
+
+### [5.3.47](https://github.com/Cap-go/capacitor-updater/compare/5.3.46...5.3.47) (2024-01-22)
+
+
+### Bug Fixes
+
+* align checksum buffersize android to 5mb ([51eeae8](https://github.com/Cap-go/capacitor-updater/commit/51eeae88b7c1a25f56b4d1ed15cbfba31baee1de))
+
+### [5.3.46](https://github.com/Cap-go/capacitor-updater/compare/5.3.45...5.3.46) (2024-01-22)
+
+
+### Bug Fixes
+
+* possible memory leak ios checksum ([cc7bebe](https://github.com/Cap-go/capacitor-updater/commit/cc7bebe7d06ccc289b4e8729909ab6c6448504c1))
+
+### [5.3.45](https://github.com/Cap-go/capacitor-updater/compare/5.3.44...5.3.45) (2024-01-22)
+
+### [5.3.44](https://github.com/Cap-go/capacitor-updater/compare/5.3.43...5.3.44) (2024-01-15)
+
 ### [5.3.43](https://github.com/Cap-go/capacitor-updater/compare/5.3.42...5.3.43) (2024-01-08)
 
 ### [5.3.42](https://github.com/Cap-go/capacitor-updater/compare/5.3.41...5.3.42) (2024-01-08)

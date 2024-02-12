@@ -123,10 +123,52 @@ declare module "@capacitor/cli" {
        * Configure the delay period for period update check. the unit is in seconds.
        *
        * Only available for Android and iOS.
+       * Cannot be less than 600 seconds (10 minutes).
        *
        * @default 600 // (10 minutes)
        */
       periodCheckDelay?: number;
+
+      /**
+       * Configure the CLI to use a local server for testing or self-hosted update server.
+       * 
+       * 
+       * @default undefined
+       * @since  4.17.48
+       */
+      localS3?: boolean;
+      /**
+       * Configure the CLI to use a local server for testing or self-hosted update server.
+       * 
+       * 
+       * @default undefined
+       * @since  4.17.48
+       */
+      localHost?: string;
+      /**
+       * Configure the CLI to use a local server for testing or self-hosted update server.
+       * 
+       * 
+       * @default undefined
+       * @since  4.17.48
+       */
+      localWebHost?: string;
+      /**
+       * Configure the CLI to use a local server for testing or self-hosted update server.
+       * 
+       * 
+       * @default undefined
+       * @since  4.17.48
+       */
+      localSupa?: string;
+      /**
+       * Configure the CLI to use a local server for testing.
+       * 
+       * 
+       * @default undefined
+       * @since  4.17.48
+       */
+      localSupaAnon?: string;
     };
   }
 }
@@ -410,6 +452,7 @@ export interface CapacitorUpdaterPlugin {
 
   /**
    * Set Channel for this device, the channel have to allow self assignement to make this work
+   * Do not use this method to set the channel at boot when autoUpdate is enabled, this method is made to set the channel after the app is ready when user click on a button for example
    *
    * @returns {Promise<channelRes>} an Promise resolved when channel is set
    * @param options is the {@link SetChannelOptions} channel to set
