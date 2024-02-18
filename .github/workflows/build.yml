@@ -68,6 +68,9 @@ jobs:
     needs: [build_android, build_ios]
     runs-on: ubuntu-latest
     name: "Build code and npm release"
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Check out
         uses: actions/checkout@v4
