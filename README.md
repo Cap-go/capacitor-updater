@@ -15,6 +15,8 @@
 [![Open Bounties](https://img.shields.io/endpoint?url=https%3A%2F%2Fconsole.algora.io%2Fapi%2Fshields%2FCapgo%2Fbounties%3Fstatus%3Dopen)](https://console.algora.io/org/Capgo/bounties?status=open)
 [![Rewarded Bounties](https://img.shields.io/endpoint?url=https%3A%2F%2Fconsole.algora.io%2Fapi%2Fshields%2FCapgo%2Fbounties%3Fstatus%3Dcompleted)](https://console.algora.io/org/Capgo/bounties?status=completed)
 
+<h2><a href="https://capgo.app/consulting/">Hire a Capacitor consultant</a></h2>
+
 Update Ionic Capacitor apps without App/Play Store review (Code-push / hot-code updates).
 
 You have 3 ways possible :
