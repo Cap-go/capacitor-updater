@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [5.4.0](https://github.com/Cap-go/capacitor-updater/compare/5.3.57...5.4.0) (2024-02-24)
+
+
+### Features
+
+* add setUrl methods ([70034fe](https://github.com/Cap-go/capacitor-updater/commit/70034fe64c31b5c808fb502d619d48b901501649))
+
 ### [5.3.57](https://github.com/Cap-go/capacitor-updater/compare/5.3.56...5.3.57) (2024-02-19)
 
 ### [5.3.56](https://github.com/Cap-go/capacitor-updater/compare/5.3.55...5.3.56) (2024-02-18)
