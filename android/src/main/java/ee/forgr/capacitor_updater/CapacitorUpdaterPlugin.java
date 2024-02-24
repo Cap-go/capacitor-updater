@@ -365,6 +365,57 @@ public class CapacitorUpdaterPlugin extends Plugin {
   }
 
   @PluginMethod
+  public void setUpdateUrl(final PluginCall call) {
+    if (!this.getConfig().getBoolean("allowModifyUrl", false)) {
+      Log.e(CapacitorUpdater.TAG, "setUpdateUrl not allowed");
+      call.reject("setUpdateUrl not allowed");
+      return;
+    }
+    final String url = call.getString("url");
+    if (url == null) {
+      Log.e(CapacitorUpdater.TAG, "setUpdateUrl called without url");
+      call.reject("setUpdateUrl called without url");
+      return;
+    }
+    this.updateUrl = url;
+    call.resolve();
+  }
+
+  @PluginMethod
+  public void setStatsUrl(final PluginCall call) {
+    if (!this.getConfig().getBoolean("allowModifyUrl", false)) {
+      Log.e(CapacitorUpdater.TAG, "setStatsUrl not allowed");
+      call.reject("setStatsUrl not allowed");
+      return;
+    }
+    final String url = call.getString("url");
+    if (url == null) {
+      Log.e(CapacitorUpdater.TAG, "setStatsUrl called without url");
+      call.reject("setStatsUrl called without url");
+      return;
+    }
+    this.implementation.statsUrl = url;
+    call.resolve();
+  }
+
+  @PluginMethod
+  public void setChannelUrl(final PluginCall call) {
+    if (!this.getConfig().getBoolean("allowModifyUrl", false)) {
+      Log.e(CapacitorUpdater.TAG, "setChannelUrl not allowed");
+      call.reject("setChannelUrl not allowed");
+      return;
+    }
+    final String url = call.getString("url");
+    if (url == null) {
+      Log.e(CapacitorUpdater.TAG, "setChannelUrl called without url");
+      call.reject("setChannelUrl called without url");
+      return;
+    }
+    this.implementation.channelUrl = url;
+    call.resolve();
+  }
+
+  @PluginMethod
   public void getBuiltinVersion(final PluginCall call) {
     try {
       final JSObject ret = new JSObject();

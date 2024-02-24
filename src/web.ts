@@ -30,6 +30,18 @@ export class CapacitorUpdaterWeb
   extends WebPlugin
   implements CapacitorUpdaterPlugin
 {
+  async setStatsUrl(options: { url: string }): Promise<void> {
+    console.warn("Cannot setStatsUrl in web", options);
+    return;
+  }
+  async setUpdateUrl(options: { url: string }): Promise<void> {
+    console.warn("Cannot setUpdateUrl in web", options);
+    return;
+  }
+  async setChannelUrl(options: { url: string; }): Promise<void> {
+    console.warn("Cannot setChannelUrl in web", options);
+    return;
+  }
   async download(options: {
     url: string;
     version?: string;

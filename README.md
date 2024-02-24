@@ -143,11 +143,110 @@ Capacitor Updator works by unzipping a compiled app bundle to the native device 
 - Do not password encrypt the bundle zip file, or it will fail to unpack.
 - Make sure the bundle does not contain any extra hidden files or folders, or it may fail to unpack.
 
+## Updater Plugin Config
+
+<docgen-config>
+<!--Update the source file JSDoc comments and rerun docgen to update the docs below-->
+
+CapacitorUpdater can be configured with this options:
+
+| Prop                     | Type                 | Description                                                                                                                                                                                     | Default                                        | Since   |
+| ------------------------ | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | ------- |
+| **`appReadyTimeout`**    | <code>number</code>  | Configure the number of milliseconds the native plugin should wait before considering an update 'failed'. Only available for Android and iOS.                                                   | <code>10000 // (10 seconds)</code>             |         |
+| **`responseTimeout`**    | <code>number</code>  | Configure the number of milliseconds the native plugin should wait before considering API timeout. Only available for Android and iOS.                                                          | <code>20 // (20 second)</code>                 |         |
+| **`autoDeleteFailed`**   | <code>boolean</code> | Configure whether the plugin should use automatically delete failed bundles. Only available for Android and iOS.                                                                                | <code>true</code>                              |         |
+| **`autoDeletePrevious`** | <code>boolean</code> | Configure whether the plugin should use automatically delete previous bundles after a successful update. Only available for Android and iOS.                                                    | <code>true</code>                              |         |
+| **`autoUpdate`**         | <code>boolean</code> | Configure whether the plugin should use Auto Update via an update server. Only available for Android and iOS.                                                                                   | <code>true</code>                              |         |
+| **`resetWhenUpdate`**    | <code>boolean</code> | Automatically delete previous downloaded bundles when a newer native app bundle is installed to the device. Only available for Android and iOS.                                                 | <code>true</code>                              |         |
+| **`updateUrl`**          | <code>string</code>  | Configure the URL / endpoint to which update checks are sent. Only available for Android and iOS.                                                                                               | <code>https://api.capgo.app/auto_update</code> |         |
+| **`statsUrl`**           | <code>string</code>  | Configure the URL / endpoint to which update statistics are sent. Only available for Android and iOS. Set to "" to disable stats reporting.                                                     | <code>https://api.capgo.app/stats</code>       |         |
+| **`privateKey`**         | <code>string</code>  | Configure the private key for end to end live update encryption. Only available for Android and iOS.                                                                                            | <code>undefined</code>                         |         |
+| **`version`**            | <code>string</code>  | Configure the current version of the app. This will be used for the first update request. If not set, the plugin will get the version from the native code. Only available for Android and iOS. | <code>undefined</code>                         | 4.17.48 |
+| **`directUpdate`**       | <code>boolean</code> | Make the plugin direct install the update when the app what just updated/installed. Only for autoUpdate mode. Only available for Android and iOS.                                               | <code>undefined</code>                         | 5.1.0   |
+| **`periodCheckDelay`**   | <code>number</code>  | Configure the delay period for period update check. the unit is in seconds. Only available for Android and iOS. Cannot be less than 600 seconds (10 minutes).                                   | <code>600 // (10 minutes)</code>               |         |
+| **`localS3`**            | <code>boolean</code> | Configure the CLI to use a local server for testing or self-hosted update server.                                                                                                               | <code>undefined</code>                         | 4.17.48 |
+| **`localHost`**          | <code>string</code>  | Configure the CLI to use a local server for testing or self-hosted update server.                                                                                                               | <code>undefined</code>                         | 4.17.48 |
+| **`localWebHost`**       | <code>string</code>  | Configure the CLI to use a local server for testing or self-hosted update server.                                                                                                               | <code>undefined</code>                         | 4.17.48 |
+| **`localSupa`**          | <code>string</code>  | Configure the CLI to use a local server for testing or self-hosted update server.                                                                                                               | <code>undefined</code>                         | 4.17.48 |
+| **`localSupaAnon`**      | <code>string</code>  | Configure the CLI to use a local server for testing.                                                                                                                                            | <code>undefined</code>                         | 4.17.48 |
+| **`allowModifyUrl`**     | <code>boolean</code> | Allow the plugin to modify the updateUrl, statsUrl and channelUrl dynamically from the JavaScript side.                                                                                         | <code>false</code>                             | 5.4.0   |
+
+### Examples
+
+In `capacitor.config.json`:
+
+```json
+{
+  "plugins": {
+    "CapacitorUpdater": {
+      "appReadyTimeout": 1000 // (1 second),
+      "responseTimeout": 10 // (10 second),
+      "autoDeleteFailed": false,
+      "autoDeletePrevious": false,
+      "autoUpdate": false,
+      "resetWhenUpdate": false,
+      "updateUrl": https://example.com/api/auto_update,
+      "statsUrl": https://example.com/api/stats,
+      "privateKey": undefined,
+      "version": undefined,
+      "directUpdate": undefined,
+      "periodCheckDelay": undefined,
+      "localS3": undefined,
+      "localHost": undefined,
+      "localWebHost": undefined,
+      "localSupa": undefined,
+      "localSupaAnon": undefined,
+      "allowModifyUrl": undefined
+    }
+  }
+}
+```
+
+In `capacitor.config.ts`:
+
+```ts
+/// <reference types="@capgo/capacitor-updater" />
+
+import { CapacitorConfig } from '@capacitor/cli';
+
+const config: CapacitorConfig = {
+  plugins: {
+    CapacitorUpdater: {
+      appReadyTimeout: 1000 // (1 second),
+      responseTimeout: 10 // (10 second),
+      autoDeleteFailed: false,
+      autoDeletePrevious: false,
+      autoUpdate: false,
+      resetWhenUpdate: false,
+      updateUrl: https://example.com/api/auto_update,
+      statsUrl: https://example.com/api/stats,
+      privateKey: undefined,
+      version: undefined,
+      directUpdate: undefined,
+      periodCheckDelay: undefined,
+      localS3: undefined,
+      localHost: undefined,
+      localWebHost: undefined,
+      localSupa: undefined,
+      localSupaAnon: undefined,
+      allowModifyUrl: undefined,
+    },
+  },
+};
+
+export default config;
+```
+
+</docgen-config>
+
 ## API
 
 <docgen-index>
 
 * [`notifyAppReady()`](#notifyappready)
+* [`setUpdateUrl(...)`](#setupdateurl)
+* [`setStatsUrl(...)`](#setstatsurl)
+* [`setChannelUrl(...)`](#setchannelurl)
 * [`download(...)`](#download)
 * [`next(...)`](#next)
 * [`set(...)`](#set)
@@ -196,6 +295,57 @@ By default this method should be called in the first 10 sec after app launch, ot
 Change this behaviour with {@link appReadyTimeout}
 
 **Returns:** <code>Promise&lt;{ bundle: <a href="#bundleinfo">BundleInfo</a>; }&gt;</code>
+
+--------------------
+
+
+### setUpdateUrl(...)
+
+```typescript
+setUpdateUrl(options: { url: string; }) => Promise<void>
+```
+
+Set the updateUrl for the app, this will be used to check for updates.
+
+| Param         | Type                          |
+| ------------- | ----------------------------- |
+| **`options`** | <code>{ url: string; }</code> |
+
+**Since:** 5.4.0
+
+--------------------
+
+
+### setStatsUrl(...)
+
+```typescript
+setStatsUrl(options: { url: string; }) => Promise<void>
+```
+
+Set the statsUrl for the app, this will be used to send statistics.
+
+| Param         | Type                          |
+| ------------- | ----------------------------- |
+| **`options`** | <code>{ url: string; }</code> |
+
+**Since:** 5.4.0
+
+--------------------
+
+
+### setChannelUrl(...)
+
+```typescript
+setChannelUrl(options: { url: string; }) => Promise<void>
+```
+
+Set the channelUrl for the app, this will be used to set the channel.
+
+| Param         | Type                          |
+| ------------- | ----------------------------- |
+| **`options`** | <code>{ url: string; }</code> |
+
+**Since:** 5.4.0
 
 --------------------
 

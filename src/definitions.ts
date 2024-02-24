@@ -7,10 +7,10 @@
 /// <reference types="@capacitor/cli" />
 import type { PluginListenerHandle } from "@capacitor/core";
 
-declare module "@capacitor/cli" {
+declare module '@capacitor/cli' {
   export interface PluginsConfig {
     /**
-     * These configuration values are available:
+     * CapacitorUpdater can be configured with this options:
      */
     CapacitorUpdater?: {
       /**
@@ -169,6 +169,16 @@ declare module "@capacitor/cli" {
        * @since  4.17.48
        */
       localSupaAnon?: string;
+
+      // allow modif url dynamically
+      /**
+       * Allow the plugin to modify the updateUrl, statsUrl and channelUrl dynamically from the JavaScript side.
+       *
+       *
+       * @default false
+       * @since  5.4.0
+       */
+      allowModifyUrl?: boolean;
     };
   }
 }
@@ -333,6 +343,36 @@ export interface CapacitorUpdaterPlugin {
    * @throws An error if something went wrong
    */
   notifyAppReady(): Promise<{ bundle: BundleInfo }>;
+
+  /**
+   * Set the updateUrl for the app, this will be used to check for updates.
+   *
+   * @returns {Promise<void>} an empty Promise
+   * @param url The URL to use for checking for updates.
+   * @throws An error if the something went wrong
+   * @since 5.4.0
+   */
+  setUpdateUrl(options: { url: string }): Promise<void>;
+
+  /**
+   * Set the statsUrl for the app, this will be used to send statistics.
+   *
+   * @returns {Promise<void>} an empty Promise
+   * @param url The URL to use for sending statistics.
+   * @throws An error if the something went wrong
+   * @since 5.4.0
+   */
+  setStatsUrl(options: { url: string }): Promise<void>;
+
+  /**
+   * Set the channelUrl for the app, this will be used to set the channel.
+   *
+   * @returns {Promise<void>} an empty Promise
+   * @param url The URL to use for setting the channel.
+   * @throws An error if the something went wrong
+   * @since 5.4.0
+   */
+  setChannelUrl(options: { url: string }): Promise<void>;
 
   /**
    * Download a new bundle from the provided URL, it should be a zip file, with files inside or with a unique id inside with all your files

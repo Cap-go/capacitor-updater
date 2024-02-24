@@ -141,6 +141,51 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         }
     }
 
+    @objc func setUpdateUrl(_ call: CAPPluginCall) {
+        guard let allowModifyUrl = call.getBool("allowModifyUrl") else {
+            print("\(self.implementation.TAG) setUpdateUrl called without allowModifyUrl")
+            call.reject("setUpdateUrl called without allowModifyUrl")
+            return
+        }
+        guard let url = call.getString("url") else {
+            print("\(self.implementation.TAG) setUpdateUrl called without url")
+            call.reject("setUpdateUrl called without url")
+            return
+        }
+        self.updateUrl = url
+        call.resolve()
+    }
+
+    @objc func setStatsUrl(_ call: CAPPluginCall) {
+        guard let allowModifyUrl = call.getBool("allowModifyUrl") else {
+            print("\(self.implementation.TAG) setStatsUrl called without allowModifyUrl")
+            call.reject("setStatsUrl called without allowModifyUrl")
+            return
+        }
+        guard let url = call.getString("url") else {
+            print("\(self.implementation.TAG) setStatsUrl called without url")
+            call.reject("setStatsUrl called without url")
+            return
+        }
+        self.statsUrl = url
+        call.resolve()
+    }
+
+    @objc func setChannelUrl(_ call: CAPPluginCall) {
+        guard let allowModifyUrl = call.getBool("allowModifyUrl") else {
+            print("\(self.implementation.TAG) setChannelUrl called without allowModifyUrl")
+            call.reject("setChannelUrl called without allowModifyUrl")
+            return
+        }
+        guard let url = call.getString("url") else {
+            print("\(self.implementation.TAG) setChannelUrl called without url")
+            call.reject("setChannelUrl called without url")
+            return
+        }
+        self.implementation.channelUrl = url
+        call.resolve()
+    }
+
     @objc func getBuiltinVersion(_ call: CAPPluginCall) {
         call.resolve(["version": implementation.versionBuild])
     }

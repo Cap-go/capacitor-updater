@@ -5,6 +5,9 @@
 // each method the plugin supports using the CAP_PLUGIN_METHOD macro.
 CAP_PLUGIN(CapacitorUpdaterPlugin, "CapacitorUpdater",
            CAP_PLUGIN_METHOD(download, CAPPluginReturnPromise);
+           CAP_PLUGIN_METHOD(setUpdateUrl, CAPPluginReturnPromise);
+           CAP_PLUGIN_METHOD(setStatsUrl, CAPPluginReturnPromise);
+           CAP_PLUGIN_METHOD(setChannelUrl, CAPPluginReturnPromise);
            CAP_PLUGIN_METHOD(set, CAPPluginReturnPromise);
            CAP_PLUGIN_METHOD(list, CAPPluginReturnPromise);
            CAP_PLUGIN_METHOD(delete, CAPPluginReturnPromise);
