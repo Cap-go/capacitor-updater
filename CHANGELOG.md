@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [5.5.0](https://github.com/Cap-go/capacitor-updater/compare/5.4.1...5.5.0) (2024-02-24)
+
+
+### Features
+
+* add default channel option ([d92dcb7](https://github.com/Cap-go/capacitor-updater/commit/d92dcb74b80c74e036a099c0ec34881a516ef8d7))
+
 ### [5.4.1](https://github.com/Cap-go/capacitor-updater/compare/5.4.0...5.4.1) (2024-02-24)
 
 
