@@ -10,6 +10,9 @@ See the Github [Readme](https://github.com/Cap-go/capacitor-updater) for more in
 <docgen-index>
 
 * [`notifyAppReady()`](#notifyappready)
+* [`setUpdateUrl(...)`](#setupdateurl)
+* [`setStatsUrl(...)`](#setstatsurl)
+* [`setChannelUrl(...)`](#setchannelurl)
 * [`download(...)`](#download)
 * [`next(...)`](#next)
 * [`set(...)`](#set)
@@ -58,6 +61,57 @@ By default this method should be called in the first 10 sec after app launch, ot
 Change this behaviour with {@link appReadyTimeout}
 
 **Returns:** <code>Promise&lt;{ bundle: <a href="#bundleinfo">BundleInfo</a>; }&gt;</code>
+
+--------------------
+
+
+## setUpdateUrl(...)
+
+```typescript
+setUpdateUrl(options: { url: string; }) => Promise<void>
+```
+
+Set the updateUrl for the app, this will be used to check for updates.
+
+| Param         | Type                          |
+| ------------- | ----------------------------- |
+| **`options`** | <code>{ url: string; }</code> |
+
+**Since:** 5.4.0
+
+--------------------
+
+
+## setStatsUrl(...)
+
+```typescript
+setStatsUrl(options: { url: string; }) => Promise<void>
+```
+
+Set the statsUrl for the app, this will be used to send statistics.
+
+| Param         | Type                          |
+| ------------- | ----------------------------- |
+| **`options`** | <code>{ url: string; }</code> |
+
+**Since:** 5.4.0
+
+--------------------
+
+
+## setChannelUrl(...)
+
+```typescript
+setChannelUrl(options: { url: string; }) => Promise<void>
+```
+
+Set the channelUrl for the app, this will be used to set the channel.
+
+| Param         | Type                          |
+| ------------- | ----------------------------- |
+| **`options`** | <code>{ url: string; }</code> |
+
+**Since:** 5.4.0
 
 --------------------
 
