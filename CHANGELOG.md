@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [5.6.0](https://github.com/Cap-go/capacitor-updater/compare/5.5.1...5.6.0) (2024-02-24)
+
+
+### Features
+
+* allow data form getLatest ([6cee5cd](https://github.com/Cap-go/capacitor-updater/commit/6cee5cdc1b4f045d23937ceb1c8ec5a064b3244b))
+
 ### [5.5.1](https://github.com/Cap-go/capacitor-updater/compare/5.5.0...5.5.1) (2024-02-24)
 
 
