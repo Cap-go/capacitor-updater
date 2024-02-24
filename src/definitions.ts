@@ -7,7 +7,7 @@
 /// <reference types="@capacitor/cli" />
 import type { PluginListenerHandle } from "@capacitor/core";
 
-declare module '@capacitor/cli' {
+declare module "@capacitor/cli" {
   export interface PluginsConfig {
     /**
      * CapacitorUpdater can be configured with this options:

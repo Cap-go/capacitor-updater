@@ -38,7 +38,7 @@ export class CapacitorUpdaterWeb
     console.warn("Cannot setUpdateUrl in web", options);
     return;
   }
-  async setChannelUrl(options: { url: string; }): Promise<void> {
+  async setChannelUrl(options: { url: string }): Promise<void> {
     console.warn("Cannot setChannelUrl in web", options);
     return;
   }
