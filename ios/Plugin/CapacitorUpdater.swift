@@ -89,6 +89,7 @@ struct AppVersionDec: Decodable {
     let error: String?
     let session_key: String?
     let major: Bool?
+    let data: [String: String]?
 }
 public class AppVersion: NSObject {
     var version: String = ""
@@ -98,6 +99,7 @@ public class AppVersion: NSObject {
     var error: String?
     var sessionKey: String?
     var major: Bool?
+    var data: [String: String]?
 }
 
 extension AppVersion {
@@ -466,6 +468,9 @@ extension CustomError: LocalizedError {
                 }
                 if let sessionKey = response.value?.session_key {
                     latest.sessionKey = sessionKey
+                }
+                if let data = response.value?.data {
+                    latest.data = data
                 }
             case let .failure(error):
                 print("\(self.TAG) Error getting Latest", response.value ?? "", error )
