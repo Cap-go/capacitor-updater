@@ -79,6 +79,7 @@ struct InfoObject: Codable {
     let is_prod: Bool?
     var action: String?
     var channel: String?
+    var defaultChannel: String?
 }
 struct AppVersionDec: Decodable {
     let version: String?
@@ -233,6 +234,7 @@ extension CustomError: LocalizedError {
     public var timeout: Double = 20
     public var statsUrl: String = ""
     public var channelUrl: String = ""
+    public var defaultChannel: String = ""
     public var appId: String = ""
     public var deviceID = UIDevice.current.identifierForVendor?.uuidString ?? ""
     public var privateKey: String = ""
@@ -429,7 +431,8 @@ extension CustomError: LocalizedError {
             is_emulator: self.isEmulator(),
             is_prod: self.isProd(),
             action: nil,
-            channel: nil
+            channel: nil,
+            defaultChannel: self.defaultChannel
         )
     }
 

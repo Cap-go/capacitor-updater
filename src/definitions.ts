@@ -170,7 +170,6 @@ declare module "@capacitor/cli" {
        */
       localSupaAnon?: string;
 
-      // allow modif url dynamically
       /**
        * Allow the plugin to modify the updateUrl, statsUrl and channelUrl dynamically from the JavaScript side.
        *
@@ -179,6 +178,16 @@ declare module "@capacitor/cli" {
        * @since  5.4.0
        */
       allowModifyUrl?: boolean;
+
+      /**
+       * Set the default channel for the app in the config.
+       *
+       *
+       *
+       * @default undefined
+       * @since  5.5.0
+       */
+      defaultChannel?: string;
     };
   }
 }

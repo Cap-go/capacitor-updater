@@ -88,6 +88,7 @@ public class CapacitorUpdater {
   public String customId = "";
   public String statsUrl = "";
   public String channelUrl = "";
+  public String defaultChannel = "";
   public String appId = "";
   public String privateKey = "";
   public String deviceID = "";
@@ -763,6 +764,7 @@ public class CapacitorUpdater {
     json.put("plugin_version", this.PLUGIN_VERSION);
     json.put("is_emulator", this.isEmulator());
     json.put("is_prod", this.isProd());
+    json.put("defaultChannel", this.defaultChannel);
     return json;
   }
 

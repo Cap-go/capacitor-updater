@@ -80,6 +80,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         print("\(self.implementation.TAG) appId \(implementation.appId)")
         implementation.statsUrl = getConfig().getString("statsUrl", CapacitorUpdaterPlugin.statsUrlDefault)!
         implementation.channelUrl = getConfig().getString("channelUrl", CapacitorUpdaterPlugin.channelUrlDefault)!
+        implementation.defaultChannel = getConfig().getString("defaultChannel", "")!
         if resetWhenUpdate {
             self.cleanupObsoleteVersions()
         }
@@ -142,7 +143,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func setUpdateUrl(_ call: CAPPluginCall) {
-        guard let allowModifyUrl = call.getBool("allowModifyUrl") else {
+        if !call.getBool("allowModifyUrl", false) {
             print("\(self.implementation.TAG) setUpdateUrl called without allowModifyUrl")
             call.reject("setUpdateUrl called without allowModifyUrl")
             return
@@ -157,7 +158,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func setStatsUrl(_ call: CAPPluginCall) {
-        guard let allowModifyUrl = call.getBool("allowModifyUrl") else {
+        if !call.getBool("allowModifyUrl", false) {
             print("\(self.implementation.TAG) setStatsUrl called without allowModifyUrl")
             call.reject("setStatsUrl called without allowModifyUrl")
             return
@@ -172,7 +173,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func setChannelUrl(_ call: CAPPluginCall) {
-        guard let allowModifyUrl = call.getBool("allowModifyUrl") else {
+        if !call.getBool("allowModifyUrl", false) {
             print("\(self.implementation.TAG) setChannelUrl called without allowModifyUrl")
             call.reject("setChannelUrl called without allowModifyUrl")
             return

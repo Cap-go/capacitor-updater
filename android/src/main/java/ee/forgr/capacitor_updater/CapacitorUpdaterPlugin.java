@@ -182,6 +182,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     this.implementation.channelUrl =
       this.getConfig().getString("channelUrl", channelUrlDefault);
     int userValue = this.getConfig().getInt("periodCheckDelay", 0);
+    this.implementation.defaultChannel =
+      this.getConfig().getString("defaultChannel", "");
 
     if (userValue >= 0 && userValue <= 600) {
       this.periodCheckDelay = 600 * 1000;

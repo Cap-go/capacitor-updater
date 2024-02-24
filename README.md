@@ -170,6 +170,7 @@ CapacitorUpdater can be configured with this options:
 | **`localSupa`**          | <code>string</code>  | Configure the CLI to use a local server for testing or self-hosted update server.                                                                                                               | <code>undefined</code>                         | 4.17.48 |
 | **`localSupaAnon`**      | <code>string</code>  | Configure the CLI to use a local server for testing.                                                                                                                                            | <code>undefined</code>                         | 4.17.48 |
 | **`allowModifyUrl`**     | <code>boolean</code> | Allow the plugin to modify the updateUrl, statsUrl and channelUrl dynamically from the JavaScript side.                                                                                         | <code>false</code>                             | 5.4.0   |
+| **`defaultChannel`**     | <code>string</code>  | Set the default channel for the app in the config.                                                                                                                                              | <code>undefined</code>                         | 5.5.0   |
 
 ### Examples
 
@@ -196,7 +197,8 @@ In `capacitor.config.json`:
       "localWebHost": undefined,
       "localSupa": undefined,
       "localSupaAnon": undefined,
-      "allowModifyUrl": undefined
+      "allowModifyUrl": undefined,
+      "defaultChannel": undefined
     }
   }
 }
@@ -230,6 +232,7 @@ const config: CapacitorConfig = {
       localSupa: undefined,
       localSupaAnon: undefined,
       allowModifyUrl: undefined,
+      defaultChannel: undefined,
     },
   },
 };
