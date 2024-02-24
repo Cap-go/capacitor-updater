@@ -5,6 +5,8 @@ sidebar:
   order: 2
 ---
 
+# Updater Plugin Config
+
 See the Github [Readme](https://github.com/Cap-go/capacitor-updater) for more information.
 
 <docgen-config>
@@ -143,6 +145,8 @@ export default config;
 * [Type Aliases](#type-aliases)
 
 </docgen-index>
+
+# Methods
 
 <docgen-api>
 <!--Update the source file JSDoc comments and rerun docgen to update the docs below-->
