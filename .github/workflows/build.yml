@@ -27,7 +27,7 @@ jobs:
         with:
           distribution: 'zulu'
           java-version: '17'
-      - uses: actions/cache@v3
+      - uses: actions/cache@v4
         with:
           path: |
             ~/android/.gradle/*
@@ -51,7 +51,7 @@ jobs:
         with:
           node-version: 18
           cache: 'pnpm'
-      - uses: actions/cache@v3
+      - uses: actions/cache@v4
         id: cocoapods-cache
         with:
           path: ios/Pods
