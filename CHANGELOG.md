@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.6.5](https://github.com/Cap-go/capacitor-updater/compare/5.6.4...5.6.5) (2024-02-26)
+
+
+### Bug Fixes
+
+* android opening two download stream of the bundle ([8ee743a](https://github.com/Cap-go/capacitor-updater/commit/8ee743ae6b606df6b7db253d80aa7cd6d28c1790))
+* trigger CI/CD ([da88c2d](https://github.com/Cap-go/capacitor-updater/commit/da88c2d64e60ec411b4898d0218386dbd3eadd79))
+
 ### [5.6.4](https://github.com/Cap-go/capacitor-updater/compare/5.6.3...5.6.4) (2024-02-26)
 
 ### [5.6.3](https://github.com/Cap-go/capacitor-updater/compare/5.6.2...5.6.3) (2024-02-26)
