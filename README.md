@@ -153,7 +153,7 @@ Capacitor Updater works by unzipping a compiled app bundle to the native device 
 <docgen-config>
 <!--Update the source file JSDoc comments and rerun docgen to update the docs below-->
 
-CapacitorUpdater can be configured with these options:
+CapacitorUpdater can be configured with this options:
 
 | Prop                     | Type                 | Description                                                                                                                                                                                     | Default                                        | Since   |
 | ------------------------ | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | ------- |
