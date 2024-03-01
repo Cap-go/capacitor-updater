@@ -157,7 +157,7 @@ export default config;
 notifyAppReady() => Promise<{ bundle: BundleInfo; }>
 ```
 
-Notify Capacitor Updater that the current bundle is working (a rollback will occur of this method is not called on every app launch)
+Notify Capacitor Updater that the current bundle is working (a rollback will occur if this method is not called on every app launch)
 By default this method should be called in the first 10 sec after app launch, otherwise a rollback will occur.
 Change this behaviour with {@link appReadyTimeout}
 
