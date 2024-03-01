@@ -20,8 +20,8 @@
 Update Ionic Capacitor apps without App/Play Store review (Code-push / hot-code updates).
 
 You have 3 ways possible :
-- Use [capgo.app](https://capgo.app) a full featured auto update system in 5 min Setup, to manage version, update, revert and see stats.
-- Use your own server update with auto update system
+- Use [capgo.app](https://capgo.app) a full featured auto-update system in 5 min Setup, to manage version, update, revert and see stats.
+- Use your own server update with auto-update system
 - Use manual methods to zip, upload, download, from JS to do it when you want.
 
 
@@ -29,7 +29,7 @@ You have 3 ways possible :
 Join the [discord](https://discord.gg/VnYRvBfgA6) to get help.
 
 ## Documentation
-I maintain a more user friendly and complete [documentation here](https://capgo.app/docs/).
+I maintain a more user-friendly and complete [documentation here](https://capgo.app/docs/).
 
 ## Installation
 
@@ -40,16 +40,16 @@ npx cap sync
 
 ## Auto-update setup
 
-Create your account in [capgo.app](https://capgo.app) and get your [API key](https://capgo.app/app/apikeys)
+Create your account in [capgo.app](https://capgo.app) and get your [API key](https://web.capgo.app/dashboard/apikeys)
 - Login to CLI `npx @capgo/cli@latest init API_KEY`
 And follow the steps by step to setup your app.
 
-See more there in the [Auto update documentation](https://capgo.app/docs/plugin/auto-update).
+For detailed instructions on the auto-update setup, refer to the [Auto update documentation](https://capgo.app/docs/plugin/cloud-mode/getting-started/).
 
 
 ## Manual setup
 
-Download update distribution zipfiles from a custom url. Manually control the entire update process.
+Download update distribution zipfiles from a custom URL. Manually control the entire update process.
 
 - Edit your `capacitor.config.json` like below, set `autoUpdate` to false.
 ```json
@@ -69,7 +69,7 @@ Download update distribution zipfiles from a custom url. Manually control the en
   import { CapacitorUpdater } from '@capgo/capacitor-updater'
   CapacitorUpdater.notifyAppReady()
 ```
-This informs Capacitor Updator that the current update bundle has loaded succesfully. Failing to call this method will cause your application to be rolled back to the previously successful version (or built-in bundle).
+This informs Capacitor Updater that the current update bundle has loaded succesfully. Failing to call this method will cause your application to be rolled back to the previously successful version (or built-in bundle).
 - Add this to your application.
 ```javascript
   const version = await CapacitorUpdater.download({
@@ -108,7 +108,7 @@ You might also consider performing auto-update when application state changes, a
 
 ```
 
-TIP: If you prefer a secure and automated way to update your app, you can use [capgo.app](https://capgo.app) - a full-featured, auto update system.
+TIP: If you prefer a secure and automated way to update your app, you can use [capgo.app](https://capgo.app) - a full-featured, auto-update system.
 
 ### Store Guideline Compliance
 
@@ -116,28 +116,33 @@ Android Google Play and iOS App Store have corresponding guidelines that have ru
 
 #### Google play
 
-Third paragraph of [Device and Network Abuse](https://support.google.com/googleplay/android-developer/answer/9888379?hl=en) topic describe that updating source code by any method other than Google Play's update mechanism is restricted. But this restriction does not apply to updating javascript bundles.
-> This restriction does not apply to code that runs in a virtual machine and has limited access to Android APIs (such as JavaScript in a webview or browser).
+Third paragraph of [Device and Network Abuse](https://support.google.com/googleplay/android-developer/answer/9888379?hl=en) topic describe that updating source code by any method besides Google Play's update mechanism is restricted. But this restriction does not apply to updating JavaScript bundles.
+> This restriction does not apply to code that runs in a virtual machine and has limited access to Android APIs (such as JavaScript in a web view or browser).
 
 That fully allow Capacitor-updater as it updates just JS bundles and can't update native code part.
 
 #### App Store
 
-Paragraph **3.3.2**, since back in 2015's [Apple Developer Program License Agreement](https://developer.apple.com/programs/ios/information/) fully allowed performing over-the-air updates of JavaScript and assets -  and in its latest version (20170605) [downloadable here](https://developer.apple.com/terms/) this ruling is even broader:
+Paragraph **3.3.2**, since back in 2015's [Apple Developer Program License Agreement](https://developer.apple.com/programs/ios/information/) fully allowed performing over-the-air updates of JavaScript and assets.
 
-> Interpreted code may be downloaded to an Application but only so long as such code: (a) does not change the primary purpose of the Application by providing features or functionality that are inconsistent with the intended and advertised purpose of the Application as submitted to the App Store, (b) does not create a store or storefront for other code or applications, and (c) does not bypass signing, sandbox, or other security features of the OS.
+And in its latest version (20170605) [downloadable here](https://developer.apple.com/terms/) this ruling is even broader:
 
-Capacitor-updater allows you to follow these rules in full compliance so long as the update you push does not significantly deviate your product from its original App Store approved intent.
+> Interpreted code may be downloaded to an Application, but only so long as such code:
+- (a) does not change the primary purpose of the Application by providing features or functionality that are inconsistent with the intended and advertised purpose of the Application as submitted to the App Store
+- (b) does not create a store or storefront for other code or applications
+- (c) does not bypass signing, sandbox, or other security features of the OS.
 
-To further remain in compliance with Apple's guidelines we suggest that App Store-distributed apps don't enable the `Force update` scenario, since in the [App Store Review Guidelines](https://developer.apple.com/app-store/review/guidelines/) it is written that:
+Capacitor-updater allows you to respect these rules in full compliance, so long as the update you push does not significantly deviate your product from its original App Store approved intent.
 
-> Apps must not force users to rate the app, review the app, download other apps, or other similar actions in order to access functionality, content, or use of the app.
+To further remain in compliance with Apple's guidelines, we suggest that App Store-distributed apps don't enable the `Force update` scenario, since in the [App Store Review Guidelines](https://developer.apple.com/app-store/review/guidelines/) it is written that:
 
-This is not a problem for the default behavior of background update, since it won't force the user to apply the new version until next app close, but at least you should be aware of that ruling if you decide to show it.
+> Apps must not force users to rate the app, review the app, download other apps, or other similar actions to access functionality, content, or use of the app.
+
+This is not a problem for the default behavior of background update, since it won't force the user to apply the new version until the next app close, but at least you should be aware of that ruling if you decide to show it.
 
 ### Packaging `dist.zip` update bundles
 
-Capacitor Updator works by unzipping a compiled app bundle to the native device filesystem. Whatever you choose to name the file you upload/download from your release/update server URL (via either manual or automatic updating), this `.zip` bundle must meet the following requirements:
+Capacitor Updater works by unzipping a compiled app bundle to the native device filesystem. Whatever you choose to name the file you upload/download from your release/update server URL (via either manual or automatic updating), this `.zip` bundle must meet the following requirements:
 
 - The zip file should contain the full contents of your production Capacitor build output folder, usually `{project directory}/dist/` or `{project directory}/www/`. This is where `index.html` will be located, and it should also contain all bundled JavaScript, CSS, and web resources necessary for your app to run.
 - Do not password encrypt the bundle zip file, or it will fail to unpack.
@@ -148,7 +153,7 @@ Capacitor Updator works by unzipping a compiled app bundle to the native device 
 <docgen-config>
 <!--Update the source file JSDoc comments and rerun docgen to update the docs below-->
 
-CapacitorUpdater can be configured with this options:
+CapacitorUpdater can be configured with these options:
 
 | Prop                     | Type                 | Description                                                                                                                                                                                     | Default                                        | Since   |
 | ------------------------ | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | ------- |
@@ -1051,4 +1056,4 @@ On iOS, Apple don't allow you to show a message when the app is updated, so you 
 
 ### Contributors
 
-[jamesyoung1337](https://github.com/jamesyoung1337) Thanks a lot for your guidance and support, it was impossible to make this plugin work without you.
+[jamesyoung1337](https://github.com/jamesyoung1337) Thank you so much for your guidance and support, it was impossible to make this plugin work without you.
