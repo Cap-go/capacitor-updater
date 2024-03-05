@@ -525,8 +525,9 @@ Get Latest bundle available from update Url
 setChannel(options: SetChannelOptions) => Promise<channelRes>
 ```
 
-Set Channel for this device, the channel have to allow self assignement to make this work
-Do not use this method to set the channel at boot when autoUpdate is enabled, this method is made to set the channel after the app is ready when user click on a button for example
+Set Channel for this device, the channel have to allow self assignment to make this work
+Do not use this method to set the channel at boot when autoUpdate is enabled, this method is made to set the channel after the app is ready when user click on a button for example.
+In Capgo cloud to make this work, you have to set the channel to allow self assignment.
 
 | Param         | Type                                                            | Description                                                                      |
 | ------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------- |
