@@ -529,7 +529,6 @@ Set Channel for this device.
 In Capgo cloud to make this work, you have to set the channel to allow [self assignment](https://capgo.app/docs/plugin/cloud-mode/channel-system/).
 Do not use this method to set the channel at boot when autoUpdate is enabled, this method is made to set the channel after the app is ready when user click on a button for example.
 
-
 | Param         | Type                                                            | Description                                                                      |
 | ------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | **`options`** | <code><a href="#setchanneloptions">SetChannelOptions</a></code> | is the {@link <a href="#setchanneloptions">SetChannelOptions</a>} channel to set |
