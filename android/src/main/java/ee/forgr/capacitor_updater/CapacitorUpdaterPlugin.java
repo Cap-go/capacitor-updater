@@ -175,7 +175,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
       );
     }
     Log.i(CapacitorUpdater.TAG, "appId: " + implementation.appId);
-    Gson gson = new Gson();
     this.implementation.publicKey =
       getConfig().getString("publicKey", defaultPublicKey);
     this.implementation.hasOldPrivateKeyPropertyInConfig = false;
