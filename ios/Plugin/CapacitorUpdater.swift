@@ -168,6 +168,7 @@ enum CustomError: Error {
     case cannotUnflat
     case cannotCreateDirectory
     case cannotDeleteDirectory
+    case cannotDecryptSessionKey
 
     // Throw in all other cases
     case unexpected(code: Int)
@@ -204,12 +205,17 @@ extension CustomError: LocalizedError {
         case .cannotDecode:
             return NSLocalizedString(
                 "Decoding the zip failed with this key",
-                comment: "Invalid private key"
+                comment: "Invalid public key"
             )
         case .cannotWrite:
             return NSLocalizedString(
                 "Cannot write to the destination",
                 comment: "Invalid destination"
+            )
+        case .cannotDecryptSessionKey:
+            return NSLocalizedString(
+                "Decrypting the session key failed",
+                comment: "Invalid session key"
             )
         }
     }
@@ -239,7 +245,8 @@ extension CustomError: LocalizedError {
     public var defaultChannel: String = ""
     public var appId: String = ""
     public var deviceID = UIDevice.current.identifierForVendor?.uuidString ?? ""
-    public var privateKey: String = ""
+    public var publicKey: String? = ""
+    public var hasOldPrivateKeyPropertyInConfig: Bool = false
 
     public var notifyDownload: (String, Int) -> Void = { _, _  in }
 
@@ -365,13 +372,14 @@ extension CustomError: LocalizedError {
     }
 
     private func decryptFile(filePath: URL, sessionKey: String, version: String) throws {
-        if self.privateKey.isEmpty || sessionKey.isEmpty  || sessionKey.components(separatedBy: ":").count != 2 {
-            print("\(self.TAG) Cannot found privateKey or sessionKey")
+        if self.publicKey != nil && self.publicKey!.isEmpty || sessionKey.isEmpty  || sessionKey.components(separatedBy: ":").count != 2 {
+            print("\(self.TAG) Cannot find public key or sessionKey")
             return
         }
+
         do {
-            guard let rsaPrivateKey: RSAPrivateKey = .load(rsaPrivateKey: self.privateKey) else {
-                print("cannot decode privateKey", self.privateKey)
+            guard let rsaPublicKey: RSAPublicKey = .load(rsaPublicKey: self.publicKey!) else {
+                print("cannot decode publicKey", self.publicKey!)
                 throw CustomError.cannotDecode
             }
 
@@ -381,21 +389,25 @@ extension CustomError: LocalizedError {
                 throw CustomError.cannotDecode
             }
 
+            //            guard let base64EncodedData = sessionKeyArray[1].data(using: .utf8)! else {
+            //                throw NSError(domain: "Invalid session key data", code: 1, userInfo: nil)
+            //            }
+
             guard let sessionKeyDataEncrypted = Data(base64Encoded: sessionKeyArray[1]) else {
                 throw NSError(domain: "Invalid session key data", code: 1, userInfo: nil)
             }
 
-            guard let sessionKeyDataDecrypted = try? rsaPrivateKey.decrypt(data: sessionKeyDataEncrypted) else {
+            guard let sessionKeyDataDecrypted = try? rsaPublicKey.decrypt(data: sessionKeyDataEncrypted) else {
                 throw NSError(domain: "Failed to decrypt session key data", code: 2, userInfo: nil)
             }
 
-            let aesPrivateKey = AES128Key(iv: ivData, aes128Key: sessionKeyDataDecrypted)
+            let aesPublicKey = AES128Key(iv: ivData, aes128Key: sessionKeyDataDecrypted)
 
             guard let encryptedData = try? Data(contentsOf: filePath) else {
                 throw NSError(domain: "Failed to read encrypted data", code: 3, userInfo: nil)
             }
 
-            guard let decryptedData = try? aesPrivateKey.decrypt(data: encryptedData) else {
+            guard let decryptedData = try? aesPublicKey.decrypt(data: encryptedData) else {
                 throw NSError(domain: "Failed to decrypt data", code: 4, userInfo: nil)
             }
 
@@ -513,7 +525,12 @@ extension CustomError: LocalizedError {
                 case .success:
                     self.notifyDownload(id, 71)
                     do {
+                        if self.hasOldPrivateKeyPropertyInConfig {
+                            print("\(self.TAG) There is still an privateKey property in the config")
+                        }
+
                         try self.decryptFile(filePath: fileURL, sessionKey: sessionKey, version: version)
+
                         checksum = self.getChecksum(filePath: fileURL)
                         try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.documentsDir.appendingPathComponent(self.bundleDirectoryHot))
                         self.notifyDownload(id, 85)
