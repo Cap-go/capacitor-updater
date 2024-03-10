@@ -194,26 +194,26 @@ export interface CapacitorUpdaterPlugin {
    * Change this behaviour with {@link appReadyTimeout}
    *
    * @returns {Promise<AppReadyResult>} an Promise resolved directly
-   * @throws {Error} an error if something went wrong
+   * @throws {Error}
    */
   notifyAppReady(): Promise<AppReadyResult>;
 
   /**
    * Set the updateUrl for the app, this will be used to check for updates.
    *
-   * @returns {Promise<void>} an empty Promise
    * @param options contains the URL to use for checking for updates.
-   * @throws An error if the something went wrong
+   * @returns {Promise<void>}
+   * @throws {Error}
    * @since 5.4.0
    */
   setUpdateUrl(options: UpdateUrl): Promise<void>;
 
   /**
-   * Set the statsUrl for the app, this will be used to send statistics.
+   * Set the statsUrl for the app, this will be used to send statistics. Passing an empty string will disable statistics gathering.
    *
-   * @returns {Promise<void>} an empty Promise
    * @param options contains the URL to use for sending statistics.
-   * @throws An error if the something went wrong
+   * @returns {Promise<void>}
+   * @throws {Error}
    * @since 5.4.0
    */
   setStatsUrl(options: StatsUrl): Promise<void>;
@@ -221,9 +221,9 @@ export interface CapacitorUpdaterPlugin {
   /**
    * Set the channelUrl for the app, this will be used to set the channel.
    *
-   * @returns {Promise<void>} an empty Promise
    * @param options contains the URL to use for setting the channel.
-   * @throws An error if the something went wrong
+   * @returns {Promise<void>}
+   * @throws {Error}
    * @since 5.4.0
    */
   setChannelUrl(options: ChannelUrl): Promise<void>;
@@ -231,101 +231,96 @@ export interface CapacitorUpdaterPlugin {
   /**
    * Download a new bundle from the provided URL, it should be a zip file, with files inside or with a unique id inside with all your files
    *
+   * @example const bundle = await CapacitorUpdater.download({ url: `https://example.com/versions/${version}/dist.zip`, version });
    * @returns {Promise<BundleInfo>} The {@link BundleInfo} for the specified bundle.
-   * @param url The URL of the bundle zip file (e.g: dist.zip) to be downloaded. (This can be any URL. E.g: Amazon S3, a github tag, any other place you've hosted your bundle.)
-   * @param version set the version code/name of this bundle/version
-   * @example https://example.com/versions/{version}/dist.zip
+   * @param options The {@link DownloadOptions} for downloading a new bundle zip.
    */
   download(options: DownloadOptions): Promise<BundleInfo>;
 
   /**
    * Set the next bundle to be used when the app is reloaded.
    *
+   * @param options Contains the ID of the next Bundle to set on next app launch. {@link BundleInfo.id}
    * @returns {Promise<BundleInfo>} The {@link BundleInfo} for the specified bundle id.
-   * @param id The bundle id to set as current, next time the app is reloaded. See {@link BundleInfo.id}
-   * @throws An error if there are is no index.html file inside the bundle folder.
+   * @throws {Error} When there is no index.html file inside the bundle folder.
    */
   next(options: BundleId): Promise<BundleInfo>;
 
   /**
    * Set the current bundle and immediately reloads the app.
    *
-   * @param id The bundle id to set as current. See {@link BundleInfo.id}
-   * @returns {Promise<Void>} An empty promise.
-   * @throws An error if there are is no index.html file inside the bundle folder.
+   * @param options A {@link BundleId} object containing the new bundle id to set as current.
+   * @returns {Promise<void>}
+   * @throws {Error} When there are is no index.html file inside the bundle folder.
    */
   set(options: BundleId): Promise<void>;
 
   /**
-   * Delete bundle in storage
+   * Deletes the specified bundle from the native app storage. Use with {@link list} to get the stored Bundle IDs.
    *
-   * @returns {Promise<void>} an empty Promise when the bundle is deleted
-   * @param id The bundle id to delete (note, this is the bundle id, NOT the version name)
-   * @throws An error if the something went wrong
+   * @param options A {@link BundleId} object containing the ID of a bundle to delete (note, this is the bundle id, NOT the version name)
+   * @returns {Promise<void>} When the bundle is deleted
+   * @throws {Error}
    */
   delete(options: BundleId): Promise<void>;
 
   /**
    * Get all locally downloaded bundles in your app
    *
-   * @returns {Promise<BundleListResult>} an Promise with the bundles list
-   * @throws An error if the something went wrong
+   * @returns {Promise<BundleListResult>} A Promise containing the {@link BundleListResult.bundles}
+   * @throws {Error}
    */
   list(): Promise<BundleListResult>;
 
   /**
-   * Set the `builtin` bundle (the one sent to Apple App Store / Google Play Store ) as current bundle
+   * Reset the app to the `builtin` bundle (the one sent to Apple App Store / Google Play Store ) or the last successfully loaded bundle.
    *
-   * @returns {Promise<void>} an empty Promise
-   * @param toLastSuccessful [false] if yes it reset to to the last successfully loaded bundle instead of `builtin`
-   * @throws An error if the something went wrong
+   * @param options Containing {@link ResetOptions.toLastSuccessful}, `true` resets to the builtin bundle and `false` will reset to the last successfully loaded bundle.
+   * @returns {Promise<void>}
+   * @throws {Error}
    */
   reset(options?: ResetOptions): Promise<void>;
 
   /**
-   * Get the current bundle, if none are set it returns `builtin`, currentNative is the original bundle installed on the device
+   * Get the current bundle, if none are set it returns `builtin`. currentNative is the original bundle installed on the device
    *
-   * @returns {Promise<{ bundle: BundleInfo, native: string }>} an Promise with the current bundle info
-   * @throws An error if the something went wrong
+   * @returns {Promise<CurrentBundleResult>} A Promise evaluating to the {@link CurrentBundleResult}
+   * @throws {Error}
    */
   current(): Promise<CurrentBundleResult>;
 
   /**
    * Reload the view
    *
-   * @returns {Promise<void>} an Promise resolved when the view is reloaded
-   * @throws An error if the something went wrong
+   * @returns {Promise<void>} A Promise which is resolved when the view is reloaded
+   * @throws {Error}
    */
   reload(): Promise<void>;
 
   /**
-   * Set DelayCondition, skip updates until one of the conditions is met
-   *
-   * @returns {Promise<void>} an Promise resolved directly
-   * @param options are the {@link DelayCondition} list to set
+   * Sets a {@link DelayCondition} array containing conditions that the Plugin will use to determine when to install updates.
    *
    * @example
-   * setMultiDelay({ delayConditions: [{ kind: 'kill' }, { kind: 'background', value: '300000' }] })
-   * // installs the update after the user kills the app or after a background of 300000 ms (5 minutes)
-   *
+   * // Install the update after the user kills the app or after a background of 300000 ms (5 minutes)
+   * await CapacitorUpdater.setMultiDelay({ delayConditions: [{ kind: 'kill' }, { kind: 'background', value: '300000' }] })
    * @example
-   * setMultiDelay({ delayConditions: [{ kind: 'date', value: '2022-09-14T06:14:11.920Z' }] })
-   * // installs the update after the specific iso8601 date is expired
-   *
+   * // Install the update after the specific iso8601 date is expired
+   * await CapacitorUpdater.setMultiDelay({ delayConditions: [{ kind: 'date', value: '2022-09-14T06:14:11.920Z' }] })
    * @example
-   * setMultiDelay({ delayConditions: [{ kind: 'background' }] })
-   * // installs the update after the first background (default behaviour without setting delay)
-   *
-   * @throws An error if the something went wrong
+   * // Install the update after the first background (default behaviour without setting delay)
+   * await CapacitorUpdater.setMultiDelay({ delayConditions: [{ kind: 'background' }] })
+   * @param options Containing the {@link MultiDelayConditions} array of conditions to set
+   * @returns {Promise<void>}
+   * @throws {Error}
    * @since 4.3.0
    */
   setMultiDelay(options: MultiDelayConditions): Promise<void>;
 
   /**
-   * Cancel delay to updates as usual
+   * Cancels a {@link DelayCondition} to process an update immediately.
    *
-   * @returns {Promise<void>} an Promise resolved directly
-   * @throws An error if the something went wrong
+   * @returns {Promise<void>}
+   * @throws {Error}
    * @since 4.0.0
    */
   cancelDelay(): Promise<void>;
@@ -333,53 +328,93 @@ export interface CapacitorUpdaterPlugin {
   /**
    * Get Latest bundle available from update Url
    *
-   * @returns {Promise<LatestVersion>} an Promise resolved when url is loaded
-   * @throws An error if the something went wrong
+   * @returns {Promise<LatestVersion>} A Promise resolved when url is loaded
+   * @throws {Error}
    * @since 4.0.0
    */
   getLatest(): Promise<LatestVersion>;
 
   /**
-   * Set Channel for this device, the channel have to allow self assignement to make this work
-   * Do not use this method to set the channel at boot when autoUpdate is enabled, this method is made to set the channel after the app is ready when user click on a button for example
+   * Sets the channel for this device. The channel has to allow for self assignment for this to work.
+   * Do not use this method to set the channel at boot when `autoUpdate` is enabled in the {@link PluginsConfig}.
+   * This method is to set the channel after the app is ready.
    *
-   * @returns {Promise<ChannelRes>} an Promise resolved when channel is set
-   * @param options is the {@link SetChannelOptions} channel to set
-   * @throws An error if the something went wrong
+   * @param options Is the {@link SetChannelOptions} channel to set
+   * @returns {Promise<ChannelRes>} A Promise which is resolved when the new channel is set
+   * @throws {Error}
    * @since 4.7.0
    */
   setChannel(options: SetChannelOptions): Promise<ChannelRes>;
 
   /**
-   * Unset Channel for this device, the device will return to the default channel
+   * Unset the channel for this device. The device will then return to the default channel
    *
-   * @returns {Promise<ChannelRes>} an Promise resolved when channel is set
-   * @throws An error if the something went wrong
+   * @returns {Promise<ChannelRes>} A Promise resolved when channel is set
+   * @throws {Error}
    * @since 4.7.0
    */
   unsetChannel(options: UnsetChannelOptions): Promise<void>;
 
 	/**
-   * get Channel for this device
+   * Get the channel for this device
    *
-   * @returns {Promise<ChannelRes>} an Promise resolved with channel info
-   * @throws An error if the something went wrong
+   * @returns {Promise<ChannelRes>} A Promise that resolves with the channel info
+   * @throws {Error}
    * @since 4.8.0
    */
   getChannel(): Promise<GetChannelRes>;
 
   /**
-   * Set Channel for this device
+   * Set a custom ID for this device
    *
-   * @returns {Promise<void>} an Promise resolved instantly
    * @param options is the {@link SetCustomIdOptions} customId to set
-   * @throws An error if the something went wrong
+   * @returns {Promise<void>} an Promise resolved instantly
+   * @throws {Error}
    * @since 4.9.0
    */
   setCustomId(options: SetCustomIdOptions): Promise<void>;
 
   /**
-   * Listen for download event in the App, let you know when the download is started, loading and finished, with a percent value
+   * Get the native app version or the builtin version if set in config
+   *
+   * @returns {Promise<BuiltinVersion>} A Promise with version for this device
+   * @since 5.2.0
+   */
+  getBuiltinVersion(): Promise<BuiltinVersion>;
+
+  /**
+   * Get unique ID used to identify device (sent to auto update server)
+   *
+   * @returns {Promise<DeviceId>} A Promise with id for this device
+   * @throws {Error}
+   */
+  getDeviceId(): Promise<DeviceId>;
+
+  /**
+   * Get the native Capacitor Updater plugin version (sent to auto update server)
+   *
+   * @returns {Promise<PluginVersion>} A Promise with Plugin version
+   * @throws {Error}
+   */
+  getPluginVersion(): Promise<PluginVersion>;
+
+  /**
+   * Get the state of auto update config.
+   *
+   * @returns {Promise<AutoUpdateEnabled>} The status for auto update. Evaluates to `false` in manual mode.
+   * @throws {Error}
+   */
+  isAutoUpdateEnabled(): Promise<AutoUpdateEnabled>;
+
+  /**
+   * Remove all listeners for this plugin.
+   *
+   * @since 1.0.0
+   */
+  removeAllListeners(): Promise<void>;
+
+  /**
+   * Listen for bundle download event in the App. Fires once a download has started, during downloading and when finished.
    *
    * @since 2.0.11
    */
@@ -397,6 +432,7 @@ export interface CapacitorUpdaterPlugin {
     eventName: "noNeedUpdate",
     listenerFunc: (state: NoNeedEvent) => void
   ): Promise<PluginListenerHandle> & PluginListenerHandle;
+
   /**
    * Listen for available update event, useful when you want to force check every time the app is launched
    *
@@ -408,7 +444,7 @@ export interface CapacitorUpdaterPlugin {
   ): Promise<PluginListenerHandle> & PluginListenerHandle;
 
   /**
-   * Listen for download event in the App, let you know when the download is started, loading and finished
+   * Listen for downloadComplete events.
    *
    * @since 4.0.0
    */
@@ -438,7 +474,7 @@ export interface CapacitorUpdaterPlugin {
   ): Promise<PluginListenerHandle> & PluginListenerHandle;
 
   /**
-   * Listen for download fail event in the App, let you know when download has fail finished
+   * Listen for download fail event in the App, let you know when a bundle download has failed
    *
    * @since 4.0.0
    */
@@ -454,7 +490,7 @@ export interface CapacitorUpdaterPlugin {
    */
   addListener(
     eventName: "appReloaded",
-    listenerFunc: (state: void) => void
+    listenerFunc: () => void
   ): Promise<PluginListenerHandle> & PluginListenerHandle;
 
   /**
@@ -466,45 +502,6 @@ export interface CapacitorUpdaterPlugin {
     eventName: "appReady",
     listenerFunc: (state: AppReadyEvent) => void
   ): Promise<PluginListenerHandle> & PluginListenerHandle;
-
-  /**
-   * Get the native app version or the builtin version if set in config
-   *
-   * @returns {Promise<BuiltinVersion>} an Promise with version for this device
-   * @since 5.2.0
-   */
-  getBuiltinVersion(): Promise<BuiltinVersion>;
-
-  /**
-   * Get unique ID used to identify device (sent to auto update server)
-   *
-   * @returns {Promise<DeviceId>} an Promise with id for this device
-   * @throws An error if the something went wrong
-   */
-  getDeviceId(): Promise<DeviceId>;
-
-  /**
-   * Get the native Capacitor Updater plugin version (sent to auto update server)
-   *
-   * @returns {Promise<PluginVersion>} an Promise with version for this device
-   * @throws An error if the something went wrong
-   */
-  getPluginVersion(): Promise<PluginVersion>;
-
-  /**
-   * Get the state of auto update config. This will return `false` in manual mode.
-   *
-   * @returns {Promise<AutoUpdateEnabled>} The status for auto update.
-   * @throws An error if the something went wrong
-   */
-  isAutoUpdateEnabled(): Promise<AutoUpdateEnabled>;
-
-  /**
-   * Remove all listeners for this plugin.
-   *
-   * @since 1.0.0
-   */
-  removeAllListeners(): Promise<void>;
 }
 
 export type BundleStatus = "success" | "error" | "pending" | "downloading";
@@ -671,7 +668,14 @@ export interface ChannelUrl {
 }
 
 export interface DownloadOptions {
+	/**
+	 * The URL of the bundle zip file (e.g: dist.zip) to be downloaded. (This can be any URL. E.g: Amazon S3, a GitHub tag, any other place you've hosted your bundle.)
+	 */
 	url: string;
+
+	/**
+	 * The version code/name of this bundle/version
+	 */
 	version: string;
 	sessionKey?: string;
 	checksum?: string;
