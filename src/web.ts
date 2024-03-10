@@ -1,22 +1,30 @@
-/*
- * This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at https://mozilla.org/MPL/2.0/.
- */
-
 import { WebPlugin } from "@capacitor/core";
 
 import type {
   CapacitorUpdaterPlugin,
   BundleInfo,
-  latestVersion,
+  LatestVersion,
   DelayCondition,
-  channelRes,
+  ChannelRes,
   SetChannelOptions,
-  getChannelRes,
+  GetChannelRes,
   SetCustomIdOptions,
   UnsetChannelOptions,
-} from "./definitions";
+  StatsUrl,
+  UpdateUrl,
+  ChannelUrl,
+  DownloadOptions,
+  BundleId,
+  AutoUpdateEnabled,
+  DeviceId,
+  BuiltinVersion,
+  PluginVersion,
+  BundleListResult,
+  ResetOptions,
+  CurrentBundleResult,
+  AppReadyResult,
+  MultiDelayConditions,
+} from './definitions'
 
 const BUNDLE_BUILTIN: BundleInfo = {
   status: "success",
@@ -26,115 +34,129 @@ const BUNDLE_BUILTIN: BundleInfo = {
   checksum: "",
 };
 
-export class CapacitorUpdaterWeb
-  extends WebPlugin
-  implements CapacitorUpdaterPlugin
-{
-  async setStatsUrl(options: { url: string }): Promise<void> {
+export class CapacitorUpdaterWeb extends WebPlugin implements CapacitorUpdaterPlugin {
+  async setStatsUrl(options: StatsUrl): Promise<void> {
     console.warn("Cannot setStatsUrl in web", options);
     return;
   }
-  async setUpdateUrl(options: { url: string }): Promise<void> {
+
+  async setUpdateUrl(options: UpdateUrl): Promise<void> {
     console.warn("Cannot setUpdateUrl in web", options);
     return;
   }
-  async setChannelUrl(options: { url: string }): Promise<void> {
+
+  async setChannelUrl(options: ChannelUrl): Promise<void> {
     console.warn("Cannot setChannelUrl in web", options);
     return;
   }
-  async download(options: {
-    url: string;
-    version?: string;
-  }): Promise<BundleInfo> {
+
+  async download(options: DownloadOptions): Promise<BundleInfo> {
     console.warn("Cannot download version in web", options);
     return BUNDLE_BUILTIN;
   }
-  async next(options: { id: string }): Promise<BundleInfo> {
+
+  async next(options: BundleId): Promise<BundleInfo> {
     console.warn("Cannot set next version in web", options);
     return BUNDLE_BUILTIN;
   }
 
-  async isAutoUpdateEnabled(): Promise<{ enabled: boolean }> {
+  async isAutoUpdateEnabled(): Promise<AutoUpdateEnabled> {
     console.warn("Cannot get isAutoUpdateEnabled in web");
     return { enabled: false };
   }
-  async set(options: { id: string }): Promise<void> {
+
+  async set(options: BundleId): Promise<void> {
     console.warn("Cannot set active bundle in web", options);
     return;
   }
-  async getDeviceId(): Promise<{ deviceId: string }> {
+
+  async getDeviceId(): Promise<DeviceId> {
     console.warn("Cannot get ID in web");
     return { deviceId: "default" };
   }
-  async getBuiltinVersion(): Promise<{ version: string }> {
+
+  async getBuiltinVersion(): Promise<BuiltinVersion> {
     console.warn("Cannot get version in web");
     return { version: "default" };
   }
-  async getPluginVersion(): Promise<{ version: string }> {
+
+  async getPluginVersion(): Promise<PluginVersion> {
     console.warn("Cannot get plugin version in web");
     return { version: "default" };
   }
-  async delete(options: { id: string }): Promise<void> {
+
+  async delete(options: BundleId): Promise<void> {
     console.warn("Cannot delete bundle in web", options);
   }
-  async list(): Promise<{ bundles: BundleInfo[] }> {
+
+  async list(): Promise<BundleListResult> {
     console.warn("Cannot list bundles in web");
     return { bundles: [] };
   }
-  async reset(options?: { toLastSuccessful?: boolean }): Promise<void> {
+
+  async reset(options?: ResetOptions): Promise<void> {
     console.warn("Cannot reset version in web", options);
   }
-  async current(): Promise<{ bundle: BundleInfo; native: string }> {
+
+  async current(): Promise<CurrentBundleResult> {
     console.warn("Cannot get current bundle in web");
     return { bundle: BUNDLE_BUILTIN, native: "0.0.0" };
   }
+
   async reload(): Promise<void> {
     console.warn("Cannot reload current bundle in web");
     return;
   }
-  async getLatest(): Promise<latestVersion> {
+
+  async getLatest(): Promise<LatestVersion> {
     console.warn("Cannot getLatest current bundle in web");
     return {
       version: "0.0.0",
       message: "Cannot getLatest current bundle in web",
     };
   }
-  async setChannel(options: SetChannelOptions): Promise<channelRes> {
+
+  async setChannel(options: SetChannelOptions): Promise<ChannelRes> {
     console.warn("Cannot setChannel in web", options);
     return {
       status: "error",
       error: "Cannot setChannel in web",
     };
   }
+
   async unsetChannel(options: UnsetChannelOptions): Promise<void> {
     console.warn("Cannot unsetChannel in web", options);
     return;
   }
+
   async setCustomId(options: SetCustomIdOptions): Promise<void> {
     console.warn("Cannot setCustomId in web", options);
     return;
   }
-  async getChannel(): Promise<getChannelRes> {
+
+  async getChannel(): Promise<GetChannelRes> {
     console.warn("Cannot getChannel in web");
     return {
       status: "error",
       error: "Cannot getChannel in web",
     };
   }
-  async notifyAppReady(): Promise<{ bundle: BundleInfo }> {
+
+  async notifyAppReady(): Promise<AppReadyResult> {
     console.warn("Cannot notify App Ready in web");
     return { bundle: BUNDLE_BUILTIN };
   }
-  async setMultiDelay(options: {
-    delayConditions: DelayCondition[];
-  }): Promise<void> {
+
+  async setMultiDelay(options: MultiDelayConditions): Promise<void> {
     console.warn("Cannot setMultiDelay in web", options?.delayConditions);
     return;
   }
+
   async setDelay(option: DelayCondition): Promise<void> {
     console.warn("Cannot setDelay in web", option);
     return;
   }
+
   async cancelDelay(): Promise<void> {
     console.warn("Cannot cancelDelay in web");
     return;
