@@ -9,11 +9,11 @@ import { WebPlugin } from "@capacitor/core";
 import type {
   CapacitorUpdaterPlugin,
   BundleInfo,
-  latestVersion,
+  LatestVersion,
   DelayCondition,
-  channelRes,
+  ChannelRes,
   SetChannelOptions,
-  getChannelRes,
+  GetChannelRes,
   SetCustomIdOptions,
   UnsetChannelOptions,
 } from "./definitions";
@@ -60,7 +60,6 @@ export class CapacitorUpdaterWeb
   }
   async set(options: { id: string }): Promise<void> {
     console.warn("Cannot set active bundle in web", options);
-    return;
   }
   async getDeviceId(): Promise<{ deviceId: string }> {
     console.warn("Cannot get ID in web");
@@ -90,16 +89,15 @@ export class CapacitorUpdaterWeb
   }
   async reload(): Promise<void> {
     console.warn("Cannot reload current bundle in web");
-    return;
   }
-  async getLatest(): Promise<latestVersion> {
+  async getLatest(): Promise<LatestVersion> {
     console.warn("Cannot getLatest current bundle in web");
     return {
       version: "0.0.0",
       message: "Cannot getLatest current bundle in web",
     };
   }
-  async setChannel(options: SetChannelOptions): Promise<channelRes> {
+  async setChannel(options: SetChannelOptions): Promise<ChannelRes> {
     console.warn("Cannot setChannel in web", options);
     return {
       status: "error",
@@ -108,13 +106,11 @@ export class CapacitorUpdaterWeb
   }
   async unsetChannel(options: UnsetChannelOptions): Promise<void> {
     console.warn("Cannot unsetChannel in web", options);
-    return;
   }
   async setCustomId(options: SetCustomIdOptions): Promise<void> {
     console.warn("Cannot setCustomId in web", options);
-    return;
   }
-  async getChannel(): Promise<getChannelRes> {
+  async getChannel(): Promise<GetChannelRes> {
     console.warn("Cannot getChannel in web");
     return {
       status: "error",
@@ -129,14 +125,11 @@ export class CapacitorUpdaterWeb
     delayConditions: DelayCondition[];
   }): Promise<void> {
     console.warn("Cannot setMultiDelay in web", options?.delayConditions);
-    return;
   }
   async setDelay(option: DelayCondition): Promise<void> {
     console.warn("Cannot setDelay in web", option);
-    return;
   }
   async cancelDelay(): Promise<void> {
     console.warn("Cannot cancelDelay in web");
-    return;
   }
 }
