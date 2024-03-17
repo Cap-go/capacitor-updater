@@ -11,6 +11,8 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Objects;
 import java.util.TimeZone;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.json.JSONTokener;
@@ -30,6 +32,7 @@ public class BundleInfo {
   private final String version;
   private final String checksum;
   private final BundleStatus status;
+  private AtomicInteger filesToDownload;
 
   static {
     sdf.setTimeZone(TimeZone.getTimeZone("GMT"));
@@ -53,6 +56,18 @@ public class BundleInfo {
     final String checksum
   ) {
     this(id, version, status, sdf.format(downloaded), checksum);
+  }
+
+  public BundleInfo(
+    final String id,
+    final String version,
+    final BundleStatus status,
+    final Date downloaded,
+    final int filesToDownload,
+    final String checksum
+  ) {
+    this(id, version, status, sdf.format(downloaded), checksum);
+    this.filesToDownload = new AtomicInteger(filesToDownload);
   }
 
   public BundleInfo(
@@ -92,6 +107,10 @@ public class BundleInfo {
       !this.downloaded.isEmpty() &&
       !this.isDeleted()
     );
+  }
+
+  public int decreaseFilesToDownload() {
+    return this.filesToDownload.decrementAndGet();
   }
 
   public String getDownloaded() {

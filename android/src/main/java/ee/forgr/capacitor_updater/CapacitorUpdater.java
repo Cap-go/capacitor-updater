@@ -16,8 +16,11 @@ import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Parcelable;
 import android.util.Base64;
 import android.util.Log;
+
+import com.android.volley.AuthFailureError;
 import com.android.volley.BuildConfig;
 import com.android.volley.DefaultRetryPolicy;
 import com.android.volley.NetworkResponse;
@@ -46,8 +49,11 @@ import java.security.PrivateKey;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -93,6 +99,7 @@ public class CapacitorUpdater {
   public String privateKey = "";
   public String deviceID = "";
   public int timeout = 20000;
+  public ManifestStorage manifestStorage;
 
   private final FilenameFilter filter = new FilenameFilter() {
     @Override
@@ -281,16 +288,20 @@ public class CapacitorUpdater {
       String action = intent.getAction();
       Bundle bundle = intent.getExtras();
       if (bundle != null) {
-        if (action == DownloadService.PERCENTDOWNLOAD) {
+        if (Objects.equals(action, DownloadService.PERCENTDOWNLOAD)) {
           String id = bundle.getString(DownloadService.ID);
           int percent = bundle.getInt(DownloadService.PERCENT);
           CapacitorUpdater.this.notifyDownload(id, percent);
-        } else if (action == DownloadService.NOTIFICATION) {
-          String id = bundle.getString(DownloadService.ID);
-          String dest = bundle.getString(DownloadService.FILEDEST);
+        } else if (Objects.equals(action, DownloadService.NOTIFICATION)) {
+          String id = bundle.getString(DownloadServiceV2.ID);
+          String dest = bundle.getString(DownloadServiceV2.FILEDEST);
+          String fullpath = bundle.getString(DownloadServiceV2.FULLFILEPATH);
+          String filename = bundle.getString(DownloadServiceV2.FILENAME);
+          String hash = bundle.getString(DownloadServiceV2.SHAFILEHASH);
+          DownloadServiceV2.DownloadJobType jobType = bundle.getParcelable(DownloadServiceV2.JOBTYPE);
           String version = bundle.getString(DownloadService.VERSION);
-          String sessionKey = bundle.getString(DownloadService.SESSIONKEY);
-          String checksum = bundle.getString(DownloadService.CHECKSUM);
+          String error = bundle.getString(DownloadService.ERROR);
+
           Log.i(
             CapacitorUpdater.TAG,
             "res " +
@@ -300,31 +311,53 @@ public class CapacitorUpdater {
             " " +
             version +
             " " +
-            sessionKey +
+            jobType +
             " " +
-            checksum
+            (jobType == (DownloadServiceV2.DownloadJobType.DOWNLOAD) ? filename : fullpath) +
+            " " +
+            error
           );
-          if (dest == null) {
-            final JSObject ret = new JSObject();
-            ret.put(
-              "version",
-              CapacitorUpdater.this.getCurrentBundle().getVersionName()
-            );
-            CapacitorUpdater.this.notifyListeners("downloadFailed", ret);
-            CapacitorUpdater.this.sendStats(
-                "download_fail",
-                CapacitorUpdater.this.getCurrentBundle().getVersionName()
-              );
+
+          int filesLeft = CapacitorUpdater.this.manifestStorage.decreaseFilesToDownloadForBundle(id);
+          if (filesLeft == -1) {
+            Log.e(TAG, "Files left = -1, this should never happen");
             return;
           }
-          CapacitorUpdater.this.finishDownload(
-              id,
-              dest,
-              version,
-              sessionKey,
-              checksum,
-              true
-            );
+
+          if (filesLeft == 0) {
+            Log.i(TAG, "Bundle " + version + " is fully done, can reload the web-view");
+            CapacitorUpdater.this.finishDownload(id, version, true);
+          }
+
+          // TODO ERROR HANDLING
+          // fullpath might be null,
+          // an error also might cause some troubles (null fullpath)
+          if (jobType == DownloadServiceV2.DownloadJobType.DOWNLOAD) {
+            CapacitorUpdater.this.manifestStorage.insertDownloadManifestEntry(filename, hash, fullpath);
+          }
+
+
+//          if (dest == null) {
+//            final JSObject ret = new JSObject();
+//            ret.put(
+//              "version",
+//              CapacitorUpdater.this.getCurrentBundle().getVersionName()
+//            );
+//            CapacitorUpdater.this.notifyListeners("downloadFailed", ret);
+//            CapacitorUpdater.this.sendStats(
+//                "download_fail",
+//                CapacitorUpdater.this.getCurrentBundle().getVersionName()
+//              );
+//            return;
+//          }
+//          CapacitorUpdater.this.finishDownload(
+//              id,
+//              dest,
+//              version,
+//              sessionKey,
+//              checksum,
+//              true
+//            );
         } else {
           Log.i(TAG, "Unknown action " + action);
         }
@@ -334,76 +367,58 @@ public class CapacitorUpdater {
 
   public Boolean finishDownload(
     String id,
-    String dest,
     String version,
-    String sessionKey,
-    String checksumRes,
     Boolean setNext
   ) {
-    try {
-      final File downloaded = new File(this.documentsDir, dest);
-      this.decryptFile(downloaded, sessionKey, version);
-      final String checksum;
-      checksum = this.getChecksum(downloaded);
-      this.notifyDownload(id, 71);
-      final File unzipped = this.unzip(id, downloaded, this.randomString(10));
-      downloaded.delete();
-      this.notifyDownload(id, 91);
-      final String idName = bundleDirectory + "/" + id;
-      this.flattenAssets(unzipped, idName);
-      this.notifyDownload(id, 100);
-      this.saveBundleInfo(id, null);
-      BundleInfo next = new BundleInfo(
-        id,
-        version,
-        BundleStatus.PENDING,
-        new Date(System.currentTimeMillis()),
-        checksum
-      );
-      this.saveBundleInfo(id, next);
-      if (
-        checksumRes != null &&
-        !checksumRes.isEmpty() &&
-        !checksumRes.equals(checksum)
-      ) {
-        Log.e(
-          CapacitorUpdater.TAG,
-          "Error checksum " + checksumRes + " " + checksum
-        );
-        this.sendStats("checksum_fail", getCurrentBundle().getVersionName());
-        final Boolean res = this.delete(id);
-        if (res) {
-          Log.i(
-            CapacitorUpdater.TAG,
-            "Failed bundle deleted: " + next.getVersionName()
-          );
-        }
-        throw new IOException("Checksum failed: " + id);
+    //      final File downloaded = new File(this.documentsDir, dest);
+//      this.decryptFile(downloaded, sessionKey, version);
+//      final String checksum;
+//      checksum = this.getChecksum(downloaded);
+    this.notifyDownload(id, 71);
+    //final File unzipped = this.unzip(id, downloaded, this.randomString(10));
+    //downloaded.delete();
+    this.notifyDownload(id, 91);
+    //final String idName = bundleDirectory + "/" + id;
+    //this.flattenAssets(unzipped, idName);
+    this.notifyDownload(id, 100);
+    this.saveBundleInfo(id, null);
+    BundleInfo next = new BundleInfo(
+      id,
+      version,
+      BundleStatus.PENDING,
+      new Date(System.currentTimeMillis()),
+      ""
+    );
+    this.saveBundleInfo(id, next);
+//      if (
+//        checksumRes != null &&
+//        !checksumRes.isEmpty() &&
+//        !checksumRes.equals(checksum)
+//      ) {
+//        Log.e(
+//          CapacitorUpdater.TAG,
+//          "Error checksum " + checksumRes + " " + checksum
+//        );
+//        this.sendStats("checksum_fail", getCurrentBundle().getVersionName());
+//        final Boolean res = this.delete(id);
+//        if (res) {
+//          Log.i(
+//            CapacitorUpdater.TAG,
+//            "Failed bundle deleted: " + next.getVersionName()
+//          );
+//        }
+//        throw new IOException("Checksum failed: " + id);
+//      }
+    final JSObject ret = new JSObject();
+    ret.put("bundle", next.toJSON());
+    CapacitorUpdater.this.notifyListeners("updateAvailable", ret);
+    if (setNext) {
+      if (this.directUpdate) {
+        CapacitorUpdater.this.directUpdateFinish(next);
+        this.directUpdate = false;
+      } else {
+        this.setNextBundle(next.getId());
       }
-      final JSObject ret = new JSObject();
-      ret.put("bundle", next.toJSON());
-      CapacitorUpdater.this.notifyListeners("updateAvailable", ret);
-      if (setNext) {
-        if (this.directUpdate) {
-          CapacitorUpdater.this.directUpdateFinish(next);
-          this.directUpdate = false;
-        } else {
-          this.setNextBundle(next.getId());
-        }
-      }
-    } catch (IOException e) {
-      e.printStackTrace();
-      final JSObject ret = new JSObject();
-      ret.put(
-        "version",
-        CapacitorUpdater.this.getCurrentBundle().getVersionName()
-      );
-      CapacitorUpdater.this.notifyListeners("downloadFailed", ret);
-      CapacitorUpdater.this.sendStats(
-          "download_fail",
-          CapacitorUpdater.this.getCurrentBundle().getVersionName()
-        );
-      return false;
     }
     return true;
   }
@@ -427,6 +442,46 @@ public class CapacitorUpdater {
     intent.putExtra(DownloadService.VERSION, version);
     intent.putExtra(DownloadService.SESSIONKEY, sessionKey);
     intent.putExtra(DownloadService.CHECKSUM, checksum);
+    this.activity.startService(intent);
+  }
+
+  private void downloadFileBackgroundManifestDownload(
+    final String id,
+    final String version,
+    final String dest,
+    final DownloadManifest.DownloadManifestEntry manifestEntry
+    ) {
+    Intent intent = new Intent(this.activity, DownloadServiceV2.class);
+    intent.putExtra(DownloadServiceV2.FILEDEST, dest);
+    intent.putExtra(
+      DownloadServiceV2.DOCDIR,
+      this.documentsDir.getAbsolutePath()
+    );
+    intent.putExtra(DownloadServiceV2.ID, id);
+    intent.putExtra(DownloadServiceV2.VERSION, version);
+    intent.putExtra(DownloadServiceV2.MANIFEST, manifestEntry);
+    intent.putExtra(DownloadServiceV2.JOBTYPE, (Parcelable) DownloadServiceV2.DownloadJobType.DOWNLOAD);
+    this.activity.startService(intent);
+  }
+
+  private void downloadFileBackgroundManifestUnzip(
+    final String id,
+    final String version,
+    final String dest,
+    final ManifestEntry manifestEntry,
+    final String finalFileName
+  ) {
+    Intent intent = new Intent(this.activity, DownloadServiceV2.class);
+    intent.putExtra(DownloadServiceV2.FILEDEST, dest);
+    intent.putExtra(
+      DownloadServiceV2.DOCDIR,
+      this.documentsDir.getAbsolutePath()
+    );
+    intent.putExtra(DownloadServiceV2.ID, id);
+    intent.putExtra(DownloadServiceV2.VERSION, version);
+    intent.putExtra(DownloadServiceV2.MANIFEST, manifestEntry);
+    intent.putExtra(DownloadServiceV2.FINALFILEPATH, finalFileName);
+    intent.putExtra(DownloadServiceV2.JOBTYPE, (Parcelable) DownloadServiceV2.DownloadJobType.UNZIP);
     this.activity.startService(intent);
   }
 
@@ -585,42 +640,97 @@ public class CapacitorUpdater {
       );
   }
 
+  public void downloadBackgroundV2(
+    final DownloadManifest manifest,
+    final String version
+  ) {
+    final String id = this.randomString(10);
+    this.saveBundleInfo(
+      id,
+      new BundleInfo(
+        id,
+        version,
+        BundleStatus.DOWNLOADING,
+        new Date(System.currentTimeMillis()),
+        ""
+      )
+    );
+    this.manifestStorage.addBundleToDownload(id, manifest.getDownloadManifestEntries().size());
+    this.notifyDownload(id, 0);
+
+    String dist = id;
+
+    // Here let's check the difference between the current manifest and the new manifest. It could be that there is no new files to download, do we know?
+    ArrayList<DownloadManifest.DownloadManifestEntry> toDownload = new ArrayList<>();
+    for (DownloadManifest.DownloadManifestEntry entry: manifest.getDownloadManifestEntries()) {
+      ManifestEntry currentEntry = this.manifestStorage.getEntryByHash(entry.getFileHash());
+      if (currentEntry != null) {
+        Log.i(
+          CapacitorUpdater.TAG,
+          "File " + currentEntry.getFilePath() + " is currently downloaded!"
+        );
+        this.downloadFileBackgroundManifestUnzip(id, version, dist, currentEntry, entry.getFileName());
+      } else {
+        Log.i(
+          CapacitorUpdater.TAG,
+          "File " + entry.getFileName() + " has to get downloaded!!!"
+        );
+
+        this.downloadFileBackgroundManifestDownload(id, version, dist, entry);
+        toDownload.add(entry);
+      }
+    }
+
+    this.notifyDownload(id, 5);
+
+
+//    this.downloadFileBackground(
+//      id,
+//      url,
+//      version,
+//      sessionKey,
+//      checksum,
+//      this.randomString(10)
+//    );
+  }
+
   public BundleInfo download(
     final String url,
     final String version,
     final String sessionKey,
     final String checksum
   ) throws IOException {
-    final String id = this.randomString(10);
-    this.saveBundleInfo(
-        id,
-        new BundleInfo(
-          id,
-          version,
-          BundleStatus.DOWNLOADING,
-          new Date(System.currentTimeMillis()),
-          ""
-        )
-      );
-    this.notifyDownload(id, 0);
-    final String idName = bundleDirectory + "/" + id;
-    this.notifyDownload(id, 5);
-    final String dest = this.randomString(10);
-    final File downloaded = this.downloadFile(id, url, dest);
-    final Boolean finished =
-      this.finishDownload(id, dest, version, sessionKey, checksum, false);
-    final BundleStatus status = finished
-      ? BundleStatus.PENDING
-      : BundleStatus.ERROR;
-    BundleInfo info = new BundleInfo(
-      id,
-      version,
-      status,
-      new Date(System.currentTimeMillis()),
-      checksum
-    );
-    this.saveBundleInfo(id, info);
-    return info;
+    return null;
+//    final String id = this.randomString(10);
+//    this.saveBundleInfo(
+//        id,
+//        new BundleInfo(
+//          id,
+//          version,
+//          BundleStatus.DOWNLOADING,
+//          new Date(System.currentTimeMillis()),
+//          ""
+//        )
+//      );
+//    this.notifyDownload(id, 0);
+//    final String idName = bundleDirectory + "/" + id;
+//    this.notifyDownload(id, 5);
+//    final String dest = this.randomString(10);
+//    final File downloaded = this.downloadFile(id, url, dest);
+////    final Boolean finished =
+////      this.finishDownload(id, dest, version, sessionKey, checksum, false);
+//    final BundleStatus status = finished
+//      ? BundleStatus.PENDING
+//      : BundleStatus.ERROR;
+//    BundleInfo info = new BundleInfo(
+//      id,
+//      version,
+//      status,
+//      new Date(System.currentTimeMillis()),
+//      checksum
+//    );
+//    this.saveBundleInfo(id, info);
+//    return info;
   }
 
   public List<BundleInfo> list() {
@@ -665,7 +775,7 @@ public class CapacitorUpdater {
   }
 
   private File getBundleDirectory(final String id) {
-    return new File(this.documentsDir, bundleDirectory + "/" + id);
+    return new File(this.documentsDir, id);
   }
 
   private boolean bundleExists(final String id) {
@@ -854,7 +964,15 @@ public class CapacitorUpdater {
           );
         }
       }
-    );
+    ) {
+      @Override
+      public Map<String, String> getHeaders() throws AuthFailureError {
+        final Map<String, String> headers = new HashMap<>();
+        headers.put("Capgo-Update-Manifest", "true");
+        headers.put("Content-Type","application/json");
+        return headers;
+      }
+    };
     this.requestQueue.add(setRetryPolicy(request));
   }
 

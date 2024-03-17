@@ -42,6 +42,8 @@ import java.util.UUID;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
+
 import org.json.JSONException;
 
 @CapacitorPlugin(name = "CapacitorUpdater")
@@ -103,6 +105,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
   @Override
   public void load() {
+    android.os.Debug.waitForDebugger();
     super.load();
     this.prefs =
       this.getContext()
@@ -141,6 +144,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
       this.implementation.versionCode = Integer.toString(pInfo.versionCode);
       this.implementation.requestQueue =
         Volley.newRequestQueue(this.getContext());
+      this.implementation.manifestStorage = ManifestStorage.init(this.getContext().getAssets(), this.editor);
       this.implementation.directUpdate =
         this.getConfig().getBoolean("directUpdate", false);
       this.currentVersionNative =
@@ -577,6 +581,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
       call.reject("Download called without url");
       return;
     }
+
+    if (url.equals("hack-super-native-hack")) {
+      // this.getContext().getAssets().open("public/js/app.10b2615a.js").bufferedReader().use { it.readText() }
+        // this.implementation.manifestStorage.nothing();
+        call.reject("Hacked!");
+        return;
+    }
+
     if (version == null) {
       Log.e(CapacitorUpdater.TAG, "Download called without version");
       call.reject("Download called without version");
@@ -864,7 +876,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
           }
         }
       },
-      0,
+      this.periodCheckDelay,
       this.periodCheckDelay
     );
   }
@@ -1068,7 +1080,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
   }
 
-  private boolean isValidURL(String urlStr) {
+  public static boolean isValidURL(String urlStr) {
     try {
       URL url = new URL(urlStr);
       return true;
@@ -1139,30 +1151,47 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 return;
               }
 
-              if (
-                !res.has("url") ||
-                !CapacitorUpdaterPlugin.this.isValidURL(res.getString("url"))
-              ) {
-                Log.e(CapacitorUpdater.TAG, "Error no url or wrong format");
-                CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                    "Error no url or wrong format",
+              AtomicReference<String> errorMsg = new AtomicReference<>();
+              DownloadManifest manifest = DownloadManifest.parseJson(res, (error -> {
+                Log.e(CapacitorUpdater.TAG, error);
+                errorMsg.set(error);
+              }));
+
+              if (manifest == null) {
+                String finalErr = errorMsg.get();
+                if (finalErr != null) {
+                  CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                    finalErr,
                     current.getVersionName(),
                     current,
                     true
                   );
+                } else {
+                  CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                    "Could not get error from the callback (?)",
+                    current.getVersionName(),
+                    current,
+                    true
+                  );
+                }
                 return;
               }
-              final String latestVersionName = res.getString("version");
+
+
+              final String latestVersionName = manifest.getVersionName();
+
+              final BundleInfo latest =
+              CapacitorUpdaterPlugin.this.implementation.getBundleInfoByName(
+                latestVersionName
+              );
+
 
               if (
                 latestVersionName != null &&
                 !"".equals(latestVersionName) &&
                 !current.getVersionName().equals(latestVersionName)
               ) {
-                final BundleInfo latest =
-                  CapacitorUpdaterPlugin.this.implementation.getBundleInfoByName(
-                      latestVersionName
-                    );
+
                 if (latest != null) {
                   final JSObject ret = new JSObject();
                   ret.put("bundle", latest.toJSON());
@@ -1252,19 +1281,21 @@ public class CapacitorUpdaterPlugin extends Plugin {
                       messageUpdate
                     );
 
-                    final String url = res.getString("url");
-                    final String sessionKey = res.has("sessionKey")
-                      ? res.getString("sessionKey")
-                      : "";
-                    final String checksum = res.has("checksum")
-                      ? res.getString("checksum")
-                      : "";
-                    CapacitorUpdaterPlugin.this.implementation.downloadBackground(
-                        url,
-                        latestVersionName,
-                        sessionKey,
-                        checksum
-                      );
+//                    final String url = res.getString("url");
+//                    final String sessionKey = res.has("sessionKey")
+//                      ? res.getString("sessionKey")
+//                      : "";
+//                    final String checksum = res.has("checksum")
+//                      ? res.getString("checksum")
+//                      : "";
+//                    CapacitorUpdaterPlugin.this.implementation.downloadBackground(
+//                        url,
+//                        latestVersionName,
+//                        sessionKey,
+//                        checksum
+//                      );
+
+                    CapacitorUpdaterPlugin.this.implementation.downloadBackgroundV2(manifest, latestVersionName);
                   } catch (final Exception e) {
                     Log.e(CapacitorUpdater.TAG, "error downloading file", e);
                     CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
