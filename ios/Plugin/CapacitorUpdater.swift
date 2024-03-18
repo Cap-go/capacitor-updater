@@ -178,37 +178,37 @@ extension CustomError: LocalizedError {
         switch self {
         case .cannotUnzip:
             return NSLocalizedString(
-                "The file cannot be unzip",
+                "fileUnzip",
                 comment: "Invalid zip"
             )
         case .cannotCreateDirectory:
             return NSLocalizedString(
-                "The folder cannot be created",
+                "cannotCreateFolder",
                 comment: "Invalid folder"
             )
         case .cannotDeleteDirectory:
             return NSLocalizedString(
-                "The folder cannot be deleted",
+                "cannotDeleteFolder",
                 comment: "Invalid folder"
             )
         case .cannotUnflat:
             return NSLocalizedString(
-                "The file cannot be unflat",
+                "fileCannotBeUnflat",
                 comment: "Invalid folder"
             )
         case .unexpected:
             return NSLocalizedString(
-                "An unexpected error occurred.",
+                "unexpectedError",
                 comment: "Unexpected Error"
             )
         case .cannotDecode:
             return NSLocalizedString(
-                "Decoding the zip failed with this key",
+                "decodingFailedForKey",
                 comment: "Invalid private key"
             )
         case .cannotWrite:
             return NSLocalizedString(
-                "Cannot write to the destination",
+                "cannotWrite",
                 comment: "Invalid destination"
             )
         }
@@ -233,7 +233,9 @@ extension CustomError: LocalizedError {
     public var versionBuild: String = ""
     public var customId: String = ""
     public var PLUGIN_VERSION: String = ""
+
     public var timeout: Double = 20
+
     public var statsUrl: String = ""
     public var channelUrl: String = ""
     public var defaultChannel: String = ""
@@ -692,7 +694,7 @@ extension CustomError: LocalizedError {
         let setChannel: SetChannel = SetChannel()
         if (self.channelUrl ).isEmpty {
             print("\(self.TAG) Channel URL is not set")
-            setChannel.message = "Channel URL is not set"
+            setChannel.message = NSLocalizedString("channelURLNotSet", comment: "")
             setChannel.error = "missing_config"
             return setChannel
         }
@@ -728,7 +730,7 @@ extension CustomError: LocalizedError {
         let setChannel: SetChannel = SetChannel()
         if (self.channelUrl ).isEmpty {
             print("\(self.TAG) Channel URL is not set")
-            setChannel.message = "Channel URL is not set"
+            setChannel.message = NSLocalizedString("channelURLNotSet", comment: "")
             setChannel.error = "missing_config"
             return setChannel
         }
@@ -765,7 +767,7 @@ extension CustomError: LocalizedError {
         let getChannel: GetChannel = GetChannel()
         if (self.channelUrl ).isEmpty {
             print("\(self.TAG) Channel URL is not set")
-            getChannel.message = "Channel URL is not set"
+            getChannel.message = NSLocalizedString("channelURLNotSet", comment: "")
             getChannel.error = "missing_config"
             return getChannel
         }
