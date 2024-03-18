@@ -84,6 +84,9 @@ public class DownloadService extends IntentService {
           publishResults(dest, id, version, checksum, sessionKey, "");
         }
       }
+    } catch (OutOfMemoryError e) {
+      e.printStackTrace();
+      publishResults("", id, version, checksum, sessionKey, "low_mem_fail");
     } catch (Exception e) {
       e.printStackTrace();
       publishResults(

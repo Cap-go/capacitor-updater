@@ -298,6 +298,7 @@ public class CapacitorUpdater {
           String version = bundle.getString(DownloadService.VERSION);
           String sessionKey = bundle.getString(DownloadService.SESSIONKEY);
           String checksum = bundle.getString(DownloadService.CHECKSUM);
+          String error = bundle.getString(DownloadService.ERROR);
           Log.i(
             CapacitorUpdater.TAG,
             "res " +
@@ -309,7 +310,9 @@ public class CapacitorUpdater {
             " " +
             sessionKey +
             " " +
-            checksum
+            checksum +
+            " " +
+            error
           );
           if (dest == null) {
             final JSObject ret = new JSObject();
@@ -317,8 +320,12 @@ public class CapacitorUpdater {
               "version",
               CapacitorUpdater.this.getCurrentBundle().getVersionName()
             );
+            if ("low_mem_fail".equals(error)) {
+              CapacitorUpdater.this.sendStats("low_mem_fail", version);
+            }
+            ret.put("error", "download_fail");
+            CapacitorUpdater.this.sendStats("download_fail", version);
             CapacitorUpdater.this.notifyListeners("downloadFailed", ret);
-            CapacitorUpdater.this.sendStats("download_fail");
             return;
           }
           CapacitorUpdater.this.finishDownload(
@@ -465,6 +472,10 @@ public class CapacitorUpdater {
         }
         bytesRead += length;
       }
+    } catch (OutOfMemoryError e) {
+      Log.e(TAG, "OutOfMemoryError while downloading file", e);
+      this.sendStats("low_mem_fail");
+      throw new IOException("OutOfMemoryError while downloading file");
     }
     return target;
   }

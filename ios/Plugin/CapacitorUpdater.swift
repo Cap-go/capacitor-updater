@@ -527,6 +527,11 @@ extension CustomError: LocalizedError {
                     }
                 case let .failure(error):
                     print("\(self.TAG) download error", response.value ?? "", error)
+                    if let afError = error as? AFError,
+                       case .sessionTaskFailed(let urlError as URLError) = afError,
+                       urlError.code == .cannotWriteToFile {
+                        self.sendStats(action: "low_mem_fail", versionName: version)
+                    }
                     mainError = error as NSError
                 }
             }
