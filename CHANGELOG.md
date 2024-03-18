@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.7.3](https://github.com/Cap-go/capacitor-updater/compare/5.7.2...5.7.3) (2024-03-18)
+
+
+### Bug Fixes
+
+* add missing progress event and missing stats ([7c616e3](https://github.com/Cap-go/capacitor-updater/commit/7c616e3d1c744ec9c466a4a4ba0c9bf63a6fd8f7))
+
 ### [5.7.2](https://github.com/Cap-go/capacitor-updater/compare/5.7.1...5.7.2) (2024-03-18)
 
 ### [5.7.1](https://github.com/Cap-go/capacitor-updater/compare/5.7.0...5.7.1) (2024-03-18)
