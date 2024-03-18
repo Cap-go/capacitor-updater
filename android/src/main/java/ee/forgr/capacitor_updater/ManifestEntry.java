@@ -3,13 +3,18 @@ package ee.forgr.capacitor_updater;
 import android.os.Parcel;
 import android.os.Parcelable;
 
+import com.getcapacitor.JSObject;
+
 import org.jetbrains.annotations.NotNull;
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+import org.json.JSONTokener;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.Objects;
 
 public class ManifestEntry implements Parcelable {
     private String hash;
@@ -21,6 +26,12 @@ public class ManifestEntry implements Parcelable {
 
     public ManifestEntry(String filePath, String hash, ManifestEntryType type) {
         this.storagePathList.add(filePath);
+        this.hash = hash;
+        this.type = type;
+    }
+
+    public ManifestEntry(String hash, ManifestEntryType type, List<String> storagePathList) {
+        this.storagePathList.addAll(storagePathList);
         this.hash = hash;
         this.type = type;
     }
@@ -42,6 +53,10 @@ public class ManifestEntry implements Parcelable {
         return storagePathList.get(0);
     }
 
+    public String formattedStoragePathList() {
+        return "[ " + String.join(", ", this.storagePathList) + " ]";
+    }
+
     public String getCopyPath() {
         if (type != ManifestEntryType.URL || storagePathList.size() == 0) {
             return null;
@@ -49,6 +64,29 @@ public class ManifestEntry implements Parcelable {
 
         // TODO: a bit smarter fetch
         return storagePathList.get(0);
+    }
+
+    public JSObject toJSON() {
+        final JSObject result = new JSObject();
+        result.put("storagePaths", new JSONArray(this.storagePathList));
+        result.put("hash", this.hash);
+        result.put("type", this.type.toString());
+        return result;
+    }
+
+    public static ManifestEntry fromJson(JSONObject json) throws JSONException {
+        JSONArray jsonArray = json.getJSONArray("storagePaths");
+
+        ArrayList<String> pathArray = new ArrayList<>(jsonArray.length());
+        for (int i = 0; i < jsonArray.length(); i++) {
+            String string = jsonArray.getString(i);
+            pathArray.add(string);
+        }
+
+        String hash = json.getString("hash");
+        ManifestEntryType type = ManifestEntry.ManifestEntryType.valueOf(json.getString("type"));
+
+        return new ManifestEntry(hash, type, pathArray);
     }
 
     @NotNull

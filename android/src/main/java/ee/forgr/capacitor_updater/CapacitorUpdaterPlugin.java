@@ -144,7 +144,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
       this.implementation.versionCode = Integer.toString(pInfo.versionCode);
       this.implementation.requestQueue =
         Volley.newRequestQueue(this.getContext());
-      this.implementation.manifestStorage = ManifestStorage.init(this.getContext().getAssets(), this.editor);
+      this.implementation.manifestStorage = ManifestStorage.init(this.getContext().getAssets(), this.editor, prefs);
       this.implementation.directUpdate =
         this.getConfig().getBoolean("directUpdate", false);
       this.currentVersionNative =

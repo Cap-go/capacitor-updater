@@ -327,13 +327,14 @@ public class CapacitorUpdater {
           if (filesLeft == 0) {
             Log.i(TAG, "Bundle " + version + " is fully done, can reload the web-view");
             CapacitorUpdater.this.finishDownload(id, version, true);
+            CapacitorUpdater.this.manifestStorage.saveToDeviceStorage();
           }
 
           // TODO ERROR HANDLING
           // fullpath might be null,
           // an error also might cause some troubles (null fullpath)
           if (jobType == DownloadServiceV2.DownloadJobType.DOWNLOAD) {
-            CapacitorUpdater.this.manifestStorage.insertDownloadManifestEntry(filename, hash, fullpath);
+            CapacitorUpdater.this.manifestStorage.insertDownloadManifestEntry(hash, fullpath);
           }
 
 
@@ -667,7 +668,7 @@ public class CapacitorUpdater {
       if (currentEntry != null) {
         Log.i(
           CapacitorUpdater.TAG,
-          "File " + currentEntry.getFilePath() + " is currently downloaded!"
+          "File " + currentEntry.formattedStoragePathList() + " is currently downloaded!"
         );
         this.downloadFileBackgroundManifestUnzip(id, version, dist, currentEntry, entry.getFileName());
       } else {
