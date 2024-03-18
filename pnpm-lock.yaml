@@ -7,19 +7,19 @@ settings:
 devDependencies:
   '@capacitor/android':
     specifier: ^5.5.0
-    version: 5.7.1(@capacitor/core@5.7.1)
+    version: 5.7.3(@capacitor/core@5.7.3)
   '@capacitor/cli':
     specifier: ^5.5.0
-    version: 5.7.1
+    version: 5.7.3
   '@capacitor/core':
     specifier: ^5.5.0
-    version: 5.7.1
+    version: 5.7.3
   '@capacitor/docgen':
     specifier: ^0.2.1
     version: 0.2.1
   '@capacitor/ios':
     specifier: ^5.5.0
-    version: 5.7.1(@capacitor/core@5.7.1)
+    version: 5.7.3(@capacitor/core@5.7.3)
   '@ionic/eslint-config':
     specifier: ^0.3.0
     version: 0.3.0(eslint@8.52.0)(typescript@5.0.4)
@@ -31,7 +31,7 @@ devDependencies:
     version: 1.1.2
   '@types/node':
     specifier: ^20.8.7
-    version: 20.8.7
+    version: 20.11.28
   '@typescript-eslint/eslint-plugin':
     specifier: ^6.8.0
     version: 6.8.0(@typescript-eslint/parser@6.8.0)(eslint@8.52.0)(typescript@5.0.4)
@@ -92,16 +92,16 @@ packages:
       js-tokens: 4.0.0
     dev: true
 
-  /@capacitor/android@5.7.1(@capacitor/core@5.7.1):
-    resolution: {integrity: sha512-qDsFw72y5GMHup148jrG/DJacEpjCz+r7lteAnMh8Jo1/TJCBvX53MVRmeHKrAnriE2BvTtHSZn4VPNcZlK7+Q==}
+  /@capacitor/android@5.7.3(@capacitor/core@5.7.3):
+    resolution: {integrity: sha512-l4FoagqyoId+D/597fG8pPfmVrNevzWzbtkJkbGtQZS5rqRR4HCNoJn0LAMs812o9bfuxGdE1T3MjpehGOe0Rw==}
     peerDependencies:
       '@capacitor/core': ^5.7.0
     dependencies:
-      '@capacitor/core': 5.7.1
+      '@capacitor/core': 5.7.3
     dev: true
 
-  /@capacitor/cli@5.7.1:
-    resolution: {integrity: sha512-iU+DufCBY2qmtD4ETss15eesMjpPclg7e3DyUDCQuruL1UKYAE5AeB8CctvNrafrC7EPRkuvLhC4dqGV1Vdy3w==}
+  /@capacitor/cli@5.7.3:
+    resolution: {integrity: sha512-bfc2QraYS5AsMyYCrhKqcPlZ9bFpsCfnjLKTWLLPJOgOhCdTALPIbzTEtjHyjMPMfch3SFuxdfog57PCCKyJWg==}
     engines: {node: '>=16.0.0'}
     hasBin: true
     dependencies:
@@ -126,8 +126,8 @@ packages:
       - supports-color
     dev: true
 
-  /@capacitor/core@5.7.1:
-    resolution: {integrity: sha512-bwmka6FdvyXOpc5U6bOyx58S/Yl6r5lO2TK561f//KnjyXjxav25HWwhV4hthq3ZxJBMiAEucl9RK5vzgkP4Lw==}
+  /@capacitor/core@5.7.3:
+    resolution: {integrity: sha512-xEuQmP+h0tugl2N+qRcdrUavZydvTnnmtvqu/OtCBb/bKZo2PDRFft7MxuQRE2GxXs6kLy3cvwzhDAHB3a+9mw==}
     dependencies:
       tslib: 2.6.2
     dev: true
@@ -137,19 +137,19 @@ packages:
     engines: {node: '>=14.5.0'}
     hasBin: true
     dependencies:
-      '@types/node': 14.18.54
+      '@types/node': 14.18.63
       colorette: 2.0.20
       github-slugger: 1.5.0
       minimist: 1.2.8
       typescript: 4.2.4
     dev: true
 
-  /@capacitor/ios@5.7.1(@capacitor/core@5.7.1):
-    resolution: {integrity: sha512-4BMdTzvVwGtOqJPqJO3q4UMdNmyAYTO0JU35nRhS6bFadUk9UG0nm7YeVs0mViygtPoxZjkRh/a3GBa+x/oAog==}
+  /@capacitor/ios@5.7.3(@capacitor/core@5.7.3):
+    resolution: {integrity: sha512-ntgayMTQlBZeZiONkqjLGQs2zFVMFghu/hsPcINgXxU53Mvticf2BBNRMmdR20eVHg2UbbJx9SLl8UlOvgQ4sA==}
     peerDependencies:
       '@capacitor/core': ^5.7.0
     dependencies:
-      '@capacitor/core': 5.7.1
+      '@capacitor/core': 5.7.3
     dev: true
 
   /@eslint-community/eslint-utils@4.4.0(eslint@8.52.0):
@@ -487,7 +487,7 @@ packages:
   /@types/fs-extra@8.1.5:
     resolution: {integrity: sha512-0dzKcwO+S8s2kuF5Z9oUWatQJj5Uq/iqphEtE3GQJVRRYm/tD1LglU2UnXi2A8jLq5umkGouOXOR9y0n613ZwQ==}
     dependencies:
-      '@types/node': 20.8.7
+      '@types/node': 20.11.28
     dev: true
 
   /@types/json-schema@7.0.12:
@@ -498,14 +498,14 @@ packages:
     resolution: {integrity: sha512-dRLjCWHYg4oaA77cxO64oO+7JwCwnIzkZPdrrC71jQmQtlhM556pwKo5bUzqvZndkVbeFLIIi+9TC40JNF5hNQ==}
     dev: true
 
-  /@types/node@14.18.54:
-    resolution: {integrity: sha512-uq7O52wvo2Lggsx1x21tKZgqkJpvwCseBBPtX/nKQfpVlEsLOb11zZ1CRsWUKvJF0+lzuA9jwvA7Pr2Wt7i3xw==}
+  /@types/node@14.18.63:
+    resolution: {integrity: sha512-fAtCfv4jJg+ExtXhvCkCqUKZ+4ok/JQk01qDKhL5BDDoS3AxKXhV5/MAVUZyQnSEd2GT92fkgZl0pz0Q0AzcIQ==}
     dev: true
 
-  /@types/node@20.8.7:
-    resolution: {integrity: sha512-21TKHHh3eUHIi2MloeptJWALuCu5H7HQTdTrWIFReA8ad+aggoX+lRes3ex7/FtpC+sVUpFMQ+QTfYr74mruiQ==}
+  /@types/node@20.11.28:
+    resolution: {integrity: sha512-M/GPWVS2wLkSkNHVeLkrF2fD5Lx5UC4PxA0uZcKc6QqbIQUJyW1jVjueJYi1z8n0I5PxYrtpnPnWglE+y9A0KA==}
     dependencies:
-      undici-types: 5.25.3
+      undici-types: 5.26.5
     dev: true
 
   /@types/parse-json@4.0.0:
@@ -1851,8 +1851,8 @@ packages:
     resolution: {integrity: sha512-k/vGaX4/Yla3WzyMCvTQOXYeIHvqOKtnqBduzTHpzpQZzAskKMhZ2K+EnBiSM9zGSoIFeMpXKxa4dYeZIQqewQ==}
     dev: true
 
-  /ini@4.1.1:
-    resolution: {integrity: sha512-QQnnxNyfvmHFIsj7gkPcYymR8Jdw/o7mp5ZFihxn6h8Ci6fh3Dx4E1gPjpQEpIuPo9XVNY/ZUwh4BPMjGyL01g==}
+  /ini@4.1.2:
+    resolution: {integrity: sha512-AMB1mvwR1pyBFY/nSevUX6y8nJWS63/SzUKD3JyQn97s4xgIdgQPT75IRouIiBAN4yLQBUShNYVW0+UG25daCw==}
     engines: {node: ^14.17.0 || ^16.13.0 || >=18.0.0}
     dev: true
 
@@ -2205,7 +2205,7 @@ packages:
       bplist-parser: 0.3.2
       debug: 4.3.4
       elementtree: 0.1.7
-      ini: 4.1.1
+      ini: 4.1.2
       plist: 3.1.0
       split2: 4.2.0
       through2: 4.0.2
@@ -2884,8 +2884,8 @@ packages:
       which-boxed-primitive: 1.0.2
     dev: true
 
-  /undici-types@5.25.3:
-    resolution: {integrity: sha512-Ga1jfYwRn7+cP9v8auvEXN1rX3sWqlayd4HP7OKk4mZWylEmu3KzXDUGrQUN6Ol7qo1gPvB2e5gX6udnyEPgdA==}
+  /undici-types@5.26.5:
+    resolution: {integrity: sha512-JlCMO+ehdEIKqlFxk6IfVoAUVmgz7cU7zD/h9XZ0qzeosSHmUJVOzSQvvYSYWXkFXC+IfLKSIffhv0sVZup6pA==}
     dev: true
 
   /universalify@2.0.1:
