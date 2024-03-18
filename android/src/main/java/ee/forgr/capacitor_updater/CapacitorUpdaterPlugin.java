@@ -606,12 +606,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
           final JSObject ret = new JSObject();
           ret.put("version", version);
           CapacitorUpdaterPlugin.this.notifyListeners("downloadFailed", ret);
-          final BundleInfo current =
-            CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
-          CapacitorUpdaterPlugin.this.implementation.sendStats(
-              "download_fail",
-              current.getVersionName()
-            );
+          CapacitorUpdaterPlugin.this.implementation.sendStats("download_fail");
         }
       });
     } catch (final Exception e) {
@@ -620,12 +615,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
       final JSObject ret = new JSObject();
       ret.put("version", version);
       CapacitorUpdaterPlugin.this.notifyListeners("downloadFailed", ret);
-      final BundleInfo current =
-        CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
-      CapacitorUpdaterPlugin.this.implementation.sendStats(
-          "download_fail",
-          current.getVersionName()
-        );
+      CapacitorUpdaterPlugin.this.implementation.sendStats("download_fail");
     }
   }
 
@@ -1449,11 +1439,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
   }
 
   public void appMovedToBackground() {
-    final BundleInfo current =
-      CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
     CapacitorUpdaterPlugin.this.implementation.sendStats(
-        "app_moved_to_background",
-        current.getVersionName()
+        "app_moved_to_background"
       );
     Log.i(CapacitorUpdater.TAG, "Checking for pending update");
     try {

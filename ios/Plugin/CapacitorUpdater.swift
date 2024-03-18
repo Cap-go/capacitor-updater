@@ -412,6 +412,7 @@ extension CustomError: LocalizedError {
         let destHot: URL = base.appendingPathComponent(id)
         let destUnZip: URL = documentsDir.appendingPathComponent(randomString(length: 10))
         if !SSZipArchive.unzipFile(atPath: sourceZip.path, toDestination: destUnZip.path) {
+            self.sendStats(action: "unzip_fail")
             throw CustomError.cannotUnzip
         }
         if try unflatFolder(source: destUnZip, dest: destHot) {
@@ -664,7 +665,7 @@ extension CustomError: LocalizedError {
         self.setFallbackBundle(fallback: Optional<BundleInfo>.none)
         _ = self.setNextBundle(next: Optional<String>.none)
         if !isInternal {
-            self.sendStats(action: "reset", versionName: self.getCurrentBundle().getVersionName())
+            self.sendStats(action: "reset")
         }
     }
 
@@ -802,18 +803,29 @@ extension CustomError: LocalizedError {
         return getChannel
     }
 
-    func sendStats(action: String, versionName: String) {
-        if (self.statsUrl ).isEmpty {
+    func sendStats(action: String, versionName: String? = nil) {
+        guard !statsUrl.isEmpty else {
             return
         }
-        var parameters: InfoObject = self.createInfoObject()
+
+        let versionName = versionName ?? getCurrentBundle().getVersionName()
+
+        var parameters = createInfoObject()
         parameters.action = action
+
         DispatchQueue.global(qos: .background).async {
-            let request = AF.request(self.statsUrl, method: .post, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
+            let request = AF.request(
+                self.statsUrl,
+                method: .post,
+                parameters: parameters,
+                encoder: JSONParameterEncoder.default,
+                requestModifier: { $0.timeoutInterval = self.timeout }
+            )
+
             request.responseData { response in
                 switch response.result {
                 case .success:
-                    print("\(self.TAG) Stats send for \(action), version \(versionName)")
+                    print("\(self.TAG) Stats sent for \(action), version \(versionName)")
                 case let .failure(error):
                     print("\(self.TAG) Error sending stats: ", response.value ?? "", error)
                 }

@@ -232,8 +232,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             } catch {
                 print("\(self.implementation.TAG) Failed to download from: \(String(describing: url)) \(error.localizedDescription)")
                 self.notifyListeners("downloadFailed", data: ["version": version])
-                let current: BundleInfo = self.implementation.getCurrentBundle()
-                self.implementation.sendStats(action: "download_fail", versionName: current.getVersionName())
+                self.implementation.sendStats(action: "download_fail")
                 call.reject("Failed to download from: \(url!)", error.localizedDescription)
             }
         }
@@ -805,8 +804,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func appMovedToBackground() {
-        let current: BundleInfo = self.implementation.getCurrentBundle()
-        self.implementation.sendStats(action: "app_moved_to_background", versionName: current.getVersionName())
+        self.implementation.sendStats(action: "app_moved_to_background")
         print("\(self.implementation.TAG) Check for pending update")
         let delayUpdatePreferences = UserDefaults.standard.string(forKey: DELAY_CONDITION_PREFERENCES) ?? "[]"
 

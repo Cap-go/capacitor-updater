@@ -187,6 +187,7 @@ public class CapacitorUpdater {
             "unzip: Windows path is not supported, please use unix path as require by zip RFC: " +
             entry.getName()
           );
+          this.sendStats("windows_path_fail");
         }
         final File file = new File(targetDirectory, entry.getName());
         final String canonicalPath = file.getCanonicalPath();
@@ -194,6 +195,7 @@ public class CapacitorUpdater {
         final File dir = entry.isDirectory() ? file : file.getParentFile();
 
         if (!canonicalPath.startsWith(canonicalDir)) {
+          this.sendStats("canonical_path_fail");
           throw new FileNotFoundException(
             "SecurityException, Failed to ensure directory is the start path : " +
             canonicalDir +
@@ -203,6 +205,8 @@ public class CapacitorUpdater {
         }
 
         if (!dir.isDirectory() && !dir.mkdirs()) {
+          final JSObject ret = new JSObject();
+          this.sendStats("directory_path_fail");
           throw new FileNotFoundException(
             "Failed to ensure directory: " + dir.getAbsolutePath()
           );
@@ -229,6 +233,9 @@ public class CapacitorUpdater {
         lengthRead += entry.getCompressedSize();
       }
       return targetDirectory;
+    } catch (IOException e) {
+      this.sendStats("unzip_fail");
+      throw new IOException("Failed to unzip: " + zipFile.getPath());
     }
   }
 
@@ -311,10 +318,7 @@ public class CapacitorUpdater {
               CapacitorUpdater.this.getCurrentBundle().getVersionName()
             );
             CapacitorUpdater.this.notifyListeners("downloadFailed", ret);
-            CapacitorUpdater.this.sendStats(
-                "download_fail",
-                CapacitorUpdater.this.getCurrentBundle().getVersionName()
-              );
+            CapacitorUpdater.this.sendStats("download_fail");
             return;
           }
           CapacitorUpdater.this.finishDownload(
@@ -370,7 +374,7 @@ public class CapacitorUpdater {
           CapacitorUpdater.TAG,
           "Error checksum " + checksumRes + " " + checksum
         );
-        this.sendStats("checksum_fail", getCurrentBundle().getVersionName());
+        this.sendStats("checksum_fail");
         final Boolean res = this.delete(id);
         if (res) {
           Log.i(
@@ -399,10 +403,7 @@ public class CapacitorUpdater {
         CapacitorUpdater.this.getCurrentBundle().getVersionName()
       );
       CapacitorUpdater.this.notifyListeners("downloadFailed", ret);
-      CapacitorUpdater.this.sendStats(
-          "download_fail",
-          CapacitorUpdater.this.getCurrentBundle().getVersionName()
-        );
+      CapacitorUpdater.this.sendStats("download_fail");
       return false;
     }
     return true;
@@ -1048,6 +1049,10 @@ public class CapacitorUpdater {
       }
     );
     this.requestQueue.add(setRetryPolicy(request));
+  }
+
+  public void sendStats(final String action) {
+    this.sendStats(action, this.getCurrentBundle().getVersionName());
   }
 
   public void sendStats(final String action, final String versionName) {
