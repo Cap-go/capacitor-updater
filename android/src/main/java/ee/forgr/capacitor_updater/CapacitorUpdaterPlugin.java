@@ -822,6 +822,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
     if (this.periodCheckDelay == 0 || !this._isAutoUpdateEnabled()) {
       return;
     }
+    // The delay should be equal to this.periodCheckDelay.
+    // In appMovedToForeground we schedule a backgroundDownload and it happens BEFORE this scheduleAtFixedRate
+    // As such we get a race condition
     final Timer timer = new Timer();
     timer.scheduleAtFixedRate(
       new TimerTask() {
@@ -854,7 +857,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
           }
         }
       },
-      0,
+      this.periodCheckDelay,
       this.periodCheckDelay
     );
   }
