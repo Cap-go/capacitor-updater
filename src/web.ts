@@ -24,7 +24,7 @@ import type {
   CurrentBundleResult,
   AppReadyResult,
   MultiDelayConditions,
-} from './definitions'
+} from "./definitions";
 
 const BUNDLE_BUILTIN: BundleInfo = {
   status: "success",
@@ -34,7 +34,10 @@ const BUNDLE_BUILTIN: BundleInfo = {
   checksum: "",
 };
 
-export class CapacitorUpdaterWeb extends WebPlugin implements CapacitorUpdaterPlugin {
+export class CapacitorUpdaterWeb
+  extends WebPlugin
+  implements CapacitorUpdaterPlugin
+{
   async setStatsUrl(options: StatsUrl): Promise<void> {
     console.warn("Cannot setStatsUrl in web", options);
     return;

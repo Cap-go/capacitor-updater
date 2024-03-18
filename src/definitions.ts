@@ -355,7 +355,7 @@ export interface CapacitorUpdaterPlugin {
    */
   unsetChannel(options: UnsetChannelOptions): Promise<void>;
 
-	/**
+  /**
    * Get the channel for this device
    *
    * @returns {Promise<ChannelRes>} A Promise that resolves with the channel info
@@ -509,211 +509,211 @@ export type BundleStatus = "success" | "error" | "pending" | "downloading";
 export type DelayUntilNext = "background" | "kill" | "nativeVersion" | "date";
 
 export interface NoNeedEvent {
-	/**
-	 * Current status of download, between 0 and 100.
-	 *
-	 * @since  4.0.0
-	 */
-	bundle: BundleInfo;
+  /**
+   * Current status of download, between 0 and 100.
+   *
+   * @since  4.0.0
+   */
+  bundle: BundleInfo;
 }
 
 export interface UpdateAvailableEvent {
-	/**
-	 * Current status of download, between 0 and 100.
-	 *
-	 * @since  4.0.0
-	 */
-	bundle: BundleInfo;
+  /**
+   * Current status of download, between 0 and 100.
+   *
+   * @since  4.0.0
+   */
+  bundle: BundleInfo;
 }
 
 export interface ChannelRes {
-	/**
-	 * Current status of set channel
-	 *
-	 * @since  4.7.0
-	 */
-	status: string;
-	error?: any;
-	message?: any;
+  /**
+   * Current status of set channel
+   *
+   * @since  4.7.0
+   */
+  status: string;
+  error?: any;
+  message?: any;
 }
 
 export interface GetChannelRes {
-	/**
-	 * Current status of get channel
-	 *
-	 * @since  4.8.0
-	 */
-	channel?: string;
-	error?: any;
-	message?: any;
-	status?: string;
-	allowSet?: boolean;
+  /**
+   * Current status of get channel
+   *
+   * @since  4.8.0
+   */
+  channel?: string;
+  error?: any;
+  message?: any;
+  status?: string;
+  allowSet?: boolean;
 }
 
 export interface DownloadEvent {
-	/**
-	 * Current status of download, between 0 and 100.
-	 *
-	 * @since  4.0.0
-	 */
-	percent: number;
-	bundle: BundleInfo;
+  /**
+   * Current status of download, between 0 and 100.
+   *
+   * @since  4.0.0
+   */
+  percent: number;
+  bundle: BundleInfo;
 }
 
 export interface MajorAvailableEvent {
-	/**
-	 * Emit when a new major bundle is available.
-	 *
-	 * @since  4.0.0
-	 */
-	version: string;
+  /**
+   * Emit when a new major bundle is available.
+   *
+   * @since  4.0.0
+   */
+  version: string;
 }
 
 export interface DownloadFailedEvent {
-	/**
-	 * Emit when a download fail.
-	 *
-	 * @since  4.0.0
-	 */
-	version: string;
+  /**
+   * Emit when a download fail.
+   *
+   * @since  4.0.0
+   */
+  version: string;
 }
 
 export interface DownloadCompleteEvent {
-	/**
-	 * Emit when a new update is available.
-	 *
-	 * @since  4.0.0
-	 */
-	bundle: BundleInfo;
+  /**
+   * Emit when a new update is available.
+   *
+   * @since  4.0.0
+   */
+  bundle: BundleInfo;
 }
 
 export interface UpdateFailedEvent {
-	/**
-	 * Emit when a update failed to install.
-	 *
-	 * @since 4.0.0
-	 */
-	bundle: BundleInfo;
+  /**
+   * Emit when a update failed to install.
+   *
+   * @since 4.0.0
+   */
+  bundle: BundleInfo;
 }
 
 export interface AppReadyEvent {
-	/**
-	 * Emitted when the app is ready to use.
-	 *
-	 * @since  5.2.0
-	 */
-	bundle: BundleInfo;
-	status: string;
+  /**
+   * Emitted when the app is ready to use.
+   *
+   * @since  5.2.0
+   */
+  bundle: BundleInfo;
+  status: string;
 }
 
 export interface LatestVersion {
-	/**
-	 * Result of getLatest method
-	 *
-	 * @since 4.0.0
-	 */
-	version: string;
-	major?: boolean;
-	message?: string;
-	sessionKey?: string;
-	error?: string;
-	old?: string;
-	url?: string;
+  /**
+   * Result of getLatest method
+   *
+   * @since 4.0.0
+   */
+  version: string;
+  major?: boolean;
+  message?: string;
+  sessionKey?: string;
+  error?: string;
+  old?: string;
+  url?: string;
 }
 
 export interface BundleInfo {
-	id: string;
-	version: string;
-	downloaded: string;
-	checksum: string;
-	status: BundleStatus;
+  id: string;
+  version: string;
+  downloaded: string;
+  checksum: string;
+  status: BundleStatus;
 }
 
 export interface SetChannelOptions {
-	channel: string;
-	triggerAutoUpdate?: boolean;
+  channel: string;
+  triggerAutoUpdate?: boolean;
 }
 
 export interface UnsetChannelOptions {
-	triggerAutoUpdate?: boolean;
+  triggerAutoUpdate?: boolean;
 }
 
 export interface SetCustomIdOptions {
-	customId: string;
+  customId: string;
 }
 
 export interface DelayCondition {
-	/**
-	 * Set up delay conditions in setMultiDelay
-	 * @param value is useless for @param kind "kill", optional for "background" (default value: "0") and required for "nativeVersion" and "date"
-	 */
-	kind: DelayUntilNext;
-	value?: string;
+  /**
+   * Set up delay conditions in setMultiDelay
+   * @param value is useless for @param kind "kill", optional for "background" (default value: "0") and required for "nativeVersion" and "date"
+   */
+  kind: DelayUntilNext;
+  value?: string;
 }
 
 export interface AppReadyResult {
-  bundle: BundleInfo
+  bundle: BundleInfo;
 }
 
 export interface UpdateUrl {
-  url: string
+  url: string;
 }
 
 export interface StatsUrl {
-	url: string
+  url: string;
 }
 
 export interface ChannelUrl {
-  url: string
+  url: string;
 }
 
 export interface DownloadOptions {
-	/**
-	 * The URL of the bundle zip file (e.g: dist.zip) to be downloaded. (This can be any URL. E.g: Amazon S3, a GitHub tag, any other place you've hosted your bundle.)
-	 */
-	url: string;
+  /**
+   * The URL of the bundle zip file (e.g: dist.zip) to be downloaded. (This can be any URL. E.g: Amazon S3, a GitHub tag, any other place you've hosted your bundle.)
+   */
+  url: string;
 
-	/**
-	 * The version code/name of this bundle/version
-	 */
-	version: string;
-	sessionKey?: string;
-	checksum?: string;
+  /**
+   * The version code/name of this bundle/version
+   */
+  version: string;
+  sessionKey?: string;
+  checksum?: string;
 }
 
 export interface BundleId {
-	id: string
+  id: string;
 }
 
 export interface BundleListResult {
-	bundles: BundleInfo[]
+  bundles: BundleInfo[];
 }
 
 export interface ResetOptions {
-	toLastSuccessful: boolean
+  toLastSuccessful: boolean;
 }
 
 export interface CurrentBundleResult {
-	bundle: BundleInfo;
-	native: string
+  bundle: BundleInfo;
+  native: string;
 }
 
 export interface MultiDelayConditions {
-	delayConditions: DelayCondition[]
+  delayConditions: DelayCondition[];
 }
 
 export interface BuiltinVersion {
-	version: string
+  version: string;
 }
 
 export interface DeviceId {
-	deviceId: string
+  deviceId: string;
 }
 
 export interface PluginVersion {
-	version: string
+  version: string;
 }
 
 export interface AutoUpdateEnabled {
-	enabled: boolean
+  enabled: boolean;
 }
