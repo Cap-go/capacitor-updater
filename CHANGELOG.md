@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [5.7.0](https://github.com/Cap-go/capacitor-updater/compare/5.6.15...5.7.0) (2024-03-18)
+
+
+### Features
+
+* add new stats event for unzip ([6b716f4](https://github.com/Cap-go/capacitor-updater/commit/6b716f4dfd5398c61d099e1c473682b8a928a036))
+
 ### [5.6.15](https://github.com/Cap-go/capacitor-updater/compare/5.6.14...5.6.15) (2024-03-18)
 
 ### [5.6.14](https://github.com/Cap-go/capacitor-updater/compare/5.6.13...5.6.14) (2024-03-18)
