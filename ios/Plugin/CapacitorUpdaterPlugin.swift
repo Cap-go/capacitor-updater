@@ -15,7 +15,7 @@ import Version
 @objc(CapacitorUpdaterPlugin)
 public class CapacitorUpdaterPlugin: CAPPlugin {
     public var implementation = CapacitorUpdater()
-    private let PLUGIN_VERSION: String = "5.7.14-alpha.0"
+    private let PLUGIN_VERSION: String = "5.7.14"
     static let updateUrlDefault = "https://api.capgo.app/updates"
     static let statsUrlDefault = "https://api.capgo.app/stats"
     static let channelUrlDefault = "https://api.capgo.app/channel_self"
@@ -792,12 +792,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             return
         }
         let timer = Timer.scheduledTimer(withTimeInterval: TimeInterval(periodCheckDelay), repeats: true) { _ in
-            let res = self.implementation.getLatest(url: url)
-            let current = self.implementation.getCurrentBundle()
+            DispatchQueue.global(qos: .background).async {
+                let res = self.implementation.getLatest(url: url)
+                let current = self.implementation.getCurrentBundle()
 
-            if res.version != current.getVersionName() {
-                print("\(self.implementation.TAG) New version found: \(res.version)")
-                self.backgroundDownload()
+                if res.version != current.getVersionName() {
+                    print("\(self.implementation.TAG) New version found: \(res.version)")
+                    self.backgroundDownload()
+                }
             }
         }
         RunLoop.current.add(timer, forMode: .default)
