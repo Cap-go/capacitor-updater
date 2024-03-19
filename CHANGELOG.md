@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.7.14](https://github.com/Cap-go/capacitor-updater/compare/5.7.13...5.7.14) (2024-03-19)
+
+
+### Bug Fixes
+
+* DispatchQueue.global for period check ([e2d6cd1](https://github.com/Cap-go/capacitor-updater/commit/e2d6cd11121e7dcef7b7535f4cd0de9457a01bf2))
+
 ### [5.7.13](https://github.com/Cap-go/capacitor-updater/compare/5.7.12...5.7.13) (2024-03-19)
 
 
