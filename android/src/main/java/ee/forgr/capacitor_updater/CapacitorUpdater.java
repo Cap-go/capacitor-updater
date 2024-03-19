@@ -793,7 +793,7 @@ public class CapacitorUpdater {
   }
 
   public void getLatest(final String updateUrl, final Callback callback) {
-    JSONObject json = null;
+    JSONObject json;
     try {
       json = this.createInfoObject();
     } catch (JSONException e) {
