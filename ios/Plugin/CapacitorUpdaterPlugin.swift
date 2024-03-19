@@ -792,6 +792,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             return
         }
         let timer = Timer.scheduledTimer(withTimeInterval: TimeInterval(periodCheckDelay), repeats: true) { _ in
+            print("\(self.implementation.TAG) Period Check")
             DispatchQueue.global(qos: .background).async {
                 let res = self.implementation.getLatest(url: url)
                 let current = self.implementation.getCurrentBundle()

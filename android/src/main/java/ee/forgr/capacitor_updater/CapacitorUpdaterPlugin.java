@@ -835,6 +835,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         @Override
         public void run() {
           try {
+            Log.i(CapacitorUpdater.TAG, "Period Check");
             CapacitorUpdaterPlugin.this.implementation.getLatest(
                 CapacitorUpdaterPlugin.this.updateUrl,
                 res -> {
