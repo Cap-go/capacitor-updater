@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.7.10-alpha.0](https://github.com/Cap-go/capacitor-updater/compare/5.7.9...5.7.10-alpha.0) (2024-03-19)
+
+
+### Bug Fixes
+
+* latest reco from android studio ([dd07eee](https://github.com/Cap-go/capacitor-updater/commit/dd07eee85a1fc2903ce3b8a2bc4c5073718d5c24))
+
 ### [5.7.9](https://github.com/Cap-go/capacitor-updater/compare/5.7.8...5.7.9) (2024-03-19)
 
 
