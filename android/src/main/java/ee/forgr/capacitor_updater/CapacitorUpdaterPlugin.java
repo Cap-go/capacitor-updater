@@ -55,7 +55,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
   private static final String channelUrlDefault =
     "https://api.capgo.app/channel_self";
 
-  private final String PLUGIN_VERSION = "5.7.10-alpha.0";
+  private final String PLUGIN_VERSION = "5.7.13";
   private static final String DELAY_CONDITION_PREFERENCES = "";
 
   private SharedPreferences.Editor editor;
@@ -473,7 +473,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         CapacitorUpdater.TAG,
         "unsetChannel triggerAutoUpdate: " + triggerAutoUpdate
       );
-      startNewThread(() -> {
+      startNewThread(() ->
         CapacitorUpdaterPlugin.this.implementation.unsetChannel(res -> {
             if (res.has("error")) {
               call.reject(res.getString("error"));
@@ -490,8 +490,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
               }
               call.resolve(res);
             }
-          });
-      });
+          })
+      );
     } catch (final Exception e) {
       Log.e(CapacitorUpdater.TAG, "Failed to unsetChannel: ", e);
       call.reject("Failed to unsetChannel: ", e);
@@ -516,7 +516,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         CapacitorUpdater.TAG,
         "setChannel " + channel + " triggerAutoUpdate: " + triggerAutoUpdate
       );
-      startNewThread(() -> {
+      startNewThread(() ->
         CapacitorUpdaterPlugin.this.implementation.setChannel(
             channel,
             res -> {
@@ -536,8 +536,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 call.resolve(res);
               }
             }
-          );
-      });
+          )
+      );
     } catch (final Exception e) {
       Log.e(CapacitorUpdater.TAG, "Failed to setChannel: " + channel, e);
       call.reject("Failed to setChannel: " + channel, e);
@@ -548,15 +548,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
   public void getChannel(final PluginCall call) {
     try {
       Log.i(CapacitorUpdater.TAG, "getChannel");
-      startNewThread(() -> {
+      startNewThread(() ->
         CapacitorUpdaterPlugin.this.implementation.getChannel(res -> {
             if (res.has("error")) {
               call.reject(res.getString("error"));
             } else {
               call.resolve(res);
             }
-          });
-      });
+          })
+      );
     } catch (final Exception e) {
       Log.e(CapacitorUpdater.TAG, "Failed to getChannel", e);
       call.reject("Failed to getChannel", e);
@@ -748,7 +748,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
   @PluginMethod
   public void getLatest(final PluginCall call) {
-    startNewThread(() -> {
+    startNewThread(() ->
       CapacitorUpdaterPlugin.this.implementation.getLatest(
           CapacitorUpdaterPlugin.this.updateUrl,
           res -> {
@@ -775,8 +775,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
             call.resolve(ret);
           }
-        );
-    });
+        )
+    );
   }
 
   private boolean _reset(final Boolean toLastSuccessful) {
@@ -843,7 +843,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
                       CapacitorUpdater.TAG,
                       Objects.requireNonNull(res.getString("error"))
                     );
-                    return;
                   } else if (res.has("version")) {
                     String newVersion = res.getString("version");
                     String currentVersion = String.valueOf(
@@ -1070,7 +1069,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
   private boolean isValidURL(String urlStr) {
     try {
-      URL url = new URL(urlStr);
+      new URL(urlStr);
       return true;
     } catch (MalformedURLException e) {
       return false;
@@ -1084,10 +1083,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     Boolean error
   ) {
     if (error) {
-      Log.i(
-        CapacitorUpdater.TAG,
-        "endBackGroundTaskWithNotif error" + error.toString()
-      );
+      Log.i(CapacitorUpdater.TAG, "endBackGroundTaskWithNotif error" + error);
       this.implementation.sendStats("download_fail", current.getVersionName());
       final JSObject ret = new JSObject();
       ret.put("version", latestVersionName);
