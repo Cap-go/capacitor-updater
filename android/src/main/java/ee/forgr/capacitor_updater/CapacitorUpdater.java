@@ -873,9 +873,7 @@ public class CapacitorUpdater {
 
   public void unsetChannel(final Callback callback) {
     String channelUrl = this.channelUrl;
-    if (
-            channelUrl == null || channelUrl.isEmpty()
-    ) {
+    if (channelUrl == null || channelUrl.isEmpty()) {
       Log.e(TAG, "Channel URL is not set");
       final JSObject retError = new JSObject();
       retError.put("message", "channelUrl missing");
@@ -940,9 +938,7 @@ public class CapacitorUpdater {
 
   public void setChannel(final String channel, final Callback callback) {
     String channelUrl = this.channelUrl;
-    if (
-            channelUrl == null || channelUrl.isEmpty()
-    ) {
+    if (channelUrl == null || channelUrl.isEmpty()) {
       Log.e(TAG, "Channel URL is not set");
       final JSObject retError = new JSObject();
       retError.put("message", "channelUrl missing");
@@ -1005,9 +1001,7 @@ public class CapacitorUpdater {
 
   public void getChannel(final Callback callback) {
     String channelUrl = this.channelUrl;
-    if (
-            channelUrl == null || channelUrl.isEmpty()
-    ) {
+    if (channelUrl == null || channelUrl.isEmpty()) {
       Log.e(TAG, "Channel URL is not set");
       final JSObject retError = new JSObject();
       retError.put("message", "Channel URL is not set");

@@ -70,7 +70,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
   private Boolean autoUpdate = false;
   private String updateUrl = "";
   private Version currentVersionNative;
-	private Thread backgroundTask;
+  private Thread backgroundTask;
   private Boolean taskRunning = false;
 
   private Boolean isPreviousMainActivity = true;
@@ -214,7 +214,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     this.appReadyTimeout = this.getConfig().getInt("appReadyTimeout", 10000);
     this.implementation.timeout =
       this.getConfig().getInt("responseTimeout", 20) * 1000;
-		boolean resetWhenUpdate = this.getConfig().getBoolean("resetWhenUpdate", true);
+    boolean resetWhenUpdate =
+      this.getConfig().getBoolean("resetWhenUpdate", true);
 
     if (resetWhenUpdate) {
       this.cleanupObsoleteVersions();
@@ -228,15 +229,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
     try {
       //        Log.i(CapacitorUpdater.TAG, "semaphoreReady count " + CapacitorUpdaterPlugin.this.semaphoreReady.getCount());
       semaphoreReady.awaitAdvanceInterruptibly(
-          semaphoreReady.getPhase(),
-          waitTime.longValue(),
-          TimeUnit.SECONDS
-        );
+        semaphoreReady.getPhase(),
+        waitTime.longValue(),
+        TimeUnit.SECONDS
+      );
       //        Log.i(CapacitorUpdater.TAG, "semaphoreReady await " + res);
       Log.i(
         CapacitorUpdater.TAG,
-        "semaphoreReady count " +
-        semaphoreReady.getPhase()
+        "semaphoreReady count " + semaphoreReady.getPhase()
       );
     } catch (InterruptedException e) {
       Log.i(CapacitorUpdater.TAG, "semaphoreWait InterruptedException");
@@ -255,8 +255,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     Log.i(CapacitorUpdater.TAG, "semaphoreDown");
     Log.i(
       CapacitorUpdater.TAG,
-      "semaphoreDown count " +
-      semaphoreReady.getPhase()
+      "semaphoreDown count " + semaphoreReady.getPhase()
     );
     semaphoreReady.arriveAndDeregister();
   }
@@ -288,7 +287,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
       try {
         if (
           !"".equals(previous.getOriginalString()) &&
-          !Objects.equals(this.currentVersionNative.getOriginalString(), previous.getOriginalString())
+          !Objects.equals(
+            this.currentVersionNative.getOriginalString(),
+            previous.getOriginalString()
+          )
         ) {
           Log.i(
             CapacitorUpdater.TAG,
@@ -478,7 +480,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             } else {
               if (
                 CapacitorUpdaterPlugin.this._isAutoUpdateEnabled() &&
-									Boolean.TRUE.equals(triggerAutoUpdate)
+                Boolean.TRUE.equals(triggerAutoUpdate)
               ) {
                 Log.i(
                   CapacitorUpdater.TAG,
@@ -523,7 +525,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
               } else {
                 if (
                   CapacitorUpdaterPlugin.this._isAutoUpdateEnabled() &&
-										Boolean.TRUE.equals(triggerAutoUpdate)
+                  Boolean.TRUE.equals(triggerAutoUpdate)
                 ) {
                   Log.i(
                     CapacitorUpdater.TAG,
@@ -837,7 +839,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 CapacitorUpdaterPlugin.this.updateUrl,
                 res -> {
                   if (res.has("error")) {
-                    Log.e(CapacitorUpdater.TAG, Objects.requireNonNull(res.getString("error")));
+                    Log.e(
+                      CapacitorUpdater.TAG,
+                      Objects.requireNonNull(res.getString("error"))
+                    );
                     return;
                   } else if (res.has("version")) {
                     String newVersion = res.getString("version");
@@ -1079,7 +1084,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
     Boolean error
   ) {
     if (error) {
-      Log.i(CapacitorUpdater.TAG, "endBackGroundTaskWithNotif error" + error.toString());
+      Log.i(
+        CapacitorUpdater.TAG,
+        "endBackGroundTaskWithNotif error" + error.toString()
+      );
       this.implementation.sendStats("download_fail", current.getVersionName());
       final JSObject ret = new JSObject();
       ret.put("version", latestVersionName);
@@ -1151,7 +1159,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
               if (
                 latestVersionName != null &&
-                        !latestVersionName.isEmpty() &&
+                !latestVersionName.isEmpty() &&
                 !current.getVersionName().equals(latestVersionName)
               ) {
                 final BundleInfo latest =
@@ -1509,9 +1517,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
       ActivityManager.RecentTaskInfo runningTask = runningTasks
         .get(0)
         .getTaskInfo();
-      String className = Objects.requireNonNull(runningTask.baseIntent.getComponent()).getClassName();
-        assert runningTask.topActivity != null;
-        String runningActivity = runningTask.topActivity.getClassName();
+      String className = Objects
+        .requireNonNull(runningTask.baseIntent.getComponent())
+        .getClassName();
+      assert runningTask.topActivity != null;
+      String runningActivity = runningTask.topActivity.getClassName();
       return className.equals(runningActivity);
     } catch (NullPointerException e) {
       return false;
