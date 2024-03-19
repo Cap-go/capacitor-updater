@@ -43,8 +43,7 @@ public class CryptoCipher {
       PSource.PSpecified.DEFAULT
     );
     cipher.init(Cipher.DECRYPT_MODE, privateKey, oaepParams);
-    byte[] decryptedBytes = cipher.doFinal(source);
-    return decryptedBytes;
+    return cipher.doFinal(source);
   }
 
   public static byte[] decryptAES(byte[] cipherText, SecretKey key, byte[] iv) {
@@ -53,8 +52,7 @@ public class CryptoCipher {
       Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
       SecretKeySpec keySpec = new SecretKeySpec(key.getEncoded(), "AES");
       cipher.init(Cipher.DECRYPT_MODE, keySpec, ivParameterSpec);
-      byte[] decryptedText = cipher.doFinal(cipherText);
-      return decryptedText;
+      return cipher.doFinal(cipherText);
     } catch (Exception e) {
       e.printStackTrace();
     }
@@ -63,13 +61,7 @@ public class CryptoCipher {
 
   public static SecretKey byteToSessionKey(byte[] sessionKey) {
     // rebuild key using SecretKeySpec
-    SecretKey originalKey = new SecretKeySpec(
-      sessionKey,
-      0,
-      sessionKey.length,
-      "AES"
-    );
-    return originalKey;
+    return new SecretKeySpec(sessionKey, 0, sessionKey.length, "AES");
   }
 
   private static PrivateKey readPkcs8PrivateKey(byte[] pkcs8Bytes)
@@ -137,7 +129,7 @@ public class CryptoCipher {
     throws GeneralSecurityException {
     // Base64 decode the result
 
-    String pkcs1Pem = private_key.toString();
+    String pkcs1Pem = private_key;
     pkcs1Pem = pkcs1Pem.replace("-----BEGIN RSA PRIVATE KEY-----", "");
     pkcs1Pem = pkcs1Pem.replace("-----END RSA PRIVATE KEY-----", "");
     pkcs1Pem = pkcs1Pem.replace("\\n", "");

@@ -6,6 +6,7 @@
 
 package ee.forgr.capacitor_updater;
 
+import androidx.annotation.NonNull;
 import com.google.gson.annotations.SerializedName;
 import java.util.Objects;
 
@@ -41,8 +42,7 @@ public class DelayCondition {
   @Override
   public boolean equals(Object o) {
     if (this == o) return true;
-    if (!(o instanceof DelayCondition)) return false;
-    DelayCondition that = (DelayCondition) o;
+    if (!(o instanceof DelayCondition that)) return false;
     return (
       getKind() == that.getKind() && Objects.equals(getValue(), that.getValue())
     );
@@ -53,6 +53,7 @@ public class DelayCondition {
     return Objects.hash(getKind(), getValue());
   }
 
+  @NonNull
   @Override
   public String toString() {
     return (
