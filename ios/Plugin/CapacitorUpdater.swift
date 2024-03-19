@@ -950,12 +950,6 @@ extension CustomError: LocalizedError {
         UserDefaults.standard.synchronize()
     }
 
-    public func setVersionName(id: String, version: String) {
-        print("\(self.TAG) Setting version for folder [\(id)] to \(version)")
-        let info = self.getBundleInfo(id: id)
-        self.saveBundleInfo(id: id, bundle: info.setVersionName(version: version))
-    }
-
     private func setBundleStatus(id: String, status: BundleStatus) {
         print("\(self.TAG) Setting status for bundle [\(id)] to \(status)")
         let info = self.getBundleInfo(id: id)
