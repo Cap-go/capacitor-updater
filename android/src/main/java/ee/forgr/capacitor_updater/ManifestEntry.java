@@ -2,6 +2,7 @@ package ee.forgr.capacitor_updater;
 
 import android.os.Parcel;
 import android.os.Parcelable;
+import android.util.Log;
 
 import com.getcapacitor.JSObject;
 
@@ -11,6 +12,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 import org.json.JSONTokener;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -53,8 +55,43 @@ public class ManifestEntry implements Parcelable {
         return storagePathList.get(0);
     }
 
+    // This fn will check if all storagePathList actually exist
+    // If not then it will remove them and retun true
+    // If true returned ManifestStorage.saveToDeviceStorage should be called
+    public synchronized boolean cleanupFilePaths() {
+        if (this.type == ManifestEntryType.BUILTIN) {
+            return false;
+        }
+
+        boolean shouldSave = false;
+
+        final List<String> finalStoragePathList = new ArrayList<>();
+        for (int i = 0; i < storagePathList.size(); i++) {
+            String filepath = storagePathList.get(i);
+
+            File file = new File(filepath);
+            if (!file.exists()) {
+                shouldSave = true;
+                Log.i(CapacitorUpdater.TAG, "Filepath " + filepath + " does not exist. Removing from storagePathList");
+                continue;
+            }
+
+            finalStoragePathList.add(filepath);
+        }
+
+        if (shouldSave) {
+            this.storagePathList.clear();
+            this.storagePathList.addAll(finalStoragePathList);
+        }
+        return shouldSave;
+    }
+
     public String formattedStoragePathList() {
         return "[ " + String.join(", ", this.storagePathList) + " ]";
+    }
+
+    public List<String> getStoragePathList() {
+        return storagePathList;
     }
 
     public String getCopyPath() {

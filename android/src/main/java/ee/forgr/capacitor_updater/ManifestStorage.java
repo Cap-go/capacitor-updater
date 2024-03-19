@@ -41,6 +41,7 @@ public class ManifestStorage {
     }
 
     public synchronized void saveToDeviceStorage() {
+        Log.i(CapacitorUpdater.TAG, "Saving the manifest storage to device storage");
         try {
             JSONArray jsonArray = new JSONArray();
 
@@ -87,7 +88,9 @@ public class ManifestStorage {
             manifestHashMap.put(manifestEntry.getHash(), manifestEntry);
         }
 
-        return new ManifestStorage(manifestHashMap, editor, prefs);
+        ManifestStorage manifestStorage = new ManifestStorage(manifestHashMap, editor, prefs);
+        manifestStorage.loadFromStorageDevice();
+        return manifestStorage;
     }
 
     public ManifestEntry getEntryByHash(String hash) {
@@ -108,12 +111,30 @@ public class ManifestStorage {
 
         try {
             JSONArray jsonArray = new JSONArray(new JSONTokener(savedManifestStr));
+            boolean shouldSave = false;
+            boolean removedFromManifest = false;
 
             for (int i = 0; i < jsonArray.length(); i++) {
                 JSONObject jsonObject = jsonArray.getJSONObject(i);
                 ManifestEntry manifestEntry = ManifestEntry.fromJson(jsonObject);
-                // TODO: verify that each ManifestEntry.storagePath is an actual file existing on the file system
-                this.manifestHashMap.put(manifestEntry.getHash(), manifestEntry);
+
+                if (manifestEntry.cleanupFilePaths() && !shouldSave) {
+                    shouldSave = true;
+                }
+
+
+                if (manifestEntry.getStoragePathList().size() > 0) {
+                    this.manifestHashMap.put(manifestEntry.getHash(), manifestEntry);
+                } else {
+                    removedFromManifest = true;
+                }
+            }
+
+            if (removedFromManifest) {
+                Log.i(CapacitorUpdater.TAG, "Some manifest entries had to be removed as the underlying file does not exist on the filesystem");
+            }
+            if (shouldSave) {
+                this.saveToDeviceStorage();
             }
 
         } catch (JSONException e) {
