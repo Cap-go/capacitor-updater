@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.7.7](https://github.com/Cap-go/capacitor-updater/compare/5.7.6...5.7.7) (2024-03-19)
+
+
+### Bug Fixes
+
+* lint and fllow android best practices ([23fcdf5](https://github.com/Cap-go/capacitor-updater/commit/23fcdf54037f31558c05ab98d10ec27f746560af))
+
 ### [5.7.6](https://github.com/Cap-go/capacitor-updater/compare/5.7.5...5.7.6) (2024-03-19)
 
 
