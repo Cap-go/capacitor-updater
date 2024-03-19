@@ -792,12 +792,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             return
         }
         let timer = Timer.scheduledTimer(withTimeInterval: TimeInterval(periodCheckDelay), repeats: true) { _ in
-            let res = self.implementation.getLatest(url: url)
-            let current = self.implementation.getCurrentBundle()
+            DispatchQueue.global(qos: .background).async {
+                let res = self.implementation.getLatest(url: url)
+                let current = self.implementation.getCurrentBundle()
 
-            if res.version != current.getVersionName() {
-                print("\(self.implementation.TAG) New version found: \(res.version)")
-                self.backgroundDownload()
+                if res.version != current.getVersionName() {
+                    print("\(self.implementation.TAG) New version found: \(res.version)")
+                    self.backgroundDownload()
+                }
             }
         }
         RunLoop.current.add(timer, forMode: .default)
