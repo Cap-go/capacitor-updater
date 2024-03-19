@@ -48,6 +48,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
 import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -288,11 +289,11 @@ public class CapacitorUpdater {
       String action = intent.getAction();
       Bundle bundle = intent.getExtras();
       if (bundle != null) {
-        if (action == DownloadService.PERCENTDOWNLOAD) {
+        if (Objects.equals(action, DownloadService.PERCENTDOWNLOAD)) {
           String id = bundle.getString(DownloadService.ID);
           int percent = bundle.getInt(DownloadService.PERCENT);
           CapacitorUpdater.this.notifyDownload(id, percent);
-        } else if (action == DownloadService.NOTIFICATION) {
+        } else if (Objects.equals(action, DownloadService.NOTIFICATION)) {
           String id = bundle.getString(DownloadService.ID);
           String dest = bundle.getString(DownloadService.FILEDEST);
           String version = bundle.getString(DownloadService.VERSION);
@@ -447,7 +448,7 @@ public class CapacitorUpdater {
     final URLConnection connection = u.openConnection();
 
     final File target = new File(this.documentsDir, dest);
-    target.getParentFile().mkdirs();
+    Objects.requireNonNull(target.getParentFile()).mkdirs();
     target.createNewFile();
 
     final long totalLength = connection.getContentLength();
@@ -640,7 +641,7 @@ public class CapacitorUpdater {
     final File destHot = new File(this.documentsDir, bundleDirectory);
     Log.d(TAG, "list File : " + destHot.getPath());
     if (destHot.exists()) {
-      for (final File i : destHot.listFiles()) {
+      for (final File i : Objects.requireNonNull(destHot.listFiles())) {
         final String id = i.getName();
         res.add(this.getBundleInfo(id));
       }
@@ -873,7 +874,7 @@ public class CapacitorUpdater {
   public void unsetChannel(final Callback callback) {
     String channelUrl = this.channelUrl;
     if (
-      channelUrl == null || "".equals(channelUrl) || channelUrl.length() == 0
+            channelUrl == null || channelUrl.isEmpty()
     ) {
       Log.e(TAG, "Channel URL is not set");
       final JSObject retError = new JSObject();
@@ -940,7 +941,7 @@ public class CapacitorUpdater {
   public void setChannel(final String channel, final Callback callback) {
     String channelUrl = this.channelUrl;
     if (
-      channelUrl == null || "".equals(channelUrl) || channelUrl.length() == 0
+            channelUrl == null || channelUrl.isEmpty()
     ) {
       Log.e(TAG, "Channel URL is not set");
       final JSObject retError = new JSObject();
@@ -1005,7 +1006,7 @@ public class CapacitorUpdater {
   public void getChannel(final Callback callback) {
     String channelUrl = this.channelUrl;
     if (
-      channelUrl == null || "".equals(channelUrl) || channelUrl.length() == 0
+            channelUrl == null || channelUrl.isEmpty()
     ) {
       Log.e(TAG, "Channel URL is not set");
       final JSObject retError = new JSObject();
@@ -1068,7 +1069,7 @@ public class CapacitorUpdater {
 
   public void sendStats(final String action, final String versionName) {
     String statsUrl = this.statsUrl;
-    if (statsUrl == null || "".equals(statsUrl) || statsUrl.length() == 0) {
+    if (statsUrl == null || statsUrl.isEmpty()) {
       return;
     }
     JSONObject json = null;
@@ -1192,7 +1193,7 @@ public class CapacitorUpdater {
 
   public String getCurrentBundlePath() {
     String path = this.prefs.getString(WebView.CAP_SERVER_PATH, "public");
-    if ("".equals(path.trim())) {
+    if (path.trim().isEmpty()) {
       return "public";
     }
     return path;
