@@ -863,7 +863,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
           }
         }
       },
-      0,
+      this.periodCheckDelay,
       this.periodCheckDelay
     );
   }
