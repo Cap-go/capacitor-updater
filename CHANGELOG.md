@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.7.15](https://github.com/Cap-go/capacitor-updater/compare/5.7.14...5.7.15) (2024-03-20)
+
+
+### Bug Fixes
+
+* put back race condition prevention ([5751a83](https://github.com/Cap-go/capacitor-updater/commit/5751a8331a3956aefa41a44a4685113cf06d1cab))
+
 ### [5.7.14](https://github.com/Cap-go/capacitor-updater/compare/5.7.13...5.7.14) (2024-03-19)
 
 
