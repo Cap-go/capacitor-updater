@@ -15,7 +15,7 @@ import Version
 @objc(CapacitorUpdaterPlugin)
 public class CapacitorUpdaterPlugin: CAPPlugin {
     public var implementation = CapacitorUpdater()
-    private let PLUGIN_VERSION: String = "5.6.8"
+    private let PLUGIN_VERSION: String = "5.7.14"
     static let updateUrlDefault = "https://api.capgo.app/updates"
     static let statsUrlDefault = "https://api.capgo.app/stats"
     static let channelUrlDefault = "https://api.capgo.app/channel_self"
@@ -236,8 +236,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             } catch {
                 print("\(self.implementation.TAG) Failed to download from: \(String(describing: url)) \(error.localizedDescription)")
                 self.notifyListeners("downloadFailed", data: ["version": version])
-                let current: BundleInfo = self.implementation.getCurrentBundle()
-                self.implementation.sendStats(action: "download_fail", versionName: current.getVersionName())
+                self.implementation.sendStats(action: "download_fail")
                 call.reject("Failed to download from: \(url!)", error.localizedDescription)
             }
         }
@@ -797,20 +796,21 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             return
         }
         let timer = Timer.scheduledTimer(withTimeInterval: TimeInterval(periodCheckDelay), repeats: true) { _ in
-            let res = self.implementation.getLatest(url: url)
-            let current = self.implementation.getCurrentBundle()
+            DispatchQueue.global(qos: .background).async {
+                let res = self.implementation.getLatest(url: url)
+                let current = self.implementation.getCurrentBundle()
 
-            if res.version != current.getVersionName() {
-                print("\(self.implementation.TAG) New version found: \(res.version)")
-                self.backgroundDownload()
+                if res.version != current.getVersionName() {
+                    print("\(self.implementation.TAG) New version found: \(res.version)")
+                    self.backgroundDownload()
+                }
             }
         }
         RunLoop.current.add(timer, forMode: .default)
     }
 
     @objc func appMovedToBackground() {
-        let current: BundleInfo = self.implementation.getCurrentBundle()
-        self.implementation.sendStats(action: "app_moved_to_background", versionName: current.getVersionName())
+        self.implementation.sendStats(action: "app_moved_to_background")
         print("\(self.implementation.TAG) Check for pending update")
         let delayUpdatePreferences = UserDefaults.standard.string(forKey: DELAY_CONDITION_PREFERENCES) ?? "[]"
 

@@ -233,6 +233,7 @@ extension CustomError: LocalizedError {
     private let INFO_SUFFIX: String = "_info"
     private let FALLBACK_VERSION: String = "pastVersion"
     private let NEXT_VERSION: String = "nextVersion"
+    private var unzipPercent = 0
 
     public let TAG: String = "✨  Capacitor-updater:"
     public let CAP_SERVER_PATH: String = "serverBasePath"
@@ -419,18 +420,73 @@ extension CustomError: LocalizedError {
         }
     }
 
+    private func unzipProgressHandler(entry: String, zipInfo: unz_file_info, entryNumber: Int, total: Int, destUnZip: URL, id: String, unzipError: inout NSError?) {
+        if entry.contains("\\") {
+            print("\(self.TAG) unzip: Windows path is not supported, please use unix path as required by zip RFC: \(entry)")
+            self.sendStats(action: "windows_path_fail")
+        }
+
+        let fileURL = destUnZip.appendingPathComponent(entry)
+        let canonicalPath = fileURL.path
+        let canonicalDir = destUnZip.path
+
+        if !canonicalPath.hasPrefix(canonicalDir) {
+            self.sendStats(action: "canonical_path_fail")
+            unzipError = NSError(domain: "CanonicalPathError", code: 0, userInfo: nil)
+        }
+
+        let isDirectory = entry.hasSuffix("/")
+        if !isDirectory {
+            let folderURL = fileURL.deletingLastPathComponent()
+            if !FileManager.default.fileExists(atPath: folderURL.path) {
+                do {
+                    try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true, attributes: nil)
+                } catch {
+                    self.sendStats(action: "directory_path_fail")
+                    unzipError = error as NSError
+                }
+            }
+        }
+
+        let newPercent = Int(Double(entryNumber) / Double(total) * 100)
+        if newPercent != self.unzipPercent {
+            self.unzipPercent = newPercent
+            self.notifyDownload(id, self.calcTotalPercent(percent: self.unzipPercent, min: 75, max: 90))
+        }
+    }
+
     private func saveDownloaded(sourceZip: URL, id: String, base: URL) throws {
         try prepareFolder(source: base)
         let destHot: URL = base.appendingPathComponent(id)
         let destUnZip: URL = documentsDir.appendingPathComponent(randomString(length: 10))
-        if !SSZipArchive.unzipFile(atPath: sourceZip.path, toDestination: destUnZip.path) {
-            throw CustomError.cannotUnzip
+
+        self.unzipPercent = 0
+        self.notifyDownload(id, 75)
+
+        var unzipError: NSError?
+        let success = SSZipArchive.unzipFile(atPath: sourceZip.path,
+                                             toDestination: destUnZip.path,
+                                             preserveAttributes: true,
+                                             overwrite: true,
+                                             nestedZipLevel: 1,
+                                             password: nil,
+                                             error: &unzipError,
+                                             delegate: nil,
+                                             progressHandler: { [weak self] (entry, zipInfo, entryNumber, total) in
+                                                guard let self = self else { return }
+                                                self.unzipProgressHandler(entry: entry, zipInfo: zipInfo, entryNumber: entryNumber, total: total, destUnZip: destUnZip, id: id, unzipError: &unzipError)
+                                             },
+                                             completionHandler: nil)
+
+        if !success || unzipError != nil {
+            self.sendStats(action: "unzip_fail")
+            throw unzipError ?? CustomError.cannotUnzip
         }
+
         if try unflatFolder(source: destUnZip, dest: destHot) {
             try deleteFolder(source: destUnZip)
         }
     }
-
     private func createInfoObject() -> InfoObject {
         return InfoObject(
             platform: "ios",
@@ -543,6 +599,11 @@ extension CustomError: LocalizedError {
                     }
                 case let .failure(error):
                     print("\(self.TAG) download error", response.value ?? "", error)
+                    if let afError = error as? AFError,
+                       case .sessionTaskFailed(let urlError as URLError) = afError,
+                       urlError.code == .cannotWriteToFile {
+                        self.sendStats(action: "low_mem_fail", versionName: version)
+                    }
                     mainError = error as NSError
                 }
             }
@@ -681,7 +742,7 @@ extension CustomError: LocalizedError {
         self.setFallbackBundle(fallback: Optional<BundleInfo>.none)
         _ = self.setNextBundle(next: Optional<String>.none)
         if !isInternal {
-            self.sendStats(action: "reset", versionName: self.getCurrentBundle().getVersionName())
+            self.sendStats(action: "reset")
         }
     }
 
@@ -714,7 +775,7 @@ extension CustomError: LocalizedError {
             return setChannel
         }
         let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
-        var parameters: InfoObject = self.createInfoObject()
+        let parameters: InfoObject = self.createInfoObject()
 
         let request = AF.request(self.channelUrl, method: .delete, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
 
@@ -819,18 +880,29 @@ extension CustomError: LocalizedError {
         return getChannel
     }
 
-    func sendStats(action: String, versionName: String) {
-        if (self.statsUrl ).isEmpty {
+    func sendStats(action: String, versionName: String? = nil) {
+        guard !statsUrl.isEmpty else {
             return
         }
-        var parameters: InfoObject = self.createInfoObject()
+
+        let versionName = versionName ?? getCurrentBundle().getVersionName()
+
+        var parameters = createInfoObject()
         parameters.action = action
+
         DispatchQueue.global(qos: .background).async {
-            let request = AF.request(self.statsUrl, method: .post, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
+            let request = AF.request(
+                self.statsUrl,
+                method: .post,
+                parameters: parameters,
+                encoder: JSONParameterEncoder.default,
+                requestModifier: { $0.timeoutInterval = self.timeout }
+            )
+
             request.responseData { response in
                 switch response.result {
                 case .success:
-                    print("\(self.TAG) Stats send for \(action), version \(versionName)")
+                    print("\(self.TAG) Stats sent for \(action), version \(versionName)")
                 case let .failure(error):
                     print("\(self.TAG) Error sending stats: ", response.value ?? "", error)
                 }
@@ -893,12 +965,6 @@ extension CustomError: LocalizedError {
             }
         }
         UserDefaults.standard.synchronize()
-    }
-
-    public func setVersionName(id: String, version: String) {
-        print("\(self.TAG) Setting version for folder [\(id)] to \(version)")
-        let info = self.getBundleInfo(id: id)
-        self.saveBundleInfo(id: id, bundle: info.setVersionName(version: version))
     }
 
     private func setBundleStatus(id: String, status: BundleStatus) {

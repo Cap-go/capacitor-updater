@@ -8,7 +8,6 @@ package ee.forgr.capacitor_updater;
 
 import android.app.Activity;
 import android.app.ActivityManager;
-import android.app.Application;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
@@ -36,6 +35,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.UUID;
@@ -55,7 +55,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
   private static final String channelUrlDefault =
     "https://api.capgo.app/channel_self";
 
-  private final String PLUGIN_VERSION = "5.6.8";
+  private final String PLUGIN_VERSION = "5.7.14";
   private static final String DELAY_CONDITION_PREFERENCES = "";
 
   private SharedPreferences.Editor editor;
@@ -70,7 +70,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
   private Boolean autoUpdate = false;
   private String updateUrl = "";
   private Version currentVersionNative;
-  private Boolean resetWhenUpdate = true;
   private Thread backgroundTask;
   private Boolean taskRunning = false;
 
@@ -167,7 +166,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     this.implementation.appId =
       this.getConfig().getString("appId", this.implementation.appId);
     if (
-      this.implementation.appId == null || "".equals(this.implementation.appId)
+      this.implementation.appId == null || this.implementation.appId.isEmpty()
     ) {
       // crash the app
       throw new RuntimeException(
@@ -222,32 +221,29 @@ public class CapacitorUpdaterPlugin extends Plugin {
     this.appReadyTimeout = this.getConfig().getInt("appReadyTimeout", 10000);
     this.implementation.timeout =
       this.getConfig().getInt("responseTimeout", 20) * 1000;
-    this.resetWhenUpdate = this.getConfig().getBoolean("resetWhenUpdate", true);
+    boolean resetWhenUpdate =
+      this.getConfig().getBoolean("resetWhenUpdate", true);
 
-    if (this.resetWhenUpdate) {
+    if (resetWhenUpdate) {
       this.cleanupObsoleteVersions();
     }
-    final Application application = (Application) this.getContext()
-      .getApplicationContext();
 
     this.checkForUpdateAfterDelay();
-    //    application.registerActivityLifecycleCallbacks(this);
   }
 
   private void semaphoreWait(Number waitTime) {
     Log.i(CapacitorUpdater.TAG, "semaphoreWait " + waitTime);
     try {
       //        Log.i(CapacitorUpdater.TAG, "semaphoreReady count " + CapacitorUpdaterPlugin.this.semaphoreReady.getCount());
-      CapacitorUpdaterPlugin.this.semaphoreReady.awaitAdvanceInterruptibly(
-          CapacitorUpdaterPlugin.this.semaphoreReady.getPhase(),
-          waitTime.longValue(),
-          TimeUnit.SECONDS
-        );
+      semaphoreReady.awaitAdvanceInterruptibly(
+        semaphoreReady.getPhase(),
+        waitTime.longValue(),
+        TimeUnit.SECONDS
+      );
       //        Log.i(CapacitorUpdater.TAG, "semaphoreReady await " + res);
       Log.i(
         CapacitorUpdater.TAG,
-        "semaphoreReady count " +
-        CapacitorUpdaterPlugin.this.semaphoreReady.getPhase()
+        "semaphoreReady count " + semaphoreReady.getPhase()
       );
     } catch (InterruptedException e) {
       Log.i(CapacitorUpdater.TAG, "semaphoreWait InterruptedException");
@@ -259,17 +255,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
   private void semaphoreUp() {
     Log.i(CapacitorUpdater.TAG, "semaphoreUp");
-    CapacitorUpdaterPlugin.this.semaphoreReady.register();
+    semaphoreReady.register();
   }
 
   private void semaphoreDown() {
     Log.i(CapacitorUpdater.TAG, "semaphoreDown");
     Log.i(
       CapacitorUpdater.TAG,
-      "semaphoreDown count " +
-      CapacitorUpdaterPlugin.this.semaphoreReady.getPhase()
+      "semaphoreDown count " + semaphoreReady.getPhase()
     );
-    CapacitorUpdaterPlugin.this.semaphoreReady.arriveAndDeregister();
+    semaphoreReady.arriveAndDeregister();
   }
 
   private void sendReadyToJs(final BundleInfo current, final String msg) {
@@ -299,8 +294,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
       try {
         if (
           !"".equals(previous.getOriginalString()) &&
-          !this.currentVersionNative.getOriginalString()
-            .equals(previous.getOriginalString())
+          !Objects.equals(
+            this.currentVersionNative.getOriginalString(),
+            previous.getOriginalString()
+          )
         ) {
           Log.i(
             CapacitorUpdater.TAG,
@@ -483,14 +480,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
         CapacitorUpdater.TAG,
         "unsetChannel triggerAutoUpdate: " + triggerAutoUpdate
       );
-      startNewThread(() -> {
+      startNewThread(() ->
         CapacitorUpdaterPlugin.this.implementation.unsetChannel(res -> {
             if (res.has("error")) {
               call.reject(res.getString("error"));
             } else {
               if (
                 CapacitorUpdaterPlugin.this._isAutoUpdateEnabled() &&
-                triggerAutoUpdate
+                Boolean.TRUE.equals(triggerAutoUpdate)
               ) {
                 Log.i(
                   CapacitorUpdater.TAG,
@@ -500,8 +497,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
               }
               call.resolve(res);
             }
-          });
-      });
+          })
+      );
     } catch (final Exception e) {
       Log.e(CapacitorUpdater.TAG, "Failed to unsetChannel: ", e);
       call.reject("Failed to unsetChannel: ", e);
@@ -526,7 +523,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         CapacitorUpdater.TAG,
         "setChannel " + channel + " triggerAutoUpdate: " + triggerAutoUpdate
       );
-      startNewThread(() -> {
+      startNewThread(() ->
         CapacitorUpdaterPlugin.this.implementation.setChannel(
             channel,
             res -> {
@@ -535,7 +532,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
               } else {
                 if (
                   CapacitorUpdaterPlugin.this._isAutoUpdateEnabled() &&
-                  triggerAutoUpdate
+                  Boolean.TRUE.equals(triggerAutoUpdate)
                 ) {
                   Log.i(
                     CapacitorUpdater.TAG,
@@ -546,8 +543,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 call.resolve(res);
               }
             }
-          );
-      });
+          )
+      );
     } catch (final Exception e) {
       Log.e(CapacitorUpdater.TAG, "Failed to setChannel: " + channel, e);
       call.reject("Failed to setChannel: " + channel, e);
@@ -558,15 +555,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
   public void getChannel(final PluginCall call) {
     try {
       Log.i(CapacitorUpdater.TAG, "getChannel");
-      startNewThread(() -> {
+      startNewThread(() ->
         CapacitorUpdaterPlugin.this.implementation.getChannel(res -> {
             if (res.has("error")) {
               call.reject(res.getString("error"));
             } else {
               call.resolve(res);
             }
-          });
-      });
+          })
+      );
     } catch (final Exception e) {
       Log.e(CapacitorUpdater.TAG, "Failed to getChannel", e);
       call.reject("Failed to getChannel", e);
@@ -758,7 +755,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
   @PluginMethod
   public void getLatest(final PluginCall call) {
-    startNewThread(() -> {
+    startNewThread(() ->
       CapacitorUpdaterPlugin.this.implementation.getLatest(
           CapacitorUpdaterPlugin.this.updateUrl,
           res -> {
@@ -785,8 +782,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
             call.resolve(ret);
           }
-        );
-    });
+        )
+    );
   }
 
   private boolean _reset(final Boolean toLastSuccessful) {
@@ -849,14 +846,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 CapacitorUpdaterPlugin.this.updateUrl,
                 res -> {
                   if (res.has("error")) {
-                    Log.e(CapacitorUpdater.TAG, res.getString("error"));
-                    return;
+                    Log.e(
+                      CapacitorUpdater.TAG,
+                      Objects.requireNonNull(res.getString("error"))
+                    );
                   } else if (res.has("version")) {
                     String newVersion = res.getString("version");
                     String currentVersion = String.valueOf(
                       CapacitorUpdaterPlugin.this.implementation.getCurrentBundle()
                     );
-                    if (!newVersion.equals(currentVersion)) {
+                    if (!Objects.equals(newVersion, currentVersion)) {
                       Log.i(
                         CapacitorUpdater.TAG,
                         "New version found: " + newVersion
@@ -871,7 +870,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
           }
         }
       },
-      0,
+      this.periodCheckDelay,
       this.periodCheckDelay
     );
   }
@@ -981,7 +980,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     for (DelayCondition condition : delayConditionList) {
       String kind = condition.getKind().toString();
       String value = condition.getValue();
-      if (!"".equals(kind)) {
+      if (!kind.isEmpty()) {
         switch (kind) {
           case "background":
             if (!killed) {
@@ -1034,7 +1033,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
   private Boolean _isAutoUpdateEnabled() {
     final CapConfig config = CapConfig.loadDefault(this.getActivity());
     String serverUrl = config.getServerUrl();
-    if (serverUrl != null && !"".equals(serverUrl)) {
+    if (serverUrl != null && !serverUrl.isEmpty()) {
       // log warning autoupdate disabled when serverUrl is set
       Log.w(
         CapacitorUpdater.TAG,
@@ -1044,7 +1043,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     return (
       CapacitorUpdaterPlugin.this.autoUpdate &&
       !"".equals(CapacitorUpdaterPlugin.this.updateUrl) &&
-      (serverUrl == null || "".equals(serverUrl))
+      (serverUrl == null || serverUrl.isEmpty())
     );
   }
 
@@ -1077,7 +1076,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
   private boolean isValidURL(String urlStr) {
     try {
-      URL url = new URL(urlStr);
+      new URL(urlStr);
       return true;
     } catch (MalformedURLException e) {
       return false;
@@ -1163,7 +1162,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
               if (
                 latestVersionName != null &&
-                !"".equals(latestVersionName) &&
+                !latestVersionName.isEmpty() &&
                 !current.getVersionName().equals(latestVersionName)
               ) {
                 final BundleInfo latest =
@@ -1322,7 +1321,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         delayUpdatePreferences,
         type
       );
-      if (delayConditionList != null && delayConditionList.size() != 0) {
+      if (delayConditionList != null && !delayConditionList.isEmpty()) {
         Log.i(CapacitorUpdater.TAG, "Update delayed to next backgrounding");
         return;
       }
@@ -1521,10 +1520,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
       ActivityManager.RecentTaskInfo runningTask = runningTasks
         .get(0)
         .getTaskInfo();
-      String className = runningTask.baseIntent.getComponent().getClassName();
+      String className = Objects
+        .requireNonNull(runningTask.baseIntent.getComponent())
+        .getClassName();
+      assert runningTask.topActivity != null;
       String runningActivity = runningTask.topActivity.getClassName();
-      boolean isThisAppActivity = className.equals(runningActivity);
-      return isThisAppActivity;
+      return className.equals(runningActivity);
     } catch (NullPointerException e) {
       return false;
     }
