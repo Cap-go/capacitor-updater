@@ -92,13 +92,13 @@ declare module "@capacitor/cli" {
        */
       statsUrl?: string;
       /**
-       * Configure the private key for end to end live update encryption.
+       * Configure the public key for end to end live update encryption.
        *
        * Only available for Android and iOS.
        *
        * @default undefined
        */
-      privateKey?: string;
+      publicKey?: string;
 
       /**
        * Configure the current version of the app. This will be used for the first update request.
@@ -189,6 +189,16 @@ declare module "@capacitor/cli" {
        * @since  5.5.0
        */
       defaultChannel?: string;
+
+      /**
+       * If set to true with encryption enabled, the plugin will only accept encrypted bundles.
+       *
+       *
+       *
+       * @default true
+       * @since  6.0.0
+       */
+      forceEncryption?: boolean;
     };
   }
 }
