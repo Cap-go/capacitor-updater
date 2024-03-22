@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.7.17](https://github.com/Cap-go/capacitor-updater/compare/5.7.16...5.7.17) (2024-03-22)
+
+
+### Bug Fixes
+
+* correct message debug make it iso Android ios ([ad3ca27](https://github.com/Cap-go/capacitor-updater/commit/ad3ca2758e7db5cc311abe2a89c906d80ce9a151))
+
 ### [5.7.16](https://github.com/Cap-go/capacitor-updater/compare/5.7.15...5.7.16) (2024-03-20)
 
 ### [5.7.15](https://github.com/Cap-go/capacitor-updater/compare/5.7.14...5.7.15) (2024-03-20)
