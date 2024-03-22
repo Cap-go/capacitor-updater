@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [6.0.0-alpha.0](https://github.com/Cap-go/capacitor-updater/compare/5.7.16...6.0.0-alpha.0) (2024-03-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* add forceEncryption
+
+### Features
+
+* add forceEncryption ([24df89e](https://github.com/Cap-go/capacitor-updater/commit/24df89e6a8480bd0db2756a6c25c2c56968ff113))
+
+### [5.7.15-alpha.1](https://github.com/Cap-go/capacitor-updater/compare/5.7.15-alpha.0...5.7.15-alpha.1) (2024-03-19)
+
+
+### Bug Fixes
+
+* add log for periodcheck ([3a61d2a](https://github.com/Cap-go/capacitor-updater/commit/3a61d2ad2d3b50411d67026bd3c1ed4f5130d226))
+
+### [5.7.15-alpha.0](https://github.com/Cap-go/capacitor-updater/compare/5.7.14...5.7.15-alpha.0) (2024-03-19)
+
+### [5.7.14-alpha.0](https://github.com/Cap-go/capacitor-updater/compare/5.7.13...5.7.14-alpha.0) (2024-03-19)
+
+### [5.7.10-alpha.0](https://github.com/Cap-go/capacitor-updater/compare/5.7.10...5.7.10-alpha.0) (2024-03-19)
+
 ### [5.7.16](https://github.com/Cap-go/capacitor-updater/compare/5.7.15...5.7.16) (2024-03-20)
 
 ### [5.7.15](https://github.com/Cap-go/capacitor-updater/compare/5.7.14...5.7.15) (2024-03-20)
