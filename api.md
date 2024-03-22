@@ -24,7 +24,7 @@ CapacitorUpdater can be configured with these options:
 | **`resetWhenUpdate`**    | <code>boolean</code> | Automatically delete previous downloaded bundles when a newer native app bundle is installed to the device. Only available for Android and iOS.                                                 | <code>true</code>                              |         |
 | **`updateUrl`**          | <code>string</code>  | Configure the URL / endpoint to which update checks are sent. Only available for Android and iOS.                                                                                               | <code>https://api.capgo.app/auto_update</code> |         |
 | **`statsUrl`**           | <code>string</code>  | Configure the URL / endpoint to which update statistics are sent. Only available for Android and iOS. Set to "" to disable stats reporting.                                                     | <code>https://api.capgo.app/stats</code>       |         |
-| **`publicKey`**          | <code>string</code>  | Configure the public key for end to end live update encryption. Only available for Android and iOS.                                                                                            | <code>undefined</code>                         |         |
+| **`publicKey`**          | <code>string</code>  | Configure the public key for end to end live update encryption. Only available for Android and iOS.                                                                                             | <code>undefined</code>                         |         |
 | **`version`**            | <code>string</code>  | Configure the current version of the app. This will be used for the first update request. If not set, the plugin will get the version from the native code. Only available for Android and iOS. | <code>undefined</code>                         | 4.17.48 |
 | **`directUpdate`**       | <code>boolean</code> | Make the plugin direct install the update when the app what just updated/installed. Only for autoUpdate mode. Only available for Android and iOS.                                               | <code>undefined</code>                         | 5.1.0   |
 | **`periodCheckDelay`**   | <code>number</code>  | Configure the delay period for period update check. the unit is in seconds. Only available for Android and iOS. Cannot be less than 600 seconds (10 minutes).                                   | <code>600 // (10 minutes)</code>               |         |
@@ -35,6 +35,7 @@ CapacitorUpdater can be configured with these options:
 | **`localSupaAnon`**      | <code>string</code>  | Configure the CLI to use a local server for testing.                                                                                                                                            | <code>undefined</code>                         | 4.17.48 |
 | **`allowModifyUrl`**     | <code>boolean</code> | Allow the plugin to modify the updateUrl, statsUrl and channelUrl dynamically from the JavaScript side.                                                                                         | <code>false</code>                             | 5.4.0   |
 | **`defaultChannel`**     | <code>string</code>  | Set the default channel for the app in the config.                                                                                                                                              | <code>undefined</code>                         | 5.5.0   |
+| **`forceEncryption`**    | <code>boolean</code> | If set to true with encryption enabled, the plugin will only accept encrypted bundles.                                                                                                          | <code>true</code>                              | 6.0.0   |
 
 ## Examples
 
@@ -62,7 +63,8 @@ In `capacitor.config.json`:
       "localSupa": undefined,
       "localSupaAnon": undefined,
       "allowModifyUrl": undefined,
-      "defaultChannel": undefined
+      "defaultChannel": undefined,
+      "forceEncryption": undefined
     }
   }
 }
@@ -97,6 +99,7 @@ const config: CapacitorConfig = {
       localSupaAnon: undefined,
       allowModifyUrl: undefined,
       defaultChannel: undefined,
+      forceEncryption: undefined,
     },
   },
 };
