@@ -52,6 +52,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         }
         print("\(self.implementation.TAG) version native \(self.currentVersionNative.description)")
         implementation.versionBuild = getConfig().getString("version", Bundle.main.versionName)!
+        implementation.forceEncryption = getConfig().getBoolean("forceEncryption", true)
         autoDeleteFailed = getConfig().getBoolean("autoDeleteFailed", true)
         autoDeletePrevious = getConfig().getBoolean("autoDeletePrevious", true)
         directUpdate = getConfig().getBoolean("directUpdate", false)

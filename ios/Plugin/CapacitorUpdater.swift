@@ -248,6 +248,7 @@ extension CustomError: LocalizedError {
     public var deviceID = UIDevice.current.identifierForVendor?.uuidString ?? ""
     public var publicKey: String? = ""
     public var hasOldPrivateKeyPropertyInConfig: Bool = false
+    public var forceEncryption: Bool = false
 
     public var notifyDownload: (String, Int) -> Void = { _, _  in }
 
@@ -373,7 +374,12 @@ extension CustomError: LocalizedError {
     }
 
     private func decryptFile(filePath: URL, sessionKey: String, version: String) throws {
-        if self.publicKey != nil && self.publicKey!.isEmpty || sessionKey.isEmpty  || sessionKey.components(separatedBy: ":").count != 2 {
+        if sessionKey.isEmpty  || sessionKey.components(separatedBy: ":").count != 2 {
+            if (self.forceEncryption && self.publicKey != nil && !self.publicKey!.isEmpty) {
+                print("\(self.TAG) Cannot accept non-encrypted bundle")
+                self.sendStats(action: "decrypt_fail", versionName: version)
+                throw CustomError.cannotDecode
+            }
             print("\(self.TAG) Cannot find public key or sessionKey")
             return
         }

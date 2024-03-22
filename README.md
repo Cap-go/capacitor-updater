@@ -176,6 +176,7 @@ CapacitorUpdater can be configured with these options:
 | **`localSupaAnon`**      | <code>string</code>  | Configure the CLI to use a local server for testing.                                                                                                                                            | <code>undefined</code>                         | 4.17.48 |
 | **`allowModifyUrl`**     | <code>boolean</code> | Allow the plugin to modify the updateUrl, statsUrl and channelUrl dynamically from the JavaScript side.                                                                                         | <code>false</code>                             | 5.4.0   |
 | **`defaultChannel`**     | <code>string</code>  | Set the default channel for the app in the config.                                                                                                                                              | <code>undefined</code>                         | 5.5.0   |
+| **`forceEncryption`**    | <code>boolean</code> | If set to true with encryption enabled, the plugin will only accept encrypted bundles.                                                                                                          | <code>true</code>                              | 6.0.0   |
 
 ### Examples
 
@@ -203,7 +204,8 @@ In `capacitor.config.json`:
       "localSupa": undefined,
       "localSupaAnon": undefined,
       "allowModifyUrl": undefined,
-      "defaultChannel": undefined
+      "defaultChannel": undefined,
+      "forceEncryption": undefined
     }
   }
 }
@@ -238,6 +240,7 @@ const config: CapacitorConfig = {
       localSupaAnon: undefined,
       allowModifyUrl: undefined,
       defaultChannel: undefined,
+      forceEncryption: undefined,
     },
   },
 };

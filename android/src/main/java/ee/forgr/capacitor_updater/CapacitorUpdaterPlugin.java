@@ -136,6 +136,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
       this.implementation.activity = this.getActivity();
       this.implementation.versionBuild =
         this.getConfig().getString("version", pInfo.versionName);
+      this.implementation.forceEncryption =
+        this.getConfig().getBoolean("forceEncryption", true);
       this.implementation.PLUGIN_VERSION = this.PLUGIN_VERSION;
       this.implementation.versionCode = Integer.toString(pInfo.versionCode);
       this.implementation.requestQueue =
