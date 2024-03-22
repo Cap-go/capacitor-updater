@@ -648,7 +648,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             let current = self.implementation.getCurrentBundle()
 
             if (res.message) != nil {
-                print("\(self.implementation.TAG) API response: \(res.message ?? "")")
+                print("\(self.implementation.TAG) API message: \(res.message ?? "")")
                 if res.major == true {
                     self.notifyListeners("majorAvailable", data: ["version": res.version])
                 }
