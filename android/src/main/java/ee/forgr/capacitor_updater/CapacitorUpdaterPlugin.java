@@ -1115,7 +1115,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
               if (res.has("message")) {
                 Log.i(
                   CapacitorUpdater.TAG,
-                  "API message " + res.get("message")
+                  "API message: " + res.get("message")
                 );
                 if (
                   res.has("major") &&
