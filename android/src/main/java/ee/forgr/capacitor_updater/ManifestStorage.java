@@ -14,6 +14,7 @@ import java.io.InputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -21,12 +22,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class ManifestStorage {
     private ConcurrentHashMap<String, ManifestEntry> manifestHashMap;
 
-    // This hashmap is used to save how many files have to still get downloaded before we can say that we got all.
-    // Essentially it will be used to map version_id -> files_left_to_download
-    // Once the number reaches zero two things have to happen
-    // A) The entry gets removed from this hashmap
-    // B) The bundle gets marked as done
-    private ConcurrentHashMap<String, AtomicInteger> downloadingManifestFilesLeftHashMap;
+    // This hashmap will store a bundle_id -> ManifestBundleInfo (object)
+    // This will allow us to figure out which manifest entries belong to what bundle
+    // This will be VERY important during the bundle deletion
+    private ConcurrentHashMap<String, ManifestBundleInfo> bundleIdToBundleInfoHashmap;
+
     private  SharedPreferences.Editor editor;
     private SharedPreferences prefs;
 
@@ -35,9 +35,10 @@ public class ManifestStorage {
 
     private ManifestStorage(ConcurrentHashMap<String, ManifestEntry> manifestHashMap, SharedPreferences.Editor editor, SharedPreferences prefs) {
         this.manifestHashMap = manifestHashMap;
-        this.downloadingManifestFilesLeftHashMap = new ConcurrentHashMap<>();
         this.editor = editor;
         this.prefs = prefs;
+        // TODO: load
+        this.bundleIdToBundleInfoHashmap = new ConcurrentHashMap<>();
     }
 
     public synchronized void saveToDeviceStorage() {
@@ -65,17 +66,21 @@ public class ManifestStorage {
         }
     }
 
+    public ManifestBundleInfo getBundleById(String id) {
+        return bundleIdToBundleInfoHashmap.get(id);
+    }
+
     public int decreaseFilesToDownloadForBundle(String id) {
-        AtomicInteger integer = downloadingManifestFilesLeftHashMap.get(id);
-        if (integer == null) {
+        ManifestBundleInfo bundle = bundleIdToBundleInfoHashmap.get(id);
+        if (bundle == null) {
             return -1;
         }
 
-        return integer.decrementAndGet();
+        return bundle.decreaseFilesLeftToDownload();
     }
 
-    public void addBundleToDownload(String id, int filesToDownload) {
-        downloadingManifestFilesLeftHashMap.put(id, new AtomicInteger(filesToDownload));
+    public void addBundleToDownload(String id, ManifestBundleInfo bundleInfo) {
+        bundleIdToBundleInfoHashmap.put(id, bundleInfo);
     }
 
     public static ManifestStorage init(AssetManager manager, SharedPreferences.Editor editor, SharedPreferences prefs) {

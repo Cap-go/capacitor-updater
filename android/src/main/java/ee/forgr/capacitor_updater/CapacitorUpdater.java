@@ -318,7 +318,8 @@ public class CapacitorUpdater {
             error
           );
 
-          int filesLeft = CapacitorUpdater.this.manifestStorage.decreaseFilesToDownloadForBundle(id);
+          ManifestBundleInfo manifestBundleInfo = CapacitorUpdater.this.manifestStorage.getBundleById(id);
+          int filesLeft = manifestBundleInfo.decreaseFilesLeftToDownload();
           if (filesLeft == -1) {
             Log.e(TAG, "Files left = -1, this should never happen");
             return;
@@ -334,7 +335,16 @@ public class CapacitorUpdater {
           // fullpath might be null,
           // an error also might cause some troubles (null fullpath)
           if (jobType == DownloadServiceV2.DownloadJobType.DOWNLOAD) {
-            CapacitorUpdater.this.manifestStorage.insertDownloadManifestEntry(hash, fullpath);
+            if (error == null && fullpath != null && !fullpath.isEmpty()) {
+              CapacitorUpdater.this.manifestStorage.insertDownloadManifestEntry(hash, fullpath);
+              manifestBundleInfo.addFieHash(hash);
+            } else {
+              if (error != null) {
+                // We logged in download service
+                return;
+              }
+              Log.e(CapacitorUpdater.TAG, "Cannot save the manifest entry - fullpath is null or empty");
+            }
           }
 
 
@@ -656,7 +666,7 @@ public class CapacitorUpdater {
         ""
       )
     );
-    this.manifestStorage.addBundleToDownload(id, manifest.getDownloadManifestEntries().size());
+    this.manifestStorage.addBundleToDownload(id, new ManifestBundleInfo(version, manifest.getDownloadManifestEntries().size()));
     this.notifyDownload(id, 0);
 
     String dist = id;
@@ -756,7 +766,7 @@ public class CapacitorUpdater {
       Log.e(TAG, "Cannot delete " + id);
       return false;
     }
-    final File bundle = new File(this.documentsDir, bundleDirectory + "/" + id);
+    final File bundle = new File(this.documentsDir, id);
     if (bundle.exists()) {
       this.deleteDirectory(bundle);
       if (removeInfo) {
