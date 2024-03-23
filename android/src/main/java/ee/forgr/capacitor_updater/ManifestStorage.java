@@ -16,6 +16,8 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -55,7 +57,27 @@ public class ManifestStorage {
                 jsonArray.put(entry.toJSON());
             }
 
-            this.editor.putString(SAVED_MANIFEST_PREFIX, jsonArray.toString());
+            JSONArray bundleIdToManifestInfo = new JSONArray();
+            for (Map.Entry<String, ManifestBundleInfo> bundleIdBundleInfoSet: bundleIdToBundleInfoHashmap.entrySet()) {
+                ManifestBundleInfo value = bundleIdBundleInfoSet.getValue();
+                if (!value.isCommitted()) {
+                    Log.e(
+                      CapacitorUpdater.TAG,
+                      "Bundle " + bundleIdBundleInfoSet.getKey() + " not commited, not saving. This means that there very likely is a different update in parallel"
+                    );
+                    return;
+                }
+                JSONObject hashmapObj = new JSONObject();
+                hashmapObj.put("key", bundleIdBundleInfoSet.getKey());
+                hashmapObj.put("val", value.toJSON());
+                bundleIdToManifestInfo.put(hashmapObj);
+            }
+
+            JSONObject finalJson = new JSONObject();
+            finalJson.put("saved_manifest", jsonArray);
+            finalJson.put("bundle_to_manifest", bundleIdToManifestInfo);
+
+            this.editor.putString(SAVED_MANIFEST_PREFIX, finalJson.toString());
             this.editor.commit();
         } catch (Exception e) {
             Log.e(
@@ -68,15 +90,6 @@ public class ManifestStorage {
 
     public ManifestBundleInfo getBundleById(String id) {
         return bundleIdToBundleInfoHashmap.get(id);
-    }
-
-    public int decreaseFilesToDownloadForBundle(String id) {
-        ManifestBundleInfo bundle = bundleIdToBundleInfoHashmap.get(id);
-        if (bundle == null) {
-            return -1;
-        }
-
-        return bundle.decreaseFilesLeftToDownload();
     }
 
     public void addBundleToDownload(String id, ManifestBundleInfo bundleInfo) {
@@ -115,12 +128,14 @@ public class ManifestStorage {
         }
 
         try {
-            JSONArray jsonArray = new JSONArray(new JSONTokener(savedManifestStr));
+            JSONObject savedJson = new JSONObject(new JSONTokener(savedManifestStr));
+            JSONArray savedManifestArray = savedJson.getJSONArray("saved_manifest");
+            JSONArray bundleIdToManifestInfo = savedJson.getJSONArray("bundle_to_manifest");
             boolean shouldSave = false;
             boolean removedFromManifest = false;
 
-            for (int i = 0; i < jsonArray.length(); i++) {
-                JSONObject jsonObject = jsonArray.getJSONObject(i);
+            for (int i = 0; i < savedManifestArray.length(); i++) {
+                JSONObject jsonObject = savedManifestArray.getJSONObject(i);
                 ManifestEntry manifestEntry = ManifestEntry.fromJson(jsonObject);
 
                 if (manifestEntry.cleanupFilePaths() && !shouldSave) {
@@ -133,6 +148,21 @@ public class ManifestStorage {
                 } else {
                     removedFromManifest = true;
                 }
+            }
+
+            for (int i = 0; i < bundleIdToManifestInfo.length(); i++) {
+                JSONObject object = bundleIdToManifestInfo.getJSONObject(i);
+                String key = object.getString("key");
+                ManifestBundleInfo bundleInfo = ManifestBundleInfo.fromJson(object.getJSONObject("val"));
+
+                for (String filehash: bundleInfo.getAllFilesHashList()) {
+                    if (this.manifestHashMap.get(filehash) == null) {
+                        Log.e(CapacitorUpdater.TAG, "Bundle " + key + " was stored with an invalid file hashes. Hash " + filehash + " does not exist. This bundle will not be marked as downloaded. This situation should never happen. Illegal state reached");
+                        return;
+                    }
+                }
+
+                this.bundleIdToBundleInfoHashmap.put(key, bundleInfo);
             }
 
             if (removedFromManifest) {

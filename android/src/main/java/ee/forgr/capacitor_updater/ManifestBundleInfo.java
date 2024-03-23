@@ -69,6 +69,17 @@ public class ManifestBundleInfo {
     this.allFilesHashList.add(fileHash);
   }
 
+  public List<String> getAllFilesHashList() {
+    if (!this.committed) {
+      throw new IllegalStateException("Cannot get all file hashes, not committed");
+    }
+    return allFilesHashList;
+  }
+
+  public boolean isCommitted() {
+    return committed;
+  }
+
   public int decreaseFilesLeftToDownload() {
     if (this.committed) {
       throw new IllegalStateException("Cannot decrease the number of files left to download after the bundle has been committed");
@@ -92,6 +103,14 @@ public class ManifestBundleInfo {
   }
 
   public JSObject toJSON() {
+    if (!this.committed) {
+      throw new IllegalStateException("Cannot call toJson, bundle not commited");
+    }
+
+    if (this.error) {
+      throw new IllegalStateException("Cannot call toJson, bundle errored");
+    }
+
     final JSObject result = new JSObject();
     result.put("name", this.name);
 

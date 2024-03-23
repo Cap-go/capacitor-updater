@@ -328,6 +328,7 @@ public class CapacitorUpdater {
           if (filesLeft == 0) {
             Log.i(TAG, "Bundle " + version + " is fully done, can reload the web-view");
             CapacitorUpdater.this.finishDownload(id, version, true);
+            manifestBundleInfo.commit();
             CapacitorUpdater.this.manifestStorage.saveToDeviceStorage();
           }
 
@@ -339,10 +340,7 @@ public class CapacitorUpdater {
               CapacitorUpdater.this.manifestStorage.insertDownloadManifestEntry(hash, fullpath);
               manifestBundleInfo.addFieHash(hash);
             } else {
-              if (error != null) {
-                // We logged in download service
-                return;
-              }
+              manifestBundleInfo.markError();
               Log.e(CapacitorUpdater.TAG, "Cannot save the manifest entry - fullpath is null or empty");
             }
           }
