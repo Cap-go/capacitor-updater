@@ -10,6 +10,7 @@ import android.app.IntentService;
 import android.content.Intent;
 import android.os.Parcel;
 import android.os.Parcelable;
+import android.util.Base64;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -21,6 +22,13 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.net.URL;
 import java.net.URLConnection;
+import java.security.GeneralSecurityException;
+import java.security.PublicKey;
+import java.util.zip.GZIPInputStream;
+
+import javax.crypto.Cipher;
+import javax.crypto.CipherInputStream;
+import javax.crypto.SecretKey;
 
 public class DownloadServiceV2 extends IntentService {
 
@@ -67,6 +75,9 @@ public class DownloadServiceV2 extends IntentService {
   public static final String FINALFILEPATH = "finalfilepath";
 
   public static final String NOTIFICATION = "service receiver";
+  public static final String SESSION_KEY = "sessionkey";
+  public static final String IV = "ivkey";
+  public static final String PUBLICKEY = "publickey";
   public static final String PERCENTDOWNLOAD = "percent receiver";
 
   public DownloadServiceV2() {
@@ -140,9 +151,45 @@ public class DownloadServiceV2 extends IntentService {
       }
     } else if (jobType == DownloadJobType.DOWNLOAD) {
       DownloadManifest.DownloadManifestEntry manifestEntry = intent.getParcelableExtra(MANIFEST);
+
       if (manifestEntry == null) {
         Log.e(CapacitorUpdater.TAG, "Cannot get the manifest from intent (download)");
         return;
+      }
+
+      String sessionKeyStr = intent.getStringExtra(SESSION_KEY);
+      String ivStr = intent.getStringExtra(IV);
+      String publicKeyStr = intent.getStringExtra(PUBLICKEY);
+
+      Cipher cipher = null;
+
+      if (
+        sessionKeyStr != null && ivStr != null && publicKeyStr != null &&
+          !sessionKeyStr.isEmpty() && !ivStr.isEmpty() && !publicKeyStr.isEmpty()
+      ) {
+        byte[] iv = Base64.decode(ivStr.getBytes(), Base64.DEFAULT);
+        byte[] sessionKey = Base64.decode(
+          sessionKeyStr.getBytes(),
+          Base64.DEFAULT
+        );
+
+        PublicKey pKey;
+        byte[] decryptedSessionKey;
+        SecretKey sKey;
+
+        try {
+          pKey = CryptoCipher.stringToPublicKey(publicKeyStr);
+          decryptedSessionKey = CryptoCipher.decryptRSA(sessionKey, pKey);
+          sKey = CryptoCipher.byteToSessionKey(decryptedSessionKey);
+          cipher = CryptoCipher.decryptAESCipher(sKey, iv);
+          if (cipher == null) {
+            // at this stage getting a null from decryptAESCipher is a deadly error ;-)
+            return;
+          }
+        } catch (GeneralSecurityException e) {
+          Log.e(CapacitorUpdater.TAG, "Cannot gen the public key - cannot download file", e);
+          return;
+        }
       }
 
       String finalDest = dest + "/" + manifestEntry.getFileName();
@@ -154,7 +201,7 @@ public class DownloadServiceV2 extends IntentService {
 
         try (
           final InputStream is = u.openStream();
-          final DataInputStream dis = new DataInputStream(is)
+          InputStream dis = (cipher != null) ? new GZIPInputStream(new CipherInputStream(new DataInputStream(is), cipher)) : new GZIPInputStream(new DataInputStream(is));
         ) {
           final File target = new File(documentsDir, finalDest);
           fullPath = target.getAbsolutePath();
@@ -170,6 +217,8 @@ public class DownloadServiceV2 extends IntentService {
             int percent = 0;
             //this.notifyDownload(id, 10);
             while ((length = dis.read(buffer)) > 0) {
+              // The entire buffer could be encrypted so...
+
               fos.write(buffer, 0, length);
 
               final int newPercent = (int) ((bytesRead * 100) / totalLength);

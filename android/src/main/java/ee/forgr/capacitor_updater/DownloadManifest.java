@@ -19,7 +19,10 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Objects;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class DownloadManifest implements Parcelable {
 
@@ -47,10 +50,10 @@ public class DownloadManifest implements Parcelable {
         @Override
         public String toString() {
             return "DownloadManifestEntry{" +
-                    "fileName='" + fileName + '\'' +
-                    ", fileHash='" + fileHash + '\'' +
-                    ", downloadUrl=" + downloadUrl +
-                    '}';
+              "fileName='" + fileName + '\'' +
+              ", fileHash='" + fileHash + '\'' +
+              ", downloadUrl=" + downloadUrl +
+              '}';
         }
 
         private DownloadManifestEntry(String fileName, String fileHash, URL downloadUrl) {
@@ -77,6 +80,7 @@ public class DownloadManifest implements Parcelable {
             String fileName;
             String fileHash;
             String downloadUrlStr;
+            String sessionKey;
 
             try {
                 fileName = jsObject.getString("file_name");
@@ -154,10 +158,21 @@ public class DownloadManifest implements Parcelable {
 
     private String versionName;
     private ArrayList<DownloadManifestEntry> downloadManifestEntries;
+    private String iv64B;
+    private String sessionKeyB64;
 
-    private DownloadManifest(String versionName, ArrayList<DownloadManifestEntry> downloadManifestEntries) {
+    private DownloadManifest(String versionName, ArrayList<DownloadManifestEntry> downloadManifestEntries, String iv64B, String sessionKeyB64) {
         this.versionName = versionName;
         this.downloadManifestEntries = downloadManifestEntries;
+        this.iv64B = iv64B;
+        this.sessionKeyB64 = sessionKeyB64;
+    }
+
+    private static boolean checkForBase64(String string) {
+        String pattern = "^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)$";
+        Pattern r = Pattern.compile(pattern);
+        Matcher m = r.matcher(string);
+        return m.find();
     }
 
     public static DownloadManifest parseJson(JSObject jsObject, DownloadManifestCallback errorCallback) throws RuntimeException {
@@ -183,8 +198,32 @@ public class DownloadManifest implements Parcelable {
         }
 
         JSONArray manifestArray;
+        String iv64B;
+        String sessionKeyB64;
         try {
             manifestArray = jsObject.getJSONArray("manifest");
+
+            if (jsObject.has("sessionKey")) {
+                String sessionKey = jsObject.getString("sessionKey");
+                String[] split = sessionKey.split(":");
+                if (split.length != 2) {
+                    errorCallback.manifestErrorCallback( "DownloadManifest parsing failed (\"session_key\" split for \":\" returned length " + split.length + " instead of 2) for " + jsObject);
+                    return null;
+                }
+                if (!checkForBase64(split[0])) {
+                    errorCallback.manifestErrorCallback( "DownloadManifest parsing failed (\"session_key\" split for \":\" at 0 (" + split[0] + ") is not base64) for " + jsObject);
+                    return null;
+                }
+                if (!checkForBase64(split[1])) {
+                    errorCallback.manifestErrorCallback( "DownloadManifest parsing failed (\"session_key\" split for \":\" at 0 (" + split[1] + ") is not base64) for " + jsObject);
+                    return null;
+                }
+                iv64B = split[0];
+                sessionKeyB64 = split[1];
+            } else {
+                iv64B = null;
+                sessionKeyB64 = null;
+            }
         } catch (JSONException e) {
             errorCallback.manifestErrorCallback( "DownloadManifest parsing failed (\"manifestArray\" is not a JSON array) for " + jsObject);
             return null;
@@ -203,7 +242,15 @@ public class DownloadManifest implements Parcelable {
             }
         }
 
-        return new DownloadManifest(version, manifestArrayList);
+        return new DownloadManifest(version, manifestArrayList, iv64B, sessionKeyB64);
+    }
+
+    public String getSessionKey() {
+        return sessionKeyB64;
+    }
+
+    public String getIv() {
+        return iv64B;
     }
 
     @Override

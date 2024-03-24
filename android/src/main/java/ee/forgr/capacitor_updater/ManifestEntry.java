@@ -90,6 +90,19 @@ public class ManifestEntry implements Parcelable {
         return "[ " + String.join(", ", this.storagePathList) + " ]";
     }
 
+    public void removeFilepathByBase(String base) {
+        ArrayList<String> newFilepaths = new ArrayList<>();
+
+        for (String filepath: storagePathList) {
+            if (!filepath.startsWith(base)) {
+                newFilepaths.add(filepath);
+            }
+        }
+
+        this.storagePathList.clear();
+        this.storagePathList.addAll(newFilepaths);
+    }
+
     public List<String> getStoragePathList() {
         return storagePathList;
     }

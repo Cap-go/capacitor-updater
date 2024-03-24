@@ -16,13 +16,8 @@ public class ManifestBundleInfo {
   // We will ALWAYS decrease this, even if the file fails
   private AtomicInteger filesLeftToDownload;
 
-  // This will be the list with ALL file hashes
-  // It will be used in ManifestStorage to map with ManifestEntry
-  // It will only be added AFTER the file has downloaded successfully
-  private List<String> allFilesHashList;
-
   // It's the name of the bundle
-  private String name;
+  private String id;
 
   // This value will commit which actions are allowed + if we should save
   // If committed = false:
@@ -42,38 +37,13 @@ public class ManifestBundleInfo {
   private boolean error;
 
   public ManifestBundleInfo(
-    String name,
+    String id,
     int filesLeft
   ) {
-    this.name = name;
+    this.id = id;
     this.filesLeftToDownload = new AtomicInteger(filesLeft);
-    this.allFilesHashList = Collections.synchronizedList(new ArrayList<>());
     this.committed = false;
     this.error = false;
-  }
-
-  private ManifestBundleInfo(
-    String name,
-    ArrayList<String> fileHashes
-  ) {
-    this.allFilesHashList = Collections.synchronizedList(fileHashes);
-    this.committed = true;
-    this.error = false;
-    this.name = name;
-  }
-
-  public void addFieHash(String fileHash) {
-    if (this.committed) {
-      throw new IllegalStateException("Cannot add a new file hash after the bundle has been committed");
-    }
-    this.allFilesHashList.add(fileHash);
-  }
-
-  public List<String> getAllFilesHashList() {
-    if (!this.committed) {
-      throw new IllegalStateException("Cannot get all file hashes, not committed");
-    }
-    return allFilesHashList;
   }
 
   public boolean isCommitted() {
@@ -100,41 +70,5 @@ public class ManifestBundleInfo {
     }
 
     this.committed = true;
-  }
-
-  public JSObject toJSON() {
-    if (!this.committed) {
-      throw new IllegalStateException("Cannot call toJson, bundle not commited");
-    }
-
-    if (this.error) {
-      throw new IllegalStateException("Cannot call toJson, bundle errored");
-    }
-
-    final JSObject result = new JSObject();
-    result.put("name", this.name);
-
-    JSONArray jsonArray = new JSONArray();
-    for (String filehash: allFilesHashList) {
-      jsonArray.put(filehash);
-    }
-
-    result.put("file_hash", jsonArray);
-
-    return result;
-  }
-
-  public static ManifestBundleInfo fromJson(JSONObject json) throws JSONException {
-    JSONArray jsonArray = json.getJSONArray("file_hash");
-
-    ArrayList<String> fileHashes = new ArrayList<>(jsonArray.length());
-    for (int i = 0; i < jsonArray.length(); i++) {
-      String string = jsonArray.getString(i);
-      fileHashes.add(string);
-    }
-
-    String name = json.getString("name");
-
-    return new ManifestBundleInfo(name, fileHashes);
   }
 }

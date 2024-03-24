@@ -8,6 +8,8 @@ package ee.forgr.capacitor_updater;
 
 import static android.content.Context.RECEIVER_NOT_EXPORTED;
 
+import static ee.forgr.capacitor_updater.ManifestStorage.encodeHexString;
+
 import android.app.Activity;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -45,6 +47,8 @@ import java.io.UnsupportedEncodingException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.security.GeneralSecurityException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.SecureRandom;
 import java.util.ArrayList;
@@ -54,6 +58,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Function;
 import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -96,7 +101,7 @@ public class CapacitorUpdater {
   public String channelUrl = "";
   public String defaultChannel = "";
   public String appId = "";
-  public String privateKey = "";
+  public String publicKey = "";
   public String deviceID = "";
   public int timeout = 20000;
   public ManifestStorage manifestStorage;
@@ -319,6 +324,24 @@ public class CapacitorUpdater {
           );
 
           ManifestBundleInfo manifestBundleInfo = CapacitorUpdater.this.manifestStorage.getBundleById(id);
+          if (manifestBundleInfo == null) {
+            Log.e(CapacitorUpdater.TAG, "Very illegal state in download service, not reporting. State broken, updates broken, updater down");
+          }
+
+          // TODO ERROR HANDLING
+          // fullpath might be null,
+          // an error also might cause some troubles (null fullpath)
+          if (jobType == DownloadServiceV2.DownloadJobType.DOWNLOAD) {
+            if (error == null && fullpath != null && !fullpath.isEmpty()) {
+              CapacitorUpdater.this.manifestStorage.insertDownloadManifestEntry(hash, fullpath);
+            } else {
+              manifestBundleInfo.markError();
+              Log.e(CapacitorUpdater.TAG, "Cannot save the manifest entry - fullpath is null or empty");
+            }
+          } else if (jobType == DownloadServiceV2.DownloadJobType.UNZIP && error == null && fullpath != null && !fullpath.isEmpty()) {
+            CapacitorUpdater.this.manifestStorage.getEntryByHash(hash).addPath(fullpath);
+          }
+
           int filesLeft = manifestBundleInfo.decreaseFilesLeftToDownload();
           if (filesLeft == -1) {
             Log.e(TAG, "Files left = -1, this should never happen");
@@ -330,19 +353,6 @@ public class CapacitorUpdater {
             CapacitorUpdater.this.finishDownload(id, version, true);
             manifestBundleInfo.commit();
             CapacitorUpdater.this.manifestStorage.saveToDeviceStorage();
-          }
-
-          // TODO ERROR HANDLING
-          // fullpath might be null,
-          // an error also might cause some troubles (null fullpath)
-          if (jobType == DownloadServiceV2.DownloadJobType.DOWNLOAD) {
-            if (error == null && fullpath != null && !fullpath.isEmpty()) {
-              CapacitorUpdater.this.manifestStorage.insertDownloadManifestEntry(hash, fullpath);
-              manifestBundleInfo.addFieHash(hash);
-            } else {
-              manifestBundleInfo.markError();
-              Log.e(CapacitorUpdater.TAG, "Cannot save the manifest entry - fullpath is null or empty");
-            }
           }
 
 
@@ -458,7 +468,10 @@ public class CapacitorUpdater {
     final String id,
     final String version,
     final String dest,
-    final DownloadManifest.DownloadManifestEntry manifestEntry
+    final DownloadManifest.DownloadManifestEntry manifestEntry,
+    final String sessionKey,
+    final String iv,
+    final String publicKey
     ) {
     Intent intent = new Intent(this.activity, DownloadServiceV2.class);
     intent.putExtra(DownloadServiceV2.FILEDEST, dest);
@@ -470,6 +483,9 @@ public class CapacitorUpdater {
     intent.putExtra(DownloadServiceV2.VERSION, version);
     intent.putExtra(DownloadServiceV2.MANIFEST, manifestEntry);
     intent.putExtra(DownloadServiceV2.JOBTYPE, (Parcelable) DownloadServiceV2.DownloadJobType.DOWNLOAD);
+    intent.putExtra(DownloadServiceV2.SESSION_KEY, sessionKey != null ? sessionKey : "");
+    intent.putExtra(DownloadServiceV2.IV, iv != null ? iv : "");
+    intent.putExtra(DownloadServiceV2.PUBLICKEY, publicKey != null ? publicKey : "");
     this.activity.startService(intent);
   }
 
@@ -566,60 +582,6 @@ public class CapacitorUpdater {
     return enc.toLowerCase();
   }
 
-  private void decryptFile(
-    final File file,
-    final String ivSessionKey,
-    final String version
-  ) throws IOException {
-    // (str != null && !str.isEmpty())
-    if (
-      this.privateKey == null ||
-      this.privateKey.isEmpty() ||
-      ivSessionKey == null ||
-      ivSessionKey.isEmpty() ||
-      ivSessionKey.split(":").length != 2
-    ) {
-      Log.i(TAG, "Cannot found privateKey or sessionKey");
-      return;
-    }
-    try {
-      String ivB64 = ivSessionKey.split(":")[0];
-      String sessionKeyB64 = ivSessionKey.split(":")[1];
-      byte[] iv = Base64.decode(ivB64.getBytes(), Base64.DEFAULT);
-      byte[] sessionKey = Base64.decode(
-        sessionKeyB64.getBytes(),
-        Base64.DEFAULT
-      );
-      PrivateKey pKey = CryptoCipher.stringToPrivateKey(this.privateKey);
-      byte[] decryptedSessionKey = CryptoCipher.decryptRSA(sessionKey, pKey);
-      SecretKey sKey = CryptoCipher.byteToSessionKey(decryptedSessionKey);
-      byte[] content = new byte[(int) file.length()];
-
-      try (
-        final FileInputStream fis = new FileInputStream(file);
-        final BufferedInputStream bis = new BufferedInputStream(fis);
-        final DataInputStream dis = new DataInputStream(bis)
-      ) {
-        dis.readFully(content);
-        dis.close();
-        byte[] decrypted = CryptoCipher.decryptAES(content, sKey, iv);
-        // write the decrypted string to the file
-        try (
-          final FileOutputStream fos = new FileOutputStream(
-            file.getAbsolutePath()
-          )
-        ) {
-          fos.write(decrypted);
-        }
-      }
-    } catch (GeneralSecurityException e) {
-      Log.i(TAG, "decryptFile fail");
-      this.sendStats("decrypt_fail", version);
-      e.printStackTrace();
-      throw new IOException("GeneralSecurityException");
-    }
-  }
-
   public void downloadBackground(
     final String url,
     final String version,
@@ -664,7 +626,7 @@ public class CapacitorUpdater {
         ""
       )
     );
-    this.manifestStorage.addBundleToDownload(id, new ManifestBundleInfo(version, manifest.getDownloadManifestEntries().size()));
+    this.manifestStorage.addBundleToDownload(id, new ManifestBundleInfo(id, manifest.getDownloadManifestEntries().size()));
     this.notifyDownload(id, 0);
 
     String dist = id;
@@ -685,7 +647,7 @@ public class CapacitorUpdater {
           "File " + entry.getFileName() + " has to get downloaded!!!"
         );
 
-        this.downloadFileBackgroundManifestDownload(id, version, dist, entry);
+        this.downloadFileBackgroundManifestDownload(id, version, dist, entry, manifest.getSessionKey(), manifest.getIv(), this.publicKey);
         toDownload.add(entry);
       }
     }
@@ -757,6 +719,49 @@ public class CapacitorUpdater {
     return res;
   }
 
+  private File[] notNullFileArr(File[] value) {
+    return value != null ? value : new File[0];
+  }
+
+  private void recursiveFileDeleteAndCheck(File base) {
+    for (File file: notNullFileArr(base.listFiles())) {
+      if (file.isDirectory()) {
+        recursiveFileDeleteAndCheck(file);
+        continue;
+      }
+
+      try (FileInputStream dataStream = new FileInputStream(file)) {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+
+        byte[] buffer = new byte[dataStream.available()];
+        if (dataStream.read(buffer) == -1) {
+          Log.e(CapacitorUpdater.TAG, "Cannot read file " + file + ". Cannot delete, continuing!");
+          continue;
+        }
+
+        digest.update(buffer);
+
+        byte[] hash = digest.digest();
+        String finalFileHash = encodeHexString(hash);
+        ManifestEntry manifestEntry = this.manifestStorage.getEntryByHash(finalFileHash);
+        String filePath = file.getAbsolutePath();
+        if (manifestEntry.getStoragePathList().size() == 1 && Objects.equals(manifestEntry.getStoragePathList().get(0), filePath)) {
+          Log.i(TAG, "File " +  filePath + " was the last local copy, removing the manifest entry");
+          this.manifestStorage.removeEntryByHash(finalFileHash);
+          continue;
+        }
+
+        manifestEntry.removeFilepathByBase(filePath);
+        Log.i(TAG, "Deleting file " + filePath);
+        if (!file.delete()) {
+          Log.e(TAG, "Failed to delete file " + filePath);
+        }
+      } catch (Throwable e) {
+        Log.i(TAG, "Cannot delete folder " + base.getPath(), e);
+      }
+    }
+  }
+
   public Boolean delete(final String id, final Boolean removeInfo)
     throws IOException {
     final BundleInfo deleted = this.getBundleInfo(id);
@@ -765,8 +770,10 @@ public class CapacitorUpdater {
       return false;
     }
     final File bundle = new File(this.documentsDir, id);
+
     if (bundle.exists()) {
-      this.deleteDirectory(bundle);
+      this.recursiveFileDeleteAndCheck(bundle);
+      this.manifestStorage.saveToDeviceStorage();
       if (removeInfo) {
         this.removeBundleInfo(id);
       } else {
