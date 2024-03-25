@@ -408,34 +408,7 @@ extension CustomError: LocalizedError {
         }
     }
 
-    private func unzipProgressHandler(entry: String, zipInfo: unz_file_info, entryNumber: Int, total: Int, destUnZip: URL, id: String, unzipError: inout NSError?) {
-        if entry.contains("\\") {
-            print("\(self.TAG) unzip: Windows path is not supported, please use unix path as required by zip RFC: \(entry)")
-            self.sendStats(action: "windows_path_fail")
-        }
-
-        let fileURL = destUnZip.appendingPathComponent(entry)
-        let canonicalPath = fileURL.path
-        let canonicalDir = destUnZip.path
-
-        if !canonicalPath.hasPrefix(canonicalDir) {
-            self.sendStats(action: "canonical_path_fail")
-            unzipError = NSError(domain: "CanonicalPathError", code: 0, userInfo: nil)
-        }
-
-        let isDirectory = entry.hasSuffix("/")
-        if !isDirectory {
-            let folderURL = fileURL.deletingLastPathComponent()
-            if !FileManager.default.fileExists(atPath: folderURL.path) {
-                do {
-                    try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true, attributes: nil)
-                } catch {
-                    self.sendStats(action: "directory_path_fail")
-                    unzipError = error as NSError
-                }
-            }
-        }
-
+    private func unzipProgressHandler(entry: String, zipInfo: unz_file_info, entryNumber: Int, total: Int, id: String) {
         let newPercent = Int(Double(entryNumber) / Double(total) * 100)
         if newPercent != self.unzipPercent {
             self.unzipPercent = newPercent
@@ -462,7 +435,7 @@ extension CustomError: LocalizedError {
                                              delegate: nil,
                                              progressHandler: { [weak self] (entry, zipInfo, entryNumber, total) in
                                                 guard let self = self else { return }
-                                                self.unzipProgressHandler(entry: entry, zipInfo: zipInfo, entryNumber: entryNumber, total: total, destUnZip: destUnZip, id: id, unzipError: &unzipError)
+                                                self.unzipProgressHandler(entry: entry, zipInfo: zipInfo, entryNumber: entryNumber, total: total, id: id)
                                              },
                                              completionHandler: nil)
 
@@ -582,11 +555,10 @@ extension CustomError: LocalizedError {
                     }
                 case let .failure(error):
                     print("\(self.TAG) download error", response.value ?? "", error)
-                    if let afError = error as? AFError,
-                       case .sessionTaskFailed(let urlError as URLError) = afError,
-                       urlError.code == .cannotWriteToFile {
-                        self.sendStats(action: "low_mem_fail", versionName: version)
-                    }
+                    if case .sessionTaskFailed(let urlError as URLError) = error,
+                        urlError.code == .cannotWriteToFile {
+                            self.sendStats(action: "low_mem_fail", versionName: version)
+                        }
                     mainError = error as NSError
                 }
             }
