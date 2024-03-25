@@ -35,6 +35,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     private var backgroundWork: DispatchWorkItem?
     private var taskRunning = false
     private var periodCheckDelay = 0
+    private var allowModifyUrl = false
     let semaphoreReady = DispatchSemaphore(value: 0)
 
     override public func load() {
@@ -56,6 +57,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         autoDeletePrevious = getConfig().getBoolean("autoDeletePrevious", true)
         directUpdate = getConfig().getBoolean("directUpdate", false)
         updateUrl = getConfig().getString("updateUrl", CapacitorUpdaterPlugin.updateUrlDefault)!
+        allowModifyUrl = getConfig().getBoolean("allowModifyUrl", false)
         autoUpdate = getConfig().getBoolean("autoUpdate", true)
         appReadyTimeout = getConfig().getInt("appReadyTimeout", 10000)
         implementation.timeout = Double(getConfig().getInt("responseTimeout", 20))
@@ -143,7 +145,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func setUpdateUrl(_ call: CAPPluginCall) {
-        if !call.getBool("allowModifyUrl", false) {
+        if !allowModifyUrl {
             print("\(self.implementation.TAG) setUpdateUrl called without allowModifyUrl")
             call.reject("setUpdateUrl called without allowModifyUrl")
             return
@@ -158,7 +160,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func setStatsUrl(_ call: CAPPluginCall) {
-        if !call.getBool("allowModifyUrl", false) {
+        if !allowModifyUrl {
             print("\(self.implementation.TAG) setStatsUrl called without allowModifyUrl")
             call.reject("setStatsUrl called without allowModifyUrl")
             return
@@ -173,7 +175,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func setChannelUrl(_ call: CAPPluginCall) {
-        if !call.getBool("allowModifyUrl", false) {
+        if !allowModifyUrl {
             print("\(self.implementation.TAG) setChannelUrl called without allowModifyUrl")
             call.reject("setChannelUrl called without allowModifyUrl")
             return
