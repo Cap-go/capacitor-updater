@@ -7,19 +7,19 @@ settings:
 devDependencies:
   '@capacitor/android':
     specifier: ^5.5.0
-    version: 5.7.3(@capacitor/core@5.7.3)
+    version: 5.7.4(@capacitor/core@5.7.4)
   '@capacitor/cli':
     specifier: ^5.5.0
-    version: 5.7.3
+    version: 5.7.4
   '@capacitor/core':
     specifier: ^5.5.0
-    version: 5.7.3
+    version: 5.7.4
   '@capacitor/docgen':
     specifier: ^0.2.1
     version: 0.2.1
   '@capacitor/ios':
     specifier: ^5.5.0
-    version: 5.7.3(@capacitor/core@5.7.3)
+    version: 5.7.4(@capacitor/core@5.7.4)
   '@ionic/eslint-config':
     specifier: ^0.3.0
     version: 0.3.0(eslint@8.52.0)(typescript@5.0.4)
@@ -92,16 +92,16 @@ packages:
       js-tokens: 4.0.0
     dev: true
 
-  /@capacitor/android@5.7.3(@capacitor/core@5.7.3):
-    resolution: {integrity: sha512-l4FoagqyoId+D/597fG8pPfmVrNevzWzbtkJkbGtQZS5rqRR4HCNoJn0LAMs812o9bfuxGdE1T3MjpehGOe0Rw==}
+  /@capacitor/android@5.7.4(@capacitor/core@5.7.4):
+    resolution: {integrity: sha512-9ETwrCaLaimLHbwGpgfsPS9cHcPMFLmKFdlYsFsYIusMO6aOrcQTA9Q4xVAkr55ava4Wk+pVRniRYsekrbOLdw==}
     peerDependencies:
       '@capacitor/core': ^5.7.0
     dependencies:
-      '@capacitor/core': 5.7.3
+      '@capacitor/core': 5.7.4
     dev: true
 
-  /@capacitor/cli@5.7.3:
-    resolution: {integrity: sha512-bfc2QraYS5AsMyYCrhKqcPlZ9bFpsCfnjLKTWLLPJOgOhCdTALPIbzTEtjHyjMPMfch3SFuxdfog57PCCKyJWg==}
+  /@capacitor/cli@5.7.4:
+    resolution: {integrity: sha512-Cn7ndfMHWfMT+A/wRoeac4/mAxZWNTlZoD1Mn7UQyVV+iGxZB2JpS9omqha7gBN4xrAuTi/X9FqkzrmR+1V96A==}
     engines: {node: '>=16.0.0'}
     hasBin: true
     dependencies:
@@ -119,15 +119,15 @@ packages:
       prompts: 2.4.2
       rimraf: 4.4.1
       semver: 7.6.0
-      tar: 6.2.0
+      tar: 6.2.1
       tslib: 2.6.2
       xml2js: 0.5.0
     transitivePeerDependencies:
       - supports-color
     dev: true
 
-  /@capacitor/core@5.7.3:
-    resolution: {integrity: sha512-xEuQmP+h0tugl2N+qRcdrUavZydvTnnmtvqu/OtCBb/bKZo2PDRFft7MxuQRE2GxXs6kLy3cvwzhDAHB3a+9mw==}
+  /@capacitor/core@5.7.4:
+    resolution: {integrity: sha512-iZBgvx3o4amzKv5ttA+QHB6i7cxK+/mYpCQd1tnSdipg6ZkvfBhg1HkzhEqHk+I7MNur+QwgYDZho9+ycHRwOw==}
     dependencies:
       tslib: 2.6.2
     dev: true
@@ -144,12 +144,12 @@ packages:
       typescript: 4.2.4
     dev: true
 
-  /@capacitor/ios@5.7.3(@capacitor/core@5.7.3):
-    resolution: {integrity: sha512-ntgayMTQlBZeZiONkqjLGQs2zFVMFghu/hsPcINgXxU53Mvticf2BBNRMmdR20eVHg2UbbJx9SLl8UlOvgQ4sA==}
+  /@capacitor/ios@5.7.4(@capacitor/core@5.7.4):
+    resolution: {integrity: sha512-tQH24WMSYVKYr/Jl1gFImooQmu8OdXUFHoDaPV1WpZIiwbwxbTdwOXeLlGes5U8B8t7xuxTWMWMDt3IwRlDbhQ==}
     peerDependencies:
       '@capacitor/core': ^5.7.0
     dependencies:
-      '@capacitor/core': 5.7.3
+      '@capacitor/core': 5.7.4
     dev: true
 
   /@eslint-community/eslint-utils@4.4.0(eslint@8.52.0):
@@ -2737,8 +2737,8 @@ packages:
       - supports-color
     dev: true
 
-  /tar@6.2.0:
-    resolution: {integrity: sha512-/Wo7DcT0u5HUV486xg675HtjNd3BXZ6xDbzsCUZPt5iw8bTQ63bP0Raut3mvro9u+CUyq7YQd8Cx55fsZXxqLQ==}
+  /tar@6.2.1:
+    resolution: {integrity: sha512-DZ4yORTwrbTj/7MZYq2w+/ZFdI6OZ/f9SFHR+71gIVUZhOQPHzVCLpvRnPgyaMpfWxxk/4ONva3GQSyNIKRv6A==}
     engines: {node: '>=10'}
     dependencies:
       chownr: 2.0.0
