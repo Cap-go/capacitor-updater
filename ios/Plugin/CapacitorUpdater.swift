@@ -436,14 +436,14 @@ extension CustomError: LocalizedError {
             }
         }
 
-        let newPercent = Int(Double(entryNumber) / Double(total) * 100)
+        let newPercent = self.calcTotalPercent(percent: Int(Double(entryNumber) / Double(total) * 100), min: 75, max: 81)
         if newPercent != self.unzipPercent {
             self.unzipPercent = newPercent
-            self.notifyDownload(id, self.calcTotalPercent(percent: self.unzipPercent, min: 75, max: 90))
+            self.notifyDownload(id, newPercent)
         }
     }
 
-    private func saveDownloaded(sourceZip: URL, id: String, base: URL) throws {
+    private func saveDownloaded(sourceZip: URL, id: String, base: URL, notify: Bool) throws {
         try prepareFolder(source: base)
         let destHot: URL = base.appendingPathComponent(id)
         let destUnZip: URL = documentsDir.appendingPathComponent(randomString(length: 10))
@@ -451,7 +451,9 @@ extension CustomError: LocalizedError {
         self.unzipPercent = 0
         self.notifyDownload(id, 75)
 
+        let semaphore = DispatchSemaphore(value: 0)
         var unzipError: NSError?
+
         let success = SSZipArchive.unzipFile(atPath: sourceZip.path,
                                              toDestination: destUnZip.path,
                                              preserveAttributes: true,
@@ -461,10 +463,19 @@ extension CustomError: LocalizedError {
                                              error: &unzipError,
                                              delegate: nil,
                                              progressHandler: { [weak self] (entry, zipInfo, entryNumber, total) in
-                                                guard let self = self else { return }
-                                                self.unzipProgressHandler(entry: entry, zipInfo: zipInfo, entryNumber: entryNumber, total: total, destUnZip: destUnZip, id: id, unzipError: &unzipError)
+                                                DispatchQueue.global(qos: .background).async {
+                                                    guard let self = self else { return }
+                                                    if !notify {
+                                                        return
+                                                    }
+                                                    self.unzipProgressHandler(entry: entry, zipInfo: zipInfo, entryNumber: entryNumber, total: total, destUnZip: destUnZip, id: id, unzipError: &unzipError)
+                                                }
                                              },
-                                             completionHandler: nil)
+                                             completionHandler: { _, _, _  in
+                                                semaphore.signal()
+                                             })
+
+        semaphore.wait()
 
         if !success || unzipError != nil {
             self.sendStats(action: "unzip_fail")
@@ -475,6 +486,7 @@ extension CustomError: LocalizedError {
             try deleteFolder(source: destUnZip)
         }
     }
+
     private func createInfoObject() -> InfoObject {
         return InfoObject(
             platform: "ios",
@@ -571,11 +583,10 @@ extension CustomError: LocalizedError {
                     do {
                         try self.decryptFile(filePath: fileURL, sessionKey: sessionKey, version: version)
                         checksum = self.getChecksum(filePath: fileURL)
-                        try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.documentsDir.appendingPathComponent(self.bundleDirectoryHot))
-                        self.notifyDownload(id, 85)
-                        try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory))
-                        self.notifyDownload(id, 100)
+                        try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.documentsDir.appendingPathComponent(self.bundleDirectoryHot), notify: true)
+                        try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: false)
                         try self.deleteFolder(source: fileURL)
+                        self.notifyDownload(id, 100)
                     } catch {
                         print("\(self.TAG) download unzip error", error)
                         mainError = error as NSError
