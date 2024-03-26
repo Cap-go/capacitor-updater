@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.8.1](https://github.com/Cap-go/capacitor-updater/compare/5.8.0...5.8.1) (2024-03-26)
+
+
+### Bug Fixes
+
+* android auto reset ([bd20a21](https://github.com/Cap-go/capacitor-updater/commit/bd20a212626f32b74816730aa59eff0d90140ccb))
+
 ## [5.8.0](https://github.com/Cap-go/capacitor-updater/compare/5.7.20...5.8.0) (2024-03-26)
 
 
