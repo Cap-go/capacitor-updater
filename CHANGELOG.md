@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [5.8.0](https://github.com/Cap-go/capacitor-updater/compare/5.7.20...5.8.0) (2024-03-26)
+
+
+### Features
+
+* add auto reset to save app in crash state ([5b49a34](https://github.com/Cap-go/capacitor-updater/commit/5b49a348440082b719146e56cdb0135d4bf4cf8e))
+
 ### [5.7.20](https://github.com/Cap-go/capacitor-updater/compare/5.7.19...5.7.20) (2024-03-26)
 
 
