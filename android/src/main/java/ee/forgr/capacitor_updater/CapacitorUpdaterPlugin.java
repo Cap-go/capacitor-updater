@@ -217,6 +217,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     boolean resetWhenUpdate =
       this.getConfig().getBoolean("resetWhenUpdate", true);
 
+    this.implementation.autoReset();
     if (resetWhenUpdate) {
       this.cleanupObsoleteVersions();
     }

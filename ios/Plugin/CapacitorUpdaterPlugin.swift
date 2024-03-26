@@ -81,6 +81,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         implementation.statsUrl = getConfig().getString("statsUrl", CapacitorUpdaterPlugin.statsUrlDefault)!
         implementation.channelUrl = getConfig().getString("channelUrl", CapacitorUpdaterPlugin.channelUrlDefault)!
         implementation.defaultChannel = getConfig().getString("defaultChannel", "")!
+        self.implementation.autoReset()
         if resetWhenUpdate {
             self.cleanupObsoleteVersions()
         }

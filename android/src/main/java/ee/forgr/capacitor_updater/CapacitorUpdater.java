@@ -697,6 +697,15 @@ public class CapacitorUpdater {
     return false;
   }
 
+  public void autoReset() {
+    String id = this.prefs.getString(WebView.CAP_SERVER_PATH);
+    final BundleInfo currentBundle = this.getBundleInfo(id);
+    if (!currentBundle.isBuiltin() && !this.bundleExists(id)) {
+      Log.i(TAG, "Folder at bundle path does not exist. Triggering reset.");
+      this.reset();
+    }
+  }
+
   public void reset() {
     this.reset(false);
   }

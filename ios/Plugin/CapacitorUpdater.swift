@@ -726,6 +726,17 @@ extension CustomError: LocalizedError {
         return false
     }
 
+    public func autoReset() {
+        guard let id: String = UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH), !id.isEmpty else {
+            return
+        }
+        let currentBundle: BundleInfo = self.getBundleInfo(id: id)
+        if !currentBundle.isBuiltin() && !self.bundleExists(id: id) {
+            print("\(self.TAG) Folder at bundle path does not exist. Triggering reset.")
+            self.reset()
+        }
+    }
+
     public func reset() {
         self.reset(isInternal: false)
     }
@@ -1008,8 +1019,7 @@ extension CustomError: LocalizedError {
             return false
         }
         let newBundle: BundleInfo = self.getBundleInfo(id: nextId)
-        let bundle: URL = self.getBundleDirectory(id: nextId)
-        if !newBundle.isBuiltin() && !bundle.exist {
+        if !newBundle.isBuiltin() && !self.bundleExists(id: nextId) {
             return false
         }
         UserDefaults.standard.set(nextId, forKey: self.NEXT_VERSION)
