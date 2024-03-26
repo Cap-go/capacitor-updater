@@ -23,18 +23,14 @@ jobs:
         id: install_code
         run: pnpm install --frozen-lockfile
       - name: Setup java
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
-      - uses: actions/cache@v3
-        with:
-          path: |
-            ~/android/.gradle/*
-            ~/android/gradle/wrapper/*
-          key: ${{ runner.os }}-gradle-${{ hashFiles('android/.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
+          cache: 'gradle'
+          cache-dependency-path: | # optional
+            android/.gradle/*.gradle*
+            android/**/gradle-wrapper.properties
       - name: Build
         id: build_code
         run: npm run verify:android
@@ -51,7 +47,7 @@ jobs:
         with:
           node-version: 20
           cache: 'pnpm'
-      - uses: actions/cache@v3
+      - uses: actions/cache@v4
         id: cocoapods-cache
         with:
           path: ios/Pods
