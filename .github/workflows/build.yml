@@ -15,9 +15,9 @@ jobs:
         with:
           version: 8
       - name: Use Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
           cache: 'pnpm'
       - name: Install dependencies
         id: install_code
@@ -47,9 +47,9 @@ jobs:
         with:
           version: 8
       - name: Use Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
           cache: 'pnpm'
       - uses: actions/cache@v3
         id: cocoapods-cache
@@ -78,9 +78,9 @@ jobs:
         with:
           version: 8
       - name: Use Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
           cache: 'pnpm'
       - name: Install dependencies
         id: install_code
