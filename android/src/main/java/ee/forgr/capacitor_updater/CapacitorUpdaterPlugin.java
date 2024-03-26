@@ -366,7 +366,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
   @PluginMethod
   public void setUpdateUrl(final PluginCall call) {
     if (!this.getConfig().getBoolean("allowModifyUrl", false)) {
-      Log.e(CapacitorUpdater.TAG, "setUpdateUrl not allowed");
+      Log.e(
+        CapacitorUpdater.TAG,
+        "setUpdateUrl not allowed set allowModifyUrl in your config to true to allow it"
+      );
       call.reject("setUpdateUrl not allowed");
       return;
     }
@@ -383,7 +386,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
   @PluginMethod
   public void setStatsUrl(final PluginCall call) {
     if (!this.getConfig().getBoolean("allowModifyUrl", false)) {
-      Log.e(CapacitorUpdater.TAG, "setStatsUrl not allowed");
+      Log.e(
+        CapacitorUpdater.TAG,
+        "setStatsUrl not allowed set allowModifyUrl in your config to true to allow it"
+      );
       call.reject("setStatsUrl not allowed");
       return;
     }
@@ -400,7 +406,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
   @PluginMethod
   public void setChannelUrl(final PluginCall call) {
     if (!this.getConfig().getBoolean("allowModifyUrl", false)) {
-      Log.e(CapacitorUpdater.TAG, "setChannelUrl not allowed");
+      Log.e(
+        CapacitorUpdater.TAG,
+        "setChannelUrl not allowed set allowModifyUrl in your config to true to allow it"
+      );
       call.reject("setChannelUrl not allowed");
       return;
     }

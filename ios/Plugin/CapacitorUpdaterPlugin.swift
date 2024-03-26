@@ -143,9 +143,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func setUpdateUrl(_ call: CAPPluginCall) {
-        if !call.getBool("allowModifyUrl", false) {
+        if !getConfig().getBoolean("allowModifyUrl", false) {
             print("\(self.implementation.TAG) setUpdateUrl called without allowModifyUrl")
-            call.reject("setUpdateUrl called without allowModifyUrl")
+            call.reject("setUpdateUrl called without allowModifyUrl set allowModifyUrl in your config to true to allow it")
             return
         }
         guard let url = call.getString("url") else {
@@ -158,9 +158,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func setStatsUrl(_ call: CAPPluginCall) {
-        if !call.getBool("allowModifyUrl", false) {
+        if !getConfig().getBoolean("allowModifyUrl", false) {
             print("\(self.implementation.TAG) setStatsUrl called without allowModifyUrl")
-            call.reject("setStatsUrl called without allowModifyUrl")
+            call.reject("setStatsUrl called without allowModifyUrl set allowModifyUrl in your config to true to allow it")
             return
         }
         guard let url = call.getString("url") else {
@@ -173,9 +173,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func setChannelUrl(_ call: CAPPluginCall) {
-        if !call.getBool("allowModifyUrl", false) {
+        if !getConfig().getBoolean("allowModifyUrl", false) {
             print("\(self.implementation.TAG) setChannelUrl called without allowModifyUrl")
-            call.reject("setChannelUrl called without allowModifyUrl")
+            call.reject("setChannelUrl called without allowModifyUrl set allowModifyUrl in your config to true to allow it")
             return
         }
         guard let url = call.getString("url") else {
