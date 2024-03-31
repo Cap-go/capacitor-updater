@@ -99,6 +99,7 @@ struct AppVersionDec: Decodable {
 }
 public class AppVersion: NSObject {
     var version: String = ""
+    var manifest: [DownloadManifestEntry]?
     var message: String?
     var error: String?
     var sessionKey: String?
@@ -471,6 +472,9 @@ extension CustomError: LocalizedError {
                 
                 if let version = response.value?.version {
                     latest.version = version
+                }
+                if let manifest = response.value?.manifest {
+                    latest.manifest = manifest
                 }
                 if let major = response.value?.major {
                     latest.major = major

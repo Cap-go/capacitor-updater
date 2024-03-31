@@ -33,14 +33,30 @@ extension Data{
     }
 }
 
+public protocol LockedManifestStorage {
+    func getEntryByHash(hash: String) -> ManifestEntry?
+}
+
+internal class LockedManifestStorageImpl: LockedManifestStorage {
+    let storage: ManifestStorage
+    
+    init(storage: ManifestStorage) {
+        self.storage = storage
+    }
+    
+    func getEntryByHash(hash: String) -> ManifestEntry? {
+        return self.storage.manifestHashMap[hash]
+    }
+}
+
 public class ManifestStorage {
     
     // Swift specific
-    private let TAG = CapacitorUpdaterConstants.TAG
+    private let TAG = "✨  Capacitor-updater:"
     private let lock = UnfairLock()
     
     // Shared (ios <-> android)
-    private var manifestHashMap: [String: ManifestEntry] = [:]
+    internal var manifestHashMap: [String: ManifestEntry] = [:]
     
     private func recusiveAssetFolderLoad(_ bundle: Bundle, folder: String) throws -> [URL]  {
         guard let files = bundle.urls(forResourcesWithExtension: nil, subdirectory: folder) else {
@@ -94,6 +110,12 @@ public class ManifestStorage {
             for entry in buildIn {
                 self.manifestHashMap[entry.hash] = entry
             }
+        }
+    }
+    
+    func locked(_ f: (_ storage: LockedManifestStorage) throws -> ()) rethrows -> () {
+        try self.lock.locked {
+            try f(LockedManifestStorageImpl(storage: self))
         }
     }
 }

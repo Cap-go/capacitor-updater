@@ -11,9 +11,9 @@ enum ManifestEntryType {
     case builtin, url
 }
 
-class ManifestEntry {
+public class ManifestEntry {
     private var storagePathList = [URL]()
-    private let hash: String
+    let hash: String
     private let type: ManifestEntryType
     
     init(filePath: URL, hash: String, type: ManifestEntryType) {

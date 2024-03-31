@@ -15,7 +15,7 @@ import Version
 @objc(CapacitorUpdaterPlugin)
 public class CapacitorUpdaterPlugin: CAPPlugin {
     public var implementation = CapacitorUpdater()
-    private let PLUGIN_VERSION: String = "5.6.12"
+    private let PLUGIN_VERSION: String = "6.0.0"
     static let updateUrlDefault = "https://api.capgo.app/updates"
     static let statsUrlDefault = "https://api.capgo.app/stats"
     static let channelUrlDefault = "https://api.capgo.app/channel_self"
@@ -661,13 +661,18 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 return
             }
             let sessionKey = res.sessionKey ?? ""
-            guard let downloadUrl = URL(string: res.url) else {
-                print("\(self.implementation.TAG) Error no url or wrong format")
-                self.endBackGroundTaskWithNotif(msg: "Error no url or wrong format", latestVersionName: res.version, current: current)
-                return
-            }
+//            guard let downloadUrl = URL(string: res.url) else {
+//                print("\(self.implementation.TAG) Error no url or wrong format")
+//                self.endBackGroundTaskWithNotif(msg: "Error no url or wrong format", latestVersionName: res.version, current: current)
+//                return
+//            }
             let latestVersionName = res.version
             if latestVersionName != "" && current.getVersionName() != latestVersionName {
+                guard let manifest = res.manifest else {
+                    print("\(self.implementation.TAG) Error getting the manifest from response")
+                    self.endBackGroundTaskWithNotif(msg: "Error getting the manifest from response", latestVersionName: latestVersionName, current: current)
+                    return
+                }
                 do {
                     print("\(self.implementation.TAG) New bundle: \(latestVersionName) found. Current is: \(current.getVersionName()). \(messageUpdate)")
                     var nextImpl = self.implementation.getBundleInfoByVersionName(version: latestVersionName)
@@ -681,7 +686,17 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                                 print("\(self.implementation.TAG) Failed to delete failed bundle: \(nextImpl!.toString())")
                             }
                         }
-                        nextImpl = try self.implementation.download(url: downloadUrl, version: latestVersionName, sessionKey: sessionKey)
+                        //
+                        self.implementation.manifestStorage.locked { (storage) -> () in
+                            for downloadManifestEntry in manifest {
+                                if let manifestEntry = storage.getEntryByHash(hash: downloadManifestEntry.file_hash) {
+                                    print("\(self.implementation.TAG) Do not download, unzip \(downloadManifestEntry.file_name)")
+                                } else {
+                                    print("\(self.implementation.TAG) Not found, please download \(downloadManifestEntry.file_name)")
+                                }
+                            }
+                        }
+//                        nextImpl = try self.implementation.download(url: downloadUrl, version: latestVersionName, sessionKey: sessionKey)
                     }
                     guard let next = nextImpl else {
                         print("\(self.implementation.TAG) Error downloading file")
@@ -691,17 +706,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                     if next.isErrorStatus() {
                         print("\(self.implementation.TAG) Latest version is in error state. Aborting update.")
                         self.endBackGroundTaskWithNotif(msg: "Latest version is in error state. Aborting update.", latestVersionName: latestVersionName, current: current)
-                        return
-                    }
-                    if res.checksum != "" && next.getChecksum() != res.checksum {
-                        print("\(self.implementation.TAG) Error checksum", next.getChecksum(), res.checksum)
-                        self.implementation.sendStats(action: "checksum_fail", versionName: next.getVersionName())
-                        let id = next.getId()
-                        let resDel = self.implementation.delete(id: id)
-                        if !resDel {
-                            print("\(self.implementation.TAG) Delete failed, id \(id) doesn't exist")
-                        }
-                        self.endBackGroundTaskWithNotif(msg: "Error checksum", latestVersionName: latestVersionName, current: current)
                         return
                     }
                     if self.directUpdate {
