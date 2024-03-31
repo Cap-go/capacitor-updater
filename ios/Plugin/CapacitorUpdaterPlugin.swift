@@ -37,7 +37,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     private var periodCheckDelay = 0
     let semaphoreReady = DispatchSemaphore(value: 0)
 
-    override public func load() {
+    override public func load() {        
+        #if targetEnvironment(simulator)
+            print("::::: SIMULATOR :::::")
+            print("Application directory: \(NSHomeDirectory())")
+        #endif
+
         self.semaphoreUp()
         print("\(self.implementation.TAG) init for device \(self.implementation.deviceID)")
         guard let versionName = getConfig().getString("version", Bundle.main.versionName) else {
@@ -51,6 +56,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             print("\(self.implementation.TAG) Cannot parse versionName \(versionName)")
         }
         print("\(self.implementation.TAG) version native \(self.currentVersionNative.description)")
+
+        // Init the manifest storage
+        implementation.manifestStorage.initialize()
+
         implementation.versionBuild = getConfig().getString("version", Bundle.main.versionName)!
         autoDeleteFailed = getConfig().getBoolean("autoDeleteFailed", true)
         autoDeletePrevious = getConfig().getBoolean("autoDeletePrevious", true)

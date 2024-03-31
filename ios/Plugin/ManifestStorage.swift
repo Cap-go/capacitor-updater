@@ -6,9 +6,43 @@
 //
 
 import Foundation
+import CommonCrypto
 
-class ManifestStorage {
-    func recusiveAssetFolderLoad(_ bundle: Bundle, folder: String) throws -> [URL]  {
+extension Data{
+    public func sha256() -> String{
+        return hexStringFromData(input: digest(input: self as NSData))
+    }
+    
+    private func digest(input : NSData) -> NSData {
+        let digestLength = Int(CC_SHA256_DIGEST_LENGTH)
+        var hash = [UInt8](repeating: 0, count: digestLength)
+        CC_SHA256(input.bytes, UInt32(input.length), &hash)
+        return NSData(bytes: hash, length: digestLength)
+    }
+    
+    private  func hexStringFromData(input: NSData) -> String {
+        var bytes = [UInt8](repeating: 0, count: input.length)
+        input.getBytes(&bytes, length: input.length)
+        
+        var hexString = ""
+        for byte in bytes {
+            hexString += String(format:"%02x", UInt8(byte))
+        }
+        
+        return hexString
+    }
+}
+
+public class ManifestStorage {
+    
+    // Swift specific
+    private let TAG = CapacitorUpdaterConstants.TAG
+    private let lock = UnfairLock()
+    
+    // Shared (ios <-> android)
+    private var manifestHashMap: [String: ManifestEntry] = [:]
+    
+    private func recusiveAssetFolderLoad(_ bundle: Bundle, folder: String) throws -> [URL]  {
         guard let files = bundle.urls(forResourcesWithExtension: nil, subdirectory: folder) else {
             throw NSError(domain: "Failed to get the files from folder \(folder)", code: 5, userInfo: nil)
         }
@@ -27,5 +61,39 @@ class ManifestStorage {
         }
         
         return finalFiles
+    }
+    
+    private func loadBuiltinManifest() -> [ManifestEntry]? {
+        do {
+            let allFiles = try recusiveAssetFolderLoad(Bundle.main, folder: "public")
+            var manifestEntries = [ManifestEntry]()
+            manifestEntries.reserveCapacity(allFiles.count)
+            
+            for file in allFiles {
+                let data = try Data(contentsOf: file)
+                let hash = data.sha256()
+                manifestEntries.append(ManifestEntry(filePath: file, hash: hash, type: ManifestEntryType.url))
+            }
+            
+            return manifestEntries
+        } catch {
+            print("\(self.TAG) Cannot load the builtin manifest, error: \(error)")
+            return nil;
+        }
+    }
+    
+    // Init in android
+    func initialize() {
+        guard let buildIn = loadBuiltinManifest() else {
+            // Logging is done in loadBuiltinManifest, safe to just return
+            return
+        }
+        
+        // Lock to prevent concurrent manifestHashMap access
+        self.lock.locked() {
+            for entry in buildIn {
+                self.manifestHashMap[entry.hash] = entry
+            }
+        }
     }
 }

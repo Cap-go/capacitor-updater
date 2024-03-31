@@ -81,10 +81,16 @@ struct InfoObject: Codable {
     var channel: String?
     var defaultChannel: String?
 }
+struct DownloadManifestEntry: Decodable {
+    let file_name: String
+    let file_hash: String
+    let download_url: String
+}
 struct AppVersionDec: Decodable {
     let version: String?
     let checksum: String?
     let url: String?
+    let manifest: [DownloadManifestEntry]?
     let message: String?
     let error: String?
     let session_key: String?
@@ -93,8 +99,6 @@ struct AppVersionDec: Decodable {
 }
 public class AppVersion: NSObject {
     var version: String = ""
-    var checksum: String = ""
-    var url: String = ""
     var message: String?
     var error: String?
     var sessionKey: String?
@@ -215,6 +219,7 @@ extension CustomError: LocalizedError {
     }
 }
 
+
 @objc public class CapacitorUpdater: NSObject {
 
     private let versionCode: String = Bundle.main.versionCode ?? ""
@@ -240,6 +245,8 @@ extension CustomError: LocalizedError {
     public var appId: String = ""
     public var deviceID = UIDevice.current.identifierForVendor?.uuidString ?? ""
     public var privateKey: String = ""
+    public var manifestStorage = ManifestStorage()
+
 
     public var notifyDownload: (String, Int) -> Void = { _, _  in }
 
@@ -448,12 +455,20 @@ extension CustomError: LocalizedError {
         request.validate().responseDecodable(of: AppVersionDec.self) { response in
             switch response.result {
             case .success:
-                if let url = response.value?.url {
-                    latest.url = url
+                if let _ = response.value?.url {
+                    // If we use partial and we get a response with url when manifest is expected we error.
+                    // The backend should never allow this branch to be reached ;-)
+                    print("\(self.TAG) Error getting latest (url != nil when partial)", response.value ?? "" )
+                    latest.message = "Error getting latest (url != nil when partial) \(String(describing: response.value))"
+                    latest.error = "response_error"
                 }
-                if let checksum = response.value?.checksum {
-                    latest.checksum = checksum
+                
+                if let _ = response.value?.checksum {
+                    print("\(self.TAG) Error getting latest (checksum != nil when partial)", response.value ?? "" )
+                    latest.message = "Error getting latest (checksum != nil when partial) \(String(describing: response.value))"
+                    latest.error = "response_error"
                 }
+                
                 if let version = response.value?.version {
                     latest.version = version
                 }
