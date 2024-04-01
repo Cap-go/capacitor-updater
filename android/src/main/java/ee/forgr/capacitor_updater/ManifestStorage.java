@@ -112,7 +112,7 @@ public class ManifestStorage {
     private synchronized void loadFromStorageDevice() {
         String savedManifestStr = this.prefs.getString(SAVED_MANIFEST_PREFIX, "");
         if (savedManifestStr.isEmpty()) {
-            Log.e(CapacitorUpdater.TAG, "Cannot read the downloaded manifest entries from device storage!");
+            Log.e(CapacitorUpdater.TAG, "Cannot read the downloaded manifest entries from device storage (empty builtin manifest)!");
             return;
         }
 
