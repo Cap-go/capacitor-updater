@@ -698,9 +698,10 @@ public class CapacitorUpdater {
   }
 
   public void autoReset() {
-    String id = this.getCurrentBundleId();
-    final BundleInfo currentBundle = this.getBundleInfo(id);
-    if (!currentBundle.isBuiltin() && !this.bundleExists(id)) {
+    final BundleInfo currentBundle = this.getCurrentBundle();
+    if (
+      !currentBundle.isBuiltin() && !this.bundleExists(currentBundle.getId())
+    ) {
       Log.i(TAG, "Folder at bundle path does not exist. Triggering reset.");
       this.reset();
     }
@@ -1049,7 +1050,6 @@ public class CapacitorUpdater {
     if (id != null) {
       trueId = id;
     }
-    // Log.d(TAG, "Getting info for bundle [" + trueId + "]");
     BundleInfo result;
     if (BundleInfo.ID_BUILTIN.equals(trueId)) {
       result = new BundleInfo(trueId, null, BundleStatus.SUCCESS, "", "");

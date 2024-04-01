@@ -727,9 +727,8 @@ extension CustomError: LocalizedError {
     }
 
     public func autoReset() {
-        let id: String = self.getCurrentBundleId()
-        let currentBundle: BundleInfo = self.getBundleInfo(id: id)
-        if !currentBundle.isBuiltin() && !self.bundleExists(id: id) {
+        let currentBundle: BundleInfo = self.getCurrentBundle()
+        if !currentBundle.isBuiltin() && !self.bundleExists(id: currentBundle.getId()) {
             print("\(self.TAG) Folder at bundle path does not exist. Triggering reset.")
             self.reset()
         }
