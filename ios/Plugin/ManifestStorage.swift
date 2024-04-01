@@ -35,6 +35,7 @@ extension Data{
 
 public protocol LockedManifestStorage {
     func getEntryByHash(hash: String) -> ManifestEntry?
+    func getEntries() -> [String: ManifestEntry]
 }
 
 internal class LockedManifestStorageImpl: LockedManifestStorage {
@@ -46,6 +47,10 @@ internal class LockedManifestStorageImpl: LockedManifestStorage {
     
     func getEntryByHash(hash: String) -> ManifestEntry? {
         return self.storage.manifestHashMap[hash]
+    }
+    
+    func getEntries() -> [String: ManifestEntry] {
+        return self.storage.manifestHashMap
     }
 }
 
@@ -113,7 +118,7 @@ public class ManifestStorage {
         }
     }
     
-    func locked(_ f: (_ storage: LockedManifestStorage) throws -> ()) rethrows -> () {
+    func locked<ReturnValue>(_ f: (_ storage: LockedManifestStorage) throws -> ReturnValue) rethrows -> ReturnValue {
         try self.lock.locked {
             try f(LockedManifestStorageImpl(storage: self))
         }

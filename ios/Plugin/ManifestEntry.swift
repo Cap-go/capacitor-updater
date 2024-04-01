@@ -21,4 +21,14 @@ public class ManifestEntry {
         self.type = type
         self.hash = hash
     }
+    
+    private init(storagePathList: [URL], hash: String, type: ManifestEntryType) {
+        self.storagePathList = storagePathList
+        self.type = type
+        self.hash = hash
+    }
+    
+    public func copy() -> ManifestEntry {
+        return ManifestEntry(storagePathList: self.storagePathList.map { URL(string: $0.absoluteString)! }, hash: self.hash, type: self.type)
+    }
 }

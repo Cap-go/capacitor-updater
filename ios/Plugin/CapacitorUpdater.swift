@@ -578,26 +578,28 @@ extension CustomError: LocalizedError {
         
         var resultArr: Array<NSError?> = Array(repeating: nil, count: manifest.count)
         
-        // We will hold a shared lock on manifestStorage but under no circumstances we will write from the DispatchQueue,concurrentPerform
-        manifestStorage.locked { (storage) -> () in            
-            let group = DispatchGroup()
-            for downloadManifestEntry in manifest {
-                DispatchQueue.global(qos: .background).async(group: group   ) {
-                    if let manifestEntry = storage.getEntryByHash(hash: downloadManifestEntry.file_hash) {
-                        print("\(self.TAG) Do not download, unzip \(downloadManifestEntry.file_name), \(Thread.current)")
-                    } else {
-                        print("\(self.TAG) Not found, please download \(downloadManifestEntry.file_name), \(Thread.current)")
-                    }
+        // First of all, we will copy the storage manifests entries
+        let copiedManifestEntries = manifestStorage.locked {
+            (storage) -> [String : ManifestEntry] in return storage.getEntries().mapValues ({ $0.copy() })
+        }
+        
+        let group = DispatchGroup()
+        for downloadManifestEntry in manifest {
+            DispatchQueue.global(qos: .background).async(group: group   ) {
+                if let manifestEntry = copiedManifestEntries[downloadManifestEntry.file_hash] {
+                    print("\(self.TAG) Do not download, unzip \(downloadManifestEntry.file_name), \(Thread.current)")
+                } else {
+                    print("\(self.TAG) Not found, please download \(downloadManifestEntry.file_name), \(Thread.current)")
                 }
             }
-            
-            let waitResult = group.wait(timeout: DispatchTime.now() + DispatchTimeInterval.seconds(10))
-            if (waitResult == DispatchTimeoutResult.timedOut) {
-                print("\(self.TAG) Could not download, timed out")
-            } else {
-                print("\(self.TAG) We done ;-)")
+        }
+        
+        let waitResult = group.wait(timeout: DispatchTime.now() + DispatchTimeInterval.seconds(10))
+        if (waitResult == DispatchTimeoutResult.timedOut) {
+            print("\(self.TAG) Could not download, timed out")
+        } else {
+            print("\(self.TAG) We done ;-)")
 
-            }
         }
 
     }
