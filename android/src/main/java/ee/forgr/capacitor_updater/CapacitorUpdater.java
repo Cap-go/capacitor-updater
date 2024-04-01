@@ -698,15 +698,27 @@ public class CapacitorUpdater {
   }
 
   public void autoReset() {
-    String id = this.prefs.getString(WebView.CAP_SERVER_PATH, "");
+    String serverPath = this.prefs.getString(WebView.CAP_SERVER_PATH, "");
 
-    // Public means 1 thing - that this is a builtin bundle.
-    if (id.equals("public")) {
+    // Server path is empty, there is no way we can get any usefull info from that
+    if (serverPath.isEmpty()) {
+      Log.e(TAG, "Folder at bundle path is an empty string, ignoring autoReset.");
       return;
     }
-    final BundleInfo currentBundle = this.getBundleInfo(id);
-    if (!currentBundle.isBuiltin() && !this.bundleExists(id)) {
-      Log.i(TAG, "Folder at bundle path does not exist. Triggering reset.");
+
+    // Public means 1 thing - that this is a builtin bundle.
+    if (serverPath.equals("public")) {
+      return;
+    }
+
+    try {
+      final File bundleFile = new File(serverPath);
+      if (!bundleFile.exists()) {
+        Log.e(TAG, "Bundle file does not exist, triggering a reset");
+        this.reset();
+      }
+    } catch (Exception e) {
+      Log.e(TAG, "Cannot create a file from current server path, triggering a reset", e);
       this.reset();
     }
   }
