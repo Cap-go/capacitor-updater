@@ -699,6 +699,11 @@ public class CapacitorUpdater {
 
   public void autoReset() {
     String id = this.prefs.getString(WebView.CAP_SERVER_PATH, "");
+
+    // Public means 1 thing - that this is a builtin bundle.
+    if (id.equals("public")) {
+      return;
+    }
     final BundleInfo currentBundle = this.getBundleInfo(id);
     if (!currentBundle.isBuiltin() && !this.bundleExists(id)) {
       Log.i(TAG, "Folder at bundle path does not exist. Triggering reset.");
