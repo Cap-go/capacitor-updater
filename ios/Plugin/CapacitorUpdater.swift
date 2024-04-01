@@ -81,7 +81,7 @@ struct InfoObject: Codable {
     var channel: String?
     var defaultChannel: String?
 }
-struct DownloadManifestEntry: Decodable {
+public struct DownloadManifestEntry: Decodable {
     let file_name: String
     let file_hash: String
     let download_url: String
@@ -572,6 +572,34 @@ extension CustomError: LocalizedError {
         let info: BundleInfo = BundleInfo(id: id, version: version, status: BundleStatus.PENDING, downloaded: Date(), checksum: checksum)
         self.saveBundleInfo(id: id, bundle: info)
         return info
+    }
+    
+    public func downloadV2(manifestStorage: ManifestStorage, manifest: [DownloadManifestEntry], version: String, sessionKey: String) {
+        
+        var resultArr: Array<NSError?> = Array(repeating: nil, count: manifest.count)
+        
+        // We will hold a shared lock on manifestStorage but under no circumstances we will write from the DispatchQueue,concurrentPerform
+        manifestStorage.locked { (storage) -> () in            
+            let group = DispatchGroup()
+            for downloadManifestEntry in manifest {
+                DispatchQueue.global(qos: .background).async(group: group   ) {
+                    if let manifestEntry = storage.getEntryByHash(hash: downloadManifestEntry.file_hash) {
+                        print("\(self.TAG) Do not download, unzip \(downloadManifestEntry.file_name), \(Thread.current)")
+                    } else {
+                        print("\(self.TAG) Not found, please download \(downloadManifestEntry.file_name), \(Thread.current)")
+                    }
+                }
+            }
+            
+            let waitResult = group.wait(timeout: DispatchTime.now() + DispatchTimeInterval.seconds(10))
+            if (waitResult == DispatchTimeoutResult.timedOut) {
+                print("\(self.TAG) Could not download, timed out")
+            } else {
+                print("\(self.TAG) We done ;-)")
+
+            }
+        }
+
     }
 
     public func list() -> [BundleInfo] {

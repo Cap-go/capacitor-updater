@@ -687,15 +687,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                             }
                         }
                         //
-                        self.implementation.manifestStorage.locked { (storage) -> () in
-                            for downloadManifestEntry in manifest {
-                                if let manifestEntry = storage.getEntryByHash(hash: downloadManifestEntry.file_hash) {
-                                    print("\(self.implementation.TAG) Do not download, unzip \(downloadManifestEntry.file_name)")
-                                } else {
-                                    print("\(self.implementation.TAG) Not found, please download \(downloadManifestEntry.file_name)")
-                                }
-                            }
-                        }
+                        self.implementation.downloadV2(manifestStorage: self.implementation.manifestStorage, manifest: manifest, version: latestVersionName, sessionKey: sessionKey)
 //                        nextImpl = try self.implementation.download(url: downloadUrl, version: latestVersionName, sessionKey: sessionKey)
                     }
                     guard let next = nextImpl else {
