@@ -687,7 +687,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                             }
                         }
                         //
-                        self.implementation.downloadV2(manifestStorage: self.implementation.manifestStorage, manifest: manifest, version: latestVersionName, sessionKey: sessionKey)
+                        try self.implementation.downloadV2(manifestStorage: self.implementation.manifestStorage, manifest: manifest, version: latestVersionName, sessionKey: sessionKey)
 //                        nextImpl = try self.implementation.download(url: downloadUrl, version: latestVersionName, sessionKey: sessionKey)
                     }
                     guard let next = nextImpl else {

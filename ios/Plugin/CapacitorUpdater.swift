@@ -306,12 +306,12 @@ extension CustomError: LocalizedError {
     // Hot Reload path /var/mobile/Containers/Data/Application/8C0C07BE-0FD3-4FD4-B7DF-90A88E12B8C3/Documents/FOLDER
     // Normal /private/var/containers/Bundle/Application/8C0C07BE-0FD3-4FD4-B7DF-90A88E12B8C3/App.app/public
 
-    private func prepareFolder(source: URL) throws {
+    private static func prepareFolder(source: URL) throws {
         if !FileManager.default.fileExists(atPath: source.path) {
             do {
                 try FileManager.default.createDirectory(atPath: source.path, withIntermediateDirectories: true, attributes: nil)
             } catch {
-                print("\(self.TAG) Cannot createDirectory \(source.path)")
+                print("✨  Capacitor-updater: Cannot createDirectory \(source.path)")
                 throw CustomError.cannotCreateDirectory
             }
         }
@@ -416,7 +416,7 @@ extension CustomError: LocalizedError {
     }
 
     private func saveDownloaded(sourceZip: URL, id: String, base: URL) throws {
-        try prepareFolder(source: base)
+        try CapacitorUpdater.prepareFolder(source: base)
         let destHot: URL = base.appendingPathComponent(id)
         let destUnZip: URL = documentsDir.appendingPathComponent(randomString(length: 10))
         if !SSZipArchive.unzipFile(atPath: sourceZip.path, toDestination: destUnZip.path) {
@@ -574,20 +574,42 @@ extension CustomError: LocalizedError {
         return info
     }
     
-    public func downloadV2(manifestStorage: ManifestStorage, manifest: [DownloadManifestEntry], version: String, sessionKey: String) {
+    public func downloadV2(manifestStorage: ManifestStorage, manifest: [DownloadManifestEntry], version: String, sessionKey: String) throws {
         
-        var resultArr: Array<NSError?> = Array(repeating: nil, count: manifest.count)
+        var resultArr: Array<(any Error)?> = Array(repeating: nil, count: manifest.count)
         
         // First of all, we will copy the storage manifests entries
         let copiedManifestEntries = manifestStorage.locked {
             (storage) -> [String : ManifestEntry] in return storage.getEntries().mapValues ({ $0.copy() })
         }
+        let id: String = self.randomString(length: 10)
+        
+        // Now let's prepare the base folder for downloading
+        let baseDir: URL = documentsDir.appendingPathComponent(bundleDirectoryHot).appendingPathComponent(id)
+        try CapacitorUpdater.prepareFolder(source: baseDir)
         
         let group = DispatchGroup()
-        for downloadManifestEntry in manifest {
-            DispatchQueue.global(qos: .background).async(group: group   ) {
+        for (i, downloadManifestEntry) in manifest.enumerated() {
+            DispatchQueue.global(qos: .background).async(group: group) {
+                let fileUrl = baseDir.appendingPathComponent(downloadManifestEntry.file_name)
+                
                 if let manifestEntry = copiedManifestEntries[downloadManifestEntry.file_hash] {
                     print("\(self.TAG) Do not download, unzip \(downloadManifestEntry.file_name), \(Thread.current)")
+                    
+                    guard let toCopyFrom = manifestEntry.copyUrl() else {
+                        print("\(self.TAG) No copy url, this is a very serious error")
+                        return
+                    }
+                    
+                    do {
+                        // TODO error handling for
+                        try CapacitorUpdater.prepareFolder(source: fileUrl.deletingLastPathComponent())
+                        try FileManager.default.copyItem(at: toCopyFrom, to: fileUrl)
+                    } catch {
+                        print("\(self.TAG) Could not copy from the builtin bundle into the new url (\(fileUrl))")
+                        resultArr[i] = error
+                    }
+                    
                 } else {
                     print("\(self.TAG) Not found, please download \(downloadManifestEntry.file_name), \(Thread.current)")
                 }

@@ -28,6 +28,10 @@ public class ManifestEntry {
         self.hash = hash
     }
     
+    public func copyUrl() -> URL? {
+        return self.storagePathList.first
+    }
+    
     public func copy() -> ManifestEntry {
         return ManifestEntry(storagePathList: self.storagePathList.map { URL(string: $0.absoluteString)! }, hash: self.hash, type: self.type)
     }
