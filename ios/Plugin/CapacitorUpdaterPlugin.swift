@@ -59,7 +59,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
         // Init the manifest storage
         implementation.manifestStorage.initialize()
-
         implementation.versionBuild = getConfig().getString("version", Bundle.main.versionName)!
         autoDeleteFailed = getConfig().getBoolean("autoDeleteFailed", true)
         autoDeletePrevious = getConfig().getBoolean("autoDeletePrevious", true)
@@ -90,6 +89,20 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         implementation.statsUrl = getConfig().getString("statsUrl", CapacitorUpdaterPlugin.statsUrlDefault)!
         implementation.channelUrl = getConfig().getString("channelUrl", CapacitorUpdaterPlugin.channelUrlDefault)!
         implementation.defaultChannel = getConfig().getString("defaultChannel", "")!
+        
+        // Load the server
+        // This is very much swift specific, android does not do that
+        // In android we depend on the serverBasePath capacitor property
+        // In IOS we do not. Instead during the plugin initialization we try to call setServerBasePath
+        // We could call setServerBasePath but the reload function already does everythig we need it to
+        // The idea is to prevent having to store the bundle twice
+        // According to martin it is not possible to use serverBasePath on ios in a way that allows us to store the bundle once
+        
+        
+        if !self.initialLoad() {
+            print("\(self.implementation.TAG) unable to force reload, the plugin might fallback to the builtin version")
+        }
+        
         if resetWhenUpdate {
             self.cleanupObsoleteVersions()
         }
@@ -97,8 +110,28 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         nc.addObserver(self, selector: #selector(appMovedToBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
         nc.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
         nc.addObserver(self, selector: #selector(appKilled), name: UIApplication.willTerminateNotification, object: nil)
+        
+        
+        
         self.appMovedToForeground()
         self.checkForUpdateAfterDelay()
+    }
+    
+    private func initialLoad() -> Bool {
+        guard let bridge = self.bridge else { return false }
+        
+        let id = self.implementation.getCurrentBundleId()
+        let dest: URL
+        if BundleInfo.ID_BUILTIN == id {
+            dest = Bundle.main.resourceURL!.appendingPathComponent("public")
+        } else {
+            dest = self.implementation.getPathHot(id: id)
+        }
+        
+        print("\(self.implementation.TAG) Initial load \(id)")
+        // We don't use the viewcontroller here as it does not work during the initial load state
+        bridge.setServerBasePath(dest.path)
+        return true
     }
 
     private func semaphoreWait(waitTime: Int) {
@@ -687,7 +720,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                             }
                         }
                         //
-                        try self.implementation.downloadV2(manifestStorage: self.implementation.manifestStorage, manifest: manifest, version: latestVersionName, sessionKey: sessionKey)
+                        nextImpl = try self.implementation.downloadV2(manifestStorage: self.implementation.manifestStorage, manifest: manifest, version: latestVersionName, sessionKey: sessionKey)
 //                        nextImpl = try self.implementation.download(url: downloadUrl, version: latestVersionName, sessionKey: sessionKey)
                     }
                     guard let next = nextImpl else {
@@ -810,6 +843,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func appMovedToBackground() {
+        self.bridge?.config.serverURL
         let current: BundleInfo = self.implementation.getCurrentBundle()
         self.implementation.sendStats(action: "app_moved_to_background", versionName: current.getVersionName())
         print("\(self.implementation.TAG) Check for pending update")

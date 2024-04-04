@@ -8,6 +8,8 @@ import Foundation
 import SSZipArchive
 import Alamofire
 import zlib
+import GZIP
+
 
 extension URL {
     var isDirectory: Bool {
@@ -235,7 +237,7 @@ extension CustomError: LocalizedError {
     private let NEXT_VERSION: String = "nextVersion"
 
     public let TAG: String = "✨  Capacitor-updater:"
-    public let CAP_SERVER_PATH: String = "serverBasePath"
+    public let CAP_SERVER_PATH: String = "capgo_serverBasePath"
     public var versionBuild: String = ""
     public var customId: String = ""
     public var PLUGIN_VERSION: String = ""
@@ -574,7 +576,7 @@ extension CustomError: LocalizedError {
         return info
     }
     
-    public func downloadV2(manifestStorage: ManifestStorage, manifest: [DownloadManifestEntry], version: String, sessionKey: String) throws {
+    public func downloadV2(manifestStorage: ManifestStorage, manifest: [DownloadManifestEntry], version: String, sessionKey: String) throws -> BundleInfo {
         
         var resultArr: Array<(any Error)?> = Array(repeating: nil, count: manifest.count)
         
@@ -593,6 +595,14 @@ extension CustomError: LocalizedError {
             DispatchQueue.global(qos: .background).async(group: group) {
                 let fileUrl = baseDir.appendingPathComponent(downloadManifestEntry.file_name)
                 
+                // Make sure we can copy/download
+                do {
+                    try CapacitorUpdater.prepareFolder(source: fileUrl.deletingLastPathComponent())
+                } catch {
+                    print("\(self.TAG) Could not prepare the parent download/copy folder (\(fileUrl.deletingLastPathComponent())). Error: \(error.localizedDescription)")
+                    resultArr[i] = error
+                }
+                                
                 if let manifestEntry = copiedManifestEntries[downloadManifestEntry.file_hash] {
                     print("\(self.TAG) Do not download, unzip \(downloadManifestEntry.file_name), \(Thread.current)")
                     
@@ -601,17 +611,78 @@ extension CustomError: LocalizedError {
                         return
                     }
                     
+                    // Copy the file from the builtin bundle into the "documents" folder
                     do {
-                        // TODO error handling for
-                        try CapacitorUpdater.prepareFolder(source: fileUrl.deletingLastPathComponent())
                         try FileManager.default.copyItem(at: toCopyFrom, to: fileUrl)
                     } catch {
-                        print("\(self.TAG) Could not copy from the builtin bundle into the new url (\(fileUrl))")
+                        print("\(self.TAG) Could not copy from the builtin bundle into the new url (\(fileUrl)) Error: \(error.localizedDescription)")
                         resultArr[i] = error
                     }
                     
                 } else {
+                    // Here we will download - this will not be easy
                     print("\(self.TAG) Not found, please download \(downloadManifestEntry.file_name), \(Thread.current)")
+                    
+                    // Verify the url
+                    guard let _ = URL(string: downloadManifestEntry.download_url) else {
+                        let error = "\(self.TAG) Cannot parse url (\(downloadManifestEntry.download_url)) Error: Please check the URL format"
+                        print(error)
+                        resultArr[i] = NSError(domain: error, code: 9, userInfo: nil)
+                        return
+                    }
+                    
+                    let downloadSemaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
+                    var mainError: NSError?
+                    
+                    let destination: DownloadRequest.Destination = { _, _ in
+                        // Please be aware - those 2 lines are duplicated
+                        // I was unable to figure out how to escape the scope of a closure in swift
+                        let baseDir: URL = self.documentsDir.appendingPathComponent(self.bundleDirectoryHot).appendingPathComponent(id)
+                        let fileUrl = baseDir.appendingPathComponent(downloadManifestEntry.file_name)
+
+                        return (fileUrl, [.removePreviousFile, .createIntermediateDirectories])
+                    }
+                    
+                    let request = AF.download(downloadManifestEntry.download_url)
+                    
+                    request.responseData(queue: .global(qos: .background), completionHandler: { (response) in
+                        defer {
+                            downloadSemaphore.signal()
+                        }
+                        
+                        switch response.result {
+                        case .success:
+                            if let responseData = response.value {
+                                guard let unzipped = (responseData as NSData).gunzipped() as Data? else {
+                                    let error = "Cannot unzip data"
+                                    mainError = NSError(domain: error, code: 9)
+                                    return
+                                }
+                                
+                                do {
+                                    try unzipped.write(to: fileUrl, options: [.atomic])
+                                } catch {
+                                    print("\(self.TAG) Cannot save file in the filesystem. Error: \(error.localizedDescription)")
+                                    mainError = error as NSError
+                                }
+                                
+                                print("yes")
+                            }else {
+                                let error = "Cannot find fileURL in the response"
+                                mainError = NSError(domain: error, code: 9)
+                            }
+                        case let .failure(error):
+                            print("\(self.TAG) download error", response.value ?? "", error)
+                            mainError = error as NSError
+                        }
+                    })
+                    
+                    downloadSemaphore.wait()
+                    if let error = mainError {
+                        // Loggin was done above, do not log twice
+                        resultArr[i] = error
+                        return
+                    }
                 }
             }
         }
@@ -619,11 +690,22 @@ extension CustomError: LocalizedError {
         let waitResult = group.wait(timeout: DispatchTime.now() + DispatchTimeInterval.seconds(10))
         if (waitResult == DispatchTimeoutResult.timedOut) {
             print("\(self.TAG) Could not download, timed out")
-        } else {
-            print("\(self.TAG) We done ;-)")
-
+            // TODO: comeback and figure out a better way. Also - timeout on android
+            throw NSError(domain: "Download reached a timeout", code: 6, userInfo: nil)
         }
-
+        
+        // There is a chance that some files failed, let's check that
+        let fails = resultArr.filter { $0 != nil }
+        
+        // 1 or more jobs failed. Inform the plugin
+        if (!fails.isEmpty) {
+            throw NSError(domain: "1 or more download job failed, please check logs", code: 7, userInfo: nil)
+        }
+        
+        // There is NO checksum with partial ;-)
+        let info: BundleInfo = BundleInfo(id: id, version: version, status: BundleStatus.PENDING, downloaded: Date(), checksum: "")
+        self.saveBundleInfo(id: id, bundle: info)
+        return info
     }
 
     public func list() -> [BundleInfo] {
@@ -682,7 +764,7 @@ extension CustomError: LocalizedError {
     }
 
     public func getBundleDirectory(id: String) -> URL {
-        return libraryDir.appendingPathComponent(self.bundleDirectory).appendingPathComponent(id)
+        return documentsDir.appendingPathComponent(bundleDirectoryHot).appendingPathComponent(id)
     }
 
     public func set(bundle: BundleInfo) -> Bool {
