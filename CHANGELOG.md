@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [5.9.0](https://github.com/Cap-go/capacitor-updater/compare/5.8.12...5.9.0) (2024-04-12)
+
+
+### Features
+
+* send old_version_name when set version and reset ([e19ba30](https://github.com/Cap-go/capacitor-updater/commit/e19ba3055db2cf1b643b561bfba145ea885d51aa))
+
 ### [5.8.12](https://github.com/Cap-go/capacitor-updater/compare/5.8.11...5.8.12) (2024-04-08)
 
 
