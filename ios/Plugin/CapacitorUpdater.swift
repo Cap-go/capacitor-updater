@@ -73,7 +73,8 @@ struct InfoObject: Codable {
     let version_build: String?
     let version_code: String?
     let version_os: String?
-    let version_name: String?
+    var version_name: String?
+    var old_version_name: String?
     let plugin_version: String?
     let is_emulator: Bool?
     let is_prod: Bool?
@@ -716,9 +717,10 @@ extension CustomError: LocalizedError {
             return true
         }
         if bundleExists(id: id) {
+            let currentBundleName = self.getCurrentBundle().getVersionName()
             self.setCurrentBundle(bundle: self.getBundleDirectory(id: id).path)
             self.setBundleStatus(id: id, status: BundleStatus.PENDING)
-            self.sendStats(action: "set", versionName: newBundle.getVersionName())
+            self.sendStats(action: "set", versionName: newBundle.getVersionName(), oldVersionName: currentBundleName)
             return true
         }
         self.setBundleStatus(id: id, status: BundleStatus.ERROR)
@@ -740,11 +742,12 @@ extension CustomError: LocalizedError {
 
     public func reset(isInternal: Bool) {
         print("\(self.TAG) reset: \(isInternal)")
+        let currentBundleName = self.getCurrentBundle().getVersionName()
         self.setCurrentBundle(bundle: "")
         self.setFallbackBundle(fallback: Optional<BundleInfo>.none)
         _ = self.setNextBundle(next: Optional<String>.none)
         if !isInternal {
-            self.sendStats(action: "reset")
+            self.sendStats(action: "reset", versionName: self.getCurrentBundle().getVersionName(), oldVersionName: currentBundleName)
         }
     }
 
@@ -882,7 +885,7 @@ extension CustomError: LocalizedError {
         return getChannel
     }
 
-    func sendStats(action: String, versionName: String? = nil) {
+    func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {
         guard !statsUrl.isEmpty else {
             return
         }
@@ -891,6 +894,8 @@ extension CustomError: LocalizedError {
 
         var parameters = createInfoObject()
         parameters.action = action
+        parameters.version_name = versionName
+        parameters.old_version_name = oldVersionName
 
         DispatchQueue.global(qos: .background).async {
             let request = AF.request(
