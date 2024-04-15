@@ -714,14 +714,25 @@ public class CapacitorUpdater {
     final File bundle = this.getBundleDirectory(id);
     Log.i(TAG, "Setting next active bundle: " + id);
     if (this.bundleExists(id)) {
+      var currentBundleName = this.getCurrentBundle().getVersionName();
       this.setCurrentBundle(bundle);
       this.setBundleStatus(id, BundleStatus.PENDING);
-      this.sendStats("set", newBundle.getVersionName());
+      this.sendStats("set", newBundle.getVersionName(), currentBundleName);
       return true;
     }
     this.setBundleStatus(id, BundleStatus.ERROR);
     this.sendStats("set_fail", newBundle.getVersionName());
     return false;
+  }
+
+  public void autoReset() {
+    final BundleInfo currentBundle = this.getCurrentBundle();
+    if (
+      !currentBundle.isBuiltin() && !this.bundleExists(currentBundle.getId())
+    ) {
+      Log.i(TAG, "Folder at bundle path does not exist. Triggering reset.");
+      this.reset();
+    }
   }
 
   public void reset() {
@@ -762,11 +773,16 @@ public class CapacitorUpdater {
 
   public void reset(final boolean internal) {
     Log.d(CapacitorUpdater.TAG, "reset: " + internal);
+    var currentBundleName = this.getCurrentBundle().getVersionName();
     this.setCurrentBundle(new File("public"));
     this.setFallbackBundle(null);
     this.setNextBundle(null);
     if (!internal) {
-      this.sendStats("reset", this.getCurrentBundle().getVersionName());
+      this.sendStats(
+          "reset",
+          this.getCurrentBundle().getVersionName(),
+          currentBundleName
+        );
     }
   }
 
@@ -1037,6 +1053,14 @@ public class CapacitorUpdater {
   }
 
   public void sendStats(final String action, final String versionName) {
+    this.sendStats(action, versionName, "");
+  }
+
+  public void sendStats(
+    final String action,
+    final String versionName,
+    final String oldVersionName
+  ) {
     String statsUrl = this.statsUrl;
     if (statsUrl == null || statsUrl.isEmpty()) {
       return;
@@ -1044,6 +1068,8 @@ public class CapacitorUpdater {
     JSONObject json;
     try {
       json = this.createInfoObject();
+      json.put("version_name", versionName);
+      json.put("old_version_name", oldVersionName);
       json.put("action", action);
     } catch (JSONException e) {
       Log.e(TAG, "Error sendStats JSONException", e);
@@ -1067,7 +1093,6 @@ public class CapacitorUpdater {
     if (id != null) {
       trueId = id;
     }
-    // Log.d(TAG, "Getting info for bundle [" + trueId + "]");
     BundleInfo result;
     if (BundleInfo.ID_BUILTIN.equals(trueId)) {
       result = new BundleInfo(trueId, null, BundleStatus.SUCCESS, "", "");

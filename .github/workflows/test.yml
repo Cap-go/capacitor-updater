@@ -17,15 +17,15 @@ jobs:
         with:
           version: 8
       - name: Use Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
           cache: 'pnpm'
       - name: Install dependencies
         id: install_code
         run: pnpm install --frozen-lockfile
       - name: Setup java
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
@@ -41,9 +41,9 @@ jobs:
         with:
           version: 8
       - name: Use Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
           cache: 'pnpm'
       - name: Install dependencies
         id: install_code
@@ -61,9 +61,9 @@ jobs:
         with:
           version: 8
       - name: Use Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
           cache: 'pnpm'
       - name: Install dependencies
         id: install_code
