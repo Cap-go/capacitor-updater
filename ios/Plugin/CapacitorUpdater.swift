@@ -376,7 +376,7 @@ extension CustomError: LocalizedError {
 
     private func decryptFile(filePath: URL, sessionKey: String, version: String) throws {
         if sessionKey.isEmpty  || sessionKey.components(separatedBy: ":").count != 2 {
-            if (self.forceEncryption && self.publicKey != nil && !self.publicKey!.isEmpty) {
+            if self.forceEncryption && self.publicKey != nil && !self.publicKey!.isEmpty {
                 print("\(self.TAG) Cannot accept non-encrypted bundle")
                 self.sendStats(action: "decrypt_fail", versionName: version)
                 throw CustomError.cannotDecode
