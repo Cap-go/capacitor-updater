@@ -263,7 +263,7 @@ export interface CapacitorUpdaterPlugin {
   next(options: BundleId): Promise<BundleInfo>;
 
   /**
-   * Set the current bundle and immediately reloads the app.
+   * Set the current bundle and immediately reloads the app. Do not run any code after this method, as the app will be reloaded.
    *
    * @param options A {@link BundleId} object containing the new bundle id to set as current.
    * @returns {Promise<void>}
