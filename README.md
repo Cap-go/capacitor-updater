@@ -400,7 +400,7 @@ Set the next bundle to be used when the app is reloaded.
 set(options: BundleId) => Promise<void>
 ```
 
-Set the current bundle and immediately reloads the app.
+Set the current bundle and immediately reloads the app. Do not run any code after this method, as the app will be reloaded.
 
 | Param         | Type                                          | Description                                                                                       |
 | ------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------- |
