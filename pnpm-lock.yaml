@@ -7,19 +7,19 @@ settings:
 devDependencies:
   '@capacitor/android':
     specifier: ^5.5.0
-    version: 5.7.4(@capacitor/core@5.7.4)
+    version: 5.7.5(@capacitor/core@5.7.5)
   '@capacitor/cli':
     specifier: ^5.5.0
-    version: 5.7.4
+    version: 5.7.5
   '@capacitor/core':
     specifier: ^5.5.0
-    version: 5.7.4
+    version: 5.7.5
   '@capacitor/docgen':
     specifier: ^0.2.1
     version: 0.2.1
   '@capacitor/ios':
     specifier: ^5.5.0
-    version: 5.7.4(@capacitor/core@5.7.4)
+    version: 5.7.5(@capacitor/core@5.7.5)
   '@ionic/eslint-config':
     specifier: ^0.3.0
     version: 0.3.0(eslint@8.52.0)(typescript@5.0.4)
@@ -92,16 +92,16 @@ packages:
       js-tokens: 4.0.0
     dev: true
 
-  /@capacitor/android@5.7.4(@capacitor/core@5.7.4):
-    resolution: {integrity: sha512-9ETwrCaLaimLHbwGpgfsPS9cHcPMFLmKFdlYsFsYIusMO6aOrcQTA9Q4xVAkr55ava4Wk+pVRniRYsekrbOLdw==}
+  /@capacitor/android@5.7.5(@capacitor/core@5.7.5):
+    resolution: {integrity: sha512-VKb9VarGA2hJ8PuLk4EhSq4jvgM+V8JOoNw00WdD6Q4rbgDKSa7WIKTw75sFrNRGiwHSZ99FPvmisJfr1Spk+Q==}
     peerDependencies:
       '@capacitor/core': ^5.7.0
     dependencies:
-      '@capacitor/core': 5.7.4
+      '@capacitor/core': 5.7.5
     dev: true
 
-  /@capacitor/cli@5.7.4:
-    resolution: {integrity: sha512-Cn7ndfMHWfMT+A/wRoeac4/mAxZWNTlZoD1Mn7UQyVV+iGxZB2JpS9omqha7gBN4xrAuTi/X9FqkzrmR+1V96A==}
+  /@capacitor/cli@5.7.5:
+    resolution: {integrity: sha512-CEgCXq3NNacS+9EptJXM+Cm915oB8eNPhiTP7ylKsQchrY0CGbeyO5y4A/oYnB/h4f+UiaX3ShlIOljx3+agqw==}
     engines: {node: '>=16.0.0'}
     hasBin: true
     dependencies:
@@ -126,8 +126,8 @@ packages:
       - supports-color
     dev: true
 
-  /@capacitor/core@5.7.4:
-    resolution: {integrity: sha512-iZBgvx3o4amzKv5ttA+QHB6i7cxK+/mYpCQd1tnSdipg6ZkvfBhg1HkzhEqHk+I7MNur+QwgYDZho9+ycHRwOw==}
+  /@capacitor/core@5.7.5:
+    resolution: {integrity: sha512-babBo26lgIyKkAOr/AbPq5wwi9I4uHDP0lBteJq7p4xZElA6tAA8mD3xRH1/4EKmZ4+acYpKmmyegX3zsVh37A==}
     dependencies:
       tslib: 2.6.2
     dev: true
@@ -144,12 +144,12 @@ packages:
       typescript: 4.2.4
     dev: true
 
-  /@capacitor/ios@5.7.4(@capacitor/core@5.7.4):
-    resolution: {integrity: sha512-tQH24WMSYVKYr/Jl1gFImooQmu8OdXUFHoDaPV1WpZIiwbwxbTdwOXeLlGes5U8B8t7xuxTWMWMDt3IwRlDbhQ==}
+  /@capacitor/ios@5.7.5(@capacitor/core@5.7.5):
+    resolution: {integrity: sha512-mREcvv4XC9USSAbYmf/2Lmbr52eZjMDpKYwxwi2CKLJXGXNjYfJaHm6jnPordAl6kZdm3Bm/tnx+rYpb9KptGA==}
     peerDependencies:
       '@capacitor/core': ^5.7.0
     dependencies:
-      '@capacitor/core': 5.7.4
+      '@capacitor/core': 5.7.5
     dev: true
 
   /@eslint-community/eslint-utils@4.4.0(eslint@8.52.0):
@@ -1735,7 +1735,7 @@ packages:
       fs.realpath: 1.0.0
       minimatch: 8.0.4
       minipass: 4.2.8
-      path-scurry: 1.10.1
+      path-scurry: 1.10.2
     dev: true
 
   /globals@13.21.0:
@@ -2107,6 +2107,11 @@ packages:
     engines: {node: 14 || >=16.14}
     dev: true
 
+  /lru-cache@10.2.0:
+    resolution: {integrity: sha512-2bIM8x+VAf6JT4bKAljS1qUWgMsqZRPGJS6FSahIMPVvctcNhyVp7AJu7quxOW9jwkryBReKZY5tY5JYv2n/7Q==}
+    engines: {node: 14 || >=16.14}
+    dev: true
+
   /lru-cache@6.0.0:
     resolution: {integrity: sha512-Jo6dJ04CmSjuznwJSS3pUeWmd/H0ffTlkXXgwZi+eq1UCmqQwCh+eLsYOYCwY991i2Fah4h1BEMCx4qThGbsiA==}
     engines: {node: '>=10'}
@@ -2170,6 +2175,11 @@ packages:
 
   /minipass@7.0.3:
     resolution: {integrity: sha512-LhbbwCfz3vsb12j/WkWQPZfKTsgqIe1Nf/ti1pKjYESGLHIVjWU96G9/ljLH4F9mWNVhlQOm0VySdAWzf05dpg==}
+    engines: {node: '>=16 || 14 >=14.17'}
+    dev: true
+
+  /minipass@7.0.4:
+    resolution: {integrity: sha512-jYofLM5Dam9279rdkWzqHozUo4ybjdZmCsDHePy5V/PbBcVMiSZR97gmAy45aqi8CK1lG2ECd356FU86avfwUQ==}
     engines: {node: '>=16 || 14 >=14.17'}
     dev: true
 
@@ -2349,6 +2359,14 @@ packages:
     dependencies:
       lru-cache: 10.0.1
       minipass: 7.0.3
+    dev: true
+
+  /path-scurry@1.10.2:
+    resolution: {integrity: sha512-7xTavNy5RQXnsjANvVvMkEjvloOinkAjv/Z6Ildz9v2RinZ4SBKTWFOVRbaF8p0vpHnyjV/UwNDdKuUv6M5qcA==}
+    engines: {node: '>=16 || 14 >=14.17'}
+    dependencies:
+      lru-cache: 10.2.0
+      minipass: 7.0.4
     dev: true
 
   /path-type@4.0.0:
