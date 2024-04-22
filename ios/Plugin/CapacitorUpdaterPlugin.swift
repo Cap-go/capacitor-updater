@@ -843,7 +843,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func appMovedToBackground() {
-        self.bridge?.config.serverURL
         let current: BundleInfo = self.implementation.getCurrentBundle()
         self.implementation.sendStats(action: "app_moved_to_background", versionName: current.getVersionName())
         print("\(self.implementation.TAG) Check for pending update")

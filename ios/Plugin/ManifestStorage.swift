@@ -38,30 +38,45 @@ public protocol LockedManifestStorage {
     func getEntries() -> [String: ManifestEntry]
 }
 
-internal class LockedManifestStorageImpl: LockedManifestStorage {
-    let storage: ManifestStorage
-    
-    init(storage: ManifestStorage) {
-        self.storage = storage
-    }
-    
-    func getEntryByHash(hash: String) -> ManifestEntry? {
-        return self.storage.manifestHashMap[hash]
-    }
-    
-    func getEntries() -> [String: ManifestEntry] {
-        return self.storage.manifestHashMap
-    }
-}
+//internal class LockedManifestStorageImpl: LockedManifestStorage {
+//    let storage: ManifestStorage
+//    
+//    init(storage: ManifestStorage) {
+//        self.storage = storage
+//    }
+//    
+//    func getEntryByHash(hash: String) -> ManifestEntry? {
+//        return self.storage.manifestHashMap[hash]
+//    }
+//    
+//    func getEntries() -> [String: ManifestEntry] {
+//        return self.storage.manifestHashMap
+//    }
+//}
 
 public class ManifestStorage {
     
     // Swift specific
     private let TAG = "✨  Capacitor-updater:"
+    private let cachePreferencesKey = "CapgoDownloadedManifestJson"
     private let lock = UnfairLock()
     
     // Shared (ios <-> android)
-    internal var manifestHashMap: [String: ManifestEntry] = [:]
+    // internal var manifestHashMap: [String: ManifestEntry] = [:]
+    
+     lazy var cache = {
+        guard let savedCache = UserDefaults.standard.string(forKey: self.cachePreferencesKey) else {
+            return Cache<String, ManifestEntry>()
+        }
+        
+        do {
+            let decodedCache = try JSONDecoder().decode(Cache<String, ManifestEntry>.self, from: Data(savedCache.utf8))
+            return decodedCache
+        } catch {
+            print("\(self.TAG) Cannot load the saved manifes storage manifest, error: \(error)")
+            return Cache<String, ManifestEntry>()
+        }
+    }()
     
     private func recusiveAssetFolderLoad(_ bundle: Bundle, folder: String) throws -> [URL]  {
         guard let files = bundle.urls(forResourcesWithExtension: nil, subdirectory: folder) else {
@@ -93,7 +108,7 @@ public class ManifestStorage {
             for file in allFiles {
                 let data = try Data(contentsOf: file)
                 let hash = data.sha256()
-                manifestEntries.append(ManifestEntry(filePath: file, hash: hash, type: ManifestEntryType.url))
+                manifestEntries.append(ManifestEntry(filePath: file, hash: hash, type: ManifestEntryType.builtin))
             }
             
             return manifestEntries
@@ -105,22 +120,51 @@ public class ManifestStorage {
     
     // Init in android
     func initialize() {
+        UserDefaults.standard.removeObject(forKey: cachePreferencesKey)
+        UserDefaults.standard.synchronize()
+
+        
         guard let buildIn = loadBuiltinManifest() else {
             // Logging is done in loadBuiltinManifest, safe to just return
             return
         }
         
-        // Lock to prevent concurrent manifestHashMap access
-        self.lock.locked() {
-            for entry in buildIn {
-                self.manifestHashMap[entry.hash] = entry
-            }
+        // Add to the cache
+        buildIn.forEach {
+            self.cache[$0.hash] = $0
         }
+        
+        // Lock to prevent concurrent manifestHashMap access
+//        self.lock.locked() {
+//            for entry in buildIn {
+//                self.manifestHashMap[entry.hash] = entry
+//            }
+//        }
     }
     
-    func locked<ReturnValue>(_ f: (_ storage: LockedManifestStorage) throws -> ReturnValue) rethrows -> ReturnValue {
-        try self.lock.locked {
-            try f(LockedManifestStorageImpl(storage: self))
+//    func locked<ReturnValue>(_ f: (_ storage: LockedManifestStorage) throws -> ReturnValue) rethrows -> ReturnValue {
+//        try self.lock.locked {
+//            try f(LockedManifestStorageImpl(storage: self))
+//        }
+//    }
+    
+    func saveToDeviceStorage() {
+        // We don't quite have "synchronized" in swift, we have to use this lock
+        
+        do {
+            try self.lock.locked {
+                // It's important to note that in android we apply a filter to make sure  that ManifestEntryType = ManifestEntry.ManifestEntryType.BUILTIN
+                // Here we DO NOT. This filter is part of the internal impl of cache. This does suck but it does work
+                guard let encodedCache = String(data: (try JSONEncoder().encode(self.cache)), encoding: .utf8) else {
+                    print("\(self.TAG) Cannot get the encoded cache for manifest storage")
+                    return
+                }
+                
+                UserDefaults.standard.set(encodedCache, forKey: cachePreferencesKey)
+                UserDefaults.standard.synchronize()
+            }
+        } catch {
+            print("\(self.TAG) Cannot save manifest storage into device storage. Error: \(error.localizedDescription)")
         }
     }
 }

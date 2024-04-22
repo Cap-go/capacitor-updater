@@ -581,9 +581,6 @@ extension CustomError: LocalizedError {
         var resultArr: Array<(any Error)?> = Array(repeating: nil, count: manifest.count)
         
         // First of all, we will copy the storage manifests entries
-        let copiedManifestEntries = manifestStorage.locked {
-            (storage) -> [String : ManifestEntry] in return storage.getEntries().mapValues ({ $0.copy() })
-        }
         let id: String = self.randomString(length: 10)
         
         // Now let's prepare the base folder for downloading
@@ -603,7 +600,7 @@ extension CustomError: LocalizedError {
                     resultArr[i] = error
                 }
                                 
-                if let manifestEntry = copiedManifestEntries[downloadManifestEntry.file_hash] {
+                if let manifestEntry = self.manifestStorage.cache[downloadManifestEntry.file_hash] {
                     print("\(self.TAG) Do not download, unzip \(downloadManifestEntry.file_name), \(Thread.current)")
                     
                     guard let toCopyFrom = manifestEntry.copyUrl() else {
@@ -643,7 +640,7 @@ extension CustomError: LocalizedError {
                         return (fileUrl, [.removePreviousFile, .createIntermediateDirectories])
                     }
                     
-                    let request = AF.download(downloadManifestEntry.download_url)
+                    let request = AF.download(downloadManifestEntry.download_url).validate(statusCode: 200..<300)
                     
                     request.responseData(queue: .global(qos: .background), completionHandler: { (response) in
                         defer {
@@ -666,13 +663,14 @@ extension CustomError: LocalizedError {
                                     mainError = error as NSError
                                 }
                                 
-                                print("yes")
+                                let newEntry = ManifestEntry(filePath: fileUrl, hash: downloadManifestEntry.file_hash, type: .url)
+                                manifestStorage.cache[newEntry.hash] = newEntry
                             }else {
                                 let error = "Cannot find fileURL in the response"
                                 mainError = NSError(domain: error, code: 9)
                             }
                         case let .failure(error):
-                            print("\(self.TAG) download error", response.value ?? "", error)
+                            print("\(self.TAG) download error: \(error) Detiald error: \(response.debugDescription)")
                             mainError = error as NSError
                         }
                     })
@@ -701,6 +699,9 @@ extension CustomError: LocalizedError {
         if (!fails.isEmpty) {
             throw NSError(domain: "1 or more download job failed, please check logs", code: 7, userInfo: nil)
         }
+        
+        // Let's save the manifest
+        manifestStorage.saveToDeviceStorage()
         
         // There is NO checksum with partial ;-)
         let info: BundleInfo = BundleInfo(id: id, version: version, status: BundleStatus.PENDING, downloaded: Date(), checksum: "")

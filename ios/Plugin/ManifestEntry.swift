@@ -7,14 +7,16 @@
 
 import Foundation
 
-enum ManifestEntryType {
+enum ManifestEntryType: Codable {
     case builtin, url
 }
 
-public class ManifestEntry {
+public class ManifestEntry: Codable {
     private var storagePathList = [URL]()
+    // This lock is swift specific, swift does not have synchronized as java has. It's required to ensure thread safety
+    private var lock = UnfairLock()
     let hash: String
-    private let type: ManifestEntryType
+    let type: ManifestEntryType
     
     init(filePath: URL, hash: String, type: ManifestEntryType) {
         self.storagePathList.append(filePath)
@@ -34,5 +36,11 @@ public class ManifestEntry {
     
     public func copy() -> ManifestEntry {
         return ManifestEntry(storagePathList: self.storagePathList.map { URL(string: $0.absoluteString)! }, hash: self.hash, type: self.type)
+    }
+    
+    // We DO NOT want to encode the lock.
+    // This enum means that lock will be skipped during encoding
+    private enum CodingKeys: String, CodingKey {
+        case hash, type, storagePathList
     }
 }
