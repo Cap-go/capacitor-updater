@@ -15,11 +15,14 @@ import android.util.Log;
 
 import androidx.annotation.NonNull;
 
+import java.io.BufferedReader;
 import java.io.DataInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLConnection;
 import java.security.GeneralSecurityException;
@@ -195,12 +198,34 @@ public class DownloadServiceV2 extends IntentService {
       String finalDest = dest + "/" + manifestEntry.getFileName();
       String fullPath;
 
+      InputStream is;
+
       try {
         final URL u = manifestEntry.getDownloadUrl();
         final URLConnection connection = u.openConnection();
 
+        if (connection instanceof HttpURLConnection) {
+
+          HttpURLConnection urlConnection = ((HttpURLConnection) connection);
+          urlConnection.setInstanceFollowRedirects(true);
+          urlConnection.setConnectTimeout(10_000);
+          urlConnection.setReadTimeout(10_000);
+          urlConnection.connect();
+
+          int responseCode = urlConnection.getResponseCode();
+          if (!(responseCode >= 200 && responseCode < 300)) {
+            // Here we know sth went really wrong
+            throw new RuntimeException("Could not open output stream for download url. Error code: " + responseCode);
+          }
+
+          is = urlConnection.getInputStream();
+
+        } else {
+          // Illegal url?? How did we get here????
+          throw new RuntimeException("URL " + u.toString() + " is not a valid http url????");
+        }
+
         try (
-          final InputStream is = u.openStream();
           InputStream dis = (cipher != null) ? new GZIPInputStream(new CipherInputStream(new DataInputStream(is), cipher)) : new GZIPInputStream(new DataInputStream(is));
         ) {
           final File target = new File(documentsDir, finalDest);
