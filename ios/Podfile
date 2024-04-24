@@ -9,6 +9,7 @@ def capacitor_pods
   pod 'Alamofire'
   pod 'Version'
   pod 'GZIP', '~> 1.3'
+  pod 'SwiftyRSA'
 end
 
 target 'Plugin' do

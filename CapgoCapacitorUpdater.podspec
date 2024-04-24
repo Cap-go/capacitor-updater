@@ -17,5 +17,6 @@ Pod::Spec.new do |s|
   s.dependency 'Alamofire'
   s.dependency 'Version'
   s.dependency 'GZIP', '~> 1.3'
+  s.dependency 'SwiftyRSA'
   s.swift_version = '5.1'
 end
