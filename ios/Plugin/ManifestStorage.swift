@@ -7,7 +7,6 @@
 
 import Foundation
 import CommonCrypto
-import Cache
 
 extension Data{
     public func sha256() -> String{

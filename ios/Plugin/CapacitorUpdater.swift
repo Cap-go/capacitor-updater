@@ -9,6 +9,7 @@ import SSZipArchive
 import Alamofire
 import zlib
 import GZIP
+import SwiftyRSA
 
 
 extension URL {
@@ -175,6 +176,7 @@ enum CustomError: Error {
     case cannotUnflat
     case cannotCreateDirectory
     case cannotDeleteDirectory
+    case cannotDecryptSessionKey
 
     // Throw in all other cases
     case unexpected(code: Int)
@@ -211,12 +213,17 @@ extension CustomError: LocalizedError {
         case .cannotDecode:
             return NSLocalizedString(
                 "Decoding the zip failed with this key",
-                comment: "Invalid private key"
+                comment: "Invalid public key"
             )
         case .cannotWrite:
             return NSLocalizedString(
                 "Cannot write to the destination",
                 comment: "Invalid destination"
+            )
+        case .cannotDecryptSessionKey:
+            return NSLocalizedString(
+                "Decrypting the session key failed",
+                comment: "Invalid session key"
             )
         }
     }
@@ -247,7 +254,8 @@ extension CustomError: LocalizedError {
     public var defaultChannel: String = ""
     public var appId: String = ""
     public var deviceID = UIDevice.current.identifierForVendor?.uuidString ?? ""
-    public var privateKey: String = ""
+    public var publicKey: String? = ""
+    public var hasOldPrivateKeyPropertyInConfig: Bool = false
     public var manifestStorage = ManifestStorage()
 
 
@@ -375,13 +383,13 @@ extension CustomError: LocalizedError {
     }
 
     private func decryptData(data: Data, sessionKey: String, version: String) throws -> Data? {
-        if self.privateKey.isEmpty || sessionKey.isEmpty  || sessionKey.components(separatedBy: ":").count != 2 {
-            print("\(self.TAG) Cannot found privateKey or sessionKey")
+        if self.publicKey != nil && self.publicKey!.isEmpty || sessionKey.isEmpty  || sessionKey.components(separatedBy: ":").count != 2 {
+            print("\(self.TAG) Cannot find public key or sessionKey")
             return nil
         }
         do {
-            guard let rsaPrivateKey: RSAPrivateKey = .load(rsaPrivateKey: self.privateKey) else {
-                print("cannot decode privateKey", self.privateKey)
+            guard let rsaPublicKey: RSAPublicKey = .load(rsaPublicKey: self.publicKey!) else {
+                print("cannot decode publicKey", self.publicKey!)
                 throw CustomError.cannotDecode
             }
 
@@ -395,13 +403,13 @@ extension CustomError: LocalizedError {
                 throw NSError(domain: "Invalid session key data", code: 1, userInfo: nil)
             }
 
-            guard let sessionKeyDataDecrypted = rsaPrivateKey.decrypt(data: sessionKeyDataEncrypted) else {
+            guard let sessionKeyDataDecrypted = rsaPublicKey.decrypt(data: sessionKeyDataEncrypted) else {
                 throw NSError(domain: "Failed to decrypt session key data", code: 2, userInfo: nil)
             }
 
-            let aesPrivateKey = AES128Key(iv: ivData, aes128Key: sessionKeyDataDecrypted)
-
-            guard let decryptedData = aesPrivateKey.decrypt(data: data) else {
+            let aesPublicKey = AES128Key(iv: ivData, aes128Key: sessionKeyDataDecrypted)
+            
+            guard let decryptedData = aesPublicKey.decrypt(data: data) else {
                 throw NSError(domain: "Failed to decrypt data", code: 4, userInfo: nil)   
             }
 
