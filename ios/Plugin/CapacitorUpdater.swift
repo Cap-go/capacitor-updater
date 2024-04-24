@@ -374,10 +374,10 @@ extension CustomError: LocalizedError {
         }
     }
 
-    private func decryptFile(filePath: URL, sessionKey: String, version: String) throws {
+    private func decryptData(data: Data, sessionKey: String, version: String) throws -> Data? {
         if self.privateKey.isEmpty || sessionKey.isEmpty  || sessionKey.components(separatedBy: ":").count != 2 {
             print("\(self.TAG) Cannot found privateKey or sessionKey")
-            return
+            return nil
         }
         do {
             guard let rsaPrivateKey: RSAPrivateKey = .load(rsaPrivateKey: self.privateKey) else {
@@ -395,24 +395,21 @@ extension CustomError: LocalizedError {
                 throw NSError(domain: "Invalid session key data", code: 1, userInfo: nil)
             }
 
-            guard let sessionKeyDataDecrypted = try? rsaPrivateKey.decrypt(data: sessionKeyDataEncrypted) else {
+            guard let sessionKeyDataDecrypted = rsaPrivateKey.decrypt(data: sessionKeyDataEncrypted) else {
                 throw NSError(domain: "Failed to decrypt session key data", code: 2, userInfo: nil)
             }
 
             let aesPrivateKey = AES128Key(iv: ivData, aes128Key: sessionKeyDataDecrypted)
 
-            guard let encryptedData = try? Data(contentsOf: filePath) else {
-                throw NSError(domain: "Failed to read encrypted data", code: 3, userInfo: nil)
+            guard let decryptedData = aesPrivateKey.decrypt(data: data) else {
+                throw NSError(domain: "Failed to decrypt data", code: 4, userInfo: nil)   
             }
 
-            guard let decryptedData = try? aesPrivateKey.decrypt(data: encryptedData) else {
-                throw NSError(domain: "Failed to decrypt data", code: 4, userInfo: nil)
-            }
-
-            try decryptedData.write(to: filePath)
+            return decryptedData
         } catch {
-            print("\(self.TAG) Cannot decode: \(filePath.path)", error)
-            self.sendStats(action: "decrypt_fail", versionName: version)
+            print("\(self.TAG) Cannot decode file for version: \(version)", error)
+            // TODO: figure out error handling for partial
+            // self.sendStats(action: "decrypt_fail", versionName: version)
             throw CustomError.cannotDecode
         }
     }
@@ -534,7 +531,7 @@ extension CustomError: LocalizedError {
                 case .success:
                     self.notifyDownload(id, 71)
                     do {
-                        try self.decryptFile(filePath: fileURL, sessionKey: sessionKey, version: version)
+                        // try self.decryptFile(filePath: fileURL, sessionKey: sessionKey, version: version)
                         checksum = self.getChecksum(filePath: fileURL)
                         try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.documentsDir.appendingPathComponent(self.bundleDirectoryHot))
                         self.notifyDownload(id, 85)
@@ -616,6 +613,8 @@ extension CustomError: LocalizedError {
                         resultArr[i] = error
                     }
                     
+                    // Add the filepath into manifest storage
+                    manifestEntry.addPath(fileUrl)
                 } else {
                     // Here we will download - this will not be easy
                     print("\(self.TAG) Not found, please download \(downloadManifestEntry.file_name), \(Thread.current)")
@@ -650,7 +649,23 @@ extension CustomError: LocalizedError {
                         switch response.result {
                         case .success:
                             if let responseData = response.value {
-                                guard let unzipped = (responseData as NSData).gunzipped() as Data? else {
+                                //We MIGHT need to decrypt before unzip
+                                // It goes like this in the cli: gzip => encrypt
+                                // So here it will be: decrypt => unzip
+                                
+                                // It's slightly cryptic
+                                // We do the following:
+                                // Declare decrypedData -> try catch block to try to decrypt -> if null (encryption disabled) set the decrypedData to responseData
+                                var decrypedData: Data
+                                do {
+                                    decrypedData = try self.decryptData(data: responseData, sessionKey: sessionKey, version: version) ?? responseData
+                                } catch {
+                                    print("\(self.TAG) Cannot decrypt file \(fileUrl.absoluteString). Error: \(error.localizedDescription)")
+                                    mainError = error as NSError
+                                    return
+                                }
+                                
+                                guard let unzipped = (decrypedData as NSData).gunzipped() as Data? else {
                                     let error = "Cannot unzip data"
                                     mainError = NSError(domain: error, code: 9)
                                     return
@@ -661,6 +676,7 @@ extension CustomError: LocalizedError {
                                 } catch {
                                     print("\(self.TAG) Cannot save file in the filesystem. Error: \(error.localizedDescription)")
                                     mainError = error as NSError
+                                    return
                                 }
                                 
                                 let newEntry = ManifestEntry(filePath: fileUrl, hash: downloadManifestEntry.file_hash, type: .url)

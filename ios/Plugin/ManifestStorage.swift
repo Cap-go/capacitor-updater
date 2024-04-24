@@ -7,6 +7,7 @@
 
 import Foundation
 import CommonCrypto
+import Cache
 
 extension Data{
     public func sha256() -> String{
@@ -64,7 +65,7 @@ public class ManifestStorage {
     // Shared (ios <-> android)
     // internal var manifestHashMap: [String: ManifestEntry] = [:]
     
-     lazy var cache = {
+    lazy var cache: Cache<String, ManifestEntry> = {
         guard let savedCache = UserDefaults.standard.string(forKey: self.cachePreferencesKey) else {
             return Cache<String, ManifestEntry>()
         }
@@ -120,8 +121,9 @@ public class ManifestStorage {
     
     // Init in android
     func initialize() {
-        UserDefaults.standard.removeObject(forKey: cachePreferencesKey)
-        UserDefaults.standard.synchronize()
+        // TODO: remove this debug
+        // UserDefaults.standard.removeObject(forKey: cachePreferencesKey)
+        // UserDefaults.standard.synchronize()
 
         
         guard let buildIn = loadBuiltinManifest() else {

@@ -34,6 +34,12 @@ public class ManifestEntry: Codable {
         return self.storagePathList.first
     }
     
+    public func addPath(_ path: URL) {
+        self.lock.locked {
+            self.storagePathList.append(path)
+        }
+    }
+    
     public func copy() -> ManifestEntry {
         return ManifestEntry(storagePathList: self.storagePathList.map { URL(string: $0.absoluteString)! }, hash: self.hash, type: self.type)
     }
