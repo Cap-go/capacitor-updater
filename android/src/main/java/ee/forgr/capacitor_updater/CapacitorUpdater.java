@@ -105,9 +105,8 @@ public class CapacitorUpdater {
 
   private boolean isEmulator() {
     return (
-      (
-        Build.BRAND.startsWith("generic") && Build.DEVICE.startsWith("generic")
-      ) ||
+      (Build.BRAND.startsWith("generic") &&
+        Build.DEVICE.startsWith("generic")) ||
       Build.FINGERPRINT.startsWith("generic") ||
       Build.FINGERPRINT.startsWith("unknown") ||
       Build.HARDWARE.contains("goldfish") ||

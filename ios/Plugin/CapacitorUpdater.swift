@@ -684,10 +684,10 @@ extension CustomError: LocalizedError {
         let bundleIndo: BundleInfo = self.getBundleInfo(id: id)
         if
             destHot.exist &&
-            destHot.isDirectory &&
-            !indexHot.isDirectory &&
-            indexHot.exist &&
-            !bundleIndo.isDeleted() {
+                destHot.isDirectory &&
+                !indexHot.isDirectory &&
+                indexHot.exist &&
+                !bundleIndo.isDeleted() {
             return true
         }
         return false

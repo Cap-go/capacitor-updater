@@ -426,7 +426,7 @@ export interface CapacitorUpdaterPlugin {
    */
   addListener(
     eventName: "download",
-    listenerFunc: (state: DownloadEvent) => void
+    listenerFunc: (state: DownloadEvent) => void,
   ): Promise<PluginListenerHandle>;
 
   /**
@@ -436,7 +436,7 @@ export interface CapacitorUpdaterPlugin {
    */
   addListener(
     eventName: "noNeedUpdate",
-    listenerFunc: (state: NoNeedEvent) => void
+    listenerFunc: (state: NoNeedEvent) => void,
   ): Promise<PluginListenerHandle>;
 
   /**
@@ -446,7 +446,7 @@ export interface CapacitorUpdaterPlugin {
    */
   addListener(
     eventName: "updateAvailable",
-    listenerFunc: (state: UpdateAvailableEvent) => void
+    listenerFunc: (state: UpdateAvailableEvent) => void,
   ): Promise<PluginListenerHandle>;
 
   /**
@@ -456,7 +456,7 @@ export interface CapacitorUpdaterPlugin {
    */
   addListener(
     eventName: "downloadComplete",
-    listenerFunc: (state: DownloadCompleteEvent) => void
+    listenerFunc: (state: DownloadCompleteEvent) => void,
   ): Promise<PluginListenerHandle>;
 
   /**
@@ -466,7 +466,7 @@ export interface CapacitorUpdaterPlugin {
    */
   addListener(
     eventName: "majorAvailable",
-    listenerFunc: (state: MajorAvailableEvent) => void
+    listenerFunc: (state: MajorAvailableEvent) => void,
   ): Promise<PluginListenerHandle>;
 
   /**
@@ -476,7 +476,7 @@ export interface CapacitorUpdaterPlugin {
    */
   addListener(
     eventName: "updateFailed",
-    listenerFunc: (state: UpdateFailedEvent) => void
+    listenerFunc: (state: UpdateFailedEvent) => void,
   ): Promise<PluginListenerHandle>;
 
   /**
@@ -486,7 +486,7 @@ export interface CapacitorUpdaterPlugin {
    */
   addListener(
     eventName: "downloadFailed",
-    listenerFunc: (state: DownloadFailedEvent) => void
+    listenerFunc: (state: DownloadFailedEvent) => void,
   ): Promise<PluginListenerHandle>;
 
   /**
@@ -496,7 +496,7 @@ export interface CapacitorUpdaterPlugin {
    */
   addListener(
     eventName: "appReloaded",
-    listenerFunc: () => void
+    listenerFunc: () => void,
   ): Promise<PluginListenerHandle>;
 
   /**
@@ -506,7 +506,7 @@ export interface CapacitorUpdaterPlugin {
    */
   addListener(
     eventName: "appReady",
-    listenerFunc: (state: AppReadyEvent) => void
+    listenerFunc: (state: AppReadyEvent) => void,
   ): Promise<PluginListenerHandle>;
 }
 

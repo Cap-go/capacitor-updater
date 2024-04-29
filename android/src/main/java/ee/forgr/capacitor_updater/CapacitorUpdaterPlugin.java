@@ -103,47 +103,44 @@ public class CapacitorUpdaterPlugin extends Plugin {
   @Override
   public void load() {
     super.load();
-    this.prefs =
-      this.getContext()
-        .getSharedPreferences(
-          WebView.WEBVIEW_PREFS_NAME,
-          Activity.MODE_PRIVATE
-        );
+    this.prefs = this.getContext()
+      .getSharedPreferences(WebView.WEBVIEW_PREFS_NAME, Activity.MODE_PRIVATE);
     this.editor = this.prefs.edit();
 
     try {
-      this.implementation =
-        new CapacitorUpdater() {
-          @Override
-          public void notifyDownload(final String id, final int percent) {
-            CapacitorUpdaterPlugin.this.notifyDownload(id, percent);
-          }
+      this.implementation = new CapacitorUpdater() {
+        @Override
+        public void notifyDownload(final String id, final int percent) {
+          CapacitorUpdaterPlugin.this.notifyDownload(id, percent);
+        }
 
-          @Override
-          public void directUpdateFinish(final BundleInfo latest) {
-            CapacitorUpdaterPlugin.this.directUpdateFinish(latest);
-          }
+        @Override
+        public void directUpdateFinish(final BundleInfo latest) {
+          CapacitorUpdaterPlugin.this.directUpdateFinish(latest);
+        }
 
-          @Override
-          public void notifyListeners(final String id, final JSObject res) {
-            CapacitorUpdaterPlugin.this.notifyListeners(id, res);
-          }
-        };
+        @Override
+        public void notifyListeners(final String id, final JSObject res) {
+          CapacitorUpdaterPlugin.this.notifyListeners(id, res);
+        }
+      };
       final PackageInfo pInfo =
         this.getContext()
           .getPackageManager()
           .getPackageInfo(this.getContext().getPackageName(), 0);
       this.implementation.activity = this.getActivity();
-      this.implementation.versionBuild =
-        this.getConfig().getString("version", pInfo.versionName);
+      this.implementation.versionBuild = this.getConfig()
+        .getString("version", pInfo.versionName);
       this.implementation.PLUGIN_VERSION = this.PLUGIN_VERSION;
       this.implementation.versionCode = Integer.toString(pInfo.versionCode);
-      this.implementation.requestQueue =
-        Volley.newRequestQueue(this.getContext());
-      this.implementation.directUpdate =
-        this.getConfig().getBoolean("directUpdate", false);
-      this.currentVersionNative =
-        new Version(this.getConfig().getString("version", pInfo.versionName));
+      this.implementation.requestQueue = Volley.newRequestQueue(
+        this.getContext()
+      );
+      this.implementation.directUpdate = this.getConfig()
+        .getBoolean("directUpdate", false);
+      this.currentVersionNative = new Version(
+        this.getConfig().getString("version", pInfo.versionName)
+      );
     } catch (final PackageManager.NameNotFoundException e) {
       Log.e(CapacitorUpdater.TAG, "Error instantiating implementation", e);
       return;
@@ -156,15 +153,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
       return;
     }
     final CapConfig config = CapConfig.loadDefault(this.getActivity());
-    this.implementation.appId =
-      InternalUtils.getPackageName(
-        getContext().getPackageManager(),
-        getContext().getPackageName()
-      );
-    this.implementation.appId =
-      config.getString("appId", this.implementation.appId);
-    this.implementation.appId =
-      this.getConfig().getString("appId", this.implementation.appId);
+    this.implementation.appId = InternalUtils.getPackageName(
+      getContext().getPackageManager(),
+      getContext().getPackageName()
+    );
+    this.implementation.appId = config.getString(
+      "appId",
+      this.implementation.appId
+    );
+    this.implementation.appId = this.getConfig()
+      .getString("appId", this.implementation.appId);
     if (
       this.implementation.appId == null || this.implementation.appId.isEmpty()
     ) {
@@ -174,15 +172,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
       );
     }
     Log.i(CapacitorUpdater.TAG, "appId: " + implementation.appId);
-    this.implementation.privateKey =
-      this.getConfig().getString("privateKey", defaultPrivateKey);
-    this.implementation.statsUrl =
-      this.getConfig().getString("statsUrl", statsUrlDefault);
-    this.implementation.channelUrl =
-      this.getConfig().getString("channelUrl", channelUrlDefault);
+    this.implementation.privateKey = this.getConfig()
+      .getString("privateKey", defaultPrivateKey);
+    this.implementation.statsUrl = this.getConfig()
+      .getString("statsUrl", statsUrlDefault);
+    this.implementation.channelUrl = this.getConfig()
+      .getString("channelUrl", channelUrlDefault);
     int userValue = this.getConfig().getInt("periodCheckDelay", 0);
-    this.implementation.defaultChannel =
-      this.getConfig().getString("defaultChannel", "");
+    this.implementation.defaultChannel = this.getConfig()
+      .getString("defaultChannel", "");
 
     if (userValue >= 0 && userValue <= 600) {
       this.periodCheckDelay = 600 * 1000;
@@ -194,8 +192,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
     this.implementation.prefs = this.prefs;
     this.implementation.editor = this.editor;
     this.implementation.versionOs = Build.VERSION.RELEASE;
-    this.implementation.deviceID =
-      this.prefs.getString("appUUID", UUID.randomUUID().toString());
+    this.implementation.deviceID = this.prefs.getString(
+        "appUUID",
+        UUID.randomUUID().toString()
+      );
     this.editor.putString("appUUID", this.implementation.deviceID);
     Log.i(
       CapacitorUpdater.TAG,
@@ -205,15 +205,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
       CapacitorUpdater.TAG,
       "version native " + this.currentVersionNative.getOriginalString()
     );
-    this.autoDeleteFailed =
-      this.getConfig().getBoolean("autoDeleteFailed", true);
-    this.autoDeletePrevious =
-      this.getConfig().getBoolean("autoDeletePrevious", true);
+    this.autoDeleteFailed = this.getConfig()
+      .getBoolean("autoDeleteFailed", true);
+    this.autoDeletePrevious = this.getConfig()
+      .getBoolean("autoDeletePrevious", true);
     this.updateUrl = this.getConfig().getString("updateUrl", updateUrlDefault);
     this.autoUpdate = this.getConfig().getBoolean("autoUpdate", true);
     this.appReadyTimeout = this.getConfig().getInt("appReadyTimeout", 10000);
-    this.implementation.timeout =
-      this.getConfig().getInt("responseTimeout", 20) * 1000;
+    this.implementation.timeout = this.getConfig()
+      .getInt("responseTimeout", 20) *
+    1000;
     boolean resetWhenUpdate =
       this.getConfig().getBoolean("resetWhenUpdate", true);
 
@@ -500,8 +501,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
               }
               call.resolve(res);
             }
-          })
-      );
+          }));
     } catch (final Exception e) {
       Log.e(CapacitorUpdater.TAG, "Failed to unsetChannel: ", e);
       call.reject("Failed to unsetChannel: ", e);
@@ -527,27 +527,23 @@ public class CapacitorUpdaterPlugin extends Plugin {
         "setChannel " + channel + " triggerAutoUpdate: " + triggerAutoUpdate
       );
       startNewThread(() ->
-        CapacitorUpdaterPlugin.this.implementation.setChannel(
-            channel,
-            res -> {
-              if (res.has("error")) {
-                call.reject(res.getString("error"));
-              } else {
-                if (
-                  CapacitorUpdaterPlugin.this._isAutoUpdateEnabled() &&
-                  Boolean.TRUE.equals(triggerAutoUpdate)
-                ) {
-                  Log.i(
-                    CapacitorUpdater.TAG,
-                    "Calling autoupdater after channel change!"
-                  );
-                  backgroundDownload();
-                }
-                call.resolve(res);
+        CapacitorUpdaterPlugin.this.implementation.setChannel(channel, res -> {
+            if (res.has("error")) {
+              call.reject(res.getString("error"));
+            } else {
+              if (
+                CapacitorUpdaterPlugin.this._isAutoUpdateEnabled() &&
+                Boolean.TRUE.equals(triggerAutoUpdate)
+              ) {
+                Log.i(
+                  CapacitorUpdater.TAG,
+                  "Calling autoupdater after channel change!"
+                );
+                backgroundDownload();
               }
+              call.resolve(res);
             }
-          )
-      );
+          }));
     } catch (final Exception e) {
       Log.e(CapacitorUpdater.TAG, "Failed to setChannel: " + channel, e);
       call.reject("Failed to setChannel: " + channel, e);
@@ -565,8 +561,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             } else {
               call.resolve(res);
             }
-          })
-      );
+          }));
     } catch (final Exception e) {
       Log.e(CapacitorUpdater.TAG, "Failed to getChannel", e);
       call.reject("Failed to getChannel", e);
@@ -785,8 +780,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
             call.resolve(ret);
           }
-        )
-    );
+        ));
   }
 
   private boolean _reset(final Boolean toLastSuccessful) {
@@ -1489,15 +1483,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
         if (backgroundTask != null) {
           backgroundTask.interrupt();
         }
-        backgroundTask =
-          startNewThread(
-            () -> {
-              taskRunning = false;
-              _checkCancelDelay(false);
-              installNext();
-            },
-            timeout
-          );
+        backgroundTask = startNewThread(
+          () -> {
+            taskRunning = false;
+            _checkCancelDelay(false);
+            installNext();
+          },
+          timeout
+        );
       } else {
         this._checkCancelDelay(false);
         this.installNext();
@@ -1523,9 +1516,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
       ActivityManager.RecentTaskInfo runningTask = runningTasks
         .get(0)
         .getTaskInfo();
-      String className = Objects
-        .requireNonNull(runningTask.baseIntent.getComponent())
-        .getClassName();
+      String className = Objects.requireNonNull(
+        runningTask.baseIntent.getComponent()
+      ).getClassName();
       assert runningTask.topActivity != null;
       String runningActivity = runningTask.topActivity.getClassName();
       return className.equals(runningActivity);
