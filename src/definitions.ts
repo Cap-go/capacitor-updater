@@ -427,7 +427,7 @@ export interface CapacitorUpdaterPlugin {
   addListener(
     eventName: "download",
     listenerFunc: (state: DownloadEvent) => void
-  ): Promise<PluginListenerHandle> & PluginListenerHandle;
+  ): Promise<PluginListenerHandle>;
 
   /**
    * Listen for no need to update event, useful when you want force check every time the app is launched
@@ -437,7 +437,7 @@ export interface CapacitorUpdaterPlugin {
   addListener(
     eventName: "noNeedUpdate",
     listenerFunc: (state: NoNeedEvent) => void
-  ): Promise<PluginListenerHandle> & PluginListenerHandle;
+  ): Promise<PluginListenerHandle>;
 
   /**
    * Listen for available update event, useful when you want to force check every time the app is launched
@@ -447,7 +447,7 @@ export interface CapacitorUpdaterPlugin {
   addListener(
     eventName: "updateAvailable",
     listenerFunc: (state: UpdateAvailableEvent) => void
-  ): Promise<PluginListenerHandle> & PluginListenerHandle;
+  ): Promise<PluginListenerHandle>;
 
   /**
    * Listen for downloadComplete events.
@@ -457,7 +457,7 @@ export interface CapacitorUpdaterPlugin {
   addListener(
     eventName: "downloadComplete",
     listenerFunc: (state: DownloadCompleteEvent) => void
-  ): Promise<PluginListenerHandle> & PluginListenerHandle;
+  ): Promise<PluginListenerHandle>;
 
   /**
    * Listen for Major update event in the App, let you know when major update is blocked by setting disableAutoUpdateBreaking
@@ -467,7 +467,7 @@ export interface CapacitorUpdaterPlugin {
   addListener(
     eventName: "majorAvailable",
     listenerFunc: (state: MajorAvailableEvent) => void
-  ): Promise<PluginListenerHandle> & PluginListenerHandle;
+  ): Promise<PluginListenerHandle>;
 
   /**
    * Listen for update fail event in the App, let you know when update has fail to install at next app start
@@ -477,7 +477,7 @@ export interface CapacitorUpdaterPlugin {
   addListener(
     eventName: "updateFailed",
     listenerFunc: (state: UpdateFailedEvent) => void
-  ): Promise<PluginListenerHandle> & PluginListenerHandle;
+  ): Promise<PluginListenerHandle>;
 
   /**
    * Listen for download fail event in the App, let you know when a bundle download has failed
@@ -487,7 +487,7 @@ export interface CapacitorUpdaterPlugin {
   addListener(
     eventName: "downloadFailed",
     listenerFunc: (state: DownloadFailedEvent) => void
-  ): Promise<PluginListenerHandle> & PluginListenerHandle;
+  ): Promise<PluginListenerHandle>;
 
   /**
    *  Listen for reload event in the App, let you know when reload has happened
@@ -497,7 +497,7 @@ export interface CapacitorUpdaterPlugin {
   addListener(
     eventName: "appReloaded",
     listenerFunc: () => void
-  ): Promise<PluginListenerHandle> & PluginListenerHandle;
+  ): Promise<PluginListenerHandle>;
 
   /**
    * Listen for app ready event in the App, let you know when app is ready to use
@@ -507,7 +507,7 @@ export interface CapacitorUpdaterPlugin {
   addListener(
     eventName: "appReady",
     listenerFunc: (state: AppReadyEvent) => void
-  ): Promise<PluginListenerHandle> & PluginListenerHandle;
+  ): Promise<PluginListenerHandle>;
 }
 
 export type BundleStatus = "success" | "error" | "pending" | "downloading";

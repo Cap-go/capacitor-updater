@@ -247,7 +247,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         if BundleInfo.ID_BUILTIN == id {
             dest = Bundle.main.resourceURL!.appendingPathComponent("public")
         } else {
-            dest = self.implementation.getPathHot(id: id)
+            dest = self.implementation.getBundleDirectory(id: id)
         }
         print("\(self.implementation.TAG) Reloading \(id)")
         if let vc = bridge.viewController as? CAPBridgeViewController {

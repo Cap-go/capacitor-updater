@@ -222,7 +222,6 @@ extension CustomError: LocalizedError {
     private let versionOs = UIDevice.current.systemVersion
     private let documentsDir: URL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
     private let libraryDir: URL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
-    private let bundleDirectoryHot: String = "versions"
     private let DEFAULT_FOLDER: String = ""
     private let bundleDirectory: String = "NoCloud/ionic_built_snapshots"
     private let INFO_SUFFIX: String = "_info"
@@ -296,8 +295,7 @@ extension CustomError: LocalizedError {
         return false
         #endif
     }
-    // Persistent path /var/mobile/Containers/Data/Application/8C0C07BE-0FD3-4FD4-B7DF-90A88E12B8C3/Library/NoCloud/ionic_built_snapshots/FOLDER
-    // Hot Reload path /var/mobile/Containers/Data/Application/8C0C07BE-0FD3-4FD4-B7DF-90A88E12B8C3/Documents/FOLDER
+    // Hot Reload path /var/mobile/Containers/Data/Application/8C0C07BE-0FD3-4FD4-B7DF-90A88E12B8C3/Library/NoCloud/ionic_built_snapshots/FOLDER
     // Normal /private/var/containers/Bundle/Application/8C0C07BE-0FD3-4FD4-B7DF-90A88E12B8C3/App.app/public
 
     private func prepareFolder(source: URL) throws {
@@ -584,8 +582,7 @@ extension CustomError: LocalizedError {
                     do {
                         try self.decryptFile(filePath: fileURL, sessionKey: sessionKey, version: version)
                         checksum = self.getChecksum(filePath: fileURL)
-                        try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.documentsDir.appendingPathComponent(self.bundleDirectoryHot), notify: true)
-                        try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: false)
+                        try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: true)
                         try self.deleteFolder(source: fileURL)
                         self.notifyDownload(id, 100)
                     } catch {
@@ -629,7 +626,7 @@ extension CustomError: LocalizedError {
     }
 
     public func list() -> [BundleInfo] {
-        let dest: URL = documentsDir.appendingPathComponent(bundleDirectoryHot)
+        let dest: URL = documentsDir.appendingPathComponent(bundleDirectory)
         do {
             let files: [String] = try FileManager.default.contentsOfDirectory(atPath: dest.path)
             var res: [BundleInfo] = []
@@ -652,17 +649,11 @@ extension CustomError: LocalizedError {
             print("\(self.TAG) Cannot delete \(id)")
             return false
         }
-        let destHot: URL = documentsDir.appendingPathComponent(bundleDirectoryHot).appendingPathComponent(id)
-        let destPersist: URL = libraryDir.appendingPathComponent(bundleDirectory).appendingPathComponent(id)
+        let destHot: URL = libraryDir.appendingPathComponent(bundleDirectory).appendingPathComponent(id)
         do {
             try FileManager.default.removeItem(atPath: destHot.path)
         } catch {
-            print("\(self.TAG) Hot Folder \(destHot.path), not removed.")
-        }
-        do {
-            try FileManager.default.removeItem(atPath: destPersist.path)
-        } catch {
-            print("\(self.TAG) Folder \(destPersist.path), not removed.")
+            print("\(self.TAG) Folder \(destHot.path), not removed.")
             return false
         }
         if removeInfo {
@@ -679,10 +670,6 @@ extension CustomError: LocalizedError {
         return self.delete(id: id, removeInfo: true)
     }
 
-    public func getPathHot(id: String) -> URL {
-        return documentsDir.appendingPathComponent(self.bundleDirectoryHot).appendingPathComponent(id)
-    }
-
     public func getBundleDirectory(id: String) -> URL {
         return libraryDir.appendingPathComponent(self.bundleDirectory).appendingPathComponent(id)
     }
@@ -692,19 +679,15 @@ extension CustomError: LocalizedError {
     }
 
     private func bundleExists(id: String) -> Bool {
-        let destHot: URL = self.getPathHot(id: id)
-        let destHotPersist: URL = self.getBundleDirectory(id: id)
+        let destHot: URL = self.getBundleDirectory(id: id)
         let indexHot: URL = destHot.appendingPathComponent("index.html")
-        let indexPersist: URL = destHotPersist.appendingPathComponent("index.html")
         let bundleIndo: BundleInfo = self.getBundleInfo(id: id)
         if
             destHot.exist &&
-                destHot.isDirectory &&
-                destHotPersist.exist &&
-                destHotPersist.isDirectory &&
-                indexHot.exist &&
-                indexPersist.exist &&
-                !bundleIndo.isDeleted() {
+            destHot.isDirectory &&
+            !indexHot.isDirectory &&
+            indexHot.exist &&
+            !bundleIndo.isDeleted() {
             return true
         }
         return false
