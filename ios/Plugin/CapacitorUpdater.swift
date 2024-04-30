@@ -238,7 +238,6 @@ extension CustomError: LocalizedError {
     private let libraryDir: URL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
     private let bundleDirectoryHot: String = "versions"
     private let DEFAULT_FOLDER: String = ""
-    private let bundleDirectory: String = "NoCloud/ionic_built_snapshots"
     private let INFO_SUFFIX: String = "_info"
     private let FALLBACK_VERSION: String = "pastVersion"
     private let NEXT_VERSION: String = "nextVersion"
@@ -516,69 +515,7 @@ extension CustomError: LocalizedError {
     }
 
     public func download(url: URL, version: String, sessionKey: String) throws -> BundleInfo {
-        let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
-        let id: String = self.randomString(length: 10)
-        var checksum: String = ""
-
-        var mainError: NSError?
-        let destination: DownloadRequest.Destination = { _, _ in
-            let documentsURL: URL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            let fileURL: URL = documentsURL.appendingPathComponent(self.randomString(length: 10))
-
-            return (fileURL, [.removePreviousFile, .createIntermediateDirectories])
-        }
-        let request = AF.download(url, to: destination)
-
-        request.downloadProgress { progress in
-            let percent = self.calcTotalPercent(percent: Int(progress.fractionCompleted * 100), min: 10, max: 70)
-            self.notifyDownload(id, percent)
-        }
-        request.responseURL(queue: .global(qos: .background), completionHandler: { (response) in
-            if let fileURL = response.fileURL {
-                switch response.result {
-                case .success:
-                    self.notifyDownload(id, 71)
-                    do {
-                        // try self.decryptFile(filePath: fileURL, sessionKey: sessionKey, version: version)
-                        checksum = self.getChecksum(filePath: fileURL)
-                        try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.documentsDir.appendingPathComponent(self.bundleDirectoryHot))
-                        self.notifyDownload(id, 85)
-                        try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory))
-                        self.notifyDownload(id, 100)
-                        try self.deleteFolder(source: fileURL)
-                    } catch {
-                        print("\(self.TAG) download unzip error", error)
-                        mainError = error as NSError
-                    }
-                case let .failure(error):
-                    print("\(self.TAG) download error", response.value ?? "", error)
-                    mainError = error as NSError
-                }
-            }
-            semaphore.signal()
-        })
-        self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.DOWNLOADING, downloaded: Date(), checksum: checksum))
-        self.notifyDownload(id, 0)
-        let reachabilityManager = NetworkReachabilityManager()
-        reachabilityManager?.startListening { status in
-            switch status {
-            case .notReachable:
-                // Stop the download request if the network is not reachable
-                request.cancel()
-                mainError = NSError(domain: NSURLErrorDomain, code: NSURLErrorNotConnectedToInternet, userInfo: nil)
-                semaphore.signal()
-            default:
-                break
-            }
-        }
-        semaphore.wait()
-        reachabilityManager?.stopListening()
-        if let error = mainError {
-            throw error
-        }
-        let info: BundleInfo = BundleInfo(id: id, version: version, status: BundleStatus.PENDING, downloaded: Date(), checksum: checksum)
-        self.saveBundleInfo(id: id, bundle: info)
-        return info
+        throw NSError(domain: "No longer supported", code: 0, userInfo: nil)
     }
     
     public func downloadV2(manifestStorage: ManifestStorage, manifest: [DownloadManifestEntry], version: String, sessionKey: String) throws -> BundleInfo {
@@ -666,7 +603,8 @@ extension CustomError: LocalizedError {
                                 // Declare decrypedData -> try catch block to try to decrypt -> if null (encryption disabled) set the decrypedData to responseData
                                 var decrypedData: Data
                                 do {
-                                    decrypedData = try self.decryptData(data: responseData, sessionKey: sessionKey, version: version) ?? responseData
+                                    // TODO: renable encryption
+                                    decrypedData = responseData // try self.decryptData(data: responseData, sessionKey: sessionKey, version: version) ?? responseData
                                 } catch {
                                     print("\(self.TAG) Cannot decrypt file \(fileUrl.absoluteString). Error: \(error.localizedDescription)")
                                     mainError = error as NSError
@@ -750,6 +688,34 @@ extension CustomError: LocalizedError {
             return []
         }
     }
+    
+    // it won;t touch the files, it will just delete them from manifest storage ;)
+    private func recursiveFileDeleteAndCheck(_ base: URL) throws {
+        // do {
+        let fileList = try FileManager.default.contentsOfDirectory(at: base, includingPropertiesForKeys: nil)
+        
+        for file in fileList {
+            if (file.isDirectory) {
+                try recursiveFileDeleteAndCheck(file)
+                continue
+            }
+            
+            // Let's now get sha256 of file
+            let data = try Data(contentsOf: file)
+            let hash = data.sha256()
+            
+            guard let cacheEntry = self.manifestStorage.cache[hash] else {
+                print("\(self.TAG) Could not get cache entry \(file.absoluteString)")
+                continue
+            }
+            
+            cacheEntry.removeFilepathByBase(file.absoluteString)
+        }
+
+//        } catch {
+//            print("\(self.TAG) Cannot recursiveFileDeleteAndCheck. Error \(error.localizedDescription)")
+//        }
+    }
 
     public func delete(id: String, removeInfo: Bool) -> Bool {
         let deleted: BundleInfo = self.getBundleInfo(id: id)
@@ -757,19 +723,21 @@ extension CustomError: LocalizedError {
             print("\(self.TAG) Cannot delete \(id)")
             return false
         }
-        let destHot: URL = documentsDir.appendingPathComponent(bundleDirectoryHot).appendingPathComponent(id)
-        let destPersist: URL = libraryDir.appendingPathComponent(bundleDirectory).appendingPathComponent(id)
+        let dest: URL = documentsDir.appendingPathComponent(bundleDirectoryHot).appendingPathComponent(id)
+        
         do {
-            try FileManager.default.removeItem(atPath: destHot.path)
+            try recursiveFileDeleteAndCheck(dest)
+            self.manifestStorage.saveToDeviceStorage()
         } catch {
-            print("\(self.TAG) Hot Folder \(destHot.path), not removed.")
+            print("\(self.TAG) Cannot recursiveFileDeleteAndCheck. Error \(error.localizedDescription)")
         }
+        
         do {
-            try FileManager.default.removeItem(atPath: destPersist.path)
+            try FileManager.default.removeItem(atPath: dest.path)
         } catch {
-            print("\(self.TAG) Folder \(destPersist.path), not removed.")
-            return false
+            print("\(self.TAG) Folder \(dest.path), not removed.")
         }
+        
         if removeInfo {
             self.removeBundleInfo(id: id)
         } else {
@@ -784,10 +752,6 @@ extension CustomError: LocalizedError {
         return self.delete(id: id, removeInfo: true)
     }
 
-    public func getPathHot(id: String) -> URL {
-        return documentsDir.appendingPathComponent(self.bundleDirectoryHot).appendingPathComponent(id)
-    }
-
     public func getBundleDirectory(id: String) -> URL {
         return documentsDir.appendingPathComponent(bundleDirectoryHot).appendingPathComponent(id)
     }
@@ -797,18 +761,14 @@ extension CustomError: LocalizedError {
     }
 
     private func bundleExists(id: String) -> Bool {
-        let destHot: URL = self.getPathHot(id: id)
-        let destHotPersist: URL = self.getBundleDirectory(id: id)
-        let indexHot: URL = destHot.appendingPathComponent("index.html")
-        let indexPersist: URL = destHotPersist.appendingPathComponent("index.html")
+        let dest: URL = self.getBundleDirectory(id: id)
+        let index: URL = dest.appendingPathComponent("index.html")
         let bundleIndo: BundleInfo = self.getBundleInfo(id: id)
         if
-            destHot.exist &&
-                destHot.isDirectory &&
-                destHotPersist.exist &&
-                destHotPersist.isDirectory &&
-                indexHot.exist &&
-                indexPersist.exist &&
+            dest.exist &&
+                dest.isDirectory &&
+                index.exist &&
+                index.exist &&
                 !bundleIndo.isDeleted() {
             return true
         }

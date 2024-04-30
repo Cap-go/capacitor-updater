@@ -39,14 +39,28 @@ private extension Cache {
     
     final class KeyTracker: NSObject, NSCacheDelegate {
         var keys = Set<Key>()
+        // This is pure stupid, i HATE this with ALL of my heart.
+        // Please, please, find a better way for this
+        // This lock is the stupidest thing
+        internal var lock = UnfairLock()
 
         func cache(_ cache: NSCache<AnyObject, AnyObject>,
                    willEvictObject object: Any) {
             guard let entry = object as? Entry else {
                 return
             }
-
-            keys.remove(entry.key)
+            
+            // Ignore the result
+            let _ = lock.locked {
+                keys.remove(entry.key)
+            }
+        }
+        
+        func addKey(_ key: Key) {
+            // Ignore the result
+            let _ = lock.locked {
+                keys.insert(key)
+            }
         }
     }
 }
@@ -79,16 +93,20 @@ extension Cache: Codable where Key: Codable, Value: Codable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         
-        try container.encode(keyTracker.keys.compactMap(entry).filter {
-            // It;s hacky but it SHOULD work.
-            // I don't encode the ManifestEntry where type = builtin
-            // This is by design - i don't want them as we will ALWAYS generate them dynamicly
-            guard let value = $0.value as? ManifestEntry else {
-                return true
+        var toEncode = keyTracker.lock.locked {
+            keyTracker.keys.compactMap(entry).filter {
+                // It;s hacky but it SHOULD work.
+                // I don't encode the ManifestEntry where type = builtin
+                // This is by design - i don't want them as we will ALWAYS generate them dynamicly
+                guard let value = $0.value as? ManifestEntry else {
+                    return true
+                }
+                
+                return value.type != .builtin
             }
-            
-            return value.type != .builtin
-        })
+        }
+        
+        try container.encode(toEncode)
     }
 }
 
@@ -101,7 +119,7 @@ final class Cache<Key: Hashable, Value> {
     
     func insert(_ value: Value, forKey key: Key) {
         let entry = Entry(key: key, value: value)
-        keyTracker.keys.insert(key)
+        keyTracker.addKey(key)
         wrapped.setObject(entry, forKey: WrappedKey(key))
     }
 
@@ -125,6 +143,18 @@ final class Cache<Key: Hashable, Value> {
     private func insert(_ entry: Entry) {
         wrapped.setObject(entry, forKey: WrappedKey(entry.key))
         keyTracker.keys.insert(entry.key)
+    }
+    
+    func forEach(_ f: (_ entry: Value) throws -> ()) throws {
+        try self.keyTracker.lock.locked {
+            try self.keyTracker.keys.forEach {
+                guard let entry = self.entry(forKey: $0) else {
+                    throw NSError(domain: "Failed to get the value for key \($0). Very invalid - should NEVER happen", code: 5, userInfo: nil)
+                }
+
+                try f(entry.value)
+            }
+        }
     }
 
     

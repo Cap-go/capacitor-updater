@@ -64,19 +64,8 @@ public class ManifestStorage {
     // Shared (ios <-> android)
     // internal var manifestHashMap: [String: ManifestEntry] = [:]
     
-    lazy var cache: Cache<String, ManifestEntry> = {
-        guard let savedCache = UserDefaults.standard.string(forKey: self.cachePreferencesKey) else {
-            return Cache<String, ManifestEntry>()
-        }
-        
-        do {
-            let decodedCache = try JSONDecoder().decode(Cache<String, ManifestEntry>.self, from: Data(savedCache.utf8))
-            return decodedCache
-        } catch {
-            print("\(self.TAG) Cannot load the saved manifes storage manifest, error: \(error)")
-            return Cache<String, ManifestEntry>()
-        }
-    }()
+    // It shoud be cheap to init an empty cache
+    var cache: Cache<String, ManifestEntry> = Cache()
     
     private func recusiveAssetFolderLoad(_ bundle: Bundle, folder: String) throws -> [URL]  {
         guard let files = bundle.urls(forResourcesWithExtension: nil, subdirectory: folder) else {
@@ -120,10 +109,28 @@ public class ManifestStorage {
     
     // Init in android
     func initialize() {
-        // TODO: remove this debug
-        // UserDefaults.standard.removeObject(forKey: cachePreferencesKey)
-        // UserDefaults.standard.synchronize()
 
+        if let savedCache = UserDefaults.standard.string(forKey: self.cachePreferencesKey) {
+            do {
+                let decodedCache = try JSONDecoder().decode(Cache<String, ManifestEntry>.self, from: Data(savedCache.utf8))
+                var shouldSave = false
+                
+                // It could throw in some very illegal and rare states of the cache
+                try decodedCache.forEach { entry in
+                    if (entry.cleanupFilePaths()) {
+                        shouldSave = true
+                    }
+                }
+                self.cache = decodedCache
+                
+                if (shouldSave) {
+                    self.saveToDeviceStorage()
+                }
+                
+            } catch {
+                print("\(self.TAG) Cannot load the saved storage manifest, error: \(error.localizedDescription)")
+            }
+        }
         
         guard let buildIn = loadBuiltinManifest() else {
             // Logging is done in loadBuiltinManifest, safe to just return
@@ -161,6 +168,7 @@ public class ManifestStorage {
                     return
                 }
                 
+                UserDefaults.standard.string(forKey: "CapgoDownloadedManifestJson")
                 UserDefaults.standard.set(encodedCache, forKey: cachePreferencesKey)
                 UserDefaults.standard.synchronize()
             }

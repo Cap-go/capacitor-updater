@@ -40,8 +40,30 @@ public class ManifestEntry: Codable {
         }
     }
     
-    public func copy() -> ManifestEntry {
-        return ManifestEntry(storagePathList: self.storagePathList.map { URL(string: $0.absoluteString)! }, hash: self.hash, type: self.type)
+    public func removeFilepathByBase(_ base: String) {
+        self.lock.locked {
+            self.storagePathList = self.storagePathList.filter {
+                !$0.absoluteString.starts(with: base)
+            }
+        }
+    }
+    
+    // This fn will check if all storagePathList actually exist
+    // If not then it will remove them and retun true
+    // If true returned ManifestStorage.saveToDeviceStorage should be called
+    public func cleanupFilePaths() -> Bool {
+        if (self.type == .builtin) {
+            return false
+        }
+        
+        return self.lock.locked {
+            var startLen = storagePathList.count
+            self.storagePathList = self.storagePathList.filter {
+                $0.exist
+            }
+            var endLen = storagePathList.count
+            return endLen == startLen
+        }
     }
     
     // We DO NOT want to encode the lock.

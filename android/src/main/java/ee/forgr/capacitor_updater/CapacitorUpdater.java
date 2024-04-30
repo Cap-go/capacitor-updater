@@ -752,7 +752,7 @@ public class CapacitorUpdater {
         }
 
         manifestEntry.removeFilepathByBase(filePath);
-        Log.i(TAG, "Deleting file " + filePath);
+        Log.i(TAG, "Deleting file " + filePath);  
         if (!file.delete()) {
           Log.e(TAG, "Failed to delete file " + filePath);
         }

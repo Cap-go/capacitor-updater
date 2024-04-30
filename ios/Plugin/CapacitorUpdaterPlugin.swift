@@ -110,7 +110,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         
         if resetWhenUpdate {
             self.cleanupObsoleteVersions()
-        }
+e        }
         let nc = NotificationCenter.default
         nc.addObserver(self, selector: #selector(appMovedToBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
         nc.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
@@ -130,7 +130,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         if BundleInfo.ID_BUILTIN == id {
             dest = Bundle.main.resourceURL!.appendingPathComponent("public")
         } else {
-            dest = self.implementation.getPathHot(id: id)
+            dest = self.implementation.getBundleDirectory(id: id)
         }
         
         print("\(self.implementation.TAG) Initial load \(id)")
@@ -294,7 +294,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         if BundleInfo.ID_BUILTIN == id {
             dest = Bundle.main.resourceURL!.appendingPathComponent("public")
         } else {
-            dest = self.implementation.getPathHot(id: id)
+            dest = self.implementation.getBundleDirectory(id: id)
         }
         print("\(self.implementation.TAG) Reloading \(id)")
         if let vc = bridge.viewController as? CAPBridgeViewController {
@@ -812,7 +812,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func appMovedToForeground() {
-        let current: BundleInfo = self.implementation.getCurrentBundle()
+ex        let current: BundleInfo = self.implementation.getCurrentBundle()
         self.implementation.sendStats(action: "app_moved_to_foreground", versionName: current.getVersionName())
         if backgroundWork != nil && taskRunning {
             backgroundWork!.cancel()
