@@ -220,9 +220,7 @@ extension CustomError: LocalizedError {
 
     private let versionCode: String = Bundle.main.versionCode ?? ""
     private let versionOs = UIDevice.current.systemVersion
-    private let documentsDir: URL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
     private let libraryDir: URL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
-    private let bundleDirectoryHot: String = "versions"
     private let DEFAULT_FOLDER: String = ""
     private let bundleDirectory: String = "NoCloud/ionic_built_snapshots"
     private let INFO_SUFFIX: String = "_info"
@@ -446,8 +444,8 @@ extension CustomError: LocalizedError {
 
     private func saveDownloaded(sourceZip: URL, id: String, base: URL, notify: Bool) throws {
         try prepareFolder(source: base)
-        let destHot: URL = base.appendingPathComponent(id)
-        let destUnZip: URL = documentsDir.appendingPathComponent(randomString(length: 10))
+        let destPersist: URL = base.appendingPathComponent(id)
+        let destUnZip: URL = libraryDir.appendingPathComponent(randomString(length: 10))
 
         self.unzipPercent = 0
         self.notifyDownload(id, 75)
@@ -483,7 +481,7 @@ extension CustomError: LocalizedError {
             throw unzipError ?? CustomError.cannotUnzip
         }
 
-        if try unflatFolder(source: destUnZip, dest: destHot) {
+        if try unflatFolder(source: destUnZip, dest: destPersist) {
             try deleteFolder(source: destUnZip)
         }
     }
@@ -584,8 +582,7 @@ extension CustomError: LocalizedError {
                     do {
                         try self.decryptFile(filePath: fileURL, sessionKey: sessionKey, version: version)
                         checksum = self.getChecksum(filePath: fileURL)
-                        try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.documentsDir.appendingPathComponent(self.bundleDirectoryHot), notify: true)
-                        try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: false)
+                        try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: true)
                         try self.deleteFolder(source: fileURL)
                         self.notifyDownload(id, 100)
                     } catch {
@@ -629,7 +626,7 @@ extension CustomError: LocalizedError {
     }
 
     public func list() -> [BundleInfo] {
-        let dest: URL = documentsDir.appendingPathComponent(bundleDirectoryHot)
+        let dest: URL = libraryDir.appendingPathComponent(bundleDirectory)
         do {
             let files: [String] = try FileManager.default.contentsOfDirectory(atPath: dest.path)
             var res: [BundleInfo] = []
@@ -652,13 +649,7 @@ extension CustomError: LocalizedError {
             print("\(self.TAG) Cannot delete \(id)")
             return false
         }
-        let destHot: URL = documentsDir.appendingPathComponent(bundleDirectoryHot).appendingPathComponent(id)
         let destPersist: URL = libraryDir.appendingPathComponent(bundleDirectory).appendingPathComponent(id)
-        do {
-            try FileManager.default.removeItem(atPath: destHot.path)
-        } catch {
-            print("\(self.TAG) Hot Folder \(destHot.path), not removed.")
-        }
         do {
             try FileManager.default.removeItem(atPath: destPersist.path)
         } catch {
@@ -679,10 +670,6 @@ extension CustomError: LocalizedError {
         return self.delete(id: id, removeInfo: true)
     }
 
-    public func getPathHot(id: String) -> URL {
-        return documentsDir.appendingPathComponent(self.bundleDirectoryHot).appendingPathComponent(id)
-    }
-
     public func getBundleDirectory(id: String) -> URL {
         return libraryDir.appendingPathComponent(self.bundleDirectory).appendingPathComponent(id)
     }
@@ -692,17 +679,13 @@ extension CustomError: LocalizedError {
     }
 
     private func bundleExists(id: String) -> Bool {
-        let destHot: URL = self.getPathHot(id: id)
-        let destHotPersist: URL = self.getBundleDirectory(id: id)
-        let indexHot: URL = destHot.appendingPathComponent("index.html")
-        let indexPersist: URL = destHotPersist.appendingPathComponent("index.html")
+        let destPersist: URL = self.getBundleDirectory(id: id)
+        let indexPersist: URL = destPersist.appendingPathComponent("index.html")
         let bundleIndo: BundleInfo = self.getBundleInfo(id: id)
         if
-            destHot.exist &&
-                destHot.isDirectory &&
-                destHotPersist.exist &&
-                destHotPersist.isDirectory &&
-                indexHot.exist &&
+            destPersist.exist &&
+                destPersist.isDirectory &&
+                !indexPersist.isDirectory &&
                 indexPersist.exist &&
                 !bundleIndo.isDeleted() {
             return true
@@ -756,7 +739,7 @@ extension CustomError: LocalizedError {
         let fallback: BundleInfo = self.getFallbackBundle()
         print("\(self.TAG) Fallback bundle is: \(fallback.toString())")
         print("\(self.TAG) Version successfully loaded: \(bundle.toString())")
-        if autoDeletePrevious && !fallback.isBuiltin() {
+        if autoDeletePrevious && !fallback.isBuiltin() && fallback.getId() != bundle.getId() {
             let res = self.delete(id: fallback.getId())
             if res {
                 print("\(self.TAG) Deleted previous bundle: \(fallback.toString())")
@@ -988,7 +971,7 @@ extension CustomError: LocalizedError {
         guard let bundlePath: String = UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH) else {
             return BundleInfo.ID_BUILTIN
         }
-        if (bundlePath ).isEmpty {
+        if (bundlePath).isEmpty {
             return BundleInfo.ID_BUILTIN
         }
         let bundleID: String = bundlePath.components(separatedBy: "/").last ?? bundlePath
