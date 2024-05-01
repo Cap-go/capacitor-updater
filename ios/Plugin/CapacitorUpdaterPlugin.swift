@@ -15,7 +15,7 @@ import Version
 @objc(CapacitorUpdaterPlugin)
 public class CapacitorUpdaterPlugin: CAPPlugin {
     public var implementation = CapacitorUpdater()
-    private let PLUGIN_VERSION: String = "6.0.2"
+    private let PLUGIN_VERSION: String = "6.0.3"
     static let updateUrlDefault = "https://api.capgo.app/updates"
     static let statsUrlDefault = "https://api.capgo.app/stats"
     static let channelUrlDefault = "https://api.capgo.app/channel_self"
@@ -247,7 +247,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         if BundleInfo.ID_BUILTIN == id {
             dest = Bundle.main.resourceURL!.appendingPathComponent("public")
         } else {
-            dest = self.implementation.getBundleDirectory(id: id)
+            dest = self.implementation.getPathHot(id: id)
         }
         print("\(self.implementation.TAG) Reloading \(id)")
         if let vc = bridge.viewController as? CAPBridgeViewController {
