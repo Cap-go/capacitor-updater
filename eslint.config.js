@@ -1,5 +1,5 @@
 module.exports = {
   extends: "@ionic/eslint-config/recommended",
-  files: ["src/**/*.tss"],
+  files: ["src/**/*.ts"],
   ignore: ["build", "dist", "example"],
 };
