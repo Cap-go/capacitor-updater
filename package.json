@@ -59,7 +59,7 @@
     "@capacitor/core": "^6.0.0",
     "@capacitor/docgen": "^0.2.2",
     "@capacitor/ios": "^6.0.0",
-    "@ionic/eslint-config": "^0.3.0",
+    "@ionic/eslint-config": "^0.4.0",
     "@ionic/prettier-config": "^4.0.0",
     "@ionic/swiftlint-config": "^1.1.2",
     "@types/node": "^20.12.7",
