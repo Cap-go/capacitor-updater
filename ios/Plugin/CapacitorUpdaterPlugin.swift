@@ -598,7 +598,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         // Automatically roll back to fallback version if notifyAppReady has not been called yet
         let current: BundleInfo = self.implementation.getCurrentBundle()
         if current.isBuiltin() {
-            print("\(self.implementation.TAG) Built-in bundle is active. Nothing to do.")
+            print("\(self.implementation.TAG) Built-in bundle is active. We skip the check for notifyAppReady.")
             return
         }
 

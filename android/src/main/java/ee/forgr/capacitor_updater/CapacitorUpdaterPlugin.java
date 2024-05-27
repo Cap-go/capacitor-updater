@@ -1355,7 +1355,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     final BundleInfo current = this.implementation.getCurrentBundle();
 
     if (current.isBuiltin()) {
-      Log.i(CapacitorUpdater.TAG, "Built-in bundle is active. Nothing to do.");
+      Log.i(CapacitorUpdater.TAG, "Built-in bundle is active. We skip the check for notifyAppReady.");
       return;
     }
     Log.d(CapacitorUpdater.TAG, "Current bundle is: " + current);
