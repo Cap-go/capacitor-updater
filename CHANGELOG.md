@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.0.11](https://github.com/Cap-go/capacitor-updater/compare/6.0.10...6.0.11) (2024-05-27)
+
+
+### Bug Fixes
+
+* make better message for checkRevert ([4033de2](https://github.com/Cap-go/capacitor-updater/commit/4033de240472582957783b43d894f89cf3353790))
+
 ### [6.0.10](https://github.com/Cap-go/capacitor-updater/compare/6.0.9...6.0.10) (2024-05-24)
 
 ### [6.0.9](https://github.com/Cap-go/capacitor-updater/compare/6.0.8...6.0.9) (2024-05-10)
