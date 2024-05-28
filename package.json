@@ -43,7 +43,7 @@
     "verify:web": "npm run build",
     "lint": "npm run eslint && npm run prettier -- --check && npm run swiftlint -- lint",
     "fmt": "npm run eslint -- --fix && npm run prettier -- --write && npm run swiftlint -- --autocorrect --format",
-    "eslint": "eslint .",
+    "eslint": "eslint . --ext .ts",
     "prettier": "prettier --config .prettierrc.js \"**/*.{css,html,ts,js,java}\"",
     "swiftlint": "node-swiftlint",
     "docgen": "docgen --api CapacitorUpdaterPlugin --output-readme README.md --output-json dist/docs.json",
@@ -59,13 +59,13 @@
     "@capacitor/core": "^6.0.0",
     "@capacitor/docgen": "^0.2.2",
     "@capacitor/ios": "^6.0.0",
-    "@ionic/eslint-config": "^0.3.0",
+    "@ionic/eslint-config": "^0.4.0",
     "@ionic/prettier-config": "^4.0.0",
     "@ionic/swiftlint-config": "^1.1.2",
     "@types/node": "^20.12.7",
     "@typescript-eslint/eslint-plugin": "^7.8.0",
     "@typescript-eslint/parser": "^7.8.0",
-    "eslint": "^9.1.1",
+    "eslint": "^8.57.0",
     "eslint-plugin-import": "^2.29.1",
     "prettier": "^3.2.5",
     "prettier-plugin-java": "^2.6.0",
@@ -78,6 +78,9 @@
     "@capacitor/core": "^6.0.0"
   },
   "prettier": "@ionic/prettier-config",
+  "eslintConfig": {
+    "extends": "@ionic/eslint-config/recommended"
+  },
   "capacitor": {
     "ios": {
       "src": "ios"
