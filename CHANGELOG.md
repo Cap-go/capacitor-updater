@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.0.12](https://github.com/Cap-go/capacitor-updater/compare/6.0.11...6.0.12) (2024-05-28)
+
+
+### Bug Fixes
+
+* set package name to intents when using RECEIVER_NOT_EXPORTED ([ea1eeee](https://github.com/Cap-go/capacitor-updater/commit/ea1eeee732d1f574d7ee1aff427f7cdd26a0ac69))
+
 ### [6.0.11](https://github.com/Cap-go/capacitor-updater/compare/6.0.10...6.0.11) (2024-05-27)
 
 
