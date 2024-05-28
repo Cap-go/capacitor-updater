@@ -105,6 +105,7 @@ public class DownloadService extends IntentService {
 
   private void notifyDownload(String id, int percent) {
     Intent intent = new Intent(PERCENTDOWNLOAD);
+    intent.setPackage(getPackageName());
     intent.putExtra(ID, id);
     intent.putExtra(PERCENT, percent);
     sendBroadcast(intent);
@@ -119,6 +120,7 @@ public class DownloadService extends IntentService {
     String error
   ) {
     Intent intent = new Intent(NOTIFICATION);
+    intent.setPackage(getPackageName());
     if (dest != null && !dest.isEmpty()) {
       intent.putExtra(FILEDEST, dest);
     }
