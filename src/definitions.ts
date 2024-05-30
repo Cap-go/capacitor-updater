@@ -77,7 +77,7 @@ declare module "@capacitor/cli" {
        *
        * Only available for Android and iOS.
        *
-       * @default https://api.capgo.app/auto_update
+       * @default https://api.capgo.app/updates
        * @example https://example.com/api/auto_update
        */
       updateUrl?: string;
