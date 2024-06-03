@@ -739,12 +739,12 @@ Listen for app ready event in the App, let you know when app is ready to use
 
 ### DownloadOptions
 
-| Prop             | Type                | Description                                                                                                                                                      |
-| ---------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **`url`**        | <code>string</code> | The URL of the bundle zip file (e.g: dist.zip) to be downloaded. (This can be any URL. E.g: Amazon S3, a GitHub tag, any other place you've hosted your bundle.) |
-| **`version`**    | <code>string</code> | The version code/name of this bundle/version                                                                                                                     |
-| **`sessionKey`** | <code>string</code> |                                                                                                                                                                  |
-| **`checksum`**   | <code>string</code> |                                                                                                                                                                  |
+| Prop             | Type                | Description                                                                                                                                                      | Default                | Since |
+| ---------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ----- |
+| **`url`**        | <code>string</code> | The URL of the bundle zip file (e.g: dist.zip) to be downloaded. (This can be any URL. E.g: Amazon S3, a GitHub tag, any other place you've hosted your bundle.) |                        |       |
+| **`version`**    | <code>string</code> | The version code/name of this bundle/version                                                                                                                     |                        |       |
+| **`sessionKey`** | <code>string</code> | The session key for the update                                                                                                                                   | <code>undefined</code> | 4.0.0 |
+| **`checksum`**   | <code>string</code> | The checksum for the update                                                                                                                                      | <code>undefined</code> | 4.0.0 |
 
 
 ### BundleId
