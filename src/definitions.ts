@@ -678,12 +678,21 @@ export interface DownloadOptions {
    * The URL of the bundle zip file (e.g: dist.zip) to be downloaded. (This can be any URL. E.g: Amazon S3, a GitHub tag, any other place you've hosted your bundle.)
    */
   url: string;
-
   /**
    * The version code/name of this bundle/version
    */
   version: string;
+  /**
+   * The session key for the update
+   * @since 4.0.0
+   * @default undefined
+   */
   sessionKey?: string;
+  /**
+   * The checksum for the update
+   * @since 4.0.0
+   * @default undefined
+   */
   checksum?: string;
 }
 
