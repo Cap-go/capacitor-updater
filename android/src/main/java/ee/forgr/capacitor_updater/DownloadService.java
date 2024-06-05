@@ -3,7 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-
 package ee.forgr.capacitor_updater;
 
 import android.app.IntentService;
@@ -12,6 +11,7 @@ import java.io.DataInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLConnection;
 import java.util.Objects;
@@ -56,36 +56,41 @@ public class DownloadService extends IntentService {
 
     try {
       final URL u = new URL(url);
-      final URLConnection connection = u.openConnection();
+      final File target = new File(documentsDir, dest);
+      long downloadedLength = 0;
+
+      if (target.exists()) {
+        downloadedLength = target.length();
+      }
+
+      final HttpURLConnection connection = (HttpURLConnection) u.openConnection();
+      connection.setRequestProperty("Range", "bytes=" + downloadedLength + "-");
+
+      connection.connect();
 
       try (
-        final InputStream is = u.openStream();
-        final DataInputStream dis = new DataInputStream(is)
+        final InputStream is = connection.getInputStream();
+        final DataInputStream dis = new DataInputStream(is);
+        final FileOutputStream fos = new FileOutputStream(target, true)
       ) {
-        assert dest != null;
-        final File target = new File(documentsDir, dest);
-        Objects.requireNonNull(target.getParentFile()).mkdirs();
-        target.createNewFile();
-        try (final FileOutputStream fos = new FileOutputStream(target)) {
-          final long totalLength = connection.getContentLength();
-          final int bufferSize = 1024;
-          final byte[] buffer = new byte[bufferSize];
-          int length;
+        final long totalLength = connection.getContentLength() + downloadedLength;
+        final int bufferSize = 1024;
+        final byte[] buffer = new byte[bufferSize];
+        int length;
 
-          int bytesRead = bufferSize;
-          int percent = 0;
-          this.notifyDownload(id, 10);
-          while ((length = dis.read(buffer)) > 0) {
-            fos.write(buffer, 0, length);
-            final int newPercent = (int) ((bytesRead * 100) / totalLength);
-            if (totalLength > 1 && newPercent != percent) {
-              percent = newPercent;
-              this.notifyDownload(id, this.calcTotalPercent(percent, 10, 70));
-            }
-            bytesRead += length;
+        int bytesRead = bufferSize;
+        int percent = (int) ((downloadedLength * 100) / totalLength);
+        this.notifyDownload(id, this.calcTotalPercent(percent, 10, 70));
+        while ((length = dis.read(buffer)) > 0) {
+          fos.write(buffer, 0, length);
+          downloadedLength += length;
+          final int newPercent = (int) ((downloadedLength * 100) / totalLength);
+          if (totalLength > 1 && newPercent != percent) {
+            percent = newPercent;
+            this.notifyDownload(id, this.calcTotalPercent(percent, 10, 70));
           }
-          publishResults(dest, id, version, checksum, sessionKey, "");
         }
+        publishResults(dest, id, version, checksum, sessionKey, "");
       }
     } catch (OutOfMemoryError e) {
       e.printStackTrace();
@@ -135,3 +140,4 @@ public class DownloadService extends IntentService {
     sendBroadcast(intent);
   }
 }
+
