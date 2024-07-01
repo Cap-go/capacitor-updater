@@ -2,6 +2,8 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.0.36](https://github.com/Cap-go/capacitor-updater/compare/6.0.35...6.0.36) (2024-07-01)
+
 ### [6.0.35](https://github.com/Cap-go/capacitor-updater/compare/6.0.34...6.0.35) (2024-07-01)
 
 ### [6.0.34](https://github.com/Cap-go/capacitor-updater/compare/6.0.33...6.0.34) (2024-07-01)
