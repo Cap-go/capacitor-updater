@@ -1,20 +1,13 @@
-/*
- * This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at https://mozilla.org/MPL/2.0/.
- */
-
 package ee.forgr.capacitor_updater;
 
 import android.app.IntentService;
 import android.content.Intent;
-import java.io.DataInputStream;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.InputStream;
+import java.io.*;
 import java.net.URL;
 import java.net.URLConnection;
 import java.util.Objects;
+import java.nio.channels.FileChannel;
+import java.net.HttpURLConnection;
 
 public class DownloadService extends IntentService {
 
@@ -29,20 +22,18 @@ public class DownloadService extends IntentService {
   public static final String CHECKSUM = "checksum";
   public static final String NOTIFICATION = "service receiver";
   public static final String PERCENTDOWNLOAD = "percent receiver";
+  private static final String PROGRESS_FILE = "progress.dat";
 
   public DownloadService() {
     super("Background DownloadService");
   }
 
-  private int calcTotalPercent(
-    final int percent,
-    final int min,
-    final int max
-  ) {
-    return (percent * (max - min)) / 100 + min;
+  private int calcTotalPercent(long downloadedBytes, int contentLength) {
+    if (contentLength <= 0)
+      return 0;
+    return (int) (((double) downloadedBytes / contentLength) * 100);
   }
 
-  // Will be called asynchronously by OS.
   @Override
   protected void onHandleIntent(Intent intent) {
     assert intent != null;
@@ -54,52 +45,88 @@ public class DownloadService extends IntentService {
     String sessionKey = intent.getStringExtra(SESSIONKEY);
     String checksum = intent.getStringExtra(CHECKSUM);
 
+    File target = new File(documentsDir, dest);
+    File progressFile = new File(documentsDir, PROGRESS_FILE); // The file where the download progress (how much byte
+                                                               // downloaded) is stored
+    File tempFile = new File(documentsDir, "temp" + ".tmp"); // Temp file, where the downloaded data is stored
     try {
-      final URL u = new URL(url);
-      final URLConnection connection = u.openConnection();
+      URL u = new URL(url);
+      HttpURLConnection httpConn = (HttpURLConnection) u.openConnection();
 
-      try (
-        final InputStream is = u.openStream();
-        final DataInputStream dis = new DataInputStream(is)
-      ) {
-        assert dest != null;
-        final File target = new File(documentsDir, dest);
-        Objects.requireNonNull(target.getParentFile()).mkdirs();
-        target.createNewFile();
-        try (final FileOutputStream fos = new FileOutputStream(target)) {
-          final long totalLength = connection.getContentLength();
-          final int bufferSize = 1024;
-          final byte[] buffer = new byte[bufferSize];
-          int length;
-
-          int bytesRead = bufferSize;
-          int percent = 0;
-          this.notifyDownload(id, 10);
-          while ((length = dis.read(buffer)) > 0) {
-            fos.write(buffer, 0, length);
-            final int newPercent = (int) ((bytesRead * 100) / totalLength);
-            if (totalLength > 1 && newPercent != percent) {
-              percent = newPercent;
-              this.notifyDownload(id, this.calcTotalPercent(percent, 10, 70));
-            }
-            bytesRead += length;
-          }
-          publishResults(dest, id, version, checksum, sessionKey, "");
+      // Reading progress file (if exist)
+      long downloadedBytes = 0;
+      if (progressFile.exists() && tempFile.exists()) {
+        try (BufferedReader reader = new BufferedReader(new FileReader(progressFile))) {
+          downloadedBytes = Long.parseLong(reader.readLine());
         }
+      } else {
+        tempFile.delete();
+        progressFile.delete();
+        progressFile.createNewFile();
+        tempFile.createNewFile();
+        downloadedBytes = 0;
       }
-    } catch (OutOfMemoryError e) {
+
+      if (downloadedBytes > 0) {
+        httpConn.setRequestProperty("Range", "bytes=" + downloadedBytes + "-");
+      }
+
+      int responseCode = httpConn.getResponseCode();
+
+      if (responseCode == HttpURLConnection.HTTP_OK || responseCode == HttpURLConnection.HTTP_PARTIAL) {
+        String contentType = httpConn.getContentType();
+        int contentLength = httpConn.getContentLength() + (int) downloadedBytes;
+
+        InputStream inputStream = httpConn.getInputStream();
+        FileOutputStream outputStream = new FileOutputStream(tempFile, downloadedBytes > 0);
+
+        // Writing initial progression into file
+        if (downloadedBytes == 0) {
+          try (BufferedWriter writer = new BufferedWriter(new FileWriter(progressFile))) {
+            writer.write(String.valueOf(downloadedBytes));
+          }
+        }
+
+        int bytesRead = -1;
+        byte[] buffer = new byte[4096];
+        int lastPercent = 0;
+        while ((bytesRead = inputStream.read(buffer)) != -1) {
+
+          outputStream.write(buffer, 0, bytesRead);
+          downloadedBytes += bytesRead;
+
+          // Updating the progress file
+          try (BufferedWriter writer = new BufferedWriter(new FileWriter(progressFile))) {
+            writer.write(String.valueOf(downloadedBytes));
+          }
+
+          // Saving progress (flushing every 100 Ko)
+          if (downloadedBytes % 102400 == 0) {
+            outputStream.flush();
+          }
+
+          // Computing percentage
+          int percent = calcTotalPercent(downloadedBytes, contentLength);
+          if (percent != lastPercent) {
+            notifyDownload(id, percent);
+            lastPercent = percent;
+          }
+        }
+
+        outputStream.close();
+        inputStream.close();
+
+        // Rename the temp file with the final name (dest)
+        tempFile.renameTo(new File(documentsDir, dest));
+        progressFile.delete();
+        publishResults(dest, id, version, checksum, sessionKey, "");
+      } else {
+        progressFile.delete();
+      }
+      httpConn.disconnect();
+    } catch (IOException e) {
       e.printStackTrace();
-      publishResults("", id, version, checksum, sessionKey, "low_mem_fail");
-    } catch (Exception e) {
-      e.printStackTrace();
-      publishResults(
-        "",
-        id,
-        version,
-        checksum,
-        sessionKey,
-        e.getLocalizedMessage()
-      );
+
     }
   }
 
@@ -107,31 +134,22 @@ public class DownloadService extends IntentService {
     Intent intent = new Intent(PERCENTDOWNLOAD);
     intent.setPackage(getPackageName());
     intent.putExtra(ID, id);
-    intent.putExtra(PERCENT, percent);
+    intent.putExtra("percent", percent);
     sendBroadcast(intent);
   }
 
-  private void publishResults(
-    String dest,
-    String id,
-    String version,
-    String checksum,
-    String sessionKey,
-    String error
-  ) {
+  private void publishResults(String dest, String id, String version, String checksum, String sessionKey,
+      String error) {
     Intent intent = new Intent(NOTIFICATION);
     intent.setPackage(getPackageName());
     if (dest != null && !dest.isEmpty()) {
       intent.putExtra(FILEDEST, dest);
     }
-    if (error != null && !error.isEmpty()) {
-      intent.putExtra(ERROR, error);
-    }
+    intent.putExtra(ERROR, error);
     intent.putExtra(ID, id);
     intent.putExtra(VERSION, version);
     intent.putExtra(SESSIONKEY, sessionKey);
     intent.putExtra(CHECKSUM, checksum);
-    intent.putExtra(ERROR, error);
     sendBroadcast(intent);
   }
 }
