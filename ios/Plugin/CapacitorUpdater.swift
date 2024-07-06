@@ -599,7 +599,8 @@ extension CustomError: LocalizedError {
         var checksum = ""
         let targetSize = try fetchFileSize(url: url).get() //Fetching the total size of the file
         var totalReceivedBytes: Int64 = loadDownloadProgress() //Retrieving the amount of already downloaded data if exist, defined at 0 otherwise
-         let requestHeaders: HTTPHeaders = ["Range": "bytes=\(totalReceivedBytes)-"]
+        let requestHeaders: HTTPHeaders = ["Range": "bytes=\(totalReceivedBytes)-"]
+        self.notifyDownload(id, 0) //Define the download progress at 0
         //Opening connection for streaming the bytes
          AF.streamRequest(url, headers: requestHeaders).validate().responseStream { [weak self] streamResponse in
              guard let self = self else { return }
@@ -609,7 +610,7 @@ extension CustomError: LocalizedError {
              case .stream(let result):
                  switch result {
                  case .success(let data):
-                    self.notifyDownload(id, 0)
+                    
 
                      self.tempData.append(data)
                      
