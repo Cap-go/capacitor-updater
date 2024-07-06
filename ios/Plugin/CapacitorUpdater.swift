@@ -573,7 +573,7 @@ extension CustomError: LocalizedError {
             guard let httpResponse = response as? HTTPURLResponse,
                   let contentLength = httpResponse.allHeaderFields["Content-Length"] as? String,
                   let fileSize = Int64(contentLength) else {
-                result = .failure(NSError(domain: "", code: 0, userInfo: [NSLocalizedDescriptionKey: "Impossible de récupérer la taille du fichier."]))
+                result = .failure(NSError(domain: "", code: 0, userInfo: [NSLocalizedDescriptionKey: "Cannot retrieve the total size of the file."]))
                 return
             }
 
