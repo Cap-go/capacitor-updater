@@ -609,7 +609,7 @@ extension CustomError: LocalizedError {
              case .stream(let result):
                  switch result {
                  case .success(let data):
-                    self.notifyDownload(id, 100)
+                    self.notifyDownload(id, 0)
 
                      self.tempData.append(data)
                      
