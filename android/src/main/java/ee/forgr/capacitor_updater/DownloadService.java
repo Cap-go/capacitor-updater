@@ -3,11 +3,11 @@ package ee.forgr.capacitor_updater;
 import android.app.IntentService;
 import android.content.Intent;
 import java.io.*;
+import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLConnection;
-import java.util.Objects;
 import java.nio.channels.FileChannel;
-import java.net.HttpURLConnection;
+import java.util.Objects;
 
 public class DownloadService extends IntentService {
 
@@ -29,8 +29,7 @@ public class DownloadService extends IntentService {
   }
 
   private int calcTotalPercent(long downloadedBytes, int contentLength) {
-    if (contentLength <= 0)
-      return 0;
+    if (contentLength <= 0) return 0;
     return (int) (((double) downloadedBytes / contentLength) * 100);
   }
 
@@ -47,7 +46,7 @@ public class DownloadService extends IntentService {
 
     File target = new File(documentsDir, dest);
     File progressFile = new File(documentsDir, PROGRESS_FILE); // The file where the download progress (how much byte
-                                                               // downloaded) is stored
+    // downloaded) is stored
     File tempFile = new File(documentsDir, "temp" + ".tmp"); // Temp file, where the downloaded data is stored
     try {
       URL u = new URL(url);
@@ -56,7 +55,11 @@ public class DownloadService extends IntentService {
       // Reading progress file (if exist)
       long downloadedBytes = 0;
       if (progressFile.exists() && tempFile.exists()) {
-        try (BufferedReader reader = new BufferedReader(new FileReader(progressFile))) {
+        try (
+          BufferedReader reader = new BufferedReader(
+            new FileReader(progressFile)
+          )
+        ) {
           downloadedBytes = Long.parseLong(reader.readLine());
         }
       } else {
@@ -73,16 +76,26 @@ public class DownloadService extends IntentService {
 
       int responseCode = httpConn.getResponseCode();
 
-      if (responseCode == HttpURLConnection.HTTP_OK || responseCode == HttpURLConnection.HTTP_PARTIAL) {
+      if (
+        responseCode == HttpURLConnection.HTTP_OK ||
+        responseCode == HttpURLConnection.HTTP_PARTIAL
+      ) {
         String contentType = httpConn.getContentType();
         int contentLength = httpConn.getContentLength() + (int) downloadedBytes;
 
         InputStream inputStream = httpConn.getInputStream();
-        FileOutputStream outputStream = new FileOutputStream(tempFile, downloadedBytes > 0);
+        FileOutputStream outputStream = new FileOutputStream(
+          tempFile,
+          downloadedBytes > 0
+        );
 
         // Writing initial progression into file
         if (downloadedBytes == 0) {
-          try (BufferedWriter writer = new BufferedWriter(new FileWriter(progressFile))) {
+          try (
+            BufferedWriter writer = new BufferedWriter(
+              new FileWriter(progressFile)
+            )
+          ) {
             writer.write(String.valueOf(downloadedBytes));
           }
         }
@@ -91,12 +104,15 @@ public class DownloadService extends IntentService {
         byte[] buffer = new byte[4096];
         int lastPercent = 0;
         while ((bytesRead = inputStream.read(buffer)) != -1) {
-
           outputStream.write(buffer, 0, bytesRead);
           downloadedBytes += bytesRead;
 
           // Updating the progress file
-          try (BufferedWriter writer = new BufferedWriter(new FileWriter(progressFile))) {
+          try (
+            BufferedWriter writer = new BufferedWriter(
+              new FileWriter(progressFile)
+            )
+          ) {
             writer.write(String.valueOf(downloadedBytes));
           }
 
@@ -126,7 +142,6 @@ public class DownloadService extends IntentService {
       httpConn.disconnect();
     } catch (IOException e) {
       e.printStackTrace();
-
     }
   }
 
@@ -134,12 +149,18 @@ public class DownloadService extends IntentService {
     Intent intent = new Intent(PERCENTDOWNLOAD);
     intent.setPackage(getPackageName());
     intent.putExtra(ID, id);
-    intent.putExtra("percent", percent);
+    intent.putExtra(PERCENT, percent);
     sendBroadcast(intent);
   }
 
-  private void publishResults(String dest, String id, String version, String checksum, String sessionKey,
-      String error) {
+  private void publishResults(
+    String dest,
+    String id,
+    String version,
+    String checksum,
+    String sessionKey,
+    String error
+  ) {
     Intent intent = new Intent(NOTIFICATION);
     intent.setPackage(getPackageName());
     if (dest != null && !dest.isEmpty()) {
