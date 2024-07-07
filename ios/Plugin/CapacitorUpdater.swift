@@ -557,33 +557,42 @@ extension CustomError: LocalizedError {
         print("\(self.TAG) Current bundle set to: \((bundle ).isEmpty ? BundleInfo.ID_BUILTIN : bundle)")
     }
 
-
-    func fetchFileSize(url: URL) -> Result<Int64, Error> {
+    //Do a GET request on the url in order to extract the Content-Length header, ask only for the 10 first bytes in order to not download the full content.
+    func fetchFileSize(url: URL) -> Int? {
         let semaphore = DispatchSemaphore(value: 0)
-        var result: Result<Int64, Error>!
+        var fileSize: Int?
+        var request = URLRequest(url: url)
+        request.setValue("bytes=0-10", forHTTPHeaderField: "Range") //Asking only for the 10 first bytes of the response body, in order to not download the full file
 
-        let task = URLSession.shared.dataTask(with: url) { _, response, error in
+        let task = URLSession.shared.dataTask(with: request) { data, response, error in
             defer { semaphore.signal() }
 
             if let error = error {
-                result = .failure(error)
+                print("Error while requesting file size : \(error)")
                 return
             }
 
             guard let httpResponse = response as? HTTPURLResponse,
-                  let contentLength = httpResponse.allHeaderFields["Content-Length"] as? String,
-                  let fileSize = Int64(contentLength) else {
-                result = .failure(NSError(domain: "", code: 0, userInfo: [NSLocalizedDescriptionKey: "Cannot retrieve the total size of the file."]))
+                  (200...299).contains(httpResponse.statusCode) else {
+                print("Could not perform the request because of a client or server error.")
                 return
             }
 
-            result = .success(fileSize)
+            if let contentRange = httpResponse.value(forHTTPHeaderField: "Content-Range") { //Extracting the Content-Range header from the partial response
+                let parts = contentRange.split(separator: "/").map(String.init)
+                if parts.count > 1, let totalSize = Int(parts[1]) {
+                    fileSize = totalSize
+                }
+            }
         }
 
         task.resume()
         semaphore.wait()
-        return result
+
+        return fileSize
     }
+
+
     
     private var tempDataPath: URL {
         return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent("package.tmp")
@@ -597,10 +606,9 @@ extension CustomError: LocalizedError {
         let id: String = self.randomString(length: 10)
         let semaphore = DispatchSemaphore(value: 0)
         var checksum = ""
-        let targetSize = try fetchFileSize(url: url).get() //Fetching the total size of the file
+        let targetSize = fetchFileSize(url: url) //Fetching the total size of the file
         var totalReceivedBytes: Int64 = loadDownloadProgress() //Retrieving the amount of already downloaded data if exist, defined at 0 otherwise
-        let requestHeaders: HTTPHeaders = ["Range": "bytes=\(totalReceivedBytes)-"]
-        self.notifyDownload(id, 0) //Define the download progress at 0
+         let requestHeaders: HTTPHeaders = ["Range": "bytes=\(totalReceivedBytes)-"]
         //Opening connection for streaming the bytes
          AF.streamRequest(url, headers: requestHeaders).validate().responseStream { [weak self] streamResponse in
              guard let self = self else { return }
@@ -610,7 +618,6 @@ extension CustomError: LocalizedError {
              case .stream(let result):
                  switch result {
                  case .success(let data):
-                    
 
                      self.tempData.append(data)
                      
@@ -618,8 +625,8 @@ extension CustomError: LocalizedError {
                      totalReceivedBytes += Int64(data.count)
                      
                      self.saveDownloadProgress(totalReceivedBytes)
-                     let percent = Int((Double(totalReceivedBytes) / Double(targetSize)) * 100.0)
-                     self.notifyDownload(id, percent)
+                     let percent = Int((Double(totalReceivedBytes) / Double(targetSize ?? 1)) * 100.0)
+                     print("Downloading : \(percent)%")
                  default:
                      print("Download failed")
                  }
@@ -635,7 +642,6 @@ extension CustomError: LocalizedError {
         try self.decryptFile(filePath: tempDataPath, sessionKey: sessionKey, version: version)
         let finalPath = tempDataPath.deletingLastPathComponent().appendingPathComponent("\(id)")
         do {
-            self.notifyDownload(id, 71)
             try FileManager.default.moveItem(at: tempDataPath, to: finalPath)
             
             checksum = self.getChecksum(filePath: finalPath)
