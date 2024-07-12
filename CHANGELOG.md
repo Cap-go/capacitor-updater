@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.0.39](https://github.com/Cap-go/capacitor-updater/compare/6.0.38...6.0.39) (2024-07-12)
+
+
+### Bug Fixes
+
+* better doc of setmulti delay ([0b93829](https://github.com/Cap-go/capacitor-updater/commit/0b938290faf4505b0e10d387fe7a10fd4410a118))
+
 ### [6.0.38](https://github.com/Cap-go/capacitor-updater/compare/6.0.37...6.0.38) (2024-07-08)
 
 ### [6.0.37](https://github.com/Cap-go/capacitor-updater/compare/6.0.36...6.0.37) (2024-07-08)
