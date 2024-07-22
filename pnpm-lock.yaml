@@ -7,19 +7,19 @@ settings:
 devDependencies:
   '@capacitor/android':
     specifier: ^6.0.0
-    version: 6.1.0(@capacitor/core@6.1.0)
+    version: 6.1.1(@capacitor/core@6.1.1)
   '@capacitor/cli':
     specifier: ^6.0.0
-    version: 6.1.0
+    version: 6.1.1
   '@capacitor/core':
     specifier: ^6.0.0
-    version: 6.1.0
+    version: 6.1.1
   '@capacitor/docgen':
     specifier: ^0.2.2
     version: 0.2.2
   '@capacitor/ios':
     specifier: ^6.0.0
-    version: 6.1.0(@capacitor/core@6.1.0)
+    version: 6.1.1(@capacitor/core@6.1.1)
   '@ionic/eslint-config':
     specifier: ^0.4.0
     version: 0.4.0(eslint@8.57.0)(typescript@5.5.2)
@@ -88,16 +88,16 @@ packages:
       picocolors: 1.0.0
     dev: true
 
-  /@capacitor/android@6.1.0(@capacitor/core@6.1.0):
-    resolution: {integrity: sha512-S4PW4N5xtKHTrICjG7bkBhI70jdXbb+8nbm1pJpuXChCD0gkCcofJhPaw4bCoO0egcugBN1U7DkegNw5jWpHcw==}
+  /@capacitor/android@6.1.1(@capacitor/core@6.1.1):
+    resolution: {integrity: sha512-rhO/nH6NJizGV5KizoIoGxCmkos3HnyUzI9TNv8IVy/C8h6lPM5Gt9cxGclb6k0OBTtgv6iJVo654+m4kzv0Qg==}
     peerDependencies:
       '@capacitor/core': ^6.1.0
     dependencies:
-      '@capacitor/core': 6.1.0
+      '@capacitor/core': 6.1.1
     dev: true
 
-  /@capacitor/cli@6.1.0:
-    resolution: {integrity: sha512-HEKDh3+FuNZKFHmSDZ7nAnaX3bzhtznYk9GsZBMac1y4CTAxIykPX9wzZ3DzLeM/EbMBGFClUbefkIkimAyfYg==}
+  /@capacitor/cli@6.1.1:
+    resolution: {integrity: sha512-rsRqEadfnBSUX90RZj59oXvi30bpSusLMfIcgbOIArOloTgfaaWr9R471F6m3gGWF7BhNoskJpZcCgSUsfywwA==}
     engines: {node: '>=18.0.0'}
     hasBin: true
     dependencies:
@@ -115,7 +115,7 @@ packages:
       plist: 3.1.0
       prompts: 2.4.2
       rimraf: 4.4.1
-      semver: 7.6.2
+      semver: 7.6.3
       tar: 6.2.1
       tslib: 2.6.3
       xml2js: 0.5.0
@@ -123,8 +123,8 @@ packages:
       - supports-color
     dev: true
 
-  /@capacitor/core@6.1.0:
-    resolution: {integrity: sha512-Kt4ONm0X9xxJXn9Q73oBaKdzep5B/VJw3VjXa2eGul4cD2k37mJwgjpXSMRnLH0Aju5bCiRL8J/hMAfTlokO6A==}
+  /@capacitor/core@6.1.1:
+    resolution: {integrity: sha512-b1s4WDMy3Y1/owTG2/XNGCI6G5SDpF2NT1JMAgcShue13fiAuHA+Ans7Wfei6McvR0KdopAE6tMHmDAfL5PM8Q==}
     dependencies:
       tslib: 2.6.3
     dev: true
@@ -141,12 +141,12 @@ packages:
       typescript: 4.2.4
     dev: true
 
-  /@capacitor/ios@6.1.0(@capacitor/core@6.1.0):
-    resolution: {integrity: sha512-ex2q0LAyDDgfJj4fKDQuSNUYSpic3939/8A/sIIIxslwuRBF5i5fuhAngu6BhCt/pQSfEETcHtg2j2vD+YEZ2w==}
+  /@capacitor/ios@6.1.1(@capacitor/core@6.1.1):
+    resolution: {integrity: sha512-he6+Fhj6x1dSnOzM98xaPvioOU8MNO+qpodCJwnHE3mIRonTpFutXJK8DP8fnNhjDPk2km9VafLSfOeiZXNv3Q==}
     peerDependencies:
       '@capacitor/core': ^6.1.0
     dependencies:
-      '@capacitor/core': 6.1.0
+      '@capacitor/core': 6.1.1
     dev: true
 
   /@chevrotain/cst-dts-gen@11.0.3:
@@ -804,7 +804,7 @@ packages:
       debug: 4.3.4
       globby: 11.1.0
       is-glob: 4.0.3
-      semver: 7.6.2
+      semver: 7.6.3
       tsutils: 3.21.0(typescript@5.5.2)
       typescript: 5.5.2
     transitivePeerDependencies:
@@ -2752,6 +2752,12 @@ packages:
 
   /semver@7.6.2:
     resolution: {integrity: sha512-FNAIBWCx9qcRhoHcgcJ0gvU7SN1lYU2ZXuSfl04bSC5OpvDHFyJCjdNHomPXxjQlCBU67YW64PzY7/VIEH7F2w==}
+    engines: {node: '>=10'}
+    hasBin: true
+    dev: true
+
+  /semver@7.6.3:
+    resolution: {integrity: sha512-oVekP1cKtI+CTDvHWYFUcMtsK/00wmAEfyqKfNdARm8u1wNVhSgaX7A8d4UuIlUI5e84iEwOhs7ZPYRmzU9U6A==}
     engines: {node: '>=10'}
     hasBin: true
     dev: true
