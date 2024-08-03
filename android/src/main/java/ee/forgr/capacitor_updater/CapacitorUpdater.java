@@ -347,7 +347,8 @@ public class CapacitorUpdater {
       }
 
       this.decryptFile(downloaded, sessionKey, version);
-      final String checksumDecrypted = this.decryptChecksum(checksumRes, version);
+      final String checksumDecrypted =
+        this.decryptChecksum(checksumRes, version);
       final String checksum;
       checksum = this.getChecksum(downloaded);
       this.notifyDownload(id, 71);
@@ -507,21 +508,16 @@ public class CapacitorUpdater {
     return enc.toLowerCase();
   }
 
-  private String decryptChecksum(String checksum, String version) throws IOException {
+  private String decryptChecksum(String checksum, String version)
+    throws IOException {
     if (this.publicKey == null || this.publicKey.isEmpty()) {
       Log.i(TAG, "Cannot find public key");
       return checksum;
     }
     try {
-      byte[] checksumBytes = Base64.decode(
-        checksum.getBytes(),
-        Base64.DEFAULT
-      );
+      byte[] checksumBytes = Base64.decode(checksum.getBytes(), Base64.DEFAULT);
       PublicKey pKey = CryptoCipher.stringToPublicKey(this.publicKey);
-      byte[] decryptedChecksum = CryptoCipher.decryptRSA(
-        checksumBytes,
-        pKey
-      );
+      byte[] decryptedChecksum = CryptoCipher.decryptRSA(checksumBytes, pKey);
       return new String(decryptedChecksum);
     } catch (GeneralSecurityException e) {
       Log.i(TAG, "decryptChecksum fail");

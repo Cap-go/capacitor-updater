@@ -172,8 +172,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
       );
     }
     Log.i(CapacitorUpdater.TAG, "appId: " + implementation.appId);
-    this.implementation.publicKey =
-      getConfig().getString("publicKey", defaultPublicKey);
+    this.implementation.publicKey = getConfig()
+      .getString("publicKey", defaultPublicKey);
     this.implementation.hasOldPrivateKeyPropertyInConfig = false;
     if (
       this.getConfig().getString("privateKey") != null &&
@@ -181,10 +181,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
     ) {
       this.implementation.hasOldPrivateKeyPropertyInConfig = true;
     }
-    this.implementation.statsUrl =
-      this.getConfig().getString("statsUrl", statsUrlDefault);
-    this.implementation.channelUrl =
-      this.getConfig().getString("channelUrl", channelUrlDefault);
+    this.implementation.statsUrl = this.getConfig()
+      .getString("statsUrl", statsUrlDefault);
+    this.implementation.channelUrl = this.getConfig()
+      .getString("channelUrl", channelUrlDefault);
     int userValue = this.getConfig().getInt("periodCheckDelay", 0);
     this.implementation.defaultChannel = this.getConfig()
       .getString("defaultChannel", "");
