@@ -15,7 +15,7 @@ import Version
 @objc(CapacitorUpdaterPlugin)
 public class CapacitorUpdaterPlugin: CAPPlugin {
     public var implementation = CapacitorUpdater()
-    private let PLUGIN_VERSION: String = "5.6.8"
+    private let PLUGIN_VERSION: String = "6.0.51"
     static let updateUrlDefault = "https://api.capgo.app/updates"
     static let statsUrlDefault = "https://api.capgo.app/stats"
     static let channelUrlDefault = "https://api.capgo.app/channel_self"
@@ -85,6 +85,18 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         implementation.statsUrl = getConfig().getString("statsUrl", CapacitorUpdaterPlugin.statsUrlDefault)!
         implementation.channelUrl = getConfig().getString("channelUrl", CapacitorUpdaterPlugin.channelUrlDefault)!
         implementation.defaultChannel = getConfig().getString("defaultChannel", "")!
+        self.implementation.autoReset()
+
+        // Load the server
+        // This is very much swift specific, android does not do that
+        // In android we depend on the serverBasePath capacitor property
+        // In IOS we do not. Instead during the plugin initialization we try to call setServerBasePath
+        // The idea is to prevent having to store the bundle in 2 locations for hot reload and persisten storage
+        // According to martin it is not possible to use serverBasePath on ios in a way that allows us to store the bundle once
+
+        if !self.initialLoad() {
+            print("\(self.implementation.TAG) unable to force reload, the plugin might fallback to the builtin version")
+        }
         if resetWhenUpdate {
             self.cleanupObsoleteVersions()
         }
@@ -94,6 +106,23 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         nc.addObserver(self, selector: #selector(appKilled), name: UIApplication.willTerminateNotification, object: nil)
         self.appMovedToForeground()
         self.checkForUpdateAfterDelay()
+    }
+
+    private func initialLoad() -> Bool {
+        guard let bridge = self.bridge else { return false }
+
+        let id = self.implementation.getCurrentBundleId()
+        let dest: URL
+        if BundleInfo.ID_BUILTIN == id {
+            dest = Bundle.main.resourceURL!.appendingPathComponent("public")
+        } else {
+            dest = self.implementation.getBundleDirectory(id: id)
+        }
+
+        print("\(self.implementation.TAG) Initial load \(id)")
+        // We don't use the viewcontroller here as it does not work during the initial load state
+        bridge.setServerBasePath(dest.path)
+        return true
     }
 
     private func semaphoreWait(waitTime: Int) {
@@ -147,9 +176,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func setUpdateUrl(_ call: CAPPluginCall) {
-        if !call.getBool("allowModifyUrl", false) {
+        if !getConfig().getBoolean("allowModifyUrl", false) {
             print("\(self.implementation.TAG) setUpdateUrl called without allowModifyUrl")
-            call.reject("setUpdateUrl called without allowModifyUrl")
+            call.reject("setUpdateUrl called without allowModifyUrl set allowModifyUrl in your config to true to allow it")
             return
         }
         guard let url = call.getString("url") else {
@@ -162,9 +191,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func setStatsUrl(_ call: CAPPluginCall) {
-        if !call.getBool("allowModifyUrl", false) {
+        if !getConfig().getBoolean("allowModifyUrl", false) {
             print("\(self.implementation.TAG) setStatsUrl called without allowModifyUrl")
-            call.reject("setStatsUrl called without allowModifyUrl")
+            call.reject("setStatsUrl called without allowModifyUrl set allowModifyUrl in your config to true to allow it")
             return
         }
         guard let url = call.getString("url") else {
@@ -177,9 +206,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func setChannelUrl(_ call: CAPPluginCall) {
-        if !call.getBool("allowModifyUrl", false) {
+        if !getConfig().getBoolean("allowModifyUrl", false) {
             print("\(self.implementation.TAG) setChannelUrl called without allowModifyUrl")
-            call.reject("setChannelUrl called without allowModifyUrl")
+            call.reject("setChannelUrl called without allowModifyUrl set allowModifyUrl in your config to true to allow it")
             return
         }
         guard let url = call.getString("url") else {
@@ -236,8 +265,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             } catch {
                 print("\(self.implementation.TAG) Failed to download from: \(String(describing: url)) \(error.localizedDescription)")
                 self.notifyListeners("downloadFailed", data: ["version": version])
-                let current: BundleInfo = self.implementation.getCurrentBundle()
-                self.implementation.sendStats(action: "download_fail", versionName: current.getVersionName())
+                self.implementation.sendStats(action: "download_fail")
                 call.reject("Failed to download from: \(url!)", error.localizedDescription)
             }
         }
@@ -251,7 +279,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         if BundleInfo.ID_BUILTIN == id {
             dest = Bundle.main.resourceURL!.appendingPathComponent("public")
         } else {
-            dest = self.implementation.getPathHot(id: id)
+            dest = self.implementation.getBundleDirectory(id: id)
         }
         print("\(self.implementation.TAG) Reloading \(id)")
         if let vc = bridge.viewController as? CAPBridgeViewController {
@@ -574,7 +602,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         // Automatically roll back to fallback version if notifyAppReady has not been called yet
         let current: BundleInfo = self.implementation.getCurrentBundle()
         if current.isBuiltin() {
-            print("\(self.implementation.TAG) Built-in bundle is active. Nothing to do.")
+            print("\(self.implementation.TAG) Built-in bundle is active. We skip the check for notifyAppReady.")
             return
         }
 
@@ -648,7 +676,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             let current = self.implementation.getCurrentBundle()
 
             if (res.message) != nil {
-                print("\(self.implementation.TAG) API response: \(res.message ?? "")")
+                print("\(self.implementation.TAG) API message: \(res.message ?? "")")
                 if res.major == true {
                     self.notifyListeners("majorAvailable", data: ["version": res.version])
                 }
@@ -797,20 +825,21 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             return
         }
         let timer = Timer.scheduledTimer(withTimeInterval: TimeInterval(periodCheckDelay), repeats: true) { _ in
-            let res = self.implementation.getLatest(url: url)
-            let current = self.implementation.getCurrentBundle()
+            DispatchQueue.global(qos: .background).async {
+                let res = self.implementation.getLatest(url: url)
+                let current = self.implementation.getCurrentBundle()
 
-            if res.version != current.getVersionName() {
-                print("\(self.implementation.TAG) New version found: \(res.version)")
-                self.backgroundDownload()
+                if res.version != current.getVersionName() {
+                    print("\(self.implementation.TAG) New version found: \(res.version)")
+                    self.backgroundDownload()
+                }
             }
         }
         RunLoop.current.add(timer, forMode: .default)
     }
 
     @objc func appMovedToBackground() {
-        let current: BundleInfo = self.implementation.getCurrentBundle()
-        self.implementation.sendStats(action: "app_moved_to_background", versionName: current.getVersionName())
+        self.implementation.sendStats(action: "app_moved_to_background")
         print("\(self.implementation.TAG) Check for pending update")
         let delayUpdatePreferences = UserDefaults.standard.string(forKey: DELAY_CONDITION_PREFERENCES) ?? "[]"
 

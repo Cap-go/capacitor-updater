@@ -2,6 +2,435 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.0.51](https://github.com/Cap-go/capacitor-updater/compare/6.0.50...6.0.51) (2024-07-29)
+
+
+### Bug Fixes
+
+* **deps:** update dependency com.android.tools.build:gradle to v8.5.1 ([4c603bc](https://github.com/Cap-go/capacitor-updater/commit/4c603bc31bd00eb54f977d56865a0453f90152a1))
+
+### [6.0.50](https://github.com/Cap-go/capacitor-updater/compare/6.0.49...6.0.50) (2024-07-29)
+
+### [6.0.49](https://github.com/Cap-go/capacitor-updater/compare/6.0.48...6.0.49) (2024-07-29)
+
+### [6.0.48](https://github.com/Cap-go/capacitor-updater/compare/6.0.47...6.0.48) (2024-07-29)
+
+### [6.0.47](https://github.com/Cap-go/capacitor-updater/compare/6.0.46...6.0.47) (2024-07-22)
+
+### [6.0.46](https://github.com/Cap-go/capacitor-updater/compare/6.0.45...6.0.46) (2024-07-22)
+
+### [6.0.45](https://github.com/Cap-go/capacitor-updater/compare/6.0.44...6.0.45) (2024-07-22)
+
+### [6.0.44](https://github.com/Cap-go/capacitor-updater/compare/6.0.43...6.0.44) (2024-07-17)
+
+### [6.0.43](https://github.com/Cap-go/capacitor-updater/compare/6.0.42...6.0.43) (2024-07-17)
+
+
+### Bug Fixes
+
+* add autofix ([85167a4](https://github.com/Cap-go/capacitor-updater/commit/85167a4283776d629496f379bb664720f25f328a))
+
+### [6.0.42](https://github.com/Cap-go/capacitor-updater/compare/6.0.41...6.0.42) (2024-07-15)
+
+### [6.0.41](https://github.com/Cap-go/capacitor-updater/compare/6.0.40...6.0.41) (2024-07-15)
+
+### [6.0.40](https://github.com/Cap-go/capacitor-updater/compare/6.0.39...6.0.40) (2024-07-15)
+
+### [6.0.39](https://github.com/Cap-go/capacitor-updater/compare/6.0.38...6.0.39) (2024-07-12)
+
+
+### Bug Fixes
+
+* better doc of setmulti delay ([0b93829](https://github.com/Cap-go/capacitor-updater/commit/0b938290faf4505b0e10d387fe7a10fd4410a118))
+
+### [6.0.38](https://github.com/Cap-go/capacitor-updater/compare/6.0.37...6.0.38) (2024-07-08)
+
+### [6.0.37](https://github.com/Cap-go/capacitor-updater/compare/6.0.36...6.0.37) (2024-07-08)
+
+### [6.0.36](https://github.com/Cap-go/capacitor-updater/compare/6.0.35...6.0.36) (2024-07-01)
+
+### [6.0.35](https://github.com/Cap-go/capacitor-updater/compare/6.0.34...6.0.35) (2024-07-01)
+
+### [6.0.34](https://github.com/Cap-go/capacitor-updater/compare/6.0.33...6.0.34) (2024-07-01)
+
+### [6.0.33](https://github.com/Cap-go/capacitor-updater/compare/6.0.32...6.0.33) (2024-06-24)
+
+### [6.0.32](https://github.com/Cap-go/capacitor-updater/compare/6.0.31...6.0.32) (2024-06-24)
+
+### [6.0.31](https://github.com/Cap-go/capacitor-updater/compare/6.0.30...6.0.31) (2024-06-17)
+
+
+### Bug Fixes
+
+* **deps:** update dependency com.android.tools.build:gradle to v8.5.0 ([ef4027d](https://github.com/Cap-go/capacitor-updater/commit/ef4027d544d465f59785a48638870bfb7b514dc9))
+
+### [6.0.30](https://github.com/Cap-go/capacitor-updater/compare/6.0.29...6.0.30) (2024-06-17)
+
+### [6.0.29](https://github.com/Cap-go/capacitor-updater/compare/6.0.28...6.0.29) (2024-06-17)
+
+### [6.0.28](https://github.com/Cap-go/capacitor-updater/compare/6.0.27...6.0.28) (2024-06-17)
+
+### [6.0.27](https://github.com/Cap-go/capacitor-updater/compare/6.0.26...6.0.27) (2024-06-10)
+
+
+### Bug Fixes
+
+* **deps:** update dependency com.google.code.gson:gson to v2.11.0 ([507a0a8](https://github.com/Cap-go/capacitor-updater/commit/507a0a815de9c958191998491a891a0fe30338c9))
+
+### [6.0.26](https://github.com/Cap-go/capacitor-updater/compare/6.0.25...6.0.26) (2024-06-10)
+
+### [6.0.25](https://github.com/Cap-go/capacitor-updater/compare/6.0.24...6.0.25) (2024-06-10)
+
+### [6.0.24](https://github.com/Cap-go/capacitor-updater/compare/6.0.23...6.0.24) (2024-06-04)
+
+### [6.0.23](https://github.com/Cap-go/capacitor-updater/compare/6.0.22...6.0.23) (2024-06-03)
+
+
+### Bug Fixes
+
+* add better keywords npm ([0dbd879](https://github.com/Cap-go/capacitor-updater/commit/0dbd8798d988e817a64d4c211ec67c0b9ae45df6))
+
+### [6.0.22](https://github.com/Cap-go/capacitor-updater/compare/6.0.21...6.0.22) (2024-06-03)
+
+
+### Bug Fixes
+
+* add better link to capgo ([7a708e0](https://github.com/Cap-go/capacitor-updater/commit/7a708e05c61de2e18d60856dafc549aabe54c1b6))
+
+### [6.0.21](https://github.com/Cap-go/capacitor-updater/compare/6.0.20...6.0.21) (2024-06-03)
+
+
+### Bug Fixes
+
+* Js doc missing info ([7adedac](https://github.com/Cap-go/capacitor-updater/commit/7adedac9a5329393c9a321bcc50ee0b9b0012fc6))
+
+### [6.0.20](https://github.com/Cap-go/capacitor-updater/compare/6.0.19...6.0.20) (2024-06-03)
+
+### [6.0.19](https://github.com/Cap-go/capacitor-updater/compare/6.0.18...6.0.19) (2024-06-03)
+
+### [6.0.18](https://github.com/Cap-go/capacitor-updater/compare/6.0.17...6.0.18) (2024-05-30)
+
+
+### Bug Fixes
+
+* issue with wrong url ([cb6bb9b](https://github.com/Cap-go/capacitor-updater/commit/cb6bb9bcd52d67307822497fb533d1100861cde7))
+
+### [6.0.17](https://github.com/Cap-go/capacitor-updater/compare/6.0.16...6.0.17) (2024-05-30)
+
+### [6.0.16](https://github.com/Cap-go/capacitor-updater/compare/6.0.15...6.0.16) (2024-05-28)
+
+
+### Bug Fixes
+
+* **deps:** update dependency com.android.tools.build:gradle to v8.4.1 ([8fab24c](https://github.com/Cap-go/capacitor-updater/commit/8fab24cc5a08df626096b727a06a2185d386dd37))
+
+### [6.0.15](https://github.com/Cap-go/capacitor-updater/compare/6.0.14...6.0.15) (2024-05-28)
+
+### [6.0.14](https://github.com/Cap-go/capacitor-updater/compare/6.0.13...6.0.14) (2024-05-28)
+
+
+### Bug Fixes
+
+* update packages ([1a5ef0b](https://github.com/Cap-go/capacitor-updater/commit/1a5ef0b6c723e722dcb8ed22455627717aa25093))
+
+### [6.0.13](https://github.com/Cap-go/capacitor-updater/compare/6.0.12...6.0.13) (2024-05-28)
+
+
+### Bug Fixes
+
+* lint issue ([dfa3bb0](https://github.com/Cap-go/capacitor-updater/commit/dfa3bb0f127f9374ad2528b50ec3cc5db32e86c1))
+
+### [6.0.12](https://github.com/Cap-go/capacitor-updater/compare/6.0.11...6.0.12) (2024-05-28)
+
+
+### Bug Fixes
+
+* set package name to intents when using RECEIVER_NOT_EXPORTED ([ea1eeee](https://github.com/Cap-go/capacitor-updater/commit/ea1eeee732d1f574d7ee1aff427f7cdd26a0ac69))
+
+### [6.0.11](https://github.com/Cap-go/capacitor-updater/compare/6.0.10...6.0.11) (2024-05-27)
+
+
+### Bug Fixes
+
+* make better message for checkRevert ([4033de2](https://github.com/Cap-go/capacitor-updater/commit/4033de240472582957783b43d894f89cf3353790))
+
+### [6.0.10](https://github.com/Cap-go/capacitor-updater/compare/6.0.9...6.0.10) (2024-05-24)
+
+### [6.0.9](https://github.com/Cap-go/capacitor-updater/compare/6.0.8...6.0.9) (2024-05-10)
+
+
+### Bug Fixes
+
+* ts config ([c889eee](https://github.com/Cap-go/capacitor-updater/commit/c889eeede2f4e5cd4440b76e8648b3a54f0ebae1))
+
+### [6.0.8](https://github.com/Cap-go/capacitor-updater/compare/6.0.7...6.0.8) (2024-05-06)
+
+### [6.0.7](https://github.com/Cap-go/capacitor-updater/compare/6.0.6...6.0.7) (2024-05-06)
+
+### [6.0.6](https://github.com/Cap-go/capacitor-updater/compare/6.0.5...6.0.6) (2024-05-06)
+
+### [6.0.5](https://github.com/Cap-go/capacitor-updater/compare/6.0.4...6.0.5) (2024-05-06)
+
+### [6.0.4](https://github.com/Cap-go/capacitor-updater/compare/6.0.3...6.0.4) (2024-05-01)
+
+
+### Bug Fixes
+
+* no more double upload ([20469f9](https://github.com/Cap-go/capacitor-updater/commit/20469f96eae22a7cd144a99d3d999b4e036c0b32))
+
+### [6.0.3](https://github.com/Cap-go/capacitor-updater/compare/6.0.2...6.0.3) (2024-05-01)
+
+
+### Bug Fixes
+
+* revert change double folder ([f0878a7](https://github.com/Cap-go/capacitor-updater/commit/f0878a7b7cb15b4db7e71bd0c86cc60519b0ed5a))
+
+### [6.0.2](https://github.com/Cap-go/capacitor-updater/compare/6.0.1...6.0.2) (2024-04-30)
+
+### [6.0.1](https://github.com/Cap-go/capacitor-updater/compare/7.0.1...6.0.1) (2024-04-29)
+
+
+### Bug Fixes
+
+* version number ([d9c61fe](https://github.com/Cap-go/capacitor-updater/commit/d9c61fe2c25f085e0c0c5e42a16a81c5d6c2ab81))
+
+### [6.0.1](https://github.com/Cap-go/capacitor-updater/compare/7.0.0...7.0.1) (2024-04-29)
+
+
+### Bug Fixes
+
+* lint issue ([bf43ac7](https://github.com/Cap-go/capacitor-updater/commit/bf43ac7d652a2da7c46fbbbb731c98f163370c39))
+
+## [6.0.0](https://github.com/Cap-go/capacitor-updater/compare/5.9.5...7.0.0) (2024-04-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* upgrade to capacitor v6
+
+### Features
+
+* upgrade to capacitor v6 ([e3f761e](https://github.com/Cap-go/capacitor-updater/commit/e3f761e1497f65bce44b88ceb0a3269b5951a5ab))
+
+### [5.9.5](https://github.com/Cap-go/capacitor-updater/compare/5.9.4...5.9.5) (2024-04-29)
+
+### [5.9.4](https://github.com/Cap-go/capacitor-updater/compare/5.9.3...5.9.4) (2024-04-22)
+
+### [5.9.3](https://github.com/Cap-go/capacitor-updater/compare/5.9.2...5.9.3) (2024-04-22)
+
+### [5.9.2](https://github.com/Cap-go/capacitor-updater/compare/5.9.1...5.9.2) (2024-04-15)
+
+### [5.9.1](https://github.com/Cap-go/capacitor-updater/compare/5.9.0...5.9.1) (2024-04-15)
+
+## [5.9.0](https://github.com/Cap-go/capacitor-updater/compare/5.8.12...5.9.0) (2024-04-12)
+
+
+### Features
+
+* send old_version_name when set version and reset ([e19ba30](https://github.com/Cap-go/capacitor-updater/commit/e19ba3055db2cf1b643b561bfba145ea885d51aa))
+
+### [5.8.12](https://github.com/Cap-go/capacitor-updater/compare/5.8.11...5.8.12) (2024-04-08)
+
+
+### Bug Fixes
+
+* trigger CI/CD ([ceddd5d](https://github.com/Cap-go/capacitor-updater/commit/ceddd5d3a6fe47c7e4fa7af2118c26bb63810c83))
+
+### [5.8.11](https://github.com/Cap-go/capacitor-updater/compare/5.8.10...5.8.11) (2024-04-08)
+
+### [5.8.10](https://github.com/Cap-go/capacitor-updater/compare/5.8.9...5.8.10) (2024-04-08)
+
+### [5.8.9](https://github.com/Cap-go/capacitor-updater/compare/5.8.8...5.8.9) (2024-04-02)
+
+### [5.8.8](https://github.com/Cap-go/capacitor-updater/compare/5.8.7...5.8.8) (2024-04-01)
+
+### [5.8.7](https://github.com/Cap-go/capacitor-updater/compare/5.8.6...5.8.7) (2024-04-01)
+
+
+### Bug Fixes
+
+* autoreset use more hight level functions ([2b0d4d9](https://github.com/Cap-go/capacitor-updater/commit/2b0d4d917d7dd6045d85d8bdfd64678ff04821c1))
+
+### [5.8.6](https://github.com/Cap-go/capacitor-updater/compare/5.8.5...5.8.6) (2024-04-01)
+
+
+### Bug Fixes
+
+* autoReset use better methods ([2164d81](https://github.com/Cap-go/capacitor-updater/commit/2164d81302f75ef39ee92c32f20bd821f08b76e9))
+
+### [5.8.5](https://github.com/Cap-go/capacitor-updater/compare/5.8.4...5.8.5) (2024-04-01)
+
+### [5.8.4](https://github.com/Cap-go/capacitor-updater/compare/5.8.3...5.8.4) (2024-03-26)
+
+
+### Bug Fixes
+
+* trigger CI/CD ([588a487](https://github.com/Cap-go/capacitor-updater/commit/588a487a7e9628bafa38a3f7b6ae225f2af069ec))
+
+### [5.8.3](https://github.com/Cap-go/capacitor-updater/compare/5.8.2...5.8.3) (2024-03-26)
+
+
+### Bug Fixes
+
+* build CI/CD ([ba19f99](https://github.com/Cap-go/capacitor-updater/commit/ba19f991c04fd5a1d183be168cd160e68537fedb))
+
+### [5.8.2](https://github.com/Cap-go/capacitor-updater/compare/5.8.1...5.8.2) (2024-03-26)
+
+
+### Bug Fixes
+
+* upgrade deprecated ([324a81c](https://github.com/Cap-go/capacitor-updater/commit/324a81cd56b220da00c4d236deb4af19fd1596d2))
+
+### [5.8.1](https://github.com/Cap-go/capacitor-updater/compare/5.8.0...5.8.1) (2024-03-26)
+
+
+### Bug Fixes
+
+* android auto reset ([bd20a21](https://github.com/Cap-go/capacitor-updater/commit/bd20a212626f32b74816730aa59eff0d90140ccb))
+
+## [5.8.0](https://github.com/Cap-go/capacitor-updater/compare/5.7.20...5.8.0) (2024-03-26)
+
+
+### Features
+
+* add auto reset to save app in crash state ([5b49a34](https://github.com/Cap-go/capacitor-updater/commit/5b49a348440082b719146e56cdb0135d4bf4cf8e))
+
+### [5.7.20](https://github.com/Cap-go/capacitor-updater/compare/5.7.19...5.7.20) (2024-03-26)
+
+
+### Bug Fixes
+
+* allowModifyUrl issue ([8236331](https://github.com/Cap-go/capacitor-updater/commit/8236331feb4f0f95bb1f231417dee730ec005ebc))
+
+### [5.7.19](https://github.com/Cap-go/capacitor-updater/compare/5.7.18...5.7.19) (2024-03-26)
+
+
+### Bug Fixes
+
+* percent download ([60c9ab9](https://github.com/Cap-go/capacitor-updater/commit/60c9ab96d72b8722422441c67740281f844e790e))
+
+### [5.7.18](https://github.com/Cap-go/capacitor-updater/compare/5.7.17...5.7.18) (2024-03-25)
+
+### [5.7.17](https://github.com/Cap-go/capacitor-updater/compare/5.7.16...5.7.17) (2024-03-22)
+
+
+### Bug Fixes
+
+* correct message debug make it iso Android ios ([ad3ca27](https://github.com/Cap-go/capacitor-updater/commit/ad3ca2758e7db5cc311abe2a89c906d80ce9a151))
+
+### [5.7.16](https://github.com/Cap-go/capacitor-updater/compare/5.7.15...5.7.16) (2024-03-20)
+
+### [5.7.15](https://github.com/Cap-go/capacitor-updater/compare/5.7.14...5.7.15) (2024-03-20)
+
+
+### Bug Fixes
+
+* put back race condition prevention ([5751a83](https://github.com/Cap-go/capacitor-updater/commit/5751a8331a3956aefa41a44a4685113cf06d1cab))
+
+### [5.7.14](https://github.com/Cap-go/capacitor-updater/compare/5.7.13...5.7.14) (2024-03-19)
+
+
+### Bug Fixes
+
+* DispatchQueue.global for period check ([e2d6cd1](https://github.com/Cap-go/capacitor-updater/commit/e2d6cd11121e7dcef7b7535f4cd0de9457a01bf2))
+
+### [5.7.13](https://github.com/Cap-go/capacitor-updater/compare/5.7.12...5.7.13) (2024-03-19)
+
+
+### Bug Fixes
+
+* android studio error ([217062a](https://github.com/Cap-go/capacitor-updater/commit/217062a005dde5ab6393d28bb342155c04d2f4e4))
+
+### [5.7.12](https://github.com/Cap-go/capacitor-updater/compare/5.7.11...5.7.12) (2024-03-19)
+
+
+### Bug Fixes
+
+* latest reco android ([eebb1b6](https://github.com/Cap-go/capacitor-updater/commit/eebb1b6f4f4020a8de8e36aa3371d9413f2973b6))
+
+### [5.7.11](https://github.com/Cap-go/capacitor-updater/compare/5.7.10...5.7.11) (2024-03-19)
+
+
+### Bug Fixes
+
+* follow android reco ([575f908](https://github.com/Cap-go/capacitor-updater/commit/575f9089562cfda73155e280d8371620c3840e84))
+
+### [5.7.10](https://github.com/Cap-go/capacitor-updater/compare/5.7.9...5.7.10) (2024-03-19)
+
+
+### Bug Fixes
+
+* latest reco from android studio ([dd07eee](https://github.com/Cap-go/capacitor-updater/commit/dd07eee85a1fc2903ce3b8a2bc4c5073718d5c24))
+
+### [5.7.9](https://github.com/Cap-go/capacitor-updater/compare/5.7.8...5.7.9) (2024-03-19)
+
+
+### Bug Fixes
+
+* lint ([f21b851](https://github.com/Cap-go/capacitor-updater/commit/f21b85192d0ee958677d1b72738c8a4f3f73eb8e))
+
+### [5.7.8](https://github.com/Cap-go/capacitor-updater/compare/5.7.7...5.7.8) (2024-03-19)
+
+
+### Bug Fixes
+
+* use best practices and remove dead code ([e671aaa](https://github.com/Cap-go/capacitor-updater/commit/e671aaad6f1193ee0c62fda5eff1caf071fa2bc2))
+
+### [5.7.7](https://github.com/Cap-go/capacitor-updater/compare/5.7.6...5.7.7) (2024-03-19)
+
+
+### Bug Fixes
+
+* lint and fllow android best practices ([23fcdf5](https://github.com/Cap-go/capacitor-updater/commit/23fcdf54037f31558c05ab98d10ec27f746560af))
+
+### [5.7.6](https://github.com/Cap-go/capacitor-updater/compare/5.7.5...5.7.6) (2024-03-19)
+
+
+### Bug Fixes
+
+* prevent more crash by following android guideline better ([68b358e](https://github.com/Cap-go/capacitor-updater/commit/68b358e364ad0968b9db8dcb05db3c30dd680fe6))
+
+### [5.7.5](https://github.com/Cap-go/capacitor-updater/compare/5.7.4...5.7.5) (2024-03-19)
+
+
+### Bug Fixes
+
+* use android studio recomendations ([fb5676e](https://github.com/Cap-go/capacitor-updater/commit/fb5676ecd8c5b5fc6f3ffdb12ddc8989b9c07c04))
+
+### [5.7.4](https://github.com/Cap-go/capacitor-updater/compare/5.7.3...5.7.4) (2024-03-19)
+
+### [5.7.3](https://github.com/Cap-go/capacitor-updater/compare/5.7.2...5.7.3) (2024-03-18)
+
+
+### Bug Fixes
+
+* add missing progress event and missing stats ([7c616e3](https://github.com/Cap-go/capacitor-updater/commit/7c616e3d1c744ec9c466a4a4ba0c9bf63a6fd8f7))
+
+### [5.7.2](https://github.com/Cap-go/capacitor-updater/compare/5.7.1...5.7.2) (2024-03-18)
+
+### [5.7.1](https://github.com/Cap-go/capacitor-updater/compare/5.7.0...5.7.1) (2024-03-18)
+
+## [5.7.0](https://github.com/Cap-go/capacitor-updater/compare/5.6.15...5.7.0) (2024-03-18)
+
+
+### Features
+
+* add new stats event for unzip ([6b716f4](https://github.com/Cap-go/capacitor-updater/commit/6b716f4dfd5398c61d099e1c473682b8a928a036))
+
+### [5.6.15](https://github.com/Cap-go/capacitor-updater/compare/5.6.14...5.6.15) (2024-03-18)
+
+### [5.6.14](https://github.com/Cap-go/capacitor-updater/compare/5.6.13...5.6.14) (2024-03-18)
+
+### [5.6.13](https://github.com/Cap-go/capacitor-updater/compare/5.6.12...5.6.13) (2024-03-11)
+
+### [5.6.12](https://github.com/Cap-go/capacitor-updater/compare/5.6.11...5.6.12) (2024-03-11)
+
+### [5.6.11](https://github.com/Cap-go/capacitor-updater/compare/5.6.10...5.6.11) (2024-03-05)
+
+### [5.6.10](https://github.com/Cap-go/capacitor-updater/compare/5.6.9...5.6.10) (2024-03-05)
+
+### [5.6.9](https://github.com/Cap-go/capacitor-updater/compare/5.6.8...5.6.9) (2024-03-04)
+
 ### [5.6.8](https://github.com/Cap-go/capacitor-updater/compare/5.6.7...5.6.8) (2024-03-01)
 
 ### [5.6.7](https://github.com/Cap-go/capacitor-updater/compare/5.6.6...5.6.7) (2024-03-01)

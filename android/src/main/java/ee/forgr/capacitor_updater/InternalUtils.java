@@ -8,8 +8,8 @@ public class InternalUtils {
 
   public static String getPackageName(PackageManager pm, String packageName) {
     try {
-      PackageInfo pinfo = getPackageInfoInternal(pm, packageName, 0);
-      return (pinfo != null) ? pinfo.packageName : null;
+      PackageInfo pInfo = getPackageInfoInternal(pm, packageName);
+      return (pInfo != null) ? pInfo.packageName : null;
     } catch (PackageManager.NameNotFoundException e) {
       // Exception is handled internally, and null is returned to indicate the package name could not be retrieved
       return null;
@@ -18,16 +18,15 @@ public class InternalUtils {
 
   private static PackageInfo getPackageInfoInternal(
     PackageManager pm,
-    String packageName,
-    long flags
+    String packageName
   ) throws PackageManager.NameNotFoundException {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
       return pm.getPackageInfo(
         packageName,
-        PackageManager.PackageInfoFlags.of(flags)
+        PackageManager.PackageInfoFlags.of(0)
       );
     } else {
-      return getPackageInfoLegacy(pm, packageName, (int) flags);
+      return getPackageInfoLegacy(pm, packageName, (int) (long) 0);
     }
   }
 

@@ -73,7 +73,8 @@ struct InfoObject: Codable {
     let version_build: String?
     let version_code: String?
     let version_os: String?
-    let version_name: String?
+    var version_name: String?
+    var old_version_name: String?
     let plugin_version: String?
     let is_emulator: Bool?
     let is_prod: Bool?
@@ -225,14 +226,13 @@ extension CustomError: LocalizedError {
 
     private let versionCode: String = Bundle.main.versionCode ?? ""
     private let versionOs = UIDevice.current.systemVersion
-    private let documentsDir: URL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
     private let libraryDir: URL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
-    private let bundleDirectoryHot: String = "versions"
     private let DEFAULT_FOLDER: String = ""
     private let bundleDirectory: String = "NoCloud/ionic_built_snapshots"
     private let INFO_SUFFIX: String = "_info"
     private let FALLBACK_VERSION: String = "pastVersion"
     private let NEXT_VERSION: String = "nextVersion"
+    private var unzipPercent = 0
 
     public let TAG: String = "✨  Capacitor-updater:"
     public let CAP_SERVER_PATH: String = "serverBasePath"
@@ -419,14 +419,81 @@ extension CustomError: LocalizedError {
         }
     }
 
-    private func saveDownloaded(sourceZip: URL, id: String, base: URL) throws {
-        try prepareFolder(source: base)
-        let destHot: URL = base.appendingPathComponent(id)
-        let destUnZip: URL = documentsDir.appendingPathComponent(randomString(length: 10))
-        if !SSZipArchive.unzipFile(atPath: sourceZip.path, toDestination: destUnZip.path) {
-            throw CustomError.cannotUnzip
+    private func unzipProgressHandler(entry: String, zipInfo: unz_file_info, entryNumber: Int, total: Int, destUnZip: URL, id: String, unzipError: inout NSError?) {
+        if entry.contains("\\") {
+            print("\(self.TAG) unzip: Windows path is not supported, please use unix path as required by zip RFC: \(entry)")
+            self.sendStats(action: "windows_path_fail")
         }
-        if try unflatFolder(source: destUnZip, dest: destHot) {
+
+        let fileURL = destUnZip.appendingPathComponent(entry)
+        let canonicalPath = fileURL.path
+        let canonicalDir = destUnZip.path
+
+        if !canonicalPath.hasPrefix(canonicalDir) {
+            self.sendStats(action: "canonical_path_fail")
+            unzipError = NSError(domain: "CanonicalPathError", code: 0, userInfo: nil)
+        }
+
+        let isDirectory = entry.hasSuffix("/")
+        if !isDirectory {
+            let folderURL = fileURL.deletingLastPathComponent()
+            if !FileManager.default.fileExists(atPath: folderURL.path) {
+                do {
+                    try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true, attributes: nil)
+                } catch {
+                    self.sendStats(action: "directory_path_fail")
+                    unzipError = error as NSError
+                }
+            }
+        }
+
+        let newPercent = self.calcTotalPercent(percent: Int(Double(entryNumber) / Double(total) * 100), min: 75, max: 81)
+        if newPercent != self.unzipPercent {
+            self.unzipPercent = newPercent
+            self.notifyDownload(id, newPercent)
+        }
+    }
+
+    private func saveDownloaded(sourceZip: URL, id: String, base: URL, notify: Bool) throws {
+        try prepareFolder(source: base)
+        let destPersist: URL = base.appendingPathComponent(id)
+        let destUnZip: URL = libraryDir.appendingPathComponent(randomString(length: 10))
+
+        self.unzipPercent = 0
+        self.notifyDownload(id, 75)
+
+        let semaphore = DispatchSemaphore(value: 0)
+        var unzipError: NSError?
+
+        let success = SSZipArchive.unzipFile(atPath: sourceZip.path,
+                                             toDestination: destUnZip.path,
+                                             preserveAttributes: true,
+                                             overwrite: true,
+                                             nestedZipLevel: 1,
+                                             password: nil,
+                                             error: &unzipError,
+                                             delegate: nil,
+                                             progressHandler: { [weak self] (entry, zipInfo, entryNumber, total) in
+                                                DispatchQueue.global(qos: .background).async {
+                                                    guard let self = self else { return }
+                                                    if !notify {
+                                                        return
+                                                    }
+                                                    self.unzipProgressHandler(entry: entry, zipInfo: zipInfo, entryNumber: entryNumber, total: total, destUnZip: destUnZip, id: id, unzipError: &unzipError)
+                                                }
+                                             },
+                                             completionHandler: { _, _, _  in
+                                                semaphore.signal()
+                                             })
+
+        semaphore.wait()
+
+        if !success || unzipError != nil {
+            self.sendStats(action: "unzip_fail")
+            throw unzipError ?? CustomError.cannotUnzip
+        }
+
+        if try unflatFolder(source: destUnZip, dest: destPersist) {
             try deleteFolder(source: destUnZip)
         }
     }
@@ -532,17 +599,20 @@ extension CustomError: LocalizedError {
                         try self.decryptFile(filePath: fileURL, sessionKey: sessionKey, version: version)
 
                         checksum = self.getChecksum(filePath: fileURL)
-                        try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.documentsDir.appendingPathComponent(self.bundleDirectoryHot))
-                        self.notifyDownload(id, 85)
-                        try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory))
-                        self.notifyDownload(id, 100)
+                        try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: true)
                         try self.deleteFolder(source: fileURL)
+                        self.notifyDownload(id, 100)
                     } catch {
                         print("\(self.TAG) download unzip error", error)
                         mainError = error as NSError
                     }
                 case let .failure(error):
                     print("\(self.TAG) download error", response.value ?? "", error)
+                    if let afError = error as? AFError,
+                       case .sessionTaskFailed(let urlError as URLError) = afError,
+                       urlError.code == .cannotWriteToFile {
+                        self.sendStats(action: "low_mem_fail", versionName: version)
+                    }
                     mainError = error as NSError
                 }
             }
@@ -573,7 +643,7 @@ extension CustomError: LocalizedError {
     }
 
     public func list() -> [BundleInfo] {
-        let dest: URL = documentsDir.appendingPathComponent(bundleDirectoryHot)
+        let dest: URL = libraryDir.appendingPathComponent(bundleDirectory)
         do {
             let files: [String] = try FileManager.default.contentsOfDirectory(atPath: dest.path)
             var res: [BundleInfo] = []
@@ -596,13 +666,7 @@ extension CustomError: LocalizedError {
             print("\(self.TAG) Cannot delete \(id)")
             return false
         }
-        let destHot: URL = documentsDir.appendingPathComponent(bundleDirectoryHot).appendingPathComponent(id)
         let destPersist: URL = libraryDir.appendingPathComponent(bundleDirectory).appendingPathComponent(id)
-        do {
-            try FileManager.default.removeItem(atPath: destHot.path)
-        } catch {
-            print("\(self.TAG) Hot Folder \(destHot.path), not removed.")
-        }
         do {
             try FileManager.default.removeItem(atPath: destPersist.path)
         } catch {
@@ -623,10 +687,6 @@ extension CustomError: LocalizedError {
         return self.delete(id: id, removeInfo: true)
     }
 
-    public func getPathHot(id: String) -> URL {
-        return documentsDir.appendingPathComponent(self.bundleDirectoryHot).appendingPathComponent(id)
-    }
-
     public func getBundleDirectory(id: String) -> URL {
         return libraryDir.appendingPathComponent(self.bundleDirectory).appendingPathComponent(id)
     }
@@ -636,17 +696,13 @@ extension CustomError: LocalizedError {
     }
 
     private func bundleExists(id: String) -> Bool {
-        let destHot: URL = self.getPathHot(id: id)
-        let destHotPersist: URL = self.getBundleDirectory(id: id)
-        let indexHot: URL = destHot.appendingPathComponent("index.html")
-        let indexPersist: URL = destHotPersist.appendingPathComponent("index.html")
+        let destPersist: URL = self.getBundleDirectory(id: id)
+        let indexPersist: URL = destPersist.appendingPathComponent("index.html")
         let bundleIndo: BundleInfo = self.getBundleInfo(id: id)
         if
-            destHot.exist &&
-                destHot.isDirectory &&
-                destHotPersist.exist &&
-                destHotPersist.isDirectory &&
-                indexHot.exist &&
+            destPersist.exist &&
+                destPersist.isDirectory &&
+                !indexPersist.isDirectory &&
                 indexPersist.exist &&
                 !bundleIndo.isDeleted() {
             return true
@@ -661,14 +717,23 @@ extension CustomError: LocalizedError {
             return true
         }
         if bundleExists(id: id) {
+            let currentBundleName = self.getCurrentBundle().getVersionName()
             self.setCurrentBundle(bundle: self.getBundleDirectory(id: id).path)
             self.setBundleStatus(id: id, status: BundleStatus.PENDING)
-            self.sendStats(action: "set", versionName: newBundle.getVersionName())
+            self.sendStats(action: "set", versionName: newBundle.getVersionName(), oldVersionName: currentBundleName)
             return true
         }
         self.setBundleStatus(id: id, status: BundleStatus.ERROR)
         self.sendStats(action: "set_fail", versionName: newBundle.getVersionName())
         return false
+    }
+
+    public func autoReset() {
+        let currentBundle: BundleInfo = self.getCurrentBundle()
+        if !currentBundle.isBuiltin() && !self.bundleExists(id: currentBundle.getId()) {
+            print("\(self.TAG) Folder at bundle path does not exist. Triggering reset.")
+            self.reset()
+        }
     }
 
     public func reset() {
@@ -677,11 +742,12 @@ extension CustomError: LocalizedError {
 
     public func reset(isInternal: Bool) {
         print("\(self.TAG) reset: \(isInternal)")
+        let currentBundleName = self.getCurrentBundle().getVersionName()
         self.setCurrentBundle(bundle: "")
         self.setFallbackBundle(fallback: Optional<BundleInfo>.none)
         _ = self.setNextBundle(next: Optional<String>.none)
         if !isInternal {
-            self.sendStats(action: "reset", versionName: self.getCurrentBundle().getVersionName())
+            self.sendStats(action: "reset", versionName: self.getCurrentBundle().getVersionName(), oldVersionName: currentBundleName)
         }
     }
 
@@ -690,7 +756,7 @@ extension CustomError: LocalizedError {
         let fallback: BundleInfo = self.getFallbackBundle()
         print("\(self.TAG) Fallback bundle is: \(fallback.toString())")
         print("\(self.TAG) Version successfully loaded: \(bundle.toString())")
-        if autoDeletePrevious && !fallback.isBuiltin() {
+        if autoDeletePrevious && !fallback.isBuiltin() && fallback.getId() != bundle.getId() {
             let res = self.delete(id: fallback.getId())
             if res {
                 print("\(self.TAG) Deleted previous bundle: \(fallback.toString())")
@@ -714,7 +780,7 @@ extension CustomError: LocalizedError {
             return setChannel
         }
         let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
-        var parameters: InfoObject = self.createInfoObject()
+        let parameters: InfoObject = self.createInfoObject()
 
         let request = AF.request(self.channelUrl, method: .delete, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
 
@@ -819,18 +885,31 @@ extension CustomError: LocalizedError {
         return getChannel
     }
 
-    func sendStats(action: String, versionName: String) {
-        if (self.statsUrl ).isEmpty {
+    func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {
+        guard !statsUrl.isEmpty else {
             return
         }
-        var parameters: InfoObject = self.createInfoObject()
+
+        let versionName = versionName ?? getCurrentBundle().getVersionName()
+
+        var parameters = createInfoObject()
         parameters.action = action
+        parameters.version_name = versionName
+        parameters.old_version_name = oldVersionName
+
         DispatchQueue.global(qos: .background).async {
-            let request = AF.request(self.statsUrl, method: .post, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
+            let request = AF.request(
+                self.statsUrl,
+                method: .post,
+                parameters: parameters,
+                encoder: JSONParameterEncoder.default,
+                requestModifier: { $0.timeoutInterval = self.timeout }
+            )
+
             request.responseData { response in
                 switch response.result {
                 case .success:
-                    print("\(self.TAG) Stats send for \(action), version \(versionName)")
+                    print("\(self.TAG) Stats sent for \(action), version \(versionName)")
                 case let .failure(error):
                     print("\(self.TAG) Error sending stats: ", response.value ?? "", error)
                 }
@@ -895,12 +974,6 @@ extension CustomError: LocalizedError {
         UserDefaults.standard.synchronize()
     }
 
-    public func setVersionName(id: String, version: String) {
-        print("\(self.TAG) Setting version for folder [\(id)] to \(version)")
-        let info = self.getBundleInfo(id: id)
-        self.saveBundleInfo(id: id, bundle: info.setVersionName(version: version))
-    }
-
     private func setBundleStatus(id: String, status: BundleStatus) {
         print("\(self.TAG) Setting status for bundle [\(id)] to \(status)")
         let info = self.getBundleInfo(id: id)
@@ -915,7 +988,7 @@ extension CustomError: LocalizedError {
         guard let bundlePath: String = UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH) else {
             return BundleInfo.ID_BUILTIN
         }
-        if (bundlePath ).isEmpty {
+        if (bundlePath).isEmpty {
             return BundleInfo.ID_BUILTIN
         }
         let bundleID: String = bundlePath.components(separatedBy: "/").last ?? bundlePath
@@ -948,8 +1021,7 @@ extension CustomError: LocalizedError {
             return false
         }
         let newBundle: BundleInfo = self.getBundleInfo(id: nextId)
-        let bundle: URL = self.getBundleDirectory(id: nextId)
-        if !newBundle.isBuiltin() && !bundle.exist {
+        if !newBundle.isBuiltin() && !self.bundleExists(id: nextId) {
             return false
         }
         UserDefaults.standard.set(nextId, forKey: self.NEXT_VERSION)

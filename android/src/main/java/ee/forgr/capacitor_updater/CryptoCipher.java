@@ -45,8 +45,7 @@ public class CryptoCipher {
       Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
       SecretKeySpec keySpec = new SecretKeySpec(key.getEncoded(), "AES");
       cipher.init(Cipher.DECRYPT_MODE, keySpec, ivParameterSpec);
-      byte[] decryptedText = cipher.doFinal(cipherText);
-      return decryptedText;
+      return cipher.doFinal(cipherText);
     } catch (Exception e) {
       e.printStackTrace();
     }
@@ -55,13 +54,7 @@ public class CryptoCipher {
 
   public static SecretKey byteToSessionKey(byte[] sessionKey) {
     // rebuild key using SecretKeySpec
-    SecretKey originalKey = new SecretKeySpec(
-      sessionKey,
-      0,
-      sessionKey.length,
-      "AES"
-    );
-    return originalKey;
+    return new SecretKeySpec(sessionKey, 0, sessionKey.length, "AES");
   }
 
   private static PublicKey readX509PublicKey(byte[] x509Bytes)

@@ -14,6 +14,7 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.net.URL;
 import java.net.URLConnection;
+import java.util.Objects;
 
 public class DownloadService extends IntentService {
 
@@ -44,6 +45,7 @@ public class DownloadService extends IntentService {
   // Will be called asynchronously by OS.
   @Override
   protected void onHandleIntent(Intent intent) {
+    assert intent != null;
     String url = intent.getStringExtra(URL);
     String id = intent.getStringExtra(ID);
     String documentsDir = intent.getStringExtra(DOCDIR);
@@ -60,8 +62,9 @@ public class DownloadService extends IntentService {
         final InputStream is = u.openStream();
         final DataInputStream dis = new DataInputStream(is)
       ) {
+        assert dest != null;
         final File target = new File(documentsDir, dest);
-        target.getParentFile().mkdirs();
+        Objects.requireNonNull(target.getParentFile()).mkdirs();
         target.createNewFile();
         try (final FileOutputStream fos = new FileOutputStream(target)) {
           final long totalLength = connection.getContentLength();
@@ -84,6 +87,9 @@ public class DownloadService extends IntentService {
           publishResults(dest, id, version, checksum, sessionKey, "");
         }
       }
+    } catch (OutOfMemoryError e) {
+      e.printStackTrace();
+      publishResults("", id, version, checksum, sessionKey, "low_mem_fail");
     } catch (Exception e) {
       e.printStackTrace();
       publishResults(
@@ -99,6 +105,7 @@ public class DownloadService extends IntentService {
 
   private void notifyDownload(String id, int percent) {
     Intent intent = new Intent(PERCENTDOWNLOAD);
+    intent.setPackage(getPackageName());
     intent.putExtra(ID, id);
     intent.putExtra(PERCENT, percent);
     sendBroadcast(intent);
@@ -113,6 +120,7 @@ public class DownloadService extends IntentService {
     String error
   ) {
     Intent intent = new Intent(NOTIFICATION);
+    intent.setPackage(getPackageName());
     if (dest != null && !dest.isEmpty()) {
       intent.putExtra(FILEDEST, dest);
     }
