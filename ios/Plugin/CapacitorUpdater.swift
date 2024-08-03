@@ -371,6 +371,28 @@ extension CustomError: LocalizedError {
         }
     }
 
+    public func decryptChecksum(checksum: String, version: String) throws -> String {
+        if self.publicKey != nil && self.publicKey!.isEmpty {
+            print("\(self.TAG) Cannot find public key")
+            return checksum
+        }
+        do {
+            let checksumBytes: Data = Data(base64Encoded: checksum)!
+            guard let rsaPublicKey: RSAPublicKey = .load(rsaPublicKey: self.publicKey!) else {
+                 print("cannot decode publicKey", self.publicKey!)
+                 throw CustomError.cannotDecode
+             }
+            guard let decryptedChecksum = try? rsaPublicKey.decrypt(data: checksumBytes) else {
+                throw NSError(domain: "Failed to decrypt session key data", code: 2, userInfo: nil)
+            }
+            return decryptedChecksum.base64EncodedString()
+        } catch {
+            print("\(self.TAG) Cannot decrypt checksum: \(checksum)", error)
+            self.sendStats(action: "decrypt_fail", versionName: version)
+            throw CustomError.cannotDecode
+        }
+    }
+
     private func decryptFile(filePath: URL, sessionKey: String, version: String) throws {
         if self.publicKey != nil && self.publicKey!.isEmpty || sessionKey.isEmpty  || sessionKey.components(separatedBy: ":").count != 2 {
             print("\(self.TAG) Cannot find public key or sessionKey")
@@ -597,7 +619,7 @@ extension CustomError: LocalizedError {
                         }
 
                         try self.decryptFile(filePath: fileURL, sessionKey: sessionKey, version: version)
-
+                        let checksumDecrypted = try self.decryptChecksum(checksum: checksum, version: version)
                         checksum = self.getChecksum(filePath: fileURL)
                         try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: true)
                         try self.deleteFolder(source: fileURL)

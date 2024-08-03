@@ -347,6 +347,7 @@ public class CapacitorUpdater {
       }
 
       this.decryptFile(downloaded, sessionKey, version);
+      final String checksumDecrypted = this.decryptChecksum(checksumRes, version);
       final String checksum;
       checksum = this.getChecksum(downloaded);
       this.notifyDownload(id, 71);
@@ -366,13 +367,13 @@ public class CapacitorUpdater {
       );
       this.saveBundleInfo(id, next);
       if (
-        checksumRes != null &&
-        !checksumRes.isEmpty() &&
-        !checksumRes.equals(checksum)
+        checksumDecrypted != null &&
+        !checksumDecrypted.isEmpty() &&
+        !checksumDecrypted.equals(checksum)
       ) {
         Log.e(
           CapacitorUpdater.TAG,
-          "Error checksum " + checksumRes + " " + checksum
+          "Error checksum " + checksumDecrypted + " " + checksum
         );
         this.sendStats("checksum_fail");
         final Boolean res = this.delete(id);
@@ -504,6 +505,30 @@ public class CapacitorUpdater {
     }
     String enc = String.format("%08X", crc.getValue());
     return enc.toLowerCase();
+  }
+
+  private String decryptChecksum(String checksum, String version) throws IOException {
+    if (this.publicKey == null || this.publicKey.isEmpty()) {
+      Log.i(TAG, "Cannot find public key");
+      return checksum;
+    }
+    try {
+      byte[] checksumBytes = Base64.decode(
+        checksum.getBytes(),
+        Base64.DEFAULT
+      );
+      PublicKey pKey = CryptoCipher.stringToPublicKey(this.publicKey);
+      byte[] decryptedChecksum = CryptoCipher.decryptRSA(
+        checksumBytes,
+        pKey
+      );
+      return new String(decryptedChecksum);
+    } catch (GeneralSecurityException e) {
+      Log.i(TAG, "decryptChecksum fail");
+      this.sendStats("decrypt_fail", version);
+      e.printStackTrace();
+      throw new IOException("GeneralSecurityException");
+    }
   }
 
   private void decryptFile(
