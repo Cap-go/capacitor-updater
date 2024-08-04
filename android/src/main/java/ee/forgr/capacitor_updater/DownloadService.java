@@ -140,7 +140,7 @@ public class DownloadService extends IntentService {
         progressFile.delete();
       }
       httpConn.disconnect();
-    }catch (OutOfMemoryError e) {
+    } catch (OutOfMemoryError e) {
       e.printStackTrace();
       publishResults("", id, version, checksum, sessionKey, "low_mem_fail");
     } catch (Exception e) {
@@ -153,8 +153,8 @@ public class DownloadService extends IntentService {
         sessionKey,
         e.getLocalizedMessage()
       );
+    }
   }
-}
 
   private void notifyDownload(String id, int percent) {
     Intent intent = new Intent(PERCENTDOWNLOAD);
