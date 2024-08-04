@@ -379,9 +379,9 @@ extension CustomError: LocalizedError {
         do {
             let checksumBytes: Data = Data(base64Encoded: checksum)!
             guard let rsaPublicKey: RSAPublicKey = .load(rsaPublicKey: self.publicKey!) else {
-                 print("cannot decode publicKey", self.publicKey!)
-                 throw CustomError.cannotDecode
-             }
+                print("cannot decode publicKey", self.publicKey!)
+                throw CustomError.cannotDecode
+            }
             guard let decryptedChecksum = try? rsaPublicKey.decrypt(data: checksumBytes) else {
                 throw NSError(domain: "Failed to decrypt session key data", code: 2, userInfo: nil)
             }

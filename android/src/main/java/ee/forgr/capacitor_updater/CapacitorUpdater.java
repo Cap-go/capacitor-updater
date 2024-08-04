@@ -41,7 +41,6 @@ import java.io.UnsupportedEncodingException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.security.GeneralSecurityException;
-import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.SecureRandom;
 import java.util.ArrayList;
@@ -515,15 +514,15 @@ public class CapacitorUpdater {
       return checksum;
     }
     try {
-      byte[] checksumBytes = Base64.decode(checksum.getBytes(), Base64.DEFAULT);
+      byte[] checksumBytes = Base64.decode(checksum, Base64.DEFAULT);
       PublicKey pKey = CryptoCipher.stringToPublicKey(this.publicKey);
       byte[] decryptedChecksum = CryptoCipher.decryptRSA(checksumBytes, pKey);
-      return new String(decryptedChecksum);
+      // Match Swift's base64 encoding of the decrypted result
+      return Base64.encodeToString(decryptedChecksum, Base64.NO_WRAP);
     } catch (GeneralSecurityException e) {
-      Log.i(TAG, "decryptChecksum fail");
+      Log.i(TAG, "decryptChecksum fail", e);
       this.sendStats("decrypt_fail", version);
-      e.printStackTrace();
-      throw new IOException("GeneralSecurityException");
+      throw new IOException("GeneralSecurityException", e);
     }
   }
 
