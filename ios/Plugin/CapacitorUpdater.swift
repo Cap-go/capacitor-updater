@@ -562,7 +562,7 @@ extension CustomError: LocalizedError {
         let semaphore = DispatchSemaphore(value: 0)
         var fileSize: Int?
         var request = URLRequest(url: url)
-        request.setValue("bytes=0-10", forHTTPHeaderField: "Range") //Asking only for the 10 first bytes of the response body, in order to not download the full file
+        request.setValue("bytes=0-0", forHTTPHeaderField: "Range") //Asking for 0 byte in the response body, in order to not download the file
 
         let task = URLSession.shared.dataTask(with: request) { data, response, error in
             defer { semaphore.signal() }
