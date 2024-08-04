@@ -629,7 +629,6 @@ extension CustomError: LocalizedError {
                         }
 
                         try self.decryptFile(filePath: fileURL, sessionKey: sessionKey, version: version)
-                        let checksumDecrypted = try self.decryptChecksum(checksum: checksum, version: version)
                         checksum = self.getChecksum(filePath: fileURL)
                         try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: true)
                         try self.deleteFolder(source: fileURL)
