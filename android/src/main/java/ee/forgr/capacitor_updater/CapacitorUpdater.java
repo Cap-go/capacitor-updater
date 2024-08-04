@@ -523,6 +523,10 @@ public class CapacitorUpdater {
       Log.i(TAG, "decryptChecksum fail", e);
       this.sendStats("decrypt_fail", version);
       throw new IOException("GeneralSecurityException", e);
+    } catch (Throwable t) {
+      Log.i(TAG, "Unexpected error in decryptChecksum", t);
+      this.sendStats("decrypt_fail", version);
+      throw new IOException("Unexpected error: " + t.getMessage());
     }
   }
 

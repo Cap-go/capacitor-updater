@@ -529,13 +529,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                     if !killed {
                         self._cancelDelay(source: "background check")
                     }
-                    case "kill":
+                case "kill":
                     if killed {
                         self._cancelDelay(source: "kill check")
                         // instant install for kill action
                         self.installNext()
                     }
-                    case "date":
+                case "date":
                     if value != nil && value != "" {
                         let dateFormatter = ISO8601DateFormatter()
                         dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -549,7 +549,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                     } else {
                         self._cancelDelay(source: "delayVal absent")
                     }
-                    case "nativeVersion":
+                case "nativeVersion":
                     if value != nil && value != "" {
                         do {
                             let versionLimit = try Version(value!)

@@ -170,6 +170,7 @@ enum CustomError: Error {
     case cannotCreateDirectory
     case cannotDeleteDirectory
     case cannotDecryptSessionKey
+    case invalidBase64
 
     // Throw in all other cases
     case unexpected(code: Int)
@@ -217,6 +218,11 @@ extension CustomError: LocalizedError {
             return NSLocalizedString(
                 "Decrypting the session key failed",
                 comment: "Invalid session key"
+            )
+        case .invalidBase64:
+            return NSLocalizedString(
+                "Decrypting the base64 failed",
+                comment: "Invalid checksum key"
             )
         }
     }
@@ -377,7 +383,11 @@ extension CustomError: LocalizedError {
             return checksum
         }
         do {
-            let checksumBytes: Data = Data(base64Encoded: checksum)!
+            guard let checksumBytes = Data(base64Encoded: checksum) else {
+                print("\(self.TAG) Invalid base64 checksum: \(checksum)")
+                self.sendStats(action: "decrypt_fail_invalid_base64", versionName: version)
+                throw CustomError.invalidBase64
+            }
             guard let rsaPublicKey: RSAPublicKey = .load(rsaPublicKey: self.publicKey!) else {
                 print("cannot decode publicKey", self.publicKey!)
                 throw CustomError.cannotDecode
