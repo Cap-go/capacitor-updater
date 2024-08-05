@@ -54,7 +54,7 @@ public struct AES128Key {
 
             let status: CCCryptorStatus = CCCrypt(CCOperation(kCCDecrypt), CryptoCipherConstants.aesAlgorithm, CryptoCipherConstants.aesOptions, keyData, keyLength, ivData, encryptedData, encryptedDataLength, decryptedData, decryptedDataLength, &decryptedLength)
 
-            if UInt32(status) == UInt32(kCCSuccess) {
+            if Int32(status) == Int32(kCCSuccess) {
                 result.length = Int(decryptedLength)
                 return result as Data
             } else {
