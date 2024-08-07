@@ -30,6 +30,7 @@ import java.io.IOException;
 import java.lang.reflect.Type;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.security.PublicKey;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -55,7 +56,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
   private static final String channelUrlDefault =
     "https://api.capgo.app/channel_self";
 
-  private final String PLUGIN_VERSION = "6.0.55";
+  private final String PLUGIN_VERSION = "6.1.0";
   private static final String DELAY_CONDITION_PREFERENCES = "";
 
   private SharedPreferences.Editor editor;
@@ -135,6 +136,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
       this.implementation.versionCode = Integer.toString(pInfo.versionCode);
       this.implementation.requestQueue = Volley.newRequestQueue(
         this.getContext()
+      );
+      this.implementation.signKey = CryptoCipher.stringToPublicKey(
+        this.getConfig().getString("signKey")
       );
       this.implementation.directUpdate = this.getConfig()
         .getBoolean("directUpdate", false);
@@ -1262,11 +1266,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     final String checksum = res.has("checksum")
                       ? res.getString("checksum")
                       : "";
+                    final String signature = res.has("signature")
+                            ? res.getString("signature")
+                            : "";
                     CapacitorUpdaterPlugin.this.implementation.downloadBackground(
                         url,
                         latestVersionName,
                         sessionKey,
-                        checksum
+                        checksum,
+                        signature
                       );
                   } catch (final Exception e) {
                     Log.e(CapacitorUpdater.TAG, "error downloading file", e);

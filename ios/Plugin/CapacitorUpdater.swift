@@ -260,7 +260,7 @@ extension CustomError: LocalizedError {
     public var appId: String = ""
     public var deviceID = UIDevice.current.identifierForVendor?.uuidString ?? ""
     public var privateKey: String = ""
-    public var signKey: String = ""
+    public var signKey: PublicKey?
 
     public var notifyDownload: (String, Int) -> Void = { _, _  in }
 
@@ -386,23 +386,23 @@ extension CustomError: LocalizedError {
     }
     
     private func verifyBundleSignature(version: String, filePath: URL, signature: String?) throws -> Bool {
-        if (self.signKey.isEmpty) {
+        if (self.signKey == nil) {
             print("\(self.TAG) Signing not configured")
             return true
         }
         
-        if (!self.signKey.isEmpty && (signature == nil || signature?.isEmpty == true)) {
+        if (self.signKey != nil && (signature == nil || signature?.isEmpty == true)) {
             print("\(self.TAG) Signature required but none provided")
             self.sendStats(action: "signature_not_provided", versionName: version)
             throw CustomError.signatureNotProvided
         }
         
         do {
-            let publicKey = try PublicKey(pemEncoded: self.signKey)
+            // let publicKey = try PublicKey(pemEncoded: self.signKey)
             let signatureObj = try Signature(base64Encoded: signature!) // I THINK I can unwrap safely here (?)
             let clear = try ClearMessage(data: Data(contentsOf: filePath))
             
-            let isSuccessful = try clear.verify(with: publicKey, signature: signatureObj, digestType: .sha256)
+            let isSuccessful = try clear.verify(with: self.signKey!, signature: signatureObj, digestType: .sha256)
             return isSuccessful
         } catch {
             print("\(self.TAG) Signature validation failed", error)

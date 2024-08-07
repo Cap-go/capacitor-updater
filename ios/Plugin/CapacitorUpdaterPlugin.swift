@@ -7,6 +7,7 @@
 import Foundation
 import Capacitor
 import Version
+import SwiftyRSA
 
 /**
  * Please read the Capacitor iOS Plugin Development Guide
@@ -86,7 +87,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         implementation.statsUrl = getConfig().getString("statsUrl", CapacitorUpdaterPlugin.statsUrlDefault)!
         implementation.channelUrl = getConfig().getString("channelUrl", CapacitorUpdaterPlugin.channelUrlDefault)!
         implementation.defaultChannel = getConfig().getString("defaultChannel", "")!
-        implementation.signKey = getConfig().getString("signKey", "")!
+        do {
+            let signKeyString = getConfig().getString("signKey", "")!
+            if (!signKeyString.isEmpty) {
+                implementation.signKey = try PublicKey(base64Encoded: signKeyString)
+            }
+        } catch {
+            print("\(self.implementation.TAG) Cannot get signKey, invalid key")
+            fatalError("Invalid signKey in capacitor config")
+        }
         self.implementation.autoReset()
 
         // Load the server
