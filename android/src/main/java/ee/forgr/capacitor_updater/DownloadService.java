@@ -86,12 +86,28 @@ public class DownloadService extends IntentService {
             }
             bytesRead += length;
           }
-          publishResults(dest, id, version, checksum, sessionKey, signature, "");
+          publishResults(
+            dest,
+            id,
+            version,
+            checksum,
+            sessionKey,
+            signature,
+            ""
+          );
         }
       }
     } catch (OutOfMemoryError e) {
       e.printStackTrace();
-      publishResults("", id, version, checksum, sessionKey, signature, "low_mem_fail");
+      publishResults(
+        "",
+        id,
+        version,
+        checksum,
+        sessionKey,
+        signature,
+        "low_mem_fail"
+      );
     } catch (Exception e) {
       e.printStackTrace();
       publishResults(
