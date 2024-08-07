@@ -654,15 +654,14 @@ extension CustomError: LocalizedError {
                         } catch {
                             print("\(self.TAG) Double error, cannot cleanup", error)
                         }
-                        
-                        return
                     }
                     
                     do {
-
-                        try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: true)
-                        try self.deleteFolder(source: fileURL)
-                        self.notifyDownload(id, 100)
+                        if (mainError == nil) {
+                            try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: true)
+                            try self.deleteFolder(source: fileURL)
+                            self.notifyDownload(id, 100)
+                        }
                     } catch {
                         print("\(self.TAG) download unzip error", error)
                         mainError = error as NSError
