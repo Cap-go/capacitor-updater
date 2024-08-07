@@ -8,7 +8,13 @@ import Foundation
 import SSZipArchive
 import Alamofire
 import zlib
+import SwiftyRSA
 
+extension Collection {
+  subscript(safe index: Index) -> Element? {
+      return indices.contains(index) ? self[index] : nil
+  }
+}
 extension URL {
     var isDirectory: Bool {
         (try? resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
@@ -91,6 +97,7 @@ struct AppVersionDec: Decodable {
     let session_key: String?
     let major: Bool?
     let data: [String: String]?
+    let signature: String?
 }
 public class AppVersion: NSObject {
     var version: String = ""
@@ -101,6 +108,7 @@ public class AppVersion: NSObject {
     var sessionKey: String?
     var major: Bool?
     var data: [String: String]?
+    var signature: String?
 }
 
 extension AppVersion {
@@ -169,6 +177,8 @@ enum CustomError: Error {
     case cannotUnflat
     case cannotCreateDirectory
     case cannotDeleteDirectory
+    case signatureNotProvided
+    case invalidSignature
 
     // Throw in all other cases
     case unexpected(code: Int)
@@ -177,6 +187,16 @@ enum CustomError: Error {
 extension CustomError: LocalizedError {
     public var errorDescription: String? {
         switch self {
+        case .signatureNotProvided:
+            return NSLocalizedString(
+                "Signature was required but none was provided",
+                comment: "Signature not provided"
+            )
+        case .invalidSignature:
+            return NSLocalizedString(
+                "Signature is not valid, cannot accept update",
+                comment: "Invalid signature"
+            )
         case .cannotUnzip:
             return NSLocalizedString(
                 "The file cannot be unzip",
@@ -240,6 +260,7 @@ extension CustomError: LocalizedError {
     public var appId: String = ""
     public var deviceID = UIDevice.current.identifierForVendor?.uuidString ?? ""
     public var privateKey: String = ""
+    public var signKey: String = ""
 
     public var notifyDownload: (String, Int) -> Void = { _, _  in }
 
@@ -361,6 +382,32 @@ extension CustomError: LocalizedError {
         } catch {
             print("\(self.TAG) Cannot get checksum: \(filePath.path)", error)
             return ""
+        }
+    }
+    
+    private func verifyBundleSignature(version: String, filePath: URL, signature: String?) throws -> Bool {
+        if (self.signKey.isEmpty) {
+            print("\(self.TAG) Signing not configured")
+            return true
+        }
+        
+        if (!self.signKey.isEmpty && (signature == nil || signature?.isEmpty == true)) {
+            print("\(self.TAG) Signature required but none provided")
+            self.sendStats(action: "signature_not_provided", versionName: version)
+            throw CustomError.signatureNotProvided
+        }
+        
+        do {
+            let publicKey = try PublicKey(pemEncoded: self.signKey)
+            let signatureObj = try Signature(base64Encoded: signature!) // I THINK I can unwrap safely here (?)
+            let clear = try ClearMessage(data: Data(contentsOf: filePath))
+            
+            let isSuccessful = try clear.verify(with: publicKey, signature: signatureObj, digestType: .sha256)
+            return isSuccessful
+        } catch {
+            print("\(self.TAG) Signature validation failed", error)
+            self.sendStats(action: "signature_validation_failed", versionName: version)
+            throw error
         }
     }
 
@@ -539,6 +586,9 @@ extension CustomError: LocalizedError {
                 if let data = response.value?.data {
                     latest.data = data
                 }
+                if let signature = response.value?.signature {
+                    latest.signature = signature
+                }
             case let .failure(error):
                 print("\(self.TAG) Error getting Latest", response.value ?? "", error )
                 latest.message = "Error getting Latest \(String(describing: response.value))"
@@ -556,7 +606,7 @@ extension CustomError: LocalizedError {
         print("\(self.TAG) Current bundle set to: \((bundle ).isEmpty ? BundleInfo.ID_BUILTIN : bundle)")
     }
 
-    public func download(url: URL, version: String, sessionKey: String) throws -> BundleInfo {
+    public func download(url: URL, version: String, sessionKey: String, signature: String?) throws -> BundleInfo {
         let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
         let id: String = self.randomString(length: 10)
         var checksum: String = ""
@@ -579,9 +629,37 @@ extension CustomError: LocalizedError {
                 switch response.result {
                 case .success:
                     self.notifyDownload(id, 71)
+                    
+                    // The reason we do 2 blocks of try/catch is that in the first one we will try to cleanup afterwards. Cleanup wlll NOT happen in the second one
+                    
                     do {
+                        let valid = try self.verifyBundleSignature(version: version, filePath: fileURL, signature: signature)
+                        if (!valid) {
+                            print("\(self.TAG) Invalid signature, cannot accept download")
+                            self.sendStats(action: "invalid_signature", versionName: version)
+                            throw CustomError.invalidSignature
+                        } else {
+                            print("\(self.TAG) Valid signature")
+                        }
+                        
                         try self.decryptFile(filePath: fileURL, sessionKey: sessionKey, version: version)
                         checksum = self.getChecksum(filePath: fileURL)
+                    } catch {
+                        print("\(self.TAG) downloaded file verification error", error)
+                        mainError = error as NSError
+                        
+                        // Cleanup
+                        do {
+                            try self.deleteFolder(source: fileURL)
+                        } catch {
+                            print("\(self.TAG) Double error, cannot cleanup", error)
+                        }
+                        
+                        return
+                    }
+                    
+                    do {
+
                         try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: true)
                         try self.deleteFolder(source: fileURL)
                         self.notifyDownload(id, 100)

@@ -15,7 +15,7 @@ import Version
 @objc(CapacitorUpdaterPlugin)
 public class CapacitorUpdaterPlugin: CAPPlugin {
     public var implementation = CapacitorUpdater()
-    private let PLUGIN_VERSION: String = "6.0.55"
+    private let PLUGIN_VERSION: String = "6.1.0"
     static let updateUrlDefault = "https://api.capgo.app/updates"
     static let statsUrlDefault = "https://api.capgo.app/stats"
     static let channelUrlDefault = "https://api.capgo.app/channel_self"
@@ -38,6 +38,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     let semaphoreReady = DispatchSemaphore(value: 0)
 
     override public func load() {
+        #if targetEnvironment(simulator)
+            print("\(self.implementation.TAG) ::::: SIMULATOR :::::")
+            print("\(self.implementation.TAG) Application directory: \(NSHomeDirectory())")
+        #endif
+        
         self.semaphoreUp()
         print("\(self.implementation.TAG) init for device \(self.implementation.deviceID)")
         guard let versionName = getConfig().getString("version", Bundle.main.versionName) else {
@@ -81,6 +86,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         implementation.statsUrl = getConfig().getString("statsUrl", CapacitorUpdaterPlugin.statsUrlDefault)!
         implementation.channelUrl = getConfig().getString("channelUrl", CapacitorUpdaterPlugin.channelUrlDefault)!
         implementation.defaultChannel = getConfig().getString("defaultChannel", "")!
+        implementation.signKey = getConfig().getString("signKey", "")!
         self.implementation.autoReset()
 
         // Load the server
@@ -245,7 +251,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         print("\(self.implementation.TAG) Downloading \(String(describing: url))")
         DispatchQueue.global(qos: .background).async {
             do {
-                let next = try self.implementation.download(url: url!, version: version, sessionKey: sessionKey)
+                // TODO: fix signature
+                let next = try self.implementation.download(url: url!, version: version, sessionKey: sessionKey, signature: "")
                 if checksum != "" && next.getChecksum() != checksum {
                     print("\(self.implementation.TAG) Error checksum", next.getChecksum(), checksum)
                     self.implementation.sendStats(action: "checksum_fail", versionName: next.getVersionName())
@@ -680,6 +687,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 return
             }
             let sessionKey = res.sessionKey ?? ""
+            let signature = res.signature
             guard let downloadUrl = URL(string: res.url) else {
                 print("\(self.implementation.TAG) Error no url or wrong format")
                 self.endBackGroundTaskWithNotif(msg: "Error no url or wrong format", latestVersionName: res.version, current: current)
@@ -700,7 +708,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                                 print("\(self.implementation.TAG) Failed to delete failed bundle: \(nextImpl!.toString())")
                             }
                         }
-                        nextImpl = try self.implementation.download(url: downloadUrl, version: latestVersionName, sessionKey: sessionKey)
+                        nextImpl = try self.implementation.download(url: downloadUrl, version: latestVersionName, sessionKey: sessionKey, signature: signature)
                     }
                     guard let next = nextImpl else {
                         print("\(self.implementation.TAG) Error downloading file")
