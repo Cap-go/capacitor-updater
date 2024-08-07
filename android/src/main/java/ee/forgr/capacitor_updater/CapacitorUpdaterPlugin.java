@@ -1267,8 +1267,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                       ? res.getString("checksum")
                       : "";
                     final String signature = res.has("signature")
-                            ? res.getString("signature")
-                            : "";
+                      ? res.getString("signature")
+                      : "";
                     CapacitorUpdaterPlugin.this.implementation.downloadBackground(
                         url,
                         latestVersionName,

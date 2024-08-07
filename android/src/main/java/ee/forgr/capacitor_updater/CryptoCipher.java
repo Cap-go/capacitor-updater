@@ -13,7 +13,6 @@ package ee.forgr.capacitor_updater;
  */
 import android.util.Base64;
 import android.util.Log;
-
 import java.security.GeneralSecurityException;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
@@ -25,7 +24,6 @@ import java.security.spec.InvalidKeySpecException;
 import java.security.spec.MGF1ParameterSpec;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
-
 import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
 import javax.crypto.IllegalBlockSizeException;
@@ -151,15 +149,17 @@ public class CryptoCipher {
   public static PublicKey stringToPublicKey(String publicKey) {
     byte[] encoded = Base64.decode(publicKey, Base64.DEFAULT);
 
-      KeyFactory keyFactory = null;
-      try {
-        keyFactory = KeyFactory.getInstance("RSA");
-        X509EncodedKeySpec keySpec = new X509EncodedKeySpec(encoded);
-        return keyFactory.generatePublic(keySpec);
-      } catch (NoSuchAlgorithmException | InvalidKeySpecException e)
-      {
-          Log.i("Capacitor-updater", "stringToPublicKey fail\nError:\n" + e.toString());
-          return null;
-      }
+    KeyFactory keyFactory = null;
+    try {
+      keyFactory = KeyFactory.getInstance("RSA");
+      X509EncodedKeySpec keySpec = new X509EncodedKeySpec(encoded);
+      return keyFactory.generatePublic(keySpec);
+    } catch (NoSuchAlgorithmException | InvalidKeySpecException e) {
+      Log.i(
+        "Capacitor-updater",
+        "stringToPublicKey fail\nError:\n" + e.toString()
+      );
+      return null;
+    }
   }
 }

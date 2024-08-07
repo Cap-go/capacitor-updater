@@ -55,7 +55,6 @@ import java.util.Objects;
 import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
-
 import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
 import org.json.JSONException;
@@ -357,22 +356,25 @@ public class CapacitorUpdater {
       boolean valid = verifyBundleSignature(version, downloaded, signature);
       if (!valid) {
         Log.e(
-            CapacitorUpdater.TAG,
-            "Invalid signature, cannot accept download"
+          CapacitorUpdater.TAG,
+          "Invalid signature, cannot accept download"
         );
 
         this.sendStats("invalid_signature", version);
-        throw new GeneralSecurityException("Signature is not valid, cannot accept update");
-      } else {
-        Log.i(
-            CapacitorUpdater.TAG,
-            "Valid signature"
+        throw new GeneralSecurityException(
+          "Signature is not valid, cannot accept update"
         );
+      } else {
+        Log.i(CapacitorUpdater.TAG, "Valid signature");
       }
 
       this.decryptFile(downloaded, sessionKey, version);
       checksum = this.getChecksum(downloaded);
-      if (checksumRes != null && !checksumRes.isEmpty() && !checksumRes.equals(checksum)) {
+      if (
+        checksumRes != null &&
+        !checksumRes.isEmpty() &&
+        !checksumRes.equals(checksum)
+      ) {
         Log.e(
           CapacitorUpdater.TAG,
           "Error checksum " + checksumRes + " " + checksum
@@ -391,8 +393,8 @@ public class CapacitorUpdater {
 
       final JSObject ret = new JSObject();
       ret.put(
-          "version",
-          CapacitorUpdater.this.getCurrentBundle().getVersionName()
+        "version",
+        CapacitorUpdater.this.getCurrentBundle().getVersionName()
       );
 
       CapacitorUpdater.this.notifyListeners("downloadFailed", ret);
@@ -554,10 +556,15 @@ public class CapacitorUpdater {
     if (signatureStr.isEmpty()) {
       Log.i(TAG, "Signature required but none provided");
       this.sendStats("signature_not_provided", version);
-      throw new GeneralSecurityException("Signature was required but none was provided");
+      throw new GeneralSecurityException(
+        "Signature was required but none was provided"
+      );
     }
 
-    byte[] providedSignatureBytes = Base64.decode(signatureStr.getBytes(StandardCharsets.UTF_8), Base64.DEFAULT);
+    byte[] providedSignatureBytes = Base64.decode(
+      signatureStr.getBytes(StandardCharsets.UTF_8),
+      Base64.DEFAULT
+    );
 
     Signature signature = Signature.getInstance("SHA256withRSA");
     signature.initVerify(this.signKey);
@@ -565,9 +572,9 @@ public class CapacitorUpdater {
     byte[] content = new byte[(int) file.length()];
 
     try (
-        final FileInputStream fis = new FileInputStream(file);
-        final BufferedInputStream bis = new BufferedInputStream(fis);
-        final DataInputStream dis = new DataInputStream(bis)
+      final FileInputStream fis = new FileInputStream(file);
+      final BufferedInputStream bis = new BufferedInputStream(fis);
+      final DataInputStream dis = new DataInputStream(bis)
     ) {
       dis.readFully(content);
       dis.close();
@@ -685,7 +692,7 @@ public class CapacitorUpdater {
     this.downloadFile(id, url, dest);
     // TODO: signature
     final Boolean finished =
-      this.finishDownload(id, dest, version, sessionKey, checksum, "",false);
+      this.finishDownload(id, dest, version, sessionKey, checksum, "", false);
     final BundleStatus status = finished
       ? BundleStatus.PENDING
       : BundleStatus.ERROR;
