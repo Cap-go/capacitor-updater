@@ -41,7 +41,7 @@ import java.io.UnsupportedEncodingException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.security.GeneralSecurityException;
-import java.security.PrivateKey;
+import java.security.PublicKey;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Date;
@@ -86,7 +86,8 @@ public class CapacitorUpdater {
   public String channelUrl = "";
   public String defaultChannel = "";
   public String appId = "";
-  public String privateKey = "";
+  public String publicKey = "";
+  public Boolean hasOldPrivateKeyPropertyInConfig = false;
   public String deviceID = "";
   public int timeout = 20000;
 
@@ -337,7 +338,16 @@ public class CapacitorUpdater {
   ) {
     try {
       final File downloaded = new File(this.documentsDir, dest);
+      if (this.hasOldPrivateKeyPropertyInConfig) {
+        Log.i(
+          CapacitorUpdater.TAG,
+          "There is still an privateKey property in the config"
+        );
+      }
+
       this.decryptFile(downloaded, sessionKey, version);
+      final String checksumDecrypted =
+        this.decryptChecksum(checksumRes, version);
       final String checksum;
       checksum = this.getChecksum(downloaded);
       this.notifyDownload(id, 71);
@@ -357,13 +367,13 @@ public class CapacitorUpdater {
       );
       this.saveBundleInfo(id, next);
       if (
-        checksumRes != null &&
-        !checksumRes.isEmpty() &&
-        !checksumRes.equals(checksum)
+        checksumDecrypted != null &&
+        !checksumDecrypted.isEmpty() &&
+        !checksumDecrypted.equals(checksum)
       ) {
         Log.e(
           CapacitorUpdater.TAG,
-          "Error checksum " + checksumRes + " " + checksum
+          "Error checksum " + checksumDecrypted + " " + checksum
         );
         this.sendStats("checksum_fail");
         final Boolean res = this.delete(id);
@@ -497,6 +507,29 @@ public class CapacitorUpdater {
     return enc.toLowerCase();
   }
 
+  private String decryptChecksum(String checksum, String version)
+    throws IOException {
+    if (this.publicKey == null || this.publicKey.isEmpty()) {
+      Log.i(TAG, "Cannot find public key");
+      return checksum;
+    }
+    try {
+      byte[] checksumBytes = Base64.decode(checksum, Base64.DEFAULT);
+      PublicKey pKey = CryptoCipher.stringToPublicKey(this.publicKey);
+      byte[] decryptedChecksum = CryptoCipher.decryptRSA(checksumBytes, pKey);
+      // Match Swift's base64 encoding of the decrypted result
+      return Base64.encodeToString(decryptedChecksum, Base64.NO_WRAP);
+    } catch (GeneralSecurityException e) {
+      Log.i(TAG, "decryptChecksum fail", e);
+      this.sendStats("decrypt_fail", version);
+      throw new IOException("GeneralSecurityException", e);
+    } catch (Throwable t) {
+      Log.i(TAG, "Unexpected error in decryptChecksum", t);
+      this.sendStats("decrypt_fail", version);
+      throw new IOException("Unexpected error: " + t.getMessage());
+    }
+  }
+
   private void decryptFile(
     final File file,
     final String ivSessionKey,
@@ -504,15 +537,24 @@ public class CapacitorUpdater {
   ) throws IOException {
     // (str != null && !str.isEmpty())
     if (
-      this.privateKey == null ||
-      this.privateKey.isEmpty() ||
+      this.publicKey == null ||
+      this.publicKey.isEmpty() ||
       ivSessionKey == null ||
       ivSessionKey.isEmpty() ||
       ivSessionKey.split(":").length != 2
     ) {
-      Log.i(TAG, "Cannot found privateKey or sessionKey");
+      Log.i(TAG, "Cannot find public key or sessionKey");
       return;
     }
+
+    if (!this.publicKey.startsWith("-----BEGIN RSA PUBLIC KEY-----")) {
+      Log.e(
+        CapacitorUpdater.TAG,
+        "The public key is not a valid RSA Public key"
+      );
+      return;
+    }
+
     try {
       String ivB64 = ivSessionKey.split(":")[0];
       String sessionKeyB64 = ivSessionKey.split(":")[1];
@@ -521,8 +563,10 @@ public class CapacitorUpdater {
         sessionKeyB64.getBytes(),
         Base64.DEFAULT
       );
-      PrivateKey pKey = CryptoCipher.stringToPrivateKey(this.privateKey);
+
+      PublicKey pKey = CryptoCipher.stringToPublicKey(this.publicKey);
       byte[] decryptedSessionKey = CryptoCipher.decryptRSA(sessionKey, pKey);
+
       SecretKey sKey = CryptoCipher.byteToSessionKey(decryptedSessionKey);
       byte[] content = new byte[(int) file.length()];
 
