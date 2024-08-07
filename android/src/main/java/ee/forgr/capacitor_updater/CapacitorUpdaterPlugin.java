@@ -1444,7 +1444,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     this._checkCancelDelay(false);
     if (
       CapacitorUpdaterPlugin.this._isAutoUpdateEnabled() &&
-      (this.backgroundDownloadTask == null || !this.backgroundDownloadTask.isAlive())
+      (this.backgroundDownloadTask == null ||
+        !this.backgroundDownloadTask.isAlive())
     ) {
       this.backgroundDownloadTask = this.backgroundDownload();
     } else {
