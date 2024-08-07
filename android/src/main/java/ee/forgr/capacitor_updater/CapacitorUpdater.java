@@ -385,10 +385,7 @@ public class CapacitorUpdater {
     } catch (IOException | GeneralSecurityException e) {
       final Boolean res = this.delete(id);
       if (!res) {
-        Log.i(
-            CapacitorUpdater.TAG,
-            "Double error, cannot cleanup: " + version
-        );
+        Log.i(CapacitorUpdater.TAG, "Double error, cannot cleanup: " + version);
       }
 
       final JSObject ret = new JSObject();
