@@ -382,11 +382,10 @@ public class CapacitorUpdater {
       }
     } catch (IOException | GeneralSecurityException e) {
       final Boolean res = this.delete(id);
-      final boolean fileDel = downloaded.delete();
-      if (!res || !fileDel) {
+      if (!res) {
         Log.i(
             CapacitorUpdater.TAG,
-            "Double error, cannot cleanup: " + version + " (" + res + ", " + fileDel + ")"
+            "Double error, cannot cleanup: " + version
         );
       }
 
