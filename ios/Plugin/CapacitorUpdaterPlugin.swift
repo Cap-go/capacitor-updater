@@ -254,14 +254,20 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             call.reject("Download called without version")
             return
         }
+        let signature = call.getString("signature", "")
+        if (self.implementation.signKey != nil && signature.isEmpty) {
+            print("\(self.implementation.TAG) Signature required but none provided for download call")
+            call.reject("Signature required but none provided")
+            return
+        }
+        
         let sessionKey = call.getString("sessionKey", "")
         let checksum = call.getString("checksum", "")
         let url = URL(string: urlString)
         print("\(self.implementation.TAG) Downloading \(String(describing: url))")
         DispatchQueue.global(qos: .background).async {
             do {
-                // TODO: fix signature
-                let next = try self.implementation.download(url: url!, version: version, sessionKey: sessionKey, signature: "")
+                let next = try self.implementation.download(url: url!, version: version, sessionKey: sessionKey, signature: signature)
                 if checksum != "" && next.getChecksum() != checksum {
                     print("\(self.implementation.TAG) Error checksum", next.getChecksum(), checksum)
                     self.implementation.sendStats(action: "checksum_fail", versionName: next.getVersionName())

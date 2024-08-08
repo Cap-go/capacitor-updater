@@ -578,6 +578,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     final String version = call.getString("version");
     final String sessionKey = call.getString("sessionKey", "");
     final String checksum = call.getString("checksum", "");
+    final String signature = call.getString("signature", "");
     if (url == null) {
       Log.e(CapacitorUpdater.TAG, "Download called without url");
       call.reject("Download called without url");
@@ -586,6 +587,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
     if (version == null) {
       Log.e(CapacitorUpdater.TAG, "Download called without version");
       call.reject("Download called without version");
+      return;
+    }
+    if (this.implementation.signKey != null && (signature == null || signature.isEmpty())) {
+      Log.e(CapacitorUpdater.TAG, "Signature required but none provided for download call");
+      call.reject("Signature required but none provided");
       return;
     }
     try {
@@ -597,7 +603,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 url,
                 version,
                 sessionKey,
-                checksum
+                checksum,
+                signature
               );
           if (downloaded.isErrorStatus()) {
             throw new RuntimeException(

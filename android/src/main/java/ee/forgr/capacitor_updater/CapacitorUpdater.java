@@ -673,7 +673,8 @@ public class CapacitorUpdater {
     final String url,
     final String version,
     final String sessionKey,
-    final String checksum
+    final String checksum,
+    final String signature
   ) throws IOException {
     final String id = this.randomString();
     this.saveBundleInfo(
@@ -690,9 +691,8 @@ public class CapacitorUpdater {
     this.notifyDownload(id, 5);
     final String dest = this.randomString();
     this.downloadFile(id, url, dest);
-    // TODO: signature
     final Boolean finished =
-      this.finishDownload(id, dest, version, sessionKey, checksum, "", false);
+      this.finishDownload(id, dest, version, sessionKey, checksum, signature, false);
     final BundleStatus status = finished
       ? BundleStatus.PENDING
       : BundleStatus.ERROR;
