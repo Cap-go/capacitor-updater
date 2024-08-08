@@ -402,7 +402,7 @@ extension CustomError: LocalizedError {
             let signatureObj = try Signature(base64Encoded: signature!) // I THINK I can unwrap safely here (?)
             let clear = try ClearMessage(data: Data(contentsOf: filePath))
             
-            let isSuccessful = try clear.verify(with: self.signKey!, signature: signatureObj, digestType: .sha256)
+            let isSuccessful = try clear.verify(with: self.signKey!, signature: signatureObj, digestType: .sha512)
             return isSuccessful
         } catch {
             print("\(self.TAG) Signature validation failed", error)

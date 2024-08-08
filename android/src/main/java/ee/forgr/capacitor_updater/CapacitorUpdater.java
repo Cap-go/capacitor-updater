@@ -563,7 +563,7 @@ public class CapacitorUpdater {
       Base64.DEFAULT
     );
 
-    Signature signature = Signature.getInstance("SHA256withRSA");
+    Signature signature = Signature.getInstance("SHA512withRSA");
     signature.initVerify(this.signKey);
 
     byte[] content = new byte[(int) file.length()];
