@@ -697,7 +697,7 @@ export interface DownloadOptions {
   checksum?: string;
     /**
    * The signature of the update. Can be generated using capgo CLI
-   * @since 4.0.0
+   * @since 6.1.0
    * @default undefined
    */
     signature?: string;

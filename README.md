@@ -919,7 +919,7 @@ Listen for app ready event in the App, let you know when app is ready to use
 | **`version`**    | <code>string</code> | The version code/name of this bundle/version                                                                                                                     |                        |       |
 | **`sessionKey`** | <code>string</code> | The session key for the update                                                                                                                                   | <code>undefined</code> | 4.0.0 |
 | **`checksum`**   | <code>string</code> | The checksum for the update                                                                                                                                      | <code>undefined</code> | 4.0.0 |
-| **`signature`**  | <code>string</code> | The signature of the update. Can be generated using capgo CLI                                                                                                    | <code>undefined</code> | 4.0.0 |
+| **`signature`**  | <code>string</code> | The signature of the update. Can be generated using capgo CLI                                                                                                    | <code>undefined</code> | 6.1.0 |
 
 
 #### BundleId
