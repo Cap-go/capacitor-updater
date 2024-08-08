@@ -189,6 +189,15 @@ declare module "@capacitor/cli" {
        * @since  5.5.0
        */
       defaultChannel?: string;
+      /**
+       * Public key used for bundle signing.
+       *
+       *
+       *
+       * @default undefined
+       * @since  6.1.0
+       */
+      signKey?: string;
     };
   }
 }
