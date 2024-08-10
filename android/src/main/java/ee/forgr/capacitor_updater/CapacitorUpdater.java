@@ -484,20 +484,22 @@ public class CapacitorUpdater {
   }
 
   private String calcChecksum(File file) {
-      final int BUFFER_SIZE = 1024 * 1024 * 5; // 5 MB buffer size
-      CRC32 crc = new CRC32();
-      
-      try (FileInputStream fis = new FileInputStream(file)) {
-          byte[] buffer = new byte[BUFFER_SIZE];
-          int length;
-          while ((length = fis.read(buffer)) != -1) {
-              crc.update(buffer, 0, length);
-          }
-          return String.format("%08x", crc.getValue());
-      } catch (IOException e) {
-          System.err.println(TAG + " Cannot calc checksum: " + file.getPath() + " " + e.getMessage());
-          return "";
+    final int BUFFER_SIZE = 1024 * 1024 * 5; // 5 MB buffer size
+    CRC32 crc = new CRC32();
+
+    try (FileInputStream fis = new FileInputStream(file)) {
+      byte[] buffer = new byte[BUFFER_SIZE];
+      int length;
+      while ((length = fis.read(buffer)) != -1) {
+        crc.update(buffer, 0, length);
       }
+      return String.format("%08x", crc.getValue());
+    } catch (IOException e) {
+      System.err.println(
+        TAG + " Cannot calc checksum: " + file.getPath() + " " + e.getMessage()
+      );
+      return "";
+    }
   }
 
   private void decryptFile(
