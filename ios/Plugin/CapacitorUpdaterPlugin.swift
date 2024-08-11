@@ -127,14 +127,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     private func semaphoreUp() {
-        print("\(self.implementation.TAG) semaphoreUp")
         DispatchQueue.global().async {
             self.semaphoreWait(waitTime: 0)
         }
     }
 
     private func semaphoreDown() {
-        print("\(self.implementation.TAG) semaphoreDown")
         semaphoreReady.signal()
     }
 
