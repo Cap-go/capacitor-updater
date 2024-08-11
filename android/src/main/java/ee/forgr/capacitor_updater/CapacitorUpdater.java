@@ -369,7 +369,7 @@ public class CapacitorUpdater {
       }
 
       this.decryptFile(downloaded, sessionKey, version);
-      checksum = this.getChecksum(downloaded);
+      checksum = this.calcChecksum(downloaded);
       if (
         checksumRes != null &&
         !checksumRes.isEmpty() &&
@@ -526,18 +526,23 @@ public class CapacitorUpdater {
     this.editor.commit();
   }
 
-  private String getChecksum(File file) throws IOException {
+  private String calcChecksum(File file) {
     final int BUFFER_SIZE = 1024 * 1024 * 5; // 5 MB buffer size
     CRC32 crc = new CRC32();
+
     try (FileInputStream fis = new FileInputStream(file)) {
       byte[] buffer = new byte[BUFFER_SIZE];
       int length;
       while ((length = fis.read(buffer)) != -1) {
         crc.update(buffer, 0, length);
       }
+      return String.format("%08x", crc.getValue());
+    } catch (IOException e) {
+      System.err.println(
+        TAG + " Cannot calc checksum: " + file.getPath() + " " + e.getMessage()
+      );
+      return "";
     }
-    String enc = String.format("%08X", crc.getValue());
-    return enc.toLowerCase();
   }
 
   private boolean verifyBundleSignature(

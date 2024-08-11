@@ -356,7 +356,7 @@ extension CustomError: LocalizedError {
         }
     }
 
-    private func getChecksum(filePath: URL) -> String {
+    private func calcChecksum(filePath: URL) -> String {
         let bufferSize = 1024 * 1024 * 5 // 5 MB
         var checksum = uLong(0)
 
@@ -380,7 +380,7 @@ extension CustomError: LocalizedError {
 
             return String(format: "%08X", checksum).lowercased()
         } catch {
-            print("\(self.TAG) Cannot get checksum: \(filePath.path)", error)
+            print("\(self.TAG) Cannot calc checksum: \(filePath.path)", error)
             return ""
         }
     }
@@ -643,7 +643,7 @@ extension CustomError: LocalizedError {
                         }
                         
                         try self.decryptFile(filePath: fileURL, sessionKey: sessionKey, version: version)
-                        checksum = self.getChecksum(filePath: fileURL)
+                        checksum = self.calcChecksum(filePath: fileURL)
                     } catch {
                         print("\(self.TAG) downloaded file verification error", error)
                         mainError = error as NSError
