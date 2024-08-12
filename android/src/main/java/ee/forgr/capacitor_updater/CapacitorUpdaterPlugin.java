@@ -137,9 +137,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
       this.implementation.requestQueue = Volley.newRequestQueue(
         this.getContext()
       );
-      this.implementation.signKey = CryptoCipher.stringToPublicKey(
-        this.getConfig().getString("signKey")
-      );
+      final String signKeyStr = this.getConfig().getString("signKey", "");
+      if (signKeyStr.length() > 0) {
+        this.implementation.signKey = CryptoCipher.stringToPublicKey(signKeyStr);
+      }
+
       this.implementation.directUpdate = this.getConfig()
         .getBoolean("directUpdate", false);
       this.currentVersionNative = new Version(
