@@ -34,7 +34,7 @@ Join the [discord](https://discord.gg/VnYRvBfgA6) to get help.
 ## Documentation
 I maintain a more user-friendly and complete [documentation here](https://capgo.app/docs/).
 
-## compatibility
+## Compatibility
 
 | Plugin version | Capacitor compatibility | Maintained        |
 | -------------- | ----------------------- | ----------------- |
