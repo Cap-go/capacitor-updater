@@ -704,12 +704,12 @@ export interface DownloadOptions {
    * @default undefined
    */
   checksum?: string;
-    /**
+  /**
    * The signature of the update. Can be generated using capgo CLI
    * @since 6.1.0
    * @default undefined
    */
-    signature?: string;
+  signature?: string;
 }
 
 export interface BundleId {

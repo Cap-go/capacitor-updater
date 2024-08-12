@@ -591,8 +591,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
       call.reject("Download called without version");
       return;
     }
-    if (this.implementation.signKey != null && (signature == null || signature.isEmpty())) {
-      Log.e(CapacitorUpdater.TAG, "Signature required but none provided for download call");
+    if (
+      this.implementation.signKey != null &&
+      (signature == null || signature.isEmpty())
+    ) {
+      Log.e(
+        CapacitorUpdater.TAG,
+        "Signature required but none provided for download call"
+      );
       call.reject("Signature required but none provided");
       return;
     }

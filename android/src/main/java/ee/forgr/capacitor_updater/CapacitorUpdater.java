@@ -694,7 +694,15 @@ public class CapacitorUpdater {
     final String dest = this.randomString();
     this.downloadFile(id, url, dest);
     final Boolean finished =
-      this.finishDownload(id, dest, version, sessionKey, checksum, signature, false);
+      this.finishDownload(
+          id,
+          dest,
+          version,
+          sessionKey,
+          checksum,
+          signature,
+          false
+        );
     final BundleStatus status = finished
       ? BundleStatus.PENDING
       : BundleStatus.ERROR;
