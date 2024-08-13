@@ -888,7 +888,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
       final JSObject ret = new JSObject();
       ret.put("bundle", bundle.toJSON());
       call.resolve(ret);
-      call.resolve();
     } catch (final Exception e) {
       Log.e(
         CapacitorUpdater.TAG,
