@@ -853,7 +853,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
       return;
     }
     final Timer timer = new Timer();
-    timer.scheduleAtFixedRate(
+    timer.schedule(
       new TimerTask() {
         @Override
         public void run() {
