@@ -674,7 +674,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 if res.major == true {
                     self.notifyListeners("majorAvailable", data: ["version": res.version])
                 }
-                self.endBackGroundTaskWithNotif(msg: res.message ?? "", latestVersionName: res.version, current: current, error: false)
+                self.endBackGroundTaskWithNotif(msg: res.message ?? "", latestVersionName: res.version, current: current, error: true)
                 return
             }
             let sessionKey = res.sessionKey ?? ""
