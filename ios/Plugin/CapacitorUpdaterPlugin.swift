@@ -31,17 +31,25 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     private var appReadyCheck: DispatchWorkItem?
     private var resetWhenUpdate = true
     private var directUpdate = false
+    private var installMode: InstallMode = .background
     private var autoDeleteFailed = false
     private var autoDeletePrevious = false
     private var backgroundWork: DispatchWorkItem?
     private var taskRunning = false
     private var periodCheckDelay = 0
     let semaphoreReady = DispatchSemaphore(value: 0)
+    
+    enum InstallMode : String, CaseIterable {
+        
+        
+        case background = "background"
+        case onNextRestart = "on_next_restart"
+    }
 
     override public func load() {
         #if targetEnvironment(simulator)
             print("\(self.implementation.TAG) ::::: SIMULATOR :::::")
-            print("\(self.implementation.TAG) Application directory: \(NSHomeDirectory())")
+            // print("\(self.implementation.TAG) Application directory: \(NSHomeDirectory())")
         #endif
         
         self.semaphoreUp()
@@ -56,6 +64,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         } catch {
             print("\(self.implementation.TAG) Cannot parse versionName \(versionName)")
         }
+        
+        let installModeStr = getConfig().getString("installMode", "background")!
+        guard let installMode = InstallMode.init(rawValue: installModeStr) else {
+            fatalError("Install mode '\(installModeStr)' is neither 'background' or 'on_next_restart'")
+        }
+        
+        self.installMode = installMode
+        
         print("\(self.implementation.TAG) version native \(self.currentVersionNative.description)")
         implementation.versionBuild = getConfig().getString("version", Bundle.main.versionName)!
         autoDeleteFailed = getConfig().getBoolean("autoDeleteFailed", true)
@@ -96,8 +112,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             print("\(self.implementation.TAG) Cannot get signKey, invalid key")
             fatalError("Invalid signKey in capacitor config")
         }
+        
+        // todo: docs
+        if (self.installMode == .onNextRestart) {
+            self.installNextUpdateOnAppBoot()
+        }
+        
         self.implementation.autoReset()
-
+    
         // Load the server
         // This is very much swift specific, android does not do that
         // In android we depend on the serverBasePath capacitor property
@@ -117,6 +139,21 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         nc.addObserver(self, selector: #selector(appKilled), name: UIApplication.willTerminateNotification, object: nil)
         self.appMovedToForeground()
         self.checkForUpdateAfterDelay()
+    }
+    
+    private func installNextUpdateOnAppBoot() {
+        let next: BundleInfo? = self.implementation.getNextBundle()
+        let current: BundleInfo = self.implementation.getCurrentBundle()
+
+        if next != nil && !next!.isErrorStatus() && next!.getVersionName() != current.getVersionName() {
+            print("\(self.implementation.TAG) [InstallMode - on_next_restart] Next bundle is: \(next!.toString())")
+            if self.implementation.set(bundle: next!) {
+                print("\(self.implementation.TAG) [InstallMode - on_next_restart] Updated to bundle: \(next!.toString())")
+                _ = self.implementation.setNextBundle(next: Optional<String>.none)
+            } else {
+                print("\(self.implementation.TAG) [InstallMode - on_next_restart] Update to bundle: \(next!.toString()) Failed!")
+            }
+        }
     }
 
     private func initialLoad() -> Bool {
@@ -494,6 +531,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     @objc func setMultiDelay(_ call: CAPPluginCall) {
+        if (self.installMode == .onNextRestart) {
+            print("\(self.implementation.TAG) Cannot use setMultiDelay when installMode == 'onNextRestart'")
+            call.reject("Cannot use setMultiDelay when installMode == 'onNextRestart'")
+            return
+        }
         guard let delayConditionList = call.getValue("delayConditions") else {
             print("\(self.implementation.TAG) setMultiDelay called without delayCondition")
             call.reject("setMultiDelay called without delayCondition")
@@ -692,7 +734,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             print("\(self.implementation.TAG) Check for update via \(self.updateUrl)")
             let res = self.implementation.getLatest(url: url)
             let current = self.implementation.getCurrentBundle()
-
+            let latest = self.implementation.getBundleInfoByVersionName(version: res.version)
+            let next = self.implementation.getNextBundle()
+            
             if (res.message) != nil {
                 print("\(self.implementation.TAG) API message: \(res.message ?? "")")
                 if res.major == true {
@@ -709,6 +753,19 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 return
             }
             let latestVersionName = res.version
+            if (latest != nil && self.implementation.bundleExists(id: latest!.getId())) {
+                print("\(self.implementation.TAG) Preventing background download because the next bundle is already downloaded")
+                
+                if (latest != nil && latest!.getId() != next!.getId()) {
+                    self.notifyListeners("updateAvailable", data: ["bundle": latest!.toJSON()])
+                    _ = self.implementation.setNextBundle(next: latest!.getId())
+                    self.endBackGroundTaskWithNotif(msg: "update downloaded, will install next \(self.installMode == .background ? "background" : "kill")", latestVersionName: latestVersionName, current: current, error: false)
+                    return
+                }
+                
+                self.endBackGroundTaskWithNotif(msg: "Preventing background download because the next bundle is already downloaded", latestVersionName: res.version, current: current, error: false)
+                return
+            }
             if latestVersionName != "" && current.getVersionName() != latestVersionName {
                 do {
                     print("\(self.implementation.TAG) New bundle: \(latestVersionName) found. Current is: \(current.getVersionName()). \(messageUpdate)")
@@ -754,7 +811,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                     } else {
                         self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
                         _ = self.implementation.setNextBundle(next: next.getId())
-                        self.endBackGroundTaskWithNotif(msg: "update downloaded, will install next background", latestVersionName: latestVersionName, current: current, error: false)
+                        self.endBackGroundTaskWithNotif(msg: "update downloaded, will install next \(self.installMode == .background ? "background" : "kill")", latestVersionName: latestVersionName, current: current, error: false)
                     }
                     return
                 } catch {
@@ -777,6 +834,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     private func installNext() {
+        if (self.installMode == .onNextRestart) {
+            print("\(self.implementation.TAG) Install mode is set to 'onNextRestart'. Prevented installNext")
+            return
+        }
         let delayUpdatePreferences = UserDefaults.standard.string(forKey: DELAY_CONDITION_PREFERENCES) ?? "[]"
         let delayConditionList: [DelayCondition]? = fromJsonArr(json: delayUpdatePreferences).map { obj -> DelayCondition in
             let kind: String = obj.value(forKey: "kind") as! String
