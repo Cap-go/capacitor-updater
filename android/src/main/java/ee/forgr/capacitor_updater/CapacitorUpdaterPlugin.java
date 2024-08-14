@@ -55,7 +55,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
   private static final String channelUrlDefault =
     "https://api.capgo.app/channel_self";
 
-  private final String PLUGIN_VERSION = "6.0.64";
+  private final String PLUGIN_VERSION = "6.0.65";
   private static final String DELAY_CONDITION_PREFERENCES = "";
 
   private SharedPreferences.Editor editor;
@@ -1582,5 +1582,4 @@ public class CapacitorUpdaterPlugin extends Plugin {
       this.appKilled();
     }
   }
-
 }
