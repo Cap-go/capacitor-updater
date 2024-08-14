@@ -1582,5 +1582,4 @@ public class CapacitorUpdaterPlugin extends Plugin {
       this.appKilled();
     }
   }
-
 }
