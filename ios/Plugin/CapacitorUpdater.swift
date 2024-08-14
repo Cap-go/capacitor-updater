@@ -755,7 +755,7 @@ extension CustomError: LocalizedError {
         return self.set(id: bundle.getId())
     }
 
-    private func bundleExists(id: String) -> Bool {
+    func bundleExists(id: String) -> Bool {
         let destPersist: URL = self.getBundleDirectory(id: id)
         let indexPersist: URL = destPersist.appendingPathComponent("index.html")
         let bundleIndo: BundleInfo = self.getBundleInfo(id: id)
