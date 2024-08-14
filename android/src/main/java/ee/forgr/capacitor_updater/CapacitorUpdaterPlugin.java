@@ -73,6 +73,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
   private Version currentVersionNative;
   private Thread backgroundTask;
   private Boolean taskRunning = false;
+  private InstallMode installMode = InstallMode.BACKGROUND;
 
   private Boolean isPreviousMainActivity = true;
 
@@ -99,6 +100,26 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
   public Thread startNewThread(final Runnable function) {
     return startNewThread(function, 0);
+  }
+
+  public enum InstallMode {
+    BACKGROUND("background"),
+    ON_NEXT_RESTART("on_next_restart"),
+
+    private String text;
+
+    InstallMode(String text) {
+      this.text = text;
+    }
+
+    public static InstallMode fromString(String text) {
+      for (InstallMode b : InstallMode.values()) {
+        if (b.text.equalsIgnoreCase(text)) {
+          return b;
+        }
+      }
+      return null;
+    }
   }
 
   @Override
@@ -177,6 +198,18 @@ public class CapacitorUpdaterPlugin extends Plugin {
         "appId is missing in capacitor.config.json or plugin config, and cannot be retrieved from the native app, please add it globally or in the plugin config"
       );
     }
+
+    InstallMode installMode = InstallMode.fromString(
+        getConfig().getString("installMode", "background")
+    );
+
+    if (installMode == null) {
+      // crash the app
+      throw new RuntimeException(
+          "Install mode '" + getConfig().getString("installMode", "background") + "' is neither 'background' or 'on_next_restart'"
+      );
+    }
+
     Log.i(CapacitorUpdater.TAG, "appId: " + implementation.appId);
     this.implementation.privateKey = this.getConfig()
       .getString("privateKey", defaultPrivateKey);
@@ -921,6 +954,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
   @PluginMethod
   public void setMultiDelay(final PluginCall call) {
     try {
+      if (this.installMode == InstallMode.ON_NEXT_RESTART) {
+        Log.e(
+            CapacitorUpdater.TAG,
+            "Cannot use setMultiDelay when installMode == 'onNextRestart'"
+        );
+        call.reject("Cannot use setMultiDelay when installMode == 'onNextRestart'");
+        return;
+      }
       final Object delayConditions = call.getData().opt("delayConditions");
       if (delayConditions == null) {
         Log.e(
@@ -1185,6 +1226,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                   CapacitorUpdaterPlugin.this.implementation.getBundleInfoByName(
                       latestVersionName
                     );
+                final BundleInfo next =
+                    CapacitorUpdaterPlugin.this.implementation.getNextBundle();
                 if (latest != null) {
                   final JSObject ret = new JSObject();
                   ret.put("bundle", latest.toJSON());
@@ -1331,6 +1374,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
   private void installNext() {
     try {
+      if (this.installMode == InstallMode.BACKGROUND) {
+        Log.i(CapacitorUpdater.TAG, "Install mode is set to 'onNextRestart'. Prevented installNext");
+        return;
+      }
       Gson gson = new Gson();
       String delayUpdatePreferences = prefs.getString(
         DELAY_CONDITION_PREFERENCES,
