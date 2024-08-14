@@ -15,7 +15,7 @@ import Version
 @objc(CapacitorUpdaterPlugin)
 public class CapacitorUpdaterPlugin: CAPPlugin {
     public var implementation = CapacitorUpdater()
-    private let PLUGIN_VERSION: String = "6.0.36"
+    private let PLUGIN_VERSION: String = "6.0.65"
     static let updateUrlDefault = "https://api.capgo.app/updates"
     static let statsUrlDefault = "https://api.capgo.app/stats"
     static let channelUrlDefault = "https://api.capgo.app/channel_self"
@@ -127,14 +127,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     private func semaphoreUp() {
-        print("\(self.implementation.TAG) semaphoreUp")
         DispatchQueue.global().async {
             self.semaphoreWait(waitTime: 0)
         }
     }
 
     private func semaphoreDown() {
-        print("\(self.implementation.TAG) semaphoreDown")
         semaphoreReady.signal()
     }
 

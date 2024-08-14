@@ -339,7 +339,8 @@ Reload the view
 setMultiDelay(options: MultiDelayConditions) => Promise<void>
 ```
 
-Sets a {@link <a href="#delaycondition">DelayCondition</a>} array containing conditions that the Plugin will use to determine when to install updates.
+Sets a {@link <a href="#delaycondition">DelayCondition</a>} array containing conditions that the Plugin will use to delay the update.
+After all conditions are met, the update process will run start again as usual, so update will be installed after a backgrounding or killing the app.
 
 | Param         | Type                                                                  | Description                                                                                                |
 | ------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |

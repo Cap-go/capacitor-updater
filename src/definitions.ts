@@ -304,16 +304,17 @@ export interface CapacitorUpdaterPlugin {
   reload(): Promise<void>;
 
   /**
-   * Sets a {@link DelayCondition} array containing conditions that the Plugin will use to determine when to install updates.
+   * Sets a {@link DelayCondition} array containing conditions that the Plugin will use to delay the update.
+   * After all conditions are met, the update process will run start again as usual, so update will be installed after a backgrounding or killing the app.
    *
    * @example
-   * // Install the update after the user kills the app or after a background of 300000 ms (5 minutes)
+   * // Delay the update after the user kills the app or after a background of 300000 ms (5 minutes)
    * await CapacitorUpdater.setMultiDelay({ delayConditions: [{ kind: 'kill' }, { kind: 'background', value: '300000' }] })
    * @example
-   * // Install the update after the specific iso8601 date is expired
+   * // Delay the update after the specific iso8601 date is expired
    * await CapacitorUpdater.setMultiDelay({ delayConditions: [{ kind: 'date', value: '2022-09-14T06:14:11.920Z' }] })
    * @example
-   * // Install the update after the first background (default behaviour without setting delay)
+   * // Delay the update after the first background (default behaviour without setting delay)
    * await CapacitorUpdater.setMultiDelay({ delayConditions: [{ kind: 'background' }] })
    * @param options Containing the {@link MultiDelayConditions} array of conditions to set
    * @returns {Promise<void>}

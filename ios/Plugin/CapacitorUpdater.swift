@@ -335,7 +335,7 @@ extension CustomError: LocalizedError {
         }
     }
 
-    private func getChecksum(filePath: URL) -> String {
+    private func calcChecksum(filePath: URL) -> String {
         let bufferSize = 1024 * 1024 * 5 // 5 MB
         var checksum = uLong(0)
 
@@ -359,7 +359,7 @@ extension CustomError: LocalizedError {
 
             return String(format: "%08X", checksum).lowercased()
         } catch {
-            print("\(self.TAG) Cannot get checksum: \(filePath.path)", error)
+            print("\(self.TAG) Cannot calc checksum: \(filePath.path)", error)
             return ""
         }
     }
@@ -576,6 +576,7 @@ extension CustomError: LocalizedError {
                   (200...299).contains(httpResponse.statusCode) else {
                 print("Could not perform the request because of a client or server error.")
                 return
+
             }
 
             if let contentRange = httpResponse.value(forHTTPHeaderField: "Content-Range") { //Extracting the Content-Range header from the partial response
