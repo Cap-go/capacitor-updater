@@ -556,7 +556,34 @@ extension CustomError: LocalizedError {
         UserDefaults.standard.synchronize()
         print("\(self.TAG) Current bundle set to: \((bundle ).isEmpty ? BundleInfo.ID_BUILTIN : bundle)")
     }
+    private func getChecksum(filePath: URL) -> String {
+        let bufferSize = 1024 * 1024 * 5 // 5 MB
+        var checksum = uLong(0)
 
+        do {
+            let fileHandle = try FileHandle(forReadingFrom: filePath)
+            defer {
+                fileHandle.closeFile()
+            }
+
+            while autoreleasepool(invoking: {
+                let fileData = fileHandle.readData(ofLength: bufferSize)
+                if fileData.count > 0 {
+                    checksum = fileData.withUnsafeBytes {
+                        crc32(checksum, $0.bindMemory(to: Bytef.self).baseAddress, uInt(fileData.count))
+                    }
+                    return true // Continue
+                } else {
+                    return false // End of file
+                }
+            }) {}
+
+            return String(format: "%08X", checksum).lowercased()
+        } catch {
+            print("\(self.TAG) Cannot get checksum: \(filePath.path)", error)
+            return ""
+        }
+    }
     //Do a GET request on the url in order to extract the Content-Length header, ask only for the 10 first bytes in order to not download the full content.
     func fetchFileSize(url: URL) -> Int? {
         let semaphore = DispatchSemaphore(value: 0)
