@@ -572,6 +572,7 @@ extension CustomError: LocalizedError {
         if(version != getLocalUpdateVersion()){
             cleanDlData()
         }
+        ensureResumableFilesExist()
         saveDownloadInfo(version)
         var checksum = ""
         var targetSize = -1
@@ -596,7 +597,9 @@ extension CustomError: LocalizedError {
                      
                      let percent = Int((Double(totalReceivedBytes) / Double(targetSize)) * 100.0)
                      print("\(self.TAG) Downloading : \(percent)%")
-                 } else {
+                        
+                 }
+                 else {
                      print("\(self.TAG) Download failed")
                  }
 
@@ -605,7 +608,7 @@ extension CustomError: LocalizedError {
                 print("\(self.TAG) Download complete, total received bytes: \(totalReceivedBytes)")
                 semaphore.signal()
              }
-         }
+        }
 
         semaphore.wait()
 
@@ -616,7 +619,6 @@ extension CustomError: LocalizedError {
             
             checksum = self.calcChecksum(filePath: finalPath)
             try self.saveDownloaded(sourceZip: finalPath, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: true)
-            print(self.libraryDir.appendingPathComponent(self.bundleDirectory))
         } catch {
             print("\(self.TAG) Failed to unzip file: \(error)")
             cleanDlData()
@@ -630,17 +632,32 @@ extension CustomError: LocalizedError {
         self.cleanDlData()
         return info
     }
+    private func ensureResumableFilesExist() {
+        let fileManager = FileManager.default
+        if !fileManager.fileExists(atPath: tempDataPath.path) {
+            if !fileManager.createFile(atPath: tempDataPath.path, contents: Data()) {
+                print("\(self.TAG) Cannot ensure that a file at \(tempDataPath.path) exists")
+            }
+        }
+        
+        if !fileManager.fileExists(atPath: updateInfo.path) {
+            if !fileManager.createFile(atPath: updateInfo.path, contents: Data()) {
+                print("\(self.TAG) Cannot ensure that a file at \(updateInfo.path) exists")
+            }
+        }
+    }
+    
     private func cleanDlData(){
         // Deleting package.tmp
         let fileManager = FileManager.default
-         if fileManager.fileExists(atPath: tempDataPath.path) {
+        if fileManager.fileExists(atPath: tempDataPath.path) {
              do {
                  try fileManager.removeItem(at: tempDataPath)
              } catch {
                  print("\(self.TAG) Could not delete file at \(tempDataPath): \(error)")
              }
          } else {
-             print("\(tempDataPath.lastPathComponent) does not exist")
+             print("\(self.TAG) \(tempDataPath.lastPathComponent) does not exist")
          }
          
          // Deleting update.dat
@@ -683,6 +700,9 @@ extension CustomError: LocalizedError {
         }
     }
     private func getLocalUpdateVersion() -> String { //Return the version that was tried to be downloaded on last download attempt
+        if !FileManager.default.fileExists(atPath: updateInfo.path) {
+            return "nil"
+        }
          guard let versionString = try? String(contentsOf: updateInfo),
                let version = Optional(versionString) else {
              return "nil"
@@ -698,7 +718,7 @@ extension CustomError: LocalizedError {
                  return fileSize.int64Value
              }
          } catch {
-             print("Could not retrieve already downloaded data size : \(error)")
+             print("\(self.TAG) Could not retrieve already downloaded data size : \(error)")
          }
          return 0
     }
