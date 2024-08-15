@@ -588,20 +588,18 @@ extension CustomError: LocalizedError {
              switch streamResponse.event {
                  
              case .stream(let result):
-                 switch result {
-                 case .success(let data):
-                     
+                 if case .success(let data) = result {
                      self.tempData.append(data)
                      
-                     self.savePartialData(startingAt: UInt64(totalReceivedBytes)) //Saving the received data in the package.tmp file
+                     self.savePartialData(startingAt: UInt64(totalReceivedBytes)) // Saving the received data in the package.tmp file
                      totalReceivedBytes += Int64(data.count)
-                     
                      
                      let percent = Int((Double(totalReceivedBytes) / Double(targetSize)) * 100.0)
                      print("Downloading : \(percent)%")
-                 default:
+                 } else {
                      print("Download failed")
                  }
+
 
              case .complete(_):
                 print("Download complete, total received bytes: \(totalReceivedBytes)")
@@ -697,7 +695,6 @@ extension CustomError: LocalizedError {
          do {
              let attributes = try fileManager.attributesOfItem(atPath: tempDataPath.path)
              if let fileSize = attributes[.size] as? NSNumber {
-                 print("already downloaded \(fileSize.int64Value)")
                  return fileSize.int64Value
              }
          } catch {
