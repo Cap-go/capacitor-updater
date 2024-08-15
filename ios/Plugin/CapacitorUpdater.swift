@@ -529,7 +529,7 @@ extension CustomError: LocalizedError {
         UserDefaults.standard.synchronize()
         print("\(self.TAG) Current bundle set to: \((bundle ).isEmpty ? BundleInfo.ID_BUILTIN : bundle)")
     }
-    private func getChecksum(filePath: URL) -> String {
+    private func calcChecksum(filePath: URL) -> String {
         let bufferSize = 1024 * 1024 * 5 // 5 MB
         var checksum = uLong(0)
 
@@ -595,14 +595,14 @@ extension CustomError: LocalizedError {
                      totalReceivedBytes += Int64(data.count)
                      
                      let percent = Int((Double(totalReceivedBytes) / Double(targetSize)) * 100.0)
-                     print("Downloading : \(percent)%")
+                     print("\(self.TAG) Downloading : \(percent)%")
                  } else {
-                     print("Download failed")
+                     print("\(self.TAG) Download failed")
                  }
 
 
              case .complete(_):
-                print("Download complete, total received bytes: \(totalReceivedBytes)")
+                print("\(self.TAG) Download complete, total received bytes: \(totalReceivedBytes)")
                 semaphore.signal()
              }
          }
@@ -614,11 +614,11 @@ extension CustomError: LocalizedError {
         do {
             try FileManager.default.moveItem(at: tempDataPath, to: finalPath)
             
-            checksum = self.getChecksum(filePath: finalPath)
+            checksum = self.calcChecksum(filePath: finalPath)
             try self.saveDownloaded(sourceZip: finalPath, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: true)
             print(self.libraryDir.appendingPathComponent(self.bundleDirectory))
         } catch {
-            print("Failed to unzip file: \(error)")
+            print("\(self.TAG) Failed to unzip file: \(error)")
             cleanDlData()
         }
         
@@ -637,7 +637,7 @@ extension CustomError: LocalizedError {
              do {
                  try fileManager.removeItem(at: tempDataPath)
              } catch {
-                 print("Could not delete file at \(tempDataPath): \(error)")
+                 print("\(self.TAG) Could not delete file at \(tempDataPath): \(error)")
              }
          } else {
              print("\(tempDataPath.lastPathComponent) does not exist")
@@ -648,10 +648,10 @@ extension CustomError: LocalizedError {
              do {
                  try fileManager.removeItem(at: updateInfo)
              } catch {
-                 print("Could not delete file at \(updateInfo): \(error)")
+                 print("\(self.TAG) Could not delete file at \(updateInfo): \(error)")
              }
          } else {
-             print("\(updateInfo.lastPathComponent) does not exist")
+             print("\(self.TAG) \(updateInfo.lastPathComponent) does not exist")
          }
     }
     
@@ -677,9 +677,9 @@ extension CustomError: LocalizedError {
 
     private func saveDownloadInfo(_ version: String) {
         do {
-            try "\(version)".write(to: updateInfo, atomically: true, encoding: .utf8)
+            try "\(self.TAG) \(version)".write(to: updateInfo, atomically: true, encoding: .utf8)
         } catch {
-            print("Failed to save progress: \(error)")
+            print("\(self.TAG) Failed to save progress: \(error)")
         }
     }
     private func getLocalUpdateVersion() -> String { //Return the version that was tried to be downloaded on last download attempt
