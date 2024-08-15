@@ -3,7 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-
 package ee.forgr.capacitor_updater;
 
 import android.app.IntentService;
@@ -28,14 +27,15 @@ public class DownloadService extends IntentService {
   public static final String CHECKSUM = "checksum";
   public static final String NOTIFICATION = "service receiver";
   public static final String PERCENTDOWNLOAD = "percent receiver";
-  private static final String PROGRESS_FILE = "progress.dat";
+  private static final String UPDATE_FILE = "update.dat";
 
   public DownloadService() {
     super("Background DownloadService");
   }
 
   private int calcTotalPercent(long downloadedBytes, int contentLength) {
-    if (contentLength <= 0) return 0;
+    if (contentLength <= 0)
+      return 0;
     return (int) (((double) downloadedBytes / contentLength) * 100);
   }
 
@@ -51,7 +51,7 @@ public class DownloadService extends IntentService {
     String checksum = intent.getStringExtra(CHECKSUM);
 
     File target = new File(documentsDir, dest);
-    File progressFile = new File(documentsDir, PROGRESS_FILE); // The file where the download progress (how much byte
+    File infoFile = new File(documentsDir, UPDATE_FILE); // The file where the download progress (how much byte
     // downloaded) is stored
     File tempFile = new File(documentsDir, "temp" + ".tmp"); // Temp file, where the downloaded data is stored
     try {
@@ -60,19 +60,24 @@ public class DownloadService extends IntentService {
 
       // Reading progress file (if exist)
       long downloadedBytes = 0;
-      if (progressFile.exists() && tempFile.exists()) {
+
+      if (infoFile.exists() && tempFile.exists()) {
+
         try (
-          BufferedReader reader = new BufferedReader(
-            new FileReader(progressFile)
-          )
-        ) {
-          downloadedBytes = Long.parseLong(reader.readLine());
+            BufferedReader reader = new BufferedReader(
+                new FileReader(infoFile))) {
+          String updateVersion = reader.readLine();
+          if (!updateVersion.equals(version)) {
+            clearDownloadData(documentsDir);
+            downloadedBytes = 0;
+          } else {
+            downloadedBytes = tempFile.length();
+          }
+
         }
+
       } else {
-        tempFile.delete();
-        progressFile.delete();
-        progressFile.createNewFile();
-        tempFile.createNewFile();
+        clearDownloadData(documentsDir);
         downloadedBytes = 0;
       }
 
@@ -82,28 +87,27 @@ public class DownloadService extends IntentService {
 
       int responseCode = httpConn.getResponseCode();
 
-      if (
-        responseCode == HttpURLConnection.HTTP_OK ||
-        responseCode == HttpURLConnection.HTTP_PARTIAL
-      ) {
+      if (responseCode == HttpURLConnection.HTTP_OK ||
+          responseCode == HttpURLConnection.HTTP_PARTIAL) {
         String contentType = httpConn.getContentType();
         int contentLength = httpConn.getContentLength() + (int) downloadedBytes;
 
         InputStream inputStream = httpConn.getInputStream();
         FileOutputStream outputStream = new FileOutputStream(
-          tempFile,
-          downloadedBytes > 0
-        );
-
-        // Writing initial progression into file
+            tempFile,
+            downloadedBytes > 0);
         if (downloadedBytes == 0) {
           try (
-            BufferedWriter writer = new BufferedWriter(
-              new FileWriter(progressFile)
-            )
-          ) {
-            writer.write(String.valueOf(downloadedBytes));
+              BufferedWriter writer = new BufferedWriter(
+                  new FileWriter(infoFile))) {
+            writer.write(String.valueOf(version));
           }
+        }
+        // Updating the info file
+        try (
+            BufferedWriter writer = new BufferedWriter(
+                new FileWriter(infoFile))) {
+          writer.write(String.valueOf(version));
         }
 
         int bytesRead = -1;
@@ -113,20 +117,10 @@ public class DownloadService extends IntentService {
           outputStream.write(buffer, 0, bytesRead);
           downloadedBytes += bytesRead;
 
-          // Updating the progress file
-          try (
-            BufferedWriter writer = new BufferedWriter(
-              new FileWriter(progressFile)
-            )
-          ) {
-            writer.write(String.valueOf(downloadedBytes));
-          }
-
           // Saving progress (flushing every 100 Ko)
           if (downloadedBytes % 102400 == 0) {
             outputStream.flush();
           }
-
           // Computing percentage
           int percent = calcTotalPercent(downloadedBytes, contentLength);
           if (percent != lastPercent) {
@@ -140,10 +134,10 @@ public class DownloadService extends IntentService {
 
         // Rename the temp file with the final name (dest)
         tempFile.renameTo(new File(documentsDir, dest));
-        progressFile.delete();
+        infoFile.delete();
         publishResults(dest, id, version, checksum, sessionKey, "");
       } else {
-        progressFile.delete();
+        infoFile.delete();
       }
       httpConn.disconnect();
     } catch (OutOfMemoryError e) {
@@ -152,13 +146,25 @@ public class DownloadService extends IntentService {
     } catch (Exception e) {
       e.printStackTrace();
       publishResults(
-        "",
-        id,
-        version,
-        checksum,
-        sessionKey,
-        e.getLocalizedMessage()
-      );
+          "",
+          id,
+          version,
+          checksum,
+          sessionKey,
+          e.getLocalizedMessage());
+    }
+  }
+
+  private void clearDownloadData(String docDir) {
+    File tempFile = new File(docDir, "temp" + ".tmp");
+    File infoFile = new File(docDir, UPDATE_FILE);
+    try {
+      tempFile.delete();
+      infoFile.delete();
+      infoFile.createNewFile();
+      tempFile.createNewFile();
+    } catch (IOException e) {
+      e.printStackTrace();
     }
   }
 
@@ -171,13 +177,12 @@ public class DownloadService extends IntentService {
   }
 
   private void publishResults(
-    String dest,
-    String id,
-    String version,
-    String checksum,
-    String sessionKey,
-    String error
-  ) {
+      String dest,
+      String id,
+      String version,
+      String checksum,
+      String sessionKey,
+      String error) {
     Intent intent = new Intent(NOTIFICATION);
     intent.setPackage(getPackageName());
     if (dest != null && !dest.isEmpty()) {
