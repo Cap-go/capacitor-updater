@@ -759,7 +759,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             return DelayCondition(kind: kind, value: value)
         }
         if delayConditionList != nil && delayConditionList?.capacity != 0 {
-            print("\(self.implementation.TAG) Update delayed to next backgrounding")
+            print("\(self.implementation.TAG) Update delayed until delay conditions met")
             return
         }
         let current: BundleInfo = self.implementation.getCurrentBundle()

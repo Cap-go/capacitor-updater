@@ -1318,7 +1318,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         type
       );
       if (delayConditionList != null && !delayConditionList.isEmpty()) {
-        Log.i(CapacitorUpdater.TAG, "Update delayed to next backgrounding");
+        Log.i(CapacitorUpdater.TAG, "Update delayed until delay conditions met");
         return;
       }
       final BundleInfo current = this.implementation.getCurrentBundle();
