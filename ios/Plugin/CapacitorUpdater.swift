@@ -335,34 +335,7 @@ extension CustomError: LocalizedError {
         }
     }
 
-    private func calcChecksum(filePath: URL) -> String {
-        let bufferSize = 1024 * 1024 * 5 // 5 MB
-        var checksum = uLong(0)
 
-        do {
-            let fileHandle = try FileHandle(forReadingFrom: filePath)
-            defer {
-                fileHandle.closeFile()
-            }
-
-            while autoreleasepool(invoking: {
-                let fileData = fileHandle.readData(ofLength: bufferSize)
-                if fileData.count > 0 {
-                    checksum = fileData.withUnsafeBytes {
-                        crc32(checksum, $0.bindMemory(to: Bytef.self).baseAddress, uInt(fileData.count))
-                    }
-                    return true // Continue
-                } else {
-                    return false // End of file
-                }
-            }) {}
-
-            return String(format: "%08X", checksum).lowercased()
-        } catch {
-            print("\(self.TAG) Cannot calc checksum: \(filePath.path)", error)
-            return ""
-        }
-    }
 
     private func decryptFile(filePath: URL, sessionKey: String, version: String) throws {
         if self.privateKey.isEmpty || sessionKey.isEmpty  || sessionKey.components(separatedBy: ":").count != 2 {
@@ -584,43 +557,6 @@ extension CustomError: LocalizedError {
             return ""
         }
     }
-    //Do a GET request on the url in order to extract the Content-Length header, ask only for the 10 first bytes in order to not download the full content.
-    func fetchFileSize(url: URL) -> Int? {
-        let semaphore = DispatchSemaphore(value: 0)
-        var fileSize: Int?
-        var request = URLRequest(url: url)
-        request.setValue("bytes=0-0", forHTTPHeaderField: "Range") //Asking for 0 byte in the response body, in order to not download the file
-
-        let task = URLSession.shared.dataTask(with: request) { data, response, error in
-            defer { semaphore.signal() }
-
-            if let error = error {
-                print("Error while requesting file size : \(error)")
-                return
-            }
-
-            guard let httpResponse = response as? HTTPURLResponse,
-                  (200...299).contains(httpResponse.statusCode) else {
-                print("Could not perform the request because of a client or server error.")
-                return
-
-            }
-
-            if let contentRange = httpResponse.value(forHTTPHeaderField: "Content-Range") { //Extracting the Content-Range header from the partial response
-                let parts = contentRange.split(separator: "/").map(String.init)
-                if parts.count > 1, let totalSize = Int(parts[1]) {
-                    fileSize = totalSize
-                }
-            }
-        }
-
-        task.resume()
-        semaphore.wait()
-
-        return fileSize
-    }
-
-
     
     private var tempDataPath: URL {
         return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent("package.tmp")
@@ -634,11 +570,15 @@ extension CustomError: LocalizedError {
         let id: String = self.randomString(length: 10)
         let semaphore = DispatchSemaphore(value: 0)
         var checksum = ""
-        let targetSize = fetchFileSize(url: url) //Fetching the total size of the file
+        var targetSize = -1
         var totalReceivedBytes: Int64 = loadDownloadProgress() //Retrieving the amount of already downloaded data if exist, defined at 0 otherwise
          let requestHeaders: HTTPHeaders = ["Range": "bytes=\(totalReceivedBytes)-"]
         //Opening connection for streaming the bytes
-         AF.streamRequest(url, headers: requestHeaders).validate().responseStream { [weak self] streamResponse in
+        AF.streamRequest(url, headers: requestHeaders).validate().onHTTPResponse(perform: { response  in
+            if let contentLength = response.headers.value(for: "Content-Length") {
+                targetSize = Int(contentLength) ?? -1
+            }
+        }).responseStream { [weak self] streamResponse in
              guard let self = self else { return }
 
              switch streamResponse.event {
