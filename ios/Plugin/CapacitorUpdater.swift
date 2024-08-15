@@ -562,13 +562,17 @@ extension CustomError: LocalizedError {
         return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent("package.tmp")
     }
 
-    private var progressPath: URL {
-        return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent("progress.dat")
+    private var updateInfo: URL {
+        return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent("update.dat")
     }
     private var tempData = Data()
     public func download(url: URL, version: String, sessionKey: String) throws -> BundleInfo {
         let id: String = self.randomString(length: 10)
         let semaphore = DispatchSemaphore(value: 0)
+        if(version != getLocalUpdateVersion()){
+            cleanDlData()
+        }
+        saveDownloadInfo(version)
         var checksum = ""
         var targetSize = -1
         var totalReceivedBytes: Int64 = loadDownloadProgress() //Retrieving the amount of already downloaded data if exist, defined at 0 otherwise
@@ -576,7 +580,7 @@ extension CustomError: LocalizedError {
         //Opening connection for streaming the bytes
         AF.streamRequest(url, headers: requestHeaders).validate().onHTTPResponse(perform: { response  in
             if let contentLength = response.headers.value(for: "Content-Length") {
-                targetSize = Int(contentLength) ?? -1
+                targetSize = (Int(contentLength) ?? -1) + Int(totalReceivedBytes)
             }
         }).responseStream { [weak self] streamResponse in
              guard let self = self else { return }
@@ -586,14 +590,14 @@ extension CustomError: LocalizedError {
              case .stream(let result):
                  switch result {
                  case .success(let data):
-
+                     
                      self.tempData.append(data)
                      
                      self.savePartialData(startingAt: UInt64(totalReceivedBytes)) //Saving the received data in the package.tmp file
                      totalReceivedBytes += Int64(data.count)
                      
-                     self.saveDownloadProgress(totalReceivedBytes)
-                     let percent = Int((Double(totalReceivedBytes) / Double(targetSize ?? 1)) * 100.0)
+                     
+                     let percent = Int((Double(totalReceivedBytes) / Double(targetSize)) * 100.0)
                      print("Downloading : \(percent)%")
                  default:
                      print("Download failed")
@@ -641,15 +645,15 @@ extension CustomError: LocalizedError {
              print("\(tempDataPath.lastPathComponent) does not exist")
          }
          
-         // Deleting progress.dat
-         if fileManager.fileExists(atPath: progressPath.path) {
+         // Deleting update.dat
+         if fileManager.fileExists(atPath: updateInfo.path) {
              do {
-                 try fileManager.removeItem(at: progressPath)
+                 try fileManager.removeItem(at: updateInfo)
              } catch {
-                 print("Could not delete file at \(progressPath): \(error)")
+                 print("Could not delete file at \(updateInfo): \(error)")
              }
          } else {
-             print("\(progressPath.lastPathComponent) does not exist")
+             print("\(updateInfo.lastPathComponent) does not exist")
          }
     }
     
@@ -673,20 +677,33 @@ extension CustomError: LocalizedError {
     }
 
 
-    private func saveDownloadProgress(_ bytes: Int64) {
+    private func saveDownloadInfo(_ version: String) {
         do {
-            try "\(bytes)".write(to: progressPath, atomically: true, encoding: .utf8)
+            try "\(version)".write(to: updateInfo, atomically: true, encoding: .utf8)
         } catch {
             print("Failed to save progress: \(error)")
         }
     }
-
+    private func getLocalUpdateVersion() -> String { //Return the version that was tried to be downloaded on last download attempt
+         guard let versionString = try? String(contentsOf: updateInfo),
+               let version = Optional(versionString) else {
+             return "nil"
+         }
+         return version
+     }
     private func loadDownloadProgress() -> Int64 {
-        guard let progressString = try? String(contentsOf: progressPath),
-              let progress = Int64(progressString) else {
-            return 0
-        }
-        return progress
+        
+        let fileManager = FileManager.default
+         do {
+             let attributes = try fileManager.attributesOfItem(atPath: tempDataPath.path)
+             if let fileSize = attributes[.size] as? NSNumber {
+                 print("already downloaded \(fileSize.int64Value)")
+                 return fileSize.int64Value
+             }
+         } catch {
+             print("Could not retrieve already downloaded data size : \(error)")
+         }
+         return 0
     }
 
 
