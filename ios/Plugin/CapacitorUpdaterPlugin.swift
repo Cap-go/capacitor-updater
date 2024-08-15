@@ -30,7 +30,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     private var appReadyTimeout = 10000
     private var appReadyCheck: DispatchWorkItem?
     private var resetWhenUpdate = true
-    private var directUpdate = false
     private var installMode: InstallMode = .background
     private var autoDeleteFailed = false
     private var autoDeletePrevious = false
@@ -44,6 +43,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         
         case background = "background"
         case onNextRestart = "on_next_restart"
+        case directUpdate = "direct_update"
     }
 
     override public func load() {
@@ -66,8 +66,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         }
         
         let installModeStr = getConfig().getString("installMode", "background")!
-        guard let installMode = InstallMode.init(rawValue: installModeStr) else {
-            fatalError("Install mode '\(installModeStr)' is neither 'background' or 'on_next_restart'")
+        guard var installMode = InstallMode.init(rawValue: installModeStr) else {
+            fatalError("Install mode '\(installModeStr)' is not 'background' nor 'on_next_restart' nor 'direct_update'")
+        }
+        if (getConfig().getBoolean("directUpdate", false) && installMode == .directUpdate) {
+            print("\(self.implementation.TAG) Legacy directUpdate setting found. Setting installMode to direct_update.")
+            print("\(self.implementation.TAG) !!! PLEASE UPDATE YOUR CONFIG !!!")
+            installMode = .directUpdate
         }
         
         self.installMode = installMode
@@ -76,7 +81,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         implementation.versionBuild = getConfig().getString("version", Bundle.main.versionName)!
         autoDeleteFailed = getConfig().getBoolean("autoDeleteFailed", true)
         autoDeletePrevious = getConfig().getBoolean("autoDeletePrevious", true)
-        directUpdate = getConfig().getBoolean("directUpdate", false)
+        directUpdate =
         updateUrl = getConfig().getString("updateUrl", CapacitorUpdaterPlugin.updateUrlDefault)!
         autoUpdate = getConfig().getBoolean("autoUpdate", true)
         appReadyTimeout = getConfig().getInt("appReadyTimeout", 10000)
@@ -757,9 +762,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 print("\(self.implementation.TAG) Preventing background download because the next bundle is already downloaded")
                 
                 if (latest != nil && latest!.getId() != next!.getId()) {
-                    self.notifyListeners("updateAvailable", data: ["bundle": latest!.toJSON()])
-                    _ = self.implementation.setNextBundle(next: latest!.getId())
-                    self.endBackGroundTaskWithNotif(msg: "update downloaded, will install next \(self.installMode == .background ? "background" : "kill")", latestVersionName: latestVersionName, current: current, error: false)
+                    if self.directUpdate {
+                        _ = self.implementation.set(bundle: next)
+                        _ = self._reload()
+                        self.directUpdate = false
+                        self.endBackGroundTaskWithNotif(msg: "update installed", latestVersionName: latestVersionName, current: current, error: false)
+                    } else {
+                        self.notifyListeners("updateAvailable", data: ["bundle": latest.toJSON()])
+                        _ = self.implementation.setNextBundle(next: latest.getId())
+                        self.endBackGroundTaskWithNotif(msg: "update downloaded, will install next \(self.installMode == .background ? "background" : "kill")", latestVersionName: latestVersionName, current: current, error: false)
+                    }
                     return
                 }
                 
