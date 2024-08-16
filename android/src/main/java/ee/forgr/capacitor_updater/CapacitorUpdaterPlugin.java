@@ -140,7 +140,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
       );
       final String signKeyStr = this.getConfig().getString("signKey", "");
       if (signKeyStr.length() > 0) {
-        this.implementation.signKey = CryptoCipher.stringToPublicKey(signKeyStr);
+        this.implementation.signKey = CryptoCipher.stringToPublicKey(
+          signKeyStr
+        );
       }
 
       this.implementation.directUpdate = this.getConfig()
