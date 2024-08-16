@@ -57,10 +57,9 @@ public class DownloadService extends IntentService {
       long downloadedBytes = 0;
 
       if (infoFile.exists() && tempFile.exists()) {
-
         try (
-            BufferedReader reader = new BufferedReader(
-                new FileReader(infoFile))) {
+          BufferedReader reader = new BufferedReader(new FileReader(infoFile))
+        ) {
           String updateVersion = reader.readLine();
           if (!updateVersion.equals(version)) {
             clearDownloadData(documentsDir);
@@ -68,9 +67,7 @@ public class DownloadService extends IntentService {
           } else {
             downloadedBytes = tempFile.length();
           }
-
         }
-
       } else {
         clearDownloadData(documentsDir);
         downloadedBytes = 0;
@@ -82,8 +79,10 @@ public class DownloadService extends IntentService {
 
       int responseCode = httpConn.getResponseCode();
 
-      if (responseCode == HttpURLConnection.HTTP_OK ||
-          responseCode == HttpURLConnection.HTTP_PARTIAL) {
+      if (
+        responseCode == HttpURLConnection.HTTP_OK ||
+        responseCode == HttpURLConnection.HTTP_PARTIAL
+      ) {
         String contentType = httpConn.getContentType();
         long contentLength = httpConn.getContentLength() + downloadedBytes;
 
