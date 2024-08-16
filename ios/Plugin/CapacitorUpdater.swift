@@ -217,7 +217,7 @@ extension CustomError: LocalizedError {
 }
 
 @objc public class CapacitorUpdater: NSObject {
-
+    
     private let versionCode: String = Bundle.main.versionCode ?? ""
     private let versionOs = UIDevice.current.systemVersion
     private let libraryDir: URL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
@@ -227,7 +227,7 @@ extension CustomError: LocalizedError {
     private let FALLBACK_VERSION: String = "pastVersion"
     private let NEXT_VERSION: String = "nextVersion"
     private var unzipPercent = 0
-
+    
     public let TAG: String = "✨  Capacitor-updater:"
     public let CAP_SERVER_PATH: String = "serverBasePath"
     public var versionBuild: String = ""
@@ -240,8 +240,11 @@ extension CustomError: LocalizedError {
     public var appId: String = ""
     public var deviceID = UIDevice.current.identifierForVendor?.uuidString ?? ""
     public var privateKey: String = ""
-
-    public var notifyDownload: (String, Int) -> Void = { _, _  in }
+    
+    public var notifyDownloadRaw: (String, Int, Bool) -> Void = { _, _, _  in }
+    private func notifyDownload(id: String, percent: Int, ignoreMultipleOfTen: Bool = false) {
+        notifyDownloadRaw(id, percent, ignoreMultipleOfTen)
+    }
 
     private func calcTotalPercent(percent: Int, min: Int, max: Int) -> Int {
         return (percent * (max - min)) / 100 + min
@@ -412,7 +415,7 @@ extension CustomError: LocalizedError {
         let newPercent = self.calcTotalPercent(percent: Int(Double(entryNumber) / Double(total) * 100), min: 75, max: 81)
         if newPercent != self.unzipPercent {
             self.unzipPercent = newPercent
-            self.notifyDownload(id, newPercent)
+            self.notifyDownload(id: id, percent: newPercent)
         }
     }
 
@@ -422,7 +425,7 @@ extension CustomError: LocalizedError {
         let destUnZip: URL = libraryDir.appendingPathComponent(randomString(length: 10))
 
         self.unzipPercent = 0
-        self.notifyDownload(id, 75)
+        self.notifyDownload(id: id, percent: 75)
 
         let semaphore = DispatchSemaphore(value: 0)
         var unzipError: NSError?
@@ -576,12 +579,25 @@ extension CustomError: LocalizedError {
         saveDownloadInfo(version)
         var checksum = ""
         var targetSize = -1
+        var lastSentProgress = 0;
         var totalReceivedBytes: Int64 = loadDownloadProgress() //Retrieving the amount of already downloaded data if exist, defined at 0 otherwise
          let requestHeaders: HTTPHeaders = ["Range": "bytes=\(totalReceivedBytes)-"]
         //Opening connection for streaming the bytes
-        AF.streamRequest(url, headers: requestHeaders).validate().onHTTPResponse(perform: { response  in
+        
+        var mainError: NSError?
+        let monitor = ClosureEventMonitor()
+        monitor.requestDidCompleteTaskWithError = { (request, task, error) in
+            if error != nil {
+                print("\(self.TAG) Downloading failed - ClosureEventMonitor activated")
+                mainError = error as NSError?
+            }
+        }
+        let session = Session(eventMonitors: [monitor])
+
+        var request = session.streamRequest(url, headers: requestHeaders).validate().onHTTPResponse(perform: { response  in
             if let contentLength = response.headers.value(for: "Content-Length") {
                 targetSize = (Int(contentLength) ?? -1) + Int(totalReceivedBytes)
+                lastSentProgress = Int((Double(totalReceivedBytes) / Double(targetSize)) * 100.0)
             }
         }).responseStream { [weak self] streamResponse in
              guard let self = self else { return }
@@ -596,8 +612,12 @@ extension CustomError: LocalizedError {
                      totalReceivedBytes += Int64(data.count)
                      
                      let percent = Int((Double(totalReceivedBytes) / Double(targetSize)) * 100.0)
-                     print("\(self.TAG) Downloading : \(percent)%")
-                        
+                     print("\(self.TAG) Downloading: \(percent)%")
+                     if (percent - lastSentProgress >= 10) {
+                         self.notifyDownload(id: id, percent: percent, ignoreMultipleOfTen: true)
+                         lastSentProgress = percent
+                     }
+                     // usleep(useconds_t(2000 * 1000))
                  }
                  else {
                      print("\(self.TAG) Download failed")
@@ -609,26 +629,41 @@ extension CustomError: LocalizedError {
                 semaphore.signal()
              }
         }
-
+        self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.DOWNLOADING, downloaded: Date(), checksum: checksum))
         semaphore.wait()
-
-        try self.decryptFile(filePath: tempDataPath, sessionKey: sessionKey, version: version)
+        
+        if (mainError != nil) {
+            print("\(self.TAG) Failed to download: \(String(describing: mainError))")
+            self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum))
+            cleanDlData()
+            throw mainError!
+        }
+        
         let finalPath = tempDataPath.deletingLastPathComponent().appendingPathComponent("\(id)")
         do {
+            try self.decryptFile(filePath: tempDataPath, sessionKey: sessionKey, version: version)
             try FileManager.default.moveItem(at: tempDataPath, to: finalPath)
-            
+        } catch {
+            print("\(self.TAG) Failed decrypt file or move it: \(error)")
+            self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum))
+            cleanDlData()
+            throw error
+        }
+        
+        do {
             checksum = self.calcChecksum(filePath: finalPath)
             try self.saveDownloaded(sourceZip: finalPath, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: true)
         } catch {
             print("\(self.TAG) Failed to unzip file: \(error)")
+            self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum))
             cleanDlData()
+            // todo: cleanup zip attempts
+            throw error
         }
         
-        
-        
-        let info = BundleInfo(id: id, version: version, status: BundleStatus.SUCCESS, downloaded: Date(), checksum: checksum)
+        let info = BundleInfo(id: id, version: version, status: BundleStatus.PENDING, downloaded: Date(), checksum: checksum)
         self.saveBundleInfo(id: id, bundle: info)
-        self.notifyDownload(id, 100)
+        self.notifyDownload(id: id, percent: 100)
         self.cleanDlData()
         return info
     }
@@ -694,7 +729,7 @@ extension CustomError: LocalizedError {
 
     private func saveDownloadInfo(_ version: String) {
         do {
-            try "\(self.TAG) \(version)".write(to: updateInfo, atomically: true, encoding: .utf8)
+            try "\(version)".write(to: updateInfo, atomically: true, encoding: .utf8)
         } catch {
             print("\(self.TAG) Failed to save progress: \(error)")
         }
