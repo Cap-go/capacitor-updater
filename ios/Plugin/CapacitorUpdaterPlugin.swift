@@ -142,14 +142,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     }
 
     private func semaphoreUp() {
-        print("\(self.implementation.TAG) semaphoreUp")
         DispatchQueue.global().async {
             self.semaphoreWait(waitTime: 0)
         }
     }
 
     private func semaphoreDown() {
-        print("\(self.implementation.TAG) semaphoreDown")
         semaphoreReady.signal()
     }
 
@@ -698,7 +696,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 if res.major == true {
                     self.notifyListeners("majorAvailable", data: ["version": res.version])
                 }
-                self.endBackGroundTaskWithNotif(msg: res.message ?? "", latestVersionName: res.version, current: current, error: false)
+                self.endBackGroundTaskWithNotif(msg: res.message ?? "", latestVersionName: res.version, current: current, error: true)
                 return
             }
             let sessionKey = res.sessionKey ?? ""
@@ -784,7 +782,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             return DelayCondition(kind: kind, value: value)
         }
         if delayConditionList != nil && delayConditionList?.capacity != 0 {
-            print("\(self.implementation.TAG) Update delayed to next backgrounding")
+            print("\(self.implementation.TAG) Update delayed until delay conditions met")
             return
         }
         let current: BundleInfo = self.implementation.getCurrentBundle()

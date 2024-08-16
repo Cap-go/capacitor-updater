@@ -341,6 +341,11 @@ setMultiDelay(options: MultiDelayConditions) => Promise<void>
 
 Sets a {@link <a href="#delaycondition">DelayCondition</a>} array containing conditions that the Plugin will use to delay the update.
 After all conditions are met, the update process will run start again as usual, so update will be installed after a backgrounding or killing the app.
+For the `date` kind, the value should be an iso8601 date string.
+For the `background` kind, the value should be a number in milliseconds.
+For the `nativeVersion` kind, the value should be the version number.
+For the `kill` kind, the value is not used.
+The function has unconsistent behavior the option kill do trigger the update after the first kill and not after the next background like other options. This will be fixed in a future major release.
 
 | Param         | Type                                                                  | Description                                                                                                |
 | ------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |

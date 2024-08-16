@@ -2,6 +2,58 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.0.69](https://github.com/Cap-go/capacitor-updater/compare/6.0.68...6.0.69) (2024-08-15)
+
+
+### Bug Fixes
+
+* message in logs for delay ([90056f8](https://github.com/Cap-go/capacitor-updater/commit/90056f8e253e36d7ce059d7e781821b360432cdd))
+
+### [6.0.68](https://github.com/Cap-go/capacitor-updater/compare/6.0.67...6.0.68) (2024-08-15)
+
+### [6.0.67](https://github.com/Cap-go/capacitor-updater/compare/6.0.66...6.0.67) (2024-08-14)
+
+### [6.0.66](https://github.com/Cap-go/capacitor-updater/compare/6.0.65...6.0.66) (2024-08-14)
+
+
+### Bug Fixes
+
+* send download fail as it should ([a2563c0](https://github.com/Cap-go/capacitor-updater/commit/a2563c0a2a0526cc14201d2a29fdae1c9031fe05))
+
+### [6.0.65](https://github.com/Cap-go/capacitor-updater/compare/6.0.64...6.0.65) (2024-08-14)
+
+
+### Bug Fixes
+
+* app kill issue ([6596b4f](https://github.com/Cap-go/capacitor-updater/commit/6596b4f8329225c37dbb28578876457d24155c3a))
+
+### [6.0.64](https://github.com/Cap-go/capacitor-updater/compare/6.0.63...6.0.64) (2024-08-13)
+
+
+### Bug Fixes
+
+* upgrade pnpm ([dc2c194](https://github.com/Cap-go/capacitor-updater/commit/dc2c19449fc2fb5d4579aa10a181199948c1857d))
+
+### [6.0.63](https://github.com/Cap-go/capacitor-updater/compare/6.0.62...6.0.63) (2024-08-13)
+
+
+### Bug Fixes
+
+* double resolve ([139d118](https://github.com/Cap-go/capacitor-updater/commit/139d118056ac9e7ca76eeecb8b776343f7ce6ddc))
+
+### [6.0.62](https://github.com/Cap-go/capacitor-updater/compare/6.0.61...6.0.62) (2024-08-12)
+
+### [6.0.61](https://github.com/Cap-go/capacitor-updater/compare/6.0.60...6.0.61) (2024-08-12)
+
+### [6.0.60](https://github.com/Cap-go/capacitor-updater/compare/6.0.59...6.0.60) (2024-08-12)
+
+### [6.0.59](https://github.com/Cap-go/capacitor-updater/compare/6.0.58...6.0.59) (2024-08-11)
+
+
+### Bug Fixes
+
+* remove useless comments ([7ac35fd](https://github.com/Cap-go/capacitor-updater/commit/7ac35fd8ebaf4f4d0f5ff23c02933ed9dcc183aa))
+
 ### [6.0.58](https://github.com/Cap-go/capacitor-updater/compare/6.0.57...6.0.58) (2024-08-10)
 
 ### [6.0.57](https://github.com/Cap-go/capacitor-updater/compare/6.0.56...6.0.57) (2024-08-10)

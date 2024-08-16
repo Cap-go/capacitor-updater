@@ -104,6 +104,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
   @Override
   public void load() {
     super.load();
+    this.counterActivityCreate++;
     this.prefs = this.getContext()
       .getSharedPreferences(WebView.WEBVIEW_PREFS_NAME, Activity.MODE_PRIVATE);
     this.editor = this.prefs.edit();
@@ -228,7 +229,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
     if (resetWhenUpdate) {
       this.cleanupObsoleteVersions();
     }
-
     this.checkForUpdateAfterDelay();
   }
 
@@ -907,7 +907,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
       final JSObject ret = new JSObject();
       ret.put("bundle", bundle.toJSON());
       call.resolve(ret);
-      call.resolve();
     } catch (final Exception e) {
       Log.e(
         CapacitorUpdater.TAG,
@@ -1342,7 +1341,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
         type
       );
       if (delayConditionList != null && !delayConditionList.isEmpty()) {
-        Log.i(CapacitorUpdater.TAG, "Update delayed to next backgrounding");
+        Log.i(
+          CapacitorUpdater.TAG,
+          "Update delayed until delay conditions met"
+        );
         return;
       }
       final BundleInfo current = this.implementation.getCurrentBundle();
@@ -1561,9 +1563,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
   @Override
   public void handleOnStart() {
-    this.counterActivityCreate++;
-    //  @Override
-    //  public void onActivityStarted(@NonNull final Activity activity) {
     if (isPreviousMainActivity) {
       this.appMovedToForeground();
     }
@@ -1576,8 +1575,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
   @Override
   public void handleOnStop() {
-    //  @Override
-    //  public void onActivityStopped(@NonNull final Activity activity) {
     isPreviousMainActivity = isMainActivity();
     if (isPreviousMainActivity) {
       this.appMovedToBackground();
@@ -1586,8 +1583,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
   @Override
   public void handleOnResume() {
-    //  @Override
-    //  public void onActivityResumed(@NonNull final Activity activity) {
     if (backgroundTask != null && taskRunning) {
       backgroundTask.interrupt();
     }
@@ -1597,35 +1592,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
   @Override
   public void handleOnPause() {
-    //  @Override
-    //  public void onActivityPaused(@NonNull final Activity activity) {
     this.implementation.activity = getActivity();
     this.implementation.onPause();
   }
 
-  //    @Override
-  //    public void handleOnDestroy() {
-  //  @Override
-  //  public void onActivityCreated(
-  //          @NonNull final Activity activity,
-  //          @Nullable final Bundle savedInstanceState
-  //  ) {
-  //    this.implementation.activity = activity;
-  //    this.counterActivityCreate++;
-  //  }
-  //
-  //  @Override
-  //  public void onActivitySaveInstanceState(
-  //          @NonNull final Activity activity,
-  //          @NonNull final Bundle outState
-  //  ) {
-  //    this.implementation.activity = activity;
-  //  }
-
   @Override
   public void handleOnDestroy() {
-    //  @Override
-    //  public void onActivityDestroyed(@NonNull final Activity activity) {
     Log.i(
       CapacitorUpdater.TAG,
       "onActivityDestroyed " + getActivity().getClass().getName()
