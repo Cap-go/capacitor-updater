@@ -34,8 +34,7 @@ public class DownloadService extends IntentService {
   }
 
   private int calcTotalPercent(long downloadedBytes, int contentLength) {
-    if (contentLength <= 0)
-      return 0;
+    if (contentLength <= 0) return 0;
     return (int) (((double) downloadedBytes / contentLength) * 100);
   }
 
@@ -62,10 +61,9 @@ public class DownloadService extends IntentService {
       long downloadedBytes = 0;
 
       if (infoFile.exists() && tempFile.exists()) {
-
         try (
-            BufferedReader reader = new BufferedReader(
-                new FileReader(infoFile))) {
+          BufferedReader reader = new BufferedReader(new FileReader(infoFile))
+        ) {
           String updateVersion = reader.readLine();
           if (!updateVersion.equals(version)) {
             clearDownloadData(documentsDir);
@@ -73,9 +71,7 @@ public class DownloadService extends IntentService {
           } else {
             downloadedBytes = tempFile.length();
           }
-
         }
-
       } else {
         clearDownloadData(documentsDir);
         downloadedBytes = 0;
@@ -87,26 +83,29 @@ public class DownloadService extends IntentService {
 
       int responseCode = httpConn.getResponseCode();
 
-      if (responseCode == HttpURLConnection.HTTP_OK ||
-          responseCode == HttpURLConnection.HTTP_PARTIAL) {
+      if (
+        responseCode == HttpURLConnection.HTTP_OK ||
+        responseCode == HttpURLConnection.HTTP_PARTIAL
+      ) {
         String contentType = httpConn.getContentType();
         int contentLength = httpConn.getContentLength() + (int) downloadedBytes;
 
         InputStream inputStream = httpConn.getInputStream();
         FileOutputStream outputStream = new FileOutputStream(
-            tempFile,
-            downloadedBytes > 0);
+          tempFile,
+          downloadedBytes > 0
+        );
         if (downloadedBytes == 0) {
           try (
-              BufferedWriter writer = new BufferedWriter(
-                  new FileWriter(infoFile))) {
+            BufferedWriter writer = new BufferedWriter(new FileWriter(infoFile))
+          ) {
             writer.write(String.valueOf(version));
           }
         }
         // Updating the info file
         try (
-            BufferedWriter writer = new BufferedWriter(
-                new FileWriter(infoFile))) {
+          BufferedWriter writer = new BufferedWriter(new FileWriter(infoFile))
+        ) {
           writer.write(String.valueOf(version));
         }
 
@@ -146,12 +145,13 @@ public class DownloadService extends IntentService {
     } catch (Exception e) {
       e.printStackTrace();
       publishResults(
-          "",
-          id,
-          version,
-          checksum,
-          sessionKey,
-          e.getLocalizedMessage());
+        "",
+        id,
+        version,
+        checksum,
+        sessionKey,
+        e.getLocalizedMessage()
+      );
     }
   }
 
@@ -177,12 +177,13 @@ public class DownloadService extends IntentService {
   }
 
   private void publishResults(
-      String dest,
-      String id,
-      String version,
-      String checksum,
-      String sessionKey,
-      String error) {
+    String dest,
+    String id,
+    String version,
+    String checksum,
+    String sessionKey,
+    String error
+  ) {
     Intent intent = new Intent(NOTIFICATION);
     intent.setPackage(getPackageName());
     if (dest != null && !dest.isEmpty()) {
