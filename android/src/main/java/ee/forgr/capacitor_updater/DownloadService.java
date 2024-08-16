@@ -33,11 +33,6 @@ public class DownloadService extends IntentService {
     super("Background DownloadService");
   }
 
-  private int calcTotalPercent(long downloadedBytes, int contentLength) {
-    if (contentLength <= 0)
-      return 0;
-    return (int) (((double) downloadedBytes / contentLength) * 100);
-  }
 
   @Override
   protected void onHandleIntent(Intent intent) {
@@ -90,23 +85,24 @@ public class DownloadService extends IntentService {
       if (responseCode == HttpURLConnection.HTTP_OK ||
           responseCode == HttpURLConnection.HTTP_PARTIAL) {
         String contentType = httpConn.getContentType();
-        int contentLength = httpConn.getContentLength() + (int) downloadedBytes;
+        long contentLength = httpConn.getContentLength() + downloadedBytes;
 
         InputStream inputStream = httpConn.getInputStream();
         FileOutputStream outputStream = new FileOutputStream(
-            tempFile,
-            downloadedBytes > 0);
+          tempFile,
+          downloadedBytes > 0
+        );
         if (downloadedBytes == 0) {
           try (
-              BufferedWriter writer = new BufferedWriter(
-                  new FileWriter(infoFile))) {
+            BufferedWriter writer = new BufferedWriter(new FileWriter(infoFile))
+          ) {
             writer.write(String.valueOf(version));
           }
         }
         // Updating the info file
         try (
-            BufferedWriter writer = new BufferedWriter(
-                new FileWriter(infoFile))) {
+          BufferedWriter writer = new BufferedWriter(new FileWriter(infoFile))
+        ) {
           writer.write(String.valueOf(version));
         }
 
@@ -116,13 +112,12 @@ public class DownloadService extends IntentService {
         while ((bytesRead = inputStream.read(buffer)) != -1) {
           outputStream.write(buffer, 0, bytesRead);
           downloadedBytes += bytesRead;
-
           // Saving progress (flushing every 100 Ko)
           if (downloadedBytes % 102400 == 0) {
             outputStream.flush();
           }
           // Computing percentage
-          int percent = calcTotalPercent(downloadedBytes, contentLength);
+          int percent = (int)((double) downloadedBytes / contentLength * 100);
           if (percent != lastPercent) {
             notifyDownload(id, percent);
             lastPercent = percent;
@@ -146,12 +141,13 @@ public class DownloadService extends IntentService {
     } catch (Exception e) {
       e.printStackTrace();
       publishResults(
-          "",
-          id,
-          version,
-          checksum,
-          sessionKey,
-          e.getLocalizedMessage());
+        "",
+        id,
+        version,
+        checksum,
+        sessionKey,
+        e.getLocalizedMessage()
+      );
     }
   }
 
@@ -177,12 +173,13 @@ public class DownloadService extends IntentService {
   }
 
   private void publishResults(
-      String dest,
-      String id,
-      String version,
-      String checksum,
-      String sessionKey,
-      String error) {
+    String dest,
+    String id,
+    String version,
+    String checksum,
+    String sessionKey,
+    String error
+  ) {
     Intent intent = new Intent(NOTIFICATION);
     intent.setPackage(getPackageName());
     if (dest != null && !dest.isEmpty()) {
