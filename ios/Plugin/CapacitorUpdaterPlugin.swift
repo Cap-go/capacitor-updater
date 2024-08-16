@@ -7,6 +7,7 @@
 import Foundation
 import Capacitor
 import Version
+import SwiftyRSA
 
 /**
  * Please read the Capacitor iOS Plugin Development Guide
@@ -38,6 +39,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
     let semaphoreReady = DispatchSemaphore(value: 0)
 
     override public func load() {
+        #if targetEnvironment(simulator)
+            print("\(self.implementation.TAG) ::::: SIMULATOR :::::")
+            print("\(self.implementation.TAG) Application directory: \(NSHomeDirectory())")
+        #endif
+        
         self.semaphoreUp()
         print("\(self.implementation.TAG) init for device \(self.implementation.deviceID)")
         guard let versionName = getConfig().getString("version", Bundle.main.versionName) else {
@@ -81,6 +87,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         implementation.statsUrl = getConfig().getString("statsUrl", CapacitorUpdaterPlugin.statsUrlDefault)!
         implementation.channelUrl = getConfig().getString("channelUrl", CapacitorUpdaterPlugin.channelUrlDefault)!
         implementation.defaultChannel = getConfig().getString("defaultChannel", "")!
+        do {
+            let signKeyString = getConfig().getString("signKey", "")!
+            if (!signKeyString.isEmpty) {
+                implementation.signKey = try PublicKey(base64Encoded: signKeyString)
+            }
+        } catch {
+            print("\(self.implementation.TAG) Cannot get signKey, invalid key")
+            fatalError("Invalid signKey in capacitor config")
+        }
         self.implementation.autoReset()
 
         // Load the server
@@ -237,13 +252,20 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             call.reject("Download called without version")
             return
         }
+        let signature = call.getString("signature", "")
+        if (self.implementation.signKey != nil && signature.isEmpty) {
+            print("\(self.implementation.TAG) Signature required but none provided for download call")
+            call.reject("Signature required but none provided")
+            return
+        }
+        
         let sessionKey = call.getString("sessionKey", "")
         let checksum = call.getString("checksum", "")
         let url = URL(string: urlString)
         print("\(self.implementation.TAG) Downloading \(String(describing: url))")
         DispatchQueue.global(qos: .background).async {
             do {
-                let next = try self.implementation.download(url: url!, version: version, sessionKey: sessionKey)
+                let next = try self.implementation.download(url: url!, version: version, sessionKey: sessionKey, signature: signature)
                 if checksum != "" && next.getChecksum() != checksum {
                     print("\(self.implementation.TAG) Error checksum", next.getChecksum(), checksum)
                     self.implementation.sendStats(action: "checksum_fail", versionName: next.getVersionName())
@@ -678,6 +700,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 return
             }
             let sessionKey = res.sessionKey ?? ""
+            let signature = res.signature
             guard let downloadUrl = URL(string: res.url) else {
                 print("\(self.implementation.TAG) Error no url or wrong format")
                 self.endBackGroundTaskWithNotif(msg: "Error no url or wrong format", latestVersionName: res.version, current: current)
@@ -698,7 +721,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                                 print("\(self.implementation.TAG) Failed to delete failed bundle: \(nextImpl!.toString())")
                             }
                         }
-                        nextImpl = try self.implementation.download(url: downloadUrl, version: latestVersionName, sessionKey: sessionKey)
+                        nextImpl = try self.implementation.download(url: downloadUrl, version: latestVersionName, sessionKey: sessionKey, signature: signature)
                     }
                     guard let next = nextImpl else {
                         print("\(self.implementation.TAG) Error downloading file")

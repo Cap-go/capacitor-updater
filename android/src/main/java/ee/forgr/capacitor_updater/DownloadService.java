@@ -27,6 +27,7 @@ public class DownloadService extends IntentService {
   public static final String VERSION = "version";
   public static final String SESSIONKEY = "sessionkey";
   public static final String CHECKSUM = "checksum";
+  public static final String SIGNATURE = "signature";
   public static final String NOTIFICATION = "service receiver";
   public static final String PERCENTDOWNLOAD = "percent receiver";
 
@@ -53,6 +54,7 @@ public class DownloadService extends IntentService {
     String version = intent.getStringExtra(VERSION);
     String sessionKey = intent.getStringExtra(SESSIONKEY);
     String checksum = intent.getStringExtra(CHECKSUM);
+    String signature = intent.getStringExtra(SIGNATURE);
 
     try {
       final URL u = new URL(url);
@@ -84,12 +86,28 @@ public class DownloadService extends IntentService {
             }
             bytesRead += length;
           }
-          publishResults(dest, id, version, checksum, sessionKey, "");
+          publishResults(
+            dest,
+            id,
+            version,
+            checksum,
+            sessionKey,
+            signature,
+            ""
+          );
         }
       }
     } catch (OutOfMemoryError e) {
       e.printStackTrace();
-      publishResults("", id, version, checksum, sessionKey, "low_mem_fail");
+      publishResults(
+        "",
+        id,
+        version,
+        checksum,
+        sessionKey,
+        signature,
+        "low_mem_fail"
+      );
     } catch (Exception e) {
       e.printStackTrace();
       publishResults(
@@ -98,6 +116,7 @@ public class DownloadService extends IntentService {
         version,
         checksum,
         sessionKey,
+        signature,
         e.getLocalizedMessage()
       );
     }
@@ -117,6 +136,7 @@ public class DownloadService extends IntentService {
     String version,
     String checksum,
     String sessionKey,
+    String signature,
     String error
   ) {
     Intent intent = new Intent(NOTIFICATION);
@@ -132,6 +152,7 @@ public class DownloadService extends IntentService {
     intent.putExtra(SESSIONKEY, sessionKey);
     intent.putExtra(CHECKSUM, checksum);
     intent.putExtra(ERROR, error);
+    intent.putExtra(SIGNATURE, signature);
     sendBroadcast(intent);
   }
 }
