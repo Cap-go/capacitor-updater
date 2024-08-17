@@ -69,7 +69,8 @@ public class DownloadService extends IntentService {
 
       if (infoFile.exists() && tempFile.exists()) {
         try (
-            BufferedReader reader = new BufferedReader(new FileReader(infoFile))) {
+          BufferedReader reader = new BufferedReader(new FileReader(infoFile))
+        ) {
           String updateVersion = reader.readLine();
           if (!updateVersion.equals(version)) {
             clearDownloadData(documentsDir);
@@ -89,24 +90,29 @@ public class DownloadService extends IntentService {
 
       int responseCode = httpConn.getResponseCode();
 
-      if (responseCode == HttpURLConnection.HTTP_OK ||
-          responseCode == HttpURLConnection.HTTP_PARTIAL) {
+      if (
+        responseCode == HttpURLConnection.HTTP_OK ||
+        responseCode == HttpURLConnection.HTTP_PARTIAL
+      ) {
         String contentType = httpConn.getContentType();
         long contentLength = httpConn.getContentLength() + downloadedBytes;
 
         InputStream inputStream = httpConn.getInputStream();
         FileOutputStream outputStream = new FileOutputStream(
-            tempFile,
-            downloadedBytes > 0);
+          tempFile,
+          downloadedBytes > 0
+        );
         if (downloadedBytes == 0) {
           try (
-              BufferedWriter writer = new BufferedWriter(new FileWriter(infoFile))) {
+            BufferedWriter writer = new BufferedWriter(new FileWriter(infoFile))
+          ) {
             writer.write(String.valueOf(version));
           }
         }
         // Updating the info file
         try (
-            BufferedWriter writer = new BufferedWriter(new FileWriter(infoFile))) {
+          BufferedWriter writer = new BufferedWriter(new FileWriter(infoFile))
+        ) {
           writer.write(String.valueOf(version));
         }
 
@@ -142,23 +148,25 @@ public class DownloadService extends IntentService {
     } catch (OutOfMemoryError e) {
       e.printStackTrace();
       publishResults(
-          "",
-          id,
-          version,
-          checksum,
-          sessionKey,
-          signature,
-          "low_mem_fail");
+        "",
+        id,
+        version,
+        checksum,
+        sessionKey,
+        signature,
+        "low_mem_fail"
+      );
     } catch (Exception e) {
       e.printStackTrace();
       publishResults(
-          "",
-          id,
-          version,
-          checksum,
-          sessionKey,
-          signature,
-          e.getLocalizedMessage());
+        "",
+        id,
+        version,
+        checksum,
+        sessionKey,
+        signature,
+        e.getLocalizedMessage()
+      );
     }
   }
 
@@ -184,13 +192,14 @@ public class DownloadService extends IntentService {
   }
 
   private void publishResults(
-      String dest,
-      String id,
-      String version,
-      String checksum,
-      String sessionKey,
-      String signature,
-      String error) {
+    String dest,
+    String id,
+    String version,
+    String checksum,
+    String sessionKey,
+    String signature,
+    String error
+  ) {
     Intent intent = new Intent(NOTIFICATION);
     intent.setPackage(getPackageName());
     if (dest != null && !dest.isEmpty()) {
