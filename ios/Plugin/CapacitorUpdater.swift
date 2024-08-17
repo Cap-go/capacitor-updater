@@ -704,10 +704,19 @@ extension CustomError: LocalizedError {
         
         let finalPath = tempDataPath.deletingLastPathComponent().appendingPathComponent("\(id)")
         do {
+            let valid = try self.verifyBundleSignature(version: version, filePath: tempDataPath, signature: signature)
+            if (!valid) {
+                print("\(self.TAG) Invalid signature, cannot accept download")
+                self.sendStats(action: "invalid_signature", versionName: version)
+                throw CustomError.invalidSignature
+            } else {
+                print("\(self.TAG) Valid signature")
+            }
+            
             try self.decryptFile(filePath: tempDataPath, sessionKey: sessionKey, version: version)
             try FileManager.default.moveItem(at: tempDataPath, to: finalPath)
         } catch {
-            print("\(self.TAG) Failed decrypt file or move it: \(error)")
+            print("\(self.TAG) Failed decrypt file or verify signature or move it: \(error)")
             self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum))
             cleanDlData()
             throw error
