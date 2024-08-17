@@ -74,7 +74,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         }
 
         implementation.privateKey = getConfig().getString("privateKey", self.defaultPrivateKey)!
-        implementation.notifyDownloadRaw = notifyDownload
+        implementation.notifyDownload = notifyDownload
         implementation.PLUGIN_VERSION = self.PLUGIN_VERSION
         let config = (self.bridge?.viewController as? CAPBridgeViewController)?.instanceDescriptor().legacyConfig
         implementation.appId = Bundle.main.infoDictionary?["CFBundleIdentifier"] as? String ?? ""
@@ -173,13 +173,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         UserDefaults.standard.synchronize()
     }
 
-    @objc func notifyDownload(id: String, percent: Int, ignoreMultipleOfTen: Bool = false) {
+    @objc func notifyDownload(id: String, percent: Int) {
         let bundle = self.implementation.getBundleInfo(id: id)
         self.notifyListeners("download", data: ["percent": percent, "bundle": bundle.toJSON()])
         if percent == 100 {
             self.notifyListeners("downloadComplete", data: ["bundle": bundle.toJSON()])
             self.implementation.sendStats(action: "download_complete", versionName: bundle.getVersionName())
-        } else if percent.isMultiple(of: 10) || ignoreMultipleOfTen {
+        } else if percent.isMultiple(of: 10) {
             self.implementation.sendStats(action: "download_\(percent)", versionName: bundle.getVersionName())
         }
     }
@@ -720,6 +720,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                             } else {
                                 print("\(self.implementation.TAG) Failed to delete failed bundle: \(nextImpl!.toString())")
                             }
+                        }
+                        guard let signature = signature else {
+                            throw CustomError.signatureNotProvided
                         }
                         nextImpl = try self.implementation.download(url: downloadUrl, version: latestVersionName, sessionKey: sessionKey, signature: signature)
                     }

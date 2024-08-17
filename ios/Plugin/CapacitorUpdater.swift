@@ -263,9 +263,10 @@ extension CustomError: LocalizedError {
     public var signKey: PublicKey?
     
     public var notifyDownloadRaw: (String, Int, Bool) -> Void = { _, _, _  in }
-    private func notifyDownload(id: String, percent: Int, ignoreMultipleOfTen: Bool = false) {
+    public func notifyDownload(id: String, percent: Int, ignoreMultipleOfTen: Bool = false) {
         notifyDownloadRaw(id, percent, ignoreMultipleOfTen)
     }
+    public var notifyDownload: (String, Int) -> Void = { _, _  in }
 
     private func calcTotalPercent(percent: Int, min: Int, max: Int) -> Int {
         return (percent * (max - min)) / 100 + min
@@ -619,7 +620,7 @@ extension CustomError: LocalizedError {
         return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent("update.dat")
     }
     private var tempData = Data()
-    public func download(url: URL, version: String, sessionKey: String) throws -> BundleInfo {
+    public func download(url: URL, version: String, sessionKey: String, signature: String) throws -> BundleInfo {
         let id: String = self.randomString(length: 10)
         let semaphore = DispatchSemaphore(value: 0)
         if(version != getLocalUpdateVersion()){
