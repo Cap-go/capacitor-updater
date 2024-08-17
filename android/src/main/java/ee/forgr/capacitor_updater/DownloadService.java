@@ -34,7 +34,6 @@ public class DownloadService extends IntentService {
     super("Background DownloadService");
   }
 
-
   @Override
   protected void onHandleIntent(Intent intent) {
     assert intent != null;
@@ -118,7 +117,8 @@ public class DownloadService extends IntentService {
             outputStream.flush();
           }
           // Computing percentage
-          int percent = (int)((double) downloadedBytes / contentLength * 100);
+          int percent = (int) (((double) downloadedBytes / contentLength) *
+            100);
           if (percent != lastPercent) {
             notifyDownload(id, percent);
             lastPercent = percent;
