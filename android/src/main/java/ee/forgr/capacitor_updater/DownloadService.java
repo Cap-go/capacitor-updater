@@ -3,17 +3,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-
 package ee.forgr.capacitor_updater;
 
 import android.app.IntentService;
 import android.content.Intent;
-import java.io.DataInputStream;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.InputStream;
+import java.io.*;
+import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLConnection;
+import java.nio.channels.FileChannel;
 import java.util.Objects;
 
 public class DownloadService extends IntentService {
@@ -30,20 +28,13 @@ public class DownloadService extends IntentService {
   public static final String SIGNATURE = "signature";
   public static final String NOTIFICATION = "service receiver";
   public static final String PERCENTDOWNLOAD = "percent receiver";
+  private static final String UPDATE_FILE = "update.dat";
 
   public DownloadService() {
     super("Background DownloadService");
   }
 
-  private int calcTotalPercent(
-    final int percent,
-    final int min,
-    final int max
-  ) {
-    return (percent * (max - min)) / 100 + min;
-  }
 
-  // Will be called asynchronously by OS.
   @Override
   protected void onHandleIntent(Intent intent) {
     assert intent != null;
@@ -56,47 +47,95 @@ public class DownloadService extends IntentService {
     String checksum = intent.getStringExtra(CHECKSUM);
     String signature = intent.getStringExtra(SIGNATURE);
 
+    File target = new File(documentsDir, dest);
+    File infoFile = new File(documentsDir, UPDATE_FILE); // The file where the download progress (how much byte
+    // downloaded) is stored
+    File tempFile = new File(documentsDir, "temp" + ".tmp"); // Temp file, where the downloaded data is stored
     try {
-      final URL u = new URL(url);
-      final URLConnection connection = u.openConnection();
+      URL u = new URL(url);
+      HttpURLConnection httpConn = (HttpURLConnection) u.openConnection();
 
-      try (
-        final InputStream is = u.openStream();
-        final DataInputStream dis = new DataInputStream(is)
-      ) {
-        assert dest != null;
-        final File target = new File(documentsDir, dest);
-        Objects.requireNonNull(target.getParentFile()).mkdirs();
-        target.createNewFile();
-        try (final FileOutputStream fos = new FileOutputStream(target)) {
-          final long totalLength = connection.getContentLength();
-          final int bufferSize = 1024;
-          final byte[] buffer = new byte[bufferSize];
-          int length;
+      // Reading progress file (if exist)
+      long downloadedBytes = 0;
 
-          int bytesRead = bufferSize;
-          int percent = 0;
-          this.notifyDownload(id, 10);
-          while ((length = dis.read(buffer)) > 0) {
-            fos.write(buffer, 0, length);
-            final int newPercent = (int) ((bytesRead * 100) / totalLength);
-            if (totalLength > 1 && newPercent != percent) {
-              percent = newPercent;
-              this.notifyDownload(id, this.calcTotalPercent(percent, 10, 70));
-            }
-            bytesRead += length;
+      if (infoFile.exists() && tempFile.exists()) {
+        try (
+          BufferedReader reader = new BufferedReader(new FileReader(infoFile))
+        ) {
+          String updateVersion = reader.readLine();
+          if (!updateVersion.equals(version)) {
+            clearDownloadData(documentsDir);
+            downloadedBytes = 0;
+          } else {
+            downloadedBytes = tempFile.length();
           }
-          publishResults(
-            dest,
-            id,
-            version,
-            checksum,
-            sessionKey,
-            signature,
-            ""
-          );
         }
+      } else {
+        clearDownloadData(documentsDir);
+        downloadedBytes = 0;
       }
+
+      if (downloadedBytes > 0) {
+        httpConn.setRequestProperty("Range", "bytes=" + downloadedBytes + "-");
+      }
+
+      int responseCode = httpConn.getResponseCode();
+
+      if (
+        responseCode == HttpURLConnection.HTTP_OK ||
+        responseCode == HttpURLConnection.HTTP_PARTIAL
+      ) {
+        String contentType = httpConn.getContentType();
+        long contentLength = httpConn.getContentLength() + downloadedBytes;
+
+        InputStream inputStream = httpConn.getInputStream();
+        FileOutputStream outputStream = new FileOutputStream(
+          tempFile,
+          downloadedBytes > 0
+        );
+        if (downloadedBytes == 0) {
+          try (
+            BufferedWriter writer = new BufferedWriter(new FileWriter(infoFile))
+          ) {
+            writer.write(String.valueOf(version));
+          }
+        }
+        // Updating the info file
+        try (
+          BufferedWriter writer = new BufferedWriter(new FileWriter(infoFile))
+        ) {
+          writer.write(String.valueOf(version));
+        }
+
+        int bytesRead = -1;
+        byte[] buffer = new byte[4096];
+        int lastPercent = 0;
+        while ((bytesRead = inputStream.read(buffer)) != -1) {
+          outputStream.write(buffer, 0, bytesRead);
+          downloadedBytes += bytesRead;
+          // Saving progress (flushing every 100 Ko)
+          if (downloadedBytes % 102400 == 0) {
+            outputStream.flush();
+          }
+          // Computing percentage
+          int percent = (int)((double) downloadedBytes / contentLength * 100);
+          if (percent != lastPercent) {
+            notifyDownload(id, percent);
+            lastPercent = percent;
+          }
+        }
+
+        outputStream.close();
+        inputStream.close();
+
+        // Rename the temp file with the final name (dest)
+        tempFile.renameTo(new File(documentsDir, dest));
+        infoFile.delete();
+        publishResults(dest, id, version, checksum, sessionKey, "");
+      } else {
+        infoFile.delete();
+      }
+      httpConn.disconnect();
     } catch (OutOfMemoryError e) {
       e.printStackTrace();
       publishResults(
@@ -122,6 +161,19 @@ public class DownloadService extends IntentService {
     }
   }
 
+  private void clearDownloadData(String docDir) {
+    File tempFile = new File(docDir, "temp" + ".tmp");
+    File infoFile = new File(docDir, UPDATE_FILE);
+    try {
+      tempFile.delete();
+      infoFile.delete();
+      infoFile.createNewFile();
+      tempFile.createNewFile();
+    } catch (IOException e) {
+      e.printStackTrace();
+    }
+  }
+
   private void notifyDownload(String id, int percent) {
     Intent intent = new Intent(PERCENTDOWNLOAD);
     intent.setPackage(getPackageName());
@@ -144,14 +196,11 @@ public class DownloadService extends IntentService {
     if (dest != null && !dest.isEmpty()) {
       intent.putExtra(FILEDEST, dest);
     }
-    if (error != null && !error.isEmpty()) {
-      intent.putExtra(ERROR, error);
-    }
+    intent.putExtra(ERROR, error);
     intent.putExtra(ID, id);
     intent.putExtra(VERSION, version);
     intent.putExtra(SESSIONKEY, sessionKey);
     intent.putExtra(CHECKSUM, checksum);
-    intent.putExtra(ERROR, error);
     intent.putExtra(SIGNATURE, signature);
     sendBroadcast(intent);
   }

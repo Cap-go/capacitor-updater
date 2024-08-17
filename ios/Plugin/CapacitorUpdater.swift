@@ -237,7 +237,7 @@ extension CustomError: LocalizedError {
 }
 
 @objc public class CapacitorUpdater: NSObject {
-
+    
     private let versionCode: String = Bundle.main.versionCode ?? ""
     private let versionOs = UIDevice.current.systemVersion
     private let libraryDir: URL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
@@ -247,7 +247,7 @@ extension CustomError: LocalizedError {
     private let FALLBACK_VERSION: String = "pastVersion"
     private let NEXT_VERSION: String = "nextVersion"
     private var unzipPercent = 0
-
+    
     public let TAG: String = "✨  Capacitor-updater:"
     public let CAP_SERVER_PATH: String = "serverBasePath"
     public var versionBuild: String = ""
@@ -261,8 +261,11 @@ extension CustomError: LocalizedError {
     public var deviceID = UIDevice.current.identifierForVendor?.uuidString ?? ""
     public var privateKey: String = ""
     public var signKey: PublicKey?
-
-    public var notifyDownload: (String, Int) -> Void = { _, _  in }
+    
+    public var notifyDownloadRaw: (String, Int, Bool) -> Void = { _, _, _  in }
+    private func notifyDownload(id: String, percent: Int, ignoreMultipleOfTen: Bool = false) {
+        notifyDownloadRaw(id, percent, ignoreMultipleOfTen)
+    }
 
     private func calcTotalPercent(percent: Int, min: Int, max: Int) -> Int {
         return (percent * (max - min)) / 100 + min
@@ -356,34 +359,7 @@ extension CustomError: LocalizedError {
         }
     }
 
-    private func calcChecksum(filePath: URL) -> String {
-        let bufferSize = 1024 * 1024 * 5 // 5 MB
-        var checksum = uLong(0)
 
-        do {
-            let fileHandle = try FileHandle(forReadingFrom: filePath)
-            defer {
-                fileHandle.closeFile()
-            }
-
-            while autoreleasepool(invoking: {
-                let fileData = fileHandle.readData(ofLength: bufferSize)
-                if fileData.count > 0 {
-                    checksum = fileData.withUnsafeBytes {
-                        crc32(checksum, $0.bindMemory(to: Bytef.self).baseAddress, uInt(fileData.count))
-                    }
-                    return true // Continue
-                } else {
-                    return false // End of file
-                }
-            }) {}
-
-            return String(format: "%08X", checksum).lowercased()
-        } catch {
-            print("\(self.TAG) Cannot calc checksum: \(filePath.path)", error)
-            return ""
-        }
-    }
     
     private func verifyBundleSignature(version: String, filePath: URL, signature: String?) throws -> Bool {
         if (self.signKey == nil) {
@@ -447,6 +423,7 @@ extension CustomError: LocalizedError {
             }
 
             try decryptedData.write(to: filePath)
+           
         } catch {
             print("\(self.TAG) Cannot decode: \(filePath.path)", error)
             self.sendStats(action: "decrypt_fail", versionName: version)
@@ -485,7 +462,7 @@ extension CustomError: LocalizedError {
         let newPercent = self.calcTotalPercent(percent: Int(Double(entryNumber) / Double(total) * 100), min: 75, max: 81)
         if newPercent != self.unzipPercent {
             self.unzipPercent = newPercent
-            self.notifyDownload(id, newPercent)
+            self.notifyDownload(id: id, percent: newPercent)
         }
     }
 
@@ -495,7 +472,7 @@ extension CustomError: LocalizedError {
         let destUnZip: URL = libraryDir.appendingPathComponent(randomString(length: 10))
 
         self.unzipPercent = 0
-        self.notifyDownload(id, 75)
+        self.notifyDownload(id: id, percent: 75)
 
         let semaphore = DispatchSemaphore(value: 0)
         var unzipError: NSError?
@@ -605,102 +582,235 @@ extension CustomError: LocalizedError {
         UserDefaults.standard.synchronize()
         print("\(self.TAG) Current bundle set to: \((bundle ).isEmpty ? BundleInfo.ID_BUILTIN : bundle)")
     }
+    private func calcChecksum(filePath: URL) -> String {
+        let bufferSize = 1024 * 1024 * 5 // 5 MB
+        var checksum = uLong(0)
 
-    public func download(url: URL, version: String, sessionKey: String, signature: String?) throws -> BundleInfo {
-        let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
-        let id: String = self.randomString(length: 10)
-        var checksum: String = ""
+        do {
+            let fileHandle = try FileHandle(forReadingFrom: filePath)
+            defer {
+                fileHandle.closeFile()
+            }
 
-        var mainError: NSError?
-        let destination: DownloadRequest.Destination = { _, _ in
-            let documentsURL: URL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            let fileURL: URL = documentsURL.appendingPathComponent(self.randomString(length: 10))
-
-            return (fileURL, [.removePreviousFile, .createIntermediateDirectories])
-        }
-        let request = AF.download(url, to: destination)
-
-        request.downloadProgress { progress in
-            let percent = self.calcTotalPercent(percent: Int(progress.fractionCompleted * 100), min: 10, max: 70)
-            self.notifyDownload(id, percent)
-        }
-        request.responseURL(queue: .global(qos: .background), completionHandler: { (response) in
-            if let fileURL = response.fileURL {
-                switch response.result {
-                case .success:
-                    self.notifyDownload(id, 71)
-                    
-                    // The reason we do 2 blocks of try/catch is that in the first one we will try to cleanup afterwards. Cleanup wlll NOT happen in the second one
-                    
-                    do {
-                        let valid = try self.verifyBundleSignature(version: version, filePath: fileURL, signature: signature)
-                        if (!valid) {
-                            print("\(self.TAG) Invalid signature, cannot accept download")
-                            self.sendStats(action: "invalid_signature", versionName: version)
-                            throw CustomError.invalidSignature
-                        } else {
-                            print("\(self.TAG) Valid signature")
-                        }
-                        
-                        try self.decryptFile(filePath: fileURL, sessionKey: sessionKey, version: version)
-                        checksum = self.calcChecksum(filePath: fileURL)
-                    } catch {
-                        print("\(self.TAG) downloaded file verification error", error)
-                        mainError = error as NSError
-                        
-                        // Cleanup
-                        do {
-                            try self.deleteFolder(source: fileURL)
-                        } catch {
-                            print("\(self.TAG) Double error, cannot cleanup", error)
-                        }
+            while autoreleasepool(invoking: {
+                let fileData = fileHandle.readData(ofLength: bufferSize)
+                if fileData.count > 0 {
+                    checksum = fileData.withUnsafeBytes {
+                        crc32(checksum, $0.bindMemory(to: Bytef.self).baseAddress, uInt(fileData.count))
                     }
-                    
-                    do {
-                        if (mainError == nil) {
-                            try self.saveDownloaded(sourceZip: fileURL, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: true)
-                            try self.deleteFolder(source: fileURL)
-                            self.notifyDownload(id, 100)
-                        }
-                    } catch {
-                        print("\(self.TAG) download unzip error", error)
-                        mainError = error as NSError
-                    }
-                case let .failure(error):
-                    print("\(self.TAG) download error", response.value ?? "", error)
-                    if let afError = error as? AFError,
-                       case .sessionTaskFailed(let urlError as URLError) = afError,
-                       urlError.code == .cannotWriteToFile {
-                        self.sendStats(action: "low_mem_fail", versionName: version)
-                    }
-                    mainError = error as NSError
+                    return true // Continue
+                } else {
+                    return false // End of file
                 }
-            }
-            semaphore.signal()
-        })
-        self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.DOWNLOADING, downloaded: Date(), checksum: checksum))
-        self.notifyDownload(id, 0)
-        let reachabilityManager = NetworkReachabilityManager()
-        reachabilityManager?.startListening { status in
-            switch status {
-            case .notReachable:
-                // Stop the download request if the network is not reachable
-                request.cancel()
-                mainError = NSError(domain: NSURLErrorDomain, code: NSURLErrorNotConnectedToInternet, userInfo: nil)
-                semaphore.signal()
-            default:
-                break
+            }) {}
+
+            return String(format: "%08X", checksum).lowercased()
+        } catch {
+            print("\(self.TAG) Cannot get checksum: \(filePath.path)", error)
+            return ""
+        }
+    }
+    
+    private var tempDataPath: URL {
+        return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent("package.tmp")
+    }
+
+    private var updateInfo: URL {
+        return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent("update.dat")
+    }
+    private var tempData = Data()
+    public func download(url: URL, version: String, sessionKey: String) throws -> BundleInfo {
+        let id: String = self.randomString(length: 10)
+        let semaphore = DispatchSemaphore(value: 0)
+        if(version != getLocalUpdateVersion()){
+            cleanDlData()
+        }
+        ensureResumableFilesExist()
+        saveDownloadInfo(version)
+        var checksum = ""
+        var targetSize = -1
+        var lastSentProgress = 0;
+        var totalReceivedBytes: Int64 = loadDownloadProgress() //Retrieving the amount of already downloaded data if exist, defined at 0 otherwise
+         let requestHeaders: HTTPHeaders = ["Range": "bytes=\(totalReceivedBytes)-"]
+        //Opening connection for streaming the bytes
+        
+        var mainError: NSError?
+        let monitor = ClosureEventMonitor()
+        monitor.requestDidCompleteTaskWithError = { (request, task, error) in
+            if error != nil {
+                print("\(self.TAG) Downloading failed - ClosureEventMonitor activated")
+                mainError = error as NSError?
             }
         }
+        let session = Session(eventMonitors: [monitor])
+
+        var request = session.streamRequest(url, headers: requestHeaders).validate().onHTTPResponse(perform: { response  in
+            if let contentLength = response.headers.value(for: "Content-Length") {
+                targetSize = (Int(contentLength) ?? -1) + Int(totalReceivedBytes)
+                lastSentProgress = Int((Double(totalReceivedBytes) / Double(targetSize)) * 100.0)
+            }
+        }).responseStream { [weak self] streamResponse in
+             guard let self = self else { return }
+
+             switch streamResponse.event {
+                 
+             case .stream(let result):
+                 if case .success(let data) = result {
+                     self.tempData.append(data)
+                     
+                     self.savePartialData(startingAt: UInt64(totalReceivedBytes)) // Saving the received data in the package.tmp file
+                     totalReceivedBytes += Int64(data.count)
+                     
+                     let percent = Int((Double(totalReceivedBytes) / Double(targetSize)) * 100.0)
+                     print("\(self.TAG) Downloading: \(percent)%")
+                     if (percent - lastSentProgress >= 10) {
+                         self.notifyDownload(id: id, percent: percent, ignoreMultipleOfTen: true)
+                         lastSentProgress = percent
+                     }
+                     // usleep(useconds_t(2000 * 1000))
+                 }
+                 else {
+                     print("\(self.TAG) Download failed")
+                 }
+
+
+             case .complete(_):
+                print("\(self.TAG) Download complete, total received bytes: \(totalReceivedBytes)")
+                semaphore.signal()
+             }
+        }
+        self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.DOWNLOADING, downloaded: Date(), checksum: checksum))
         semaphore.wait()
-        reachabilityManager?.stopListening()
-        if let error = mainError {
+        
+        if (mainError != nil) {
+            print("\(self.TAG) Failed to download: \(String(describing: mainError))")
+            self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum))
+            cleanDlData()
+            throw mainError!
+        }
+        
+        let finalPath = tempDataPath.deletingLastPathComponent().appendingPathComponent("\(id)")
+        do {
+            try self.decryptFile(filePath: tempDataPath, sessionKey: sessionKey, version: version)
+            try FileManager.default.moveItem(at: tempDataPath, to: finalPath)
+        } catch {
+            print("\(self.TAG) Failed decrypt file or move it: \(error)")
+            self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum))
+            cleanDlData()
             throw error
         }
-        let info: BundleInfo = BundleInfo(id: id, version: version, status: BundleStatus.PENDING, downloaded: Date(), checksum: checksum)
+        
+        do {
+            checksum = self.calcChecksum(filePath: finalPath)
+            try self.saveDownloaded(sourceZip: finalPath, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: true)
+        } catch {
+            print("\(self.TAG) Failed to unzip file: \(error)")
+            self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum))
+            cleanDlData()
+            // todo: cleanup zip attempts
+            throw error
+        }
+        
+        let info = BundleInfo(id: id, version: version, status: BundleStatus.PENDING, downloaded: Date(), checksum: checksum)
         self.saveBundleInfo(id: id, bundle: info)
+        self.notifyDownload(id: id, percent: 100)
+        self.cleanDlData()
         return info
     }
+    private func ensureResumableFilesExist() {
+        let fileManager = FileManager.default
+        if !fileManager.fileExists(atPath: tempDataPath.path) {
+            if !fileManager.createFile(atPath: tempDataPath.path, contents: Data()) {
+                print("\(self.TAG) Cannot ensure that a file at \(tempDataPath.path) exists")
+            }
+        }
+        
+        if !fileManager.fileExists(atPath: updateInfo.path) {
+            if !fileManager.createFile(atPath: updateInfo.path, contents: Data()) {
+                print("\(self.TAG) Cannot ensure that a file at \(updateInfo.path) exists")
+            }
+        }
+    }
+    
+    private func cleanDlData(){
+        // Deleting package.tmp
+        let fileManager = FileManager.default
+        if fileManager.fileExists(atPath: tempDataPath.path) {
+             do {
+                 try fileManager.removeItem(at: tempDataPath)
+             } catch {
+                 print("\(self.TAG) Could not delete file at \(tempDataPath): \(error)")
+             }
+         } else {
+             print("\(self.TAG) \(tempDataPath.lastPathComponent) does not exist")
+         }
+         
+         // Deleting update.dat
+         if fileManager.fileExists(atPath: updateInfo.path) {
+             do {
+                 try fileManager.removeItem(at: updateInfo)
+             } catch {
+                 print("\(self.TAG) Could not delete file at \(updateInfo): \(error)")
+             }
+         } else {
+             print("\(self.TAG) \(updateInfo.lastPathComponent) does not exist")
+         }
+    }
+    
+    private func savePartialData(startingAt byteOffset: UInt64) {
+        let fileManager = FileManager.default
+        do {
+            // Check if package.tmp exist
+            if !fileManager.fileExists(atPath: tempDataPath.path) {
+                try self.tempData.write(to: tempDataPath, options: .atomicWrite)
+            } else {
+                // If yes, it start writing on it
+                let fileHandle = try FileHandle(forWritingTo: tempDataPath)
+                fileHandle.seek(toFileOffset: byteOffset) // Moving at the specified position to start writing
+                fileHandle.write(self.tempData)
+                fileHandle.closeFile()
+            }
+        } catch {
+            print("Failed to write data starting at byte \(byteOffset): \(error)")
+        }
+        self.tempData.removeAll() // Clearing tempData to avoid writing the same data multiple times
+    }
+
+
+    private func saveDownloadInfo(_ version: String) {
+        do {
+            try "\(version)".write(to: updateInfo, atomically: true, encoding: .utf8)
+        } catch {
+            print("\(self.TAG) Failed to save progress: \(error)")
+        }
+    }
+    private func getLocalUpdateVersion() -> String { //Return the version that was tried to be downloaded on last download attempt
+        if !FileManager.default.fileExists(atPath: updateInfo.path) {
+            return "nil"
+        }
+         guard let versionString = try? String(contentsOf: updateInfo),
+               let version = Optional(versionString) else {
+             return "nil"
+         }
+         return version
+     }
+    private func loadDownloadProgress() -> Int64 {
+        
+        let fileManager = FileManager.default
+         do {
+             let attributes = try fileManager.attributesOfItem(atPath: tempDataPath.path)
+             if let fileSize = attributes[.size] as? NSNumber {
+                 return fileSize.int64Value
+             }
+         } catch {
+             print("\(self.TAG) Could not retrieve already downloaded data size : \(error)")
+         }
+         return 0
+    }
+
+
+
+
 
     public func list() -> [BundleInfo] {
         let dest: URL = libraryDir.appendingPathComponent(bundleDirectory)
