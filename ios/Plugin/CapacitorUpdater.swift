@@ -681,12 +681,24 @@ extension CustomError: LocalizedError {
              }
         }
         self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.DOWNLOADING, downloaded: Date(), checksum: checksum))
+        let reachabilityManager = NetworkReachabilityManager()
+        reachabilityManager?.startListening { status in
+            switch status {
+            case .notReachable:
+                // Stop the download request if the network is not reachable
+                request.cancel()
+                mainError = NSError(domain: NSURLErrorDomain, code: NSURLErrorNotConnectedToInternet, userInfo: nil)
+                semaphore.signal()
+            default:
+                break
+            }
+        }
         semaphore.wait()
-        
+        reachabilityManager?.stopListening()
+
         if (mainError != nil) {
             print("\(self.TAG) Failed to download: \(String(describing: mainError))")
             self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum))
-            cleanDlData()
             throw mainError!
         }
         
