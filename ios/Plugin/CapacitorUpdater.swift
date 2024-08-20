@@ -630,11 +630,13 @@ extension CustomError: LocalizedError {
         saveDownloadInfo(version)
         var checksum = ""
         var targetSize = -1
-        var lastSentProgress = 0;
+        var lastSentProgress = 0
         var totalReceivedBytes: Int64 = loadDownloadProgress() //Retrieving the amount of already downloaded data if exist, defined at 0 otherwise
          let requestHeaders: HTTPHeaders = ["Range": "bytes=\(totalReceivedBytes)-"]
         //Opening connection for streaming the bytes
-        
+        if(totalReceivedBytes == 0){
+            self.notifyDownload(id: id, percent: 0, ignoreMultipleOfTen: true)
+        }
         var mainError: NSError?
         let monitor = ClosureEventMonitor()
         monitor.requestDidCompleteTaskWithError = { (request, task, error) in
@@ -648,13 +650,10 @@ extension CustomError: LocalizedError {
         var request = session.streamRequest(url, headers: requestHeaders).validate().onHTTPResponse(perform: { response  in
             if let contentLength = response.headers.value(for: "Content-Length") {
                 targetSize = (Int(contentLength) ?? -1) + Int(totalReceivedBytes)
-                lastSentProgress = Int((Double(totalReceivedBytes) / Double(targetSize)) * 100.0)
             }
         }).responseStream { [weak self] streamResponse in
              guard let self = self else { return }
-
              switch streamResponse.event {
-                 
              case .stream(let result):
                  if case .success(let data) = result {
                      self.tempData.append(data)
@@ -663,12 +662,16 @@ extension CustomError: LocalizedError {
                      totalReceivedBytes += Int64(data.count)
                      
                      let percent = Int((Double(totalReceivedBytes) / Double(targetSize)) * 100.0)
+                     
                      print("\(self.TAG) Downloading: \(percent)%")
-                     if (percent - lastSentProgress >= 10) {
-                         self.notifyDownload(id: id, percent: percent, ignoreMultipleOfTen: true)
-                         lastSentProgress = percent
-                     }
-                     // usleep(useconds_t(2000 * 1000))
+                     let currentMilestone = (percent / 10) * 10
+                             if currentMilestone > lastSentProgress && currentMilestone <= 70 {
+                                 for milestone in stride(from: lastSentProgress + 10, through: currentMilestone, by: 10) {
+                                     self.notifyDownload(id: id, percent: milestone, ignoreMultipleOfTen: true)
+                                 }
+                                 lastSentProgress = currentMilestone
+                             }
+
                  }
                  else {
                      print("\(self.TAG) Download failed")
