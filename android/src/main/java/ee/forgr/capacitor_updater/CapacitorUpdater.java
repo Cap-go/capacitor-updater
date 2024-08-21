@@ -258,19 +258,12 @@ public class CapacitorUpdater {
       IntentFilter filter = new IntentFilter();
       filter.addAction(DownloadService.NOTIFICATION);
       filter.addAction(DownloadService.PERCENTDOWNLOAD);
-      this.activity.registerReceiver(
-          receiver,
-          filter,
-          RECEIVER_NOT_EXPORTED
-        );
+      this.activity.registerReceiver(receiver, filter, RECEIVER_NOT_EXPORTED);
     } else {
       IntentFilter filter = new IntentFilter();
       filter.addAction(DownloadService.NOTIFICATION);
       filter.addAction(DownloadService.PERCENTDOWNLOAD);
-      this.activity.registerReceiver(
-          receiver,
-          filter
-        );
+      this.activity.registerReceiver(receiver, filter);
     }
   }
 
