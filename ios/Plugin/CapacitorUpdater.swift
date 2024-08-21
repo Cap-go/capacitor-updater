@@ -667,7 +667,7 @@ extension CustomError: LocalizedError {
                      let currentMilestone = (percent / 10) * 10
                              if currentMilestone > lastSentProgress && currentMilestone <= 70 {
                                  for milestone in stride(from: lastSentProgress + 10, through: currentMilestone, by: 10) {
-                                     self.notifyDownload(id: id, percent: milestone, ignoreMultipleOfTen: true)
+                                         self.notifyDownload(id: id, percent: milestone, ignoreMultipleOfTen: false)
                                  }
                                  lastSentProgress = currentMilestone
                              }
@@ -680,6 +680,7 @@ extension CustomError: LocalizedError {
 
              case .complete(_):
                 print("\(self.TAG) Download complete, total received bytes: \(totalReceivedBytes)")
+                 self.notifyDownload(id: id, percent: 70, ignoreMultipleOfTen: true)
                 semaphore.signal()
              }
         }
@@ -728,6 +729,7 @@ extension CustomError: LocalizedError {
         do {
             checksum = self.calcChecksum(filePath: finalPath)
             try self.saveDownloaded(sourceZip: finalPath, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: true)
+            self.notifyDownload(id: id, percent: 90)
         } catch {
             print("\(self.TAG) Failed to unzip file: \(error)")
             self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum))
@@ -1080,37 +1082,47 @@ extension CustomError: LocalizedError {
         return getChannel
     }
 
+    private let operationQueue = OperationQueue()
+
     func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {
         guard !statsUrl.isEmpty else {
             return
         }
+        operationQueue.maxConcurrentOperationCount = 1
 
         let versionName = versionName ?? getCurrentBundle().getVersionName()
 
         var parameters = createInfoObject()
         parameters.action = action
         parameters.version_name = versionName
-        parameters.old_version_name = oldVersionName
+        parameters.old_version_name = oldVersionName ?? ""
+        
+        
+        let operation = BlockOperation {
+            let semaphore = DispatchSemaphore(value: 0)
+             let request = AF.request(
+                 self.statsUrl,
+                 method: .post,
+                 parameters: parameters,
+                 encoder: JSONParameterEncoder.default,
+                 requestModifier: { $0.timeoutInterval = self.timeout }
+             ).responseData { response in
+                 switch response.result {
+                 case .success:
+                     print("\(self.TAG) Stats sent for \(action), version \(versionName)")
+                 case let .failure(error):
+                     print("\(self.TAG) Error sending stats: ", response.value ?? "", error.localizedDescription)
+                 }
+                 semaphore.signal()
+             }
+             semaphore.wait()
+         }
+        operationQueue.addOperation(operation)
+        
 
-        DispatchQueue.global(qos: .background).async {
-            let request = AF.request(
-                self.statsUrl,
-                method: .post,
-                parameters: parameters,
-                encoder: JSONParameterEncoder.default,
-                requestModifier: { $0.timeoutInterval = self.timeout }
-            )
-
-            request.responseData { response in
-                switch response.result {
-                case .success:
-                    print("\(self.TAG) Stats sent for \(action), version \(versionName)")
-                case let .failure(error):
-                    print("\(self.TAG) Error sending stats: ", response.value ?? "", error)
-                }
-            }
-        }
+        
     }
+
 
     public func getBundleInfo(id: String?) -> BundleInfo {
         var trueId = BundleInfo.VERSION_UNKNOWN
