@@ -118,7 +118,7 @@ public class DownloadService extends IntentService {
 
         int bytesRead = -1;
         byte[] buffer = new byte[4096];
-        int lastPercent = 0;
+        int lastNotifiedPercent = 0;
         while ((bytesRead = inputStream.read(buffer)) != -1) {
           outputStream.write(buffer, 0, bytesRead);
           downloadedBytes += bytesRead;
@@ -128,9 +128,9 @@ public class DownloadService extends IntentService {
           }
           // Computing percentage
           int percent = calcTotalPercent(downloadedBytes, contentLength);
-          if (percent != lastPercent) {
-            notifyDownload(id, percent);
-            lastPercent = percent;
+          while (lastNotifiedPercent + 10 <= percent) {
+            lastNotifiedPercent += 10;
+            notifyDownload(id, lastNotifiedPercent);
           }
         }
 

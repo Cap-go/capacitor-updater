@@ -255,16 +255,15 @@ public class CapacitorUpdater {
 
   public void onResume() {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-      this.activity.registerReceiver(
-          receiver,
-          new IntentFilter(DownloadService.NOTIFICATION),
-          RECEIVER_NOT_EXPORTED
-        );
+      IntentFilter filter = new IntentFilter();
+      filter.addAction(DownloadService.NOTIFICATION);
+      filter.addAction(DownloadService.PERCENTDOWNLOAD);
+      this.activity.registerReceiver(receiver, filter, RECEIVER_NOT_EXPORTED);
     } else {
-      this.activity.registerReceiver(
-          receiver,
-          new IntentFilter(DownloadService.NOTIFICATION)
-        );
+      IntentFilter filter = new IntentFilter();
+      filter.addAction(DownloadService.NOTIFICATION);
+      filter.addAction(DownloadService.PERCENTDOWNLOAD);
+      this.activity.registerReceiver(receiver, filter);
     }
   }
 
