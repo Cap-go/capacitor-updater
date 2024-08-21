@@ -1104,7 +1104,7 @@ extension CustomError: LocalizedError {
         
         let operation = BlockOperation {
             let semaphore = DispatchSemaphore(value: 0)
-             let request = AF.request(
+            AF.request(
                  self.statsUrl,
                  method: .post,
                  parameters: parameters,
