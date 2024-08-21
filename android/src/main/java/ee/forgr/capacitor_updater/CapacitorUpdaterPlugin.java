@@ -206,6 +206,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         UUID.randomUUID().toString()
       );
     this.editor.putString("appUUID", this.implementation.deviceID);
+    this.editor.commit();
     Log.i(
       CapacitorUpdater.TAG,
       "init for device " + this.implementation.deviceID
