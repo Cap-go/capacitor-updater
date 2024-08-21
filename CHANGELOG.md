@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.1.5](https://github.com/Cap-go/capacitor-updater/compare/6.1.4...6.1.5) (2024-08-21)
+
+
+### Bug Fixes
+
+* commit appUUID save ([583e670](https://github.com/Cap-go/capacitor-updater/commit/583e67065e0363522f9d1f069ff71cd409c3446a))
+
 ### [6.1.4](https://github.com/Cap-go/capacitor-updater/compare/6.1.3...6.1.4) (2024-08-20)
 
 ### [6.1.3](https://github.com/Cap-go/capacitor-updater/compare/6.1.2...6.1.3) (2024-08-20)
