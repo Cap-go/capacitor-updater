@@ -661,7 +661,7 @@ extension CustomError: LocalizedError {
                      self.savePartialData(startingAt: UInt64(totalReceivedBytes)) // Saving the received data in the package.tmp file
                      totalReceivedBytes += Int64(data.count)
                      
-                     let percent = Int((Double(totalReceivedBytes) / Double(targetSize)) * 70.0)
+                     let percent = max(10, Int((Double(totalReceivedBytes) / Double(targetSize)) * 70.0))
                      
                      print("\(self.TAG) Downloading: \(percent)%")
                      let currentMilestone = (percent / 10) * 10
