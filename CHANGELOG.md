@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.1.6](https://github.com/Cap-go/capacitor-updater/compare/6.1.5...6.1.6) (2024-08-21)
+
+
+### Bug Fixes
+
+* use appUUID like in android ([091859d](https://github.com/Cap-go/capacitor-updater/commit/091859d10dffa9875ac6faadb2344e409f3d7a1c))
+
 ### [6.1.5](https://github.com/Cap-go/capacitor-updater/compare/6.1.4...6.1.5) (2024-08-21)
 
 
