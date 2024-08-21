@@ -661,7 +661,7 @@ extension CustomError: LocalizedError {
                      self.savePartialData(startingAt: UInt64(totalReceivedBytes)) // Saving the received data in the package.tmp file
                      totalReceivedBytes += Int64(data.count)
                      
-                     let percent = Int((Double(totalReceivedBytes) / Double(targetSize)) * 100.0)
+                     let percent = Int((Double(totalReceivedBytes) / Double(targetSize)) * 70.0)
                      
                      print("\(self.TAG) Downloading: \(percent)%")
                      let currentMilestone = (percent / 10) * 10
@@ -728,8 +728,9 @@ extension CustomError: LocalizedError {
         
         do {
             checksum = self.calcChecksum(filePath: finalPath)
+            print("\(self.TAG) Downloading: 80% (unzipping)")
             try self.saveDownloaded(sourceZip: finalPath, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: true)
-            self.notifyDownload(id: id, percent: 90)
+            
         } catch {
             print("\(self.TAG) Failed to unzip file: \(error)")
             self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum))
@@ -738,10 +739,13 @@ extension CustomError: LocalizedError {
             throw error
         }
         
+        self.notifyDownload(id: id, percent: 90)
+        print("\(self.TAG) Downloading: 90% (wrapping up)")
         let info = BundleInfo(id: id, version: version, status: BundleStatus.PENDING, downloaded: Date(), checksum: checksum)
         self.saveBundleInfo(id: id, bundle: info)
-        self.notifyDownload(id: id, percent: 100)
         self.cleanDlData()
+        self.notifyDownload(id: id, percent: 100)
+        print("\(self.TAG) Downloading: 100% (complete)")
         return info
     }
     private func ensureResumableFilesExist() {
