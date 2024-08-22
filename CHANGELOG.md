@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.1.12](https://github.com/Cap-go/capacitor-updater/compare/6.1.11...6.1.12) (2024-08-22)
+
+
+### Bug Fixes
+
+* add missing declaration unset channel ios ([85ba89c](https://github.com/Cap-go/capacitor-updater/commit/85ba89ce83d2415d2a77a7cf91f19328d284a9f6))
+
 ### [6.1.11](https://github.com/Cap-go/capacitor-updater/compare/6.1.10...6.1.11) (2024-08-22)
 
 
