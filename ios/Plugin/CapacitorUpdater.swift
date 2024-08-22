@@ -258,7 +258,7 @@ extension CustomError: LocalizedError {
     public var channelUrl: String = ""
     public var defaultChannel: String = ""
     public var appId: String = ""
-    public var deviceID = UIDevice.current.identifierForVendor?.uuidString ?? ""
+    public var deviceID = ""
     public var privateKey: String = ""
     public var signKey: PublicKey?
     

@@ -16,7 +16,7 @@ import SwiftyRSA
 @objc(CapacitorUpdaterPlugin)
 public class CapacitorUpdaterPlugin: CAPPlugin {
     public var implementation = CapacitorUpdater()
-    private let PLUGIN_VERSION: String = "6.1.0"
+    private let PLUGIN_VERSION: String = "6.1.12"
     static let updateUrlDefault = "https://api.capgo.app/updates"
     static let statsUrlDefault = "https://api.capgo.app/stats"
     static let channelUrlDefault = "https://api.capgo.app/channel_self"
@@ -45,6 +45,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         #endif
         
         self.semaphoreUp()
+        self.implementation.deviceID = UserDefaults.standard.string(forKey: "appUUID") ?? UUID().uuidString
+        UserDefaults.standard.set( self.implementation.deviceID, forKey: "appUUID")
+        UserDefaults.standard.synchronize()
         print("\(self.implementation.TAG) init for device \(self.implementation.deviceID)")
         guard let versionName = getConfig().getString("version", Bundle.main.versionName) else {
             print("\(self.implementation.TAG) Cannot get version name")

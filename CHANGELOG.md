@@ -2,6 +2,70 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.1.12](https://github.com/Cap-go/capacitor-updater/compare/6.1.11...6.1.12) (2024-08-22)
+
+
+### Bug Fixes
+
+* add missing declaration unset channel ios ([85ba89c](https://github.com/Cap-go/capacitor-updater/commit/85ba89ce83d2415d2a77a7cf91f19328d284a9f6))
+
+### [6.1.11](https://github.com/Cap-go/capacitor-updater/compare/6.1.10...6.1.11) (2024-08-22)
+
+
+### Bug Fixes
+
+* sign use same as session ([c8b399a](https://github.com/Cap-go/capacitor-updater/commit/c8b399a1c96083a7dafc646a1165ea7125cf5c3b))
+
+### [6.1.10](https://github.com/Cap-go/capacitor-updater/compare/6.1.9...6.1.10) (2024-08-22)
+
+
+### Bug Fixes
+
+* build issue ([3bad0a0](https://github.com/Cap-go/capacitor-updater/commit/3bad0a03d12fecc9916746ad451ec65b4cc392ac))
+
+### [6.1.9](https://github.com/Cap-go/capacitor-updater/compare/6.1.8...6.1.9) (2024-08-22)
+
+
+### Bug Fixes
+
+* remove dup check ([82a1f45](https://github.com/Cap-go/capacitor-updater/commit/82a1f45777ac0d31cdc495a9d8f742074574d52d))
+
+### [6.1.8](https://github.com/Cap-go/capacitor-updater/compare/6.1.7...6.1.8) (2024-08-21)
+
+
+### Bug Fixes
+
+* remove dup code ([fea6b84](https://github.com/Cap-go/capacitor-updater/commit/fea6b8479a9ffd57435f6f574d33c00506221ba6))
+
+### [6.1.7](https://github.com/Cap-go/capacitor-updater/compare/6.1.6...6.1.7) (2024-08-21)
+
+### [6.1.6](https://github.com/Cap-go/capacitor-updater/compare/6.1.5...6.1.6) (2024-08-21)
+
+
+### Bug Fixes
+
+* use appUUID like in android ([091859d](https://github.com/Cap-go/capacitor-updater/commit/091859d10dffa9875ac6faadb2344e409f3d7a1c))
+
+### [6.1.5](https://github.com/Cap-go/capacitor-updater/compare/6.1.4...6.1.5) (2024-08-21)
+
+
+### Bug Fixes
+
+* commit appUUID save ([583e670](https://github.com/Cap-go/capacitor-updater/commit/583e67065e0363522f9d1f069ff71cd409c3446a))
+
+### [6.1.4](https://github.com/Cap-go/capacitor-updater/compare/6.1.3...6.1.4) (2024-08-20)
+
+### [6.1.3](https://github.com/Cap-go/capacitor-updater/compare/6.1.2...6.1.3) (2024-08-20)
+
+### [6.1.2](https://github.com/Cap-go/capacitor-updater/compare/6.1.1...6.1.2) (2024-08-19)
+
+### [6.1.1](https://github.com/Cap-go/capacitor-updater/compare/6.1.0...6.1.1) (2024-08-19)
+
+
+### Bug Fixes
+
+* **deps:** update dependency com.android.tools.build:gradle to v8.5.2 ([a471dc8](https://github.com/Cap-go/capacitor-updater/commit/a471dc8081344223ff91764d5cdc2d8a93cd14df))
+
 ## [6.1.0](https://github.com/Cap-go/capacitor-updater/compare/6.0.70...6.1.0) (2024-08-16)
 
 

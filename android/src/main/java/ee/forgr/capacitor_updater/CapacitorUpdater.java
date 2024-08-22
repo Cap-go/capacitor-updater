@@ -254,15 +254,12 @@ public class CapacitorUpdater {
   }
 
   public void onResume() {
+    IntentFilter filter = new IntentFilter();
+    filter.addAction(DownloadService.NOTIFICATION);
+    filter.addAction(DownloadService.PERCENTDOWNLOAD);
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-      IntentFilter filter = new IntentFilter();
-      filter.addAction(DownloadService.NOTIFICATION);
-      filter.addAction(DownloadService.PERCENTDOWNLOAD);
       this.activity.registerReceiver(receiver, filter, RECEIVER_NOT_EXPORTED);
     } else {
-      IntentFilter filter = new IntentFilter();
-      filter.addAction(DownloadService.NOTIFICATION);
-      filter.addAction(DownloadService.PERCENTDOWNLOAD);
       this.activity.registerReceiver(receiver, filter);
     }
   }

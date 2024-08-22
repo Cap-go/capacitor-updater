@@ -56,7 +56,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
   private static final String channelUrlDefault =
     "https://api.capgo.app/channel_self";
 
-  private final String PLUGIN_VERSION = "6.1.0";
+  private final String PLUGIN_VERSION = "6.1.12";
   private static final String DELAY_CONDITION_PREFERENCES = "";
 
   private SharedPreferences.Editor editor;
@@ -206,6 +206,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         UUID.randomUUID().toString()
       );
     this.editor.putString("appUUID", this.implementation.deviceID);
+    this.editor.commit();
     Log.i(
       CapacitorUpdater.TAG,
       "init for device " + this.implementation.deviceID
