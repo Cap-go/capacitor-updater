@@ -724,7 +724,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                                 print("\(self.implementation.TAG) Failed to delete failed bundle: \(nextImpl!.toString())")
                             }
                         }
-                        nextImpl = try self.implementation.download(url: downloadUrl, version: latestVersionName, sessionKey: sessionKey, signature: signature)
+                        nextImpl = try self.implementation.download(url: downloadUrl, version: latestVersionName, sessionKey: sessionKey, signature: signature ?? "")
                     }
                     guard let next = nextImpl else {
                         print("\(self.implementation.TAG) Error downloading file")
