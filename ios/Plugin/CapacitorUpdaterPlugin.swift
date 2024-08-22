@@ -703,7 +703,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 return
             }
             let sessionKey = res.sessionKey ?? ""
-            let signature = res.signature
+            let signature = res.signature ?? ""
             guard let downloadUrl = URL(string: res.url) else {
                 print("\(self.implementation.TAG) Error no url or wrong format")
                 self.endBackGroundTaskWithNotif(msg: "Error no url or wrong format", latestVersionName: res.version, current: current)
@@ -724,7 +724,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                                 print("\(self.implementation.TAG) Failed to delete failed bundle: \(nextImpl!.toString())")
                             }
                         }
-                        nextImpl = try self.implementation.download(url: downloadUrl, version: latestVersionName, sessionKey: sessionKey, signature: signature ?? "")
+                        nextImpl = try self.implementation.download(url: downloadUrl, version: latestVersionName, sessionKey: sessionKey, signature: signature)
                     }
                     guard let next = nextImpl else {
                         print("\(self.implementation.TAG) Error downloading file")
