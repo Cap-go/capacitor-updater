@@ -690,7 +690,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             print("\(self.implementation.TAG) Check for update via \(self.updateUrl)")
             let res = self.implementation.getLatest(url: url)
             let current = self.implementation.getCurrentBundle()
-
             if (res.message) != nil {
                 print("\(self.implementation.TAG) API message: \(res.message ?? "")")
                 if res.major == true {
@@ -700,7 +699,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 return
             }
             let sessionKey = res.sessionKey ?? ""
-            let signature = res.signature
+            let signature = res.signature ?? ""
             guard let downloadUrl = URL(string: res.url) else {
                 print("\(self.implementation.TAG) Error no url or wrong format")
                 self.endBackGroundTaskWithNotif(msg: "Error no url or wrong format", latestVersionName: res.version, current: current)
@@ -721,11 +720,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                                 print("\(self.implementation.TAG) Failed to delete failed bundle: \(nextImpl!.toString())")
                             }
                         }
-                        guard let signature = signature else {
-                            throw CustomError.signatureNotProvided
-                        }
-                        nextImpl = try self.implementation.download(url: downloadUrl, version: latestVersionName, sessionKey: sessionKey, signature: signature)
                     }
+                    nextImpl = try self.implementation.download(url: downloadUrl, version: latestVersionName, sessionKey: sessionKey, signature: signature)
                     guard let next = nextImpl else {
                         print("\(self.implementation.TAG) Error downloading file")
                         self.endBackGroundTaskWithNotif(msg: "Error downloading file", latestVersionName: latestVersionName, current: current)
