@@ -495,6 +495,9 @@ public class CapacitorUpdater {
         }
         bytesRead += length;
       }
+      if (bytesRead == bufferSize) {
+        throw new IOException("Failed to download: No data read from URL");
+      }
     } catch (OutOfMemoryError e) {
       Log.e(TAG, "OutOfMemoryError while downloading file", e);
       this.sendStats("low_mem_fail");
