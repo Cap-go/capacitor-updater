@@ -335,6 +335,26 @@ public class CapacitorUpdater {
     }
   };
 
+  private String decryptChecksum(String checksum, String version) throws IOException {
+    try {
+      byte[] checksumBytes = Base64.decode(
+        checksum.getBytes(),
+        Base64.DEFAULT
+      );
+      PublicKey pKey = CryptoCipher.stringToPublicKey(this.publicKey);
+      byte[] decryptedChecksum = CryptoCipherV2.decryptRSA(
+        checksumBytes,
+        pKey
+      );
+      return new String(decryptedChecksum);
+    } catch (GeneralSecurityException e) {
+      Log.i(TAG, "decryptChecksum fail");
+      this.sendStats("decrypt_fail", version);
+      e.printStackTrace();
+      throw new IOException("GeneralSecurityException");
+    }
+  }
+
   public Boolean finishDownload(
     String id,
     String dest,
@@ -366,20 +386,22 @@ public class CapacitorUpdater {
         Log.i(CapacitorUpdater.TAG, "Valid signature");
       }
 
+      String checksumDecrypted = checksumRes;
       if (this.hasOldPrivateKeyPropertyInConfig) {
         this.decryptFileV2(downloaded, sessionKey, version);
+        checksumDecrypted = this.decryptChecksum(checksumRes, version);
       } else {
         this.decryptFile(downloaded, sessionKey, version);
       }
       checksum = this.calcChecksum(downloaded);
       if (
-        checksumRes != null &&
-        !checksumRes.isEmpty() &&
-        !checksumRes.equals(checksum)
+	    checksumDecrypted != null &&
+      !checksumDecrypted.isEmpty() &&
+      !checksumDecrypted.equals(checksum)
       ) {
         Log.e(
           CapacitorUpdater.TAG,
-          "Error checksum " + checksumRes + " " + checksum
+          "Error checksum " + checksumDecrypted + " " + checksum
         );
         this.sendStats("checksum_fail");
         throw new IOException("Checksum failed: " + id);

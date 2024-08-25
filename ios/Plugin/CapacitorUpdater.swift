@@ -679,6 +679,25 @@ extension CustomError: LocalizedError {
         return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent("update.dat")
     }
     private var tempData = Data()
+
+    public func decryptChecksum(checksum: String, version: String) throws -> String {
+        do {
+            let checksumBytes: Data = Data(base64Encoded: checksum)!
+            guard let rsaPublicKey: RSAPublicKey = .load(rsaPublicKey: self.publicKey) else {
+                print("cannot decode publicKey", self.publicKey)
+                 throw CustomError.cannotDecode
+             }
+            guard let decryptedChecksum = try? rsaPublicKey.decrypt(data: checksumBytes) else {
+                throw NSError(domain: "Failed to decrypt session key data", code: 2, userInfo: nil)
+            }
+            return decryptedChecksum.base64EncodedString()
+        } catch {
+            print("\(self.TAG) Cannot decrypt checksum: \(checksum)", error)
+            self.sendStats(action: "decrypt_fail", versionName: version)
+            throw CustomError.cannotDecode
+        }
+    }
+
     public func download(url: URL, version: String, sessionKey: String, signature: String) throws -> BundleInfo {
         let id: String = self.randomString(length: 10)
         let semaphore = DispatchSemaphore(value: 0)
@@ -691,7 +710,7 @@ extension CustomError: LocalizedError {
         var targetSize = -1
         var lastSentProgress = 0
         var totalReceivedBytes: Int64 = loadDownloadProgress() //Retrieving the amount of already downloaded data if exist, defined at 0 otherwise
-         let requestHeaders: HTTPHeaders = ["Range": "bytes=\(totalReceivedBytes)-"]
+        let requestHeaders: HTTPHeaders = ["Range": "bytes=\(totalReceivedBytes)-"]
         //Opening connection for streaming the bytes
         if(totalReceivedBytes == 0){
             self.notifyDownload(id: id, percent: 0, ignoreMultipleOfTen: true)
@@ -775,6 +794,7 @@ extension CustomError: LocalizedError {
             } else {
                 print("\(self.TAG) Valid signature")
             }
+            var checksumDecrypted = checksum
             if (!self.hasOldPrivateKeyPropertyInConfig) {
                 try self.decryptFileV2(filePath: tempDataPath, sessionKey: sessionKey, version: version)
             } else {

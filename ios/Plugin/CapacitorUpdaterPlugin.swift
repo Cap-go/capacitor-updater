@@ -263,12 +263,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         }
         
         let sessionKey = call.getString("sessionKey", "")
-        let checksum = call.getString("checksum", "")
+        var checksum = call.getString("checksum", "")
         let url = URL(string: urlString)
         print("\(self.implementation.TAG) Downloading \(String(describing: url))")
         DispatchQueue.global(qos: .background).async {
             do {
                 let next = try self.implementation.download(url: url!, version: version, sessionKey: sessionKey, signature: signature)
+                if (!self.implementation.hasOldPrivateKeyPropertyInConfig) {
+                    checksum = try self.implementation.decryptChecksum(checksum: checksum, version: version)
+                }
                 if checksum != "" && next.getChecksum() != checksum {
                     print("\(self.implementation.TAG) Error checksum", next.getChecksum(), checksum)
                     self.implementation.sendStats(action: "checksum_fail", versionName: next.getVersionName())
@@ -735,6 +738,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                         print("\(self.implementation.TAG) Latest version is in error state. Aborting update.")
                         self.endBackGroundTaskWithNotif(msg: "Latest version is in error state. Aborting update.", latestVersionName: latestVersionName, current: current)
                         return
+                    }
+                    if (!self.implementation.hasOldPrivateKeyPropertyInConfig) {
+                        res.checksum = try self.implementation.decryptChecksum(checksum: res.checksum, version: latestVersionName)
                     }
                     if res.checksum != "" && next.getChecksum() != res.checksum {
                         print("\(self.implementation.TAG) Error checksum", next.getChecksum(), res.checksum)
