@@ -335,30 +335,23 @@ public class CapacitorUpdater {
     }
   };
 
-  private String decryptChecksum(String checksum, String version) throws IOException {
-    if (!this.publicKey.startsWith("-----BEGIN RSA PUBLIC KEY-----")) {
-      Log.e(
-        CapacitorUpdater.TAG,
-        "The public key is not a valid RSA Public key"
-      );
+  private String decryptChecksum(String checksum, String version)
+    throws IOException {
+    if (this.publicKey.isEmpty()) {
+      Log.e(CapacitorUpdater.TAG, "The public key is empty");
       return checksum;
     }
     try {
-      byte[] checksumBytes = Base64.decode(
-        checksum.getBytes(),
-        Base64.DEFAULT
-      );
-      PublicKey pKey = CryptoCipher.stringToPublicKey(this.publicKey);
-      byte[] decryptedChecksum = CryptoCipherV2.decryptRSA(
-        checksumBytes,
-        pKey
-      );
-      return new String(decryptedChecksum);
+      byte[] checksumBytes = Base64.decode(checksum, Base64.DEFAULT);
+      PublicKey pKey = CryptoCipherV2.stringToPublicKey(this.publicKey);
+      byte[] decryptedChecksum = CryptoCipherV2.decryptRSA(checksumBytes, pKey);
+      // return Base64.encodeToString(decryptedChecksum, Base64.DEFAULT);
+      String result = Base64.encodeToString(decryptedChecksum, Base64.DEFAULT);
+      return result.replaceAll("\\s", ""); // Remove all whitespace, including newlines
     } catch (GeneralSecurityException e) {
-      Log.i(TAG, "decryptChecksum fail");
+      Log.e(TAG, "decryptChecksum fail: " + e.getMessage());
       this.sendStats("decrypt_fail", version);
-      e.printStackTrace();
-      throw new IOException("GeneralSecurityException");
+      throw new IOException("Decryption failed: " + e.getMessage());
     }
   }
 
@@ -403,13 +396,13 @@ public class CapacitorUpdater {
         checksum = this.calcChecksum(downloaded);
       }
       if (
-	    checksumDecrypted != null &&
-      !checksumDecrypted.isEmpty() &&
-      !checksumDecrypted.equals(checksum)
+        checksumDecrypted != null &&
+        !checksumDecrypted.isEmpty() &&
+        !checksumDecrypted.equals(checksum)
       ) {
         Log.e(
           CapacitorUpdater.TAG,
-          "Error checksum " + checksumDecrypted + " " + checksum
+          "Error checksum '" + checksumDecrypted + "' '" + checksum + "' '"
         );
         this.sendStats("checksum_fail");
         throw new IOException("Checksum failed: " + id);
@@ -560,6 +553,7 @@ public class CapacitorUpdater {
     Log.i(TAG, "Current bundle set to: " + bundle);
     this.editor.commit();
   }
+
   private String calcChecksum(File file) {
     final int BUFFER_SIZE = 1024 * 1024 * 5; // 5 MB buffer size
     CRC32 crc = new CRC32();
@@ -605,7 +599,11 @@ public class CapacitorUpdater {
       return hexString.toString();
     } catch (IOException e) {
       System.err.println(
-        TAG + " Cannot calc checksum v2: " + file.getPath() + " " + e.getMessage()
+        TAG +
+        " Cannot calc checksum v2: " +
+        file.getPath() +
+        " " +
+        e.getMessage()
       );
       return "";
     }
@@ -720,14 +718,10 @@ public class CapacitorUpdater {
     final String version
   ) throws IOException {
     // (str != null && !str.isEmpty())
-    if (
-      this.privateKey == null ||
-      this.privateKey.isEmpty()
-    ) {
+    if (this.privateKey == null || this.privateKey.isEmpty()) {
       Log.i(TAG, "Cannot found privateKey");
       return;
-    }
-    else if (
+    } else if (
       ivSessionKey == null ||
       ivSessionKey.isEmpty() ||
       ivSessionKey.split(":").length != 2

@@ -179,8 +179,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
       );
     }
     Log.i(CapacitorUpdater.TAG, "appId: " + implementation.appId);
-    this.implementation.publicKey = this.getConfig()
-      .getString("publicKey", "");
+    this.implementation.publicKey = this.getConfig().getString("publicKey", "");
     this.implementation.privateKey = this.getConfig()
       .getString("privateKey", "");
     if (

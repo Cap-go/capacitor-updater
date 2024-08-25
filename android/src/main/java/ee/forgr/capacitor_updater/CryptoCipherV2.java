@@ -70,17 +70,12 @@ public class CryptoCipherV2 {
 
   public static PublicKey stringToPublicKey(String public_key)
     throws GeneralSecurityException {
-    // Base64 decode the result
-
-    String pkcs1Pem = public_key.toString();
-    pkcs1Pem = pkcs1Pem.replace("-----BEGIN RSA PUBLIC KEY-----", "");
-    pkcs1Pem = pkcs1Pem.replace("-----END RSA PUBLIC KEY-----", "");
-    pkcs1Pem = pkcs1Pem.replace("\\n", "");
-    pkcs1Pem = pkcs1Pem.replace(" ", "");
+    String pkcs1Pem = public_key
+      .replaceAll("\\s+", "")
+      .replace("-----BEGINRSAPUBLICKEY-----", "")
+      .replace("-----ENDRSAPUBLICKEY-----", "");
 
     byte[] pkcs1EncodedBytes = Base64.decode(pkcs1Pem, Base64.DEFAULT);
-
-    // extract the public key
     return readPkcs1PublicKey(pkcs1EncodedBytes);
   }
 

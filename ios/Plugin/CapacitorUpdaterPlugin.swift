@@ -42,7 +42,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             print("\(self.implementation.TAG) ::::: SIMULATOR :::::")
             print("\(self.implementation.TAG) Application directory: \(NSHomeDirectory())")
         #endif
-        
+
         self.semaphoreUp()
         self.implementation.deviceID = UserDefaults.standard.string(forKey: "appUUID") ?? UUID().uuidString
         UserDefaults.standard.set( self.implementation.deviceID, forKey: "appUUID")
@@ -77,10 +77,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
         implementation.privateKey = getConfig().getString("privateKey", "")!
         implementation.publicKey = getConfig().getString("publicKey", "")!
-        if (
-            !implementation.privateKey.isEmpty
-        ) {
-            implementation.hasOldPrivateKeyPropertyInConfig = true;
+        if !implementation.privateKey.isEmpty {
+            implementation.hasOldPrivateKeyPropertyInConfig = true
         }
         implementation.notifyDownloadRaw = notifyDownload
         implementation.PLUGIN_VERSION = self.PLUGIN_VERSION
@@ -97,7 +95,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         implementation.defaultChannel = getConfig().getString("defaultChannel", "")!
         do {
             let signKeyString = getConfig().getString("signKey", "")!
-            if (!signKeyString.isEmpty) {
+            if !signKeyString.isEmpty {
                 implementation.signKey = try PublicKey(base64Encoded: signKeyString)
             }
         } catch {
@@ -261,12 +259,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
             return
         }
         let signature = call.getString("signature", "")
-        if (self.implementation.signKey != nil && signature.isEmpty) {
+        if self.implementation.signKey != nil && signature.isEmpty {
             print("\(self.implementation.TAG) Signature required but none provided for download call")
             call.reject("Signature required but none provided")
             return
         }
-        
+
         let sessionKey = call.getString("sessionKey", "")
         var checksum = call.getString("checksum", "")
         let url = URL(string: urlString)
@@ -274,7 +272,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         DispatchQueue.global(qos: .background).async {
             do {
                 let next = try self.implementation.download(url: url!, version: version, sessionKey: sessionKey, signature: signature)
-                if (!self.implementation.hasOldPrivateKeyPropertyInConfig) {
+                if !self.implementation.hasOldPrivateKeyPropertyInConfig {
                     checksum = try self.implementation.decryptChecksum(checksum: checksum, version: version)
                 }
                 if checksum != "" && next.getChecksum() != checksum {
@@ -286,6 +284,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                         print("\(self.implementation.TAG) Delete failed, id \(id) doesn't exist")
                     }
                     throw ObjectSavableError.checksum
+                } else {
+                    print("\(self.implementation.TAG) Good checksum", next.getChecksum(), checksum)
                 }
                 self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
                 call.resolve(next.toJSON())
@@ -555,15 +555,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                     if !killed {
                         self._cancelDelay(source: "background check")
                     }
-                    break
-                case "kill":
+                    case "kill":
                     if killed {
                         self._cancelDelay(source: "kill check")
                         // instant install for kill action
                         self.installNext()
                     }
-                    break
-                case "date":
+                    case "date":
                     if value != nil && value != "" {
                         let dateFormatter = ISO8601DateFormatter()
                         dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -577,8 +575,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                     } else {
                         self._cancelDelay(source: "delayVal absent")
                     }
-                    break
-                case "nativeVersion":
+                    case "nativeVersion":
                     if value != nil && value != "" {
                         do {
                             let versionLimit = try Version(value!)
@@ -591,7 +588,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                     } else {
                         self._cancelDelay(source: "delayVal absent")
                     }
-                    break
                 case .none:
                     print("\(self.implementation.TAG) _checkCancelDelay switch case none error")
                 case .some:
@@ -744,7 +740,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                         self.endBackGroundTaskWithNotif(msg: "Latest version is in error state. Aborting update.", latestVersionName: latestVersionName, current: current)
                         return
                     }
-                    if (!self.implementation.hasOldPrivateKeyPropertyInConfig) {
+                    if !self.implementation.hasOldPrivateKeyPropertyInConfig {
                         res.checksum = try self.implementation.decryptChecksum(checksum: res.checksum, version: latestVersionName)
                     }
                     if res.checksum != "" && next.getChecksum() != res.checksum {
@@ -757,7 +753,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                         }
                         self.endBackGroundTaskWithNotif(msg: "Error checksum", latestVersionName: latestVersionName, current: current)
                         return
-                    }
+                    } else {
+                    print("\(self.implementation.TAG) Good checksum", next.getChecksum(), checksum)
+                }
                     if self.directUpdate {
                         _ = self.implementation.set(bundle: next)
                         _ = self._reload()
