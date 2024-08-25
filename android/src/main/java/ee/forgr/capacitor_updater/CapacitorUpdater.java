@@ -387,7 +387,7 @@ public class CapacitorUpdater {
       }
 
       String checksumDecrypted = checksumRes;
-      if (this.hasOldPrivateKeyPropertyInConfig) {
+      if (!this.hasOldPrivateKeyPropertyInConfig) {
         this.decryptFileV2(downloaded, sessionKey, version);
         checksumDecrypted = this.decryptChecksum(checksumRes, version);
         checksum = this.calcChecksumV2(downloaded);
