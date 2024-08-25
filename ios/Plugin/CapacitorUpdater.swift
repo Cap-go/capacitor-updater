@@ -714,6 +714,9 @@ extension CustomError: LocalizedError {
     private var tempData = Data()
 
     public func decryptChecksum(checksum: String, version: String) throws -> String {
+        if (self.publicKey.isEmpty) {
+            return checksum
+        }
         do {
             let checksumBytes: Data = Data(base64Encoded: checksum)!
             guard let rsaPublicKey: RSAPublicKey = .load(rsaPublicKey: self.publicKey) else {
