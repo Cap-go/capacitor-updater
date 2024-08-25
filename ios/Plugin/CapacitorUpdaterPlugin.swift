@@ -753,9 +753,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                         }
                         self.endBackGroundTaskWithNotif(msg: "Error checksum", latestVersionName: latestVersionName, current: current)
                         return
-                    } else {
-                    print("\(self.implementation.TAG) Good checksum", next.getChecksum(), checksum)
-                }
+                    }
                     if self.directUpdate {
                         _ = self.implementation.set(bundle: next)
                         _ = self._reload()
