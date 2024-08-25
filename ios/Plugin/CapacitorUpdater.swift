@@ -731,7 +731,7 @@ extension CustomError: LocalizedError {
         let id: String = self.randomString(length: 10)
         let semaphore = DispatchSemaphore(value: 0)
         if(version != getLocalUpdateVersion()){
-            cleanDlData()
+            cleanDownloadData()
         }
         ensureResumableFilesExist()
         saveDownloadInfo(version)
@@ -833,7 +833,7 @@ extension CustomError: LocalizedError {
         } catch {
             print("\(self.TAG) Failed decrypt file or verify signature or move it: \(error)")
             self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum))
-            cleanDlData()
+            cleanDownloadData()
             throw error
         }
         
@@ -849,7 +849,7 @@ extension CustomError: LocalizedError {
         } catch {
             print("\(self.TAG) Failed to unzip file: \(error)")
             self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum))
-            cleanDlData()
+            cleanDownloadData()
             // todo: cleanup zip attempts
             throw error
         }
@@ -858,7 +858,7 @@ extension CustomError: LocalizedError {
         print("\(self.TAG) Downloading: 90% (wrapping up)")
         let info = BundleInfo(id: id, version: version, status: BundleStatus.PENDING, downloaded: Date(), checksum: checksum)
         self.saveBundleInfo(id: id, bundle: info)
-        self.cleanDlData()
+        self.cleanDownloadData()
         self.notifyDownload(id: id, percent: 100)
         print("\(self.TAG) Downloading: 100% (complete)")
         return info
@@ -878,7 +878,7 @@ extension CustomError: LocalizedError {
         }
     }
     
-    private func cleanDlData(){
+    private func cleanDownloadData(){
         // Deleting package.tmp
         let fileManager = FileManager.default
         if fileManager.fileExists(atPath: tempDataPath.path) {
@@ -887,10 +887,7 @@ extension CustomError: LocalizedError {
              } catch {
                  print("\(self.TAG) Could not delete file at \(tempDataPath): \(error)")
              }
-         } else {
-             print("\(self.TAG) \(tempDataPath.lastPathComponent) does not exist")
          }
-         
          // Deleting update.dat
          if fileManager.fileExists(atPath: updateInfo.path) {
              do {
@@ -898,8 +895,6 @@ extension CustomError: LocalizedError {
              } catch {
                  print("\(self.TAG) Could not delete file at \(updateInfo): \(error)")
              }
-         } else {
-             print("\(self.TAG) \(updateInfo.lastPathComponent) does not exist")
          }
     }
     
