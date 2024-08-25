@@ -336,6 +336,13 @@ public class CapacitorUpdater {
   };
 
   private String decryptChecksum(String checksum, String version) throws IOException {
+    if (!this.publicKey.startsWith("-----BEGIN RSA PUBLIC KEY-----")) {
+      Log.e(
+        CapacitorUpdater.TAG,
+        "The public key is not a valid RSA Public key"
+      );
+      return checksum;
+    }
     try {
       byte[] checksumBytes = Base64.decode(
         checksum.getBytes(),
