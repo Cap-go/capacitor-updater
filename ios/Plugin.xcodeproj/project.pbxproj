@@ -19,6 +19,7 @@
 		860FEBCA291E1FC600D45696 /* UserDefaultsExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = 860FEBC9291E1FC600D45696 /* UserDefaultsExtension.swift */; };
 		863289042823450E0057FC90 /* BundleInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 863289032823450E0057FC90 /* BundleInfo.swift */; };
 		863289062823453C0057FC90 /* BundleStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 863289052823453C0057FC90 /* BundleStatus.swift */; };
+		867499312C7AAC0300524CB6 /* CryptoCipherV2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 867499302C7AAC0300524CB6 /* CryptoCipherV2.swift */; };
 		86F528F32939F7BC0076A2CA /* CryptoCipher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86F528F22939F7BC0076A2CA /* CryptoCipher.swift */; };
 		B3F3EE2328CF27FA00663217 /* DelayCondition.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3F3EE2228CF27FA00663217 /* DelayCondition.swift */; };
 		B3F3EE2528CF287200663217 /* DelayUntilNext.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3F3EE2428CF287200663217 /* DelayUntilNext.swift */; };
@@ -50,6 +51,7 @@
 		860FEBC9291E1FC600D45696 /* UserDefaultsExtension.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = UserDefaultsExtension.swift; sourceTree = "<group>"; };
 		863289032823450E0057FC90 /* BundleInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundleInfo.swift; sourceTree = "<group>"; };
 		863289052823453C0057FC90 /* BundleStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundleStatus.swift; sourceTree = "<group>"; };
+		867499302C7AAC0300524CB6 /* CryptoCipherV2.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CryptoCipherV2.swift; sourceTree = "<group>"; };
 		86F528F22939F7BC0076A2CA /* CryptoCipher.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CryptoCipher.swift; sourceTree = "<group>"; };
 		91781294A431A2A7CC6EB714 /* Pods-Plugin.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Plugin.release.xcconfig"; path = "Pods/Target Support Files/Pods-Plugin/Pods-Plugin.release.xcconfig"; sourceTree = "<group>"; };
 		96ED1B6440D6672E406C8D19 /* Pods-PluginTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-PluginTests.debug.xcconfig"; path = "Pods/Target Support Files/Pods-PluginTests/Pods-PluginTests.debug.xcconfig"; sourceTree = "<group>"; };
@@ -110,6 +112,7 @@
 				863289052823453C0057FC90 /* BundleStatus.swift */,
 				50ADFF8B201F53D600D50D53 /* CapacitorUpdaterPlugin.h */,
 				86F528F22939F7BC0076A2CA /* CryptoCipher.swift */,
+				867499302C7AAC0300524CB6 /* CryptoCipherV2.swift */,
 				50ADFFA72020EE4F00D50D53 /* CapacitorUpdaterPlugin.m */,
 				50ADFF8C201F53D600D50D53 /* Info.plist */,
 				B3F3EE2228CF27FA00663217 /* DelayCondition.swift */,
@@ -341,6 +344,7 @@
 				863289042823450E0057FC90 /* BundleInfo.swift in Sources */,
 				860FEBCA291E1FC600D45696 /* UserDefaultsExtension.swift in Sources */,
 				50ADFFA82020EE4F00D50D53 /* CapacitorUpdaterPlugin.m in Sources */,
+				867499312C7AAC0300524CB6 /* CryptoCipherV2.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

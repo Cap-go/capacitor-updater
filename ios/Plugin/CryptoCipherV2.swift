@@ -10,62 +10,12 @@ import CommonCrypto
 ///
 /// Constants
 ///
-private enum CryptoCipherConstantsV2 {
+private enum CryptoCipherConstants {
     static let rsaKeySizeInBits: NSNumber = 2048
     static let aesAlgorithm: CCAlgorithm = CCAlgorithm(kCCAlgorithmAES)
     static let aesOptions: CCOptions = CCOptions(kCCOptionPKCS7Padding)
-    static let rsaAlgorithm: SecKeyAlgorithm = .rsaEncryptionPKCS1
+    static let rsaAlgorithm: SecKeyAlgorithm = .rsaEncryptionOAEPSHA256
 }
-///
-/// The AES key. Contains both the initialization vector and secret key.
-///
-public struct AES128KeyV2 {
-    /// Initialization vector
-    private let iv: Data
-    private let aes128Key: Data
-    #if DEBUG
-    public var __debug_iv: Data { iv }
-    public var __debug_aes128Key: Data { aes128Key }
-    #endif
-    init(iv: Data, aes128Key: Data) {
-        self.iv = iv
-        self.aes128Key = aes128Key
-    }
-    ///
-    /// Takes the data and uses the private key to decrypt it. Will call `CCCrypt` in CommonCrypto
-    /// and provide it `ivData` for the initialization vector. Will use cipher block chaining (CBC) as
-    /// the mode of operation.
-    ///
-    /// Returns the decrypted data.
-    ///
-    public func decrypt(data: Data) -> Data? {
-        let encryptedData: UnsafePointer<UInt8> = (data as NSData).bytes.bindMemory(to: UInt8.self, capacity: data.count)
-        let encryptedDataLength: Int = data.count
-
-        if let result: NSMutableData = NSMutableData(length: encryptedDataLength) {
-            let keyData: UnsafePointer<UInt8> = (self.aes128Key as NSData).bytes.bindMemory(to: UInt8.self, capacity: self.aes128Key.count)
-            let keyLength: size_t = size_t(self.aes128Key.count)
-            let ivData: UnsafePointer<UInt8> = (iv as NSData).bytes.bindMemory(to: UInt8.self, capacity: self.iv.count)
-
-            let decryptedData: UnsafeMutablePointer<UInt8> = UnsafeMutablePointer<UInt8>(result.mutableBytes.assumingMemoryBound(to: UInt8.self))
-            let decryptedDataLength: size_t = size_t(result.length)
-
-            var decryptedLength: size_t = 0
-
-            let status: CCCryptorStatus = CCCrypt(CCOperation(kCCDecrypt), CryptoCipherConstants.aesAlgorithm, CryptoCipherConstants.aesOptions, keyData, keyLength, ivData, encryptedData, encryptedDataLength, decryptedData, decryptedDataLength, &decryptedLength)
-
-            if Int32(status) == Int32(kCCSuccess) {
-                result.length = Int(decryptedLength)
-                return result as Data
-            } else {
-                return nil
-            }
-        } else {
-            return nil
-        }
-    }
-}
-
 ///
 /// The RSA keypair. Includes both private and public key.
 ///
@@ -108,7 +58,7 @@ public struct RSAKeyPairV2 {
 ///
 /// The RSA public key.
 ///
-public struct RSAPublicKeyV2 {
+public struct RSAPublicKey {
     private let publicKey: SecKey
 
     #if DEBUG
@@ -135,14 +85,6 @@ public struct RSAPublicKeyV2 {
             return nil
         }
     }
-
-    ///
-    /// Allows you to export the RSA public key to a format (so you can send over the net).
-    ///
-    public func export() -> Data? {
-        return publicKey.exportToData()
-    }
-    //
 
     ///
     /// Allows you to load an RSA public key (i.e. one downloaded from the net).
@@ -231,7 +173,7 @@ public struct RSAPublicKeyV2 {
     }
 }
 
-fileprivate extension SecKeyV2 {
+fileprivate extension SecKey {
     func exportToData() -> Data? {
         var error: Unmanaged<CFError>?
         if let cfData: CFData = SecKeyCopyExternalRepresentation(self, &error) {

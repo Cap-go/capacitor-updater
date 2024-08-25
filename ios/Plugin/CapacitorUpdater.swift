@@ -178,6 +178,8 @@ enum CustomError: Error {
     case cannotCreateDirectory
     case cannotDeleteDirectory
     case signatureNotProvided
+    case cannotDecryptSessionKey
+    case invalidBase64
     case invalidSignature
 
     // Throw in all other cases
@@ -225,12 +227,22 @@ extension CustomError: LocalizedError {
         case .cannotDecode:
             return NSLocalizedString(
                 "Decoding the zip failed with this key",
-                comment: "Invalid private key"
+                comment: "Invalid public key"
             )
         case .cannotWrite:
             return NSLocalizedString(
                 "Cannot write to the destination",
                 comment: "Invalid destination"
+            )
+        case .cannotDecryptSessionKey:
+            return NSLocalizedString(
+                "Decrypting the session key failed",
+                comment: "Invalid session key"
+            )
+        case .invalidBase64:
+            return NSLocalizedString(
+                "Decrypting the base64 failed",
+                comment: "Invalid checksum key"
             )
         }
     }
@@ -260,6 +272,8 @@ extension CustomError: LocalizedError {
     public var appId: String = ""
     public var deviceID = ""
     public var privateKey: String = ""
+    public var publicKey: String = ""
+    public var hasOldPrivateKeyPropertyInConfig: Bool = false
     public var signKey: PublicKey?
     
     public var notifyDownloadRaw: (String, Int, Bool) -> Void = { _, _, _  in }
@@ -385,6 +399,51 @@ extension CustomError: LocalizedError {
             print("\(self.TAG) Signature validation failed", error)
             self.sendStats(action: "signature_validation_failed", versionName: version)
             throw error
+        }
+    }
+
+    private func decryptFileV2(filePath: URL, sessionKey: String, version: String) throws {
+        if self.publicKey.isEmpty || sessionKey.isEmpty  || sessionKey.components(separatedBy: ":").count != 2 {
+            print("\(self.TAG) Cannot find public key or sessionKey")
+            return
+        }
+        do {
+            guard let rsaPublicKey: RSAPublicKey = .load(rsaPublicKey: self.publicKey) else {
+                print("cannot decode publicKey", self.publicKey)
+                throw CustomError.cannotDecode
+            }
+
+            let sessionKeyArray: [String] = sessionKey.components(separatedBy: ":")
+            guard let ivData: Data = Data(base64Encoded: sessionKeyArray[0]) else {
+                print("cannot decode sessionKey", sessionKey)
+                throw CustomError.cannotDecode
+            }
+
+            guard let sessionKeyDataEncrypted = Data(base64Encoded: sessionKeyArray[1]) else {
+                throw NSError(domain: "Invalid session key data", code: 1, userInfo: nil)
+            }
+
+            guard let sessionKeyDataDecrypted = rsaPublicKey.decrypt(data: sessionKeyDataEncrypted) else {
+                throw NSError(domain: "Failed to decrypt session key data", code: 2, userInfo: nil)
+            }
+
+
+            let aesPrivateKey = AES128Key(iv: ivData, aes128Key: sessionKeyDataDecrypted)
+
+            guard let encryptedData = try? Data(contentsOf: filePath) else {
+                throw NSError(domain: "Failed to read encrypted data", code: 3, userInfo: nil)
+            }
+
+            guard let decryptedData = aesPrivateKey.decrypt(data: encryptedData) else {
+                throw NSError(domain: "Failed to decrypt data", code: 4, userInfo: nil)
+            }
+
+            try decryptedData.write(to: filePath)
+           
+        } catch {
+            print("\(self.TAG) Cannot decode: \(filePath.path)", error)
+            self.sendStats(action: "decrypt_fail", versionName: version)
+            throw CustomError.cannotDecode
         }
     }
 
@@ -716,8 +775,11 @@ extension CustomError: LocalizedError {
             } else {
                 print("\(self.TAG) Valid signature")
             }
-            
-            try self.decryptFile(filePath: tempDataPath, sessionKey: sessionKey, version: version)
+            if (!self.hasOldPrivateKeyPropertyInConfig) {
+                try self.decryptFileV2(filePath: tempDataPath, sessionKey: sessionKey, version: version)
+            } else {
+                try self.decryptFile(filePath: tempDataPath, sessionKey: sessionKey, version: version)
+            }            
             try FileManager.default.moveItem(at: tempDataPath, to: finalPath)
         } catch {
             print("\(self.TAG) Failed decrypt file or verify signature or move it: \(error)")

@@ -92,6 +92,8 @@ public class CapacitorUpdater {
   public String defaultChannel = "";
   public String appId = "";
   public String privateKey = "";
+  public String publicKey = "";
+  public boolean hasOldPrivateKeyPropertyInConfig = false;
   public String deviceID = "";
   public int timeout = 20000;
   public PublicKey signKey = null;
@@ -364,7 +366,11 @@ public class CapacitorUpdater {
         Log.i(CapacitorUpdater.TAG, "Valid signature");
       }
 
-      this.decryptFile(downloaded, sessionKey, version);
+      if (this.hasOldPrivateKeyPropertyInConfig) {
+        this.decryptFileV2(downloaded, sessionKey, version);
+      } else {
+        this.decryptFile(downloaded, sessionKey, version);
+      }
       checksum = this.calcChecksum(downloaded);
       if (
         checksumRes != null &&
@@ -582,6 +588,68 @@ public class CapacitorUpdater {
 
       signature.update(content);
       return signature.verify(providedSignatureBytes);
+    }
+  }
+
+  private void decryptFileV2(
+    final File file,
+    final String ivSessionKey,
+    final String version
+  ) throws IOException {
+    // (str != null && !str.isEmpty())
+    if (
+      this.publicKey == null ||
+      this.publicKey.isEmpty() ||
+      ivSessionKey == null ||
+      ivSessionKey.isEmpty() ||
+      ivSessionKey.split(":").length != 2
+    ) {
+      Log.i(TAG, "Cannot found public key or sessionKey");
+      return;
+    }
+    if (!this.publicKey.startsWith("-----BEGIN RSA PUBLIC KEY-----")) {
+      Log.e(
+        CapacitorUpdater.TAG,
+        "The public key is not a valid RSA Public key"
+      );
+      return;
+    }
+    try {
+      String ivB64 = ivSessionKey.split(":")[0];
+      String sessionKeyB64 = ivSessionKey.split(":")[1];
+      byte[] iv = Base64.decode(ivB64.getBytes(), Base64.DEFAULT);
+      byte[] sessionKey = Base64.decode(
+        sessionKeyB64.getBytes(),
+        Base64.DEFAULT
+      );
+      PublicKey pKey = CryptoCipherV2.stringToPublicKey(this.publicKey);
+      byte[] decryptedSessionKey = CryptoCipherV2.decryptRSA(sessionKey, pKey);
+
+      SecretKey sKey = CryptoCipherV2.byteToSessionKey(decryptedSessionKey);
+      byte[] content = new byte[(int) file.length()];
+
+      try (
+        final FileInputStream fis = new FileInputStream(file);
+        final BufferedInputStream bis = new BufferedInputStream(fis);
+        final DataInputStream dis = new DataInputStream(bis)
+      ) {
+        dis.readFully(content);
+        dis.close();
+        byte[] decrypted = CryptoCipherV2.decryptAES(content, sKey, iv);
+        // write the decrypted string to the file
+        try (
+          final FileOutputStream fos = new FileOutputStream(
+            file.getAbsolutePath()
+          )
+        ) {
+          fos.write(decrypted);
+        }
+      }
+    } catch (GeneralSecurityException e) {
+      Log.i(TAG, "decryptFile fail");
+      this.sendStats("decrypt_fail", version);
+      e.printStackTrace();
+      throw new IOException("GeneralSecurityException");
     }
   }
 
