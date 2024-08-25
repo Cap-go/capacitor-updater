@@ -716,11 +716,16 @@ public class CapacitorUpdater {
     if (
       this.privateKey == null ||
       this.privateKey.isEmpty() ||
+    ) {
+      Log.i(TAG, "Cannot found privateKey");
+      return;
+    }
+    else if (
       ivSessionKey == null ||
       ivSessionKey.isEmpty() ||
       ivSessionKey.split(":").length != 2
     ) {
-      Log.i(TAG, "Cannot found privateKey or sessionKey");
+      Log.i(TAG, "Cannot found sessionKey");
       return;
     }
     try {
