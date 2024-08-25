@@ -390,10 +390,11 @@ public class CapacitorUpdater {
       if (this.hasOldPrivateKeyPropertyInConfig) {
         this.decryptFileV2(downloaded, sessionKey, version);
         checksumDecrypted = this.decryptChecksum(checksumRes, version);
+        checksum = this.calcChecksumV2(downloaded);
       } else {
         this.decryptFile(downloaded, sessionKey, version);
+        checksum = this.calcChecksum(downloaded);
       }
-      checksum = this.calcChecksum(downloaded);
       if (
 	    checksumDecrypted != null &&
       !checksumDecrypted.isEmpty() &&
@@ -552,7 +553,6 @@ public class CapacitorUpdater {
     Log.i(TAG, "Current bundle set to: " + bundle);
     this.editor.commit();
   }
-
   private String calcChecksum(File file) {
     final int BUFFER_SIZE = 1024 * 1024 * 5; // 5 MB buffer size
     CRC32 crc = new CRC32();
@@ -567,6 +567,38 @@ public class CapacitorUpdater {
     } catch (IOException e) {
       System.err.println(
         TAG + " Cannot calc checksum: " + file.getPath() + " " + e.getMessage()
+      );
+      return "";
+    }
+  }
+
+  private String calcChecksumV2(File file) {
+    final int BUFFER_SIZE = 1024 * 1024 * 5; // 5 MB buffer size
+    MessageDigest digest;
+    try {
+      digest = MessageDigest.getInstance("SHA-256");
+    } catch (java.security.NoSuchAlgorithmException e) {
+      System.err.println(TAG + " SHA-256 algorithm not available");
+      return "";
+    }
+
+    try (FileInputStream fis = new FileInputStream(file)) {
+      byte[] buffer = new byte[BUFFER_SIZE];
+      int length;
+      while ((length = fis.read(buffer)) != -1) {
+        digest.update(buffer, 0, length);
+      }
+      byte[] hash = digest.digest();
+      StringBuilder hexString = new StringBuilder();
+      for (byte b : hash) {
+        String hex = Integer.toHexString(0xff & b);
+        if (hex.length() == 1) hexString.append('0');
+        hexString.append(hex);
+      }
+      return hexString.toString();
+    } catch (IOException e) {
+      System.err.println(
+        TAG + " Cannot calc checksum v2: " + file.getPath() + " " + e.getMessage()
       );
       return "";
     }

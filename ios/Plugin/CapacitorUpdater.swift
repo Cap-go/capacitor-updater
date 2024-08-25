@@ -9,6 +9,7 @@ import SSZipArchive
 import Alamofire
 import zlib
 import SwiftyRSA
+import CryptoKit
 
 extension Collection {
   subscript(safe index: Index) -> Element? {
@@ -670,6 +671,34 @@ extension CustomError: LocalizedError {
             return ""
         }
     }
+
+    private func calcChecksumV2(filePath: URL) -> String {
+        let bufferSize = 1024 * 1024 * 5 // 5 MB
+        var sha256 = SHA256()
+
+        do {
+            let fileHandle = try FileHandle(forReadingFrom: filePath)
+            defer {
+                fileHandle.closeFile()
+            }
+
+            while autoreleasepool(invoking: {
+                let fileData = fileHandle.readData(ofLength: bufferSize)
+                if fileData.count > 0 {
+                    sha256.update(data: fileData)
+                    return true // Continue
+                } else {
+                    return false // End of file
+                }
+            }) {}
+
+            let digest = sha256.finalize()
+            return digest.compactMap { String(format: "%02x", $0) }.joined()
+        } catch {
+            print("\(self.TAG) Cannot get checksum: \(filePath.path)", error)
+            return ""
+        }
+    }
     
     private var tempDataPath: URL {
         return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent("package.tmp")
@@ -809,7 +838,11 @@ extension CustomError: LocalizedError {
         }
         
         do {
-            checksum = self.calcChecksum(filePath: finalPath)
+            if (!self.hasOldPrivateKeyPropertyInConfig) {
+                checksum = self.calcChecksumV2(filePath: finalPath)
+            } else {
+                checksum = self.calcChecksum(filePath: finalPath)
+            }
             print("\(self.TAG) Downloading: 80% (unzipping)")
             try self.saveDownloaded(sourceZip: finalPath, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: true)
             
