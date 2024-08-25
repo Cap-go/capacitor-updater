@@ -715,7 +715,7 @@ public class CapacitorUpdater {
     // (str != null && !str.isEmpty())
     if (
       this.privateKey == null ||
-      this.privateKey.isEmpty() ||
+      this.privateKey.isEmpty()
     ) {
       Log.i(TAG, "Cannot found privateKey");
       return;
