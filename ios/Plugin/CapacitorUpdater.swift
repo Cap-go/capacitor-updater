@@ -770,7 +770,6 @@ extension CustomError: LocalizedError {
                      
                      let percent = max(10, Int((Double(totalReceivedBytes) / Double(targetSize)) * 70.0))
                      
-                     print("\(self.TAG) Downloading: \(percent)%")
                      let currentMilestone = (percent / 10) * 10
                              if currentMilestone > lastSentProgress && currentMilestone <= 70 {
                                  for milestone in stride(from: lastSentProgress + 10, through: currentMilestone, by: 10) {
