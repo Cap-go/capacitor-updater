@@ -838,7 +838,7 @@ extension CustomError: LocalizedError {
         }
 
         do {
-            if !self.hasOldPrivateKeyPropertyInConfig {
+            if !self.hasOldPrivateKeyPropertyInConfig && !sessionKey.isEmpty {
                 checksum = self.calcChecksumV2(filePath: finalPath)
             } else {
                 checksum = self.calcChecksum(filePath: finalPath)
