@@ -145,14 +145,7 @@ public class DownloadService extends IntentService {
       httpConn.disconnect();
     } catch (OutOfMemoryError e) {
       e.printStackTrace();
-      publishResults(
-        "",
-        id,
-        version,
-        checksum,
-        sessionKey,
-        "low_mem_fail"
-      );
+      publishResults("", id, version, checksum, sessionKey, "low_mem_fail");
     } catch (Exception e) {
       e.printStackTrace();
       publishResults(
