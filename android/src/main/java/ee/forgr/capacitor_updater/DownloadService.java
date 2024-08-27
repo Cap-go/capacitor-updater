@@ -25,7 +25,6 @@ public class DownloadService extends IntentService {
   public static final String VERSION = "version";
   public static final String SESSIONKEY = "sessionkey";
   public static final String CHECKSUM = "checksum";
-  public static final String SIGNATURE = "signature";
   public static final String NOTIFICATION = "service receiver";
   public static final String PERCENTDOWNLOAD = "percent receiver";
   private static final String UPDATE_FILE = "update.dat";
@@ -54,7 +53,6 @@ public class DownloadService extends IntentService {
     String version = intent.getStringExtra(VERSION);
     String sessionKey = intent.getStringExtra(SESSIONKEY);
     String checksum = intent.getStringExtra(CHECKSUM);
-    String signature = intent.getStringExtra(SIGNATURE);
 
     File target = new File(documentsDir, dest);
     File infoFile = new File(documentsDir, UPDATE_FILE); // The file where the download progress (how much byte
@@ -140,7 +138,7 @@ public class DownloadService extends IntentService {
         // Rename the temp file with the final name (dest)
         tempFile.renameTo(new File(documentsDir, dest));
         infoFile.delete();
-        publishResults(dest, id, version, checksum, sessionKey, signature, "");
+        publishResults(dest, id, version, checksum, sessionKey, "");
       } else {
         infoFile.delete();
       }
@@ -153,7 +151,6 @@ public class DownloadService extends IntentService {
         version,
         checksum,
         sessionKey,
-        signature,
         "low_mem_fail"
       );
     } catch (Exception e) {
@@ -164,7 +161,6 @@ public class DownloadService extends IntentService {
         version,
         checksum,
         sessionKey,
-        signature,
         e.getLocalizedMessage()
       );
     }
@@ -197,7 +193,6 @@ public class DownloadService extends IntentService {
     String version,
     String checksum,
     String sessionKey,
-    String signature,
     String error
   ) {
     Intent intent = new Intent(NOTIFICATION);
@@ -210,7 +205,6 @@ public class DownloadService extends IntentService {
     intent.putExtra(VERSION, version);
     intent.putExtra(SESSIONKEY, sessionKey);
     intent.putExtra(CHECKSUM, checksum);
-    intent.putExtra(SIGNATURE, signature);
     sendBroadcast(intent);
   }
 }

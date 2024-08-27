@@ -189,15 +189,6 @@ declare module "@capacitor/cli" {
        * @since  5.5.0
        */
       defaultChannel?: string;
-      /**
-       * Public key used for bundle signing.
-       *
-       *
-       *
-       * @default undefined
-       * @since  6.1.0
-       */
-      signKey?: string;
     };
   }
 }
@@ -709,12 +700,6 @@ export interface DownloadOptions {
    * @default undefined
    */
   checksum?: string;
-  /**
-   * The signature of the update. Can be generated using capgo CLI
-   * @since 6.1.0
-   * @default undefined
-   */
-  signature?: string;
 }
 
 export interface BundleId {

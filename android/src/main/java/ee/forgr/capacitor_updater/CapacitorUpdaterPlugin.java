@@ -30,7 +30,6 @@ import java.io.IOException;
 import java.lang.reflect.Type;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.security.PublicKey;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -136,12 +135,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
       this.implementation.requestQueue = Volley.newRequestQueue(
         this.getContext()
       );
-      final String signKeyStr = this.getConfig().getString("signKey", "");
-      if (signKeyStr.length() > 0) {
-        this.implementation.signKey = CryptoCipher.stringToPublicKey(
-          signKeyStr
-        );
-      }
 
       this.implementation.directUpdate = this.getConfig()
         .getBoolean("directUpdate", false);
@@ -588,7 +581,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
     final String version = call.getString("version");
     final String sessionKey = call.getString("sessionKey", "");
     final String checksum = call.getString("checksum", "");
-    final String signature = call.getString("signature", "");
     if (url == null) {
       Log.e(CapacitorUpdater.TAG, "Download called without url");
       call.reject("Download called without url");
@@ -597,17 +589,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
     if (version == null) {
       Log.e(CapacitorUpdater.TAG, "Download called without version");
       call.reject("Download called without version");
-      return;
-    }
-    if (
-      this.implementation.signKey != null &&
-      (signature == null || signature.isEmpty())
-    ) {
-      Log.e(
-        CapacitorUpdater.TAG,
-        "Signature required but none provided for download call"
-      );
-      call.reject("Signature required but none provided");
       return;
     }
     try {
@@ -619,8 +600,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 url,
                 version,
                 sessionKey,
-                checksum,
-                signature
+                checksum
               );
           if (downloaded.isErrorStatus()) {
             throw new RuntimeException(
@@ -1288,15 +1268,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     final String checksum = res.has("checksum")
                       ? res.getString("checksum")
                       : "";
-                    final String signature = res.has("signature")
-                      ? res.getString("signature")
-                      : "";
                     CapacitorUpdaterPlugin.this.implementation.downloadBackground(
                         url,
                         latestVersionName,
                         sessionKey,
-                        checksum,
-                        signature
+                        checksum
                       );
                   } catch (final Exception e) {
                     Log.e(CapacitorUpdater.TAG, "error downloading file", e);

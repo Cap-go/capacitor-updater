@@ -98,7 +98,6 @@ struct AppVersionDec: Decodable {
     let session_key: String?
     let major: Bool?
     let data: [String: String]?
-    let signature: String?
 }
 public class AppVersion: NSObject {
     var version: String = ""
@@ -109,7 +108,6 @@ public class AppVersion: NSObject {
     var sessionKey: String?
     var major: Bool?
     var data: [String: String]?
-    var signature: String?
 }
 
 extension AppVersion {
@@ -178,10 +176,8 @@ enum CustomError: Error {
     case cannotUnflat
     case cannotCreateDirectory
     case cannotDeleteDirectory
-    case signatureNotProvided
     case cannotDecryptSessionKey
     case invalidBase64
-    case invalidSignature
 
     // Throw in all other cases
     case unexpected(code: Int)
@@ -190,16 +186,6 @@ enum CustomError: Error {
 extension CustomError: LocalizedError {
     public var errorDescription: String? {
         switch self {
-        case .signatureNotProvided:
-            return NSLocalizedString(
-                "Signature was required but none was provided",
-                comment: "Signature not provided"
-            )
-        case .invalidSignature:
-            return NSLocalizedString(
-                "Signature is not valid, cannot accept update",
-                comment: "Invalid signature"
-            )
         case .cannotUnzip:
             return NSLocalizedString(
                 "The file cannot be unzip",
@@ -275,7 +261,6 @@ extension CustomError: LocalizedError {
     public var privateKey: String = ""
     public var publicKey: String = ""
     public var hasOldPrivateKeyPropertyInConfig: Bool = false
-    public var signKey: PublicKey?
 
     public var notifyDownloadRaw: (String, Int, Bool) -> Void = { _, _, _  in }
     public func notifyDownload(id: String, percent: Int, ignoreMultipleOfTen: Bool = false) {
@@ -372,32 +357,6 @@ extension CustomError: LocalizedError {
         } catch {
             print("\(self.TAG) File not moved. source: \(source.path) dest: \(dest.path)")
             throw CustomError.cannotUnflat
-        }
-    }
-
-    private func verifyBundleSignature(version: String, filePath: URL, signature: String?) throws -> Bool {
-        if self.signKey == nil {
-            print("\(self.TAG) Signing not configured")
-            return true
-        }
-
-        if self.signKey != nil && (signature == nil || signature?.isEmpty == true) {
-            print("\(self.TAG) Signature required but none provided")
-            self.sendStats(action: "signature_not_provided", versionName: version)
-            throw CustomError.signatureNotProvided
-        }
-
-        do {
-            // let publicKey = try PublicKey(pemEncoded: self.signKey)
-            let signatureObj = try Signature(base64Encoded: signature!) // I THINK I can unwrap safely here (?)
-            let clear = try ClearMessage(data: Data(contentsOf: filePath))
-
-            let isSuccessful = try clear.verify(with: self.signKey!, signature: signatureObj, digestType: .sha512)
-            return isSuccessful
-        } catch {
-            print("\(self.TAG) Signature validation failed", error)
-            self.sendStats(action: "signature_validation_failed", versionName: version)
-            throw error
         }
     }
 
@@ -624,9 +583,6 @@ extension CustomError: LocalizedError {
                 if let data = response.value?.data {
                     latest.data = data
                 }
-                if let signature = response.value?.signature {
-                    latest.signature = signature
-                }
             case let .failure(error):
                 print("\(self.TAG) Error getting Latest", response.value ?? "", error )
                 latest.message = "Error getting Latest \(String(describing: response.value))"
@@ -730,7 +686,7 @@ extension CustomError: LocalizedError {
         }
     }
 
-    public func download(url: URL, version: String, sessionKey: String, signature: String) throws -> BundleInfo {
+    public func download(url: URL, version: String, sessionKey: String) throws -> BundleInfo {
         let id: String = self.randomString(length: 10)
         let semaphore = DispatchSemaphore(value: 0)
         if version != getLocalUpdateVersion() {
@@ -815,14 +771,6 @@ extension CustomError: LocalizedError {
 
         let finalPath = tempDataPath.deletingLastPathComponent().appendingPathComponent("\(id)")
         do {
-            let valid = try self.verifyBundleSignature(version: version, filePath: tempDataPath, signature: signature)
-            if !valid {
-                print("\(self.TAG) Invalid signature, cannot accept download")
-                self.sendStats(action: "invalid_signature", versionName: version)
-                throw CustomError.invalidSignature
-            } else {
-                print("\(self.TAG) Valid signature")
-            }
             var checksumDecrypted = checksum
             if !self.hasOldPrivateKeyPropertyInConfig {
                 try self.decryptFileV2(filePath: tempDataPath, sessionKey: sessionKey, version: version)
@@ -831,7 +779,7 @@ extension CustomError: LocalizedError {
             }
             try FileManager.default.moveItem(at: tempDataPath, to: finalPath)
         } catch {
-            print("\(self.TAG) Failed decrypt file or verify signature or move it: \(error)")
+            print("\(self.TAG) Failed decrypt file : \(error)")
             self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum))
             cleanDownloadData()
             throw error

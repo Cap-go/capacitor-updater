@@ -218,7 +218,6 @@ CapacitorUpdater can be configured with these options:
 | **`localSupaAnon`**      | <code>string</code>  | Configure the CLI to use a local server for testing.                                                                                                                                            | <code>undefined</code>                     | 4.17.48 |
 | **`allowModifyUrl`**     | <code>boolean</code> | Allow the plugin to modify the updateUrl, statsUrl and channelUrl dynamically from the JavaScript side.                                                                                         | <code>false</code>                         | 5.4.0   |
 | **`defaultChannel`**     | <code>string</code>  | Set the default channel for the app in the config.                                                                                                                                              | <code>undefined</code>                     | 5.5.0   |
-| **`signKey`**            | <code>string</code>  | Public key used for bundle signing.                                                                                                                                                             | <code>undefined</code>                     | 6.1.0   |
 
 ### Examples
 
@@ -246,8 +245,7 @@ In `capacitor.config.json`:
       "localSupa": undefined,
       "localSupaAnon": undefined,
       "allowModifyUrl": undefined,
-      "defaultChannel": undefined,
-      "signKey": undefined
+      "defaultChannel": undefined
     }
   }
 }
@@ -282,7 +280,6 @@ const config: CapacitorConfig = {
       localSupaAnon: undefined,
       allowModifyUrl: undefined,
       defaultChannel: undefined,
-      signKey: undefined,
     },
   },
 };
@@ -937,7 +934,6 @@ Listen for app ready event in the App, let you know when app is ready to use
 | **`version`**    | <code>string</code> | The version code/name of this bundle/version                                                                                                                     |                        |       |
 | **`sessionKey`** | <code>string</code> | The session key for the update                                                                                                                                   | <code>undefined</code> | 4.0.0 |
 | **`checksum`**   | <code>string</code> | The checksum for the update                                                                                                                                      | <code>undefined</code> | 4.0.0 |
-| **`signature`**  | <code>string</code> | The signature of the update. Can be generated using capgo CLI                                                                                                    | <code>undefined</code> | 6.1.0 |
 
 
 #### BundleId
