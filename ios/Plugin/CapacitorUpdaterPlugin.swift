@@ -260,7 +260,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 if !self.implementation.hasOldPrivateKeyPropertyInConfig {
                     checksum = try self.implementation.decryptChecksum(checksum: checksum, version: version)
                 }
-                if checksum != "" && next.getChecksum() != checksum {
+                if (checksum != "" || self.implementation.publicKey != "") && next.getChecksum() != checksum {
                     print("\(self.implementation.TAG) Error checksum", next.getChecksum(), checksum)
                     self.implementation.sendStats(action: "checksum_fail", versionName: next.getVersionName())
                     let id = next.getId()

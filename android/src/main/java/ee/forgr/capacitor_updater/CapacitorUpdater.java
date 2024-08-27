@@ -362,7 +362,7 @@ public class CapacitorUpdater {
       this.notifyDownload(id, 71);
       downloaded = new File(this.documentsDir, dest);
 
-      String checksumDecrypted = checksumRes;
+      String checksumDecrypted = Objects.requireNonNullElse(checksumRes, "");
       if (!this.hasOldPrivateKeyPropertyInConfig && !sessionKey.isEmpty()) {
         this.decryptFileV2(downloaded, sessionKey, version);
         checksumDecrypted = this.decryptChecksum(checksumRes, version);
@@ -372,8 +372,7 @@ public class CapacitorUpdater {
         checksum = this.calcChecksum(downloaded);
       }
       if (
-        checksumDecrypted != null &&
-        !checksumDecrypted.isEmpty() &&
+        (!checksumDecrypted.isEmpty() || !this.publicKey.isEmpty()) &&
         !checksumDecrypted.equals(checksum)
       ) {
         Log.e(
@@ -590,7 +589,6 @@ public class CapacitorUpdater {
   ) throws IOException {
     // (str != null && !str.isEmpty())
     if (
-      this.publicKey == null ||
       this.publicKey.isEmpty() ||
       ivSessionKey == null ||
       ivSessionKey.isEmpty() ||
