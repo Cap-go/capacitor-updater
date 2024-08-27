@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.1.18](https://github.com/Cap-go/capacitor-updater/compare/6.1.17...6.1.18) (2024-08-27)
+
+
+### Bug Fixes
+
+* **android:** Fix checksum verification when encryption is not configured ([0a96bfc](https://github.com/Cap-go/capacitor-updater/commit/0a96bfc2831a928e794c87ac1e81a434acb5e90b))
+* do not bypass checksum ([eccb60e](https://github.com/Cap-go/capacitor-updater/commit/eccb60e1c0d9d390f10ea88d113a4b1450172886))
+* do not decrypt checksum in ios when no key ([69ea417](https://github.com/Cap-go/capacitor-updater/commit/69ea417c40b633e0c2b95dcbf37fcf6e3d6c91e0))
+* do not decrypt if no key ([105cc8c](https://github.com/Cap-go/capacitor-updater/commit/105cc8c648f70db1a6552fa562128802039423cb))
+* lint and work on android ([bfd007c](https://github.com/Cap-go/capacitor-updater/commit/bfd007ccf8583be4131c91064ca00b9ff5c450bb))
+* remove key in code ([ef8c108](https://github.com/Cap-go/capacitor-updater/commit/ef8c1089a9a3df4d45f6005b16a9782d90ce23c6))
+* remove old log ([784e7ad](https://github.com/Cap-go/capacitor-updater/commit/784e7ad4749ecf6ed7cb920d5ca722aa4f6f7930))
+* remove signature as our checksum is enought ([8706422](https://github.com/Cap-go/capacitor-updater/commit/870642298b4368adcf9674689862e56d39285b71))
+* remove useless log ([485f2ce](https://github.com/Cap-go/capacitor-updater/commit/485f2ce21df17f3614a6cb95b6b6a05bb74fef38))
+* rename function and remove useless logs ([ef37084](https://github.com/Cap-go/capacitor-updater/commit/ef37084420deca8b57c4b1b0ec7ee4604431e040))
+* reversed condition android ([4189819](https://github.com/Cap-go/capacitor-updater/commit/41898198179bda72eabd195176e46f695c96a16f))
+* typo ([a9cbb8f](https://github.com/Cap-go/capacitor-updater/commit/a9cbb8ffcf2495312d9a55d0891cbd5bbc0c83da))
+
 ### [6.1.17](https://github.com/Cap-go/capacitor-updater/compare/6.1.16...6.1.17) (2024-08-27)
 
 ### [6.1.16](https://github.com/Cap-go/capacitor-updater/compare/6.1.15...6.1.16) (2024-08-26)
