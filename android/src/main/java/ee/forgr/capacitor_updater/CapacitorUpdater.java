@@ -363,7 +363,7 @@ public class CapacitorUpdater {
       downloaded = new File(this.documentsDir, dest);
 
       String checksumDecrypted = checksumRes;
-      if (!this.hasOldPrivateKeyPropertyInConfig) {
+      if (!this.hasOldPrivateKeyPropertyInConfig && !sessionKey.isEmpty()) {
         this.decryptFileV2(downloaded, sessionKey, version);
         checksumDecrypted = this.decryptChecksum(checksumRes, version);
         checksum = this.calcChecksumV2(downloaded);
