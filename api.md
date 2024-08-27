@@ -96,7 +96,7 @@ const config: CapacitorConfig = {
       localSupa: undefined,
       localSupaAnon: undefined,
       allowModifyUrl: undefined,
-      defaultChannel: undefined
+      defaultChannel: undefined,
     },
   },
 };
