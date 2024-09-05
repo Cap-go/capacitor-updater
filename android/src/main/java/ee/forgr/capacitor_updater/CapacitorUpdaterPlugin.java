@@ -609,7 +609,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
           } else {
             call.resolve(downloaded.toJSON());
           }
-        } catch (final IOException e) {
+        } catch (final Exception e) {
           Log.e(CapacitorUpdater.TAG, "Failed to download from: " + url, e);
           call.reject("Failed to download from: " + url, e);
           final JSObject ret = new JSObject();
