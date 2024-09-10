@@ -618,6 +618,12 @@ export interface AppReadyEvent {
   status: string;
 }
 
+export interface ManifestEntry {
+  file_name: string | null
+  file_hash: string | null
+  download_url: string | null
+}
+
 export interface LatestVersion {
   /**
    * Result of getLatest method
@@ -625,6 +631,9 @@ export interface LatestVersion {
    * @since 4.0.0
    */
   version: string;
+  /**
+   * @since 6
+   */
   checksum?: string;
   major?: boolean;
   message?: string;
@@ -632,6 +641,10 @@ export interface LatestVersion {
   error?: string;
   old?: string;
   url?: string;
+  /**
+   * @since 6.1
+   */
+  manifest?: ManifestEntry[]
 }
 
 export interface BundleInfo {
