@@ -120,11 +120,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         guard let bridge = self.bridge else { return false }
 
         let id = self.implementation.getCurrentBundleId()
-        let dest: URL
+        var dest: URL
         if BundleInfo.ID_BUILTIN == id {
             dest = Bundle.main.resourceURL!.appendingPathComponent("public")
         } else {
             dest = self.implementation.getBundleDirectory(id: id)
+        }
+        
+        if !FileManager.default.fileExists(atPath: dest.path) {
+            print("\(self.implementation.TAG) Initial load fail - file at path \(dest.path) doesn't exist. Defaulting to buildin!! \(id)")
+            dest = Bundle.main.resourceURL!.appendingPathComponent("public")
         }
 
         print("\(self.implementation.TAG) Initial load \(id)")
