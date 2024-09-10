@@ -625,6 +625,7 @@ export interface LatestVersion {
    * @since 4.0.0
    */
   version: string;
+  checksum?: string;
   major?: boolean;
   message?: string;
   sessionKey?: string;
