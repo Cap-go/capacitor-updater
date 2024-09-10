@@ -619,9 +619,9 @@ export interface AppReadyEvent {
 }
 
 export interface ManifestEntry {
-  file_name: string | null
-  file_hash: string | null
-  download_url: string | null
+  file_name: string | null;
+  file_hash: string | null;
+  download_url: string | null;
 }
 
 export interface LatestVersion {
@@ -644,7 +644,7 @@ export interface LatestVersion {
   /**
    * @since 6.1
    */
-  manifest?: ManifestEntry[]
+  manifest?: ManifestEntry[];
 }
 
 export interface BundleInfo {
