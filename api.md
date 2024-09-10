@@ -799,16 +799,26 @@ Listen for app ready event in the App, let you know when app is ready to use
 
 ### LatestVersion
 
-| Prop             | Type                 | Description                | Since |
-| ---------------- | -------------------- | -------------------------- | ----- |
-| **`version`**    | <code>string</code>  | Result of getLatest method | 4.0.0 |
-| **`checksum`**   | <code>string</code>  |                            |       |
-| **`major`**      | <code>boolean</code> |                            |       |
-| **`message`**    | <code>string</code>  |                            |       |
-| **`sessionKey`** | <code>string</code>  |                            |       |
-| **`error`**      | <code>string</code>  |                            |       |
-| **`old`**        | <code>string</code>  |                            |       |
-| **`url`**        | <code>string</code>  |                            |       |
+| Prop             | Type                         | Description                | Since |
+| ---------------- | ---------------------------- | -------------------------- | ----- |
+| **`version`**    | <code>string</code>          | Result of getLatest method | 4.0.0 |
+| **`checksum`**   | <code>string</code>          |                            | 6     |
+| **`major`**      | <code>boolean</code>         |                            |       |
+| **`message`**    | <code>string</code>          |                            |       |
+| **`sessionKey`** | <code>string</code>          |                            |       |
+| **`error`**      | <code>string</code>          |                            |       |
+| **`old`**        | <code>string</code>          |                            |       |
+| **`url`**        | <code>string</code>          |                            |       |
+| **`manifest`**   | <code>ManifestEntry[]</code> |                            | 6.1   |
+
+
+### ManifestEntry
+
+| Prop               | Type                        |
+| ------------------ | --------------------------- |
+| **`file_name`**    | <code>string \| null</code> |
+| **`file_hash`**    | <code>string \| null</code> |
+| **`download_url`** | <code>string \| null</code> |
 
 
 ### ChannelRes
