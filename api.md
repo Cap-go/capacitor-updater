@@ -802,6 +802,7 @@ Listen for app ready event in the App, let you know when app is ready to use
 | Prop             | Type                 | Description                | Since |
 | ---------------- | -------------------- | -------------------------- | ----- |
 | **`version`**    | <code>string</code>  | Result of getLatest method | 4.0.0 |
+| **`checksum`**   | <code>string</code>  |                            |       |
 | **`major`**      | <code>boolean</code> |                            |       |
 | **`message`**    | <code>string</code>  |                            |       |
 | **`sessionKey`** | <code>string</code>  |                            |       |
