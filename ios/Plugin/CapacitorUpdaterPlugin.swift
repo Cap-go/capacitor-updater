@@ -39,8 +39,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
 
     override public func load() {
         #if targetEnvironment(simulator)
-            print("\(self.implementation.TAG) ::::: SIMULATOR :::::")
-            print("\(self.implementation.TAG) Application directory: \(NSHomeDirectory())")
+        print("\(self.implementation.TAG) ::::: SIMULATOR :::::")
+        print("\(self.implementation.TAG) Application directory: \(NSHomeDirectory())")
         #endif
 
         self.semaphoreUp()
@@ -126,7 +126,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
         } else {
             dest = self.implementation.getBundleDirectory(id: id)
         }
-        
+
         if !FileManager.default.fileExists(atPath: dest.path) {
             print("\(self.implementation.TAG) Initial load fail - file at path \(dest.path) doesn't exist. Defaulting to buildin!! \(id)")
             dest = Bundle.main.resourceURL!.appendingPathComponent("public")
@@ -545,13 +545,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                     if !killed {
                         self._cancelDelay(source: "background check")
                     }
-                    case "kill":
+                case "kill":
                     if killed {
                         self._cancelDelay(source: "kill check")
                         // instant install for kill action
                         self.installNext()
                     }
-                    case "date":
+                case "date":
                     if value != nil && value != "" {
                         let dateFormatter = ISO8601DateFormatter()
                         dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -565,7 +565,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                     } else {
                         self._cancelDelay(source: "delayVal absent")
                     }
-                    case "nativeVersion":
+                case "nativeVersion":
                     if value != nil && value != "" {
                         do {
                             let versionLimit = try Version(value!)
