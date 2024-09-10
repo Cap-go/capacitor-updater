@@ -99,6 +99,15 @@ declare module "@capacitor/cli" {
        * @default undefined
        */
       privateKey?: string;
+            /**
+       * Configure the public key for end to end live update encryption Version 2
+       *
+       * Only available for Android and iOS.
+       *
+       * @default undefined
+       * @since 6.2.0
+       */
+      publicKey?: string;
 
       /**
        * Configure the current version of the app. This will be used for the first update request.
