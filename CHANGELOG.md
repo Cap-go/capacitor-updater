@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.1.26](https://github.com/Cap-go/capacitor-updater/compare/6.1.25...6.1.26) (2024-09-10)
+
+
+### Bug Fixes
+
+* add missing publicKey TS ([6be6c9e](https://github.com/Cap-go/capacitor-updater/commit/6be6c9e9b1aeaccea8c18cdd12cbeea540291357))
+
 ### [6.1.25](https://github.com/Cap-go/capacitor-updater/compare/6.1.24...6.1.25) (2024-09-10)
 
 
