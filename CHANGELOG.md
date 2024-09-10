@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.1.27](https://github.com/Cap-go/capacitor-updater/compare/6.1.26...6.1.27) (2024-09-10)
+
+
+### Bug Fixes
+
+* for Ipad ([aab2e66](https://github.com/Cap-go/capacitor-updater/commit/aab2e669874be5716154afaf9f71e0cb9cae9666))
+
 ### [6.1.26](https://github.com/Cap-go/capacitor-updater/compare/6.1.25...6.1.26) (2024-09-10)
 
 
