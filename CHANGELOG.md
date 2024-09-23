@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [6.2.0](https://github.com/Cap-go/capacitor-updater/compare/6.1.34...6.2.0) (2024-09-23)
+
+
+### Features
+
+* add reset from server ([40aa24e](https://github.com/Cap-go/capacitor-updater/commit/40aa24e133def1982b850037ebca765ef403f027))
+
 ### [6.1.34](https://github.com/Cap-go/capacitor-updater/compare/6.1.33...6.1.34) (2024-09-23)
 
 ### [6.1.33](https://github.com/Cap-go/capacitor-updater/compare/6.1.32...6.1.33) (2024-09-23)
