@@ -696,6 +696,19 @@ public class CapacitorUpdaterPlugin: CAPPlugin {
                 self.endBackGroundTaskWithNotif(msg: res.message ?? "", latestVersionName: res.version, current: current, error: true)
                 return
             }
+            if res.version == "builtin" {
+                print("\(self.implementation.TAG) Latest version is builtin")
+                if self.directUpdate {
+                    print("\(self.implementation.TAG) Direct update to builtin version")
+                    _ = self._reset(toLastSuccessful: false)
+                    self.endBackGroundTaskWithNotif(msg: "Updated to builtin version", latestVersionName: res.version, current: self.implementation.getCurrentBundle(), error: false)
+                } else {
+                    print("\(self.implementation.TAG) Setting next bundle to builtin")
+                    _ = self.implementation.setNextBundle(next: BundleInfo.ID_BUILTIN)
+                    self.endBackGroundTaskWithNotif(msg: "Next update will be to builtin version", latestVersionName: res.version, current: current, error: false)
+                }
+                return
+            }
             let sessionKey = res.sessionKey ?? ""
             guard let downloadUrl = URL(string: res.url) else {
                 print("\(self.implementation.TAG) Error no url or wrong format")

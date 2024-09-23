@@ -1148,6 +1148,37 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 return;
               }
 
+              final String latestVersionName = res.getString("version");
+
+              if ("builtin".equals(latestVersionName)) {
+                Log.i(CapacitorUpdater.TAG, "Latest version is builtin");
+                if (CapacitorUpdaterPlugin.this.implementation.directUpdate) {
+                  Log.i(
+                    CapacitorUpdater.TAG,
+                    "Direct update to builtin version"
+                  );
+                  this._reset(false);
+                  CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                      "Updated to builtin version",
+                      latestVersionName,
+                      CapacitorUpdaterPlugin.this.implementation.getCurrentBundle(),
+                      false
+                    );
+                } else {
+                  Log.i(CapacitorUpdater.TAG, "Setting next bundle to builtin");
+                  CapacitorUpdaterPlugin.this.implementation.setNextBundle(
+                      BundleInfo.ID_BUILTIN
+                    );
+                  CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                      "Next update will be to builtin version",
+                      latestVersionName,
+                      current,
+                      false
+                    );
+                }
+                return;
+              }
+
               if (
                 !res.has("url") ||
                 !CapacitorUpdaterPlugin.this.isValidURL(res.getString("url"))
@@ -1161,7 +1192,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
                   );
                 return;
               }
-              final String latestVersionName = res.getString("version");
 
               if (
                 latestVersionName != null &&
