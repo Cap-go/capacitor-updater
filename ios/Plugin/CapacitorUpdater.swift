@@ -8,7 +8,6 @@ import Foundation
 import SSZipArchive
 import Alamofire
 import zlib
-import SwiftyRSA
 import CryptoKit
 
 extension Collection {

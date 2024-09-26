@@ -5,8 +5,17 @@ node_modules
 # iOS files
 Pods
 Podfile.lock
+Package.resolved
 Build
 xcuserdata
+/.build
+/Packages
+xcuserdata/
+DerivedData/
+.swiftpm/configuration/registries.json
+.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
+.netrc
+
 
 # macOS files
 .DS_Store
@@ -52,7 +61,6 @@ captures
 # IntelliJ
 *.iml
 .idea
-.settings
 
 # Keystore files
 # Uncomment the following line if you do not want to check your keystore files in.
