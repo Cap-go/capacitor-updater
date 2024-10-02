@@ -71,7 +71,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         #endif
 
         self.semaphoreUp()
-        self.implementation.deviceID = UserDefaults.standard.string(forKey: "appUUID") ?? UUID().uuidString
+        self.implementation.deviceID = (UserDefaults.standard.string(forKey: "appUUID") ?? UUID().uuidString).lowercased()
         UserDefaults.standard.set( self.implementation.deviceID, forKey: "appUUID")
         UserDefaults.standard.synchronize()
         print("\(self.implementation.TAG) init for device \(self.implementation.deviceID)")
