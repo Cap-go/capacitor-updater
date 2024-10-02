@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.2.5](https://github.com/Cap-go/capacitor-updater/compare/6.2.4...6.2.5) (2024-10-02)
+
+
+### Bug Fixes
+
+* allow SPM ([7a0ee4a](https://github.com/Cap-go/capacitor-updater/commit/7a0ee4a8712bc6fbdea6503533c292f956addf7a))
+* make sure uuid is lowercase ([52da993](https://github.com/Cap-go/capacitor-updater/commit/52da993c3bebd1dc3ce988f92db4a45cb1711e3e))
+* test ci ([b39dc0a](https://github.com/Cap-go/capacitor-updater/commit/b39dc0ac30f00ee01bcad63fe745a12dceb34079))
+* test ci ([dd5196c](https://github.com/Cap-go/capacitor-updater/commit/dd5196cfb13c30c6b74ab9738311b9ede0e1b39c))
+
 ### [6.2.4](https://github.com/Cap-go/capacitor-updater/compare/6.2.3...6.2.4) (2024-09-30)
 
 ### [6.2.3](https://github.com/Cap-go/capacitor-updater/compare/6.2.2...6.2.3) (2024-09-30)
