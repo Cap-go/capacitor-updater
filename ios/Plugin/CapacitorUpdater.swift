@@ -9,6 +9,7 @@ import SSZipArchive
 import Alamofire
 import zlib
 import CryptoKit
+import Compression
 
 extension Collection {
     subscript(safe index: Index) -> Element? {
@@ -717,16 +718,8 @@ extension CustomError: LocalizedError {
                 continue
             }
             
-            let cacheFilePath = cacheFolder.appendingPathComponent(fileHash)
+            let tempGzipPath = cacheFolder.appendingPathComponent("\(fileName).gz")
             let destFilePath = destFolder.appendingPathComponent(fileName)
-            
-            if FileManager.default.fileExists(atPath: cacheFilePath.path) {
-                let cachedFileHash = self.calcChecksumV2(filePath: cacheFilePath)
-                if cachedFileHash == fileHash {
-                    try FileManager.default.copyItem(at: cacheFilePath, to: destFilePath)
-                    continue
-                }
-            }
             
             dispatchGroup.enter()
             AF.download(downloadUrl).responseData { response in
@@ -735,29 +728,37 @@ extension CustomError: LocalizedError {
                 switch response.result {
                 case .success(let data):
                     do {
-                        try data.write(to: cacheFilePath)
-                        let downloadedFileHash = self.calcChecksumV2(filePath: cacheFilePath)
-                        print("\(self.TAG) downloadManifest checksum \(fileName) \(downloadedFileHash) = \(fileHash)")
-                        if downloadedFileHash == fileHash {
-                            try FileManager.default.copyItem(at: cacheFilePath, to: destFilePath)
-                        } else {
+                        try data.write(to: tempGzipPath)
+                        
+                        // Decompress the GZIP file
+                        let decompressedData = try self.decompressGzip(inputFile: tempGzipPath)
+                        try decompressedData.write(to: destFilePath)
+                        
+                        // Calculate checksum after decompression
+                        let decompressedFileHash = self.calcChecksumV2(filePath: destFilePath)
+                        print("\(self.TAG) downloadManifest checksum \(fileName) \(decompressedFileHash) = \(fileHash)")
+                        
+                        if decompressedFileHash != fileHash {
                             downloadError = NSError(domain: "ChecksumMismatch", code: 0, userInfo: nil)
                         }
+                        
+                        // Clean up temporary gzip file
+                        try? FileManager.default.removeItem(at: tempGzipPath)
+                        
                         print("\(self.TAG) downloadManifest \(fileName) done")
                     } catch {
                         downloadError = error
-                        print("\(self.TAG) downloadManifest \(fileName) error")
+                        print("\(self.TAG) downloadManifest \(fileName) error: \(error)")
                     }
                 case .failure(let error):
                     downloadError = error
-                    print("\(self.TAG) downloadManifest \(fileName) error")
+                    print("\(self.TAG) downloadManifest \(fileName) download error: \(error)")
                 }
             }
         }
         
         dispatchGroup.wait()
         
-        print("\(self.TAG) downloadManifest done")
         if let error = downloadError {
             throw error
         }
@@ -765,7 +766,16 @@ extension CustomError: LocalizedError {
         let bundleInfo = BundleInfo(id: id, version: version, status: BundleStatus.PENDING, downloaded: Date(), checksum: "")
         self.saveBundleInfo(id: id, bundle: bundleInfo)
         
+        print("\(self.TAG) downloadManifest done")
         return bundleInfo
+    }
+
+    private func decompressGzip(inputFile: URL) throws -> Data {
+        let data = try Data(contentsOf: inputFile)
+        guard let decompressed = try (data as NSData).decompressed(using: .zlib) as Data? else {
+            throw NSError(domain: "GzipDecompressionError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress gzip file"])
+        }
+        return decompressed
     }
 
 
