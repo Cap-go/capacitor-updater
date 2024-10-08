@@ -471,7 +471,7 @@ public class CapacitorUpdater {
     intent.putExtra(DownloadService.SESSIONKEY, sessionKey);
     intent.putExtra(DownloadService.CHECKSUM, checksum);
     if (manifest != null) {
-        intent.putExtra("MANIFEST", manifest.toString());
+        intent.putExtra(DownloadService.MANIFEST, manifest.toString());
     }
     this.activity.startService(intent);
   }

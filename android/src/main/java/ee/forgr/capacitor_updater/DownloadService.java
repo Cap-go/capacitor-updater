@@ -48,6 +48,7 @@ public class DownloadService extends IntentService {
   public static final String NOTIFICATION = "service receiver";
   public static final String PERCENTDOWNLOAD = "percent receiver";
   public static final String IS_MANIFEST = "is_manifest";
+  public static final String MANIFEST = "manifest";
   private static final String UPDATE_FILE = "update.dat";
 
   public DownloadService() {
@@ -74,8 +75,9 @@ public class DownloadService extends IntentService {
     String version = intent.getStringExtra(VERSION);
     String sessionKey = intent.getStringExtra(SESSIONKEY);
     String checksum = intent.getStringExtra(CHECKSUM);
-    String manifestString = intent.getStringExtra("MANIFEST");
+    String manifestString = intent.getStringExtra(MANIFEST);
 
+    Log.d("DownloadService", "onHandleIntent" + manifestString);
     if (manifestString != null) {
       handleManifestDownload(id, documentsDir, version, sessionKey, manifestString);
     } else {
@@ -85,32 +87,12 @@ public class DownloadService extends IntentService {
 
   private void handleManifestDownload(String id, String documentsDir, String version, String sessionKey, String manifestString) {
     try {
+        Log.d("DownloadService", "handleManifestDownload");
         JSONArray manifest = new JSONArray(manifestString);
         File destFolder = new File(documentsDir, id);
         File cacheFolder = new File(documentsDir, "capgo_downloads");
         destFolder.mkdirs();
         cacheFolder.mkdirs();
-
-        long totalBytes = 0;
-        long[] downloadedBytes = {0};
-
-        // Calculate total bytes to download (only for files not in cache)
-        for (int i = 0; i < manifest.length(); i++) {
-            JSONObject entry = manifest.getJSONObject(i);
-            String fileName = entry.getString("file_name");
-            String fileHash = entry.getString("file_hash");
-            String downloadUrl = entry.getString("download_url");
-
-            File cacheFile = new File(cacheFolder, fileHash + "_" + new File(fileName).getName());
-            if (!cacheFile.exists()) {
-                URL url = new URL(downloadUrl);
-                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-                totalBytes += connection.getContentLength();
-                connection.disconnect();
-            }
-        }
-
-        final long finalTotalBytes = totalBytes;
 
         // Use ExecutorService for parallel downloads
         ExecutorService executor = Executors.newFixedThreadPool(5); // Adjust thread count as needed
@@ -133,18 +115,13 @@ public class DownloadService extends IntentService {
                     if (cacheFile.exists()) {
                         if (verifyChecksum(cacheFile, fileHash)) {
                             copyFile(cacheFile, targetFile);
-                            synchronized (downloadedBytes) {
-                                downloadedBytes[0] += cacheFile.length();
-                                int percent = calcTotalPercent(downloadedBytes[0], finalTotalBytes);
-                                Log.d("DownloadService", "already cached" + fileName);
-                                notifyDownload(id, percent);
-                            }
+                            Log.d("DownloadService", "already cached" + fileName);
                         } else {
                             cacheFile.delete();
-                            downloadAndVerify(downloadUrl, targetFile, cacheFile, fileHash, downloadedBytes, finalTotalBytes, id);
+                            downloadAndVerify(downloadUrl, targetFile, cacheFile, fileHash, id);
                         }
                     } else {
-                        downloadAndVerify(downloadUrl, targetFile, cacheFile, fileHash, downloadedBytes, finalTotalBytes, id);
+                        downloadAndVerify(downloadUrl, targetFile, cacheFile, fileHash, id);
                     }
                 } catch (Exception e) {
                     e.printStackTrace();
@@ -330,7 +307,7 @@ public class DownloadService extends IntentService {
     }
   }
 
-  private void downloadAndVerify(String downloadUrl, File targetFile, File cacheFile, String expectedHash, long[] downloadedBytes, long totalBytes, String id) throws Exception {
+  private void downloadAndVerify(String downloadUrl, File targetFile, File cacheFile, String expectedHash, String id) throws Exception {
     Log.d("DownloadService", "downloadAndVerify " + downloadUrl);
     InputStreamVolleyRequest request = new InputStreamVolleyRequest(
         Request.Method.GET,
@@ -349,14 +326,8 @@ public class DownloadService extends IntentService {
                         copyFile(targetFile, cacheFile);
                         Log.d("DownloadService", "copied to cache " + targetFile.getName());
                     } else {
+                        Log.d("DownloadService", "checksum verification failed for " + targetFile.getName() + " " + expectedHash + " " + actualHash);
                         throw new IOException("Checksum verification failed for " + targetFile.getName() + " " + expectedHash + " " + actualHash);
-                    }
-
-                    // Update progress
-                    synchronized (downloadedBytes) {
-                        downloadedBytes[0] += response.length;
-                        int percent = calcTotalPercent(downloadedBytes[0], totalBytes);
-                        notifyDownload(id, percent);
                     }
                 }
             } catch (Exception e) {
