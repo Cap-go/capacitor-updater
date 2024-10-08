@@ -718,41 +718,56 @@ extension CustomError: LocalizedError {
                 continue
             }
             
-            let tempGzipPath = cacheFolder.appendingPathComponent("\(fileName).gz")
+            let fileNameWithoutPath = (fileName as NSString).lastPathComponent
+            let cacheFileName = "\(fileHash)_\(fileNameWithoutPath)"
+            let cacheFilePath = cacheFolder.appendingPathComponent(cacheFileName)
             let destFilePath = destFolder.appendingPathComponent(fileName)
             
+            // Create necessary subdirectories in the destination folder
+            try FileManager.default.createDirectory(at: destFilePath.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
+            
             dispatchGroup.enter()
-            AF.download(downloadUrl).responseData { response in
-                defer { dispatchGroup.leave() }
-                
-                switch response.result {
-                case .success(let data):
-                    do {
-                        try data.write(to: tempGzipPath)
-                        
-                        // Decompress the GZIP file
-                        let decompressedData = try self.decompressGzip(inputFile: tempGzipPath)
-                        try decompressedData.write(to: destFilePath)
-                        
-                        // Calculate checksum after decompression
-                        let decompressedFileHash = self.calcChecksumV2(filePath: destFilePath)
-                        print("\(self.TAG) downloadManifest checksum \(fileName) \(decompressedFileHash) = \(fileHash)")
-                        
-                        if decompressedFileHash != fileHash {
-                            downloadError = NSError(domain: "ChecksumMismatch", code: 0, userInfo: nil)
-                        }
-                        
-                        // Clean up temporary gzip file
-                        try? FileManager.default.removeItem(at: tempGzipPath)
-                        
-                        print("\(self.TAG) downloadManifest \(fileName) done")
-                    } catch {
-                        downloadError = error
-                        print("\(self.TAG) downloadManifest \(fileName) error: \(error)")
-                    }
-                case .failure(let error):
+            
+            if FileManager.default.fileExists(atPath: cacheFilePath.path) {
+                // File exists in cache, copy to destination
+                do {
+                    try FileManager.default.copyItem(at: cacheFilePath, to: destFilePath)
+                    print("\(self.TAG) downloadManifest \(fileName) from cache")
+                    dispatchGroup.leave()
+                } catch {
                     downloadError = error
-                    print("\(self.TAG) downloadManifest \(fileName) download error: \(error)")
+                    print("\(self.TAG) downloadManifest \(fileName) cache error: \(error)")
+                    dispatchGroup.leave()
+                }
+            } else {
+                // File not in cache, download, decompress, and save to both cache and destination
+                AF.download(downloadUrl).responseData { response in
+                    defer { dispatchGroup.leave() }
+                    
+                    switch response.result {
+                    case .success(let data):
+                        do {
+                            print("\(self.TAG) downloadManifest \(fileName) downloading")
+                            // Decompress the Brotli data
+                            guard let decompressedData = self.decompressBrotli(data: data) else {
+                                throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data"])
+                            }
+                            print("\(self.TAG) downloadManifest \(fileName) decompressing")
+                            // Save decompressed data to cache
+                            try decompressedData.write(to: cacheFilePath)
+                            print("\(self.TAG) downloadManifest \(fileName) caching")
+                            // Save decompressed data to destination
+                            try decompressedData.write(to: destFilePath)
+                            
+                            print("\(self.TAG) downloadManifest \(fileName) downloaded, decompressed, and cached")
+                        } catch {
+                            downloadError = error
+                            print("\(self.TAG) downloadManifest \(fileName) error: \(error)")
+                        }
+                    case .failure(let error):
+                        downloadError = error
+                        print("\(self.TAG) downloadManifest \(fileName) download error: \(error)")
+                    }
                 }
             }
         }
@@ -770,14 +785,73 @@ extension CustomError: LocalizedError {
         return bundleInfo
     }
 
-    private func decompressGzip(inputFile: URL) throws -> Data {
-        let data = try Data(contentsOf: inputFile)
-        guard let decompressed = try (data as NSData).decompressed(using: .zlib) as Data? else {
-            throw NSError(domain: "GzipDecompressionError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress gzip file"])
+    private func decompressBrotli(data: Data) -> Data? {
+        let outputBufferSize = 65536
+        var outputBuffer = [UInt8](repeating: 0, count: outputBufferSize)
+        var decompressedData = Data()
+        
+        let streamPointer = UnsafeMutablePointer<compression_stream>.allocate(capacity: 1)
+        var status = compression_stream_init(streamPointer, COMPRESSION_STREAM_DECODE, COMPRESSION_BROTLI)
+        guard status != COMPRESSION_STATUS_ERROR else {
+            print("\(self.TAG) Unable to initialize the decompression stream.")
+            return nil
         }
-        return decompressed
+        
+        defer {
+            compression_stream_destroy(streamPointer)
+            streamPointer.deallocate()
+        }
+        
+        streamPointer.pointee.src_size = 0
+        streamPointer.pointee.dst_ptr = UnsafeMutablePointer<UInt8>(&outputBuffer)
+        streamPointer.pointee.dst_size = outputBufferSize
+        
+        let input = data
+        
+        while true {
+            if streamPointer.pointee.src_size == 0 {
+                streamPointer.pointee.src_size = input.count
+                input.withUnsafeBytes { rawBufferPointer in
+                    if let baseAddress = rawBufferPointer.baseAddress {
+                        streamPointer.pointee.src_ptr = baseAddress.assumingMemoryBound(to: UInt8.self)
+                    } else {
+                        print("\(self.TAG) Error: Unable to get base address of input data")
+                        status = COMPRESSION_STATUS_ERROR
+                        return
+                    }
+                }
+            }
+            
+            if status == COMPRESSION_STATUS_ERROR {
+                break
+            }
+            
+            status = compression_stream_process(streamPointer, 0)
+            
+            let have = outputBufferSize - streamPointer.pointee.dst_size
+            if have > 0 {
+                decompressedData.append(outputBuffer, count: have)
+            }
+            
+            if status == COMPRESSION_STATUS_END {
+                break
+            } else if status == COMPRESSION_STATUS_ERROR {
+                print("\(self.TAG) Error during Brotli decompression")
+                return nil
+            }
+            
+            if streamPointer.pointee.dst_size == 0 {
+                streamPointer.pointee.dst_ptr = UnsafeMutablePointer<UInt8>(&outputBuffer)
+                streamPointer.pointee.dst_size = outputBufferSize
+            }
+            
+            if input.count == 0 {
+                break
+            }
+        }
+        
+        return status == COMPRESSION_STATUS_END ? decompressedData : nil
     }
-
 
     public func download(url: URL, version: String, sessionKey: String) throws -> BundleInfo {
         let id: String = self.randomString(length: 10)
@@ -1264,7 +1338,7 @@ extension CustomError: LocalizedError {
                 }
                 semaphore.signal()
             }
-            semaphore.wait()
+            semaphore.signal()
         }
         operationQueue.addOperation(operation)
 
