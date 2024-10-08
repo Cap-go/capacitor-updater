@@ -13,6 +13,9 @@ import java.net.URL;
 import java.net.URLConnection;
 import java.nio.channels.FileChannel;
 import java.util.Objects;
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 public class DownloadService extends IntentService {
 
@@ -53,7 +56,113 @@ public class DownloadService extends IntentService {
     String version = intent.getStringExtra(VERSION);
     String sessionKey = intent.getStringExtra(SESSIONKEY);
     String checksum = intent.getStringExtra(CHECKSUM);
+    String manifestString = intent.getStringExtra("MANIFEST");
 
+    if (manifestString != null) {
+      handleManifestDownload(id, documentsDir, version, sessionKey, manifestString);
+    } else {
+      handleSingleFileDownload(url, id, documentsDir, dest, version, sessionKey, checksum);
+    }
+  }
+
+  private void handleManifestDownload(String id, String documentsDir, String version, String sessionKey, String manifestString) {
+    try {
+        JSONArray manifest = new JSONArray(manifestString);
+        File destFolder = new File(documentsDir, id);
+        File cacheFolder = new File(documentsDir, "capgo_downloads");
+        destFolder.mkdirs();
+        cacheFolder.mkdirs();
+
+        long totalBytes = 0;
+        long downloadedBytes = 0;
+
+        // Calculate total bytes to download (only for files not in cache)
+        for (int i = 0; i < manifest.length(); i++) {
+            JSONObject entry = manifest.getJSONObject(i);
+            String fileName = entry.getString("file_name");
+            String fileHash = entry.getString("file_hash");
+            String downloadUrl = entry.getString("download_url");
+
+            File cacheFile = new File(cacheFolder, fileHash + "_" + new File(fileName).getName());
+            if (!cacheFile.exists()) {
+                URL url = new URL(downloadUrl);
+                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+                totalBytes += connection.getContentLength();
+                connection.disconnect();
+            }
+        }
+
+        for (int i = 0; i < manifest.length(); i++) {
+            JSONObject entry = manifest.getJSONObject(i);
+            String fileName = entry.getString("file_name");
+            String fileHash = entry.getString("file_hash");
+            String downloadUrl = entry.getString("download_url");
+
+            File targetFile = new File(destFolder, fileName);
+            File cacheFile = new File(cacheFolder, fileHash + "_" + new File(fileName).getName());
+            targetFile.getParentFile().mkdirs();
+
+            if (cacheFile.exists()) {
+                // File exists in cache, copy to destination
+                FileInputStream inStream = new FileInputStream(cacheFile);
+                FileOutputStream outStream = new FileOutputStream(targetFile);
+                FileChannel inChannel = inStream.getChannel();
+                FileChannel outChannel = outStream.getChannel();
+                inChannel.transferTo(0, inChannel.size(), outChannel);
+                inStream.close();
+                outStream.close();
+                
+                downloadedBytes += cacheFile.length();
+                int percent = calcTotalPercent(downloadedBytes, totalBytes);
+                notifyDownload(id, percent);
+            } else {
+                // File not in cache, download it
+                URL url = new URL(downloadUrl);
+                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+                connection.connect();
+
+                if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) {
+                    throw new IOException("Server returned HTTP " + connection.getResponseCode() 
+                        + " " + connection.getResponseMessage());
+                }
+
+                FileOutputStream fileOutput = new FileOutputStream(cacheFile);
+                InputStream inputStream = connection.getInputStream();
+
+                byte[] buffer = new byte[4096];
+                int bytesRead;
+                while ((bytesRead = inputStream.read(buffer)) != -1) {
+                    fileOutput.write(buffer, 0, bytesRead);
+                    downloadedBytes += bytesRead;
+                    int percent = calcTotalPercent(downloadedBytes, totalBytes);
+                    notifyDownload(id, percent);
+                }
+
+                fileOutput.close();
+                inputStream.close();
+                connection.disconnect();
+
+                // Copy from cache to destination
+                FileInputStream inStream = new FileInputStream(cacheFile);
+                FileOutputStream outStream = new FileOutputStream(targetFile);
+                FileChannel inChannel = inStream.getChannel();
+                FileChannel outChannel = outStream.getChannel();
+                inChannel.transferTo(0, inChannel.size(), outChannel);
+                inStream.close();
+                outStream.close();
+            }
+
+            // Here you might want to verify the fileHash
+        }
+
+        publishResults(destFolder.getPath(), id, version, "", sessionKey, "");
+    } catch (Exception e) {
+        e.printStackTrace();
+        publishResults("", id, version, "", sessionKey, e.getMessage());
+    }
+  }
+
+  private void handleSingleFileDownload(String url, String id, String documentsDir, String dest, String version, String sessionKey, String checksum) {
     File target = new File(documentsDir, dest);
     File infoFile = new File(documentsDir, UPDATE_FILE); // The file where the download progress (how much byte
     // downloaded) is stored

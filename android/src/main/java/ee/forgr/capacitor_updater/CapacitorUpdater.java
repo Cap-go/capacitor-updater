@@ -54,6 +54,7 @@ import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import javax.crypto.SecretKey;
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -447,19 +448,23 @@ public class CapacitorUpdater {
     final String version,
     final String sessionKey,
     final String checksum,
-    final String dest
+    final String dest,
+    final JSONArray manifest
   ) {
     Intent intent = new Intent(this.activity, DownloadService.class);
     intent.putExtra(DownloadService.URL, url);
     intent.putExtra(DownloadService.FILEDEST, dest);
     intent.putExtra(
-      DownloadService.DOCDIR,
-      this.documentsDir.getAbsolutePath()
+        DownloadService.DOCDIR,
+        this.documentsDir.getAbsolutePath()
     );
     intent.putExtra(DownloadService.ID, id);
     intent.putExtra(DownloadService.VERSION, version);
     intent.putExtra(DownloadService.SESSIONKEY, sessionKey);
     intent.putExtra(DownloadService.CHECKSUM, checksum);
+    if (manifest != null) {
+        intent.putExtra("MANIFEST", manifest.toString());
+    }
     this.activity.startService(intent);
   }
 
@@ -702,29 +707,32 @@ public class CapacitorUpdater {
     final String url,
     final String version,
     final String sessionKey,
-    final String checksum
+    final String checksum,
+    final JSONArray manifest
   ) {
     final String id = this.randomString();
     this.saveBundleInfo(
         id,
         new BundleInfo(
-          id,
-          version,
-          BundleStatus.DOWNLOADING,
-          new Date(System.currentTimeMillis()),
-          ""
+            id,
+            version,
+            BundleStatus.DOWNLOADING,
+            new Date(System.currentTimeMillis()),
+            ""
         )
-      );
+    );
     this.notifyDownload(id, 0);
     this.notifyDownload(id, 5);
+    
     this.downloadFileBackground(
         id,
         url,
         version,
         sessionKey,
         checksum,
-        this.randomString()
-      );
+        this.randomString(),
+        manifest
+    );
   }
 
   public BundleInfo download(

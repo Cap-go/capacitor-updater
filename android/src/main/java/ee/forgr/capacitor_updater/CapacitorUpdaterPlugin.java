@@ -43,6 +43,7 @@ import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.json.JSONException;
+import org.json.JSONArray;
 
 @CapacitorPlugin(name = "CapacitorUpdater")
 public class CapacitorUpdaterPlugin extends Plugin {
@@ -1298,12 +1299,27 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     final String checksum = res.has("checksum")
                       ? res.getString("checksum")
                       : "";
-                    CapacitorUpdaterPlugin.this.implementation.downloadBackground(
-                        url,
-                        latestVersionName,
-                        sessionKey,
-                        checksum
+
+                    if (res.has("manifest")) {
+                      // Handle manifest-based download
+                      JSONArray manifest = res.getJSONArray("manifest");
+                      CapacitorUpdaterPlugin.this.implementation.downloadBackground(
+                          url,
+                          latestVersionName,
+                          sessionKey,
+                          checksum,
+                          manifest
                       );
+                    } else {
+                      // Handle single file download (existing code)
+                      CapacitorUpdaterPlugin.this.implementation.downloadBackground(
+                          url,
+                          latestVersionName,
+                          sessionKey,
+                          checksum,
+                          null
+                      );
+                    }
                   } catch (final Exception e) {
                     Log.e(CapacitorUpdater.TAG, "error downloading file", e);
                     CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
