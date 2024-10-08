@@ -284,6 +284,7 @@ public class CapacitorUpdater {
           String sessionKey = bundle.getString(DownloadService.SESSIONKEY);
           String checksum = bundle.getString(DownloadService.CHECKSUM);
           String error = bundle.getString(DownloadService.ERROR);
+          boolean isManifest = bundle.getBoolean(DownloadService.IS_MANIFEST, false);
           Log.i(
             CapacitorUpdater.TAG,
             "res " +
@@ -319,7 +320,8 @@ public class CapacitorUpdater {
               version,
               sessionKey,
               checksum,
-              true
+              true,
+              isManifest
             );
         } else {
           Log.i(TAG, "Unknown action " + action);
@@ -354,35 +356,39 @@ public class CapacitorUpdater {
     String version,
     String sessionKey,
     String checksumRes,
-    Boolean setNext
+    Boolean setNext,
+    Boolean isManifest
   ) {
     File downloaded = null;
-    String checksum;
+    String checksum = "";
 
     try {
       this.notifyDownload(id, 71);
       downloaded = new File(this.documentsDir, dest);
 
-      String checksumDecrypted = Objects.requireNonNullElse(checksumRes, "");
-      if (!this.hasOldPrivateKeyPropertyInConfig && !sessionKey.isEmpty()) {
-        this.decryptFileV2(downloaded, sessionKey, version);
-        checksumDecrypted = this.decryptChecksum(checksumRes, version);
-        checksum = this.calcChecksumV2(downloaded);
-      } else {
-        this.decryptFile(downloaded, sessionKey, version);
-        checksum = this.calcChecksum(downloaded);
+      if (!isManifest) {
+        String checksumDecrypted = Objects.requireNonNullElse(checksumRes, "");
+        if (!this.hasOldPrivateKeyPropertyInConfig && !sessionKey.isEmpty()) {
+          this.decryptFileV2(downloaded, sessionKey, version);
+          checksumDecrypted = this.decryptChecksum(checksumRes, version);
+          checksum = this.calcChecksumV2(downloaded);
+        } else {
+          this.decryptFile(downloaded, sessionKey, version);
+          checksum = this.calcChecksum(downloaded);
+        }
+        if (
+          (!checksumDecrypted.isEmpty() || !this.publicKey.isEmpty()) &&
+          !checksumDecrypted.equals(checksum)
+        ) {
+          Log.e(
+            CapacitorUpdater.TAG,
+            "Error checksum '" + checksumDecrypted + "' '" + checksum + "' '"
+          );
+          this.sendStats("checksum_fail");
+          throw new IOException("Checksum failed: " + id);
+        }
       }
-      if (
-        (!checksumDecrypted.isEmpty() || !this.publicKey.isEmpty()) &&
-        !checksumDecrypted.equals(checksum)
-      ) {
-        Log.e(
-          CapacitorUpdater.TAG,
-          "Error checksum '" + checksumDecrypted + "' '" + checksum + "' '"
-        );
-        this.sendStats("checksum_fail");
-        throw new IOException("Checksum failed: " + id);
-      }
+      // Remove the decryption for manifest downloads
     } catch (IOException e) {
       final Boolean res = this.delete(id);
       if (!res) {
@@ -401,11 +407,13 @@ public class CapacitorUpdater {
     }
 
     try {
-      final File unzipped = this.unzip(id, downloaded, this.randomString());
-      downloaded.delete();
-      this.notifyDownload(id, 91);
-      final String idName = bundleDirectory + "/" + id;
-      this.flattenAssets(unzipped, idName);
+      if (!isManifest) {
+        final File unzipped = this.unzip(id, downloaded, this.randomString());
+        downloaded.delete();
+        this.notifyDownload(id, 91);
+        final String idName = bundleDirectory + "/" + id;
+        this.flattenAssets(unzipped, idName);
+      }
       this.notifyDownload(id, 100);
       this.saveBundleInfo(id, null);
       BundleInfo next = new BundleInfo(
@@ -757,7 +765,7 @@ public class CapacitorUpdater {
     final String dest = this.randomString();
     this.downloadFile(id, url, dest);
     final Boolean finished =
-      this.finishDownload(id, dest, version, sessionKey, checksum, false);
+      this.finishDownload(id, dest, version, sessionKey, checksum, false, false);
     final BundleStatus status = finished
       ? BundleStatus.PENDING
       : BundleStatus.ERROR;

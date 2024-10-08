@@ -13,9 +13,16 @@ import java.net.URL;
 import java.net.URLConnection;
 import java.nio.channels.FileChannel;
 import java.util.Objects;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.ArrayList;
+import java.util.List;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import java.security.MessageDigest;
+import java.io.FileInputStream;
 
 public class DownloadService extends IntentService {
 
@@ -30,6 +37,7 @@ public class DownloadService extends IntentService {
   public static final String CHECKSUM = "checksum";
   public static final String NOTIFICATION = "service receiver";
   public static final String PERCENTDOWNLOAD = "percent receiver";
+  public static final String IS_MANIFEST = "is_manifest";
   private static final String UPDATE_FILE = "update.dat";
 
   public DownloadService() {
@@ -74,7 +82,7 @@ public class DownloadService extends IntentService {
         cacheFolder.mkdirs();
 
         long totalBytes = 0;
-        long downloadedBytes = 0;
+        long[] downloadedBytes = {0};
 
         // Calculate total bytes to download (only for files not in cache)
         for (int i = 0; i < manifest.length(); i++) {
@@ -92,6 +100,12 @@ public class DownloadService extends IntentService {
             }
         }
 
+        final long finalTotalBytes = totalBytes;
+
+        // Use ExecutorService for parallel downloads
+        ExecutorService executor = Executors.newFixedThreadPool(5); // Adjust thread count as needed
+        List<Future<?>> futures = new ArrayList<>();
+
         for (int i = 0; i < manifest.length(); i++) {
             JSONObject entry = manifest.getJSONObject(i);
             String fileName = entry.getString("file_name");
@@ -102,63 +116,45 @@ public class DownloadService extends IntentService {
             File cacheFile = new File(cacheFolder, fileHash + "_" + new File(fileName).getName());
             targetFile.getParentFile().mkdirs();
 
-            if (cacheFile.exists()) {
-                // File exists in cache, copy to destination
-                FileInputStream inStream = new FileInputStream(cacheFile);
-                FileOutputStream outStream = new FileOutputStream(targetFile);
-                FileChannel inChannel = inStream.getChannel();
-                FileChannel outChannel = outStream.getChannel();
-                inChannel.transferTo(0, inChannel.size(), outChannel);
-                inStream.close();
-                outStream.close();
-                
-                downloadedBytes += cacheFile.length();
-                int percent = calcTotalPercent(downloadedBytes, totalBytes);
-                notifyDownload(id, percent);
-            } else {
-                // File not in cache, download it
-                URL url = new URL(downloadUrl);
-                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-                connection.connect();
-
-                if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) {
-                    throw new IOException("Server returned HTTP " + connection.getResponseCode() 
-                        + " " + connection.getResponseMessage());
+            futures.add(executor.submit(() -> {
+                try {
+                    if (cacheFile.exists()) {
+                        // File exists in cache, verify checksum before copying
+                        if (verifyChecksum(cacheFile, fileHash)) {
+                            copyFile(cacheFile, targetFile);
+                            
+                            synchronized (downloadedBytes) {
+                                downloadedBytes[0] += cacheFile.length();
+                                int percent = calcTotalPercent(downloadedBytes[0], finalTotalBytes);
+                                notifyDownload(id, percent);
+                            }
+                        } else {
+                            // Checksum failed, delete cache file and download again
+                            cacheFile.delete();
+                            downloadAndVerify(downloadUrl, targetFile, cacheFile, fileHash, downloadedBytes, finalTotalBytes, id);
+                        }
+                    } else {
+                        // File not in cache, download it
+                        downloadAndVerify(downloadUrl, targetFile, cacheFile, fileHash, downloadedBytes, finalTotalBytes, id);
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    // Handle individual file download errors
                 }
-
-                FileOutputStream fileOutput = new FileOutputStream(cacheFile);
-                InputStream inputStream = connection.getInputStream();
-
-                byte[] buffer = new byte[4096];
-                int bytesRead;
-                while ((bytesRead = inputStream.read(buffer)) != -1) {
-                    fileOutput.write(buffer, 0, bytesRead);
-                    downloadedBytes += bytesRead;
-                    int percent = calcTotalPercent(downloadedBytes, totalBytes);
-                    notifyDownload(id, percent);
-                }
-
-                fileOutput.close();
-                inputStream.close();
-                connection.disconnect();
-
-                // Copy from cache to destination
-                FileInputStream inStream = new FileInputStream(cacheFile);
-                FileOutputStream outStream = new FileOutputStream(targetFile);
-                FileChannel inChannel = inStream.getChannel();
-                FileChannel outChannel = outStream.getChannel();
-                inChannel.transferTo(0, inChannel.size(), outChannel);
-                inStream.close();
-                outStream.close();
-            }
-
-            // Here you might want to verify the fileHash
+            }));
         }
 
-        publishResults(destFolder.getPath(), id, version, "", sessionKey, "");
+        // Wait for all downloads to complete
+        for (Future<?> future : futures) {
+            future.get();
+        }
+
+        executor.shutdown();
+
+        publishResults(destFolder.getPath(), id, version, "", sessionKey, "", true);
     } catch (Exception e) {
         e.printStackTrace();
-        publishResults("", id, version, "", sessionKey, e.getMessage());
+        publishResults("", id, version, "", sessionKey, e.getMessage(), true);
     }
   }
 
@@ -247,14 +243,14 @@ public class DownloadService extends IntentService {
         // Rename the temp file with the final name (dest)
         tempFile.renameTo(new File(documentsDir, dest));
         infoFile.delete();
-        publishResults(dest, id, version, checksum, sessionKey, "");
+        publishResults(dest, id, version, checksum, sessionKey, "", false);
       } else {
         infoFile.delete();
       }
       httpConn.disconnect();
     } catch (OutOfMemoryError e) {
       e.printStackTrace();
-      publishResults("", id, version, checksum, sessionKey, "low_mem_fail");
+      publishResults("", id, version, checksum, sessionKey, "low_mem_fail", false);
     } catch (Exception e) {
       e.printStackTrace();
       publishResults(
@@ -263,7 +259,8 @@ public class DownloadService extends IntentService {
         version,
         checksum,
         sessionKey,
-        e.getLocalizedMessage()
+        e.getLocalizedMessage(),
+        false
       );
     }
   }
@@ -295,7 +292,8 @@ public class DownloadService extends IntentService {
     String version,
     String checksum,
     String sessionKey,
-    String error
+    String error,
+    boolean isManifest
   ) {
     Intent intent = new Intent(NOTIFICATION);
     intent.setPackage(getPackageName());
@@ -307,6 +305,89 @@ public class DownloadService extends IntentService {
     intent.putExtra(VERSION, version);
     intent.putExtra(SESSIONKEY, sessionKey);
     intent.putExtra(CHECKSUM, checksum);
+    intent.putExtra(IS_MANIFEST, isManifest);
     sendBroadcast(intent);
+  }
+
+  // Helper methods
+
+  private void copyFile(File source, File dest) throws IOException {
+    try (FileInputStream inStream = new FileInputStream(source);
+         FileOutputStream outStream = new FileOutputStream(dest);
+         FileChannel inChannel = inStream.getChannel();
+         FileChannel outChannel = outStream.getChannel()) {
+      inChannel.transferTo(0, inChannel.size(), outChannel);
+    }
+  }
+
+  private void downloadFile(HttpURLConnection connection, File file, long[] downloadedBytes, long totalBytes, String id) throws IOException {
+    try (InputStream inputStream = connection.getInputStream();
+         FileOutputStream fileOutput = new FileOutputStream(file)) {
+
+      byte[] buffer = new byte[4096];
+      int bytesRead;
+      while ((bytesRead = inputStream.read(buffer)) != -1) {
+        fileOutput.write(buffer, 0, bytesRead);
+        synchronized (downloadedBytes) {
+          downloadedBytes[0] += bytesRead;
+          int percent = calcTotalPercent(downloadedBytes[0], totalBytes);
+          notifyDownload(id, percent);
+        }
+      }
+    }
+  }
+
+  private void downloadAndVerify(String downloadUrl, File targetFile, File cacheFile, String expectedHash, long[] downloadedBytes, long totalBytes, String id) throws Exception {
+    URL url = new URL(downloadUrl);
+    HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+    connection.connect();
+
+    if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) {
+        throw new IOException("Server returned HTTP " + connection.getResponseCode() 
+            + " " + connection.getResponseMessage());
+    }
+
+    // Download directly to the target file
+    downloadFile(connection, targetFile, downloadedBytes, totalBytes, id);
+
+    connection.disconnect();
+
+    // Verify checksum
+    String actualHash = calculateFileHash(targetFile);
+    if (actualHash.equals(expectedHash)) {
+        // Copy the downloaded file to cache if checksum is correct
+        copyFile(targetFile, cacheFile);
+    } else {
+        throw new IOException("Checksum verification failed for " + targetFile.getName() + " " + expectedHash + " " + actualHash);
+    }
+  }
+
+  private boolean verifyChecksum(File file, String expectedHash) {
+    try {
+        String actualHash = calculateFileHash(file);
+        return actualHash.equals(expectedHash);
+    } catch (Exception e) {
+        e.printStackTrace();
+        return false;
+    }
+  }
+
+  private String calculateFileHash(File file) throws Exception {
+    MessageDigest digest = MessageDigest.getInstance("SHA-256");
+    FileInputStream fis = new FileInputStream(file);
+    byte[] byteArray = new byte[1024];
+    int bytesCount = 0;
+
+    while ((bytesCount = fis.read(byteArray)) != -1) {
+        digest.update(byteArray, 0, bytesCount);
+    }
+    fis.close();
+
+    byte[] bytes = digest.digest();
+    StringBuilder sb = new StringBuilder();
+    for (byte aByte : bytes) {
+        sb.append(Integer.toString((aByte & 0xff) + 0x100, 16).substring(1));
+    }
+    return sb.toString();
   }
 }
