@@ -19,10 +19,20 @@ import java.util.concurrent.Future;
 import java.util.ArrayList;
 import java.util.List;
 import org.json.JSONArray;
+import android.util.Log;
 import org.json.JSONException;
 import org.json.JSONObject;
 import java.security.MessageDigest;
 import java.io.FileInputStream;
+import com.android.volley.NetworkResponse;
+import com.android.volley.Request;
+import com.android.volley.RequestQueue;
+import com.android.volley.Response;
+import com.android.volley.VolleyError;
+import com.android.volley.toolbox.HttpHeaderParser;
+import com.android.volley.toolbox.Volley;
+import com.android.volley.RetryPolicy;
+import com.android.volley.DefaultRetryPolicy;
 
 public class DownloadService extends IntentService {
 
@@ -106,6 +116,8 @@ public class DownloadService extends IntentService {
         ExecutorService executor = Executors.newFixedThreadPool(5); // Adjust thread count as needed
         List<Future<?>> futures = new ArrayList<>();
 
+        RequestQueue queue = Volley.newRequestQueue(this);
+
         for (int i = 0; i < manifest.length(); i++) {
             JSONObject entry = manifest.getJSONObject(i);
             String fileName = entry.getString("file_name");
@@ -119,28 +131,25 @@ public class DownloadService extends IntentService {
             futures.add(executor.submit(() -> {
                 try {
                     if (cacheFile.exists()) {
-                        // File exists in cache, verify checksum before copying
                         if (verifyChecksum(cacheFile, fileHash)) {
                             copyFile(cacheFile, targetFile);
-                            
                             synchronized (downloadedBytes) {
                                 downloadedBytes[0] += cacheFile.length();
                                 int percent = calcTotalPercent(downloadedBytes[0], finalTotalBytes);
+                                Log.d("DownloadService", "already cached" + fileName);
                                 notifyDownload(id, percent);
                             }
                         } else {
-                            // Checksum failed, delete cache file and download again
                             cacheFile.delete();
                             downloadAndVerify(downloadUrl, targetFile, cacheFile, fileHash, downloadedBytes, finalTotalBytes, id);
                         }
                     } else {
-                        // File not in cache, download it
                         downloadAndVerify(downloadUrl, targetFile, cacheFile, fileHash, downloadedBytes, finalTotalBytes, id);
                     }
                 } catch (Exception e) {
                     e.printStackTrace();
-                    // Handle individual file download errors
                 }
+                return null;
             }));
         }
 
@@ -150,6 +159,7 @@ public class DownloadService extends IntentService {
         }
 
         executor.shutdown();
+        queue.stop();
 
         publishResults(destFolder.getPath(), id, version, "", sessionKey, "", true);
     } catch (Exception e) {
@@ -320,45 +330,72 @@ public class DownloadService extends IntentService {
     }
   }
 
-  private void downloadFile(HttpURLConnection connection, File file, long[] downloadedBytes, long totalBytes, String id) throws IOException {
-    try (InputStream inputStream = connection.getInputStream();
-         FileOutputStream fileOutput = new FileOutputStream(file)) {
+  private void downloadAndVerify(String downloadUrl, File targetFile, File cacheFile, String expectedHash, long[] downloadedBytes, long totalBytes, String id) throws Exception {
+    Log.d("DownloadService", "downloadAndVerify " + downloadUrl);
+    InputStreamVolleyRequest request = new InputStreamVolleyRequest(
+        Request.Method.GET,
+        downloadUrl,
+        response -> {
+            try {
+                if (response != null) {
+                    FileOutputStream fos = new FileOutputStream(targetFile);
+                    fos.write(response);
+                    fos.close();
 
-      byte[] buffer = new byte[4096];
-      int bytesRead;
-      while ((bytesRead = inputStream.read(buffer)) != -1) {
-        fileOutput.write(buffer, 0, bytesRead);
-        synchronized (downloadedBytes) {
-          downloadedBytes[0] += bytesRead;
-          int percent = calcTotalPercent(downloadedBytes[0], totalBytes);
-          notifyDownload(id, percent);
+                    // Verify checksum
+                    String actualHash = calculateFileHash(targetFile);
+                    if (actualHash.equals(expectedHash)) {
+                        // Copy the downloaded file to cache if checksum is correct
+                        copyFile(targetFile, cacheFile);
+                        Log.d("DownloadService", "copied to cache " + targetFile.getName());
+                    } else {
+                        throw new IOException("Checksum verification failed for " + targetFile.getName() + " " + expectedHash + " " + actualHash);
+                    }
+
+                    // Update progress
+                    synchronized (downloadedBytes) {
+                        downloadedBytes[0] += response.length;
+                        int percent = calcTotalPercent(downloadedBytes[0], totalBytes);
+                        notifyDownload(id, percent);
+                    }
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        },
+        error -> {
+            // Handle error
+            error.printStackTrace();
         }
-      }
-    }
+    );
+
+    request.setRetryPolicy(new DefaultRetryPolicy(
+        30000,
+        DefaultRetryPolicy.DEFAULT_MAX_RETRIES,
+        DefaultRetryPolicy.DEFAULT_BACKOFF_MULT));
+
+    Volley.newRequestQueue(this).add(request);
   }
 
-  private void downloadAndVerify(String downloadUrl, File targetFile, File cacheFile, String expectedHash, long[] downloadedBytes, long totalBytes, String id) throws Exception {
-    URL url = new URL(downloadUrl);
-    HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-    connection.connect();
+  // Custom request for handling input stream
+  private class InputStreamVolleyRequest extends Request<byte[]> {
+    private final Response.Listener<byte[]> mListener;
 
-    if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) {
-        throw new IOException("Server returned HTTP " + connection.getResponseCode() 
-            + " " + connection.getResponseMessage());
+    public InputStreamVolleyRequest(int method, String mUrl, Response.Listener<byte[]> listener,
+                                    Response.ErrorListener errorListener) {
+        super(method, mUrl, errorListener);
+        mListener = listener;
     }
 
-    // Download directly to the target file
-    downloadFile(connection, targetFile, downloadedBytes, totalBytes, id);
+    @Override
+    protected void deliverResponse(byte[] response) {
+        mListener.onResponse(response);
+    }
 
-    connection.disconnect();
-
-    // Verify checksum
-    String actualHash = calculateFileHash(targetFile);
-    if (actualHash.equals(expectedHash)) {
-        // Copy the downloaded file to cache if checksum is correct
-        copyFile(targetFile, cacheFile);
-    } else {
-        throw new IOException("Checksum verification failed for " + targetFile.getName() + " " + expectedHash + " " + actualHash);
+    @Override
+    protected Response<byte[]> parseNetworkResponse(NetworkResponse response) {
+        byte[] responseData = response.data;
+        return Response.success(responseData, HttpHeaderParser.parseCacheHeaders(response));
     }
   }
 
