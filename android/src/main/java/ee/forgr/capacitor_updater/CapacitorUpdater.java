@@ -284,7 +284,10 @@ public class CapacitorUpdater {
           String sessionKey = bundle.getString(DownloadService.SESSIONKEY);
           String checksum = bundle.getString(DownloadService.CHECKSUM);
           String error = bundle.getString(DownloadService.ERROR);
-          boolean isManifest = bundle.getBoolean(DownloadService.IS_MANIFEST, false);
+          boolean isManifest = bundle.getBoolean(
+            DownloadService.IS_MANIFEST,
+            false
+          );
           Log.i(
             CapacitorUpdater.TAG,
             "res " +
@@ -467,15 +470,15 @@ public class CapacitorUpdater {
     intent.putExtra(DownloadService.URL, url);
     intent.putExtra(DownloadService.FILEDEST, dest);
     intent.putExtra(
-        DownloadService.DOCDIR,
-        this.documentsDir.getAbsolutePath()
+      DownloadService.DOCDIR,
+      this.documentsDir.getAbsolutePath()
     );
     intent.putExtra(DownloadService.ID, id);
     intent.putExtra(DownloadService.VERSION, version);
     intent.putExtra(DownloadService.SESSIONKEY, sessionKey);
     intent.putExtra(DownloadService.CHECKSUM, checksum);
     if (manifest != null) {
-        intent.putExtra(DownloadService.MANIFEST, manifest.toString());
+      intent.putExtra(DownloadService.MANIFEST, manifest.toString());
     }
     this.activity.startService(intent);
   }
@@ -726,16 +729,16 @@ public class CapacitorUpdater {
     this.saveBundleInfo(
         id,
         new BundleInfo(
-            id,
-            version,
-            BundleStatus.DOWNLOADING,
-            new Date(System.currentTimeMillis()),
-            ""
+          id,
+          version,
+          BundleStatus.DOWNLOADING,
+          new Date(System.currentTimeMillis()),
+          ""
         )
-    );
+      );
     this.notifyDownload(id, 0);
     this.notifyDownload(id, 5);
-    
+
     this.downloadFileBackground(
         id,
         url,
@@ -744,7 +747,7 @@ public class CapacitorUpdater {
         checksum,
         this.randomString(),
         manifest
-    );
+      );
   }
 
   public BundleInfo download(
@@ -769,7 +772,15 @@ public class CapacitorUpdater {
     final String dest = this.randomString();
     this.downloadFile(id, url, dest);
     final Boolean finished =
-      this.finishDownload(id, dest, version, sessionKey, checksum, false, false);
+      this.finishDownload(
+          id,
+          dest,
+          version,
+          sessionKey,
+          checksum,
+          false,
+          false
+        );
     final BundleStatus status = finished
       ? BundleStatus.PENDING
       : BundleStatus.ERROR;

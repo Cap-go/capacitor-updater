@@ -42,8 +42,8 @@ import java.util.UUID;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import org.json.JSONException;
 import org.json.JSONArray;
+import org.json.JSONException;
 
 @CapacitorPlugin(name = "CapacitorUpdater")
 public class CapacitorUpdaterPlugin extends Plugin {
@@ -1309,7 +1309,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                           sessionKey,
                           checksum,
                           manifest
-                      );
+                        );
                     } else {
                       // Handle single file download (existing code)
                       CapacitorUpdaterPlugin.this.implementation.downloadBackground(
@@ -1318,7 +1318,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                           sessionKey,
                           checksum,
                           null
-                      );
+                        );
                     }
                   } catch (final Exception e) {
                     Log.e(CapacitorUpdater.TAG, "error downloading file", e);
