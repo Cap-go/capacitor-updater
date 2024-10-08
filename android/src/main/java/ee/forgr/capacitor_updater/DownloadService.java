@@ -33,6 +33,7 @@ import com.android.volley.toolbox.HttpHeaderParser;
 import com.android.volley.toolbox.Volley;
 import com.android.volley.RetryPolicy;
 import com.android.volley.DefaultRetryPolicy;
+import org.brotli.dec.BrotliInputStream;
 
 public class DownloadService extends IntentService {
 
@@ -129,11 +130,12 @@ public class DownloadService extends IntentService {
                 return null;
             }));
         }
-
+        Log.d("DownloadService", "waiting for downloads to complete");
         // Wait for all downloads to complete
         for (Future<?> future : futures) {
             future.get();
         }
+        Log.d("DownloadService", "downloads complete");
 
         executor.shutdown();
         queue.stop();
@@ -315,9 +317,27 @@ public class DownloadService extends IntentService {
         response -> {
             try {
                 if (response != null) {
-                    FileOutputStream fos = new FileOutputStream(targetFile);
-                    fos.write(response);
-                    fos.close();
+                    // Create a temporary file for the compressed data
+                    File compressedFile = new File(targetFile.getParentFile(), targetFile.getName() + ".br");
+                    FileOutputStream compressedFos = new FileOutputStream(compressedFile);
+                    compressedFos.write(response);
+                    compressedFos.close();
+
+                    // Decompress the file
+                    try (
+                        FileInputStream fis = new FileInputStream(compressedFile);
+                        BrotliInputStream brotliInputStream = new BrotliInputStream(fis);
+                        FileOutputStream fos = new FileOutputStream(targetFile)
+                    ) {
+                        byte[] buffer = new byte[8192];
+                        int len;
+                        while ((len = brotliInputStream.read(buffer)) != -1) {
+                            fos.write(buffer, 0, len);
+                        }
+                    }
+
+                    // Delete the compressed file
+                    compressedFile.delete();
 
                     // Verify checksum
                     String actualHash = calculateFileHash(targetFile);
