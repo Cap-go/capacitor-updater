@@ -88,6 +88,13 @@ struct InfoObject: Codable {
     var channel: String?
     var defaultChannel: String?
 }
+
+public struct ManifestEntry: Decodable {
+    let file_name: String?
+    let file_hash: String?
+    let download_url: String?
+}
+
 struct AppVersionDec: Decodable {
     let version: String?
     let checksum: String?
@@ -97,7 +104,9 @@ struct AppVersionDec: Decodable {
     let session_key: String?
     let major: Bool?
     let data: [String: String]?
+    let manifest: [ManifestEntry]?
 }
+
 public class AppVersion: NSObject {
     var version: String = ""
     var checksum: String = ""
@@ -107,6 +116,7 @@ public class AppVersion: NSObject {
     var sessionKey: String?
     var major: Bool?
     var data: [String: String]?
+    var manifest: [ManifestEntry]?
 }
 
 extension AppVersion {
@@ -582,6 +592,9 @@ extension CustomError: LocalizedError {
                 if let data = response.value?.data {
                     latest.data = data
                 }
+                if let manifest = response.value?.manifest {
+                    latest.manifest = manifest
+                }
             case let .failure(error):
                 print("\(self.TAG) Error getting Latest", response.value ?? "", error )
                 latest.message = "Error getting Latest \(String(describing: response.value))"
@@ -684,6 +697,77 @@ extension CustomError: LocalizedError {
             throw CustomError.cannotDecode
         }
     }
+
+    public func downloadManifest(manifest: [ManifestEntry], version: String, sessionKey: String) throws -> BundleInfo {
+        print("\(self.TAG) downloadManifest start")
+        let id = self.randomString(length: 10)
+        let cacheFolder = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!.appendingPathComponent("capgo_downloads")
+        let destFolder = self.getBundleDirectory(id: id)
+        
+        try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true, attributes: nil)
+        try FileManager.default.createDirectory(at: destFolder, withIntermediateDirectories: true, attributes: nil)
+        
+        let dispatchGroup = DispatchGroup()
+        var downloadError: Error?
+        
+        for entry in manifest {
+            guard let fileName = entry.file_name,
+                  let fileHash = entry.file_hash,
+                  let downloadUrl = entry.download_url else {
+                continue
+            }
+            
+            let cacheFilePath = cacheFolder.appendingPathComponent(fileHash)
+            let destFilePath = destFolder.appendingPathComponent(fileName)
+            
+            if FileManager.default.fileExists(atPath: cacheFilePath.path) {
+                let cachedFileHash = self.calcChecksumV2(filePath: cacheFilePath)
+                if cachedFileHash == fileHash {
+                    try FileManager.default.copyItem(at: cacheFilePath, to: destFilePath)
+                    continue
+                }
+            }
+            
+            dispatchGroup.enter()
+            AF.download(downloadUrl).responseData { response in
+                defer { dispatchGroup.leave() }
+                
+                switch response.result {
+                case .success(let data):
+                    do {
+                        try data.write(to: cacheFilePath)
+                        let downloadedFileHash = self.calcChecksumV2(filePath: cacheFilePath)
+                        print("\(self.TAG) downloadManifest checksum \(fileName) \(downloadedFileHash) = \(fileHash)")
+                        if downloadedFileHash == fileHash {
+                            try FileManager.default.copyItem(at: cacheFilePath, to: destFilePath)
+                        } else {
+                            downloadError = NSError(domain: "ChecksumMismatch", code: 0, userInfo: nil)
+                        }
+                        print("\(self.TAG) downloadManifest \(fileName) done")
+                    } catch {
+                        downloadError = error
+                        print("\(self.TAG) downloadManifest \(fileName) error")
+                    }
+                case .failure(let error):
+                    downloadError = error
+                    print("\(self.TAG) downloadManifest \(fileName) error")
+                }
+            }
+        }
+        
+        dispatchGroup.wait()
+        
+        print("\(self.TAG) downloadManifest done")
+        if let error = downloadError {
+            throw error
+        }
+        
+        let bundleInfo = BundleInfo(id: id, version: version, status: BundleStatus.PENDING, downloaded: Date(), checksum: "")
+        self.saveBundleInfo(id: id, bundle: bundleInfo)
+        
+        return bundleInfo
+    }
+
 
     public func download(url: URL, version: String, sessionKey: String) throws -> BundleInfo {
         let id: String = self.randomString(length: 10)
