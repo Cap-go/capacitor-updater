@@ -413,6 +413,10 @@ public class CapacitorUpdater {
         this.notifyDownload(id, 91);
         final String idName = bundleDirectory + "/" + id;
         this.flattenAssets(unzipped, idName);
+      } else {
+        this.notifyDownload(id, 91);
+        final String idName = bundleDirectory + "/" + id;
+        this.flattenAssets(downloaded, idName);
       }
       this.notifyDownload(id, 100);
       this.saveBundleInfo(id, null);

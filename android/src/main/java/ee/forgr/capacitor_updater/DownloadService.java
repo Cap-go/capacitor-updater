@@ -28,10 +28,8 @@ import com.android.volley.NetworkResponse;
 import com.android.volley.Request;
 import com.android.volley.RequestQueue;
 import com.android.volley.Response;
-import com.android.volley.VolleyError;
 import com.android.volley.toolbox.HttpHeaderParser;
 import com.android.volley.toolbox.Volley;
-import com.android.volley.RetryPolicy;
 import com.android.volley.DefaultRetryPolicy;
 import org.brotli.dec.BrotliInputStream;
 
@@ -80,17 +78,17 @@ public class DownloadService extends IntentService {
 
     Log.d("DownloadService", "onHandleIntent" + manifestString);
     if (manifestString != null) {
-      handleManifestDownload(id, documentsDir, version, sessionKey, manifestString);
+      handleManifestDownload(id, documentsDir, dest, version, sessionKey, manifestString);
     } else {
       handleSingleFileDownload(url, id, documentsDir, dest, version, sessionKey, checksum);
     }
   }
 
-  private void handleManifestDownload(String id, String documentsDir, String version, String sessionKey, String manifestString) {
+  private void handleManifestDownload(String id, String documentsDir, String dest, String version, String sessionKey, String manifestString) {
     try {
         Log.d("DownloadService", "handleManifestDownload");
         JSONArray manifest = new JSONArray(manifestString);
-        File destFolder = new File(documentsDir, id);
+        File destFolder = new File(documentsDir, dest);
         File cacheFolder = new File(documentsDir, "capgo_downloads");
         destFolder.mkdirs();
         cacheFolder.mkdirs();
@@ -116,7 +114,7 @@ public class DownloadService extends IntentService {
                     if (cacheFile.exists()) {
                         if (verifyChecksum(cacheFile, fileHash)) {
                             copyFile(cacheFile, targetFile);
-                            Log.d("DownloadService", "already cached" + fileName);
+                            Log.d("DownloadService", "already cached " + fileName);
                         } else {
                             cacheFile.delete();
                             downloadAndVerify(downloadUrl, targetFile, cacheFile, fileHash, id);
@@ -140,7 +138,7 @@ public class DownloadService extends IntentService {
         executor.shutdown();
         queue.stop();
 
-        publishResults(destFolder.getPath(), id, version, "", sessionKey, "", true);
+        publishResults(dest, id, version, "", sessionKey, "", true);
     } catch (Exception e) {
         e.printStackTrace();
         publishResults("", id, version, "", sessionKey, e.getMessage(), true);
