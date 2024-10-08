@@ -706,30 +706,30 @@ extension CustomError: LocalizedError {
         let id = self.randomString(length: 10)
         print("\(self.TAG) downloadManifest start \(id)")
         let destFolder = self.getBundleDirectory(id: id)
-        
+
         try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true, attributes: nil)
         try FileManager.default.createDirectory(at: destFolder, withIntermediateDirectories: true, attributes: nil)
-        
+
         let dispatchGroup = DispatchGroup()
         var downloadError: Error?
-        
+
         for entry in manifest {
             guard let fileName = entry.file_name,
                   let fileHash = entry.file_hash,
                   let downloadUrl = entry.download_url else {
                 continue
             }
-            
+
             let fileNameWithoutPath = (fileName as NSString).lastPathComponent
             let cacheFileName = "\(fileHash)_\(fileNameWithoutPath)"
             let cacheFilePath = cacheFolder.appendingPathComponent(cacheFileName)
             let destFilePath = destFolder.appendingPathComponent(fileName)
-            
+
             // Create necessary subdirectories in the destination folder
             try FileManager.default.createDirectory(at: destFilePath.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
-            
+
             dispatchGroup.enter()
-            
+
             if FileManager.default.fileExists(atPath: cacheFilePath.path) {
                 // File exists in cache, copy to destination
                 do {
@@ -745,7 +745,7 @@ extension CustomError: LocalizedError {
                 // File not in cache, download, decompress, and save to both cache and destination
                 AF.download(downloadUrl).responseData { response in
                     defer { dispatchGroup.leave() }
-                    
+
                     switch response.result {
                     case .success(let data):
                         do {
@@ -757,7 +757,7 @@ extension CustomError: LocalizedError {
                             try decompressedData.write(to: cacheFilePath)
                             // Save decompressed data to destination
                             try decompressedData.write(to: destFilePath)
-                            
+
                             print("\(self.TAG) downloadManifest \(id) \(fileName) downloaded, decompressed, and cached")
                         } catch {
                             downloadError = error
@@ -770,16 +770,16 @@ extension CustomError: LocalizedError {
                 }
             }
         }
-        
+
         dispatchGroup.wait()
-        
+
         if let error = downloadError {
             throw error
         }
-        
+
         let bundleInfo = BundleInfo(id: id, version: version, status: BundleStatus.PENDING, downloaded: Date(), checksum: "")
         self.saveBundleInfo(id: id, bundle: bundleInfo)
-        
+
         print("\(self.TAG) downloadManifest done \(id)")
         return bundleInfo
     }
@@ -788,25 +788,25 @@ extension CustomError: LocalizedError {
         let outputBufferSize = 65536
         var outputBuffer = [UInt8](repeating: 0, count: outputBufferSize)
         var decompressedData = Data()
-        
+
         let streamPointer = UnsafeMutablePointer<compression_stream>.allocate(capacity: 1)
         var status = compression_stream_init(streamPointer, COMPRESSION_STREAM_DECODE, COMPRESSION_BROTLI)
         guard status != COMPRESSION_STATUS_ERROR else {
             print("\(self.TAG) Unable to initialize the decompression stream.")
             return nil
         }
-        
+
         defer {
             compression_stream_destroy(streamPointer)
             streamPointer.deallocate()
         }
-        
+
         streamPointer.pointee.src_size = 0
         streamPointer.pointee.dst_ptr = UnsafeMutablePointer<UInt8>(&outputBuffer)
         streamPointer.pointee.dst_size = outputBufferSize
-        
+
         let input = data
-        
+
         while true {
             if streamPointer.pointee.src_size == 0 {
                 streamPointer.pointee.src_size = input.count
@@ -820,35 +820,35 @@ extension CustomError: LocalizedError {
                     }
                 }
             }
-            
+
             if status == COMPRESSION_STATUS_ERROR {
                 break
             }
-            
+
             status = compression_stream_process(streamPointer, 0)
-            
+
             let have = outputBufferSize - streamPointer.pointee.dst_size
             if have > 0 {
                 decompressedData.append(outputBuffer, count: have)
             }
-            
+
             if status == COMPRESSION_STATUS_END {
                 break
             } else if status == COMPRESSION_STATUS_ERROR {
                 print("\(self.TAG) Error during Brotli decompression")
                 return nil
             }
-            
+
             if streamPointer.pointee.dst_size == 0 {
                 streamPointer.pointee.dst_ptr = UnsafeMutablePointer<UInt8>(&outputBuffer)
                 streamPointer.pointee.dst_size = outputBufferSize
             }
-            
+
             if input.count == 0 {
                 break
             }
         }
-        
+
         return status == COMPRESSION_STATUS_END ? decompressedData : nil
     }
 

@@ -14,8 +14,8 @@ import Version
  */
 @objc(CapacitorUpdaterPlugin)
 public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
-    public let identifier = "CapacitorUpdaterPlugin" 
-    public let jsName = "CapacitorUpdater" 
+    public let identifier = "CapacitorUpdaterPlugin"
+    public let jsName = "CapacitorUpdater"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "download", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setUpdateUrl", returnType: CAPPluginReturnPromise),
@@ -40,8 +40,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getPluginVersion", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "next", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "isAutoUpdateEnabled", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "getBuiltinVersion", returnType: CAPPluginReturnPromise),
-    ] 
+        CAPPluginMethod(name: "getBuiltinVersion", returnType: CAPPluginReturnPromise)
+    ]
     public var implementation = CapacitorUpdater()
     private let PLUGIN_VERSION: String = "6.2.9"
     static let updateUrlDefault = "https://api.capgo.app/updates"
@@ -757,7 +757,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                                 print("\(self.implementation.TAG) Failed to delete failed bundle: \(nextImpl!.toString())")
                             }
                         }
-                        if (res.manifest != nil) {
+                        if res.manifest != nil {
                             nextImpl = try self.implementation.downloadManifest(manifest: res.manifest!, version: latestVersionName, sessionKey: sessionKey)
                         } else {
                             nextImpl = try self.implementation.download(url: downloadUrl, version: latestVersionName, sessionKey: sessionKey)
