@@ -257,6 +257,9 @@ extension CustomError: LocalizedError {
     private let NEXT_VERSION: String = "nextVersion"
     private var unzipPercent = 0
 
+    // Add this line to declare cacheFolder
+    private let cacheFolder: URL = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!.appendingPathComponent("capgo_downloads")
+
     public let TAG: String = "✨  Capacitor-updater:"
     public let CAP_SERVER_PATH: String = "serverBasePath"
     public var versionBuild: String = ""
@@ -702,7 +705,6 @@ extension CustomError: LocalizedError {
     public func downloadManifest(manifest: [ManifestEntry], version: String, sessionKey: String) throws -> BundleInfo {
         let id = self.randomString(length: 10)
         print("\(self.TAG) downloadManifest start \(id)")
-        let cacheFolder = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!.appendingPathComponent("capgo_downloads")
         let destFolder = self.getBundleDirectory(id: id)
         
         try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true, attributes: nil)
