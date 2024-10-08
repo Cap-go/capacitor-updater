@@ -700,8 +700,8 @@ extension CustomError: LocalizedError {
     }
 
     public func downloadManifest(manifest: [ManifestEntry], version: String, sessionKey: String) throws -> BundleInfo {
-        print("\(self.TAG) downloadManifest start")
         let id = self.randomString(length: 10)
+        print("\(self.TAG) downloadManifest start \(id)")
         let cacheFolder = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!.appendingPathComponent("capgo_downloads")
         let destFolder = self.getBundleDirectory(id: id)
         
@@ -732,11 +732,11 @@ extension CustomError: LocalizedError {
                 // File exists in cache, copy to destination
                 do {
                     try FileManager.default.copyItem(at: cacheFilePath, to: destFilePath)
-                    print("\(self.TAG) downloadManifest \(fileName) from cache")
+                    print("\(self.TAG) downloadManifest \(fileName) copy from cache \(id)")
                     dispatchGroup.leave()
                 } catch {
                     downloadError = error
-                    print("\(self.TAG) downloadManifest \(fileName) cache error: \(error)")
+                    print("\(self.TAG) downloadManifest \(fileName) cache error \(id): \(error)")
                     dispatchGroup.leave()
                 }
             } else {
@@ -747,26 +747,23 @@ extension CustomError: LocalizedError {
                     switch response.result {
                     case .success(let data):
                         do {
-                            print("\(self.TAG) downloadManifest \(fileName) downloading")
                             // Decompress the Brotli data
                             guard let decompressedData = self.decompressBrotli(data: data) else {
                                 throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data"])
                             }
-                            print("\(self.TAG) downloadManifest \(fileName) decompressing")
                             // Save decompressed data to cache
                             try decompressedData.write(to: cacheFilePath)
-                            print("\(self.TAG) downloadManifest \(fileName) caching")
                             // Save decompressed data to destination
                             try decompressedData.write(to: destFilePath)
                             
-                            print("\(self.TAG) downloadManifest \(fileName) downloaded, decompressed, and cached")
+                            print("\(self.TAG) downloadManifest \(id) \(fileName) downloaded, decompressed, and cached")
                         } catch {
                             downloadError = error
-                            print("\(self.TAG) downloadManifest \(fileName) error: \(error)")
+                            print("\(self.TAG) downloadManifest \(id) \(fileName) error: \(error)")
                         }
                     case .failure(let error):
                         downloadError = error
-                        print("\(self.TAG) downloadManifest \(fileName) download error: \(error)")
+                        print("\(self.TAG) downloadManifest \(id) \(fileName) download error: \(error)")
                     }
                 }
             }
@@ -781,7 +778,7 @@ extension CustomError: LocalizedError {
         let bundleInfo = BundleInfo(id: id, version: version, status: BundleStatus.PENDING, downloaded: Date(), checksum: "")
         self.saveBundleInfo(id: id, bundle: bundleInfo)
         
-        print("\(self.TAG) downloadManifest done")
+        print("\(self.TAG) downloadManifest done \(id)")
         return bundleInfo
     }
 
