@@ -11,7 +11,6 @@ import android.util.Log;
 import com.android.volley.DefaultRetryPolicy;
 import com.android.volley.NetworkResponse;
 import com.android.volley.Request;
-import com.android.volley.RequestQueue;
 import com.android.volley.Response;
 import com.android.volley.toolbox.HttpHeaderParser;
 import com.android.volley.toolbox.Volley;
@@ -19,12 +18,10 @@ import java.io.*;
 import java.io.FileInputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.net.URLConnection;
 import java.nio.channels.FileChannel;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -32,7 +29,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import org.brotli.dec.BrotliInputStream;
 import org.json.JSONArray;
-import org.json.JSONException;
 import org.json.JSONObject;
 
 public class DownloadService extends IntentService {
@@ -194,7 +190,6 @@ public class DownloadService extends IntentService {
               Log.e("DownloadService", "Error processing file: " + fileName, e);
               hasError.set(true);
             }
-            return null;
           })
         );
       }
@@ -405,96 +400,59 @@ public class DownloadService extends IntentService {
     String id
   ) throws Exception {
     Log.d("DownloadService", "downloadAndVerify " + downloadUrl);
-    InputStreamVolleyRequest request = new InputStreamVolleyRequest(
-      Request.Method.GET,
-      downloadUrl,
-      response -> {
-        try {
-          if (response != null) {
-            // Ensure parent directories exist
-            File parentDir = targetFile.getParentFile();
-            if (!parentDir.exists() && !parentDir.mkdirs()) {
-              throw new IOException(
-                "Failed to create parent directory: " +
-                parentDir.getAbsolutePath()
-              );
-            }
-
-            // Create a temporary file for the compressed data in the cache directory
-            File compressedFile = new File(
-              getApplicationContext().getCacheDir(),
-              "temp_" + targetFile.getName() + ".br"
-            );
-            FileOutputStream compressedFos = new FileOutputStream(
-              compressedFile
-            );
-            compressedFos.write(response);
-            compressedFos.close();
-
-            // Decompress the file
-            try (
-              FileInputStream fis = new FileInputStream(compressedFile);
-              BrotliInputStream brotliInputStream = new BrotliInputStream(fis);
-              FileOutputStream fos = new FileOutputStream(targetFile)
-            ) {
-              byte[] buffer = new byte[8192];
-              int len;
-              while ((len = brotliInputStream.read(buffer)) != -1) {
-                fos.write(buffer, 0, len);
-              }
-            }
-
-            // Delete the compressed file
-            compressedFile.delete();
-
-            // Verify checksum
-            String actualHash = calculateFileHash(targetFile);
-            if (actualHash.equals(expectedHash)) {
-              // Copy the downloaded file to cache if checksum is correct
-              copyFile(targetFile, cacheFile);
-              Log.d(
-                "DownloadService",
-                "copied to cache " + targetFile.getName()
-              );
-            } else {
-              Log.d(
-                "DownloadService",
-                "checksum verification failed for " +
-                targetFile.getName() +
-                " " +
-                expectedHash +
-                " " +
-                actualHash
-              );
-              throw new IOException(
-                "Checksum verification failed for " +
-                targetFile.getName() +
-                " " +
-                expectedHash +
-                " " +
-                actualHash
-              );
-            }
-          }
-        } catch (Exception e) {
-          Log.e("DownloadService", "Error in downloadAndVerify", e);
-        }
-      },
-      error -> {
-        // Handle error
-        Log.e("DownloadService", "Error in Volley request", error);
+    URL url = new URL(downloadUrl);
+    HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+    connection.setRequestMethod("GET");
+    
+    // Create a temporary file for the compressed data
+    File compressedFile = new File(
+      getApplicationContext().getCacheDir(),
+      "temp_" + targetFile.getName() + ".br"
+    );
+    
+    try (InputStream inputStream = connection.getInputStream();
+         FileOutputStream compressedFos = new FileOutputStream(compressedFile)) {
+      
+      byte[] buffer = new byte[8192];
+      int bytesRead;
+      while ((bytesRead = inputStream.read(buffer)) != -1) {
+        compressedFos.write(buffer, 0, bytesRead);
       }
-    );
+    }
 
-    request.setRetryPolicy(
-      new DefaultRetryPolicy(
-        30000,
-        DefaultRetryPolicy.DEFAULT_MAX_RETRIES,
-        DefaultRetryPolicy.DEFAULT_BACKOFF_MULT
-      )
-    );
+    // Decompress the file
+    try (
+      FileInputStream fis = new FileInputStream(compressedFile);
+      BrotliInputStream brotliInputStream = new BrotliInputStream(fis);
+      FileOutputStream fos = new FileOutputStream(targetFile)
+    ) {
+      byte[] buffer = new byte[8192];
+      int len;
+      while ((len = brotliInputStream.read(buffer)) != -1) {
+        fos.write(buffer, 0, len);
+      }
+    }
 
-    Volley.newRequestQueue(this).add(request);
+    // Delete the compressed file
+    compressedFile.delete();
+
+    // Verify checksum
+    String actualHash = calculateFileHash(targetFile);
+    if (actualHash.equals(expectedHash)) {
+      // Copy the downloaded file to cache if checksum is correct
+      copyFile(targetFile, cacheFile);
+      Log.d("DownloadService", "copied to cache " + targetFile.getName());
+    } else {
+      targetFile.delete();
+      throw new IOException(
+        "Checksum verification failed for " +
+        targetFile.getName() +
+        " " +
+        expectedHash +
+        " " +
+        actualHash
+      );
+    }
   }
 
   // Custom request for handling input stream
