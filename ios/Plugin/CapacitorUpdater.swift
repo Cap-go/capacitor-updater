@@ -9,6 +9,7 @@ import SSZipArchive
 import Alamofire
 import zlib
 import CryptoKit
+import Compression
 
 extension Collection {
     subscript(safe index: Index) -> Element? {
@@ -88,6 +89,13 @@ struct InfoObject: Codable {
     var channel: String?
     var defaultChannel: String?
 }
+
+public struct ManifestEntry: Decodable {
+    let file_name: String?
+    let file_hash: String?
+    let download_url: String?
+}
+
 struct AppVersionDec: Decodable {
     let version: String?
     let checksum: String?
@@ -97,7 +105,9 @@ struct AppVersionDec: Decodable {
     let session_key: String?
     let major: Bool?
     let data: [String: String]?
+    let manifest: [ManifestEntry]?
 }
+
 public class AppVersion: NSObject {
     var version: String = ""
     var checksum: String = ""
@@ -107,6 +117,7 @@ public class AppVersion: NSObject {
     var sessionKey: String?
     var major: Bool?
     var data: [String: String]?
+    var manifest: [ManifestEntry]?
 }
 
 extension AppVersion {
@@ -245,6 +256,9 @@ extension CustomError: LocalizedError {
     private let FALLBACK_VERSION: String = "pastVersion"
     private let NEXT_VERSION: String = "nextVersion"
     private var unzipPercent = 0
+
+    // Add this line to declare cacheFolder
+    private let cacheFolder: URL = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!.appendingPathComponent("capgo_downloads")
 
     public let TAG: String = "✨  Capacitor-updater:"
     public let CAP_SERVER_PATH: String = "serverBasePath"
@@ -582,6 +596,9 @@ extension CustomError: LocalizedError {
                 if let data = response.value?.data {
                     latest.data = data
                 }
+                if let manifest = response.value?.manifest {
+                    latest.manifest = manifest
+                }
             case let .failure(error):
                 print("\(self.TAG) Error getting Latest", response.value ?? "", error )
                 latest.message = "Error getting Latest \(String(describing: response.value))"
@@ -683,6 +700,174 @@ extension CustomError: LocalizedError {
             self.sendStats(action: "decrypt_fail", versionName: version)
             throw CustomError.cannotDecode
         }
+    }
+
+    public func downloadManifest(manifest: [ManifestEntry], version: String, sessionKey: String) throws -> BundleInfo {
+        let id = self.randomString(length: 10)
+        print("\(self.TAG) downloadManifest start \(id)")
+        let destFolder = self.getBundleDirectory(id: id)
+
+        try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true, attributes: nil)
+        try FileManager.default.createDirectory(at: destFolder, withIntermediateDirectories: true, attributes: nil)
+
+        // Create and save BundleInfo before starting the download process
+        let bundleInfo = BundleInfo(id: id, version: version, status: BundleStatus.DOWNLOADING, downloaded: Date(), checksum: "")
+        self.saveBundleInfo(id: id, bundle: bundleInfo)
+
+        // Notify the start of the download process
+        self.notifyDownload(id: id, percent: 0, ignoreMultipleOfTen: true)
+
+        let dispatchGroup = DispatchGroup()
+        var downloadError: Error?
+
+        let totalFiles = manifest.count
+        var completedFiles = 0
+
+        for entry in manifest {
+            guard let fileName = entry.file_name,
+                  let fileHash = entry.file_hash,
+                  let downloadUrl = entry.download_url else {
+                continue
+            }
+
+            let fileNameWithoutPath = (fileName as NSString).lastPathComponent
+            let cacheFileName = "\(fileHash)_\(fileNameWithoutPath)"
+            let cacheFilePath = cacheFolder.appendingPathComponent(cacheFileName)
+            let destFilePath = destFolder.appendingPathComponent(fileName)
+
+            // Create necessary subdirectories in the destination folder
+            try FileManager.default.createDirectory(at: destFilePath.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
+
+            dispatchGroup.enter()
+
+            if FileManager.default.fileExists(atPath: cacheFilePath.path) {
+                // File exists in cache, copy to destination
+                do {
+                    try FileManager.default.copyItem(at: cacheFilePath, to: destFilePath)
+                    print("\(self.TAG) downloadManifest \(fileName) copy from cache \(id)")
+                    completedFiles += 1
+                    self.notifyDownload(id: id, percent: self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70))
+                    dispatchGroup.leave()
+                } catch {
+                    downloadError = error
+                    print("\(self.TAG) downloadManifest \(fileName) cache error \(id): \(error)")
+                    dispatchGroup.leave()
+                }
+            } else {
+                // File not in cache, download, decompress, and save to both cache and destination
+                AF.download(downloadUrl).responseData { response in
+                    defer { dispatchGroup.leave() }
+
+                    switch response.result {
+                    case .success(let data):
+                        do {
+                            // Decompress the Brotli data
+                            guard let decompressedData = self.decompressBrotli(data: data) else {
+                                throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data"])
+                            }
+                            // Save decompressed data to cache
+                            try decompressedData.write(to: cacheFilePath)
+                            // Save decompressed data to destination
+                            try decompressedData.write(to: destFilePath)
+
+                            completedFiles += 1
+                            self.notifyDownload(id: id, percent: self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70))
+                            print("\(self.TAG) downloadManifest \(id) \(fileName) downloaded, decompressed, and cached")
+                        } catch {
+                            downloadError = error
+                            print("\(self.TAG) downloadManifest \(id) \(fileName) error: \(error)")
+                        }
+                    case .failure(let error):
+                        downloadError = error
+                        print("\(self.TAG) downloadManifest \(id) \(fileName) download error: \(error)")
+                    }
+                }
+            }
+        }
+
+        dispatchGroup.wait()
+
+        if let error = downloadError {
+            // Update bundle status to ERROR if download failed
+            let errorBundle = bundleInfo.setStatus(status: BundleStatus.ERROR.localizedString)
+            self.saveBundleInfo(id: id, bundle: errorBundle)
+            throw error
+        }
+
+        // Update bundle status to PENDING after successful download
+        let updatedBundle = bundleInfo.setStatus(status: BundleStatus.PENDING.localizedString)
+        self.saveBundleInfo(id: id, bundle: updatedBundle)
+
+        print("\(self.TAG) downloadManifest done \(id)")
+        return updatedBundle
+    }
+
+    private func decompressBrotli(data: Data) -> Data? {
+        let outputBufferSize = 65536
+        var outputBuffer = [UInt8](repeating: 0, count: outputBufferSize)
+        var decompressedData = Data()
+
+        let streamPointer = UnsafeMutablePointer<compression_stream>.allocate(capacity: 1)
+        var status = compression_stream_init(streamPointer, COMPRESSION_STREAM_DECODE, COMPRESSION_BROTLI)
+        guard status != COMPRESSION_STATUS_ERROR else {
+            print("\(self.TAG) Unable to initialize the decompression stream.")
+            return nil
+        }
+
+        defer {
+            compression_stream_destroy(streamPointer)
+            streamPointer.deallocate()
+        }
+
+        streamPointer.pointee.src_size = 0
+        streamPointer.pointee.dst_ptr = UnsafeMutablePointer<UInt8>(&outputBuffer)
+        streamPointer.pointee.dst_size = outputBufferSize
+
+        let input = data
+
+        while true {
+            if streamPointer.pointee.src_size == 0 {
+                streamPointer.pointee.src_size = input.count
+                input.withUnsafeBytes { rawBufferPointer in
+                    if let baseAddress = rawBufferPointer.baseAddress {
+                        streamPointer.pointee.src_ptr = baseAddress.assumingMemoryBound(to: UInt8.self)
+                    } else {
+                        print("\(self.TAG) Error: Unable to get base address of input data")
+                        status = COMPRESSION_STATUS_ERROR
+                        return
+                    }
+                }
+            }
+
+            if status == COMPRESSION_STATUS_ERROR {
+                break
+            }
+
+            status = compression_stream_process(streamPointer, 0)
+
+            let have = outputBufferSize - streamPointer.pointee.dst_size
+            if have > 0 {
+                decompressedData.append(outputBuffer, count: have)
+            }
+
+            if status == COMPRESSION_STATUS_END {
+                break
+            } else if status == COMPRESSION_STATUS_ERROR {
+                print("\(self.TAG) Error during Brotli decompression")
+                return nil
+            }
+
+            if streamPointer.pointee.dst_size == 0 {
+                streamPointer.pointee.dst_ptr = UnsafeMutablePointer<UInt8>(&outputBuffer)
+                streamPointer.pointee.dst_size = outputBufferSize
+            }
+
+            if input.count == 0 {
+                break
+            }
+        }
+
+        return status == COMPRESSION_STATUS_END ? decompressedData : nil
     }
 
     public func download(url: URL, version: String, sessionKey: String) throws -> BundleInfo {
@@ -1170,7 +1355,7 @@ extension CustomError: LocalizedError {
                 }
                 semaphore.signal()
             }
-            semaphore.wait()
+            semaphore.signal()
         }
         operationQueue.addOperation(operation)
 

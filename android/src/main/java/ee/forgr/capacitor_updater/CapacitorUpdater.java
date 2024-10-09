@@ -54,6 +54,7 @@ import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import javax.crypto.SecretKey;
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -283,6 +284,10 @@ public class CapacitorUpdater {
           String sessionKey = bundle.getString(DownloadService.SESSIONKEY);
           String checksum = bundle.getString(DownloadService.CHECKSUM);
           String error = bundle.getString(DownloadService.ERROR);
+          boolean isManifest = bundle.getBoolean(
+            DownloadService.IS_MANIFEST,
+            false
+          );
           Log.i(
             CapacitorUpdater.TAG,
             "res " +
@@ -318,7 +323,8 @@ public class CapacitorUpdater {
               version,
               sessionKey,
               checksum,
-              true
+              true,
+              isManifest
             );
         } else {
           Log.i(TAG, "Unknown action " + action);
@@ -353,35 +359,39 @@ public class CapacitorUpdater {
     String version,
     String sessionKey,
     String checksumRes,
-    Boolean setNext
+    Boolean setNext,
+    Boolean isManifest
   ) {
     File downloaded = null;
-    String checksum;
+    String checksum = "";
 
     try {
       this.notifyDownload(id, 71);
       downloaded = new File(this.documentsDir, dest);
 
-      String checksumDecrypted = Objects.requireNonNullElse(checksumRes, "");
-      if (!this.hasOldPrivateKeyPropertyInConfig && !sessionKey.isEmpty()) {
-        this.decryptFileV2(downloaded, sessionKey, version);
-        checksumDecrypted = this.decryptChecksum(checksumRes, version);
-        checksum = this.calcChecksumV2(downloaded);
-      } else {
-        this.decryptFile(downloaded, sessionKey, version);
-        checksum = this.calcChecksum(downloaded);
+      if (!isManifest) {
+        String checksumDecrypted = Objects.requireNonNullElse(checksumRes, "");
+        if (!this.hasOldPrivateKeyPropertyInConfig && !sessionKey.isEmpty()) {
+          this.decryptFileV2(downloaded, sessionKey, version);
+          checksumDecrypted = this.decryptChecksum(checksumRes, version);
+          checksum = this.calcChecksumV2(downloaded);
+        } else {
+          this.decryptFile(downloaded, sessionKey, version);
+          checksum = this.calcChecksum(downloaded);
+        }
+        if (
+          (!checksumDecrypted.isEmpty() || !this.publicKey.isEmpty()) &&
+          !checksumDecrypted.equals(checksum)
+        ) {
+          Log.e(
+            CapacitorUpdater.TAG,
+            "Error checksum '" + checksumDecrypted + "' '" + checksum + "' '"
+          );
+          this.sendStats("checksum_fail");
+          throw new IOException("Checksum failed: " + id);
+        }
       }
-      if (
-        (!checksumDecrypted.isEmpty() || !this.publicKey.isEmpty()) &&
-        !checksumDecrypted.equals(checksum)
-      ) {
-        Log.e(
-          CapacitorUpdater.TAG,
-          "Error checksum '" + checksumDecrypted + "' '" + checksum + "' '"
-        );
-        this.sendStats("checksum_fail");
-        throw new IOException("Checksum failed: " + id);
-      }
+      // Remove the decryption for manifest downloads
     } catch (IOException e) {
       final Boolean res = this.delete(id);
       if (!res) {
@@ -400,11 +410,17 @@ public class CapacitorUpdater {
     }
 
     try {
-      final File unzipped = this.unzip(id, downloaded, this.randomString());
-      downloaded.delete();
-      this.notifyDownload(id, 91);
-      final String idName = bundleDirectory + "/" + id;
-      this.flattenAssets(unzipped, idName);
+      if (!isManifest) {
+        final File unzipped = this.unzip(id, downloaded, this.randomString());
+        this.notifyDownload(id, 91);
+        final String idName = bundleDirectory + "/" + id;
+        this.flattenAssets(unzipped, idName);
+      } else {
+        this.notifyDownload(id, 91);
+        final String idName = bundleDirectory + "/" + id;
+        this.flattenAssets(downloaded, idName);
+        downloaded.delete();
+      }
       this.notifyDownload(id, 100);
       this.saveBundleInfo(id, null);
       BundleInfo next = new BundleInfo(
@@ -447,7 +463,8 @@ public class CapacitorUpdater {
     final String version,
     final String sessionKey,
     final String checksum,
-    final String dest
+    final String dest,
+    final JSONArray manifest
   ) {
     Intent intent = new Intent(this.activity, DownloadService.class);
     intent.putExtra(DownloadService.URL, url);
@@ -460,6 +477,9 @@ public class CapacitorUpdater {
     intent.putExtra(DownloadService.VERSION, version);
     intent.putExtra(DownloadService.SESSIONKEY, sessionKey);
     intent.putExtra(DownloadService.CHECKSUM, checksum);
+    if (manifest != null) {
+      intent.putExtra(DownloadService.MANIFEST, manifest.toString());
+    }
     this.activity.startService(intent);
   }
 
@@ -702,7 +722,8 @@ public class CapacitorUpdater {
     final String url,
     final String version,
     final String sessionKey,
-    final String checksum
+    final String checksum,
+    final JSONArray manifest
   ) {
     final String id = this.randomString();
     this.saveBundleInfo(
@@ -717,13 +738,15 @@ public class CapacitorUpdater {
       );
     this.notifyDownload(id, 0);
     this.notifyDownload(id, 5);
+
     this.downloadFileBackground(
         id,
         url,
         version,
         sessionKey,
         checksum,
-        this.randomString()
+        this.randomString(),
+        manifest
       );
   }
 
@@ -749,7 +772,15 @@ public class CapacitorUpdater {
     final String dest = this.randomString();
     this.downloadFile(id, url, dest);
     final Boolean finished =
-      this.finishDownload(id, dest, version, sessionKey, checksum, false);
+      this.finishDownload(
+          id,
+          dest,
+          version,
+          sessionKey,
+          checksum,
+          false,
+          false
+        );
     final BundleStatus status = finished
       ? BundleStatus.PENDING
       : BundleStatus.ERROR;
