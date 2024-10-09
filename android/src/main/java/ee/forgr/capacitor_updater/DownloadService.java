@@ -28,6 +28,7 @@ import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import org.brotli.dec.BrotliInputStream;
 import org.json.JSONArray;
@@ -132,10 +133,9 @@ public class DownloadService extends IntentService {
       ExecutorService executor = Executors.newFixedThreadPool(5);
       List<Future<?>> futures = new ArrayList<>();
 
-      RequestQueue queue = Volley.newRequestQueue(this);
-
       int totalFiles = manifest.length();
       final AtomicLong completedFiles = new AtomicLong(0);
+      final AtomicBoolean hasError = new AtomicBoolean(false);
 
       for (int i = 0; i < totalFiles; i++) {
         JSONObject entry = manifest.getJSONObject(i);
@@ -192,20 +192,23 @@ public class DownloadService extends IntentService {
               notifyDownload(id, percent);
             } catch (Exception e) {
               Log.e("DownloadService", "Error processing file: " + fileName, e);
+              hasError.set(true);
             }
             return null;
           })
         );
       }
-      Log.d("DownloadService", "waiting for downloads to complete");
+
       // Wait for all downloads to complete
       for (Future<?> future : futures) {
         future.get();
       }
-      Log.d("DownloadService", "downloads complete");
 
       executor.shutdown();
-      queue.stop();
+
+      if (hasError.get()) {
+        throw new IOException("One or more files failed to download");
+      }
 
       publishResults(dest, id, version, "", sessionKey, "", true);
     } catch (Exception e) {
