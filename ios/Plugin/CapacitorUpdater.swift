@@ -710,8 +710,18 @@ extension CustomError: LocalizedError {
         try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true, attributes: nil)
         try FileManager.default.createDirectory(at: destFolder, withIntermediateDirectories: true, attributes: nil)
 
+        // Create and save BundleInfo before starting the download process
+        let bundleInfo = BundleInfo(id: id, version: version, status: BundleStatus.DOWNLOADING, downloaded: Date(), checksum: "")
+        self.saveBundleInfo(id: id, bundle: bundleInfo)
+
+        // Notify the start of the download process
+        self.notifyDownload(id: id, percent: 0, ignoreMultipleOfTen: true)
+
         let dispatchGroup = DispatchGroup()
         var downloadError: Error?
+
+        let totalFiles = manifest.count
+        var completedFiles = 0
 
         for entry in manifest {
             guard let fileName = entry.file_name,
@@ -735,6 +745,8 @@ extension CustomError: LocalizedError {
                 do {
                     try FileManager.default.copyItem(at: cacheFilePath, to: destFilePath)
                     print("\(self.TAG) downloadManifest \(fileName) copy from cache \(id)")
+                    completedFiles += 1
+                    self.notifyDownload(id: id, percent: self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70))
                     dispatchGroup.leave()
                 } catch {
                     downloadError = error
@@ -758,6 +770,8 @@ extension CustomError: LocalizedError {
                             // Save decompressed data to destination
                             try decompressedData.write(to: destFilePath)
 
+                            completedFiles += 1
+                            self.notifyDownload(id: id, percent: self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70))
                             print("\(self.TAG) downloadManifest \(id) \(fileName) downloaded, decompressed, and cached")
                         } catch {
                             downloadError = error
@@ -774,14 +788,18 @@ extension CustomError: LocalizedError {
         dispatchGroup.wait()
 
         if let error = downloadError {
+            // Update bundle status to ERROR if download failed
+            let errorBundle = bundleInfo.setStatus(status: BundleStatus.ERROR.localizedString)
+            self.saveBundleInfo(id: id, bundle: errorBundle)
             throw error
         }
 
-        let bundleInfo = BundleInfo(id: id, version: version, status: BundleStatus.PENDING, downloaded: Date(), checksum: "")
-        self.saveBundleInfo(id: id, bundle: bundleInfo)
+        // Update bundle status to PENDING after successful download
+        let updatedBundle = bundleInfo.setStatus(status: BundleStatus.PENDING.localizedString)
+        self.saveBundleInfo(id: id, bundle: updatedBundle)
 
         print("\(self.TAG) downloadManifest done \(id)")
-        return bundleInfo
+        return updatedBundle
     }
 
     private func decompressBrotli(data: Data) -> Data? {
