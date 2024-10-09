@@ -22,6 +22,7 @@ import java.nio.channels.FileChannel;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -30,7 +31,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.brotli.dec.BrotliInputStream;
 import org.json.JSONArray;
 import org.json.JSONObject;
-import java.util.concurrent.CompletableFuture;
 
 public class DownloadService extends IntentService {
 
@@ -132,7 +132,10 @@ public class DownloadService extends IntentService {
       final AtomicBoolean hasError = new AtomicBoolean(false);
 
       // Use more threads for I/O-bound operations
-      int threadCount = Math.min(Runtime.getRuntime().availableProcessors() * 2, 32);
+      int threadCount = Math.min(
+        Runtime.getRuntime().availableProcessors() * 2,
+        32
+      );
       ExecutorService executor = Executors.newFixedThreadPool(threadCount);
       CompletableFuture<Void>[] futures = new CompletableFuture[totalFiles];
 
@@ -159,14 +162,24 @@ public class DownloadService extends IntentService {
           );
         }
 
-        futures[i] = CompletableFuture.runAsync(() -> {
-          try {
-            if (cacheFile.exists()) {
-              if (verifyChecksum(cacheFile, fileHash)) {
-                copyFile(cacheFile, targetFile);
-                Log.d("DownloadService", "already cached " + fileName);
+        futures[i] = CompletableFuture.runAsync(
+          () -> {
+            try {
+              if (cacheFile.exists()) {
+                if (verifyChecksum(cacheFile, fileHash)) {
+                  copyFile(cacheFile, targetFile);
+                  Log.d("DownloadService", "already cached " + fileName);
+                } else {
+                  cacheFile.delete();
+                  downloadAndVerify(
+                    downloadUrl,
+                    targetFile,
+                    cacheFile,
+                    fileHash,
+                    id
+                  );
+                }
               } else {
-                cacheFile.delete();
                 downloadAndVerify(
                   downloadUrl,
                   targetFile,
@@ -175,24 +188,17 @@ public class DownloadService extends IntentService {
                   id
                 );
               }
-            } else {
-              downloadAndVerify(
-                downloadUrl,
-                targetFile,
-                cacheFile,
-                fileHash,
-                id
-              );
-            }
 
-            long completed = completedFiles.incrementAndGet();
-            int percent = calcTotalPercent(completed, totalFiles);
-            notifyDownload(id, percent);
-          } catch (Exception e) {
-            Log.e("DownloadService", "Error processing file: " + fileName, e);
-            hasError.set(true);
-          }
-        }, executor);
+              long completed = completedFiles.incrementAndGet();
+              int percent = calcTotalPercent(completed, totalFiles);
+              notifyDownload(id, percent);
+            } catch (Exception e) {
+              Log.e("DownloadService", "Error processing file: " + fileName, e);
+              hasError.set(true);
+            }
+          },
+          executor
+        );
       }
 
       // Wait for all downloads to complete
@@ -402,16 +408,17 @@ public class DownloadService extends IntentService {
     URL url = new URL(downloadUrl);
     HttpURLConnection connection = (HttpURLConnection) url.openConnection();
     connection.setRequestMethod("GET");
-    
+
     // Create a temporary file for the compressed data
     File compressedFile = new File(
       getApplicationContext().getCacheDir(),
       "temp_" + targetFile.getName() + ".br"
     );
-    
-    try (InputStream inputStream = connection.getInputStream();
-         FileOutputStream compressedFos = new FileOutputStream(compressedFile)) {
-      
+
+    try (
+      InputStream inputStream = connection.getInputStream();
+      FileOutputStream compressedFos = new FileOutputStream(compressedFile)
+    ) {
       byte[] buffer = new byte[8192];
       int bytesRead;
       while ((bytesRead = inputStream.read(buffer)) != -1) {
