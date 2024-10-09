@@ -126,8 +126,8 @@ public class DownloadService extends IntentService {
         );
       }
 
-      ExecutorService executor = Executors.newFixedThreadPool(5);
-      List<Future<?>> futures = new ArrayList<>();
+      ExecutorService executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+      List<Future<Void>> futures = new ArrayList<>();
 
       int totalFiles = manifest.length();
       final AtomicLong completedFiles = new AtomicLong(0);
@@ -190,13 +190,19 @@ public class DownloadService extends IntentService {
               Log.e("DownloadService", "Error processing file: " + fileName, e);
               hasError.set(true);
             }
+            return null;
           })
         );
       }
 
       // Wait for all downloads to complete
-      for (Future<?> future : futures) {
-        future.get();
+      for (Future<Void> future : futures) {
+        try {
+          future.get();
+        } catch (Exception e) {
+          Log.e("DownloadService", "Error waiting for future", e);
+          hasError.set(true);
+        }
       }
 
       executor.shutdown();
