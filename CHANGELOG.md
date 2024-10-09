@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [6.3.0](https://github.com/Cap-go/capacitor-updater/compare/6.2.9...6.3.0) (2024-10-09)
+
+
+### Features
+
+* base android ([4c42490](https://github.com/Cap-go/capacitor-updater/commit/4c42490a1047e613a5fbb8e2da1bd2f1ec16af4a))
+
+
+### Bug Fixes
+
+* add download percent in ios ([e608da9](https://github.com/Cap-go/capacitor-updater/commit/e608da9c08df7fc0ffdc0b7966936c06d7163b06))
+* add missing decompression with brotli ([7e25d73](https://github.com/Cap-go/capacitor-updater/commit/7e25d73487652492194af2164cde2188bc36167e))
+* base of partial ([00587ad](https://github.com/Cap-go/capacitor-updater/commit/00587adce1696bc0a2e7b5b31a398316b02aa99c))
+* do not unzip or checksum on manifest ([5f0da38](https://github.com/Cap-go/capacitor-updater/commit/5f0da381922ca3d1777850be99da71e1001d2834))
+* fail downloads ([7445371](https://github.com/Cap-go/capacitor-updater/commit/7445371b662e9ab81cd71b9ede6b0d3e3d70061e))
+* folder location issue ([bf4594c](https://github.com/Cap-go/capacitor-updater/commit/bf4594c625e2374750761885ea0559031d8d977f))
+* lint ([08ec427](https://github.com/Cap-go/capacitor-updater/commit/08ec42733691d6c22d29795461c4a63e987c6f65))
+* make cache folder on the top ([90ecabf](https://github.com/Cap-go/capacitor-updater/commit/90ecabf0cbc7624ebd24fd6d24e1c5c470efe22a))
+* make cache work ([c2c3447](https://github.com/Cap-go/capacitor-updater/commit/c2c34478e7dbb982b002481f53f5a83bcc22b394))
+* make it work better ([145f994](https://github.com/Cap-go/capacitor-updater/commit/145f994029b8c5f06750c408521a64a48108d289))
+* make it work first time ([a7088de](https://github.com/Cap-go/capacitor-updater/commit/a7088de943ad2ed60b6351f061653d4203d590f0))
+* make update even faster ([50c0d41](https://github.com/Cap-go/capacitor-updater/commit/50c0d4186764764317767e0661efc0fe83e02940))
+* missing folder issue and delete transition folder too ([cae3b9a](https://github.com/Cap-go/capacitor-updater/commit/cae3b9a82e3e508f7ab91838d928130ff9dba564))
+* remove percent for now ([0867c06](https://github.com/Cap-go/capacitor-updater/commit/0867c065b6ae1c4e3597b9b385880984781eaffa))
+* ungzip issue ([256ff6b](https://github.com/Cap-go/capacitor-updater/commit/256ff6be64d581e70400661830934a54ed999d79))
+* unzip work ([f4732d9](https://github.com/Cap-go/capacitor-updater/commit/f4732d921550fd12c91a20555b3d4856aef38e2b))
+* use volley ([86eaa84](https://github.com/Cap-go/capacitor-updater/commit/86eaa843307da7a090203e2278025ebb718e455d))
+
 ### [6.2.9](https://github.com/Cap-go/capacitor-updater/compare/6.2.8...6.2.9) (2024-10-07)
 
 ### [6.2.8](https://github.com/Cap-go/capacitor-updater/compare/6.2.7...6.2.8) (2024-10-07)
