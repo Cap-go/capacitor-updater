@@ -126,7 +126,9 @@ public class DownloadService extends IntentService {
         );
       }
 
-      ExecutorService executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+      ExecutorService executor = Executors.newFixedThreadPool(
+        Runtime.getRuntime().availableProcessors()
+      );
       List<Future<Void>> futures = new ArrayList<>();
 
       int totalFiles = manifest.length();
@@ -409,16 +411,17 @@ public class DownloadService extends IntentService {
     URL url = new URL(downloadUrl);
     HttpURLConnection connection = (HttpURLConnection) url.openConnection();
     connection.setRequestMethod("GET");
-    
+
     // Create a temporary file for the compressed data
     File compressedFile = new File(
       getApplicationContext().getCacheDir(),
       "temp_" + targetFile.getName() + ".br"
     );
-    
-    try (InputStream inputStream = connection.getInputStream();
-         FileOutputStream compressedFos = new FileOutputStream(compressedFile)) {
-      
+
+    try (
+      InputStream inputStream = connection.getInputStream();
+      FileOutputStream compressedFos = new FileOutputStream(compressedFile)
+    ) {
       byte[] buffer = new byte[8192];
       int bytesRead;
       while ((bytesRead = inputStream.read(buffer)) != -1) {
