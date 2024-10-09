@@ -30,6 +30,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.brotli.dec.BrotliInputStream;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import java.util.concurrent.CompletableFuture;
 
 public class DownloadService extends IntentService {
 
@@ -126,12 +127,14 @@ public class DownloadService extends IntentService {
         );
       }
 
-      ExecutorService executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
-      List<Future<Void>> futures = new ArrayList<>();
-
       int totalFiles = manifest.length();
       final AtomicLong completedFiles = new AtomicLong(0);
       final AtomicBoolean hasError = new AtomicBoolean(false);
+
+      // Use more threads for I/O-bound operations
+      int threadCount = Math.min(Runtime.getRuntime().availableProcessors() * 2, 32);
+      ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+      CompletableFuture<Void>[] futures = new CompletableFuture[totalFiles];
 
       for (int i = 0; i < totalFiles; i++) {
         JSONObject entry = manifest.getJSONObject(i);
@@ -156,24 +159,14 @@ public class DownloadService extends IntentService {
           );
         }
 
-        futures.add(
-          executor.submit(() -> {
-            try {
-              if (cacheFile.exists()) {
-                if (verifyChecksum(cacheFile, fileHash)) {
-                  copyFile(cacheFile, targetFile);
-                  Log.d("DownloadService", "already cached " + fileName);
-                } else {
-                  cacheFile.delete();
-                  downloadAndVerify(
-                    downloadUrl,
-                    targetFile,
-                    cacheFile,
-                    fileHash,
-                    id
-                  );
-                }
+        futures[i] = CompletableFuture.runAsync(() -> {
+          try {
+            if (cacheFile.exists()) {
+              if (verifyChecksum(cacheFile, fileHash)) {
+                copyFile(cacheFile, targetFile);
+                Log.d("DownloadService", "already cached " + fileName);
               } else {
+                cacheFile.delete();
                 downloadAndVerify(
                   downloadUrl,
                   targetFile,
@@ -182,28 +175,28 @@ public class DownloadService extends IntentService {
                   id
                 );
               }
-
-              long completed = completedFiles.incrementAndGet();
-              int percent = calcTotalPercent(completed, totalFiles);
-              notifyDownload(id, percent);
-            } catch (Exception e) {
-              Log.e("DownloadService", "Error processing file: " + fileName, e);
-              hasError.set(true);
+            } else {
+              downloadAndVerify(
+                downloadUrl,
+                targetFile,
+                cacheFile,
+                fileHash,
+                id
+              );
             }
-            return null;
-          })
-        );
+
+            long completed = completedFiles.incrementAndGet();
+            int percent = calcTotalPercent(completed, totalFiles);
+            notifyDownload(id, percent);
+          } catch (Exception e) {
+            Log.e("DownloadService", "Error processing file: " + fileName, e);
+            hasError.set(true);
+          }
+        }, executor);
       }
 
       // Wait for all downloads to complete
-      for (Future<Void> future : futures) {
-        try {
-          future.get();
-        } catch (Exception e) {
-          Log.e("DownloadService", "Error waiting for future", e);
-          hasError.set(true);
-        }
-      }
+      CompletableFuture.allOf(futures).join();
 
       executor.shutdown();
 
