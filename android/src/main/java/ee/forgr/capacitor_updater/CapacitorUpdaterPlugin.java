@@ -80,6 +80,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
   //  private static final CountDownLatch semaphoreReady = new CountDownLatch(1);
   private static final Phaser semaphoreReady = new Phaser(1);
 
+  private int lastNotifiedStatPercent = 0;
+
   public Thread startNewThread(final Runnable function, Number waitTime) {
     Thread bgTask = new Thread(() -> {
       try {
@@ -352,6 +354,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
       final BundleInfo bundleInfo = this.implementation.getBundleInfo(id);
       ret.put("bundle", bundleInfo.toJSON());
       this.notifyListeners("download", ret);
+
       if (percent == 100) {
         final JSObject retDownloadComplete = new JSObject(
           ret,
@@ -362,11 +365,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
             "download_complete",
             bundleInfo.getVersionName()
           );
-      } else if (percent % 10 == 0) {
-        this.implementation.sendStats(
-            "download_" + percent,
-            bundleInfo.getVersionName()
-          );
+        lastNotifiedStatPercent = 100;
+      } else {
+        int currentStatPercent = (percent / 10) * 10; // Round down to nearest 10
+        if (currentStatPercent > lastNotifiedStatPercent) {
+          this.implementation.sendStats(
+              "download_" + currentStatPercent,
+              bundleInfo.getVersionName()
+            );
+          lastNotifiedStatPercent = currentStatPercent;
+        }
       }
     } catch (final Exception e) {
       Log.e(CapacitorUpdater.TAG, "Could not notify listeners", e);

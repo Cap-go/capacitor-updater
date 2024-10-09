@@ -412,7 +412,6 @@ public class CapacitorUpdater {
     try {
       if (!isManifest) {
         final File unzipped = this.unzip(id, downloaded, this.randomString());
-        downloaded.delete();
         this.notifyDownload(id, 91);
         final String idName = bundleDirectory + "/" + id;
         this.flattenAssets(unzipped, idName);
@@ -420,6 +419,7 @@ public class CapacitorUpdater {
         this.notifyDownload(id, 91);
         final String idName = bundleDirectory + "/" + id;
         this.flattenAssets(downloaded, idName);
+        downloaded.delete();
       }
       this.notifyDownload(id, 100);
       this.saveBundleInfo(id, null);

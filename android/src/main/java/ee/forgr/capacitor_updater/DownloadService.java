@@ -28,6 +28,7 @@ import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicLong;
 import org.brotli.dec.BrotliInputStream;
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -111,17 +112,32 @@ public class DownloadService extends IntentService {
       Log.d("DownloadService", "handleManifestDownload");
       JSONArray manifest = new JSONArray(manifestString);
       File destFolder = new File(documentsDir, dest);
-      File cacheFolder = new File(documentsDir, "capgo_downloads");
-      destFolder.mkdirs();
-      cacheFolder.mkdirs();
+      File cacheFolder = new File(
+        getApplicationContext().getCacheDir(),
+        "capgo_downloads"
+      );
+      // Ensure directories are created
+      if (!destFolder.exists() && !destFolder.mkdirs()) {
+        throw new IOException(
+          "Failed to create destination directory: " +
+          destFolder.getAbsolutePath()
+        );
+      }
+      if (!cacheFolder.exists() && !cacheFolder.mkdirs()) {
+        throw new IOException(
+          "Failed to create cache directory: " + cacheFolder.getAbsolutePath()
+        );
+      }
 
-      // Use ExecutorService for parallel downloads
-      ExecutorService executor = Executors.newFixedThreadPool(5); // Adjust thread count as needed
+      ExecutorService executor = Executors.newFixedThreadPool(5);
       List<Future<?>> futures = new ArrayList<>();
 
       RequestQueue queue = Volley.newRequestQueue(this);
 
-      for (int i = 0; i < manifest.length(); i++) {
+      int totalFiles = manifest.length();
+      final AtomicLong completedFiles = new AtomicLong(0);
+
+      for (int i = 0; i < totalFiles; i++) {
         JSONObject entry = manifest.getJSONObject(i);
         String fileName = entry.getString("file_name");
         String fileHash = entry.getString("file_hash");
@@ -132,7 +148,17 @@ public class DownloadService extends IntentService {
           cacheFolder,
           fileHash + "_" + new File(fileName).getName()
         );
-        targetFile.getParentFile().mkdirs();
+
+        // Ensure parent directories of the target file exist
+        if (
+          !targetFile.getParentFile().exists() &&
+          !targetFile.getParentFile().mkdirs()
+        ) {
+          throw new IOException(
+            "Failed to create parent directory for: " +
+            targetFile.getAbsolutePath()
+          );
+        }
 
         futures.add(
           executor.submit(() -> {
@@ -160,8 +186,12 @@ public class DownloadService extends IntentService {
                   id
                 );
               }
+
+              long completed = completedFiles.incrementAndGet();
+              int percent = calcTotalPercent(completed, totalFiles);
+              notifyDownload(id, percent);
             } catch (Exception e) {
-              e.printStackTrace();
+              Log.e("DownloadService", "Error processing file: " + fileName, e);
             }
             return null;
           })
@@ -179,7 +209,7 @@ public class DownloadService extends IntentService {
 
       publishResults(dest, id, version, "", sessionKey, "", true);
     } catch (Exception e) {
-      e.printStackTrace();
+      Log.e("DownloadService", "Error in handleManifestDownload", e);
       publishResults("", id, version, "", sessionKey, e.getMessage(), true);
     }
   }
@@ -378,10 +408,19 @@ public class DownloadService extends IntentService {
       response -> {
         try {
           if (response != null) {
-            // Create a temporary file for the compressed data
+            // Ensure parent directories exist
+            File parentDir = targetFile.getParentFile();
+            if (!parentDir.exists() && !parentDir.mkdirs()) {
+              throw new IOException(
+                "Failed to create parent directory: " +
+                parentDir.getAbsolutePath()
+              );
+            }
+
+            // Create a temporary file for the compressed data in the cache directory
             File compressedFile = new File(
-              targetFile.getParentFile(),
-              targetFile.getName() + ".br"
+              getApplicationContext().getCacheDir(),
+              "temp_" + targetFile.getName() + ".br"
             );
             FileOutputStream compressedFos = new FileOutputStream(
               compressedFile
@@ -435,12 +474,12 @@ public class DownloadService extends IntentService {
             }
           }
         } catch (Exception e) {
-          e.printStackTrace();
+          Log.e("DownloadService", "Error in downloadAndVerify", e);
         }
       },
       error -> {
         // Handle error
-        error.printStackTrace();
+        Log.e("DownloadService", "Error in Volley request", error);
       }
     );
 
