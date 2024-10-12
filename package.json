@@ -64,17 +64,17 @@
     "@ionic/eslint-config": "^0.4.0",
     "@ionic/prettier-config": "^4.0.0",
     "@ionic/swiftlint-config": "^1.1.2",
-    "@types/node": "^20.12.12",
+    "@types/node": "^22.7.5",
     "@typescript-eslint/eslint-plugin": "^7.11.0",
     "@typescript-eslint/parser": "^7.11.0",
     "eslint": "^8.57.0",
-    "eslint-plugin-import": "^2.29.1",
-    "prettier": "^3.2.5",
-    "prettier-plugin-java": "^2.6.0",
-    "rimraf": "^5.0.7",
-    "rollup": "^4.18.0",
-    "swiftlint": "^1.0.2",
-    "typescript": "^5.4.5"
+    "eslint-plugin-import": "^2.31.0",
+    "prettier": "^3.3.3",
+    "prettier-plugin-java": "^2.6.4",
+    "rimraf": "^6.0.1",
+    "rollup": "^4.24.0",
+    "swiftlint": "^2.0.0",
+    "typescript": "^5.6.3"
   },
   "peerDependencies": {
     "@capacitor/core": "^6.0.0"
