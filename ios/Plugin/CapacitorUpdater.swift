@@ -90,7 +90,7 @@ struct InfoObject: Codable {
     var defaultChannel: String?
 }
 
-public struct ManifestEntry: Decodable {
+public struct ManifestEntry: Codable {
     let file_name: String?
     let file_hash: String?
     let download_url: String?
