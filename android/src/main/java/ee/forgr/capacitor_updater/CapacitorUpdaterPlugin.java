@@ -517,7 +517,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
               }
               call.resolve(res);
             }
-          }));
+          })
+      );
     } catch (final Exception e) {
       Log.e(CapacitorUpdater.TAG, "Failed to unsetChannel: ", e);
       call.reject("Failed to unsetChannel: ", e);
@@ -559,7 +560,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
               }
               call.resolve(res);
             }
-          }));
+          })
+      );
     } catch (final Exception e) {
       Log.e(CapacitorUpdater.TAG, "Failed to setChannel: " + channel, e);
       call.reject("Failed to setChannel: " + channel, e);
@@ -577,7 +579,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
             } else {
               call.resolve(res);
             }
-          }));
+          })
+      );
     } catch (final Exception e) {
       Log.e(CapacitorUpdater.TAG, "Failed to getChannel", e);
       call.reject("Failed to getChannel", e);
@@ -796,7 +799,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
             call.resolve(ret);
           }
-        ));
+        )
+    );
   }
 
   private boolean _reset(final Boolean toLastSuccessful) {
