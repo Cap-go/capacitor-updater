@@ -67,7 +67,7 @@
     "@types/node": "^22.7.5",
     "@typescript-eslint/eslint-plugin": "^7.11.0",
     "@typescript-eslint/parser": "^7.11.0",
-    "eslint": "^8.57.0",
+    "eslint": "^9.0.0",
     "eslint-plugin-import": "^2.31.0",
     "prettier": "^3.3.3",
     "prettier-plugin-java": "^2.6.4",
