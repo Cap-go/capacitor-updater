@@ -15,8 +15,8 @@ devDependencies:
     specifier: ^6.0.0
     version: 6.1.2
   '@capacitor/docgen':
-    specifier: ^0.2.2
-    version: 0.2.2
+    specifier: ^0.3.0
+    version: 0.3.0
   '@capacitor/ios':
     specifier: ^6.0.0
     version: 6.1.2(@capacitor/core@6.1.2)
@@ -129,9 +129,9 @@ packages:
       tslib: 2.7.0
     dev: true
 
-  /@capacitor/docgen@0.2.2:
-    resolution: {integrity: sha512-617jB5DlKjUljxfoANORWeqffsHqHekckH48oslKWFGzfCHYIAEPfJfMa5M4mVSzn2ifSvWB5C3st4augwhl5w==}
-    engines: {node: '>=14.5.0'}
+  /@capacitor/docgen@0.3.0:
+    resolution: {integrity: sha512-WPggobo5Ql70F+2xOIUwNSApJXaL9F/9+Al6B+sNuSAmcg484OAksyUPKgiynF4BVlxeY5a0sDkgdVkmmA3ElQ==}
+    engines: {node: '>=18.0.0'}
     hasBin: true
     dependencies:
       '@types/node': 14.18.63
