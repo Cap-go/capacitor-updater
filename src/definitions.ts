@@ -194,7 +194,7 @@ declare module "@capacitor/cli" {
        * @default undefined
        * @since  6.3.3
       */
-      localFileUpload?: string;
+      localApiFiles?: string;
       /**
        * Allow the plugin to modify the updateUrl, statsUrl and channelUrl dynamically from the JavaScript side.
        *
