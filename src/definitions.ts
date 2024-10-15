@@ -179,7 +179,22 @@ declare module "@capacitor/cli" {
        * @since  4.17.48
        */
       localSupaAnon?: string;
-
+      /**
+       * Configure the CLI to use a local api for testing.
+       *
+       *
+       * @default undefined
+       * @since  6.3.3
+       */
+      localApi?: string;
+      /**
+       * Configure the CLI to use a local file api for testing.
+       *
+       *
+       * @default undefined
+       * @since  6.3.3
+      */
+      localFileUpload?: string;
       /**
        * Allow the plugin to modify the updateUrl, statsUrl and channelUrl dynamically from the JavaScript side.
        *
