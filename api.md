@@ -35,7 +35,7 @@ CapacitorUpdater can be configured with these options:
 | **`localSupa`**          | <code>string</code>  | Configure the CLI to use a local server for testing or self-hosted update server.                                                                                                               | <code>undefined</code>                     | 4.17.48 |
 | **`localSupaAnon`**      | <code>string</code>  | Configure the CLI to use a local server for testing.                                                                                                                                            | <code>undefined</code>                     | 4.17.48 |
 | **`localApi`**           | <code>string</code>  | Configure the CLI to use a local api for testing.                                                                                                                                               | <code>undefined</code>                     | 6.3.3   |
-| **`localFileUpload`**    | <code>string</code>  | Configure the CLI to use a local file api for testing.                                                                                                                                          | <code>undefined</code>                     | 6.3.3   |
+| **`localApiFiles`**      | <code>string</code>  | Configure the CLI to use a local file api for testing.                                                                                                                                          | <code>undefined</code>                     | 6.3.3   |
 | **`allowModifyUrl`**     | <code>boolean</code> | Allow the plugin to modify the updateUrl, statsUrl and channelUrl dynamically from the JavaScript side.                                                                                         | <code>false</code>                         | 5.4.0   |
 | **`defaultChannel`**     | <code>string</code>  | Set the default channel for the app in the config.                                                                                                                                              | <code>undefined</code>                     | 5.5.0   |
 
@@ -66,7 +66,7 @@ In `capacitor.config.json`:
       "localSupa": undefined,
       "localSupaAnon": undefined,
       "localApi": undefined,
-      "localFileUpload": undefined,
+      "localApiFiles": undefined,
       "allowModifyUrl": undefined,
       "defaultChannel": undefined
     }
@@ -103,7 +103,7 @@ const config: CapacitorConfig = {
       localSupa: undefined,
       localSupaAnon: undefined,
       localApi: undefined,
-      localFileUpload: undefined,
+      localApiFiles: undefined,
       allowModifyUrl: undefined,
       defaultChannel: undefined,
     },
