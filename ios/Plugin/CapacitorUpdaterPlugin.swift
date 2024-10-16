@@ -747,12 +747,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 do {
                     print("\(self.implementation.TAG) New bundle: \(latestVersionName) found. Current is: \(current.getVersionName()). \(messageUpdate)")
                     var nextImpl = self.implementation.getBundleInfoByVersionName(version: latestVersionName)
-                    if nextImpl == nil || ((nextImpl?.isDeleted()) != nil) {
-                        if (nextImpl?.isDeleted()) != nil {
+                    if nextImpl == nil || nextImpl?.isDeleted() == true {
+                        if nextImpl?.isDeleted() == true {
                             print("\(self.implementation.TAG) Latest bundle already exists and will be deleted, download will overwrite it.")
                             let res = self.implementation.delete(id: nextImpl!.getId(), removeInfo: true)
                             if res {
-                                print("\(self.implementation.TAG) Delete version deleted: \(nextImpl!.toString())")
+                                print("\(self.implementation.TAG) Failed bundle deleted: \(nextImpl!.toString())")
                             } else {
                                 print("\(self.implementation.TAG) Failed to delete failed bundle: \(nextImpl!.toString())")
                             }
@@ -769,7 +769,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         return
                     }
                     if next.isErrorStatus() {
-                        print("\(self.implementation.TAG) Latest version is in error state. Aborting update.")
+                        print("\(self.implementation.TAG) Latest bundle already exists and is in error state. Aborting update.")
                         self.endBackGroundTaskWithNotif(msg: "Latest version is in error state. Aborting update.", latestVersionName: latestVersionName, current: current)
                         return
                     }
