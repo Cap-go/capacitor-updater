@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.3.6](https://github.com/Cap-go/capacitor-updater/compare/6.3.5...6.3.6) (2024-10-16)
+
+
+### Bug Fixes
+
+* issue on IOS who make update get re download each time open if not install ([a177a84](https://github.com/Cap-go/capacitor-updater/commit/a177a848d3d75f7f3ecdec4cff5cc5624108eccc))
+
 ### [6.3.5](https://github.com/Cap-go/capacitor-updater/compare/6.3.4...6.3.5) (2024-10-15)
 
 
