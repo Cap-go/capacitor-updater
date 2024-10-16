@@ -96,6 +96,19 @@ public struct ManifestEntry: Codable {
     let download_url: String?
 }
 
+extension ManifestEntry {
+    func toDict() -> [String: Any] {
+        var dict: [String: Any] = [String: Any]()
+        let mirror = Mirror(reflecting: self)
+        for child in mirror.children {
+            if let key = child.label {
+                dict[key] = child.value
+            }
+        }
+        return dict
+    }
+}
+
 struct AppVersionDec: Decodable {
     let version: String?
     let checksum: String?
@@ -126,7 +139,11 @@ extension AppVersion {
         let otherSelf: Mirror = Mirror(reflecting: self)
         for child: Mirror.Child in otherSelf.children {
             if let key: String = child.label {
-                dict[key] = child.value
+                if key == "manifest", let manifestEntries = child.value as? [ManifestEntry] {
+                    dict[key] = manifestEntries.map { $0.toDict() }
+                } else {
+                    dict[key] = child.value
+                }
             }
         }
         return dict
