@@ -43,7 +43,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getBuiltinVersion", returnType: CAPPluginReturnPromise)
     ]
     public var implementation = CapacitorUpdater()
-    private let PLUGIN_VERSION: String = "6.3.9"
+    private let PLUGIN_VERSION: String = "6.3.10"
     static let updateUrlDefault = "https://api.capgo.app/updates"
     static let statsUrlDefault = "https://api.capgo.app/stats"
     static let channelUrlDefault = "https://api.capgo.app/channel_self"
