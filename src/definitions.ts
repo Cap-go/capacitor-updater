@@ -83,6 +83,16 @@ declare module "@capacitor/cli" {
       updateUrl?: string;
 
       /**
+       * Configure the URL / endpoint for channel operations.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default https://api.capgo.app/channel_self
+       * @example https://example.com/api/channel
+       */
+      channelUrl?: string;
+
+      /**
        * Configure the URL / endpoint to which update statistics are sent.
        *
        * Only available for Android and iOS. Set to "" to disable stats reporting.
