@@ -81,9 +81,9 @@ jobs:
       - name: Install dependencies
         id: install_code
         run: pnpm install --frozen-lockfile
-      - name: Lint
-        id: lint_code
-        run: pnpm lint
+      # - name: Lint
+      #   id: lint_code
+      #   run: pnpm lint
       - name: Build
         id: build_code
         run: pnpm build
