@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.3.16](https://github.com/Cap-go/capacitor-updater/compare/6.3.15...6.3.16) (2024-11-05)
+
+
+### Bug Fixes
+
+* fix pnpm lock ([3a54fc4](https://github.com/Cap-go/capacitor-updater/commit/3a54fc48cffe9355355f49690c522bb03fa42e34))
+
 ### [6.3.15](https://github.com/Cap-go/capacitor-updater/compare/6.3.14...6.3.15) (2024-11-04)
 
 
