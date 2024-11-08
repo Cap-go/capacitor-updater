@@ -39,6 +39,7 @@ CapacitorUpdater can be configured with these options:
 | **`localApiFiles`**      | <code>string</code>  | Configure the CLI to use a local file api for testing.                                                                                                                                          | <code>undefined</code>                          | 6.3.3   |
 | **`allowModifyUrl`**     | <code>boolean</code> | Allow the plugin to modify the updateUrl, statsUrl and channelUrl dynamically from the JavaScript side.                                                                                         | <code>false</code>                              | 5.4.0   |
 | **`defaultChannel`**     | <code>string</code>  | Set the default channel for the app in the config.                                                                                                                                              | <code>undefined</code>                          | 5.5.0   |
+| **`appId`**              | <code>string</code>  | Configure the app id for the app in the config.                                                                                                                                                 | <code>undefined</code>                          | 6.0.0   |
 
 ## Examples
 
@@ -70,7 +71,8 @@ In `capacitor.config.json`:
       "localApi": undefined,
       "localApiFiles": undefined,
       "allowModifyUrl": undefined,
-      "defaultChannel": undefined
+      "defaultChannel": undefined,
+      "appId": undefined
     }
   }
 }
@@ -109,6 +111,7 @@ const config: CapacitorConfig = {
       localApiFiles: undefined,
       allowModifyUrl: undefined,
       defaultChannel: undefined,
+      appId: undefined,
     },
   },
 };
