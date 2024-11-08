@@ -223,6 +223,13 @@ declare module "@capacitor/cli" {
        * @since  5.5.0
        */
       defaultChannel?: string;
+      /**
+       * Configure the app id for the app in the config.
+       *
+       * @default undefined
+       * @since  6.0.0
+       */
+      appId?: string;
     };
   }
 }
