@@ -77,7 +77,7 @@ declare module "@capacitor/cli" {
        *
        * Only available for Android and iOS.
        *
-       * @default https://api.capgo.app/updates
+       * @default https://plugin.capgo.app/updates
        * @example https://example.com/api/auto_update
        */
       updateUrl?: string;
@@ -87,7 +87,7 @@ declare module "@capacitor/cli" {
        *
        * Only available for Android and iOS.
        *
-       * @default https://api.capgo.app/channel_self
+       * @default https://plugin.capgo.app/channel_self
        * @example https://example.com/api/channel
        */
       channelUrl?: string;
@@ -97,7 +97,7 @@ declare module "@capacitor/cli" {
        *
        * Only available for Android and iOS. Set to "" to disable stats reporting.
        *
-       * @default https://api.capgo.app/stats
+       * @default https://plugin.capgo.app/stats
        * @example https://example.com/api/stats
        */
       statsUrl?: string;

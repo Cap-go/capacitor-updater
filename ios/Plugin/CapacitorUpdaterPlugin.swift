@@ -44,9 +44,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     ]
     public var implementation = CapacitorUpdater()
     private let PLUGIN_VERSION: String = "6.3.17"
-    static let updateUrlDefault = "https://api.capgo.app/updates"
-    static let statsUrlDefault = "https://api.capgo.app/stats"
-    static let channelUrlDefault = "https://api.capgo.app/channel_self"
+    static let updateUrlDefault = "https://plugin.capgo.app/updates"
+    static let statsUrlDefault = "https://plugin.capgo.app/stats"
+    static let channelUrlDefault = "https://plugin.capgo.app/channel_self"
     let DELAY_CONDITION_PREFERENCES = ""
     private var updateUrl = ""
     private var statsUrl = ""
