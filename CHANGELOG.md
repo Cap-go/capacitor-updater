@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.3.19](https://github.com/Cap-go/capacitor-updater/compare/6.3.18...6.3.19) (2024-11-19)
+
+
+### Bug Fixes
+
+* switch to our new domain ( already used with redirect) ([b7096e3](https://github.com/Cap-go/capacitor-updater/commit/b7096e3ee907b890e3b9f15361bc5d7fcd4b9117))
+
 ### [6.3.18](https://github.com/Cap-go/capacitor-updater/compare/6.3.17...6.3.18) (2024-11-19)
 
 
