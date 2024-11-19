@@ -586,8 +586,8 @@ export interface ChannelRes {
    * @since  4.7.0
    */
   status: string;
-  error?: any;
-  message?: any;
+  error?: string;
+  message?: string;
 }
 
 export interface GetChannelRes {
@@ -597,8 +597,8 @@ export interface GetChannelRes {
    * @since  4.8.0
    */
   channel?: string;
-  error?: any;
-  message?: any;
+  error?: string;
+  message?: string;
   status?: string;
   allowSet?: boolean;
 }
