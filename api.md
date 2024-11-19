@@ -841,8 +841,8 @@ Listen for app ready event in the App, let you know when app is ready to use
 | Prop          | Type                | Description                   | Since |
 | ------------- | ------------------- | ----------------------------- | ----- |
 | **`status`**  | <code>string</code> | Current status of set channel | 4.7.0 |
-| **`error`**   | <code>any</code>    |                               |       |
-| **`message`** | <code>any</code>    |                               |       |
+| **`error`**   | <code>string</code> |                               |       |
+| **`message`** | <code>string</code> |                               |       |
 
 
 ### SetChannelOptions
@@ -865,8 +865,8 @@ Listen for app ready event in the App, let you know when app is ready to use
 | Prop           | Type                 | Description                   | Since |
 | -------------- | -------------------- | ----------------------------- | ----- |
 | **`channel`**  | <code>string</code>  | Current status of get channel | 4.8.0 |
-| **`error`**    | <code>any</code>     |                               |       |
-| **`message`**  | <code>any</code>     |                               |       |
+| **`error`**    | <code>string</code>  |                               |       |
+| **`message`**  | <code>string</code>  |                               |       |
 | **`status`**   | <code>string</code>  |                               |       |
 | **`allowSet`** | <code>boolean</code> |                               |       |
 
