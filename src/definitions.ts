@@ -104,7 +104,7 @@ declare module "@capacitor/cli" {
       /**
        * Configure the private key for end to end live update encryption.
        *
-       * Only available for Android and iOS.
+       * Only available for Android and iOS. Deprecated in version 6.2.0. will be removed in version 7.0.0.
        *
        * @default undefined
        */
