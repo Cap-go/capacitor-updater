@@ -1312,6 +1312,9 @@ extension CustomError: LocalizedError {
         let request = AF.request(self.channelUrl, method: .put, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
 
         request.validate().responseDecodable(of: GetChannelDec.self) { response in
+            defer {
+                semaphore.signal()
+            }
             switch response.result {
             case .success:
                 if let status = response.value?.status {
@@ -1330,11 +1333,18 @@ extension CustomError: LocalizedError {
                     getChannel.allowSet = allowSet
                 }
             case let .failure(error):
+                if let data = response.data, let bodyString = String(data: data, encoding: .utf8) {
+                    if (bodyString.contains("channel_not_found") && response.response?.statusCode == 400 && !self.defaultChannel.isEmpty) {
+                        getChannel.channel = self.defaultChannel
+                        getChannel.status = "default"
+                        return
+                    }
+                }
+                
                 print("\(self.TAG) Error get Channel", response.value ?? "", error)
                 getChannel.message = "Error get Channel \(String(describing: response.value)))"
                 getChannel.error = "response_error"
             }
-            semaphore.signal()
         }
         semaphore.wait()
         return getChannel
