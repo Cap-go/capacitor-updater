@@ -1191,12 +1191,17 @@ public class CapacitorUpdater {
         Log.i(TAG, "Channel get to \"" + ret);
         callback.callback(ret);
       },
-      error ->
-      {
+      error -> {
         try {
           if (error.networkResponse.statusCode == 400) {
-            String data = new String(error.networkResponse.data, HttpHeaderParser.parseCharset(error.networkResponse.headers));
-            if (data.contains("channel_not_found") && !this.defaultChannel.isEmpty()) {
+            String data = new String(
+              error.networkResponse.data,
+              HttpHeaderParser.parseCharset(error.networkResponse.headers)
+            );
+            if (
+              data.contains("channel_not_found") &&
+              !this.defaultChannel.isEmpty()
+            ) {
               final JSObject ret = new JSObject();
               ret.put("channel", this.defaultChannel);
               ret.put("status", "default");
@@ -1209,7 +1214,7 @@ public class CapacitorUpdater {
           // ignore
         }
         callback.callback(
-            CapacitorUpdater.this.createError("Error get channel", error)
+          CapacitorUpdater.this.createError("Error get channel", error)
         );
       }
     );
