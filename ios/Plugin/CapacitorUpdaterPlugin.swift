@@ -102,11 +102,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             periodCheckDelay = periodCheckDelayValue
         }
 
-        implementation.privateKey = getConfig().getString("privateKey", "")!
         implementation.publicKey = getConfig().getString("publicKey", "")!
-        if !implementation.privateKey.isEmpty {
-            implementation.hasOldPrivateKeyPropertyInConfig = true
-        }
         implementation.notifyDownloadRaw = notifyDownload
         implementation.PLUGIN_VERSION = self.PLUGIN_VERSION
         let config = (self.bridge?.viewController as? CAPBridgeViewController)?.instanceDescriptor().legacyConfig
@@ -289,9 +285,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.global(qos: .background).async {
             do {
                 let next = try self.implementation.download(url: url!, version: version, sessionKey: sessionKey)
-                if !self.implementation.hasOldPrivateKeyPropertyInConfig {
-                    checksum = try self.implementation.decryptChecksum(checksum: checksum, version: version)
-                }
+                checksum = try self.implementation.decryptChecksum(checksum: checksum, version: version)
                 if (checksum != "" || self.implementation.publicKey != "") && next.getChecksum() != checksum {
                     print("\(self.implementation.TAG) Error checksum", next.getChecksum(), checksum)
                     self.implementation.sendStats(action: "checksum_fail", versionName: next.getVersionName())
@@ -773,9 +767,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         self.endBackGroundTaskWithNotif(msg: "Latest version is in error state. Aborting update.", latestVersionName: latestVersionName, current: current)
                         return
                     }
-                    if !self.implementation.hasOldPrivateKeyPropertyInConfig {
-                        res.checksum = try self.implementation.decryptChecksum(checksum: res.checksum, version: latestVersionName)
-                    }
+                    res.checksum = try self.implementation.decryptChecksum(checksum: res.checksum, version: latestVersionName)
                     if res.checksum != "" && next.getChecksum() != res.checksum && res.manifest == nil {
                         print("\(self.implementation.TAG) Error checksum", next.getChecksum(), res.checksum)
                         self.implementation.sendStats(action: "checksum_fail", versionName: next.getVersionName())

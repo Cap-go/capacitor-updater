@@ -42,7 +42,6 @@ import java.net.URL;
 import java.net.URLConnection;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
-import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.SecureRandom;
 import java.util.ArrayList;
@@ -89,9 +88,7 @@ public class CapacitorUpdater {
   public String channelUrl = "";
   public String defaultChannel = "";
   public String appId = "";
-  public String privateKey = "";
   public String publicKey = "";
-  public boolean hasOldPrivateKeyPropertyInConfig = false;
   public String deviceID = "";
   public int timeout = 20000;
 
@@ -371,14 +368,9 @@ public class CapacitorUpdater {
 
       if (!isManifest) {
         String checksumDecrypted = Objects.requireNonNullElse(checksumRes, "");
-        if (!this.hasOldPrivateKeyPropertyInConfig && !sessionKey.isEmpty()) {
-          this.decryptFileV2(downloaded, sessionKey, version);
-          checksumDecrypted = this.decryptChecksum(checksumRes, version);
-          checksum = this.calcChecksumV2(downloaded);
-        } else {
-          this.decryptFile(downloaded, sessionKey, version);
-          checksum = this.calcChecksum(downloaded);
-        }
+        this.decryptFileV2(downloaded, sessionKey, version);
+        checksumDecrypted = this.decryptChecksum(checksumRes, version);
+        checksum = this.calcChecksumV2(downloaded);
         if (
           (!checksumDecrypted.isEmpty() || !this.publicKey.isEmpty()) &&
           !checksumDecrypted.equals(checksum)
@@ -646,61 +638,6 @@ public class CapacitorUpdater {
         dis.readFully(content);
         dis.close();
         byte[] decrypted = CryptoCipherV2.decryptAES(content, sKey, iv);
-        // write the decrypted string to the file
-        try (
-          final FileOutputStream fos = new FileOutputStream(
-            file.getAbsolutePath()
-          )
-        ) {
-          fos.write(decrypted);
-        }
-      }
-    } catch (GeneralSecurityException e) {
-      Log.i(TAG, "decryptFile fail");
-      this.sendStats("decrypt_fail", version);
-      e.printStackTrace();
-      throw new IOException("GeneralSecurityException");
-    }
-  }
-
-  private void decryptFile(
-    final File file,
-    final String ivSessionKey,
-    final String version
-  ) throws IOException {
-    // (str != null && !str.isEmpty())
-    if (this.privateKey == null || this.privateKey.isEmpty()) {
-      Log.i(TAG, "Cannot found privateKey");
-      return;
-    } else if (
-      ivSessionKey == null ||
-      ivSessionKey.isEmpty() ||
-      ivSessionKey.split(":").length != 2
-    ) {
-      Log.i(TAG, "Cannot found sessionKey");
-      return;
-    }
-    try {
-      String ivB64 = ivSessionKey.split(":")[0];
-      String sessionKeyB64 = ivSessionKey.split(":")[1];
-      byte[] iv = Base64.decode(ivB64.getBytes(), Base64.DEFAULT);
-      byte[] sessionKey = Base64.decode(
-        sessionKeyB64.getBytes(),
-        Base64.DEFAULT
-      );
-      PrivateKey pKey = CryptoCipher.stringToPrivateKey(this.privateKey);
-      byte[] decryptedSessionKey = CryptoCipher.decryptRSA(sessionKey, pKey);
-      SecretKey sKey = CryptoCipher.byteToSessionKey(decryptedSessionKey);
-      byte[] content = new byte[(int) file.length()];
-
-      try (
-        final FileInputStream fis = new FileInputStream(file);
-        final BufferedInputStream bis = new BufferedInputStream(fis);
-        final DataInputStream dis = new DataInputStream(bis)
-      ) {
-        dis.readFully(content);
-        dis.close();
-        byte[] decrypted = CryptoCipher.decryptAES(content, sKey, iv);
         // write the decrypted string to the file
         try (
           final FileOutputStream fos = new FileOutputStream(

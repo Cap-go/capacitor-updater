@@ -288,9 +288,7 @@ extension CustomError: LocalizedError {
     public var defaultChannel: String = ""
     public var appId: String = ""
     public var deviceID = ""
-    public var privateKey: String = ""
     public var publicKey: String = ""
-    public var hasOldPrivateKeyPropertyInConfig: Bool = false
 
     public var notifyDownloadRaw: (String, Int, Bool) -> Void = { _, _, _  in }
     public func notifyDownload(id: String, percent: Int, ignoreMultipleOfTen: Bool = false) {
@@ -412,53 +410,6 @@ extension CustomError: LocalizedError {
             }
 
             guard let sessionKeyDataDecrypted = rsaPublicKey.decrypt(data: sessionKeyDataEncrypted) else {
-                throw NSError(domain: "Failed to decrypt session key data", code: 2, userInfo: nil)
-            }
-
-            let aesPrivateKey = AES128Key(iv: ivData, aes128Key: sessionKeyDataDecrypted)
-
-            guard let encryptedData = try? Data(contentsOf: filePath) else {
-                throw NSError(domain: "Failed to read encrypted data", code: 3, userInfo: nil)
-            }
-
-            guard let decryptedData = aesPrivateKey.decrypt(data: encryptedData) else {
-                throw NSError(domain: "Failed to decrypt data", code: 4, userInfo: nil)
-            }
-
-            try decryptedData.write(to: filePath)
-
-        } catch {
-            print("\(self.TAG) Cannot decode: \(filePath.path)", error)
-            self.sendStats(action: "decrypt_fail", versionName: version)
-            throw CustomError.cannotDecode
-        }
-    }
-
-    private func decryptFile(filePath: URL, sessionKey: String, version: String) throws {
-        if self.privateKey.isEmpty {
-            print("\(self.TAG) Cannot found privateKey")
-            return
-        } else if sessionKey.isEmpty  || sessionKey.components(separatedBy: ":").count != 2 {
-            print("\(self.TAG) Cannot found sessionKey")
-            return
-        }
-        do {
-            guard let rsaPrivateKey: RSAPrivateKey = .load(rsaPrivateKey: self.privateKey) else {
-                print("cannot decode privateKey", self.privateKey)
-                throw CustomError.cannotDecode
-            }
-
-            let sessionKeyArray: [String] = sessionKey.components(separatedBy: ":")
-            guard let ivData: Data = Data(base64Encoded: sessionKeyArray[0]) else {
-                print("cannot decode sessionKey", sessionKey)
-                throw CustomError.cannotDecode
-            }
-
-            guard let sessionKeyDataEncrypted = Data(base64Encoded: sessionKeyArray[1]) else {
-                throw NSError(domain: "Invalid session key data", code: 1, userInfo: nil)
-            }
-
-            guard let sessionKeyDataDecrypted = rsaPrivateKey.decrypt(data: sessionKeyDataEncrypted) else {
                 throw NSError(domain: "Failed to decrypt session key data", code: 2, userInfo: nil)
             }
 
@@ -708,7 +659,7 @@ extension CustomError: LocalizedError {
                 print("cannot decode publicKey", self.publicKey)
                 throw CustomError.cannotDecode
             }
-            guard let decryptedChecksum = try? rsaPublicKey.decrypt(data: checksumBytes) else {
+            guard let decryptedChecksum = rsaPublicKey.decrypt(data: checksumBytes) else {
                 throw NSError(domain: "Failed to decrypt session key data", code: 2, userInfo: nil)
             }
             return decryptedChecksum.base64EncodedString()
@@ -914,7 +865,7 @@ extension CustomError: LocalizedError {
         }
         let session = Session(eventMonitors: [monitor])
 
-        var request = session.streamRequest(url, headers: requestHeaders).validate().onHTTPResponse(perform: { response  in
+        let request = session.streamRequest(url, headers: requestHeaders).validate().onHTTPResponse(perform: { response  in
             if let contentLength = response.headers.value(for: "Content-Length") {
                 targetSize = (Int(contentLength) ?? -1) + Int(totalReceivedBytes)
             }
@@ -972,12 +923,7 @@ extension CustomError: LocalizedError {
 
         let finalPath = tempDataPath.deletingLastPathComponent().appendingPathComponent("\(id)")
         do {
-            var checksumDecrypted = checksum
-            if !self.hasOldPrivateKeyPropertyInConfig {
-                try self.decryptFileV2(filePath: tempDataPath, sessionKey: sessionKey, version: version)
-            } else {
-                try self.decryptFile(filePath: tempDataPath, sessionKey: sessionKey, version: version)
-            }
+            try self.decryptFileV2(filePath: tempDataPath, sessionKey: sessionKey, version: version)
             try FileManager.default.moveItem(at: tempDataPath, to: finalPath)
         } catch {
             print("\(self.TAG) Failed decrypt file : \(error)")
@@ -987,11 +933,7 @@ extension CustomError: LocalizedError {
         }
 
         do {
-            if !self.hasOldPrivateKeyPropertyInConfig && !sessionKey.isEmpty {
-                checksum = self.calcChecksumV2(filePath: finalPath)
-            } else {
-                checksum = self.calcChecksum(filePath: finalPath)
-            }
+            checksum = self.calcChecksumV2(filePath: finalPath)
             print("\(self.TAG) Downloading: 80% (unzipping)")
             try self.saveDownloaded(sourceZip: finalPath, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: true)
 
