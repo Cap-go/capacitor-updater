@@ -191,7 +191,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             _ = self._reset(toLastSuccessful: false)
             let res = implementation.list()
             res.forEach { version in
-                print("\(self.implementation.TAG) Deleting obsolete bundle: \(version)")
+                print("\(self.implementation.TAG) Deleting obsolete bundle: \(version.getId())")
                 let res = implementation.delete(id: version.getId())
                 if !res {
                     print("\(self.implementation.TAG) Delete failed, id \(version.getId()) doesn't exist")
