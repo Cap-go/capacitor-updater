@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [6.4.0](https://github.com/Cap-go/capacitor-updater/compare/6.3.22...6.4.0) (2024-11-25)
+
+
+### Features
+
+* getChannel return defaultChannel ([587e6e9](https://github.com/Cap-go/capacitor-updater/commit/587e6e9bf1da5b3b3810f91091dbeec71472d961))
+
 ### [6.3.22](https://github.com/Cap-go/capacitor-updater/compare/6.3.21...6.3.22) (2024-11-25)
 
 
