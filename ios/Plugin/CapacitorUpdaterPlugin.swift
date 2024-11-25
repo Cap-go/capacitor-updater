@@ -43,7 +43,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getBuiltinVersion", returnType: CAPPluginReturnPromise)
     ]
     public var implementation = CapacitorUpdater()
-    private let PLUGIN_VERSION: String = "6.3.20"
+    private let PLUGIN_VERSION: String = "6.3.22"
     static let updateUrlDefault = "https://plugin.capgo.app/updates"
     static let statsUrlDefault = "https://plugin.capgo.app/stats"
     static let channelUrlDefault = "https://plugin.capgo.app/channel_self"
@@ -122,6 +122,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         implementation.defaultChannel = getConfig().getString("defaultChannel", "")!
         self.implementation.autoReset()
 
+        if resetWhenUpdate {
+            self.cleanupObsoleteVersions()
+        }
+        
         // Load the server
         // This is very much swift specific, android does not do that
         // In android we depend on the serverBasePath capacitor property
@@ -132,9 +136,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if !self.initialLoad() {
             print("\(self.implementation.TAG) unable to force reload, the plugin might fallback to the builtin version")
         }
-        if resetWhenUpdate {
-            self.cleanupObsoleteVersions()
-        }
+        
         let nc = NotificationCenter.default
         nc.addObserver(self, selector: #selector(appMovedToBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
         nc.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
@@ -191,7 +193,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             _ = self._reset(toLastSuccessful: false)
             let res = implementation.list()
             res.forEach { version in
-                print("\(self.implementation.TAG) Deleting obsolete bundle: \(version)")
+                print("\(self.implementation.TAG) Deleting obsolete bundle: \(version.getId())")
                 let res = implementation.delete(id: version.getId())
                 if !res {
                     print("\(self.implementation.TAG) Delete failed, id \(version.getId()) doesn't exist")
