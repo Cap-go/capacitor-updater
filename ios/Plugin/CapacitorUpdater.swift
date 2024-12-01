@@ -119,6 +119,7 @@ struct AppVersionDec: Decodable {
     let major: Bool?
     let data: [String: String]?
     let manifest: [ManifestEntry]?
+    let revert_to_builtin: Bool?
 }
 
 public class AppVersion: NSObject {
@@ -126,6 +127,7 @@ public class AppVersion: NSObject {
     var checksum: String = ""
     var url: String = ""
     var message: String?
+    var revertToBuiltin: Bool?
     var error: String?
     var sessionKey: String?
     var major: Bool?
@@ -594,6 +596,9 @@ extension CustomError: LocalizedError {
                 }
                 if let checksum = response.value?.checksum {
                     latest.checksum = checksum
+                }
+                if let revertToBuiltin = response.value?.revert_to_builtin {
+                    latest.revertToBuiltin = revertToBuiltin
                 }
                 if let version = response.value?.version {
                     latest.version = version

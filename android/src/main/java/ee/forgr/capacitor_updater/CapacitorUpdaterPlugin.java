@@ -783,6 +783,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
             } else if (res.has("message")) {
               call.reject(res.getString("message"));
               return;
+            } else if (res.has("revert_to_builtin")) {
+              call.reject(
+                res.getString("revertToBuiltin is set to true, rejecting")
+              );
+              return;
             } else {
               call.resolve(res);
             }
@@ -1175,8 +1180,22 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     "Built-in bundle is active. revert_to_builtin doesn't apply."
                   );
                 } else {
-                  this._reset(false);
                   Log.i(CapacitorUpdater.TAG, "Resetting to builtin version");
+                  if (!this._reset(false)) {
+                    CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                        "Cannot reset via revertToBuiltin",
+                        current.getVersionName(),
+                        current,
+                        true
+                      );
+                  } else {
+                    CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                        "Resteted via revertToBuiltin",
+                        current.getVersionName(),
+                        current,
+                        false
+                      );
+                  }
                 }
                 return;
               }

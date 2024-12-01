@@ -410,7 +410,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 call.reject( res.error!)
             } else if res.message != nil {
                 call.reject( res.message!)
-            } else {
+            } else if (res.revertToBuiltin ?? false) {
+                call.reject("revertToBuiltin is set to true, rejecting")
+            }
+            else {
                 call.resolve(res.toDict())
             }
         }
@@ -716,6 +719,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             print("\(self.implementation.TAG) Check for update via \(self.updateUrl)")
             let res = self.implementation.getLatest(url: url)
             let current = self.implementation.getCurrentBundle()
+            
+            if (res.revertToBuiltin ?? false) {
+                if (!self._reset(toLastSuccessful: false)) {
+                    self.endBackGroundTaskWithNotif(msg: "Cannot reset via revertToBuiltin", latestVersionName: res.version, current: self.implementation.getCurrentBundle(), error: true)
+                } else {
+                    self.endBackGroundTaskWithNotif(msg: "Resteted via revertToBuiltin", latestVersionName: res.version, current: self.implementation.getCurrentBundle(), error: false)
+                }
+                return
+            }
 
             if (res.message) != nil {
                 print("\(self.implementation.TAG) API message: \(res.message ?? "")")
@@ -723,19 +735,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     self.notifyListeners("majorAvailable", data: ["version": res.version])
                 }
                 self.endBackGroundTaskWithNotif(msg: res.message ?? "", latestVersionName: res.version, current: current, error: true)
-                return
-            }
-            if res.version == "builtin" {
-                print("\(self.implementation.TAG) Latest version is builtin")
-                if self.directUpdate {
-                    print("\(self.implementation.TAG) Direct update to builtin version")
-                    _ = self._reset(toLastSuccessful: false)
-                    self.endBackGroundTaskWithNotif(msg: "Updated to builtin version", latestVersionName: res.version, current: self.implementation.getCurrentBundle(), error: false)
-                } else {
-                    print("\(self.implementation.TAG) Setting next bundle to builtin")
-                    _ = self.implementation.setNextBundle(next: BundleInfo.ID_BUILTIN)
-                    self.endBackGroundTaskWithNotif(msg: "Next update will be to builtin version", latestVersionName: res.version, current: current, error: false)
-                }
                 return
             }
             let sessionKey = res.sessionKey ?? ""
