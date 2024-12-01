@@ -1164,31 +1164,19 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
               final String latestVersionName = res.getString("version");
 
-              if ("builtin".equals(latestVersionName)) {
-                Log.i(CapacitorUpdater.TAG, "Latest version is builtin");
-                if (CapacitorUpdaterPlugin.this.implementation.directUpdate) {
+              final boolean revertToNative = res.has("revert_to_builtin")
+                ? res.getBool("revert_to_builtin")
+                : false;
+
+              if (revertToNative) {
+                if (current.isBuiltin()) {
                   Log.i(
                     CapacitorUpdater.TAG,
-                    "Direct update to builtin version"
+                    "Built-in bundle is active. revert_to_builtin doesn't apply."
                   );
-                  this._reset(false);
-                  CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                      "Updated to builtin version",
-                      latestVersionName,
-                      CapacitorUpdaterPlugin.this.implementation.getCurrentBundle(),
-                      false
-                    );
                 } else {
-                  Log.i(CapacitorUpdater.TAG, "Setting next bundle to builtin");
-                  CapacitorUpdaterPlugin.this.implementation.setNextBundle(
-                      BundleInfo.ID_BUILTIN
-                    );
-                  CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                      "Next update will be to builtin version",
-                      latestVersionName,
-                      current,
-                      false
-                    );
+                  this._reset(false);
+                  Log.i(CapacitorUpdater.TAG, "Resetting to builtin version");
                 }
                 return;
               }
