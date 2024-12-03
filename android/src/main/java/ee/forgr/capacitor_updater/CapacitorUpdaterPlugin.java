@@ -55,7 +55,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
   private static final String channelUrlDefault =
     "https://plugin.capgo.app/channel_self";
 
-  private final String PLUGIN_VERSION = "6.3.22";
+  private final String PLUGIN_VERSION = "6.4.1";
   private static final String DELAY_CONDITION_PREFERENCES = "";
 
   private SharedPreferences.Editor editor;
@@ -224,8 +224,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
     this.updateUrl = this.getConfig().getString("updateUrl", updateUrlDefault);
     this.autoUpdate = this.getConfig().getBoolean("autoUpdate", true);
     this.appReadyTimeout = this.getConfig().getInt("appReadyTimeout", 10000);
-    this.implementation.timeout =
-      this.getConfig().getInt("responseTimeout", 20) * 1000;
+    this.implementation.timeout = this.getConfig()
+      .getInt("responseTimeout", 20) *
+    1000;
     boolean resetWhenUpdate =
       this.getConfig().getBoolean("resetWhenUpdate", true);
 
