@@ -408,6 +408,7 @@ setChannel(options: SetChannelOptions) => Promise<ChannelRes>
 Sets the channel for this device. The channel has to allow for self assignment for this to work.
 Do not use this method to set the channel at boot when `autoUpdate` is enabled in the {@link PluginsConfig}.
 This method is to set the channel after the app is ready.
+This methods send to Capgo backend a request to link the device ID to the channel. Capgo can accept or refuse depending of the setting of your channel.
 
 | Param         | Type                                                            | Description                                                                      |
 | ------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------- |
