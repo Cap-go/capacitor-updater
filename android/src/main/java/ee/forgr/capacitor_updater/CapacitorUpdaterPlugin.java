@@ -1113,9 +1113,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
     if (error) {
       Log.i(
         CapacitorUpdater.TAG,
-        "endBackGroundTaskWithNotif error" +
+        "endBackGroundTaskWithNotif error: " +
         error +
-        "current: " +
+        " current: " +
         current.getVersionName() +
         "latestVersionName: " +
         latestVersionName

@@ -79,28 +79,34 @@ public class DownloadService extends IntentService {
     String version = intent.getStringExtra(VERSION);
     String sessionKey = intent.getStringExtra(SESSIONKEY);
     String checksum = intent.getStringExtra(CHECKSUM);
-    String manifestString = intent.getStringExtra(MANIFEST);
+    boolean isManifest = intent.getBooleanExtra(IS_MANIFEST, false);
 
-    Log.d(TAG + " DownloadService", "onHandleIntent" + manifestString);
-    if (manifestString != null) {
-      handleManifestDownload(
-        id,
-        documentsDir,
-        dest,
-        version,
-        sessionKey,
-        manifestString
-      );
+    Log.d(TAG + " DownloadService", "onHandleIntent isManifest: " + isManifest);
+    if (isManifest) {
+        JSONArray manifest = DataManager.getInstance().getAndClearManifest();
+        if (manifest != null) {
+            handleManifestDownload(
+                id,
+                documentsDir,
+                dest,
+                version,
+                sessionKey,
+                manifest.toString()
+            );
+        } else {
+            Log.e(TAG + " DownloadService", "Manifest is null");
+            publishResults("", id, version, checksum, sessionKey, "Manifest is null", false);
+        }
     } else {
-      handleSingleFileDownload(
-        url,
-        id,
-        documentsDir,
-        dest,
-        version,
-        sessionKey,
-        checksum
-      );
+        handleSingleFileDownload(
+            url,
+            id,
+            documentsDir,
+            dest,
+            version,
+            sessionKey,
+            checksum
+        );
     }
   }
 

@@ -478,9 +478,15 @@ public class CapacitorUpdater {
     intent.putExtra(DownloadService.SESSIONKEY, sessionKey);
     intent.putExtra(DownloadService.CHECKSUM, checksum);
     if (manifest != null) {
-      intent.putExtra(DownloadService.MANIFEST, manifest.toString());
+        DataManager.getInstance().setManifest(manifest);
+        intent.putExtra(DownloadService.IS_MANIFEST, true);
     }
-    this.activity.startService(intent);
+    
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        this.activity.startForegroundService(intent);
+    } else {
+        this.activity.startService(intent);
+    }
   }
 
   private void downloadFile(
