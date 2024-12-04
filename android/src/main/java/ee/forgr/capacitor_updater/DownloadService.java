@@ -203,10 +203,7 @@ public class DownloadService extends IntentService {
       final AtomicBoolean hasError = new AtomicBoolean(false);
 
       // Use more threads for I/O-bound operations
-      int threadCount = Math.min(
-        Runtime.getRuntime().availableProcessors() * 2,
-        32
-      );
+      int threadCount = Math.min(64, Math.max(32, totalFiles));
       ExecutorService executor = Executors.newFixedThreadPool(threadCount);
       List<Future<?>> futures = new ArrayList<>();
 
