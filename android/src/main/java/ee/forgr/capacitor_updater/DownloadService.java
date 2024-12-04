@@ -6,7 +6,13 @@
 package ee.forgr.capacitor_updater;
 
 import android.app.IntentService;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.content.Intent;
+import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import java.io.*;
 import java.io.FileInputStream;
@@ -50,13 +56,57 @@ public class DownloadService extends IntentService {
   public static final String IS_MANIFEST = "is_manifest";
   public static final String MANIFEST = "manifest";
   private static final String UPDATE_FILE = "update.dat";
+  private static final int NOTIFICATION_ID = 1;
+  private static final long NOTIFICATION_DELAY_MS = 4000; // 4 seconds
 
   private final OkHttpClient client = new OkHttpClient.Builder()
     .protocols(Arrays.asList(Protocol.HTTP_2, Protocol.HTTP_1_1))
     .build();
+  private Handler handler = new Handler(Looper.getMainLooper());
+  private Runnable notificationRunnable;
+  private boolean isNotificationShown = false;
 
   public DownloadService() {
     super("Background DownloadService");
+  }
+
+  @Override
+  public void onCreate() {
+    super.onCreate();
+    notificationRunnable = () -> startForeground();
+    handler.postDelayed(notificationRunnable, NOTIFICATION_DELAY_MS);
+  }
+
+  @Override
+  public void onDestroy() {
+    super.onDestroy();
+    handler.removeCallbacks(notificationRunnable);
+  }
+
+  private void startForeground() {
+    isNotificationShown = true;
+    String channelId = createNotificationChannel();
+    Notification.Builder builder = new Notification.Builder(this, channelId)
+        .setContentTitle("Downloading Update")
+        .setContentText("Download in progress")
+        .setSmallIcon(android.R.drawable.stat_sys_download)
+        .setOngoing(true);
+
+    startForeground(NOTIFICATION_ID, builder.build());
+  }
+
+  private String createNotificationChannel() {
+    String channelId = "capacitor_updater_channel";
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        NotificationChannel channel = new NotificationChannel(
+            channelId,
+            "Capacitor Updater Downloads",
+            NotificationManager.IMPORTANCE_LOW
+        );
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        manager.createNotificationChannel(channel);
+    }
+    return channelId;
   }
 
   private int calcTotalPercent(long downloadedBytes, long contentLength) {
@@ -245,6 +295,7 @@ public class DownloadService extends IntentService {
       Log.e(TAG + " DownloadService", "Error in handleManifestDownload", e);
       publishResults("", id, version, "", sessionKey, e.getMessage(), true);
     }
+    stopForegroundIfNeeded();
   }
 
   private void handleSingleFileDownload(
@@ -368,6 +419,7 @@ public class DownloadService extends IntentService {
         false
       );
     }
+    stopForegroundIfNeeded();
   }
 
   private void clearDownloadData(String docDir) {
@@ -533,5 +585,16 @@ public class DownloadService extends IntentService {
       sb.append(Integer.toString((aByte & 0xff) + 0x100, 16).substring(1));
     }
     return sb.toString();
+  }
+
+  private void stopForegroundIfNeeded() {
+    handler.removeCallbacks(notificationRunnable);
+    if (isNotificationShown) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(STOP_FOREGROUND_REMOVE);
+        } else {
+            stopForeground(true);
+        }
+    }
   }
 }
