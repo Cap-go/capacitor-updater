@@ -478,14 +478,14 @@ public class CapacitorUpdater {
     intent.putExtra(DownloadService.SESSIONKEY, sessionKey);
     intent.putExtra(DownloadService.CHECKSUM, checksum);
     if (manifest != null) {
-        DataManager.getInstance().setManifest(manifest);
-        intent.putExtra(DownloadService.IS_MANIFEST, true);
+      DataManager.getInstance().setManifest(manifest);
+      intent.putExtra(DownloadService.IS_MANIFEST, true);
     }
-    
+
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        this.activity.startForegroundService(intent);
+      this.activity.startForegroundService(intent);
     } else {
-        this.activity.startService(intent);
+      this.activity.startService(intent);
     }
   }
 

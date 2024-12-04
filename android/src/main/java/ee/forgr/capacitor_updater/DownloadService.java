@@ -87,10 +87,10 @@ public class DownloadService extends IntentService {
     isNotificationShown = true;
     String channelId = createNotificationChannel();
     Notification.Builder builder = new Notification.Builder(this, channelId)
-        .setContentTitle("Downloading Update")
-        .setContentText("Download in progress")
-        .setSmallIcon(android.R.drawable.stat_sys_download)
-        .setOngoing(true);
+      .setContentTitle("Downloading Update")
+      .setContentText("Download in progress")
+      .setSmallIcon(android.R.drawable.stat_sys_download)
+      .setOngoing(true);
 
     startForeground(NOTIFICATION_ID, builder.build());
   }
@@ -98,13 +98,13 @@ public class DownloadService extends IntentService {
   private String createNotificationChannel() {
     String channelId = "capacitor_updater_channel";
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        NotificationChannel channel = new NotificationChannel(
-            channelId,
-            "Capacitor Updater Downloads",
-            NotificationManager.IMPORTANCE_LOW
-        );
-        NotificationManager manager = getSystemService(NotificationManager.class);
-        manager.createNotificationChannel(channel);
+      NotificationChannel channel = new NotificationChannel(
+        channelId,
+        "Capacitor Updater Downloads",
+        NotificationManager.IMPORTANCE_LOW
+      );
+      NotificationManager manager = getSystemService(NotificationManager.class);
+      manager.createNotificationChannel(channel);
     }
     return channelId;
   }
@@ -133,30 +133,38 @@ public class DownloadService extends IntentService {
 
     Log.d(TAG + " DownloadService", "onHandleIntent isManifest: " + isManifest);
     if (isManifest) {
-        JSONArray manifest = DataManager.getInstance().getAndClearManifest();
-        if (manifest != null) {
-            handleManifestDownload(
-                id,
-                documentsDir,
-                dest,
-                version,
-                sessionKey,
-                manifest.toString()
-            );
-        } else {
-            Log.e(TAG + " DownloadService", "Manifest is null");
-            publishResults("", id, version, checksum, sessionKey, "Manifest is null", false);
-        }
-    } else {
-        handleSingleFileDownload(
-            url,
-            id,
-            documentsDir,
-            dest,
-            version,
-            sessionKey,
-            checksum
+      JSONArray manifest = DataManager.getInstance().getAndClearManifest();
+      if (manifest != null) {
+        handleManifestDownload(
+          id,
+          documentsDir,
+          dest,
+          version,
+          sessionKey,
+          manifest.toString()
         );
+      } else {
+        Log.e(TAG + " DownloadService", "Manifest is null");
+        publishResults(
+          "",
+          id,
+          version,
+          checksum,
+          sessionKey,
+          "Manifest is null",
+          false
+        );
+      }
+    } else {
+      handleSingleFileDownload(
+        url,
+        id,
+        documentsDir,
+        dest,
+        version,
+        sessionKey,
+        checksum
+      );
     }
   }
 
@@ -590,11 +598,11 @@ public class DownloadService extends IntentService {
   private void stopForegroundIfNeeded() {
     handler.removeCallbacks(notificationRunnable);
     if (isNotificationShown) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            stopForeground(STOP_FOREGROUND_REMOVE);
-        } else {
-            stopForeground(true);
-        }
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+        stopForeground(STOP_FOREGROUND_REMOVE);
+      } else {
+        stopForeground(true);
+      }
     }
   }
 }
