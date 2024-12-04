@@ -125,7 +125,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if resetWhenUpdate {
             self.cleanupObsoleteVersions()
         }
-        
+
         // Load the server
         // This is very much swift specific, android does not do that
         // In android we depend on the serverBasePath capacitor property
@@ -136,7 +136,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if !self.initialLoad() {
             print("\(self.implementation.TAG) unable to force reload, the plugin might fallback to the builtin version")
         }
-        
+
         let nc = NotificationCenter.default
         nc.addObserver(self, selector: #selector(appMovedToBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
         nc.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)

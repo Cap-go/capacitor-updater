@@ -1334,13 +1334,13 @@ extension CustomError: LocalizedError {
                 }
             case let .failure(error):
                 if let data = response.data, let bodyString = String(data: data, encoding: .utf8) {
-                    if (bodyString.contains("channel_not_found") && response.response?.statusCode == 400 && !self.defaultChannel.isEmpty) {
+                    if bodyString.contains("channel_not_found") && response.response?.statusCode == 400 && !self.defaultChannel.isEmpty {
                         getChannel.channel = self.defaultChannel
                         getChannel.status = "default"
                         return
                     }
                 }
-                
+
                 print("\(self.TAG) Error get Channel", response.value ?? "", error)
                 getChannel.message = "Error get Channel \(String(describing: response.value)))"
                 getChannel.error = "response_error"

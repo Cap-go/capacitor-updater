@@ -42,10 +42,10 @@ import java.util.UUID;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import org.json.JSONArray;
-import org.json.JSONException;
 import okhttp3.OkHttpClient;
 import okhttp3.Protocol;
+import org.json.JSONArray;
+import org.json.JSONException;
 
 @CapacitorPlugin(name = "CapacitorUpdater")
 public class CapacitorUpdaterPlugin extends Plugin {
@@ -229,9 +229,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     this.updateUrl = this.getConfig().getString("updateUrl", updateUrlDefault);
     this.autoUpdate = this.getConfig().getBoolean("autoUpdate", true);
     this.appReadyTimeout = this.getConfig().getInt("appReadyTimeout", 10000);
-    this.implementation.timeout = this.getConfig()
-      .getInt("responseTimeout", 20) *
-    1000;
+    this.implementation.timeout =
+      this.getConfig().getInt("responseTimeout", 20) * 1000;
     boolean resetWhenUpdate =
       this.getConfig().getBoolean("resetWhenUpdate", true);
 
@@ -1112,7 +1111,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
     Boolean error
   ) {
     if (error) {
-      Log.i(CapacitorUpdater.TAG, "endBackGroundTaskWithNotif error" + error + "current: " + current.getVersionName() + "latestVersionName: " + latestVersionName);
+      Log.i(
+        CapacitorUpdater.TAG,
+        "endBackGroundTaskWithNotif error" +
+        error +
+        "current: " +
+        current.getVersionName() +
+        "latestVersionName: " +
+        latestVersionName
+      );
       this.implementation.sendStats("download_fail", current.getVersionName());
       final JSObject ret = new JSObject();
       ret.put("version", latestVersionName);

@@ -15,23 +15,23 @@ import java.net.URL;
 import java.nio.channels.FileChannel;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
-import org.brotli.dec.BrotliInputStream;
-import org.json.JSONArray;
-import org.json.JSONObject;
 import okhttp3.OkHttpClient;
 import okhttp3.Protocol;
 import okhttp3.Request;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
-import java.util.Arrays;
-import java.util.concurrent.TimeUnit;
+import org.brotli.dec.BrotliInputStream;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 public class DownloadService extends IntentService {
 
@@ -120,7 +120,7 @@ public class DownloadService extends IntentService {
         getApplicationContext().getCacheDir(),
         "capgo_downloads"
       );
-      
+
       // Ensure directories are created
       if (!destFolder.exists() && !destFolder.mkdirs()) {
         throw new IOException(
@@ -199,7 +199,11 @@ public class DownloadService extends IntentService {
             int percent = calcTotalPercent(completed, totalFiles);
             notifyDownload(id, percent);
           } catch (Exception e) {
-            Log.e(TAG + " DownloadService", "Error processing file: " + fileName, e);
+            Log.e(
+              TAG + " DownloadService",
+              "Error processing file: " + fileName,
+              e
+            );
             hasError.set(true);
           }
         });
@@ -425,10 +429,8 @@ public class DownloadService extends IntentService {
     String id
   ) throws Exception {
     Log.d(TAG + " DownloadService", "downloadAndVerify " + downloadUrl);
-    
-    Request request = new Request.Builder()
-      .url(downloadUrl)
-      .build();
+
+    Request request = new Request.Builder().url(downloadUrl).build();
 
     // Create a temporary file for the compressed data
     File compressedFile = new File(
@@ -480,7 +482,10 @@ public class DownloadService extends IntentService {
       if (actualHash.equals(expectedHash)) {
         // Copy the downloaded file to cache if checksum is correct
         copyFile(targetFile, cacheFile);
-        Log.d(TAG + " DownloadService", "copied to cache " + targetFile.getName());
+        Log.d(
+          TAG + " DownloadService",
+          "copied to cache " + targetFile.getName()
+        );
       } else {
         targetFile.delete();
         throw new IOException(

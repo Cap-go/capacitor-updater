@@ -393,7 +393,7 @@ export interface CapacitorUpdaterPlugin {
    * This method is to set the channel after the app is ready.
    * This methods send to Capgo backend a request to link the device ID to the channel. Capgo can accept or refuse depending of the setting of your channel.
    *
-   * 
+   *
    *
    * @param options Is the {@link SetChannelOptions} channel to set
    * @returns {Promise<ChannelRes>} A Promise which is resolved when the new channel is set
