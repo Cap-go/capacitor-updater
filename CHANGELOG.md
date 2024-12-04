@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.5.2](https://github.com/Cap-go/capacitor-updater/compare/6.5.1...6.5.2) (2024-12-04)
+
+
+### Bug Fixes
+
+* issue too big manifest ([9078eae](https://github.com/Cap-go/capacitor-updater/commit/9078eae96f46fa10a4adc7c3a985c9d6a26a2eca))
+* show download notif if download too long ([38b7078](https://github.com/Cap-go/capacitor-updater/commit/38b7078aed59b78f8b875cf84feccb7dc7909094))
+
 ### [6.5.1](https://github.com/Cap-go/capacitor-updater/compare/6.5.0...6.5.1) (2024-12-04)
 
 
