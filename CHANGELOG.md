@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [6.5.0](https://github.com/Cap-go/capacitor-updater/compare/6.4.2...6.5.0) (2024-12-04)
+
+
+### Features
+
+* switch to okhttp to accept http/2 ([2628e5e](https://github.com/Cap-go/capacitor-updater/commit/2628e5e37350f4590f0e8c7ea1b477a4d1aedae5))
+
 ### [6.4.2](https://github.com/Cap-go/capacitor-updater/compare/6.4.1...6.4.2) (2024-12-03)
 
 ### [6.4.1](https://github.com/Cap-go/capacitor-updater/compare/6.4.0...6.4.1) (2024-11-26)
