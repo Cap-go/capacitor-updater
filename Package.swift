@@ -30,5 +30,6 @@ let package = Package(
             name: "CapacitorUpdaterPluginTests",
             dependencies: ["CapacitorUpdaterPlugin"],
             path: "ios/Tests/CapacitorUpdaterPluginTests")
-    ]
+    ],
+    swiftLanguageVersions: [.v5]
 )

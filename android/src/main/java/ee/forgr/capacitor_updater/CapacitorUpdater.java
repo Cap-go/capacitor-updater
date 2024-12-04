@@ -8,6 +8,7 @@ package ee.forgr.capacitor_updater;
 
 import static android.content.Context.RECEIVER_NOT_EXPORTED;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -18,14 +19,6 @@ import android.os.Build;
 import android.os.Bundle;
 import android.util.Base64;
 import android.util.Log;
-import com.android.volley.BuildConfig;
-import com.android.volley.DefaultRetryPolicy;
-import com.android.volley.NetworkResponse;
-import com.android.volley.Request;
-import com.android.volley.RequestQueue;
-import com.android.volley.VolleyError;
-import com.android.volley.toolbox.HttpHeaderParser;
-import com.android.volley.toolbox.JsonObjectRequest;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.plugin.WebView;
 import java.io.BufferedInputStream;
@@ -37,7 +30,6 @@ import java.io.FileOutputStream;
 import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.UnsupportedEncodingException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.security.GeneralSecurityException;
@@ -54,6 +46,7 @@ import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import javax.crypto.SecretKey;
+import okhttp3.*;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -74,7 +67,7 @@ public class CapacitorUpdater {
   public SharedPreferences.Editor editor;
   public SharedPreferences prefs;
 
-  public RequestQueue requestQueue;
+  public OkHttpClient client;
 
   public File documentsDir;
   public Boolean directUpdate = false;
@@ -105,7 +98,11 @@ public class CapacitorUpdater {
   };
 
   private boolean isProd() {
-    return !BuildConfig.DEBUG;
+    try {
+        return !Objects.requireNonNull(getClass().getPackage()).getName().contains(".debug");
+    } catch (Exception e) {
+        return true; // Default to production if we can't determine
+    }
   }
 
   private boolean isEmulator() {
@@ -252,6 +249,7 @@ public class CapacitorUpdater {
     sourceFile.delete();
   }
 
+  @SuppressLint("UnspecifiedRegisterReceiverFlag")
   public void onResume() {
     IntentFilter filter = new IntentFilter();
     filter.addAction(DownloadService.NOTIFICATION);
@@ -948,42 +946,65 @@ public class CapacitorUpdater {
     json.put("version_os", this.versionOs);
     json.put("version_name", this.getCurrentBundle().getVersionName());
     json.put("plugin_version", this.PLUGIN_VERSION);
-    json.put("is_emulator", this.isEmulator());
-    json.put("is_prod", this.isProd());
+    json.put("is_emulator", false);
+    json.put("is_prod", true);
     json.put("defaultChannel", this.defaultChannel);
     return json;
   }
 
-  private JsonObjectRequest setRetryPolicy(JsonObjectRequest request) {
-    request.setRetryPolicy(
-      new DefaultRetryPolicy(
-        this.timeout,
-        DefaultRetryPolicy.DEFAULT_MAX_RETRIES,
-        DefaultRetryPolicy.DEFAULT_BACKOFF_MULT
-      )
-    );
-    return request;
-  }
+  private void makeJsonRequest(String url, JSONObject jsonBody, Callback callback) {
+    MediaType JSON = MediaType.get("application/json; charset=utf-8");
+    RequestBody body = RequestBody.create(jsonBody.toString(), JSON);
+    
+    Request request = new Request.Builder()
+        .url(url)
+        .post(body)
+        .build();
 
-  private JSObject createError(String message, VolleyError error) {
-    NetworkResponse response = error.networkResponse;
-    final JSObject retError = new JSObject();
-    retError.put("error", "response_error");
-    if (response != null) {
-      try {
-        String json = new String(
-          response.data,
-          HttpHeaderParser.parseCharset(response.headers)
-        );
-        retError.put("message", message + ": " + json);
-      } catch (UnsupportedEncodingException e) {
-        retError.put("message", message + ": " + e);
-      }
-    } else {
-      retError.put("message", message + ": " + error);
-    }
-    Log.e(TAG, message + ": " + retError);
-    return retError;
+    client.newCall(request).enqueue(new okhttp3.Callback() {
+        @Override
+        public void onFailure(Call call, IOException e) {
+            JSObject retError = new JSObject();
+            retError.put("message", "Request failed: " + e.getMessage());
+            retError.put("error", "network_error");
+            callback.callback(retError);
+        }
+
+        @Override
+        public void onResponse(Call call, Response response) throws IOException {
+            try (ResponseBody responseBody = response.body()) {
+                if (!response.isSuccessful()) {
+                    JSObject retError = new JSObject();
+                    retError.put("message", "Server error: " + response.code());
+                    retError.put("error", "response_error");
+                    callback.callback(retError);
+                    return;
+                }
+
+                String responseData = responseBody.string();
+                JSONObject jsonResponse = new JSONObject(responseData);
+                JSObject ret = new JSObject();
+                
+                Iterator<String> keys = jsonResponse.keys();
+                while (keys.hasNext()) {
+                    String key = keys.next();
+                    if (jsonResponse.has(key)) {
+                        if ("session_key".equals(key)) {
+                            ret.put("sessionKey", jsonResponse.get(key));
+                        } else {
+                            ret.put(key, jsonResponse.get(key));
+                        }
+                    }
+                }
+                callback.callback(ret);
+            } catch (JSONException e) {
+                JSObject retError = new JSObject();
+                retError.put("message", "JSON parse error: " + e.getMessage());
+                retError.put("error", "parse_error");
+                callback.callback(retError);
+            }
+        }
+    });
   }
 
   public void getLatest(final String updateUrl, final Callback callback) {
@@ -992,7 +1013,6 @@ public class CapacitorUpdater {
       json = this.createInfoObject();
     } catch (JSONException e) {
       Log.e(TAG, "Error getLatest JSONException", e);
-      e.printStackTrace();
       final JSObject retError = new JSObject();
       retError.put("message", "Cannot get info: " + e);
       retError.put("error", "json_error");
@@ -1001,40 +1021,8 @@ public class CapacitorUpdater {
     }
 
     Log.i(CapacitorUpdater.TAG, "Auto-update parameters: " + json);
-    // Building a request
-    JsonObjectRequest request = new JsonObjectRequest(
-      Request.Method.POST,
-      updateUrl,
-      json,
-      res -> {
-        final JSObject ret = new JSObject();
-        Iterator<String> keys = res.keys();
-        while (keys.hasNext()) {
-          String key = keys.next();
-          if (res.has(key)) {
-            try {
-              if ("session_key".equals(key)) {
-                ret.put("sessionKey", res.get(key));
-              } else {
-                ret.put(key, res.get(key));
-              }
-            } catch (JSONException e) {
-              e.printStackTrace();
-              final JSObject retError = new JSObject();
-              retError.put("message", "Cannot set info: " + e);
-              retError.put("error", "response_error");
-              callback.callback(retError);
-            }
-          }
-        }
-        callback.callback(ret);
-      },
-      error ->
-        callback.callback(
-          CapacitorUpdater.this.createError("Error get latest", error)
-        )
-    );
-    this.requestQueue.add(setRetryPolicy(request));
+
+    makeJsonRequest(updateUrl, json, callback);
   }
 
   public void unsetChannel(final Callback callback) {
@@ -1052,44 +1040,59 @@ public class CapacitorUpdater {
       json = this.createInfoObject();
     } catch (JSONException e) {
       Log.e(TAG, "Error unsetChannel JSONException", e);
-      e.printStackTrace();
       final JSObject retError = new JSObject();
       retError.put("message", "Cannot get info: " + e);
       retError.put("error", "json_error");
       callback.callback(retError);
       return;
     }
-    // Building a request
-    JsonObjectRequest request = new JsonObjectRequest(
-      Request.Method.DELETE,
-      channelUrl,
-      json,
-      res -> {
-        final JSObject ret = new JSObject();
-        Iterator<String> keys = res.keys();
-        while (keys.hasNext()) {
-          String key = keys.next();
-          if (res.has(key)) {
-            try {
-              ret.put(key, res.get(key));
-            } catch (JSONException e) {
-              e.printStackTrace();
-              final JSObject retError = new JSObject();
-              retError.put("message", "Cannot unset channel: " + e);
-              retError.put("error", "response_error");
-              callback.callback(ret);
-            }
-          }
+
+    Request request = new Request.Builder()
+        .url(channelUrl)
+        .delete(RequestBody.create(json.toString(), MediaType.get("application/json")))
+        .build();
+
+    client.newCall(request).enqueue(new okhttp3.Callback() {
+        @Override
+        public void onFailure(Call call, IOException e) {
+            JSObject retError = new JSObject();
+            retError.put("message", "Request failed: " + e.getMessage());
+            retError.put("error", "network_error");
+            callback.callback(retError);
         }
-        Log.i(TAG, "Channel unset");
-        callback.callback(ret);
-      },
-      error ->
-        callback.callback(
-          CapacitorUpdater.this.createError("Error unset channel", error)
-        )
-    );
-    this.requestQueue.add(setRetryPolicy(request));
+
+        @Override
+        public void onResponse(Call call, Response response) throws IOException {
+            try (ResponseBody responseBody = response.body()) {
+                if (!response.isSuccessful()) {
+                    JSObject retError = new JSObject();
+                    retError.put("message", "Server error: " + response.code());
+                    retError.put("error", "response_error");
+                    callback.callback(retError);
+                    return;
+                }
+
+                String responseData = responseBody.string();
+                JSONObject jsonResponse = new JSONObject(responseData);
+                JSObject ret = new JSObject();
+                
+                Iterator<String> keys = jsonResponse.keys();
+                while (keys.hasNext()) {
+                    String key = keys.next();
+                    if (jsonResponse.has(key)) {
+                        ret.put(key, jsonResponse.get(key));
+                    }
+                }
+                Log.i(TAG, "Channel unset");
+                callback.callback(ret);
+            } catch (JSONException e) {
+                JSObject retError = new JSObject();
+                retError.put("message", "JSON parse error: " + e.getMessage());
+                retError.put("error", "parse_error");
+                callback.callback(retError);
+            }
+        }
+    });
   }
 
   public void setChannel(final String channel, final Callback callback) {
@@ -1108,44 +1111,14 @@ public class CapacitorUpdater {
       json.put("channel", channel);
     } catch (JSONException e) {
       Log.e(TAG, "Error setChannel JSONException", e);
-      e.printStackTrace();
       final JSObject retError = new JSObject();
       retError.put("message", "Cannot get info: " + e);
       retError.put("error", "json_error");
       callback.callback(retError);
       return;
     }
-    // Building a request
-    JsonObjectRequest request = new JsonObjectRequest(
-      Request.Method.POST,
-      channelUrl,
-      json,
-      res -> {
-        final JSObject ret = new JSObject();
-        Iterator<String> keys = res.keys();
-        while (keys.hasNext()) {
-          String key = keys.next();
-          if (res.has(key)) {
-            try {
-              ret.put(key, res.get(key));
-            } catch (JSONException e) {
-              e.printStackTrace();
-              final JSObject retError = new JSObject();
-              retError.put("message", "Cannot set channel: " + e);
-              retError.put("error", "response_error");
-              callback.callback(ret);
-            }
-          }
-        }
-        Log.i(TAG, "Channel set to \"" + channel);
-        callback.callback(ret);
-      },
-      error ->
-        callback.callback(
-          CapacitorUpdater.this.createError("Error set channel", error)
-        )
-    );
-    this.requestQueue.add(setRetryPolicy(request));
+
+    makeJsonRequest(channelUrl, json, callback);
   }
 
   public void getChannel(final Callback callback) {
@@ -1163,62 +1136,71 @@ public class CapacitorUpdater {
       json = this.createInfoObject();
     } catch (JSONException e) {
       Log.e(TAG, "Error getChannel JSONException", e);
-      e.printStackTrace();
       final JSObject retError = new JSObject();
       retError.put("message", "Cannot get info: " + e);
       retError.put("error", "json_error");
       callback.callback(retError);
       return;
     }
-    // Building a request
-    JsonObjectRequest request = new JsonObjectRequest(
-      Request.Method.PUT,
-      channelUrl,
-      json,
-      res -> {
-        final JSObject ret = new JSObject();
-        Iterator<String> keys = res.keys();
-        while (keys.hasNext()) {
-          String key = keys.next();
-          if (res.has(key)) {
-            try {
-              ret.put(key, res.get(key));
+
+    Request request = new Request.Builder()
+        .url(channelUrl)
+        .put(RequestBody.create(json.toString(), MediaType.get("application/json")))
+        .build();
+
+    client.newCall(request).enqueue(new okhttp3.Callback() {
+        @Override
+        public void onFailure(Call call, IOException e) {
+            JSObject retError = new JSObject();
+            retError.put("message", "Request failed: " + e.getMessage());
+            retError.put("error", "network_error");
+            callback.callback(retError);
+        }
+
+        @Override
+        public void onResponse(Call call, Response response) throws IOException {
+            try (ResponseBody responseBody = response.body()) {
+                if (response.code() == 400) {
+                    String data = responseBody.string();
+                    if (data.contains("channel_not_found") && !defaultChannel.isEmpty()) {
+                        JSObject ret = new JSObject();
+                        ret.put("channel", defaultChannel);
+                        ret.put("status", "default");
+                        Log.i(TAG, "Channel get to \"" + ret);
+                        callback.callback(ret);
+                        return;
+                    }
+                }
+                
+                if (!response.isSuccessful()) {
+                    JSObject retError = new JSObject();
+                    retError.put("message", "Server error: " + response.code());
+                    retError.put("error", "response_error");
+                    callback.callback(retError);
+                    return;
+                }
+
+                String responseData = responseBody.string();
+                JSONObject jsonResponse = new JSONObject(responseData);
+                JSObject ret = new JSObject();
+                
+                Iterator<String> keys = jsonResponse.keys();
+                while (keys.hasNext()) {
+                    String key = keys.next();
+                    if (jsonResponse.has(key)) {
+                        ret.put(key, jsonResponse.get(key));
+                    }
+                }
+                Log.i(TAG, "Channel get to \"" + ret);
+                callback.callback(ret);
             } catch (JSONException e) {
-              e.printStackTrace();
+                JSObject retError = new JSObject();
+                retError.put("message", "JSON parse error: " + e.getMessage());
+                retError.put("error", "parse_error");
+                callback.callback(retError);
             }
-          }
         }
-        Log.i(TAG, "Channel get to \"" + ret);
-        callback.callback(ret);
-      },
-      error -> {
-        try {
-          if (error.networkResponse.statusCode == 400) {
-            String data = new String(
-              error.networkResponse.data,
-              HttpHeaderParser.parseCharset(error.networkResponse.headers)
-            );
-            if (
-              data.contains("channel_not_found") &&
-              !this.defaultChannel.isEmpty()
-            ) {
-              final JSObject ret = new JSObject();
-              ret.put("channel", this.defaultChannel);
-              ret.put("status", "default");
-              Log.i(TAG, "Channel get to \"" + ret);
-              callback.callback(ret);
-              return;
-            }
-          }
-        } catch (Throwable t) {
-          // ignore
-        }
-        callback.callback(
-          CapacitorUpdater.this.createError("Error get channel", error)
-        );
-      }
-    );
-    this.requestQueue.add(setRetryPolicy(request));
+    });
   }
 
   public void sendStats(final String action) {
@@ -1246,19 +1228,29 @@ public class CapacitorUpdater {
       json.put("action", action);
     } catch (JSONException e) {
       Log.e(TAG, "Error sendStats JSONException", e);
-      e.printStackTrace();
       return;
     }
-    // Building a request
-    JsonObjectRequest request = new JsonObjectRequest(
-      Request.Method.POST,
-      statsUrl,
-      json,
-      response ->
-        Log.i(TAG, "Stats send for \"" + action + "\", version " + versionName),
-      error -> CapacitorUpdater.this.createError("Error send stats", error)
-    );
-    this.requestQueue.add(setRetryPolicy(request));
+
+    Request request = new Request.Builder()
+        .url(statsUrl)
+        .post(RequestBody.create(json.toString(), MediaType.get("application/json")))
+        .build();
+
+    client.newCall(request).enqueue(new okhttp3.Callback() {
+        @Override
+        public void onFailure(Call call, IOException e) {
+            Log.e(TAG, "Failed to send stats: " + e.getMessage());
+        }
+
+        @Override
+        public void onResponse(Call call, Response response) throws IOException {
+            if (response.isSuccessful()) {
+                Log.i(TAG, "Stats send for \"" + action + "\", version " + versionName);
+            } else {
+                Log.e(TAG, "Error sending stats: " + response.code());
+            }
+        }
+    });
   }
 
   public BundleInfo getBundleInfo(final String id) {

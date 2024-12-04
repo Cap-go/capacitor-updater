@@ -14,7 +14,6 @@ import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.util.Log;
-import com.android.volley.toolbox.Volley;
 import com.getcapacitor.CapConfig;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -32,6 +31,7 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
@@ -44,6 +44,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.json.JSONArray;
 import org.json.JSONException;
+import okhttp3.OkHttpClient;
+import okhttp3.Protocol;
 
 @CapacitorPlugin(name = "CapacitorUpdater")
 public class CapacitorUpdaterPlugin extends Plugin {
@@ -136,9 +138,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
         .getString("version", pInfo.versionName);
       this.implementation.PLUGIN_VERSION = this.PLUGIN_VERSION;
       this.implementation.versionCode = Integer.toString(pInfo.versionCode);
-      this.implementation.requestQueue = Volley.newRequestQueue(
-        this.getContext()
-      );
+      this.implementation.client = new OkHttpClient.Builder()
+        .protocols(Arrays.asList(Protocol.HTTP_2, Protocol.HTTP_1_1))
+        .connectTimeout(this.implementation.timeout, TimeUnit.MILLISECONDS)
+        .readTimeout(this.implementation.timeout, TimeUnit.MILLISECONDS)
+        .writeTimeout(this.implementation.timeout, TimeUnit.MILLISECONDS)
+        .build();
 
       this.implementation.directUpdate = this.getConfig()
         .getBoolean("directUpdate", false);
@@ -1107,7 +1112,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     Boolean error
   ) {
     if (error) {
-      Log.i(CapacitorUpdater.TAG, "endBackGroundTaskWithNotif error" + error);
+      Log.i(CapacitorUpdater.TAG, "endBackGroundTaskWithNotif error" + error + "current: " + current.getVersionName() + "latestVersionName: " + latestVersionName);
       this.implementation.sendStats("download_fail", current.getVersionName());
       final JSObject ret = new JSObject();
       ret.put("version", latestVersionName);

@@ -698,7 +698,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         self.notifyListeners("noNeedUpdate", data: ["bundle": current.toJSON()])
         self.sendReadyToJs(current: current, msg: msg)
-        print("\(self.implementation.TAG) endBackGroundTaskWithNotif \(msg)")
+        print("\(self.implementation.TAG) endBackGroundTaskWithNotif \(msg) current: \(current.getVersionName()) latestVersionName: \(latestVersionName)")
         self.endBackGroundTask()
     }
 

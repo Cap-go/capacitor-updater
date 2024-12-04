@@ -8,12 +8,6 @@ package ee.forgr.capacitor_updater;
 import android.app.IntentService;
 import android.content.Intent;
 import android.util.Log;
-import com.android.volley.DefaultRetryPolicy;
-import com.android.volley.NetworkResponse;
-import com.android.volley.Request;
-import com.android.volley.Response;
-import com.android.volley.toolbox.HttpHeaderParser;
-import com.android.volley.toolbox.Volley;
 import java.io.*;
 import java.io.FileInputStream;
 import java.net.HttpURLConnection;
@@ -31,9 +25,17 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.brotli.dec.BrotliInputStream;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import okhttp3.OkHttpClient;
+import okhttp3.Protocol;
+import okhttp3.Request;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
+import java.util.Arrays;
+import java.util.concurrent.TimeUnit;
 
 public class DownloadService extends IntentService {
 
+  public static final String TAG = "Capacitor-updater";
   public static final String URL = "URL";
   public static final String ID = "id";
   public static final String PERCENT = "percent";
@@ -48,6 +50,10 @@ public class DownloadService extends IntentService {
   public static final String IS_MANIFEST = "is_manifest";
   public static final String MANIFEST = "manifest";
   private static final String UPDATE_FILE = "update.dat";
+
+  private final OkHttpClient client = new OkHttpClient.Builder()
+    .protocols(Arrays.asList(Protocol.HTTP_2, Protocol.HTTP_1_1))
+    .build();
 
   public DownloadService() {
     super("Background DownloadService");
@@ -75,7 +81,7 @@ public class DownloadService extends IntentService {
     String checksum = intent.getStringExtra(CHECKSUM);
     String manifestString = intent.getStringExtra(MANIFEST);
 
-    Log.d("DownloadService", "onHandleIntent" + manifestString);
+    Log.d(TAG + " DownloadService", "onHandleIntent" + manifestString);
     if (manifestString != null) {
       handleManifestDownload(
         id,
@@ -107,13 +113,14 @@ public class DownloadService extends IntentService {
     String manifestString
   ) {
     try {
-      Log.d("DownloadService", "handleManifestDownload");
+      Log.d(TAG + " DownloadService", "handleManifestDownload");
       JSONArray manifest = new JSONArray(manifestString);
       File destFolder = new File(documentsDir, dest);
       File cacheFolder = new File(
         getApplicationContext().getCacheDir(),
         "capgo_downloads"
       );
+      
       // Ensure directories are created
       if (!destFolder.exists() && !destFolder.mkdirs()) {
         throw new IOException(
@@ -137,7 +144,7 @@ public class DownloadService extends IntentService {
         32
       );
       ExecutorService executor = Executors.newFixedThreadPool(threadCount);
-      CompletableFuture<Void>[] futures = new CompletableFuture[totalFiles];
+      List<Future<?>> futures = new ArrayList<>();
 
       for (int i = 0; i < totalFiles; i++) {
         JSONObject entry = manifest.getJSONObject(i);
@@ -162,24 +169,14 @@ public class DownloadService extends IntentService {
           );
         }
 
-        futures[i] = CompletableFuture.runAsync(
-          () -> {
-            try {
-              if (cacheFile.exists()) {
-                if (verifyChecksum(cacheFile, fileHash)) {
-                  copyFile(cacheFile, targetFile);
-                  Log.d("DownloadService", "already cached " + fileName);
-                } else {
-                  cacheFile.delete();
-                  downloadAndVerify(
-                    downloadUrl,
-                    targetFile,
-                    cacheFile,
-                    fileHash,
-                    id
-                  );
-                }
+        Future<?> future = executor.submit(() -> {
+          try {
+            if (cacheFile.exists()) {
+              if (verifyChecksum(cacheFile, fileHash)) {
+                copyFile(cacheFile, targetFile);
+                Log.d(TAG + " DownloadService", "already cached " + fileName);
               } else {
+                cacheFile.delete();
                 downloadAndVerify(
                   downloadUrl,
                   targetFile,
@@ -188,23 +185,46 @@ public class DownloadService extends IntentService {
                   id
                 );
               }
-
-              long completed = completedFiles.incrementAndGet();
-              int percent = calcTotalPercent(completed, totalFiles);
-              notifyDownload(id, percent);
-            } catch (Exception e) {
-              Log.e("DownloadService", "Error processing file: " + fileName, e);
-              hasError.set(true);
+            } else {
+              downloadAndVerify(
+                downloadUrl,
+                targetFile,
+                cacheFile,
+                fileHash,
+                id
+              );
             }
-          },
-          executor
-        );
+
+            long completed = completedFiles.incrementAndGet();
+            int percent = calcTotalPercent(completed, totalFiles);
+            notifyDownload(id, percent);
+          } catch (Exception e) {
+            Log.e(TAG + " DownloadService", "Error processing file: " + fileName, e);
+            hasError.set(true);
+          }
+        });
+        futures.add(future);
       }
 
       // Wait for all downloads to complete
-      CompletableFuture.allOf(futures).join();
+      for (Future<?> future : futures) {
+        try {
+          future.get();
+        } catch (Exception e) {
+          Log.e(TAG + " DownloadService", "Error waiting for download", e);
+          hasError.set(true);
+        }
+      }
 
       executor.shutdown();
+      try {
+        if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
+          executor.shutdownNow();
+        }
+      } catch (InterruptedException e) {
+        executor.shutdownNow();
+        Thread.currentThread().interrupt();
+      }
 
       if (hasError.get()) {
         throw new IOException("One or more files failed to download");
@@ -212,7 +232,7 @@ public class DownloadService extends IntentService {
 
       publishResults(dest, id, version, "", sessionKey, "", true);
     } catch (Exception e) {
-      Log.e("DownloadService", "Error in handleManifestDownload", e);
+      Log.e(TAG + " DownloadService", "Error in handleManifestDownload", e);
       publishResults("", id, version, "", sessionKey, e.getMessage(), true);
     }
   }
@@ -404,10 +424,11 @@ public class DownloadService extends IntentService {
     String expectedHash,
     String id
   ) throws Exception {
-    Log.d("DownloadService", "downloadAndVerify " + downloadUrl);
-    URL url = new URL(downloadUrl);
-    HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-    connection.setRequestMethod("GET");
+    Log.d(TAG + " DownloadService", "downloadAndVerify " + downloadUrl);
+    
+    Request request = new Request.Builder()
+      .url(downloadUrl)
+      .build();
 
     // Create a temporary file for the compressed data
     File compressedFile = new File(
@@ -415,79 +436,62 @@ public class DownloadService extends IntentService {
       "temp_" + targetFile.getName() + ".br"
     );
 
-    try (
-      InputStream inputStream = connection.getInputStream();
-      FileOutputStream compressedFos = new FileOutputStream(compressedFile)
-    ) {
-      byte[] buffer = new byte[8192];
-      int bytesRead;
-      while ((bytesRead = inputStream.read(buffer)) != -1) {
-        compressedFos.write(buffer, 0, bytesRead);
+    try (Response response = client.newCall(request).execute()) {
+      if (!response.isSuccessful()) {
+        throw new IOException("Unexpected response code: " + response.code());
       }
-    }
 
-    // Decompress the file
-    try (
-      FileInputStream fis = new FileInputStream(compressedFile);
-      BrotliInputStream brotliInputStream = new BrotliInputStream(fis);
-      FileOutputStream fos = new FileOutputStream(targetFile)
-    ) {
-      byte[] buffer = new byte[8192];
-      int len;
-      while ((len = brotliInputStream.read(buffer)) != -1) {
-        fos.write(buffer, 0, len);
+      // Download compressed file
+      try (
+        ResponseBody responseBody = response.body();
+        FileOutputStream compressedFos = new FileOutputStream(compressedFile)
+      ) {
+        if (responseBody == null) {
+          throw new IOException("Response body is null");
+        }
+
+        byte[] buffer = new byte[8192];
+        int bytesRead;
+        try (InputStream inputStream = responseBody.byteStream()) {
+          while ((bytesRead = inputStream.read(buffer)) != -1) {
+            compressedFos.write(buffer, 0, bytesRead);
+          }
+        }
       }
-    }
 
-    // Delete the compressed file
-    compressedFile.delete();
+      // Decompress the file
+      try (
+        FileInputStream fis = new FileInputStream(compressedFile);
+        BrotliInputStream brotliInputStream = new BrotliInputStream(fis);
+        FileOutputStream fos = new FileOutputStream(targetFile)
+      ) {
+        byte[] buffer = new byte[8192];
+        int len;
+        while ((len = brotliInputStream.read(buffer)) != -1) {
+          fos.write(buffer, 0, len);
+        }
+      }
 
-    // Verify checksum
-    String actualHash = calculateFileHash(targetFile);
-    if (actualHash.equals(expectedHash)) {
-      // Copy the downloaded file to cache if checksum is correct
-      copyFile(targetFile, cacheFile);
-      Log.d("DownloadService", "copied to cache " + targetFile.getName());
-    } else {
-      targetFile.delete();
-      throw new IOException(
-        "Checksum verification failed for " +
-        targetFile.getName() +
-        " " +
-        expectedHash +
-        " " +
-        actualHash
-      );
-    }
-  }
+      // Delete the compressed file
+      compressedFile.delete();
 
-  // Custom request for handling input stream
-  private class InputStreamVolleyRequest extends Request<byte[]> {
-
-    private final Response.Listener<byte[]> mListener;
-
-    public InputStreamVolleyRequest(
-      int method,
-      String mUrl,
-      Response.Listener<byte[]> listener,
-      Response.ErrorListener errorListener
-    ) {
-      super(method, mUrl, errorListener);
-      mListener = listener;
-    }
-
-    @Override
-    protected void deliverResponse(byte[] response) {
-      mListener.onResponse(response);
-    }
-
-    @Override
-    protected Response<byte[]> parseNetworkResponse(NetworkResponse response) {
-      byte[] responseData = response.data;
-      return Response.success(
-        responseData,
-        HttpHeaderParser.parseCacheHeaders(response)
-      );
+      // Verify checksum
+      String actualHash = calculateFileHash(targetFile);
+      if (actualHash.equals(expectedHash)) {
+        // Copy the downloaded file to cache if checksum is correct
+        copyFile(targetFile, cacheFile);
+        Log.d(TAG + " DownloadService", "copied to cache " + targetFile.getName());
+      } else {
+        targetFile.delete();
+        throw new IOException(
+          "Checksum verification failed for " +
+          targetFile.getName() +
+          " " +
+          expectedHash +
+          " " +
+          actualHash
+        );
+      }
     }
   }
 
