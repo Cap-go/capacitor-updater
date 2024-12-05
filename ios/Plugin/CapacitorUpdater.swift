@@ -719,10 +719,16 @@ extension CustomError: LocalizedError {
         }
     }
 
+    private func verifyChecksum(file: URL, expectedHash: String) -> Bool {
+        let actualHash = calcChecksumV2(filePath: file)
+        return actualHash == expectedHash
+    }
+
     public func downloadManifest(manifest: [ManifestEntry], version: String, sessionKey: String) throws -> BundleInfo {
         let id = self.randomString(length: 10)
         print("\(self.TAG) downloadManifest start \(id)")
         let destFolder = self.getBundleDirectory(id: id)
+        let builtinFolder = Bundle.main.bundleURL.appendingPathComponent("public")
 
         try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true, attributes: nil)
         try FileManager.default.createDirectory(at: destFolder, withIntermediateDirectories: true, attributes: nil)
@@ -751,25 +757,25 @@ extension CustomError: LocalizedError {
             let cacheFileName = "\(fileHash)_\(fileNameWithoutPath)"
             let cacheFilePath = cacheFolder.appendingPathComponent(cacheFileName)
             let destFilePath = destFolder.appendingPathComponent(fileName)
+            let builtinFilePath = builtinFolder.appendingPathComponent(fileName)
 
             // Create necessary subdirectories in the destination folder
             try FileManager.default.createDirectory(at: destFilePath.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
 
             dispatchGroup.enter()
 
-            if FileManager.default.fileExists(atPath: cacheFilePath.path) {
-                // File exists in cache, copy to destination
-                do {
-                    try FileManager.default.copyItem(at: cacheFilePath, to: destFilePath)
-                    print("\(self.TAG) downloadManifest \(fileName) copy from cache \(id)")
-                    completedFiles += 1
-                    self.notifyDownload(id: id, percent: self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70))
-                    dispatchGroup.leave()
-                } catch {
-                    downloadError = error
-                    print("\(self.TAG) downloadManifest \(fileName) cache error \(id): \(error)")
-                    dispatchGroup.leave()
-                }
+            if FileManager.default.fileExists(atPath: builtinFilePath.path) && verifyChecksum(file: builtinFilePath, expectedHash: fileHash) {
+                try FileManager.default.copyItem(at: builtinFilePath, to: destFilePath)
+                print("\(self.TAG) downloadManifest \(fileName) using builtin file \(id)")
+                completedFiles += 1
+                self.notifyDownload(id: id, percent: self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70))
+                dispatchGroup.leave()
+            } else if FileManager.default.fileExists(atPath: cacheFilePath.path) && verifyChecksum(file: cacheFilePath, expectedHash: fileHash) {
+                try FileManager.default.copyItem(at: cacheFilePath, to: destFilePath)
+                print("\(self.TAG) downloadManifest \(fileName) copy from cache \(id)")
+                completedFiles += 1
+                self.notifyDownload(id: id, percent: self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70))
+                dispatchGroup.leave()
             } else {
                 // File not in cache, download, decompress, and save to both cache and destination
                 AF.download(downloadUrl).responseData { response in

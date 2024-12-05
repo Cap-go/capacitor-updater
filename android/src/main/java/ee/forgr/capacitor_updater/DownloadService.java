@@ -184,6 +184,10 @@ public class DownloadService extends IntentService {
         getApplicationContext().getCacheDir(),
         "capgo_downloads"
       );
+      File builtinFolder = new File(
+        getApplicationContext().getFilesDir(),
+        "public"
+      );
 
       // Ensure directories are created
       if (!destFolder.exists() && !destFolder.mkdirs()) {
@@ -218,6 +222,7 @@ public class DownloadService extends IntentService {
           cacheFolder,
           fileHash + "_" + new File(fileName).getName()
         );
+        File builtinFile = new File(builtinFolder, fileName);
 
         // Ensure parent directories of the target file exist
         if (
@@ -232,20 +237,14 @@ public class DownloadService extends IntentService {
 
         Future<?> future = executor.submit(() -> {
           try {
-            if (cacheFile.exists()) {
-              if (verifyChecksum(cacheFile, fileHash)) {
-                copyFile(cacheFile, targetFile);
-                Log.d(TAG + " DownloadService", "already cached " + fileName);
-              } else {
-                cacheFile.delete();
-                downloadAndVerify(
-                  downloadUrl,
-                  targetFile,
-                  cacheFile,
-                  fileHash,
-                  id
-                );
-              }
+            if (builtinFile.exists() && verifyChecksum(builtinFile, fileHash)) {
+              copyFile(builtinFile, targetFile);
+              Log.d(TAG + " DownloadService", "using builtin file " + fileName);
+            } else if (
+              cacheFile.exists() && verifyChecksum(cacheFile, fileHash)
+            ) {
+              copyFile(cacheFile, targetFile);
+              Log.d(TAG + " DownloadService", "already cached " + fileName);
             } else {
               downloadAndVerify(
                 downloadUrl,
@@ -543,21 +542,12 @@ public class DownloadService extends IntentService {
       // Verify checksum
       String actualHash = calculateFileHash(targetFile);
       if (actualHash.equals(expectedHash)) {
-        // Copy the downloaded file to cache if checksum is correct
+        // Only cache if checksum is correct
         copyFile(targetFile, cacheFile);
-        Log.d(
-          TAG + " DownloadService",
-          "copied to cache " + targetFile.getName()
-        );
       } else {
         targetFile.delete();
         throw new IOException(
-          "Checksum verification failed for " +
-          targetFile.getName() +
-          " " +
-          expectedHash +
-          " " +
-          actualHash
+          "Checksum verification failed for " + targetFile.getName()
         );
       }
     }
