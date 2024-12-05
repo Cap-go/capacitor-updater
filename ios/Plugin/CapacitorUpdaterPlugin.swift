@@ -775,7 +775,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         self.endBackGroundTaskWithNotif(msg: "Latest version is in error state. Aborting update.", latestVersionName: latestVersionName, current: current)
                         return
                     }
-                    if !self.implementation.hasOldPrivateKeyPropertyInConfig {
+                    if !self.implementation.hasOldPrivateKeyPropertyInConfig && !sessionKey.isEmpty {
                         res.checksum = try self.implementation.decryptChecksum(checksum: res.checksum, version: latestVersionName)
                     }
                     if res.checksum != "" && next.getChecksum() != res.checksum && res.manifest == nil {

@@ -979,7 +979,7 @@ extension CustomError: LocalizedError {
         let finalPath = tempDataPath.deletingLastPathComponent().appendingPathComponent("\(id)")
         do {
             var checksumDecrypted = checksum
-            if !self.hasOldPrivateKeyPropertyInConfig {
+            if !self.hasOldPrivateKeyPropertyInConfig && !sessionKey.isEmpty {
                 try self.decryptFileV2(filePath: tempDataPath, sessionKey: sessionKey, version: version)
             } else {
                 try self.decryptFile(filePath: tempDataPath, sessionKey: sessionKey, version: version)
