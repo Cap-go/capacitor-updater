@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.5.4](https://github.com/Cap-go/capacitor-updater/compare/6.5.3...6.5.4) (2024-12-04)
+
+
+### Bug Fixes
+
+* make download files scale better with multiplexing ([e049e5a](https://github.com/Cap-go/capacitor-updater/commit/e049e5a55391870e672ce48ecafb6f63e525dd8f))
+
 ### [6.5.3](https://github.com/Cap-go/capacitor-updater/compare/6.5.2...6.5.3) (2024-12-04)
 
 
