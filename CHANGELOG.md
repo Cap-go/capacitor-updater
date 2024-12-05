@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.6.1](https://github.com/Cap-go/capacitor-updater/compare/6.6.0...6.6.1) (2024-12-05)
+
+
+### Bug Fixes
+
+* checksum differs on android and ios ([1a8a133](https://github.com/Cap-go/capacitor-updater/commit/1a8a133fdb7fbf9c16fbdda4cafca8db2e8328a6))
+
 ## [6.6.0](https://github.com/Cap-go/capacitor-updater/compare/6.5.5...6.6.0) (2024-12-05)
 
 
