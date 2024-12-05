@@ -291,7 +291,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.global(qos: .background).async {
             do {
                 let next = try self.implementation.download(url: url!, version: version, sessionKey: sessionKey)
-                if !self.implementation.hasOldPrivateKeyPropertyInConfig && !sessionKey.isEmpty {
+                if !self.implementation.hasOldPrivateKeyPropertyInConfig {
                     checksum = try self.implementation.decryptChecksum(checksum: checksum, version: version)
                 }
                 if (checksum != "" || self.implementation.publicKey != "") && next.getChecksum() != checksum {
@@ -775,7 +775,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         self.endBackGroundTaskWithNotif(msg: "Latest version is in error state. Aborting update.", latestVersionName: latestVersionName, current: current)
                         return
                     }
-                    if !self.implementation.hasOldPrivateKeyPropertyInConfig && !sessionKey.isEmpty {
+                    if !self.implementation.hasOldPrivateKeyPropertyInConfig {
                         res.checksum = try self.implementation.decryptChecksum(checksum: res.checksum, version: latestVersionName)
                     }
                     if res.checksum != "" && next.getChecksum() != res.checksum && res.manifest == nil {
