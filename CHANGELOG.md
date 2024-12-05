@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.5.5](https://github.com/Cap-go/capacitor-updater/compare/6.5.4...6.5.5) (2024-12-05)
+
+
+### Bug Fixes
+
+* revert issue isProd ([85c8058](https://github.com/Cap-go/capacitor-updater/commit/85c8058fe4573026abd6704e3031e8326972c8e7))
+
 ### [6.5.4](https://github.com/Cap-go/capacitor-updater/compare/6.5.3...6.5.4) (2024-12-04)
 
 
