@@ -291,7 +291,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.global(qos: .background).async {
             do {
                 let next = try self.implementation.download(url: url!, version: version, sessionKey: sessionKey)
-                if !self.implementation.hasOldPrivateKeyPropertyInConfig {
+                if !self.implementation.hasOldPrivateKeyPropertyInConfig && !sessionKey.isEmpty {
                     checksum = try self.implementation.decryptChecksum(checksum: checksum, version: version)
                 }
                 if (checksum != "" || self.implementation.publicKey != "") && next.getChecksum() != checksum {
