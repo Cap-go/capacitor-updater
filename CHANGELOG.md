@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.6.2](https://github.com/Cap-go/capacitor-updater/compare/6.6.1...6.6.2) (2024-12-05)
+
+
+### Bug Fixes
+
+* diff for decrypt checksum ([216de9b](https://github.com/Cap-go/capacitor-updater/commit/216de9bca47bf99e90de845584a20618e42c0dac))
+
 ### [6.6.1](https://github.com/Cap-go/capacitor-updater/compare/6.6.0...6.6.1) (2024-12-05)
 
 
