@@ -954,8 +954,8 @@ public class CapacitorUpdater {
     json.put("version_os", this.versionOs);
     json.put("version_name", this.getCurrentBundle().getVersionName());
     json.put("plugin_version", this.PLUGIN_VERSION);
-    json.put("is_emulator", false);
-    json.put("is_prod", true);
+    json.put("is_emulator", this.isEmulator());
+    json.put("is_prod", this.isProd());
     json.put("defaultChannel", this.defaultChannel);
     return json;
   }
