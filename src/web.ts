@@ -30,6 +30,7 @@ import type {
   CurrentBundleResult,
   AppReadyResult,
   MultiDelayConditions,
+  AutoUpdateAvailable,
 } from "./definitions";
 
 const BUNDLE_BUILTIN: BundleInfo = {
@@ -169,5 +170,10 @@ export class CapacitorUpdaterWeb
   async cancelDelay(): Promise<void> {
     console.warn("Cannot cancelDelay in web");
     return;
+  }
+
+  async isAutoUpdateAvailable(): Promise<AutoUpdateAvailable> {
+    console.warn("Cannot isAutoUpdateAvailable in web");
+    return { available: false };
   }
 }
