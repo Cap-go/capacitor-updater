@@ -156,6 +156,7 @@ export default config;
 * [`addListener('downloadFailed', ...)`](#addlistenerdownloadfailed-)
 * [`addListener('appReloaded', ...)`](#addlistenerappreloaded-)
 * [`addListener('appReady', ...)`](#addlistenerappready-)
+* [`isAutoUpdateAvailable()`](#isautoupdateavailable)
 * [Interfaces](#interfaces)
 * [Type Aliases](#type-aliases)
 
@@ -717,6 +718,19 @@ Listen for app ready event in the App, let you know when app is ready to use
 --------------------
 
 
+## isAutoUpdateAvailable()
+
+```typescript
+isAutoUpdateAvailable() => Promise<AutoUpdateAvailable>
+```
+
+Get if auto update is available (not disabled by serverUrl).
+
+**Returns:** <code>Promise&lt;<a href="#autoupdateavailable">AutoUpdateAvailable</a>&gt;</code>
+
+--------------------
+
+
 ## Interfaces
 
 
@@ -970,6 +984,13 @@ Listen for app ready event in the App, let you know when app is ready to use
 | ------------ | ------------------------------------------------- | ------------------------------------- | ----- |
 | **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emitted when the app is ready to use. | 5.2.0 |
 | **`status`** | <code>string</code>                               |                                       |       |
+
+
+### AutoUpdateAvailable
+
+| Prop            | Type                 |
+| --------------- | -------------------- |
+| **`available`** | <code>boolean</code> |
 
 
 ## Type Aliases
