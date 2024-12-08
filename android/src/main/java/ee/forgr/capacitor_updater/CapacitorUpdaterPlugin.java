@@ -1080,6 +1080,20 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
   }
 
+  @PluginMethod
+  public void isAutoUpdateAvailable(final PluginCall call) {
+    try {
+        final CapConfig config = CapConfig.loadDefault(this.getActivity());
+        String serverUrl = config.getServerUrl();
+        final JSObject ret = new JSObject();
+        ret.put("available", serverUrl == null || serverUrl.isEmpty());
+        call.resolve(ret);
+    } catch (final Exception e) {
+        Log.e(CapacitorUpdater.TAG, "Could not get autoUpdate availability", e);
+        call.reject("Could not get autoUpdate availability", e);
+    }
+  }
+
   private void checkAppReady() {
     try {
       if (this.appReadyCheck != null) {

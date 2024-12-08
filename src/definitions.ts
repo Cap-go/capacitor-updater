@@ -558,6 +558,14 @@ export interface CapacitorUpdaterPlugin {
     eventName: "appReady",
     listenerFunc: (state: AppReadyEvent) => void,
   ): Promise<PluginListenerHandle>;
+
+  /**
+   * Get if auto update is available (not disabled by serverUrl).
+   *
+   * @returns {Promise<AutoUpdateAvailable>} The availability status for auto update. Evaluates to `false` when serverUrl is set.
+   * @throws {Error}
+   */
+  isAutoUpdateAvailable(): Promise<AutoUpdateAvailable>;
 }
 
 export type BundleStatus = "success" | "error" | "pending" | "downloading";
@@ -795,4 +803,8 @@ export interface PluginVersion {
 
 export interface AutoUpdateEnabled {
   enabled: boolean;
+}
+
+export interface AutoUpdateAvailable {
+  available: boolean;
 }

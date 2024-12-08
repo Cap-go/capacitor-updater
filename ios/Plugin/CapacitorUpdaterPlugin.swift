@@ -40,7 +40,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getPluginVersion", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "next", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "isAutoUpdateEnabled", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "getBuiltinVersion", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "getBuiltinVersion", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "isAutoUpdateAvailable", returnType: CAPPluginReturnPromise)
     ]
     public var implementation = CapacitorUpdater()
     private let PLUGIN_VERSION: String = "6.6.4"
@@ -628,6 +629,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func isAutoUpdateEnabled(_ call: CAPPluginCall) {
         call.resolve([
             "enabled": self._isAutoUpdateEnabled()
+        ])
+    }
+
+    @objc func isAutoUpdateAvailable(_ call: CAPPluginCall) {
+        let instanceDescriptor = (self.bridge?.viewController as? CAPBridgeViewController)?.instanceDescriptor()
+        let isAvailable = instanceDescriptor?.serverURL == nil
+        call.resolve([
+            "available": isAvailable
         ])
     }
 
