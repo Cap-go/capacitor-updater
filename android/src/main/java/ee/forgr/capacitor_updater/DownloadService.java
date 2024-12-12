@@ -55,6 +55,7 @@ public class DownloadService extends IntentService {
   public static final String PERCENTDOWNLOAD = "percent receiver";
   public static final String IS_MANIFEST = "is_manifest";
   public static final String MANIFEST = "manifest";
+  public static final String PUBLIC_KEY = "publickey";
   private static final String UPDATE_FILE = "update.dat";
   private static final int NOTIFICATION_ID = 1;
   private static final long NOTIFICATION_DELAY_MS = 4000; // 4 seconds
@@ -129,9 +130,10 @@ public class DownloadService extends IntentService {
     String version = intent.getStringExtra(VERSION);
     String sessionKey = intent.getStringExtra(SESSIONKEY);
     String checksum = intent.getStringExtra(CHECKSUM);
+    String publicKey = intent.getStringExtra(PUBLIC_KEY);
     boolean isManifest = intent.getBooleanExtra(IS_MANIFEST, false);
 
-    Log.d(TAG + " DownloadService", "onHandleIntent isManifest: " + isManifest);
+    Log.d(CapacitorUpdater.TAG + " DLSrv", "onHandleIntent isManifest: " + isManifest);
     if (isManifest) {
       JSONArray manifest = DataManager.getInstance().getAndClearManifest();
       if (manifest != null) {
@@ -139,12 +141,13 @@ public class DownloadService extends IntentService {
           id,
           documentsDir,
           dest,
+                publicKey,
           version,
           sessionKey,
           manifest.toString()
         );
       } else {
-        Log.e(TAG + " DownloadService", "Manifest is null");
+        Log.e(CapacitorUpdater.TAG + " DLSrv", "Manifest is null");
         publishResults(
           "",
           id,
@@ -172,12 +175,13 @@ public class DownloadService extends IntentService {
     String id,
     String documentsDir,
     String dest,
+    String publicKey,
     String version,
     String sessionKey,
     String manifestString
   ) {
     try {
-      Log.d(TAG + " DownloadService", "handleManifestDownload");
+      Log.d(CapacitorUpdater.TAG + " DLSrv", "handleManifestDownload");
       JSONArray manifest = new JSONArray(manifestString);
       File destFolder = new File(documentsDir, dest);
       File cacheFolder = new File(
@@ -217,6 +221,11 @@ public class DownloadService extends IntentService {
         String fileHash = entry.getString("file_hash");
         String downloadUrl = entry.getString("download_url");
 
+        // Decrypt fileHash if encryption is enabled
+        if (!publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
+          fileHash = CryptoCipherV2.decryptChecksum(fileHash, publicKey, version);
+        }
+
         File targetFile = new File(destFolder, fileName);
         File cacheFile = new File(
           cacheFolder,
@@ -235,23 +244,27 @@ public class DownloadService extends IntentService {
           );
         }
 
+        final String finalFileHash = fileHash;
         Future<?> future = executor.submit(() -> {
           try {
-            if (builtinFile.exists() && verifyChecksum(builtinFile, fileHash)) {
+            if (builtinFile.exists() && verifyChecksum(builtinFile, finalFileHash)) {
               copyFile(builtinFile, targetFile);
-              Log.d(TAG + " DownloadService", "using builtin file " + fileName);
+              Log.d(CapacitorUpdater.TAG + " DLSrv", "using builtin file " + fileName);
             } else if (
-              cacheFile.exists() && verifyChecksum(cacheFile, fileHash)
+              cacheFile.exists() && verifyChecksum(cacheFile, finalFileHash)
             ) {
               copyFile(cacheFile, targetFile);
-              Log.d(TAG + " DownloadService", "already cached " + fileName);
+              Log.d(CapacitorUpdater.TAG + " DLSrv", "already cached " + fileName);
             } else {
-              downloadAndVerify(
+                downloadAndVerify(
                 downloadUrl,
                 targetFile,
                 cacheFile,
-                fileHash,
-                id
+                        finalFileHash,
+                id,
+                publicKey,
+                sessionKey,
+                version
               );
             }
 
@@ -260,7 +273,7 @@ public class DownloadService extends IntentService {
             notifyDownload(id, percent);
           } catch (Exception e) {
             Log.e(
-              TAG + " DownloadService",
+              TAG + " DLSrv",
               "Error processing file: " + fileName,
               e
             );
@@ -275,7 +288,7 @@ public class DownloadService extends IntentService {
         try {
           future.get();
         } catch (Exception e) {
-          Log.e(TAG + " DownloadService", "Error waiting for download", e);
+          Log.e(CapacitorUpdater.TAG + " DLSrv", "Error waiting for download", e);
           hasError.set(true);
         }
       }
@@ -296,7 +309,7 @@ public class DownloadService extends IntentService {
 
       publishResults(dest, id, version, "", sessionKey, "", true);
     } catch (Exception e) {
-      Log.e(TAG + " DownloadService", "Error in handleManifestDownload", e);
+      Log.e(CapacitorUpdater.TAG + " DLSrv", "Error in handleManifestDownload", e);
       publishResults("", id, version, "", sessionKey, e.getMessage(), true);
     }
     stopForegroundIfNeeded();
@@ -488,9 +501,12 @@ public class DownloadService extends IntentService {
     File targetFile,
     File cacheFile,
     String expectedHash,
-    String id
+    String id,
+    String sessionKey,
+    String publicKey,
+    String version
   ) throws Exception {
-    Log.d(TAG + " DownloadService", "downloadAndVerify " + downloadUrl);
+    Log.d(CapacitorUpdater.TAG + " DLSrv", "downloadAndVerify " + downloadUrl);
 
     Request request = new Request.Builder().url(downloadUrl).build();
 
@@ -539,6 +555,11 @@ public class DownloadService extends IntentService {
       // Delete the compressed file
       compressedFile.delete();
 
+      // Decrypt if public key and session key are available
+      if (!publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
+        Log.d(CapacitorUpdater.TAG + " DLSrv", "Decrypting file " + targetFile.getName());
+        CryptoCipherV2.decryptFile(targetFile, publicKey, sessionKey, version);
+      }
       // Verify checksum
       String actualHash = calculateFileHash(targetFile);
       if (actualHash.equals(expectedHash)) {

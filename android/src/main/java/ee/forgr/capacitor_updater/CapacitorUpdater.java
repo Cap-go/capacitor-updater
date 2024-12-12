@@ -17,7 +17,6 @@ import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Bundle;
-import android.util.Base64;
 import android.util.Log;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.plugin.WebView;
@@ -32,20 +31,14 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
 import java.net.URLConnection;
-import java.security.GeneralSecurityException;
-import java.security.MessageDigest;
-import java.security.PrivateKey;
-import java.security.PublicKey;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
-import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
-import javax.crypto.SecretKey;
 import okhttp3.*;
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -70,7 +63,7 @@ public class CapacitorUpdater {
   public OkHttpClient client;
 
   public File documentsDir;
-  public Boolean directUpdate = false;
+  public boolean directUpdate = false;
   public Activity activity;
   public String PLUGIN_VERSION = "";
   public String versionBuild = "";
@@ -327,40 +320,20 @@ public class CapacitorUpdater {
               isManifest
             );
         } else {
-          Log.i(TAG, "Unknown action " + action);
+          Log.i(CapacitorUpdater.TAG, "Unknown action " + action);
         }
       }
     }
   };
 
-  private String decryptChecksum(String checksum, String version)
-    throws IOException {
-    if (this.publicKey.isEmpty()) {
-      Log.e(CapacitorUpdater.TAG, "The public key is empty");
-      return checksum;
-    }
-    try {
-      byte[] checksumBytes = Base64.decode(checksum, Base64.DEFAULT);
-      PublicKey pKey = CryptoCipherV2.stringToPublicKey(this.publicKey);
-      byte[] decryptedChecksum = CryptoCipherV2.decryptRSA(checksumBytes, pKey);
-      // return Base64.encodeToString(decryptedChecksum, Base64.DEFAULT);
-      String result = Base64.encodeToString(decryptedChecksum, Base64.DEFAULT);
-      return result.replaceAll("\\s", ""); // Remove all whitespace, including newlines
-    } catch (GeneralSecurityException e) {
-      Log.e(TAG, "decryptChecksum fail: " + e.getMessage());
-      this.sendStats("decrypt_fail", version);
-      throw new IOException("Decryption failed: " + e.getMessage());
-    }
-  }
-
-  public Boolean finishDownload(
+  public boolean finishDownload(
     String id,
     String dest,
     String version,
     String sessionKey,
     String checksumRes,
-    Boolean setNext,
-    Boolean isManifest
+    boolean setNext,
+    boolean isManifest
   ) {
     File downloaded = null;
     String checksum = "";
@@ -371,13 +344,18 @@ public class CapacitorUpdater {
 
       if (!isManifest) {
         String checksumDecrypted = Objects.requireNonNullElse(checksumRes, "");
-        if (!this.hasOldPrivateKeyPropertyInConfig && !sessionKey.isEmpty()) {
-          this.decryptFileV2(downloaded, sessionKey, version);
-          checksumDecrypted = this.decryptChecksum(checksumRes, version);
-          checksum = this.calcChecksumV2(downloaded);
-        } else {
-          this.decryptFile(downloaded, sessionKey, version);
-          checksum = this.calcChecksum(downloaded);
+        try {
+          if (!this.hasOldPrivateKeyPropertyInConfig && !sessionKey.isEmpty()) {
+            CryptoCipherV2.decryptFile(downloaded, this.publicKey, sessionKey, version);
+            checksumDecrypted = CryptoCipherV2.decryptChecksum(checksumRes, this.publicKey, version);
+            checksum = CryptoCipherV2.calcChecksum(downloaded);
+          } else {
+            CryptoCipher.decryptFile(downloaded, this.privateKey, sessionKey, version);
+            checksum = CryptoCipher.calcChecksum(downloaded);
+          }
+        } catch (Exception e) {
+          this.sendStats("decrypt_fail", version);
+          throw e;
         }
         if (
           (!checksumDecrypted.isEmpty() || !this.publicKey.isEmpty()) &&
@@ -393,7 +371,7 @@ public class CapacitorUpdater {
       }
       // Remove the decryption for manifest downloads
     } catch (IOException e) {
-      final Boolean res = this.delete(id);
+      final boolean res = this.delete(id);
       if (!res) {
         Log.i(CapacitorUpdater.TAG, "Double error, cannot cleanup: " + version);
       }
@@ -477,6 +455,7 @@ public class CapacitorUpdater {
     intent.putExtra(DownloadService.VERSION, version);
     intent.putExtra(DownloadService.SESSIONKEY, sessionKey);
     intent.putExtra(DownloadService.CHECKSUM, checksum);
+    intent.putExtra(DownloadService.PUBLIC_KEY, this.publicKey);
     if (manifest != null) {
       DataManager.getInstance().setManifest(manifest);
       intent.putExtra(DownloadService.IS_MANIFEST, true);
@@ -527,7 +506,7 @@ public class CapacitorUpdater {
         throw new IOException("Failed to download: No data read from URL");
       }
     } catch (OutOfMemoryError e) {
-      Log.e(TAG, "OutOfMemoryError while downloading file", e);
+      Log.e(CapacitorUpdater.TAG, "OutOfMemoryError while downloading file", e);
       this.sendStats("low_mem_fail");
       throw new IOException("OutOfMemoryError while downloading file");
     }
@@ -549,179 +528,8 @@ public class CapacitorUpdater {
 
   private void setCurrentBundle(final File bundle) {
     this.editor.putString(WebView.CAP_SERVER_PATH, bundle.getPath());
-    Log.i(TAG, "Current bundle set to: " + bundle);
+    Log.i(CapacitorUpdater.TAG, "Current bundle set to: " + bundle);
     this.editor.commit();
-  }
-
-  private String calcChecksum(File file) {
-    final int BUFFER_SIZE = 1024 * 1024 * 5; // 5 MB buffer size
-    CRC32 crc = new CRC32();
-
-    try (FileInputStream fis = new FileInputStream(file)) {
-      byte[] buffer = new byte[BUFFER_SIZE];
-      int length;
-      while ((length = fis.read(buffer)) != -1) {
-        crc.update(buffer, 0, length);
-      }
-      return String.format("%08x", crc.getValue());
-    } catch (IOException e) {
-      System.err.println(
-        TAG + " Cannot calc checksum: " + file.getPath() + " " + e.getMessage()
-      );
-      return "";
-    }
-  }
-
-  private String calcChecksumV2(File file) {
-    final int BUFFER_SIZE = 1024 * 1024 * 5; // 5 MB buffer size
-    MessageDigest digest;
-    try {
-      digest = MessageDigest.getInstance("SHA-256");
-    } catch (java.security.NoSuchAlgorithmException e) {
-      System.err.println(TAG + " SHA-256 algorithm not available");
-      return "";
-    }
-
-    try (FileInputStream fis = new FileInputStream(file)) {
-      byte[] buffer = new byte[BUFFER_SIZE];
-      int length;
-      while ((length = fis.read(buffer)) != -1) {
-        digest.update(buffer, 0, length);
-      }
-      byte[] hash = digest.digest();
-      StringBuilder hexString = new StringBuilder();
-      for (byte b : hash) {
-        String hex = Integer.toHexString(0xff & b);
-        if (hex.length() == 1) hexString.append('0');
-        hexString.append(hex);
-      }
-      return hexString.toString();
-    } catch (IOException e) {
-      System.err.println(
-        TAG +
-        " Cannot calc checksum v2: " +
-        file.getPath() +
-        " " +
-        e.getMessage()
-      );
-      return "";
-    }
-  }
-
-  private void decryptFileV2(
-    final File file,
-    final String ivSessionKey,
-    final String version
-  ) throws IOException {
-    // (str != null && !str.isEmpty())
-    if (
-      this.publicKey.isEmpty() ||
-      ivSessionKey == null ||
-      ivSessionKey.isEmpty() ||
-      ivSessionKey.split(":").length != 2
-    ) {
-      Log.i(TAG, "Cannot found public key or sessionKey");
-      return;
-    }
-    if (!this.publicKey.startsWith("-----BEGIN RSA PUBLIC KEY-----")) {
-      Log.e(
-        CapacitorUpdater.TAG,
-        "The public key is not a valid RSA Public key"
-      );
-      return;
-    }
-    try {
-      String ivB64 = ivSessionKey.split(":")[0];
-      String sessionKeyB64 = ivSessionKey.split(":")[1];
-      byte[] iv = Base64.decode(ivB64.getBytes(), Base64.DEFAULT);
-      byte[] sessionKey = Base64.decode(
-        sessionKeyB64.getBytes(),
-        Base64.DEFAULT
-      );
-      PublicKey pKey = CryptoCipherV2.stringToPublicKey(this.publicKey);
-      byte[] decryptedSessionKey = CryptoCipherV2.decryptRSA(sessionKey, pKey);
-
-      SecretKey sKey = CryptoCipherV2.byteToSessionKey(decryptedSessionKey);
-      byte[] content = new byte[(int) file.length()];
-
-      try (
-        final FileInputStream fis = new FileInputStream(file);
-        final BufferedInputStream bis = new BufferedInputStream(fis);
-        final DataInputStream dis = new DataInputStream(bis)
-      ) {
-        dis.readFully(content);
-        dis.close();
-        byte[] decrypted = CryptoCipherV2.decryptAES(content, sKey, iv);
-        // write the decrypted string to the file
-        try (
-          final FileOutputStream fos = new FileOutputStream(
-            file.getAbsolutePath()
-          )
-        ) {
-          fos.write(decrypted);
-        }
-      }
-    } catch (GeneralSecurityException e) {
-      Log.i(TAG, "decryptFile fail");
-      this.sendStats("decrypt_fail", version);
-      e.printStackTrace();
-      throw new IOException("GeneralSecurityException");
-    }
-  }
-
-  private void decryptFile(
-    final File file,
-    final String ivSessionKey,
-    final String version
-  ) throws IOException {
-    // (str != null && !str.isEmpty())
-    if (this.privateKey == null || this.privateKey.isEmpty()) {
-      Log.i(TAG, "Cannot found privateKey");
-      return;
-    } else if (
-      ivSessionKey == null ||
-      ivSessionKey.isEmpty() ||
-      ivSessionKey.split(":").length != 2
-    ) {
-      Log.i(TAG, "Cannot found sessionKey");
-      return;
-    }
-    try {
-      String ivB64 = ivSessionKey.split(":")[0];
-      String sessionKeyB64 = ivSessionKey.split(":")[1];
-      byte[] iv = Base64.decode(ivB64.getBytes(), Base64.DEFAULT);
-      byte[] sessionKey = Base64.decode(
-        sessionKeyB64.getBytes(),
-        Base64.DEFAULT
-      );
-      PrivateKey pKey = CryptoCipher.stringToPrivateKey(this.privateKey);
-      byte[] decryptedSessionKey = CryptoCipher.decryptRSA(sessionKey, pKey);
-      SecretKey sKey = CryptoCipher.byteToSessionKey(decryptedSessionKey);
-      byte[] content = new byte[(int) file.length()];
-
-      try (
-        final FileInputStream fis = new FileInputStream(file);
-        final BufferedInputStream bis = new BufferedInputStream(fis);
-        final DataInputStream dis = new DataInputStream(bis)
-      ) {
-        dis.readFully(content);
-        dis.close();
-        byte[] decrypted = CryptoCipher.decryptAES(content, sKey, iv);
-        // write the decrypted string to the file
-        try (
-          final FileOutputStream fos = new FileOutputStream(
-            file.getAbsolutePath()
-          )
-        ) {
-          fos.write(decrypted);
-        }
-      }
-    } catch (GeneralSecurityException e) {
-      Log.i(TAG, "decryptFile fail");
-      this.sendStats("decrypt_fail", version);
-      e.printStackTrace();
-      throw new IOException("GeneralSecurityException");
-    }
   }
 
   public void downloadBackground(
@@ -777,7 +585,7 @@ public class CapacitorUpdater {
     this.notifyDownload(id, 5);
     final String dest = this.randomString();
     this.downloadFile(id, url, dest);
-    final Boolean finished =
+    final boolean finished =
       this.finishDownload(
           id,
           dest,
@@ -804,23 +612,23 @@ public class CapacitorUpdater {
   public List<BundleInfo> list() {
     final List<BundleInfo> res = new ArrayList<>();
     final File destHot = new File(this.documentsDir, bundleDirectory);
-    Log.d(TAG, "list File : " + destHot.getPath());
+    Log.d(CapacitorUpdater.TAG, "list File : " + destHot.getPath());
     if (destHot.exists()) {
       for (final File i : Objects.requireNonNull(destHot.listFiles())) {
         final String id = i.getName();
         res.add(this.getBundleInfo(id));
       }
     } else {
-      Log.i(TAG, "No versions available to list" + destHot);
+      Log.i(CapacitorUpdater.TAG, "No versions available to list" + destHot);
     }
     return res;
   }
 
-  public Boolean delete(final String id, final Boolean removeInfo)
+  public boolean delete(final String id, final boolean removeInfo)
     throws IOException {
     final BundleInfo deleted = this.getBundleInfo(id);
     if (deleted.isBuiltin() || this.getCurrentBundleId().equals(id)) {
-      Log.e(TAG, "Cannot delete " + id);
+      Log.e(CapacitorUpdater.TAG, "Cannot delete " + id);
       return false;
     }
     final File bundle = new File(this.documentsDir, bundleDirectory + "/" + id);
@@ -833,12 +641,12 @@ public class CapacitorUpdater {
       }
       return true;
     }
-    Log.e(TAG, "bundle removed: " + deleted.getVersionName());
+    Log.e(CapacitorUpdater.TAG, "bundle removed: " + deleted.getVersionName());
     this.sendStats("delete", deleted.getVersionName());
     return false;
   }
 
-  public Boolean delete(final String id) {
+  public boolean delete(final String id) {
     try {
       return this.delete(id, true);
     } catch (IOException e) {
@@ -866,18 +674,18 @@ public class CapacitorUpdater {
     );
   }
 
-  public Boolean set(final BundleInfo bundle) {
+  public boolean set(final BundleInfo bundle) {
     return this.set(bundle.getId());
   }
 
-  public Boolean set(final String id) {
+  public boolean set(final String id) {
     final BundleInfo newBundle = this.getBundleInfo(id);
     if (newBundle.isBuiltin()) {
       this.reset();
       return true;
     }
     final File bundle = this.getBundleDirectory(id);
-    Log.i(TAG, "Setting next active bundle: " + id);
+    Log.i(CapacitorUpdater.TAG, "Setting next active bundle: " + id);
     if (this.bundleExists(id)) {
       var currentBundleName = this.getCurrentBundle().getVersionName();
       this.setCurrentBundle(bundle);
@@ -895,7 +703,7 @@ public class CapacitorUpdater {
     if (
       !currentBundle.isBuiltin() && !this.bundleExists(currentBundle.getId())
     ) {
-      Log.i(TAG, "Folder at bundle path does not exist. Triggering reset.");
+      Log.i(CapacitorUpdater.TAG, "Folder at bundle path does not exist. Triggering reset.");
       this.reset();
     }
   }
@@ -913,7 +721,7 @@ public class CapacitorUpdater {
       "Version successfully loaded: " + bundle.getVersionName()
     );
     if (autoDeletePrevious && !fallback.isBuiltin()) {
-      final Boolean res = this.delete(fallback.getId());
+      final boolean res = this.delete(fallback.getId());
       if (res) {
         Log.i(
           CapacitorUpdater.TAG,
@@ -1026,7 +834,7 @@ public class CapacitorUpdater {
     try {
       json = this.createInfoObject();
     } catch (JSONException e) {
-      Log.e(TAG, "Error getLatest JSONException", e);
+      Log.e(CapacitorUpdater.TAG, "Error getLatest JSONException", e);
       final JSObject retError = new JSObject();
       retError.put("message", "Cannot get info: " + e);
       retError.put("error", "json_error");
@@ -1042,7 +850,7 @@ public class CapacitorUpdater {
   public void unsetChannel(final Callback callback) {
     String channelUrl = this.channelUrl;
     if (channelUrl == null || channelUrl.isEmpty()) {
-      Log.e(TAG, "Channel URL is not set");
+      Log.e(CapacitorUpdater.TAG, "Channel URL is not set");
       final JSObject retError = new JSObject();
       retError.put("message", "channelUrl missing");
       retError.put("error", "missing_config");
@@ -1053,7 +861,7 @@ public class CapacitorUpdater {
     try {
       json = this.createInfoObject();
     } catch (JSONException e) {
-      Log.e(TAG, "Error unsetChannel JSONException", e);
+      Log.e(CapacitorUpdater.TAG, "Error unsetChannel JSONException", e);
       final JSObject retError = new JSObject();
       retError.put("message", "Cannot get info: " + e);
       retError.put("error", "json_error");
@@ -1103,7 +911,7 @@ public class CapacitorUpdater {
                   ret.put(key, jsonResponse.get(key));
                 }
               }
-              Log.i(TAG, "Channel unset");
+              Log.i(CapacitorUpdater.TAG, "Channel unset");
               callback.callback(ret);
             } catch (JSONException e) {
               JSObject retError = new JSObject();
@@ -1119,7 +927,7 @@ public class CapacitorUpdater {
   public void setChannel(final String channel, final Callback callback) {
     String channelUrl = this.channelUrl;
     if (channelUrl == null || channelUrl.isEmpty()) {
-      Log.e(TAG, "Channel URL is not set");
+      Log.e(CapacitorUpdater.TAG, "Channel URL is not set");
       final JSObject retError = new JSObject();
       retError.put("message", "channelUrl missing");
       retError.put("error", "missing_config");
@@ -1131,7 +939,7 @@ public class CapacitorUpdater {
       json = this.createInfoObject();
       json.put("channel", channel);
     } catch (JSONException e) {
-      Log.e(TAG, "Error setChannel JSONException", e);
+      Log.e(CapacitorUpdater.TAG, "Error setChannel JSONException", e);
       final JSObject retError = new JSObject();
       retError.put("message", "Cannot get info: " + e);
       retError.put("error", "json_error");
@@ -1145,7 +953,7 @@ public class CapacitorUpdater {
   public void getChannel(final Callback callback) {
     String channelUrl = this.channelUrl;
     if (channelUrl == null || channelUrl.isEmpty()) {
-      Log.e(TAG, "Channel URL is not set");
+      Log.e(CapacitorUpdater.TAG, "Channel URL is not set");
       final JSObject retError = new JSObject();
       retError.put("message", "Channel URL is not set");
       retError.put("error", "missing_config");
@@ -1156,7 +964,7 @@ public class CapacitorUpdater {
     try {
       json = this.createInfoObject();
     } catch (JSONException e) {
-      Log.e(TAG, "Error getChannel JSONException", e);
+      Log.e(CapacitorUpdater.TAG, "Error getChannel JSONException", e);
       final JSObject retError = new JSObject();
       retError.put("message", "Cannot get info: " + e);
       retError.put("error", "json_error");
@@ -1196,7 +1004,7 @@ public class CapacitorUpdater {
                   JSObject ret = new JSObject();
                   ret.put("channel", defaultChannel);
                   ret.put("status", "default");
-                  Log.i(TAG, "Channel get to \"" + ret);
+                  Log.i(CapacitorUpdater.TAG, "Channel get to \"" + ret);
                   callback.callback(ret);
                   return;
                 }
@@ -1221,7 +1029,7 @@ public class CapacitorUpdater {
                   ret.put(key, jsonResponse.get(key));
                 }
               }
-              Log.i(TAG, "Channel get to \"" + ret);
+              Log.i(CapacitorUpdater.TAG, "Channel get to \"" + ret);
               callback.callback(ret);
             } catch (JSONException e) {
               JSObject retError = new JSObject();
@@ -1258,7 +1066,7 @@ public class CapacitorUpdater {
       json.put("old_version_name", oldVersionName);
       json.put("action", action);
     } catch (JSONException e) {
-      Log.e(TAG, "Error sendStats JSONException", e);
+      Log.e(CapacitorUpdater.TAG, "Error sendStats JSONException", e);
       return;
     }
 
@@ -1275,7 +1083,7 @@ public class CapacitorUpdater {
         new okhttp3.Callback() {
           @Override
           public void onFailure(Call call, IOException e) {
-            Log.e(TAG, "Failed to send stats: " + e.getMessage());
+            Log.e(CapacitorUpdater.TAG, "Failed to send stats: " + e.getMessage());
           }
 
           @Override
@@ -1287,7 +1095,7 @@ public class CapacitorUpdater {
                 "Stats send for \"" + action + "\", version " + versionName
               );
             } else {
-              Log.e(TAG, "Error sending stats: " + response.code());
+              Log.e(CapacitorUpdater.TAG, "Error sending stats: " + response.code());
             }
           }
         }
@@ -1309,11 +1117,11 @@ public class CapacitorUpdater {
         String stored = this.prefs.getString(trueId + INFO_SUFFIX, "");
         result = BundleInfo.fromJSON(stored);
       } catch (JSONException e) {
-        Log.e(TAG, "Failed to parse info for bundle [" + trueId + "] ", e);
+        Log.e(CapacitorUpdater.TAG, "Failed to parse info for bundle [" + trueId + "] ", e);
         result = new BundleInfo(trueId, null, BundleStatus.PENDING, "", "");
       }
     }
-    // Log.d(TAG, "Returning info [" + trueId + "] " + result);
+    // Log.d(CapacitorUpdater.TAG, "Returning info [" + trueId + "] " + result);
     return result;
   }
 
@@ -1335,16 +1143,16 @@ public class CapacitorUpdater {
     if (
       id == null || (info != null && (info.isBuiltin() || info.isUnknown()))
     ) {
-      Log.d(TAG, "Not saving info for bundle: [" + id + "] " + info);
+      Log.d(CapacitorUpdater.TAG, "Not saving info for bundle: [" + id + "] " + info);
       return;
     }
 
     if (info == null) {
-      Log.d(TAG, "Removing info for bundle [" + id + "]");
+      Log.d(CapacitorUpdater.TAG, "Removing info for bundle [" + id + "]");
       this.editor.remove(id + INFO_SUFFIX);
     } else {
       final BundleInfo update = info.setId(id);
-      Log.d(TAG, "Storing info for bundle [" + id + "] " + update.toString());
+      Log.d(CapacitorUpdater.TAG, "Storing info for bundle [" + id + "] " + update.toString());
       this.editor.putString(id + INFO_SUFFIX, update.toString());
     }
     this.editor.commit();
@@ -1353,7 +1161,7 @@ public class CapacitorUpdater {
   private void setBundleStatus(final String id, final BundleStatus status) {
     if (id != null && status != null) {
       BundleInfo info = this.getBundleInfo(id);
-      Log.d(TAG, "Setting status for bundle [" + id + "] to " + status);
+      Log.d(CapacitorUpdater.TAG, "Setting status for bundle [" + id + "] to " + status);
       this.saveBundleInfo(id, info.setStatus(status));
     }
   }
@@ -1379,7 +1187,7 @@ public class CapacitorUpdater {
     return path;
   }
 
-  public Boolean isUsingBuiltin() {
+  public boolean isUsingBuiltin() {
     return this.getCurrentBundlePath().equals("public");
   }
 
