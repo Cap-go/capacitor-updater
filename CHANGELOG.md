@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.7.6](https://github.com/Cap-go/capacitor-updater/compare/6.7.5...6.7.6) (2024-12-19)
+
+
+### Bug Fixes
+
+* prevent a crash in download service ([5502741](https://github.com/Cap-go/capacitor-updater/commit/5502741205657291be7b2579d5b496f22e3de121))
+* prevent downloadFileBackground from starting in the background ([8eabffb](https://github.com/Cap-go/capacitor-updater/commit/8eabffb3352fc88229873b1e0a07a865cfe0ae16))
+
 ### [6.7.5](https://github.com/Cap-go/capacitor-updater/compare/6.7.4...6.7.5) (2024-12-16)
 
 ### [6.7.4](https://github.com/Cap-go/capacitor-updater/compare/6.7.3...6.7.4) (2024-12-09)
