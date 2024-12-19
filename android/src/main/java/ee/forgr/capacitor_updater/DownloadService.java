@@ -10,9 +10,11 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Intent;
+import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.util.Log;
 import java.io.*;
 import java.io.FileInputStream;
@@ -23,7 +25,6 @@ import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -58,6 +59,10 @@ public class DownloadService extends IntentService {
   private static final String UPDATE_FILE = "update.dat";
   private static final int NOTIFICATION_ID = 1;
   private static final long NOTIFICATION_DELAY_MS = 4000; // 4 seconds
+  private static final String CHANNEL_ID = "CapacitorUpdaterChannel";
+  private static final String CHANNEL_NAME = "Capacitor Updater";
+  private static final String CHANNEL_DESCRIPTION =
+    "Notifications for app updates";
 
   private final OkHttpClient client = new OkHttpClient.Builder()
     .protocols(Arrays.asList(Protocol.HTTP_2, Protocol.HTTP_1_1))
@@ -65,6 +70,7 @@ public class DownloadService extends IntentService {
   private Handler handler = new Handler(Looper.getMainLooper());
   private Runnable notificationRunnable;
   private boolean isNotificationShown = false;
+  private PowerManager.WakeLock wakeLock;
 
   public DownloadService() {
     super("Background DownloadService");
@@ -73,35 +79,47 @@ public class DownloadService extends IntentService {
   @Override
   public void onCreate() {
     super.onCreate();
-    notificationRunnable = () -> startForeground();
-    handler.postDelayed(notificationRunnable, NOTIFICATION_DELAY_MS);
+    this.startForegroundService();
   }
 
   @Override
   public void onDestroy() {
     super.onDestroy();
     handler.removeCallbacks(notificationRunnable);
+    Log.w(TAG + " DownloadService", "DownloadService killed/destroyed");
   }
 
-  private void startForeground() {
+  private void startForegroundService() {
     isNotificationShown = true;
-    String channelId = createNotificationChannel();
+    String channelId = createNotificationChannelForDownload();
+
     Notification.Builder builder = new Notification.Builder(this, channelId)
       .setContentTitle("Downloading Update")
       .setContentText("Download in progress")
       .setSmallIcon(android.R.drawable.stat_sys_download)
-      .setOngoing(true);
+      .setOngoing(true)
+      .setPriority(Notification.PRIORITY_MIN)
+      .setCategory(Notification.CATEGORY_SERVICE)
+      .setAutoCancel(false);
 
-    startForeground(NOTIFICATION_ID, builder.build());
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+      startForeground(
+        NOTIFICATION_ID,
+        builder.build(),
+        ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+      );
+    } else {
+      startForeground(NOTIFICATION_ID, builder.build());
+    }
   }
 
-  private String createNotificationChannel() {
+  private String createNotificationChannelForDownload() {
     String channelId = "capacitor_updater_channel";
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       NotificationChannel channel = new NotificationChannel(
         channelId,
         "Capacitor Updater Downloads",
-        NotificationManager.IMPORTANCE_LOW
+        NotificationManager.IMPORTANCE_MIN // // High importance to keep service alive
       );
       NotificationManager manager = getSystemService(NotificationManager.class);
       manager.createNotificationChannel(channel);
@@ -385,6 +403,8 @@ public class DownloadService extends IntentService {
           int percent = calcTotalPercent(downloadedBytes, contentLength);
           while (lastNotifiedPercent + 10 <= percent) {
             lastNotifiedPercent += 10;
+            // Artificial delay using CPU-bound calculation to take ~5 seconds
+            double result = 0;
             notifyDownload(id, lastNotifiedPercent);
           }
         }
@@ -591,5 +611,46 @@ public class DownloadService extends IntentService {
         stopForeground(true);
       }
     }
+  }
+
+  private void createNotificationChannel() {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      NotificationChannel channel = new NotificationChannel(
+        CHANNEL_ID,
+        CHANNEL_NAME,
+        NotificationManager.IMPORTANCE_MAX
+      );
+      channel.setDescription(CHANNEL_DESCRIPTION);
+      NotificationManager notificationManager = getSystemService(
+        NotificationManager.class
+      );
+      notificationManager.createNotificationChannel(channel);
+    }
+  }
+
+  private void showNotification(String text, int progress) {
+    Notification.Builder builder = new Notification.Builder(this, CHANNEL_ID)
+      .setSmallIcon(android.R.drawable.stat_sys_download)
+      .setContentTitle("App Update")
+      .setContentText(text)
+      // .setPriority(Notification.PRIORITY_LOW)
+      .setOngoing(true);
+
+    if (progress > 0) {
+      builder.setProgress(100, progress, false);
+    }
+
+    startForeground(NOTIFICATION_ID, builder.build());
+  }
+
+  // Update the notification progress
+  private void updateNotificationProgress(int progress) {
+    showNotification("Downloading OTA update... " + progress + "%", progress);
+  }
+
+  // When download completes or fails
+  private void stopForegroundService() {
+    stopForeground(true);
+    stopSelf();
   }
 }
