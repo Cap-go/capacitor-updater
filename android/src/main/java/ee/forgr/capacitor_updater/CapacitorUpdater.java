@@ -484,11 +484,14 @@ public class CapacitorUpdater {
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       // Check if app is in foreground using activity lifecycle state
-      boolean isAppForeground = this.activity != null && !this.activity.isFinishing() && this.activity.hasWindowFocus();
+      boolean isAppForeground =
+        this.activity != null &&
+        !this.activity.isFinishing() &&
+        this.activity.hasWindowFocus();
       if (!isAppForeground) {
-          // If app is not in foreground, use regular startService instead of startForegroundService
-          Log.d(TAG, "App is in background, aborting downloadFileBackground");
-          return;
+        // If app is not in foreground, use regular startService instead of startForegroundService
+        Log.d(TAG, "App is in background, aborting downloadFileBackground");
+        return;
       }
       Log.d(TAG, "App is in foreground, using startForegroundService");
       this.activity.startForegroundService(intent);
