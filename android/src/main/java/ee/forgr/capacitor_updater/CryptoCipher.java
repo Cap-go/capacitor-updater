@@ -31,7 +31,6 @@ import java.security.spec.MGF1ParameterSpec;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.zip.CRC32;
-
 import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
 import javax.crypto.IllegalBlockSizeException;
@@ -222,7 +221,11 @@ public class CryptoCipher {
       return String.format("%08x", crc.getValue());
     } catch (IOException e) {
       System.err.println(
-              CapacitorUpdater.TAG + " Cannot calc checksum: " + file.getPath() + " " + e.getMessage()
+        CapacitorUpdater.TAG +
+        " Cannot calc checksum: " +
+        file.getPath() +
+        " " +
+        e.getMessage()
       );
       return "";
     }

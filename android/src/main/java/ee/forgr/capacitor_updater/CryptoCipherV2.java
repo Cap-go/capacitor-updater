@@ -13,7 +13,6 @@ package ee.forgr.capacitor_updater;
  */
 import android.util.Base64;
 import android.util.Log;
-
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
@@ -46,7 +45,7 @@ public class CryptoCipherV2 {
     throws NoSuchPaddingException, NoSuchAlgorithmException, InvalidAlgorithmParameterException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException {
     Cipher cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
     cipher.init(Cipher.DECRYPT_MODE, publicKey);
-      return cipher.doFinal(source);
+    return cipher.doFinal(source);
   }
 
   public static byte[] decryptAES(byte[] cipherText, SecretKey key, byte[] iv) {
@@ -253,8 +252,11 @@ public class CryptoCipherV2 {
     }
   }
 
-  public static String decryptChecksum(String checksum, String publicKey, String version)
-    throws IOException {
+  public static String decryptChecksum(
+    String checksum,
+    String publicKey,
+    String version
+  ) throws IOException {
     if (publicKey.isEmpty()) {
       Log.e(CapacitorUpdater.TAG, "The public key is empty");
       return checksum;
@@ -278,7 +280,9 @@ public class CryptoCipherV2 {
     try {
       digest = MessageDigest.getInstance("SHA-256");
     } catch (java.security.NoSuchAlgorithmException e) {
-      System.err.println(CapacitorUpdater.TAG + " SHA-256 algorithm not available");
+      System.err.println(
+        CapacitorUpdater.TAG + " SHA-256 algorithm not available"
+      );
       return "";
     }
 
@@ -298,7 +302,7 @@ public class CryptoCipherV2 {
       return hexString.toString();
     } catch (IOException e) {
       System.err.println(
-              CapacitorUpdater.TAG +
+        CapacitorUpdater.TAG +
         " Cannot calc checksum v2: " +
         file.getPath() +
         " " +

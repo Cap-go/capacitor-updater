@@ -346,11 +346,25 @@ public class CapacitorUpdater {
         String checksumDecrypted = Objects.requireNonNullElse(checksumRes, "");
         try {
           if (!this.hasOldPrivateKeyPropertyInConfig && !sessionKey.isEmpty()) {
-            CryptoCipherV2.decryptFile(downloaded, this.publicKey, sessionKey, version);
-            checksumDecrypted = CryptoCipherV2.decryptChecksum(checksumRes, this.publicKey, version);
+            CryptoCipherV2.decryptFile(
+              downloaded,
+              this.publicKey,
+              sessionKey,
+              version
+            );
+            checksumDecrypted = CryptoCipherV2.decryptChecksum(
+              checksumRes,
+              this.publicKey,
+              version
+            );
             checksum = CryptoCipherV2.calcChecksum(downloaded);
           } else {
-            CryptoCipher.decryptFile(downloaded, this.privateKey, sessionKey, version);
+            CryptoCipher.decryptFile(
+              downloaded,
+              this.privateKey,
+              sessionKey,
+              version
+            );
             checksum = CryptoCipher.calcChecksum(downloaded);
           }
         } catch (Exception e) {
@@ -703,7 +717,10 @@ public class CapacitorUpdater {
     if (
       !currentBundle.isBuiltin() && !this.bundleExists(currentBundle.getId())
     ) {
-      Log.i(CapacitorUpdater.TAG, "Folder at bundle path does not exist. Triggering reset.");
+      Log.i(
+        CapacitorUpdater.TAG,
+        "Folder at bundle path does not exist. Triggering reset."
+      );
       this.reset();
     }
   }
@@ -1083,7 +1100,10 @@ public class CapacitorUpdater {
         new okhttp3.Callback() {
           @Override
           public void onFailure(Call call, IOException e) {
-            Log.e(CapacitorUpdater.TAG, "Failed to send stats: " + e.getMessage());
+            Log.e(
+              CapacitorUpdater.TAG,
+              "Failed to send stats: " + e.getMessage()
+            );
           }
 
           @Override
@@ -1095,7 +1115,10 @@ public class CapacitorUpdater {
                 "Stats send for \"" + action + "\", version " + versionName
               );
             } else {
-              Log.e(CapacitorUpdater.TAG, "Error sending stats: " + response.code());
+              Log.e(
+                CapacitorUpdater.TAG,
+                "Error sending stats: " + response.code()
+              );
             }
           }
         }
@@ -1117,7 +1140,11 @@ public class CapacitorUpdater {
         String stored = this.prefs.getString(trueId + INFO_SUFFIX, "");
         result = BundleInfo.fromJSON(stored);
       } catch (JSONException e) {
-        Log.e(CapacitorUpdater.TAG, "Failed to parse info for bundle [" + trueId + "] ", e);
+        Log.e(
+          CapacitorUpdater.TAG,
+          "Failed to parse info for bundle [" + trueId + "] ",
+          e
+        );
         result = new BundleInfo(trueId, null, BundleStatus.PENDING, "", "");
       }
     }
@@ -1143,7 +1170,10 @@ public class CapacitorUpdater {
     if (
       id == null || (info != null && (info.isBuiltin() || info.isUnknown()))
     ) {
-      Log.d(CapacitorUpdater.TAG, "Not saving info for bundle: [" + id + "] " + info);
+      Log.d(
+        CapacitorUpdater.TAG,
+        "Not saving info for bundle: [" + id + "] " + info
+      );
       return;
     }
 
@@ -1152,7 +1182,10 @@ public class CapacitorUpdater {
       this.editor.remove(id + INFO_SUFFIX);
     } else {
       final BundleInfo update = info.setId(id);
-      Log.d(CapacitorUpdater.TAG, "Storing info for bundle [" + id + "] " + update.toString());
+      Log.d(
+        CapacitorUpdater.TAG,
+        "Storing info for bundle [" + id + "] " + update.toString()
+      );
       this.editor.putString(id + INFO_SUFFIX, update.toString());
     }
     this.editor.commit();
@@ -1161,7 +1194,10 @@ public class CapacitorUpdater {
   private void setBundleStatus(final String id, final BundleStatus status) {
     if (id != null && status != null) {
       BundleInfo info = this.getBundleInfo(id);
-      Log.d(CapacitorUpdater.TAG, "Setting status for bundle [" + id + "] to " + status);
+      Log.d(
+        CapacitorUpdater.TAG,
+        "Setting status for bundle [" + id + "] to " + status
+      );
       this.saveBundleInfo(id, info.setStatus(status));
     }
   }

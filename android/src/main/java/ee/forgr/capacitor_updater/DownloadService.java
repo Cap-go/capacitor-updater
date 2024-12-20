@@ -133,7 +133,10 @@ public class DownloadService extends IntentService {
     String publicKey = intent.getStringExtra(PUBLIC_KEY);
     boolean isManifest = intent.getBooleanExtra(IS_MANIFEST, false);
 
-    Log.d(CapacitorUpdater.TAG + " DLSrv", "onHandleIntent isManifest: " + isManifest);
+    Log.d(
+      CapacitorUpdater.TAG + " DLSrv",
+      "onHandleIntent isManifest: " + isManifest
+    );
     if (isManifest) {
       JSONArray manifest = DataManager.getInstance().getAndClearManifest();
       if (manifest != null) {
@@ -141,7 +144,7 @@ public class DownloadService extends IntentService {
           id,
           documentsDir,
           dest,
-                publicKey,
+          publicKey,
           version,
           sessionKey,
           manifest.toString()
@@ -222,8 +225,14 @@ public class DownloadService extends IntentService {
         String downloadUrl = entry.getString("download_url");
 
         // Decrypt fileHash if encryption is enabled
-        if (!publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
-          fileHash = CryptoCipherV2.decryptChecksum(fileHash, publicKey, version);
+        if (
+          !publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()
+        ) {
+          fileHash = CryptoCipherV2.decryptChecksum(
+            fileHash,
+            publicKey,
+            version
+          );
         }
 
         File targetFile = new File(destFolder, fileName);
@@ -247,20 +256,28 @@ public class DownloadService extends IntentService {
         final String finalFileHash = fileHash;
         Future<?> future = executor.submit(() -> {
           try {
-            if (builtinFile.exists() && verifyChecksum(builtinFile, finalFileHash)) {
+            if (
+              builtinFile.exists() && verifyChecksum(builtinFile, finalFileHash)
+            ) {
               copyFile(builtinFile, targetFile);
-              Log.d(CapacitorUpdater.TAG + " DLSrv", "using builtin file " + fileName);
+              Log.d(
+                CapacitorUpdater.TAG + " DLSrv",
+                "using builtin file " + fileName
+              );
             } else if (
               cacheFile.exists() && verifyChecksum(cacheFile, finalFileHash)
             ) {
               copyFile(cacheFile, targetFile);
-              Log.d(CapacitorUpdater.TAG + " DLSrv", "already cached " + fileName);
+              Log.d(
+                CapacitorUpdater.TAG + " DLSrv",
+                "already cached " + fileName
+              );
             } else {
-                downloadAndVerify(
+              downloadAndVerify(
                 downloadUrl,
                 targetFile,
                 cacheFile,
-                        finalFileHash,
+                finalFileHash,
                 id,
                 publicKey,
                 sessionKey,
@@ -272,11 +289,7 @@ public class DownloadService extends IntentService {
             int percent = calcTotalPercent(completed, totalFiles);
             notifyDownload(id, percent);
           } catch (Exception e) {
-            Log.e(
-              TAG + " DLSrv",
-              "Error processing file: " + fileName,
-              e
-            );
+            Log.e(TAG + " DLSrv", "Error processing file: " + fileName, e);
             hasError.set(true);
           }
         });
@@ -288,7 +301,11 @@ public class DownloadService extends IntentService {
         try {
           future.get();
         } catch (Exception e) {
-          Log.e(CapacitorUpdater.TAG + " DLSrv", "Error waiting for download", e);
+          Log.e(
+            CapacitorUpdater.TAG + " DLSrv",
+            "Error waiting for download",
+            e
+          );
           hasError.set(true);
         }
       }
@@ -309,7 +326,11 @@ public class DownloadService extends IntentService {
 
       publishResults(dest, id, version, "", sessionKey, "", true);
     } catch (Exception e) {
-      Log.e(CapacitorUpdater.TAG + " DLSrv", "Error in handleManifestDownload", e);
+      Log.e(
+        CapacitorUpdater.TAG + " DLSrv",
+        "Error in handleManifestDownload",
+        e
+      );
       publishResults("", id, version, "", sessionKey, e.getMessage(), true);
     }
     stopForegroundIfNeeded();
@@ -557,7 +578,10 @@ public class DownloadService extends IntentService {
 
       // Decrypt if public key and session key are available
       if (!publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
-        Log.d(CapacitorUpdater.TAG + " DLSrv", "Decrypting file " + targetFile.getName());
+        Log.d(
+          CapacitorUpdater.TAG + " DLSrv",
+          "Decrypting file " + targetFile.getName()
+        );
         CryptoCipherV2.decryptFile(targetFile, publicKey, sessionKey, version);
       }
       // Verify checksum
