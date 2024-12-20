@@ -6,6 +6,7 @@
 
 import Foundation
 import CommonCrypto
+import CryptoKit
 
 ///
 /// Constants
@@ -146,7 +147,7 @@ public struct RSAPublicKey {
 
         return Data(decryptedData)
     }
-
+    
     // code is copied from here: https://github.com/btnguyen2k/swiftutils/blob/88494f4c635b6c6d42ef0fb30a7d666acd38c4fa/SwiftUtils/RSAUtils.swift#L429
     private static func removePadding(_ data: [UInt8]) -> [UInt8] {
         var idxFirstZero = -1
@@ -201,5 +202,98 @@ fileprivate extension SecKey {
             kSecAttrKeySizeInBits: CryptoCipherConstants.rsaKeySizeInBits
         ]
         return SecKeyCreateWithData(data as CFData, keyDict as CFDictionary, nil)
+    }
+}
+
+public struct CryptoCipherV2 {
+
+    public static func decryptChecksum(checksum: String, publicKey: String, version: String) throws -> String {
+        if publicKey.isEmpty {
+            return checksum
+        }
+        do {
+            let checksumBytes: Data = Data(base64Encoded: checksum)!
+            guard let rsaPublicKey: RSAPublicKey = .load(rsaPublicKey: publicKey) else {
+                print("cannot decode publicKey", publicKey)
+                throw CustomError.cannotDecode
+            }
+            guard let decryptedChecksum = rsaPublicKey.decrypt(data: checksumBytes) else {
+                throw NSError(domain: "Failed to decrypt session key data", code: 2, userInfo: nil)
+            }
+            return decryptedChecksum.base64EncodedString()
+        } catch {
+            print("\(CapacitorUpdater.TAG) Cannot decrypt checksum: \(checksum)", error)
+            throw CustomError.cannotDecode
+        }
+    }
+    public static func calcChecksum(filePath: URL) -> String {
+        let bufferSize = 1024 * 1024 * 5 // 5 MB
+        var sha256 = SHA256()
+
+        do {
+            let fileHandle = try FileHandle(forReadingFrom: filePath)
+            defer {
+                fileHandle.closeFile()
+            }
+
+            while autoreleasepool(invoking: {
+                let fileData = fileHandle.readData(ofLength: bufferSize)
+                if fileData.count > 0 {
+                    sha256.update(data: fileData)
+                    return true // Continue
+                } else {
+                    return false // End of file
+                }
+            }) {}
+
+            let digest = sha256.finalize()
+            return digest.compactMap { String(format: "%02x", $0) }.joined()
+        } catch {
+            print("\(CapacitorUpdater.TAG) Cannot get checksum: \(filePath.path)", error)
+            return ""
+        }
+    }
+
+    public static func decryptFile(filePath: URL, publicKey: String, sessionKey: String, version: String) throws {
+        if publicKey.isEmpty || sessionKey.isEmpty  || sessionKey.components(separatedBy: ":").count != 2 {
+            print("\(CapacitorUpdater.TAG) Cannot find public key or sessionKey")
+            return
+        }
+        do {
+            guard let rsaPublicKey: RSAPublicKey = .load(rsaPublicKey: publicKey) else {
+                print("cannot decode publicKey", publicKey)
+                throw CustomError.cannotDecode
+            }
+
+            let sessionKeyArray: [String] = sessionKey.components(separatedBy: ":")
+            guard let ivData: Data = Data(base64Encoded: sessionKeyArray[0]) else {
+                print("cannot decode sessionKey", sessionKey)
+                throw CustomError.cannotDecode
+            }
+
+            guard let sessionKeyDataEncrypted = Data(base64Encoded: sessionKeyArray[1]) else {
+                throw NSError(domain: "Invalid session key data", code: 1, userInfo: nil)
+            }
+
+            guard let sessionKeyDataDecrypted = rsaPublicKey.decrypt(data: sessionKeyDataEncrypted) else {
+                throw NSError(domain: "Failed to decrypt session key data", code: 2, userInfo: nil)
+            }
+
+            let aesPrivateKey = AES128Key(iv: ivData, aes128Key: sessionKeyDataDecrypted)
+
+            guard let encryptedData = try? Data(contentsOf: filePath) else {
+                throw NSError(domain: "Failed to read encrypted data", code: 3, userInfo: nil)
+            }
+
+            guard let decryptedData = aesPrivateKey.decrypt(data: encryptedData) else {
+                throw NSError(domain: "Failed to decrypt data", code: 4, userInfo: nil)
+            }
+
+            try decryptedData.write(to: filePath)
+
+        } catch {
+            print("\(CapacitorUpdater.TAG) Cannot decode: \(filePath.path)", error)
+            throw CustomError.cannotDecode
+        }
     }
 }
