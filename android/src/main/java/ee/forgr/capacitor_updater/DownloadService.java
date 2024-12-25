@@ -6,14 +6,7 @@
 package ee.forgr.capacitor_updater;
 
 import android.app.IntentService;
-import android.app.Notification;
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
 import android.content.Intent;
-import android.content.pm.ServiceInfo;
-import android.os.Build;
-import android.os.Handler;
-import android.os.Looper;
 import android.os.PowerManager;
 import android.util.Log;
 import java.io.*;
@@ -57,19 +50,10 @@ public class DownloadService extends IntentService {
   public static final String IS_MANIFEST = "is_manifest";
   public static final String MANIFEST = "manifest";
   private static final String UPDATE_FILE = "update.dat";
-  private static final int NOTIFICATION_ID = 1;
-  private static final long NOTIFICATION_DELAY_MS = 4000; // 4 seconds
-  private static final String CHANNEL_ID = "CapacitorUpdaterChannel";
-  private static final String CHANNEL_NAME = "Capacitor Updater";
-  private static final String CHANNEL_DESCRIPTION =
-    "Notifications for app updates";
 
   private final OkHttpClient client = new OkHttpClient.Builder()
     .protocols(Arrays.asList(Protocol.HTTP_2, Protocol.HTTP_1_1))
     .build();
-  private Handler handler = new Handler(Looper.getMainLooper());
-  private Runnable notificationRunnable;
-  private boolean isNotificationShown = false;
   private PowerManager.WakeLock wakeLock;
 
   public DownloadService() {
@@ -79,52 +63,18 @@ public class DownloadService extends IntentService {
   @Override
   public void onCreate() {
     super.onCreate();
-    this.startForegroundService();
+    PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
+    wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,
+        "CapacitorUpdater::DownloadWakeLock");
   }
 
   @Override
   public void onDestroy() {
     super.onDestroy();
-    handler.removeCallbacks(notificationRunnable);
     Log.w(TAG + " DownloadService", "DownloadService killed/destroyed");
-  }
-
-  private void startForegroundService() {
-    isNotificationShown = true;
-    String channelId = createNotificationChannelForDownload();
-
-    Notification.Builder builder = new Notification.Builder(this, channelId)
-      .setContentTitle("Downloading Update")
-      .setContentText("Download in progress")
-      .setSmallIcon(android.R.drawable.stat_sys_download)
-      .setOngoing(true)
-      .setPriority(Notification.PRIORITY_MIN)
-      .setCategory(Notification.CATEGORY_SERVICE)
-      .setAutoCancel(false);
-
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-      startForeground(
-        NOTIFICATION_ID,
-        builder.build(),
-        ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-      );
-    } else {
-      startForeground(NOTIFICATION_ID, builder.build());
+    if (wakeLock != null && wakeLock.isHeld()) {
+        wakeLock.release();
     }
-  }
-
-  private String createNotificationChannelForDownload() {
-    String channelId = "capacitor_updater_channel";
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-      NotificationChannel channel = new NotificationChannel(
-        channelId,
-        "Capacitor Updater Downloads",
-        NotificationManager.IMPORTANCE_MIN // // High importance to keep service alive
-      );
-      NotificationManager manager = getSystemService(NotificationManager.class);
-      manager.createNotificationChannel(channel);
-    }
-    return channelId;
   }
 
   private int calcTotalPercent(long downloadedBytes, long contentLength) {
@@ -139,50 +89,55 @@ public class DownloadService extends IntentService {
 
   @Override
   protected void onHandleIntent(Intent intent) {
-    assert intent != null;
-    String url = intent.getStringExtra(URL);
-    String id = intent.getStringExtra(ID);
-    String documentsDir = intent.getStringExtra(DOCDIR);
-    String dest = intent.getStringExtra(FILEDEST);
-    String version = intent.getStringExtra(VERSION);
-    String sessionKey = intent.getStringExtra(SESSIONKEY);
-    String checksum = intent.getStringExtra(CHECKSUM);
-    boolean isManifest = intent.getBooleanExtra(IS_MANIFEST, false);
+    try {
+        wakeLock.acquire(10*60*1000L);
+        assert intent != null;
+        String url = intent.getStringExtra(URL);
+        String id = intent.getStringExtra(ID);
+        String documentsDir = intent.getStringExtra(DOCDIR);
+        String dest = intent.getStringExtra(FILEDEST);
+        String version = intent.getStringExtra(VERSION);
+        String sessionKey = intent.getStringExtra(SESSIONKEY);
+        String checksum = intent.getStringExtra(CHECKSUM);
+        boolean isManifest = intent.getBooleanExtra(IS_MANIFEST, false);
 
-    Log.d(TAG + " DownloadService", "onHandleIntent isManifest: " + isManifest);
-    if (isManifest) {
-      JSONArray manifest = DataManager.getInstance().getAndClearManifest();
-      if (manifest != null) {
-        handleManifestDownload(
-          id,
-          documentsDir,
-          dest,
-          version,
-          sessionKey,
-          manifest.toString()
-        );
-      } else {
-        Log.e(TAG + " DownloadService", "Manifest is null");
-        publishResults(
-          "",
-          id,
-          version,
-          checksum,
-          sessionKey,
-          "Manifest is null",
-          false
-        );
-      }
-    } else {
-      handleSingleFileDownload(
-        url,
-        id,
-        documentsDir,
-        dest,
-        version,
-        sessionKey,
-        checksum
-      );
+        Log.d(TAG + " DownloadService", "onHandleIntent isManifest: " + isManifest);
+        if (isManifest) {
+            JSONArray manifest = DataManager.getInstance().getAndClearManifest();
+            if (manifest != null) {
+                handleManifestDownload(
+                    id,
+                    documentsDir,
+                    dest,
+                    version,
+                    sessionKey,
+                    manifest.toString()
+                );
+            } else {
+                Log.e(TAG + " DownloadService", "Manifest is null");
+                publishResults(
+                    "",
+                    id,
+                    version,
+                    checksum,
+                    sessionKey,
+                    "Manifest is null",
+                    false
+                );
+            }
+        } else {
+            handleSingleFileDownload(
+                url,
+                id,
+                documentsDir,
+                dest,
+                version,
+                sessionKey,
+                checksum
+            );
+        }
+    } finally {
+        wakeLock.release();
     }
   }
 
@@ -317,7 +272,6 @@ public class DownloadService extends IntentService {
       Log.e(TAG + " DownloadService", "Error in handleManifestDownload", e);
       publishResults("", id, version, "", sessionKey, e.getMessage(), true);
     }
-    stopForegroundIfNeeded();
   }
 
   private void handleSingleFileDownload(
@@ -335,91 +289,97 @@ public class DownloadService extends IntentService {
     File tempFile = new File(documentsDir, "temp" + ".tmp"); // Temp file, where the downloaded data is stored
     try {
       URL u = new URL(url);
-      HttpURLConnection httpConn = (HttpURLConnection) u.openConnection();
+      HttpURLConnection httpConn = null;
+      try {
+        httpConn = (HttpURLConnection) u.openConnection();
 
-      // Reading progress file (if exist)
-      long downloadedBytes = 0;
+        // Reading progress file (if exist)
+        long downloadedBytes = 0;
 
-      if (infoFile.exists() && tempFile.exists()) {
-        try (
-          BufferedReader reader = new BufferedReader(new FileReader(infoFile))
-        ) {
-          String updateVersion = reader.readLine();
-          if (!updateVersion.equals(version)) {
-            clearDownloadData(documentsDir);
-            downloadedBytes = 0;
-          } else {
-            downloadedBytes = tempFile.length();
-          }
-        }
-      } else {
-        clearDownloadData(documentsDir);
-        downloadedBytes = 0;
-      }
-
-      if (downloadedBytes > 0) {
-        httpConn.setRequestProperty("Range", "bytes=" + downloadedBytes + "-");
-      }
-
-      int responseCode = httpConn.getResponseCode();
-
-      if (
-        responseCode == HttpURLConnection.HTTP_OK ||
-        responseCode == HttpURLConnection.HTTP_PARTIAL
-      ) {
-        String contentType = httpConn.getContentType();
-        long contentLength = httpConn.getContentLength() + downloadedBytes;
-
-        InputStream inputStream = httpConn.getInputStream();
-        FileOutputStream outputStream = new FileOutputStream(
-          tempFile,
-          downloadedBytes > 0
-        );
-        if (downloadedBytes == 0) {
+        if (infoFile.exists() && tempFile.exists()) {
           try (
-            BufferedWriter writer = new BufferedWriter(new FileWriter(infoFile))
+            BufferedReader reader = new BufferedReader(new FileReader(infoFile))
           ) {
-            writer.write(String.valueOf(version));
+            String updateVersion = reader.readLine();
+            if (!updateVersion.equals(version)) {
+              clearDownloadData(documentsDir);
+              downloadedBytes = 0;
+            } else {
+              downloadedBytes = tempFile.length();
+            }
           }
+        } else {
+          clearDownloadData(documentsDir);
+          downloadedBytes = 0;
         }
-        // Updating the info file
-        try (
-          BufferedWriter writer = new BufferedWriter(new FileWriter(infoFile))
+
+        if (downloadedBytes > 0) {
+          httpConn.setRequestProperty("Range", "bytes=" + downloadedBytes + "-");
+        }
+
+        int responseCode = httpConn.getResponseCode();
+
+        if (
+          responseCode == HttpURLConnection.HTTP_OK ||
+          responseCode == HttpURLConnection.HTTP_PARTIAL
         ) {
-          writer.write(String.valueOf(version));
-        }
+          String contentType = httpConn.getContentType();
+          long contentLength = httpConn.getContentLength() + downloadedBytes;
 
-        int bytesRead = -1;
-        byte[] buffer = new byte[4096];
-        int lastNotifiedPercent = 0;
-        while ((bytesRead = inputStream.read(buffer)) != -1) {
-          outputStream.write(buffer, 0, bytesRead);
-          downloadedBytes += bytesRead;
-          // Saving progress (flushing every 100 Ko)
-          if (downloadedBytes % 102400 == 0) {
-            outputStream.flush();
+          try (
+            InputStream inputStream = httpConn.getInputStream();
+            FileOutputStream outputStream = new FileOutputStream(tempFile, downloadedBytes > 0)
+          ) {
+            if (downloadedBytes == 0) {
+              try (
+                BufferedWriter writer = new BufferedWriter(new FileWriter(infoFile))
+              ) {
+                writer.write(String.valueOf(version));
+              }
+            }
+            // Updating the info file
+            try (
+              BufferedWriter writer = new BufferedWriter(new FileWriter(infoFile))
+            ) {
+              writer.write(String.valueOf(version));
+            }
+
+            int bytesRead = -1;
+            byte[] buffer = new byte[4096];
+            int lastNotifiedPercent = 0;
+            while ((bytesRead = inputStream.read(buffer)) != -1) {
+              outputStream.write(buffer, 0, bytesRead);
+              downloadedBytes += bytesRead;
+              // Saving progress (flushing every 100 Ko)
+              if (downloadedBytes % 102400 == 0) {
+                outputStream.flush();
+              }
+              // Computing percentage
+              int percent = calcTotalPercent(downloadedBytes, contentLength);
+              while (lastNotifiedPercent + 10 <= percent) {
+                lastNotifiedPercent += 10;
+                // Artificial delay using CPU-bound calculation to take ~5 seconds
+                double result = 0;
+                notifyDownload(id, lastNotifiedPercent);
+              }
+            }
+
+            outputStream.close();
+            inputStream.close();
+
+            // Rename the temp file with the final name (dest)
+            tempFile.renameTo(new File(documentsDir, dest));
+            infoFile.delete();
+            publishResults(dest, id, version, checksum, sessionKey, "", false);
           }
-          // Computing percentage
-          int percent = calcTotalPercent(downloadedBytes, contentLength);
-          while (lastNotifiedPercent + 10 <= percent) {
-            lastNotifiedPercent += 10;
-            // Artificial delay using CPU-bound calculation to take ~5 seconds
-            double result = 0;
-            notifyDownload(id, lastNotifiedPercent);
-          }
+        } else {
+          infoFile.delete();
         }
-
-        outputStream.close();
-        inputStream.close();
-
-        // Rename the temp file with the final name (dest)
-        tempFile.renameTo(new File(documentsDir, dest));
-        infoFile.delete();
-        publishResults(dest, id, version, checksum, sessionKey, "", false);
-      } else {
-        infoFile.delete();
+      } finally {
+        if (httpConn != null) {
+          httpConn.disconnect();
+        }
       }
-      httpConn.disconnect();
     } catch (OutOfMemoryError e) {
       e.printStackTrace();
       publishResults(
@@ -443,7 +403,6 @@ public class DownloadService extends IntentService {
         false
       );
     }
-    stopForegroundIfNeeded();
   }
 
   private void clearDownloadData(String docDir) {
@@ -600,57 +559,5 @@ public class DownloadService extends IntentService {
       sb.append(Integer.toString((aByte & 0xff) + 0x100, 16).substring(1));
     }
     return sb.toString();
-  }
-
-  private void stopForegroundIfNeeded() {
-    handler.removeCallbacks(notificationRunnable);
-    if (isNotificationShown) {
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-        stopForeground(STOP_FOREGROUND_REMOVE);
-      } else {
-        stopForeground(true);
-      }
-    }
-  }
-
-  private void createNotificationChannel() {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-      NotificationChannel channel = new NotificationChannel(
-        CHANNEL_ID,
-        CHANNEL_NAME,
-        NotificationManager.IMPORTANCE_MAX
-      );
-      channel.setDescription(CHANNEL_DESCRIPTION);
-      NotificationManager notificationManager = getSystemService(
-        NotificationManager.class
-      );
-      notificationManager.createNotificationChannel(channel);
-    }
-  }
-
-  private void showNotification(String text, int progress) {
-    Notification.Builder builder = new Notification.Builder(this, CHANNEL_ID)
-      .setSmallIcon(android.R.drawable.stat_sys_download)
-      .setContentTitle("App Update")
-      .setContentText(text)
-      // .setPriority(Notification.PRIORITY_LOW)
-      .setOngoing(true);
-
-    if (progress > 0) {
-      builder.setProgress(100, progress, false);
-    }
-
-    startForeground(NOTIFICATION_ID, builder.build());
-  }
-
-  // Update the notification progress
-  private void updateNotificationProgress(int progress) {
-    showNotification("Downloading OTA update... " + progress + "%", progress);
-  }
-
-  // When download completes or fails
-  private void stopForegroundService() {
-    stopForeground(true);
-    stopSelf();
   }
 }

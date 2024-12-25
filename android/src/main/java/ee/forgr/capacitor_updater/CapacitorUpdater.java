@@ -482,22 +482,7 @@ public class CapacitorUpdater {
       intent.putExtra(DownloadService.IS_MANIFEST, true);
     }
 
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-      // Check if app is in foreground using activity lifecycle state
-      boolean isAppForeground =
-        this.activity != null &&
-        !this.activity.isFinishing() &&
-        this.activity.hasWindowFocus();
-      if (!isAppForeground) {
-        // If app is not in foreground, use regular startService instead of startForegroundService
-        Log.d(TAG, "App is in background, aborting downloadFileBackground");
-        return;
-      }
-      Log.d(TAG, "App is in foreground, using startForegroundService");
-      this.activity.startForegroundService(intent);
-    } else {
-      this.activity.startService(intent);
-    }
+    this.activity.startService(intent);
   }
 
   private void downloadFile(
@@ -513,28 +498,27 @@ public class CapacitorUpdater {
     target.createNewFile();
 
     final long totalLength = connection.getContentLength();
-    final int bufferSize = 1024;
-    final byte[] buffer = new byte[bufferSize];
-    int length;
-
-    int bytesRead = bufferSize;
+    int bytesRead = 0;
     int percent = 0;
     this.notifyDownload(id, 10);
+
     try (
-      final InputStream is = connection.getInputStream();
-      final DataInputStream dis = new DataInputStream(is);
-      final FileOutputStream fos = new FileOutputStream(target)
+      InputStream is = connection.getInputStream();
+      DataInputStream dis = new DataInputStream(is);
+      FileOutputStream fos = new FileOutputStream(target)
     ) {
+      byte[] buffer = new byte[8192];
+      int length;
       while ((length = dis.read(buffer)) > 0) {
         fos.write(buffer, 0, length);
+        bytesRead += length;
         final int newPercent = (int) ((bytesRead / (float) totalLength) * 100);
         if (totalLength > 1 && newPercent != percent) {
           percent = newPercent;
           this.notifyDownload(id, this.calcTotalPercent(percent, 10, 70));
         }
-        bytesRead += length;
       }
-      if (bytesRead == bufferSize) {
+      if (bytesRead == 0) {
         throw new IOException("Failed to download: No data read from URL");
       }
     } catch (OutOfMemoryError e) {
