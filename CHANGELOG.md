@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.7.7-alpha.0](https://github.com/Cap-go/capacitor-updater/compare/6.7.6...6.7.7-alpha.0) (2024-12-25)
+
+
+### Bug Fixes
+
+* perm issue foreground ([f522f92](https://github.com/Cap-go/capacitor-updater/commit/f522f9276ff3b4813e4bf2a64c47590b5bbffb78))
+
 ### [6.7.6](https://github.com/Cap-go/capacitor-updater/compare/6.7.5...6.7.6) (2024-12-19)
 
 
