@@ -49,6 +49,8 @@ repositories {
 
 
 dependencies {
+    def work_version = "2.9.1"
+    implementation "androidx.work:work-runtime:$work_version"
     implementation fileTree(dir: 'libs', include: ['*.jar'])
     implementation project(':capacitor-android')
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"

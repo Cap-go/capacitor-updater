@@ -1658,13 +1658,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
       backgroundTask.interrupt();
     }
     this.implementation.activity = getActivity();
-    this.implementation.onResume();
   }
 
   @Override
   public void handleOnPause() {
     this.implementation.activity = getActivity();
-    this.implementation.onPause();
   }
 
   @Override

@@ -5,10 +5,12 @@
  */
 package ee.forgr.capacitor_updater;
 
-import android.app.IntentService;
-import android.content.Intent;
-import android.os.PowerManager;
+import android.content.Context;
 import android.util.Log;
+import androidx.annotation.NonNull;
+import androidx.work.Data;
+import androidx.work.Worker;
+import androidx.work.WorkerParameters;
 import java.io.*;
 import java.io.FileInputStream;
 import java.net.HttpURLConnection;
@@ -18,6 +20,7 @@ import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -33,7 +36,7 @@ import org.brotli.dec.BrotliInputStream;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-public class DownloadService extends IntentService {
+public class DownloadService extends Worker {
 
   public static final String TAG = "Capacitor-updater";
   public static final String URL = "URL";
@@ -45,37 +48,93 @@ public class DownloadService extends IntentService {
   public static final String VERSION = "version";
   public static final String SESSIONKEY = "sessionkey";
   public static final String CHECKSUM = "checksum";
-  public static final String NOTIFICATION = "service receiver";
-  public static final String PERCENTDOWNLOAD = "percent receiver";
   public static final String IS_MANIFEST = "is_manifest";
-  public static final String MANIFEST = "manifest";
   private static final String UPDATE_FILE = "update.dat";
 
   private final OkHttpClient client = new OkHttpClient.Builder()
     .protocols(Arrays.asList(Protocol.HTTP_2, Protocol.HTTP_1_1))
     .build();
-  private PowerManager.WakeLock wakeLock;
 
-  public DownloadService() {
-    super("Background DownloadService");
+  public DownloadService(
+    @NonNull Context context,
+    @NonNull WorkerParameters params
+  ) {
+    super(context, params);
   }
 
-  @Override
-  public void onCreate() {
-    super.onCreate();
-    PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
-    wakeLock = powerManager.newWakeLock(
-      PowerManager.PARTIAL_WAKE_LOCK,
-      "CapacitorUpdater::DownloadWakeLock"
-    );
+  private void setProgress(int percent) {
+    Data progress = new Data.Builder().putInt(PERCENT, percent).build();
+    setProgressAsync(progress);
   }
 
+  private Result createFailureResult(String error) {
+    Data output = new Data.Builder().putString(ERROR, error).build();
+    return Result.failure(output);
+  }
+
+  private Result createSuccessResult(
+    String dest,
+    String version,
+    String sessionKey,
+    String checksum,
+    boolean isManifest
+  ) {
+    Data output = new Data.Builder()
+      .putString(FILEDEST, dest)
+      .putString(VERSION, version)
+      .putString(SESSIONKEY, sessionKey)
+      .putString(CHECKSUM, checksum)
+      .putBoolean(IS_MANIFEST, isManifest)
+      .build();
+    return Result.success(output);
+  }
+
+  @NonNull
   @Override
-  public void onDestroy() {
-    super.onDestroy();
-    Log.w(TAG + " DownloadService", "DownloadService killed/destroyed");
-    if (wakeLock != null && wakeLock.isHeld()) {
-      wakeLock.release();
+  public Result doWork() {
+    try {
+      String url = getInputData().getString(URL);
+      String id = getInputData().getString(ID);
+      String documentsDir = getInputData().getString(DOCDIR);
+      String dest = getInputData().getString(FILEDEST);
+      String version = getInputData().getString(VERSION);
+      String sessionKey = getInputData().getString(SESSIONKEY);
+      String checksum = getInputData().getString(CHECKSUM);
+      boolean isManifest = getInputData().getBoolean(IS_MANIFEST, false);
+
+      Log.d(TAG, "doWork isManifest: " + isManifest);
+
+      if (isManifest) {
+        JSONArray manifest = DataManager.getInstance().getAndClearManifest();
+        if (manifest != null) {
+          handleManifestDownload(
+            id,
+            documentsDir,
+            dest,
+            version,
+            sessionKey,
+            manifest.toString()
+          );
+          return createSuccessResult(dest, version, sessionKey, checksum, true);
+        } else {
+          Log.e(TAG, "Manifest is null");
+          return createFailureResult("Manifest is null");
+        }
+      } else {
+        handleSingleFileDownload(
+          url,
+          id,
+          documentsDir,
+          dest,
+          version,
+          sessionKey,
+          checksum
+        );
+        return createSuccessResult(dest, version, sessionKey, checksum, false);
+      }
+    } catch (Exception e) {
+      Log.e(TAG, "Error in doWork", e);
+      return createFailureResult(e.getMessage());
     }
   }
 
@@ -89,63 +148,6 @@ public class DownloadService extends IntentService {
     return percent;
   }
 
-  @Override
-  protected void onHandleIntent(Intent intent) {
-    try {
-      wakeLock.acquire(3 * 60 * 1000L);
-      assert intent != null;
-      String url = intent.getStringExtra(URL);
-      String id = intent.getStringExtra(ID);
-      String documentsDir = intent.getStringExtra(DOCDIR);
-      String dest = intent.getStringExtra(FILEDEST);
-      String version = intent.getStringExtra(VERSION);
-      String sessionKey = intent.getStringExtra(SESSIONKEY);
-      String checksum = intent.getStringExtra(CHECKSUM);
-      boolean isManifest = intent.getBooleanExtra(IS_MANIFEST, false);
-
-      Log.d(
-        TAG + " DownloadService",
-        "onHandleIntent isManifest: " + isManifest
-      );
-      if (isManifest) {
-        JSONArray manifest = DataManager.getInstance().getAndClearManifest();
-        if (manifest != null) {
-          handleManifestDownload(
-            id,
-            documentsDir,
-            dest,
-            version,
-            sessionKey,
-            manifest.toString()
-          );
-        } else {
-          Log.e(TAG + " DownloadService", "Manifest is null");
-          publishResults(
-            "",
-            id,
-            version,
-            checksum,
-            sessionKey,
-            "Manifest is null",
-            false
-          );
-        }
-      } else {
-        handleSingleFileDownload(
-          url,
-          id,
-          documentsDir,
-          dest,
-          version,
-          sessionKey,
-          checksum
-        );
-      }
-    } finally {
-      wakeLock.release();
-    }
-  }
-
   private void handleManifestDownload(
     String id,
     String documentsDir,
@@ -155,7 +157,7 @@ public class DownloadService extends IntentService {
     String manifestString
   ) {
     try {
-      Log.d(TAG + " DownloadService", "handleManifestDownload");
+      Log.d(TAG, "handleManifestDownload");
       JSONArray manifest = new JSONArray(manifestString);
       File destFolder = new File(documentsDir, dest);
       File cacheFolder = new File(
@@ -204,7 +206,7 @@ public class DownloadService extends IntentService {
 
         // Ensure parent directories of the target file exist
         if (
-          !targetFile.getParentFile().exists() &&
+          !Objects.requireNonNull(targetFile.getParentFile()).exists() &&
           !targetFile.getParentFile().mkdirs()
         ) {
           throw new IOException(
@@ -217,12 +219,12 @@ public class DownloadService extends IntentService {
           try {
             if (builtinFile.exists() && verifyChecksum(builtinFile, fileHash)) {
               copyFile(builtinFile, targetFile);
-              Log.d(TAG + " DownloadService", "using builtin file " + fileName);
+              Log.d(TAG, "using builtin file " + fileName);
             } else if (
               cacheFile.exists() && verifyChecksum(cacheFile, fileHash)
             ) {
               copyFile(cacheFile, targetFile);
-              Log.d(TAG + " DownloadService", "already cached " + fileName);
+              Log.d(TAG, "already cached " + fileName);
             } else {
               downloadAndVerify(
                 downloadUrl,
@@ -235,13 +237,9 @@ public class DownloadService extends IntentService {
 
             long completed = completedFiles.incrementAndGet();
             int percent = calcTotalPercent(completed, totalFiles);
-            notifyDownload(id, percent);
+            setProgress(percent);
           } catch (Exception e) {
-            Log.e(
-              TAG + " DownloadService",
-              "Error processing file: " + fileName,
-              e
-            );
+            Log.e(TAG, "Error processing file: " + fileName, e);
             hasError.set(true);
           }
         });
@@ -253,7 +251,7 @@ public class DownloadService extends IntentService {
         try {
           future.get();
         } catch (Exception e) {
-          Log.e(TAG + " DownloadService", "Error waiting for download", e);
+          Log.e(TAG, "Error waiting for download", e);
           hasError.set(true);
         }
       }
@@ -271,11 +269,8 @@ public class DownloadService extends IntentService {
       if (hasError.get()) {
         throw new IOException("One or more files failed to download");
       }
-
-      publishResults(dest, id, version, "", sessionKey, "", true);
     } catch (Exception e) {
-      Log.e(TAG + " DownloadService", "Error in handleManifestDownload", e);
-      publishResults("", id, version, "", sessionKey, e.getMessage(), true);
+      Log.e(TAG, "Error in handleManifestDownload", e);
     }
   }
 
@@ -308,14 +303,12 @@ public class DownloadService extends IntentService {
             String updateVersion = reader.readLine();
             if (!updateVersion.equals(version)) {
               clearDownloadData(documentsDir);
-              downloadedBytes = 0;
             } else {
               downloadedBytes = tempFile.length();
             }
           }
         } else {
           clearDownloadData(documentsDir);
-          downloadedBytes = 0;
         }
 
         if (downloadedBytes > 0) {
@@ -331,7 +324,6 @@ public class DownloadService extends IntentService {
           responseCode == HttpURLConnection.HTTP_OK ||
           responseCode == HttpURLConnection.HTTP_PARTIAL
         ) {
-          String contentType = httpConn.getContentType();
           long contentLength = httpConn.getContentLength() + downloadedBytes;
 
           try (
@@ -375,7 +367,7 @@ public class DownloadService extends IntentService {
                 lastNotifiedPercent += 10;
                 // Artificial delay using CPU-bound calculation to take ~5 seconds
                 double result = 0;
-                notifyDownload(id, lastNotifiedPercent);
+                setProgress(lastNotifiedPercent);
               }
             }
 
@@ -385,7 +377,6 @@ public class DownloadService extends IntentService {
             // Rename the temp file with the final name (dest)
             tempFile.renameTo(new File(documentsDir, dest));
             infoFile.delete();
-            publishResults(dest, id, version, checksum, sessionKey, "", false);
           }
         } else {
           infoFile.delete();
@@ -397,26 +388,10 @@ public class DownloadService extends IntentService {
       }
     } catch (OutOfMemoryError e) {
       e.printStackTrace();
-      publishResults(
-        "",
-        id,
-        version,
-        checksum,
-        sessionKey,
-        "low_mem_fail",
-        false
-      );
+      throw new RuntimeException("low_mem_fail");
     } catch (Exception e) {
       e.printStackTrace();
-      publishResults(
-        "",
-        id,
-        version,
-        checksum,
-        sessionKey,
-        e.getLocalizedMessage(),
-        false
-      );
+      throw new RuntimeException(e.getLocalizedMessage());
     }
   }
 
@@ -431,37 +406,6 @@ public class DownloadService extends IntentService {
     } catch (IOException e) {
       e.printStackTrace();
     }
-  }
-
-  private void notifyDownload(String id, int percent) {
-    Intent intent = new Intent(PERCENTDOWNLOAD);
-    intent.setPackage(getPackageName());
-    intent.putExtra(ID, id);
-    intent.putExtra(PERCENT, percent);
-    sendBroadcast(intent);
-  }
-
-  private void publishResults(
-    String dest,
-    String id,
-    String version,
-    String checksum,
-    String sessionKey,
-    String error,
-    boolean isManifest
-  ) {
-    Intent intent = new Intent(NOTIFICATION);
-    intent.setPackage(getPackageName());
-    if (dest != null && !dest.isEmpty()) {
-      intent.putExtra(FILEDEST, dest);
-    }
-    intent.putExtra(ERROR, error);
-    intent.putExtra(ID, id);
-    intent.putExtra(VERSION, version);
-    intent.putExtra(SESSIONKEY, sessionKey);
-    intent.putExtra(CHECKSUM, checksum);
-    intent.putExtra(IS_MANIFEST, isManifest);
-    sendBroadcast(intent);
   }
 
   // Helper methods
@@ -484,7 +428,7 @@ public class DownloadService extends IntentService {
     String expectedHash,
     String id
   ) throws Exception {
-    Log.d(TAG + " DownloadService", "downloadAndVerify " + downloadUrl);
+    Log.d(TAG, "downloadAndVerify " + downloadUrl);
 
     Request request = new Request.Builder().url(downloadUrl).build();
 

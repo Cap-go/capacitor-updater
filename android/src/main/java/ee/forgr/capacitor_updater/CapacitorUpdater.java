@@ -6,19 +6,18 @@
 
 package ee.forgr.capacitor_updater;
 
-import static android.content.Context.RECEIVER_NOT_EXPORTED;
-
-import android.annotation.SuppressLint;
 import android.app.Activity;
-import android.content.BroadcastReceiver;
 import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.os.Build;
-import android.os.Bundle;
 import android.util.Base64;
 import android.util.Log;
+
+import androidx.annotation.NonNull;
+import androidx.lifecycle.LifecycleOwner;
+import androidx.work.Data;
+import androidx.work.WorkInfo;
+import androidx.work.WorkManager;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.plugin.WebView;
 import java.io.BufferedInputStream;
@@ -29,9 +28,6 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.FilenameFilter;
 import java.io.IOException;
-import java.io.InputStream;
-import java.net.URL;
-import java.net.URLConnection;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.PrivateKey;
@@ -251,87 +247,94 @@ public class CapacitorUpdater {
     sourceFile.delete();
   }
 
-  @SuppressLint("UnspecifiedRegisterReceiverFlag")
-  public void onResume() {
-    IntentFilter filter = new IntentFilter();
-    filter.addAction(DownloadService.NOTIFICATION);
-    filter.addAction(DownloadService.PERCENTDOWNLOAD);
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-      this.activity.registerReceiver(receiver, filter, RECEIVER_NOT_EXPORTED);
-    } else {
-      this.activity.registerReceiver(receiver, filter);
+  private void observeWorkProgress(Context context, String id) {
+    if (!(context instanceof LifecycleOwner)) {
+      Log.e(TAG, "Context is not a LifecycleOwner, cannot observe work progress");
+      return;
     }
-  }
 
-  public void onPause() {
-    this.activity.unregisterReceiver(receiver);
-  }
+    activity.runOnUiThread(() -> {
+      WorkManager.getInstance(context)
+        .getWorkInfosByTagLiveData(id)
+        .observe((LifecycleOwner) context, workInfos -> {
+          if (workInfos == null || workInfos.isEmpty()) return;
 
-  private final BroadcastReceiver receiver = new BroadcastReceiver() {
-    @Override
-    public void onReceive(Context context, Intent intent) {
-      String action = intent.getAction();
-      Bundle bundle = intent.getExtras();
-      if (bundle != null) {
-        if (Objects.equals(action, DownloadService.PERCENTDOWNLOAD)) {
-          String id = bundle.getString(DownloadService.ID);
-          int percent = bundle.getInt(DownloadService.PERCENT);
-          CapacitorUpdater.this.notifyDownload(id, percent);
-        } else if (Objects.equals(action, DownloadService.NOTIFICATION)) {
-          String id = bundle.getString(DownloadService.ID);
-          String dest = bundle.getString(DownloadService.FILEDEST);
-          String version = bundle.getString(DownloadService.VERSION);
-          String sessionKey = bundle.getString(DownloadService.SESSIONKEY);
-          String checksum = bundle.getString(DownloadService.CHECKSUM);
-          String error = bundle.getString(DownloadService.ERROR);
-          boolean isManifest = bundle.getBoolean(
-            DownloadService.IS_MANIFEST,
-            false
-          );
-          Log.i(
-            CapacitorUpdater.TAG,
-            "res " +
-            id +
-            " " +
-            dest +
-            " " +
-            version +
-            " " +
-            sessionKey +
-            " " +
-            checksum +
-            " " +
-            error
-          );
-          if (dest == null) {
-            final JSObject ret = new JSObject();
-            ret.put(
-              "version",
-              CapacitorUpdater.this.getCurrentBundle().getVersionName()
-            );
-            if ("low_mem_fail".equals(error)) {
-              CapacitorUpdater.this.sendStats("low_mem_fail", version);
-            }
-            ret.put("error", "download_fail");
-            CapacitorUpdater.this.sendStats("download_fail", version);
-            CapacitorUpdater.this.notifyListeners("downloadFailed", ret);
-            return;
+          WorkInfo workInfo = workInfos.get(0);
+          Data progress = workInfo.getProgress();
+
+          switch (workInfo.getState()) {
+            case RUNNING:
+              int percent = progress.getInt(DownloadService.PERCENT, 0);
+              notifyDownload(id, percent);
+              break;
+            case SUCCEEDED:
+              Data outputData = workInfo.getOutputData();
+              String dest = outputData.getString(DownloadService.FILEDEST);
+              String version = outputData.getString(DownloadService.VERSION);
+              String sessionKey = outputData.getString(DownloadService.SESSIONKEY);
+              String checksum = outputData.getString(DownloadService.CHECKSUM);
+              boolean isManifest = outputData.getBoolean(DownloadService.IS_MANIFEST, false);
+
+              boolean success = finishDownload(id, dest, version, sessionKey, checksum, true, isManifest);
+              if (!success) {
+                saveBundleInfo(id, new BundleInfo(id, version, BundleStatus.ERROR, new Date(System.currentTimeMillis()), ""));
+                JSObject ret = new JSObject();
+                ret.put("version", getCurrentBundle().getVersionName());
+                ret.put("error", "finish_download_fail");
+                sendStats("finish_download_fail", version);
+                notifyListeners("downloadFailed", ret);
+              }
+              break;
+            case FAILED:
+              Data failedData = workInfo.getOutputData();
+              String error = failedData.getString(DownloadService.ERROR);
+              String failedVersion = failedData.getString(DownloadService.VERSION);
+              saveBundleInfo(id, new BundleInfo(id, failedVersion, BundleStatus.ERROR, new Date(System.currentTimeMillis()), ""));
+              JSObject ret = new JSObject();
+              ret.put("version", getCurrentBundle().getVersionName());
+              if ("low_mem_fail".equals(error)) {
+                sendStats("low_mem_fail", failedVersion);
+              }
+              ret.put("error", error != null ? error : "download_fail");
+              sendStats("download_fail", failedVersion);
+              notifyListeners("downloadFailed", ret);
+              break;
           }
-          CapacitorUpdater.this.finishDownload(
-              id,
-              dest,
-              version,
-              sessionKey,
-              checksum,
-              true,
-              isManifest
-            );
-        } else {
-          Log.i(TAG, "Unknown action " + action);
-        }
-      }
+        });
+    });
+  }
+
+  private void download(
+    final String id,
+    final String url,
+    final String dest,
+    final String version,
+    final String sessionKey,
+    final String checksum,
+    final JSONArray manifest
+  ) {
+    if (this.activity == null) {
+      Log.e(TAG, "Activity is null, cannot observe work progress");
+      return;
     }
-  };
+    observeWorkProgress(this.activity, id);
+
+    DownloadWorkerManager.enqueueDownload(
+      this.activity,
+      url,
+      id,
+      this.documentsDir.getAbsolutePath(),
+      dest,
+      version,
+      sessionKey,
+      checksum,
+      manifest != null
+    );
+
+    if (manifest != null) {
+      DataManager.getInstance().setManifest(manifest);
+    }
+  }
 
   private String decryptChecksum(String checksum, String version)
     throws IOException {
@@ -455,77 +458,6 @@ public class CapacitorUpdater {
       return false;
     }
     return true;
-  }
-
-  private void downloadFileBackground(
-    final String id,
-    final String url,
-    final String version,
-    final String sessionKey,
-    final String checksum,
-    final String dest,
-    final JSONArray manifest
-  ) {
-    Intent intent = new Intent(this.activity, DownloadService.class);
-    intent.putExtra(DownloadService.URL, url);
-    intent.putExtra(DownloadService.FILEDEST, dest);
-    intent.putExtra(
-      DownloadService.DOCDIR,
-      this.documentsDir.getAbsolutePath()
-    );
-    intent.putExtra(DownloadService.ID, id);
-    intent.putExtra(DownloadService.VERSION, version);
-    intent.putExtra(DownloadService.SESSIONKEY, sessionKey);
-    intent.putExtra(DownloadService.CHECKSUM, checksum);
-    if (manifest != null) {
-      DataManager.getInstance().setManifest(manifest);
-      intent.putExtra(DownloadService.IS_MANIFEST, true);
-    }
-
-    this.activity.startService(intent);
-  }
-
-  private void downloadFile(
-    final String id,
-    final String url,
-    final String dest
-  ) throws IOException {
-    final URL u = new URL(url);
-    final URLConnection connection = u.openConnection();
-
-    final File target = new File(this.documentsDir, dest);
-    Objects.requireNonNull(target.getParentFile()).mkdirs();
-    target.createNewFile();
-
-    final long totalLength = connection.getContentLength();
-    int bytesRead = 0;
-    int percent = 0;
-    this.notifyDownload(id, 10);
-
-    try (
-      InputStream is = connection.getInputStream();
-      DataInputStream dis = new DataInputStream(is);
-      FileOutputStream fos = new FileOutputStream(target)
-    ) {
-      byte[] buffer = new byte[8192];
-      int length;
-      while ((length = dis.read(buffer)) > 0) {
-        fos.write(buffer, 0, length);
-        bytesRead += length;
-        final int newPercent = (int) ((bytesRead / (float) totalLength) * 100);
-        if (totalLength > 1 && newPercent != percent) {
-          percent = newPercent;
-          this.notifyDownload(id, this.calcTotalPercent(percent, 10, 70));
-        }
-      }
-      if (bytesRead == 0) {
-        throw new IOException("Failed to download: No data read from URL");
-      }
-    } catch (OutOfMemoryError e) {
-      Log.e(TAG, "OutOfMemoryError while downloading file", e);
-      this.sendStats("low_mem_fail");
-      throw new IOException("OutOfMemoryError while downloading file");
-    }
   }
 
   private void deleteDirectory(final File file) throws IOException {
@@ -727,6 +659,16 @@ public class CapacitorUpdater {
     final JSONArray manifest
   ) {
     final String id = this.randomString();
+
+    // Check if version is already downloading
+    if (
+      this.activity != null &&
+      DownloadWorkerManager.isVersionDownloading(version)
+    ) {
+      Log.i(TAG, "Version already downloading: " + version);
+      return;
+    }
+
     this.saveBundleInfo(
         id,
         new BundleInfo(
@@ -740,13 +682,13 @@ public class CapacitorUpdater {
     this.notifyDownload(id, 0);
     this.notifyDownload(id, 5);
 
-    this.downloadFileBackground(
+    this.download(
         id,
         url,
+        this.randomString(),
         version,
         sessionKey,
         checksum,
-        this.randomString(),
         manifest
       );
   }
@@ -771,29 +713,44 @@ public class CapacitorUpdater {
     this.notifyDownload(id, 0);
     this.notifyDownload(id, 5);
     final String dest = this.randomString();
-    this.downloadFile(id, url, dest);
-    final Boolean finished =
-      this.finishDownload(
-          id,
-          dest,
-          version,
-          sessionKey,
-          checksum,
-          false,
-          false
-        );
-    final BundleStatus status = finished
-      ? BundleStatus.PENDING
-      : BundleStatus.ERROR;
-    BundleInfo info = new BundleInfo(
-      id,
-      version,
-      status,
-      new Date(System.currentTimeMillis()),
-      checksum
-    );
-    this.saveBundleInfo(id, info);
-    return info;
+
+    // Use the new WorkManager-based download
+    this.download(id, url, dest, version, sessionKey, checksum, null);
+
+    // Wait for completion
+    try {
+      List<WorkInfo> workInfos = WorkManager.getInstance(activity)
+        .getWorkInfosByTag(id)
+        .get();
+      
+      for (WorkInfo workInfo : workInfos) {
+        if (workInfo.getState() == WorkInfo.State.SUCCEEDED) {
+          Data outputData = workInfo.getOutputData();
+          boolean success = finishDownload(
+            id,
+            outputData.getString(DownloadService.FILEDEST),
+            version,
+            sessionKey,
+            checksum,
+            true,
+            false
+          );
+          if (!success) {
+            throw new IOException("Failed to finish download");
+          }
+          return getBundleInfo(id);
+        } else if (workInfo.getState().isFinished()) {
+          Data outputData = workInfo.getOutputData();
+          String error = outputData.getString(DownloadService.ERROR);
+          throw new IOException(error != null ? error : "Download failed: " + workInfo.getState());
+        }
+      }
+      throw new IOException("No work info found for id: " + id);
+    } catch (Exception e) {
+      Log.e(TAG, "Error waiting for download", e);
+      saveBundleInfo(id, new BundleInfo(id, version, BundleStatus.ERROR, new Date(System.currentTimeMillis()), ""));
+      throw new IOException("Error waiting for download: " + e.getMessage());
+    }
   }
 
   public List<BundleInfo> list() {
@@ -817,6 +774,13 @@ public class CapacitorUpdater {
     if (deleted.isBuiltin() || this.getCurrentBundleId().equals(id)) {
       Log.e(TAG, "Cannot delete " + id);
       return false;
+    }
+    // Cancel download for this version if active
+    if (this.activity != null) {
+      DownloadWorkerManager.cancelVersionDownload(
+        this.activity,
+        deleted.getVersionName()
+      );
     }
     final File bundle = new File(this.documentsDir, bundleDirectory + "/" + id);
     if (bundle.exists()) {
@@ -929,6 +893,10 @@ public class CapacitorUpdater {
     this.setCurrentBundle(new File("public"));
     this.setFallbackBundle(null);
     this.setNextBundle(null);
+    // Cancel any ongoing downloads
+    if (this.activity != null) {
+      DownloadWorkerManager.cancelAllDownloads(this.activity);
+    }
     if (!internal) {
       this.sendStats(
           "reset",
@@ -970,7 +938,7 @@ public class CapacitorUpdater {
       .enqueue(
         new okhttp3.Callback() {
           @Override
-          public void onFailure(Call call, IOException e) {
+          public void onFailure(@NonNull Call call, @NonNull IOException e) {
             JSObject retError = new JSObject();
             retError.put("message", "Request failed: " + e.getMessage());
             retError.put("error", "network_error");
@@ -978,7 +946,7 @@ public class CapacitorUpdater {
           }
 
           @Override
-          public void onResponse(Call call, Response response)
+          public void onResponse(@NonNull Call call, @NonNull Response response)
             throws IOException {
             try (ResponseBody responseBody = response.body()) {
               if (!response.isSuccessful()) {
@@ -989,7 +957,8 @@ public class CapacitorUpdater {
                 return;
               }
 
-              String responseData = responseBody.string();
+                assert responseBody != null;
+                String responseData = responseBody.string();
               JSONObject jsonResponse = new JSONObject(responseData);
               JSObject ret = new JSObject();
 
@@ -1068,7 +1037,7 @@ public class CapacitorUpdater {
       .enqueue(
         new okhttp3.Callback() {
           @Override
-          public void onFailure(Call call, IOException e) {
+          public void onFailure(@NonNull Call call, @NonNull IOException e) {
             JSObject retError = new JSObject();
             retError.put("message", "Request failed: " + e.getMessage());
             retError.put("error", "network_error");
@@ -1076,7 +1045,7 @@ public class CapacitorUpdater {
           }
 
           @Override
-          public void onResponse(Call call, Response response)
+          public void onResponse(@NonNull Call call, @NonNull Response response)
             throws IOException {
             try (ResponseBody responseBody = response.body()) {
               if (!response.isSuccessful()) {
@@ -1087,7 +1056,8 @@ public class CapacitorUpdater {
                 return;
               }
 
-              String responseData = responseBody.string();
+                assert responseBody != null;
+                String responseData = responseBody.string();
               JSONObject jsonResponse = new JSONObject(responseData);
               JSObject ret = new JSObject();
 
@@ -1171,7 +1141,7 @@ public class CapacitorUpdater {
       .enqueue(
         new okhttp3.Callback() {
           @Override
-          public void onFailure(Call call, IOException e) {
+          public void onFailure(@NonNull Call call, @NonNull IOException e) {
             JSObject retError = new JSObject();
             retError.put("message", "Request failed: " + e.getMessage());
             retError.put("error", "network_error");
@@ -1179,11 +1149,12 @@ public class CapacitorUpdater {
           }
 
           @Override
-          public void onResponse(Call call, Response response)
+          public void onResponse(@NonNull Call call, @NonNull Response response)
             throws IOException {
             try (ResponseBody responseBody = response.body()) {
               if (response.code() == 400) {
-                String data = responseBody.string();
+                  assert responseBody != null;
+                  String data = responseBody.string();
                 if (
                   data.contains("channel_not_found") &&
                   !defaultChannel.isEmpty()
@@ -1205,7 +1176,8 @@ public class CapacitorUpdater {
                 return;
               }
 
-              String responseData = responseBody.string();
+                assert responseBody != null;
+                String responseData = responseBody.string();
               JSONObject jsonResponse = new JSONObject(responseData);
               JSObject ret = new JSObject();
 
@@ -1269,12 +1241,12 @@ public class CapacitorUpdater {
       .enqueue(
         new okhttp3.Callback() {
           @Override
-          public void onFailure(Call call, IOException e) {
+          public void onFailure(@NonNull Call call, @NonNull IOException e) {
             Log.e(TAG, "Failed to send stats: " + e.getMessage());
           }
 
           @Override
-          public void onResponse(Call call, Response response)
+          public void onResponse(@NonNull Call call, @NonNull Response response)
             throws IOException {
             if (response.isSuccessful()) {
               Log.i(
