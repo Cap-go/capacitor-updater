@@ -92,7 +92,7 @@ public class DownloadService extends IntentService {
   @Override
   protected void onHandleIntent(Intent intent) {
     try {
-      wakeLock.acquire(10 * 60 * 1000L);
+      wakeLock.acquire(3 * 60 * 1000L);
       assert intent != null;
       String url = intent.getStringExtra(URL);
       String id = intent.getStringExtra(ID);
