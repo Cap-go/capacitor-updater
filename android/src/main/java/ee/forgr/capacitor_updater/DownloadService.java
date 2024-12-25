@@ -64,8 +64,10 @@ public class DownloadService extends IntentService {
   public void onCreate() {
     super.onCreate();
     PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
-    wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,
-        "CapacitorUpdater::DownloadWakeLock");
+    wakeLock = powerManager.newWakeLock(
+      PowerManager.PARTIAL_WAKE_LOCK,
+      "CapacitorUpdater::DownloadWakeLock"
+    );
   }
 
   @Override
@@ -73,7 +75,7 @@ public class DownloadService extends IntentService {
     super.onDestroy();
     Log.w(TAG + " DownloadService", "DownloadService killed/destroyed");
     if (wakeLock != null && wakeLock.isHeld()) {
-        wakeLock.release();
+      wakeLock.release();
     }
   }
 
@@ -90,54 +92,57 @@ public class DownloadService extends IntentService {
   @Override
   protected void onHandleIntent(Intent intent) {
     try {
-        wakeLock.acquire(10*60*1000L);
-        assert intent != null;
-        String url = intent.getStringExtra(URL);
-        String id = intent.getStringExtra(ID);
-        String documentsDir = intent.getStringExtra(DOCDIR);
-        String dest = intent.getStringExtra(FILEDEST);
-        String version = intent.getStringExtra(VERSION);
-        String sessionKey = intent.getStringExtra(SESSIONKEY);
-        String checksum = intent.getStringExtra(CHECKSUM);
-        boolean isManifest = intent.getBooleanExtra(IS_MANIFEST, false);
+      wakeLock.acquire(10 * 60 * 1000L);
+      assert intent != null;
+      String url = intent.getStringExtra(URL);
+      String id = intent.getStringExtra(ID);
+      String documentsDir = intent.getStringExtra(DOCDIR);
+      String dest = intent.getStringExtra(FILEDEST);
+      String version = intent.getStringExtra(VERSION);
+      String sessionKey = intent.getStringExtra(SESSIONKEY);
+      String checksum = intent.getStringExtra(CHECKSUM);
+      boolean isManifest = intent.getBooleanExtra(IS_MANIFEST, false);
 
-        Log.d(TAG + " DownloadService", "onHandleIntent isManifest: " + isManifest);
-        if (isManifest) {
-            JSONArray manifest = DataManager.getInstance().getAndClearManifest();
-            if (manifest != null) {
-                handleManifestDownload(
-                    id,
-                    documentsDir,
-                    dest,
-                    version,
-                    sessionKey,
-                    manifest.toString()
-                );
-            } else {
-                Log.e(TAG + " DownloadService", "Manifest is null");
-                publishResults(
-                    "",
-                    id,
-                    version,
-                    checksum,
-                    sessionKey,
-                    "Manifest is null",
-                    false
-                );
-            }
+      Log.d(
+        TAG + " DownloadService",
+        "onHandleIntent isManifest: " + isManifest
+      );
+      if (isManifest) {
+        JSONArray manifest = DataManager.getInstance().getAndClearManifest();
+        if (manifest != null) {
+          handleManifestDownload(
+            id,
+            documentsDir,
+            dest,
+            version,
+            sessionKey,
+            manifest.toString()
+          );
         } else {
-            handleSingleFileDownload(
-                url,
-                id,
-                documentsDir,
-                dest,
-                version,
-                sessionKey,
-                checksum
-            );
+          Log.e(TAG + " DownloadService", "Manifest is null");
+          publishResults(
+            "",
+            id,
+            version,
+            checksum,
+            sessionKey,
+            "Manifest is null",
+            false
+          );
         }
+      } else {
+        handleSingleFileDownload(
+          url,
+          id,
+          documentsDir,
+          dest,
+          version,
+          sessionKey,
+          checksum
+        );
+      }
     } finally {
-        wakeLock.release();
+      wakeLock.release();
     }
   }
 
@@ -314,7 +319,10 @@ public class DownloadService extends IntentService {
         }
 
         if (downloadedBytes > 0) {
-          httpConn.setRequestProperty("Range", "bytes=" + downloadedBytes + "-");
+          httpConn.setRequestProperty(
+            "Range",
+            "bytes=" + downloadedBytes + "-"
+          );
         }
 
         int responseCode = httpConn.getResponseCode();
@@ -328,18 +336,25 @@ public class DownloadService extends IntentService {
 
           try (
             InputStream inputStream = httpConn.getInputStream();
-            FileOutputStream outputStream = new FileOutputStream(tempFile, downloadedBytes > 0)
+            FileOutputStream outputStream = new FileOutputStream(
+              tempFile,
+              downloadedBytes > 0
+            )
           ) {
             if (downloadedBytes == 0) {
               try (
-                BufferedWriter writer = new BufferedWriter(new FileWriter(infoFile))
+                BufferedWriter writer = new BufferedWriter(
+                  new FileWriter(infoFile)
+                )
               ) {
                 writer.write(String.valueOf(version));
               }
             }
             // Updating the info file
             try (
-              BufferedWriter writer = new BufferedWriter(new FileWriter(infoFile))
+              BufferedWriter writer = new BufferedWriter(
+                new FileWriter(infoFile)
+              )
             ) {
               writer.write(String.valueOf(version));
             }
