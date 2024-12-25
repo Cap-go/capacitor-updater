@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.7.7-alpha.2](https://github.com/Cap-go/capacitor-updater/compare/6.7.7-alpha.1...6.7.7-alpha.2) (2024-12-25)
+
+
+### Bug Fixes
+
+* lock max 3 min ([70c8622](https://github.com/Cap-go/capacitor-updater/commit/70c8622169729e4c9bfc8e8c4aa46c8cc3b5fbe5))
+
 ### [6.7.7-alpha.1](https://github.com/Cap-go/capacitor-updater/compare/6.7.7-alpha.0...6.7.7-alpha.1) (2024-12-25)
 
 
