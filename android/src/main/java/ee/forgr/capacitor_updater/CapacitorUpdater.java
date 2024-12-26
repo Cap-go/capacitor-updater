@@ -12,7 +12,6 @@ import android.content.SharedPreferences;
 import android.os.Build;
 import android.util.Base64;
 import android.util.Log;
-
 import androidx.annotation.NonNull;
 import androidx.lifecycle.LifecycleOwner;
 import androidx.work.Data;
@@ -20,6 +19,8 @@ import androidx.work.WorkInfo;
 import androidx.work.WorkManager;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.plugin.WebView;
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
 import java.io.BufferedInputStream;
 import java.io.DataInputStream;
 import java.io.File;
@@ -46,9 +47,6 @@ import okhttp3.*;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
-
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.common.util.concurrent.Futures;
 
 public class CapacitorUpdater {
 
@@ -252,7 +250,10 @@ public class CapacitorUpdater {
 
   private void observeWorkProgress(Context context, String id) {
     if (!(context instanceof LifecycleOwner)) {
-      Log.e(TAG, "Context is not a LifecycleOwner, cannot observe work progress");
+      Log.e(
+        TAG,
+        "Context is not a LifecycleOwner, cannot observe work progress"
+      );
       return;
     }
 
@@ -274,13 +275,35 @@ public class CapacitorUpdater {
               Data outputData = workInfo.getOutputData();
               String dest = outputData.getString(DownloadService.FILEDEST);
               String version = outputData.getString(DownloadService.VERSION);
-              String sessionKey = outputData.getString(DownloadService.SESSIONKEY);
+              String sessionKey = outputData.getString(
+                DownloadService.SESSIONKEY
+              );
               String checksum = outputData.getString(DownloadService.CHECKSUM);
-              boolean isManifest = outputData.getBoolean(DownloadService.IS_MANIFEST, false);
+              boolean isManifest = outputData.getBoolean(
+                DownloadService.IS_MANIFEST,
+                false
+              );
 
-              boolean success = finishDownload(id, dest, version, sessionKey, checksum, true, isManifest);
+              boolean success = finishDownload(
+                id,
+                dest,
+                version,
+                sessionKey,
+                checksum,
+                true,
+                isManifest
+              );
               if (!success) {
-                saveBundleInfo(id, new BundleInfo(id, version, BundleStatus.ERROR, new Date(System.currentTimeMillis()), ""));
+                saveBundleInfo(
+                  id,
+                  new BundleInfo(
+                    id,
+                    version,
+                    BundleStatus.ERROR,
+                    new Date(System.currentTimeMillis()),
+                    ""
+                  )
+                );
                 JSObject ret = new JSObject();
                 ret.put("version", getCurrentBundle().getVersionName());
                 ret.put("error", "finish_download_fail");
@@ -291,8 +314,19 @@ public class CapacitorUpdater {
             case FAILED:
               Data failedData = workInfo.getOutputData();
               String error = failedData.getString(DownloadService.ERROR);
-              String failedVersion = failedData.getString(DownloadService.VERSION);
-              saveBundleInfo(id, new BundleInfo(id, failedVersion, BundleStatus.ERROR, new Date(System.currentTimeMillis()), ""));
+              String failedVersion = failedData.getString(
+                DownloadService.VERSION
+              );
+              saveBundleInfo(
+                id,
+                new BundleInfo(
+                  id,
+                  failedVersion,
+                  BundleStatus.ERROR,
+                  new Date(System.currentTimeMillis()),
+                  ""
+                )
+              );
               JSObject ret = new JSObject();
               ret.put("version", getCurrentBundle().getVersionName());
               if ("low_mem_fail".equals(error)) {
@@ -722,11 +756,12 @@ public class CapacitorUpdater {
 
     // Wait for completion
     try {
-      ListenableFuture<List<WorkInfo>> future = WorkManager.getInstance(activity)
-        .getWorkInfosByTag(id);
-      
+      ListenableFuture<List<WorkInfo>> future = WorkManager.getInstance(
+        activity
+      ).getWorkInfosByTag(id);
+
       List<WorkInfo> workInfos = Futures.getChecked(future, IOException.class);
-      
+
       if (workInfos != null && !workInfos.isEmpty()) {
         WorkInfo workInfo = workInfos.get(0);
         while (!workInfo.getState().isFinished()) {
@@ -739,7 +774,7 @@ public class CapacitorUpdater {
             workInfo = workInfos.get(0);
           }
         }
-        
+
         if (workInfo.getState() == WorkInfo.State.SUCCEEDED) {
           Data outputData = workInfo.getOutputData();
           boolean success = finishDownload(
@@ -757,13 +792,24 @@ public class CapacitorUpdater {
         } else {
           Data outputData = workInfo.getOutputData();
           String error = outputData.getString(DownloadService.ERROR);
-          throw new IOException(error != null ? error : "Download failed: " + workInfo.getState());
+          throw new IOException(
+            error != null ? error : "Download failed: " + workInfo.getState()
+          );
         }
       }
       return getBundleInfo(id);
     } catch (Exception e) {
       Log.e(TAG, "Error waiting for download", e);
-      saveBundleInfo(id, new BundleInfo(id, version, BundleStatus.ERROR, new Date(System.currentTimeMillis()), ""));
+      saveBundleInfo(
+        id,
+        new BundleInfo(
+          id,
+          version,
+          BundleStatus.ERROR,
+          new Date(System.currentTimeMillis()),
+          ""
+        )
+      );
       throw new IOException("Error waiting for download: " + e.getMessage());
     }
   }
@@ -961,8 +1007,10 @@ public class CapacitorUpdater {
           }
 
           @Override
-          public void onResponse(@NonNull Call call, @NonNull Response response)
-            throws IOException {
+          public void onResponse(
+            @NonNull Call call,
+            @NonNull Response response
+          ) throws IOException {
             try (ResponseBody responseBody = response.body()) {
               if (!response.isSuccessful()) {
                 JSObject retError = new JSObject();
@@ -972,8 +1020,8 @@ public class CapacitorUpdater {
                 return;
               }
 
-                assert responseBody != null;
-                String responseData = responseBody.string();
+              assert responseBody != null;
+              String responseData = responseBody.string();
               JSONObject jsonResponse = new JSONObject(responseData);
               JSObject ret = new JSObject();
 
@@ -1060,8 +1108,10 @@ public class CapacitorUpdater {
           }
 
           @Override
-          public void onResponse(@NonNull Call call, @NonNull Response response)
-            throws IOException {
+          public void onResponse(
+            @NonNull Call call,
+            @NonNull Response response
+          ) throws IOException {
             try (ResponseBody responseBody = response.body()) {
               if (!response.isSuccessful()) {
                 JSObject retError = new JSObject();
@@ -1071,8 +1121,8 @@ public class CapacitorUpdater {
                 return;
               }
 
-                assert responseBody != null;
-                String responseData = responseBody.string();
+              assert responseBody != null;
+              String responseData = responseBody.string();
               JSONObject jsonResponse = new JSONObject(responseData);
               JSObject ret = new JSObject();
 
@@ -1164,12 +1214,14 @@ public class CapacitorUpdater {
           }
 
           @Override
-          public void onResponse(@NonNull Call call, @NonNull Response response)
-            throws IOException {
+          public void onResponse(
+            @NonNull Call call,
+            @NonNull Response response
+          ) throws IOException {
             try (ResponseBody responseBody = response.body()) {
               if (response.code() == 400) {
-                  assert responseBody != null;
-                  String data = responseBody.string();
+                assert responseBody != null;
+                String data = responseBody.string();
                 if (
                   data.contains("channel_not_found") &&
                   !defaultChannel.isEmpty()
@@ -1191,8 +1243,8 @@ public class CapacitorUpdater {
                 return;
               }
 
-                assert responseBody != null;
-                String responseData = responseBody.string();
+              assert responseBody != null;
+              String responseData = responseBody.string();
               JSONObject jsonResponse = new JSONObject(responseData);
               JSObject ret = new JSObject();
 
@@ -1261,8 +1313,10 @@ public class CapacitorUpdater {
           }
 
           @Override
-          public void onResponse(@NonNull Call call, @NonNull Response response)
-            throws IOException {
+          public void onResponse(
+            @NonNull Call call,
+            @NonNull Response response
+          ) throws IOException {
             if (response.isSuccessful()) {
               Log.i(
                 TAG,
