@@ -47,6 +47,9 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import com.google.common.util.concurrent.ListenableFuture;
+import com.google.common.util.concurrent.Futures;
+
 public class CapacitorUpdater {
 
   private static final String AB =
@@ -719,11 +722,24 @@ public class CapacitorUpdater {
 
     // Wait for completion
     try {
-      List<WorkInfo> workInfos = WorkManager.getInstance(activity)
-        .getWorkInfosByTag(id)
-        .get();
+      ListenableFuture<List<WorkInfo>> future = WorkManager.getInstance(activity)
+        .getWorkInfosByTag(id);
       
-      for (WorkInfo workInfo : workInfos) {
+      List<WorkInfo> workInfos = Futures.getChecked(future, IOException.class);
+      
+      if (workInfos != null && !workInfos.isEmpty()) {
+        WorkInfo workInfo = workInfos.get(0);
+        while (!workInfo.getState().isFinished()) {
+          Thread.sleep(100);
+          workInfos = Futures.getChecked(
+            WorkManager.getInstance(activity).getWorkInfosByTag(id),
+            IOException.class
+          );
+          if (workInfos != null && !workInfos.isEmpty()) {
+            workInfo = workInfos.get(0);
+          }
+        }
+        
         if (workInfo.getState() == WorkInfo.State.SUCCEEDED) {
           Data outputData = workInfo.getOutputData();
           boolean success = finishDownload(
@@ -738,14 +754,13 @@ public class CapacitorUpdater {
           if (!success) {
             throw new IOException("Failed to finish download");
           }
-          return getBundleInfo(id);
-        } else if (workInfo.getState().isFinished()) {
+        } else {
           Data outputData = workInfo.getOutputData();
           String error = outputData.getString(DownloadService.ERROR);
           throw new IOException(error != null ? error : "Download failed: " + workInfo.getState());
         }
       }
-      throw new IOException("No work info found for id: " + id);
+      return getBundleInfo(id);
     } catch (Exception e) {
       Log.e(TAG, "Error waiting for download", e);
       saveBundleInfo(id, new BundleInfo(id, version, BundleStatus.ERROR, new Date(System.currentTimeMillis()), ""));
