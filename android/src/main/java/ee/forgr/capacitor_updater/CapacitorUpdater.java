@@ -836,6 +836,16 @@ public class CapacitorUpdater {
       Log.e(TAG, "Cannot delete " + id);
       return false;
     }
+    final BundleInfo next = this.getNextBundle();
+    if (
+      next != null &&
+      !next.isDeleted() &&
+      !next.isErrorStatus() &&
+      next.getId().equals(id)
+    ) {
+      Log.e(TAG, "Cannot delete the next bundle" + id);
+      return false;
+    }
     // Cancel download for this version if active
     if (this.activity != null) {
       DownloadWorkerManager.cancelVersionDownload(
