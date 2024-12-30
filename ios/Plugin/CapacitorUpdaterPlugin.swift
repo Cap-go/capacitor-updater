@@ -60,6 +60,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var directUpdate = false
     private var autoDeleteFailed = false
     private var autoDeletePrevious = false
+    private var keepUrlPathAfterReload = false
     private var backgroundWork: DispatchWorkItem?
     private var taskRunning = false
     private var periodCheckDelay = 0
@@ -90,6 +91,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         implementation.versionBuild = getConfig().getString("version", Bundle.main.versionName)!
         autoDeleteFailed = getConfig().getBoolean("autoDeleteFailed", true)
         autoDeletePrevious = getConfig().getBoolean("autoDeletePrevious", true)
+        keepUrlPathAfterReload = getConfig().getBoolean("keepUrlPathAfterReload", false)
         directUpdate = getConfig().getBoolean("directUpdate", false)
         updateUrl = getConfig().getString("updateUrl", CapacitorUpdaterPlugin.updateUrlDefault)!
         autoUpdate = getConfig().getBoolean("autoUpdate", true)
@@ -330,7 +332,29 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         print("\(self.implementation.TAG) Reloading \(id)")
         if let vc = bridge.viewController as? CAPBridgeViewController {
-            vc.setServerBasePath(path: dest.path)
+            guard let capBridge = vc.bridge else {
+                print("\(self.implementation.TAG) Cannot get capBridge")
+                return false
+            }
+            if keepUrlPathAfterReload {
+                DispatchQueue.main.async {
+                    guard let url = vc.webView?.url else {
+                        print("\(self.implementation.TAG) vc.webView?.url is null?")
+                        return
+                    }
+                    capBridge.setServerBasePath(dest.path)
+                    var urlComponents = URLComponents(url: capBridge.config.serverURL, resolvingAgainstBaseURL: false)!
+                    urlComponents.path = url.path
+                    if let finalUrl = urlComponents.url {
+                        _ = vc.webView?.load(URLRequest(url: finalUrl))
+                        vc.webView?.backForwardList.perform(Selector(("_removeAllItems")))
+                    }
+                }
+            } else {
+                vc.setServerBasePath(path: dest.path)
+
+            }
+
             self.checkAppReady()
             self.notifyListeners("appReloaded", data: [:])
             return true

@@ -230,6 +230,15 @@ declare module "@capacitor/cli" {
        * @since  6.0.0
        */
       appId?: string;
+
+      /**
+       * Configure the plugin to keep the URL path after a reload.
+       * WARNING: When a reload is triggered, 'window.history' will be cleared.
+       *
+       * @default false
+       * @since  6.8.0
+       */
+      keepUrlPathAfterReload?: boolean;
     };
   }
 }
