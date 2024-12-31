@@ -235,9 +235,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     this.appReadyTimeout = this.getConfig().getInt("appReadyTimeout", 10000);
     this.keepUrlPathAfterReload = this.getConfig()
       .getBoolean("keepUrlPathAfterReload", false);
-    this.implementation.timeout = this.getConfig()
-      .getInt("responseTimeout", 20) *
-    1000;
+    this.implementation.timeout =
+      this.getConfig().getInt("responseTimeout", 20) * 1000;
     boolean resetWhenUpdate =
       this.getConfig().getBoolean("resetWhenUpdate", true);
 
