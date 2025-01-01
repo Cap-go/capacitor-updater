@@ -1048,7 +1048,11 @@ public class CapacitorUpdater {
       );
   }
 
-  public void getLatest(final String updateUrl, final String channel, final Callback callback) {
+  public void getLatest(
+    final String updateUrl,
+    final String channel,
+    final Callback callback
+  ) {
     JSONObject json;
     try {
       json = this.createInfoObject();

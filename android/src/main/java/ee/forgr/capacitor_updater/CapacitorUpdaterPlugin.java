@@ -777,9 +777,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
   @PluginMethod
   public void getLatest(final PluginCall call) {
-    final String channel = call.getString(
-        "channel"
-    );
+    final String channel = call.getString("channel");
     startNewThread(() ->
       CapacitorUpdaterPlugin.this.implementation.getLatest(
           CapacitorUpdaterPlugin.this.updateUrl,
