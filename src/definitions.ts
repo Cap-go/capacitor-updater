@@ -570,7 +570,7 @@ export interface CapacitorUpdaterPlugin {
   /**
    * Get the next bundle that will be used when the app reloads.
    * Returns null if no next bundle is set.
-   * 
+   *
    * @returns {Promise<BundleInfo | null>} A Promise that resolves with the next bundle information or null
    * @throws {Error}
    * @since 6.8.0

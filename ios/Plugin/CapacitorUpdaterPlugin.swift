@@ -951,7 +951,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             call.resolve()
             return
         }
-        
+
         call.resolve(bundle!.toJSON())
     }
 }
