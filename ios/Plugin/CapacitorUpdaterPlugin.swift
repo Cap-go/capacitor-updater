@@ -405,8 +405,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func getLatest(_ call: CAPPluginCall) {
+        let channel = call.getString("channel")
         DispatchQueue.global(qos: .background).async {
-            let res = self.implementation.getLatest(url: URL(string: self.updateUrl)!)
+            let res = self.implementation.getLatest(url: URL(string: self.updateUrl)!, channel: channel)
             if res.error != nil {
                 call.reject( res.error!)
             } else if res.message != nil {
@@ -723,7 +724,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 self.endBackGroundTask()
             }
             print("\(self.implementation.TAG) Check for update via \(self.updateUrl)")
-            let res = self.implementation.getLatest(url: url)
+            let res = self.implementation.getLatest(url: url, channel: nil)
             let current = self.implementation.getCurrentBundle()
 
             if (res.message) != nil {
@@ -897,7 +898,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         let timer = Timer.scheduledTimer(withTimeInterval: TimeInterval(periodCheckDelay), repeats: true) { _ in
             DispatchQueue.global(qos: .background).async {
-                let res = self.implementation.getLatest(url: url)
+                let res = self.implementation.getLatest(url: url, channel: nil)
                 let current = self.implementation.getCurrentBundle()
 
                 if res.version != current.getVersionName() {

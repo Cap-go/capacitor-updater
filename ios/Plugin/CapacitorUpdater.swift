@@ -579,10 +579,13 @@ extension CustomError: LocalizedError {
         )
     }
 
-    public func getLatest(url: URL) -> AppVersion {
+    public func getLatest(url: URL, channel: String?) -> AppVersion {
         let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
         let latest: AppVersion = AppVersion()
-        let parameters: InfoObject = self.createInfoObject()
+        var parameters: InfoObject = self.createInfoObject()
+        if let channel = channel {
+            parameters.defaultChannel = channel
+        }
         print("\(self.TAG) Auto-update parameters: \(parameters)")
         let request = AF.request(url, method: .post, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
 
