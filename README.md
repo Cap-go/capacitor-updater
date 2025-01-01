@@ -322,7 +322,7 @@ export default config;
 * [`reload()`](#reload)
 * [`setMultiDelay(...)`](#setmultidelay)
 * [`cancelDelay()`](#canceldelay)
-* [`getLatest()`](#getlatest)
+* [`getLatest(...)`](#getlatest)
 * [`setChannel(...)`](#setchannel)
 * [`unsetChannel(...)`](#unsetchannel)
 * [`getChannel()`](#getchannel)
@@ -568,13 +568,17 @@ Cancels a {@link <a href="#delaycondition">DelayCondition</a>} to process an upd
 --------------------
 
 
-### getLatest()
+### getLatest(...)
 
 ```typescript
-getLatest() => Promise<LatestVersion>
+getLatest(options?: GetLatestOptions | undefined) => Promise<LatestVersion>
 ```
 
 Get Latest bundle available from update Url
+
+| Param         | Type                                                          |
+| ------------- | ------------------------------------------------------------- |
+| **`options`** | <code><a href="#getlatestoptions">GetLatestOptions</a></code> |
 
 **Returns:** <code>Promise&lt;<a href="#latestversion">LatestVersion</a>&gt;</code>
 
@@ -1032,6 +1036,13 @@ Get if auto update is available (not disabled by serverUrl).
 | **`file_name`**    | <code>string \| null</code> |
 | **`file_hash`**    | <code>string \| null</code> |
 | **`download_url`** | <code>string \| null</code> |
+
+
+#### GetLatestOptions
+
+| Prop          | Type                | Description                                                                                     | Default                | Since |
+| ------------- | ------------------- | ----------------------------------------------------------------------------------------------- | ---------------------- | ----- |
+| **`channel`** | <code>string</code> | The channel to get the latest version for The channel must allow 'self_assign' for this to work | <code>undefined</code> | 6.8.0 |
 
 
 #### ChannelRes

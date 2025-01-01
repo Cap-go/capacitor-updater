@@ -1048,10 +1048,13 @@ public class CapacitorUpdater {
       );
   }
 
-  public void getLatest(final String updateUrl, final Callback callback) {
+  public void getLatest(final String updateUrl, final String channel, final Callback callback) {
     JSONObject json;
     try {
       json = this.createInfoObject();
+      if (channel != null && json != null) {
+        json.put("defaultChannel", channel);
+      }
     } catch (JSONException e) {
       Log.e(TAG, "Error getLatest JSONException", e);
       final JSObject retError = new JSObject();
