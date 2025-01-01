@@ -41,7 +41,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "next", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "isAutoUpdateEnabled", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getBuiltinVersion", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "isAutoUpdateAvailable", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "isAutoUpdateAvailable", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getNextBundle", returnType: CAPPluginReturnPromise)
     ]
     public var implementation = CapacitorUpdater()
     private let PLUGIN_VERSION: String = "6.7.7"
@@ -942,5 +943,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             self.installNext()
         }
 
+    }
+
+    @objc func getNextBundle(_ call: CAPPluginCall) {
+        let bundle = self.implementation.getNextBundle()
+        if bundle == nil || bundle?.isUnknown() == true {
+            call.resolve()
+            return
+        }
+        
+        call.resolve(bundle!.toJSON())
     }
 }
