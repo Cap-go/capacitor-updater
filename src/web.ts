@@ -176,4 +176,14 @@ export class CapacitorUpdaterWeb
     console.warn("Cannot isAutoUpdateAvailable in web");
     return { available: false };
   }
+
+  async getCurrentBundle(): Promise<BundleInfo> {
+    console.warn("Cannot get current bundle in web");
+    return BUNDLE_BUILTIN;
+  }
+
+  async getNextBundle(): Promise<BundleInfo | null> {
+    console.warn("Cannot get next bundle in web");
+    return null;
+  }
 }
