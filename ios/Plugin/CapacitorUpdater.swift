@@ -1127,6 +1127,16 @@ extension CustomError: LocalizedError {
             print("\(self.TAG) Cannot delete \(id)")
             return false
         }
+        
+        // Check if this is the next bundle and prevent deletion if it is
+        if let next = self.getNextBundle(),
+           !next.isDeleted() && 
+           !next.isErrorStatus() &&
+           next.getId() == id {
+            print("\(self.TAG) Cannot delete the next bundle \(id)")
+            return false
+        }
+        
         let destPersist: URL = libraryDir.appendingPathComponent(bundleDirectory).appendingPathComponent(id)
         do {
             try FileManager.default.removeItem(atPath: destPersist.path)

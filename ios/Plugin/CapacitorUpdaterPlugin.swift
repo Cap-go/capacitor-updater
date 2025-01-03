@@ -389,8 +389,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if res {
             call.resolve()
         } else {
-            print("\(self.implementation.TAG) Delete failed, id \(id) doesn't exist")
-            call.reject("Delete failed, id \(id) doesn't exist")
+            print("\(self.implementation.TAG) Delete failed, id \(id) doesn't exist or it cannot be deleted (perhaps it is the 'next' bundle)")
+            call.reject("Delete failed, id \(id) does not exist or it cannot be deleted (perhaps it is the 'next' bundle)")
         }
     }
 

@@ -750,7 +750,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
           CapacitorUpdater.TAG,
           "Delete failed, id " + id + " does not exist"
         );
-        call.reject("Delete failed, id " + id + " does not exist");
+        call.reject(
+          "Delete failed, id " +
+          id +
+          " does not exist or it cannot be deleted (perhaps it is the 'next' bundle)"
+        );
       }
     } catch (final Exception e) {
       Log.e(CapacitorUpdater.TAG, "Could not delete id " + id, e);
