@@ -157,6 +157,7 @@ export default config;
 * [`addListener('appReloaded', ...)`](#addlistenerappreloaded-)
 * [`addListener('appReady', ...)`](#addlistenerappready-)
 * [`isAutoUpdateAvailable()`](#isautoupdateavailable)
+* [`getNextBundle()`](#getnextbundle)
 * [Interfaces](#interfaces)
 * [Type Aliases](#type-aliases)
 
@@ -727,6 +728,22 @@ isAutoUpdateAvailable() => Promise<AutoUpdateAvailable>
 Get if auto update is available (not disabled by serverUrl).
 
 **Returns:** <code>Promise&lt;<a href="#autoupdateavailable">AutoUpdateAvailable</a>&gt;</code>
+
+--------------------
+
+
+## getNextBundle()
+
+```typescript
+getNextBundle() => Promise<BundleInfo | null>
+```
+
+Get the next bundle that will be used when the app reloads.
+Returns null if no next bundle is set.
+
+**Returns:** <code>Promise&lt;<a href="#bundleinfo">BundleInfo</a> | null&gt;</code>
+
+**Since:** 6.8.0
 
 --------------------
 
