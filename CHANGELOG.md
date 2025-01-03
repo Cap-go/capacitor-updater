@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.7.8](https://github.com/Cap-go/capacitor-updater/compare/6.7.7...6.7.8) (2025-01-03)
+
+
+### Bug Fixes
+
+* fix delete the 'next' bundle will cause a crash ([69f3eb2](https://github.com/Cap-go/capacitor-updater/commit/69f3eb20619974c0b58b1e5b2a4b928749a5f6b3)), closes [#499](https://github.com/Cap-go/capacitor-updater/issues/499)
+* prevent deleting the 'next' bundle and improve error message on iOS ([9132d97](https://github.com/Cap-go/capacitor-updater/commit/9132d97d8cb52dc757cae1e38059c974cefb7e90)), closes [#499](https://github.com/Cap-go/capacitor-updater/issues/499)
+
 ### [6.7.7](https://github.com/Cap-go/capacitor-updater/compare/6.7.7-alpha.3...6.7.7) (2024-12-30)
 
 
