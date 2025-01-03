@@ -13,6 +13,7 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.os.Build;
+import android.os.Looper;
 import android.util.Log;
 import com.getcapacitor.CapConfig;
 import com.getcapacitor.JSArray;
@@ -40,8 +41,10 @@ import java.util.Timer;
 import java.util.TimerTask;
 import java.util.UUID;
 import java.util.concurrent.Phaser;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 import okhttp3.OkHttpClient;
 import okhttp3.Protocol;
 import org.json.JSONArray;
@@ -74,6 +77,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
   private Version currentVersionNative;
   private Thread backgroundTask;
   private Boolean taskRunning = false;
+  private Boolean keepUrlPathAfterReload = false;
 
   private Boolean isPreviousMainActivity = true;
 
@@ -229,6 +233,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     this.updateUrl = this.getConfig().getString("updateUrl", updateUrlDefault);
     this.autoUpdate = this.getConfig().getBoolean("autoUpdate", true);
     this.appReadyTimeout = this.getConfig().getInt("appReadyTimeout", 10000);
+    this.keepUrlPathAfterReload = this.getConfig()
+      .getBoolean("keepUrlPathAfterReload", false);
     this.implementation.timeout =
       this.getConfig().getInt("responseTimeout", 20) * 1000;
     boolean resetWhenUpdate =
@@ -659,11 +665,84 @@ public class CapacitorUpdaterPlugin extends Plugin {
     final String path = this.implementation.getCurrentBundlePath();
     this.semaphoreUp();
     Log.i(CapacitorUpdater.TAG, "Reloading: " + path);
-    if (this.implementation.isUsingBuiltin()) {
-      this.bridge.setServerAssetPath(path);
-    } else {
-      this.bridge.setServerBasePath(path);
+
+    AtomicReference<URL> url = new AtomicReference<>();
+    if (this.keepUrlPathAfterReload) {
+      try {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+          Semaphore mainThreadSemaphore = new Semaphore(0);
+          this.bridge.executeOnMainThread(() -> {
+              try {
+                url.set(new URL(this.bridge.getWebView().getUrl()));
+              } catch (Exception e) {
+                Log.e(
+                  CapacitorUpdater.TAG,
+                  "Error executing on main thread",
+                  e
+                );
+              }
+              mainThreadSemaphore.release();
+            });
+          mainThreadSemaphore.acquire();
+        } else {
+          try {
+            url.set(new URL(this.bridge.getWebView().getUrl()));
+          } catch (Exception e) {
+            Log.e(CapacitorUpdater.TAG, "Error executing on main thread", e);
+          }
+        }
+      } catch (InterruptedException e) {
+        Log.e(
+          CapacitorUpdater.TAG,
+          "Error waiting for main thread or getting the current URL from webview",
+          e
+        );
+      }
     }
+
+    if (url.get() != null) {
+      if (this.implementation.isUsingBuiltin()) {
+        this.bridge.getLocalServer().hostAssets(path);
+      } else {
+        this.bridge.getLocalServer().hostFiles(path);
+      }
+
+      try {
+        URL finalUrl = null;
+        finalUrl = new URL(this.bridge.getAppUrl());
+        finalUrl = new URL(
+          finalUrl.getProtocol(),
+          finalUrl.getHost(),
+          finalUrl.getPort(),
+          url.get().getPath()
+        );
+        URL finalUrl1 = finalUrl;
+        this.bridge.getWebView()
+          .post(() -> {
+            this.bridge.getWebView().loadUrl(finalUrl1.toString());
+            this.bridge.getWebView().clearHistory();
+          });
+      } catch (MalformedURLException e) {
+        Log.e(
+          CapacitorUpdater.TAG,
+          "Cannot get finalUrl from capacitor bridge",
+          e
+        );
+
+        if (this.implementation.isUsingBuiltin()) {
+          this.bridge.setServerAssetPath(path);
+        } else {
+          this.bridge.setServerBasePath(path);
+        }
+      }
+    } else {
+      if (this.implementation.isUsingBuiltin()) {
+        this.bridge.setServerAssetPath(path);
+      } else {
+        this.bridge.setServerBasePath(path);
+      }
+    }
+
     this.checkAppReady();
     this.notifyListeners("appReloaded", new JSObject());
     return true;
