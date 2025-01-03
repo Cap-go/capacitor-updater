@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [6.9.0](https://github.com/Cap-go/capacitor-updater/compare/6.8.0...6.9.0) (2025-01-03)
+
+
+### Features
+
+* getLatest({channel: string}) for Android ([c742e0a](https://github.com/Cap-go/capacitor-updater/commit/c742e0a4e380ecf8e17887073e23fdf6d641632e))
+* getLatest({channel: string}) for iOS ([68666a4](https://github.com/Cap-go/capacitor-updater/commit/68666a458026e645eaf782d4bd6f4918b562f54d))
+
 ## [6.8.0](https://github.com/Cap-go/capacitor-updater/compare/6.7.8...6.8.0) (2025-01-03)
 
 
