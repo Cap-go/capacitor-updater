@@ -860,9 +860,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
   @PluginMethod
   public void getLatest(final PluginCall call) {
+    final String channel = call.getString("channel");
     startNewThread(() ->
       CapacitorUpdaterPlugin.this.implementation.getLatest(
           CapacitorUpdaterPlugin.this.updateUrl,
+          channel,
           res -> {
             if (res.has("error")) {
               call.reject(res.getString("error"));
@@ -965,6 +967,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
           try {
             CapacitorUpdaterPlugin.this.implementation.getLatest(
                 CapacitorUpdaterPlugin.this.updateUrl,
+                null,
                 res -> {
                   if (res.has("error")) {
                     Log.e(
@@ -1257,6 +1260,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
       );
       CapacitorUpdaterPlugin.this.implementation.getLatest(
           CapacitorUpdaterPlugin.this.updateUrl,
+          null,
           res -> {
             final BundleInfo current =
               CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();

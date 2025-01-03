@@ -394,7 +394,7 @@ export interface CapacitorUpdaterPlugin {
    * @throws {Error}
    * @since 4.0.0
    */
-  getLatest(): Promise<LatestVersion>;
+  getLatest(options?: GetLatestOptions): Promise<LatestVersion>;
 
   /**
    * Sets the channel for this device. The channel has to allow for self assignment for this to work.
@@ -746,6 +746,16 @@ export interface DelayCondition {
    */
   kind: DelayUntilNext;
   value?: string;
+}
+
+export interface GetLatestOptions {
+  /**
+   * The channel to get the latest version for
+   * The channel must allow 'self_assign' for this to work
+   * @since 6.8.0
+   * @default undefined
+   */
+  channel?: string;
 }
 
 export interface AppReadyResult {
