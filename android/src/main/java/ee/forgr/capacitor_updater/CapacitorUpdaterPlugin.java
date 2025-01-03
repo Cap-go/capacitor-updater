@@ -854,6 +854,22 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
   }
 
+  @PluginMethod
+  public void getNextBundle(final PluginCall call) {
+    try {
+      final BundleInfo bundle = this.implementation.getNextBundle();
+      if (bundle == null) {
+        call.resolve(null);
+        return;
+      }
+
+      call.resolve(bundle.toJSON());
+    } catch (final Exception e) {
+      Log.e(CapacitorUpdater.TAG, "Could not get next bundle", e);
+      call.reject("Could not get next bundle", e);
+    }
+  }
+
   public void checkForUpdateAfterDelay() {
     if (this.periodCheckDelay == 0 || !this._isAutoUpdateEnabled()) {
       return;
