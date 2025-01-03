@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [6.8.0](https://github.com/Cap-go/capacitor-updater/compare/6.7.8...6.8.0) (2025-01-03)
+
+
+### Features
+
+* preserve URL path after reload() ([02304e0](https://github.com/Cap-go/capacitor-updater/commit/02304e03de786a588257807f1a818001fbbe8e34))
+
 ### [6.7.8](https://github.com/Cap-go/capacitor-updater/compare/6.7.7...6.7.8) (2025-01-03)
 
 
