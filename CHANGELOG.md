@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [6.10.0](https://github.com/Cap-go/capacitor-updater/compare/6.9.0...6.10.0) (2025-01-06)
+
+
+### Features
+
+* encrypt partial updates (v2) ([6abfe50](https://github.com/Cap-go/capacitor-updater/commit/6abfe50bd190e7fb8ab2edb6cfccec6d24c0b2f0))
+
 ## [6.9.0](https://github.com/Cap-go/capacitor-updater/compare/6.8.0...6.9.0) (2025-01-03)
 
 
