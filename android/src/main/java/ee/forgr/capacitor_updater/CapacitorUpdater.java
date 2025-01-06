@@ -10,7 +10,6 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Build;
-import android.os.Bundle;
 import android.util.Base64;
 import android.util.Log;
 import androidx.annotation.NonNull;
@@ -30,9 +29,6 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.FilenameFilter;
 import java.io.IOException;
-import java.io.InputStream;
-import java.net.URL;
-import java.net.URLConnection;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.PrivateKey;
@@ -341,6 +337,38 @@ public class CapacitorUpdater {
           }
         });
     });
+  }
+
+  private void download(
+    final String id,
+    final String url,
+    final String dest,
+    final String version,
+    final String sessionKey,
+    final String checksum,
+    final JSONArray manifest
+  ) {
+    if (this.activity == null) {
+      Log.e(TAG, "Activity is null, cannot observe work progress");
+      return;
+    }
+    observeWorkProgress(this.activity, id);
+
+    DownloadWorkerManager.enqueueDownload(
+      this.activity,
+      url,
+      id,
+      this.documentsDir.getAbsolutePath(),
+      dest,
+      version,
+      sessionKey,
+      checksum,
+      manifest != null
+    );
+
+    if (manifest != null) {
+      DataManager.getInstance().setManifest(manifest);
+    }
   }
 
   private void download(
