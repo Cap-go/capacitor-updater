@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.11.1](https://github.com/Cap-go/capacitor-updater/compare/6.11.0...6.11.1) (2025-01-06)
+
+
+### Bug Fixes
+
+* missing Package.swift ([b8d101c](https://github.com/Cap-go/capacitor-updater/commit/b8d101c0b5159059507175ed26716b159c6edf41))
+
 ## [6.11.0](https://github.com/Cap-go/capacitor-updater/compare/6.10.0...6.11.0) (2025-01-06)
 
 
