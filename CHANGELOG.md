@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [6.11.0](https://github.com/Cap-go/capacitor-updater/compare/6.10.0...6.11.0) (2025-01-06)
+
+
+### Features
+
+* Revert "feat: encrypt partial updates (v2)" ([7326038](https://github.com/Cap-go/capacitor-updater/commit/732603854ad85b4c0fd098f31207c27fb01df9de))
+
 ## [6.10.0](https://github.com/Cap-go/capacitor-updater/compare/6.9.0...6.10.0) (2025-01-06)
 
 
