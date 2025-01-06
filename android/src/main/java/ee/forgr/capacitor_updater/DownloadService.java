@@ -470,9 +470,15 @@ public class DownloadService extends Worker {
       String decryptedExpectedHash = expectedHash;
 
       if (!publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
-        Log.d(CapacitorUpdater.TAG + " DLSrv", "Decrypting file " + targetFile.getName());
+        Log.d(
+          CapacitorUpdater.TAG + " DLSrv",
+          "Decrypting file " + targetFile.getName()
+        );
         CryptoCipherV2.decryptFile(compressedFile, publicKey, sessionKey);
-        decryptedExpectedHash = CryptoCipherV2.decryptChecksum(decryptedExpectedHash, publicKey);
+        decryptedExpectedHash = CryptoCipherV2.decryptChecksum(
+          decryptedExpectedHash,
+          publicKey
+        );
       }
 
       // Decompress the file

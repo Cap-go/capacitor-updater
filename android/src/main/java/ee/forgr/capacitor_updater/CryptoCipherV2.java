@@ -13,7 +13,6 @@ package ee.forgr.capacitor_updater;
  */
 import android.util.Base64;
 import android.util.Log;
-
 import java.io.BufferedInputStream;
 import java.io.DataInputStream;
 import java.io.File;
@@ -143,23 +142,23 @@ public class CryptoCipherV2 {
   }
 
   public static void decryptFile(
-      final File file,
-      final String publicKey,
-      final String ivSessionKey
+    final File file,
+    final String publicKey,
+    final String ivSessionKey
   ) throws IOException {
     if (
-        publicKey.isEmpty() ||
-            ivSessionKey == null ||
-            ivSessionKey.isEmpty() ||
-            ivSessionKey.split(":").length != 2
+      publicKey.isEmpty() ||
+      ivSessionKey == null ||
+      ivSessionKey.isEmpty() ||
+      ivSessionKey.split(":").length != 2
     ) {
       Log.i(CapacitorUpdater.TAG, "Cannot found public key or sessionKey");
       return;
     }
     if (!publicKey.startsWith("-----BEGIN RSA PUBLIC KEY-----")) {
       Log.e(
-          CapacitorUpdater.TAG,
-          "The public key is not a valid RSA Public key"
+        CapacitorUpdater.TAG,
+        "The public key is not a valid RSA Public key"
       );
       return;
     }
@@ -169,8 +168,8 @@ public class CryptoCipherV2 {
       String sessionKeyB64 = ivSessionKey.split(":")[1];
       byte[] iv = Base64.decode(ivB64.getBytes(), Base64.DEFAULT);
       byte[] sessionKey = Base64.decode(
-          sessionKeyB64.getBytes(),
-          Base64.DEFAULT
+        sessionKeyB64.getBytes(),
+        Base64.DEFAULT
       );
       PublicKey pKey = CryptoCipherV2.stringToPublicKey(publicKey);
       byte[] decryptedSessionKey = CryptoCipherV2.decryptRSA(sessionKey, pKey);
@@ -179,18 +178,18 @@ public class CryptoCipherV2 {
       byte[] content = new byte[(int) file.length()];
 
       try (
-          final FileInputStream fis = new FileInputStream(file);
-          final BufferedInputStream bis = new BufferedInputStream(fis);
-          final DataInputStream dis = new DataInputStream(bis)
+        final FileInputStream fis = new FileInputStream(file);
+        final BufferedInputStream bis = new BufferedInputStream(fis);
+        final DataInputStream dis = new DataInputStream(bis)
       ) {
         dis.readFully(content);
         dis.close();
         byte[] decrypted = CryptoCipherV2.decryptAES(content, sKey, iv);
         // write the decrypted string to the file
         try (
-            final FileOutputStream fos = new FileOutputStream(
-                file.getAbsolutePath()
-            )
+          final FileOutputStream fos = new FileOutputStream(
+            file.getAbsolutePath()
+          )
         ) {
           fos.write(decrypted);
         }
@@ -203,7 +202,7 @@ public class CryptoCipherV2 {
   }
 
   public static String decryptChecksum(String checksum, String publicKey)
-      throws IOException {
+    throws IOException {
     if (publicKey.isEmpty()) {
       Log.e(CapacitorUpdater.TAG, "The public key is empty");
       return checksum;
@@ -221,8 +220,11 @@ public class CryptoCipherV2 {
     }
   }
 
-  public static String decryptChecksum(String checksum, String publicKey, String version)
-      throws IOException {
+  public static String decryptChecksum(
+    String checksum,
+    String publicKey,
+    String version
+  ) throws IOException {
     if (publicKey.isEmpty()) {
       Log.e(CapacitorUpdater.TAG, "The public key is empty");
       return checksum;
@@ -246,7 +248,9 @@ public class CryptoCipherV2 {
     try {
       digest = MessageDigest.getInstance("SHA-256");
     } catch (java.security.NoSuchAlgorithmException e) {
-      System.err.println(CapacitorUpdater.TAG + " SHA-256 algorithm not available");
+      System.err.println(
+        CapacitorUpdater.TAG + " SHA-256 algorithm not available"
+      );
       return "";
     }
 
@@ -266,11 +270,11 @@ public class CryptoCipherV2 {
       return hexString.toString();
     } catch (IOException e) {
       System.err.println(
-          CapacitorUpdater.TAG +
-              " Cannot calc checksum v2: " +
-              file.getPath() +
-              " " +
-              e.getMessage()
+        CapacitorUpdater.TAG +
+        " Cannot calc checksum v2: " +
+        file.getPath() +
+        " " +
+        e.getMessage()
       );
       return "";
     }
