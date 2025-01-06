@@ -53,7 +53,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var updateUrl = ""
     private var statsUrl = ""
     private var backgroundTaskID: UIBackgroundTaskIdentifier = UIBackgroundTaskIdentifier.invalid
-    private var currentVersionNative: Version = "0.0.0"
+    private var currentVersionNative: Version = .init("0.0.0")!
     private var autoUpdate = false
     private var appReadyTimeout = 10000
     private var appReadyCheck: DispatchWorkItem?
@@ -84,7 +84,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             fatalError("Cannot get version name")
         }
         do {
-            currentVersionNative = try Version(versionName)
+            currentVersionNative = try Version(versionName)!
         } catch {
             print("\(self.implementation.TAG) Cannot parse versionName \(versionName)")
         }
@@ -187,13 +187,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func cleanupObsoleteVersions() {
-        var LatestVersionNative: Version = "0.0.0"
+        var LatestVersionNative: Version = .init("0.0.0")!
         do {
-            LatestVersionNative = try Version(UserDefaults.standard.string(forKey: "LatestVersionNative") ?? "0.0.0")
+            LatestVersionNative = try Version(UserDefaults.standard.string(forKey: "LatestVersionNative") ?? "0.0.0")!
         } catch {
             print("\(self.implementation.TAG) Cannot get version native \(currentVersionNative)")
         }
-        if LatestVersionNative != "0.0.0" && self.currentVersionNative.description != LatestVersionNative.description {
+        if LatestVersionNative != .init("0.0.0")! && self.currentVersionNative.description != LatestVersionNative.description {
             _ = self._reset(toLastSuccessful: false)
             let res = implementation.list()
             res.forEach { version in
@@ -624,7 +624,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 case "nativeVersion":
                     if value != nil && value != "" {
                         do {
-                            let versionLimit = try Version(value!)
+                            let versionLimit = try Version(value!)!
                             if self.currentVersionNative >= versionLimit {
                                 self._cancelDelay(source: "nativeVersion above limit")
                             }
