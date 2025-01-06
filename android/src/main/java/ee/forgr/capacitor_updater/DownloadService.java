@@ -48,6 +48,7 @@ public class DownloadService extends Worker {
   public static final String VERSION = "version";
   public static final String SESSIONKEY = "sessionkey";
   public static final String CHECKSUM = "checksum";
+  public static final String PUBLIC_KEY = "publickey";
   public static final String IS_MANIFEST = "is_manifest";
   private static final String UPDATE_FILE = "update.dat";
 
@@ -100,6 +101,7 @@ public class DownloadService extends Worker {
       String version = getInputData().getString(VERSION);
       String sessionKey = getInputData().getString(SESSIONKEY);
       String checksum = getInputData().getString(CHECKSUM);
+      String publicKey = getInputData().getString(PUBLIC_KEY);
       boolean isManifest = getInputData().getBoolean(IS_MANIFEST, false);
 
       Log.d(TAG, "doWork isManifest: " + isManifest);
@@ -113,6 +115,7 @@ public class DownloadService extends Worker {
             dest,
             version,
             sessionKey,
+            publicKey,
             manifest.toString()
           );
           return createSuccessResult(dest, version, sessionKey, checksum, true);
@@ -154,6 +157,7 @@ public class DownloadService extends Worker {
     String dest,
     String version,
     String sessionKey,
+    String publicKey,
     String manifestString
   ) {
     try {
@@ -231,7 +235,8 @@ public class DownloadService extends Worker {
                 targetFile,
                 cacheFile,
                 fileHash,
-                id
+                sessionKey,
+                publicKey
               );
             }
 
@@ -426,7 +431,8 @@ public class DownloadService extends Worker {
     File targetFile,
     File cacheFile,
     String expectedHash,
-    String id
+    String sessionKey,
+    String publicKey
   ) throws Exception {
     Log.d(TAG, "downloadAndVerify " + downloadUrl);
 
@@ -461,6 +467,14 @@ public class DownloadService extends Worker {
         }
       }
 
+      String decryptedExpectedHash = expectedHash;
+
+      if (!publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
+        Log.d(CapacitorUpdater.TAG + " DLSrv", "Decrypting file " + targetFile.getName());
+        CryptoCipherV2.decryptFile(compressedFile, publicKey, sessionKey);
+        decryptedExpectedHash = CryptoCipherV2.decryptChecksum(decryptedExpectedHash, publicKey);
+      }
+
       // Decompress the file
       try (
         FileInputStream fis = new FileInputStream(compressedFile);
@@ -476,10 +490,10 @@ public class DownloadService extends Worker {
 
       // Delete the compressed file
       compressedFile.delete();
+      String calculatedHash = CryptoCipherV2.calcChecksum(targetFile);
 
       // Verify checksum
-      String actualHash = calculateFileHash(targetFile);
-      if (actualHash.equals(expectedHash)) {
+      if (calculatedHash.equals(decryptedExpectedHash)) {
         // Only cache if checksum is correct
         copyFile(targetFile, cacheFile);
       } else {

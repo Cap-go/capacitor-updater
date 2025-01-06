@@ -365,6 +365,7 @@ public class CapacitorUpdater {
       version,
       sessionKey,
       checksum,
+      this.publicKey,
       manifest != null
     );
 
@@ -373,25 +374,6 @@ public class CapacitorUpdater {
     }
   }
 
-  private String decryptChecksum(String checksum, String version)
-    throws IOException {
-    if (this.publicKey.isEmpty()) {
-      Log.e(CapacitorUpdater.TAG, "The public key is empty");
-      return checksum;
-    }
-    try {
-      byte[] checksumBytes = Base64.decode(checksum, Base64.DEFAULT);
-      PublicKey pKey = CryptoCipherV2.stringToPublicKey(this.publicKey);
-      byte[] decryptedChecksum = CryptoCipherV2.decryptRSA(checksumBytes, pKey);
-      // return Base64.encodeToString(decryptedChecksum, Base64.DEFAULT);
-      String result = Base64.encodeToString(decryptedChecksum, Base64.DEFAULT);
-      return result.replaceAll("\\s", ""); // Remove all whitespace, including newlines
-    } catch (GeneralSecurityException e) {
-      Log.e(TAG, "decryptChecksum fail: " + e.getMessage());
-      this.sendStats("decrypt_fail", version);
-      throw new IOException("Decryption failed: " + e.getMessage());
-    }
-  }
 
   public Boolean finishDownload(
     String id,
@@ -412,12 +394,12 @@ public class CapacitorUpdater {
       if (!isManifest) {
         String checksumDecrypted = Objects.requireNonNullElse(checksumRes, "");
         if (!this.hasOldPrivateKeyPropertyInConfig && !sessionKey.isEmpty()) {
-          this.decryptFileV2(downloaded, sessionKey, version);
-          checksumDecrypted = this.decryptChecksum(checksumRes, version);
-          checksum = this.calcChecksumV2(downloaded);
+          CryptoCipherV2.decryptFile(downloaded, publicKey, sessionKey);
+          checksumDecrypted = CryptoCipherV2.decryptChecksum(checksumRes, publicKey);
+          checksum = CryptoCipherV2.calcChecksum(downloaded);
         } else {
-          this.decryptFile(downloaded, sessionKey, version);
-          checksum = this.calcChecksum(downloaded);
+          CryptoCipher.decryptFile(downloaded, privateKey, sessionKey, version);
+          checksum = CryptoCipher.calcChecksum(downloaded);
         }
         if (
           (!checksumDecrypted.isEmpty() || !this.publicKey.isEmpty()) &&
@@ -515,177 +497,6 @@ public class CapacitorUpdater {
     this.editor.putString(WebView.CAP_SERVER_PATH, bundle.getPath());
     Log.i(TAG, "Current bundle set to: " + bundle);
     this.editor.commit();
-  }
-
-  private String calcChecksum(File file) {
-    final int BUFFER_SIZE = 1024 * 1024 * 5; // 5 MB buffer size
-    CRC32 crc = new CRC32();
-
-    try (FileInputStream fis = new FileInputStream(file)) {
-      byte[] buffer = new byte[BUFFER_SIZE];
-      int length;
-      while ((length = fis.read(buffer)) != -1) {
-        crc.update(buffer, 0, length);
-      }
-      return String.format("%08x", crc.getValue());
-    } catch (IOException e) {
-      System.err.println(
-        TAG + " Cannot calc checksum: " + file.getPath() + " " + e.getMessage()
-      );
-      return "";
-    }
-  }
-
-  private String calcChecksumV2(File file) {
-    final int BUFFER_SIZE = 1024 * 1024 * 5; // 5 MB buffer size
-    MessageDigest digest;
-    try {
-      digest = MessageDigest.getInstance("SHA-256");
-    } catch (java.security.NoSuchAlgorithmException e) {
-      System.err.println(TAG + " SHA-256 algorithm not available");
-      return "";
-    }
-
-    try (FileInputStream fis = new FileInputStream(file)) {
-      byte[] buffer = new byte[BUFFER_SIZE];
-      int length;
-      while ((length = fis.read(buffer)) != -1) {
-        digest.update(buffer, 0, length);
-      }
-      byte[] hash = digest.digest();
-      StringBuilder hexString = new StringBuilder();
-      for (byte b : hash) {
-        String hex = Integer.toHexString(0xff & b);
-        if (hex.length() == 1) hexString.append('0');
-        hexString.append(hex);
-      }
-      return hexString.toString();
-    } catch (IOException e) {
-      System.err.println(
-        TAG +
-        " Cannot calc checksum v2: " +
-        file.getPath() +
-        " " +
-        e.getMessage()
-      );
-      return "";
-    }
-  }
-
-  private void decryptFileV2(
-    final File file,
-    final String ivSessionKey,
-    final String version
-  ) throws IOException {
-    // (str != null && !str.isEmpty())
-    if (
-      this.publicKey.isEmpty() ||
-      ivSessionKey == null ||
-      ivSessionKey.isEmpty() ||
-      ivSessionKey.split(":").length != 2
-    ) {
-      Log.i(TAG, "Cannot found public key or sessionKey");
-      return;
-    }
-    if (!this.publicKey.startsWith("-----BEGIN RSA PUBLIC KEY-----")) {
-      Log.e(
-        CapacitorUpdater.TAG,
-        "The public key is not a valid RSA Public key"
-      );
-      return;
-    }
-    try {
-      String ivB64 = ivSessionKey.split(":")[0];
-      String sessionKeyB64 = ivSessionKey.split(":")[1];
-      byte[] iv = Base64.decode(ivB64.getBytes(), Base64.DEFAULT);
-      byte[] sessionKey = Base64.decode(
-        sessionKeyB64.getBytes(),
-        Base64.DEFAULT
-      );
-      PublicKey pKey = CryptoCipherV2.stringToPublicKey(this.publicKey);
-      byte[] decryptedSessionKey = CryptoCipherV2.decryptRSA(sessionKey, pKey);
-
-      SecretKey sKey = CryptoCipherV2.byteToSessionKey(decryptedSessionKey);
-      byte[] content = new byte[(int) file.length()];
-
-      try (
-        final FileInputStream fis = new FileInputStream(file);
-        final BufferedInputStream bis = new BufferedInputStream(fis);
-        final DataInputStream dis = new DataInputStream(bis)
-      ) {
-        dis.readFully(content);
-        dis.close();
-        byte[] decrypted = CryptoCipherV2.decryptAES(content, sKey, iv);
-        // write the decrypted string to the file
-        try (
-          final FileOutputStream fos = new FileOutputStream(
-            file.getAbsolutePath()
-          )
-        ) {
-          fos.write(decrypted);
-        }
-      }
-    } catch (GeneralSecurityException e) {
-      Log.i(TAG, "decryptFile fail");
-      this.sendStats("decrypt_fail", version);
-      e.printStackTrace();
-      throw new IOException("GeneralSecurityException");
-    }
-  }
-
-  private void decryptFile(
-    final File file,
-    final String ivSessionKey,
-    final String version
-  ) throws IOException {
-    // (str != null && !str.isEmpty())
-    if (this.privateKey == null || this.privateKey.isEmpty()) {
-      Log.i(TAG, "Cannot found privateKey");
-      return;
-    } else if (
-      ivSessionKey == null ||
-      ivSessionKey.isEmpty() ||
-      ivSessionKey.split(":").length != 2
-    ) {
-      Log.i(TAG, "Cannot found sessionKey");
-      return;
-    }
-    try {
-      String ivB64 = ivSessionKey.split(":")[0];
-      String sessionKeyB64 = ivSessionKey.split(":")[1];
-      byte[] iv = Base64.decode(ivB64.getBytes(), Base64.DEFAULT);
-      byte[] sessionKey = Base64.decode(
-        sessionKeyB64.getBytes(),
-        Base64.DEFAULT
-      );
-      PrivateKey pKey = CryptoCipher.stringToPrivateKey(this.privateKey);
-      byte[] decryptedSessionKey = CryptoCipher.decryptRSA(sessionKey, pKey);
-      SecretKey sKey = CryptoCipher.byteToSessionKey(decryptedSessionKey);
-      byte[] content = new byte[(int) file.length()];
-
-      try (
-        final FileInputStream fis = new FileInputStream(file);
-        final BufferedInputStream bis = new BufferedInputStream(fis);
-        final DataInputStream dis = new DataInputStream(bis)
-      ) {
-        dis.readFully(content);
-        dis.close();
-        byte[] decrypted = CryptoCipher.decryptAES(content, sKey, iv);
-        // write the decrypted string to the file
-        try (
-          final FileOutputStream fos = new FileOutputStream(
-            file.getAbsolutePath()
-          )
-        ) {
-          fos.write(decrypted);
-        }
-      }
-    } catch (GeneralSecurityException e) {
-      Log.i(TAG, "decryptFile fail");
-      this.sendStats("decrypt_fail", version);
-      e.printStackTrace();
-      throw new IOException("GeneralSecurityException");
-    }
   }
 
   public void downloadBackground(
