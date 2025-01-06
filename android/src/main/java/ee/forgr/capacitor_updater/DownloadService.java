@@ -50,7 +50,7 @@ public class DownloadService extends Worker {
   public static final String CHECKSUM = "checksum";
   public static final String IS_MANIFEST = "is_manifest";
   public static final String MANIFEST = "manifest";
-  public static final String PUBLIC_KEY  = "publickey";
+  public static final String PUBLIC_KEY = "publickey";
   private static final String UPDATE_FILE = "update.dat";
 
   private final OkHttpClient client = new OkHttpClient.Builder()
@@ -105,8 +105,10 @@ public class DownloadService extends Worker {
       String publicKey = getInputData().getString(PUBLIC_KEY);
       boolean isManifest = getInputData().getBoolean(IS_MANIFEST, false);
 
-
-      Log.d(CapacitorUpdater.TAG + " DLSrv", "doWork isManifest: " + isManifest);
+      Log.d(
+        CapacitorUpdater.TAG + " DLSrv",
+        "doWork isManifest: " + isManifest
+      );
 
       if (isManifest) {
         JSONArray manifest = DataManager.getInstance().getAndClearManifest();
@@ -205,15 +207,15 @@ public class DownloadService extends Worker {
 
         // Decrypt fileHash if encryption is enabled
         // disable: TODO: fix the CLI
-//        if (
-//          !publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()
-//        ) {
-//          fileHash = CryptoCipherV2.decryptChecksum(
-//            fileHash,
-//            publicKey,
-//            version
-//          );
-//        }
+        //        if (
+        //          !publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()
+        //        ) {
+        //          fileHash = CryptoCipherV2.decryptChecksum(
+        //            fileHash,
+        //            publicKey,
+        //            version
+        //          );
+        //        }
 
         File targetFile = new File(destFolder, fileName);
         File cacheFile = new File(
@@ -505,10 +507,15 @@ public class DownloadService extends Worker {
       // Decrypt if public key and session key are available
       if (!publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
         Log.d(
-            CapacitorUpdater.TAG + " DLSrv",
-            "Decrypting file " + targetFile.getName()
+          CapacitorUpdater.TAG + " DLSrv",
+          "Decrypting file " + targetFile.getName()
         );
-        CryptoCipherV2.decryptFile(compressedFile, publicKey, sessionKey, version);
+        CryptoCipherV2.decryptFile(
+          compressedFile,
+          publicKey,
+          sessionKey,
+          version
+        );
       }
 
       // Decompress the file
