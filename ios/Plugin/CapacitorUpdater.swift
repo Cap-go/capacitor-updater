@@ -330,9 +330,18 @@ import Compression
 
         for entry in manifest {
             guard let fileName = entry.file_name,
-                  let fileHash = entry.file_hash,
+                  var fileHash = entry.file_hash,
                   let downloadUrl = entry.download_url else {
                 continue
+            }
+            
+            if (!self.hasOldPrivateKeyPropertyInConfig && !self.publicKey.isEmpty && !sessionKey.isEmpty) {
+                do {
+                    fileHash = try CryptoCipherV2.decryptChecksum(checksum: fileHash, publicKey: self.publicKey, version: version)
+                } catch {
+                    downloadError = error
+                    print("\(CapacitorUpdater.TAG) CryptoCipherV2.decryptChecksum error \(id) \(fileName) error: \(error)")
+                }
             }
 
             let fileNameWithoutPath = (fileName as NSString).lastPathComponent
@@ -366,16 +375,11 @@ import Compression
                     switch response.result {
                     case .success(let data):
                         do {
-                            // Decompress the Brotli data
-                            guard let decompressedData = self.decompressBrotli(data: data) else {
-                                throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data"])
-                            }
-
                             // Add decryption step if public key is set and sessionKey is provided
-                            var finalData = decompressedData
+                            var finalData = data
                             if !self.publicKey.isEmpty && !sessionKey.isEmpty {
                                 let tempFile = self.cacheFolder.appendingPathComponent("temp_\(UUID().uuidString)")
-                                try decompressedData.write(to: tempFile)
+                                try finalData.write(to: tempFile)
                                 do {
                                     try CryptoCipherV2.decryptFile(filePath: tempFile, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
                                 } catch {
@@ -386,10 +390,25 @@ import Compression
                                 finalData = try Data(contentsOf: tempFile)
                                 try FileManager.default.removeItem(at: tempFile)
                             }
-
+                            
+                            // Decompress the Brotli data
+                            guard let decompressedData = self.decompressBrotli(data: finalData) else {
+                                throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data"])
+                            }
+                            finalData = decompressedData
+                            
+                            try finalData.write(to: destFilePath)
+                            if (!self.hasOldPrivateKeyPropertyInConfig && !self.publicKey.isEmpty && !sessionKey.isEmpty) {
+                                // assume that calcChecksum != null
+                                let calculatedChecksum = CryptoCipherV2.calcChecksum(filePath: destFilePath)
+                                if (calculatedChecksum != fileHash) {
+                                    throw NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash))"])
+                                }
+                            }
+                            
                             // Save decrypted data to cache and destination
                             try finalData.write(to: cacheFilePath)
-                            try finalData.write(to: destFilePath)
+                            
 
                             completedFiles += 1
                             self.notifyDownload(id: id, percent: self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70))
@@ -736,7 +755,7 @@ import Compression
            !next.isDeleted() && 
            !next.isErrorStatus() &&
            next.getId() == id {
-            print("\(self.TAG) Cannot delete the next bundle \(id)")
+            print("\(CapacitorUpdater.TAG) Cannot delete the next bundle \(id)")
             return false
         }
         
