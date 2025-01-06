@@ -5,11 +5,21 @@
  */
 
 import Foundation
+#if canImport(ZipArchive)
+import ZipArchive
+#else
 import SSZipArchive
+#endif
 import Alamofire
 import zlib
 import CryptoKit
 import Compression
+
+#if canImport(ZipArchive)
+typealias ZipArchiveHelper = ZipArchive
+#else
+typealias ZipArchiveHelper = SSZipArchive
+#endif
 
 extension Collection {
     subscript(safe index: Index) -> Element? {
@@ -527,7 +537,7 @@ extension CustomError: LocalizedError {
         let semaphore = DispatchSemaphore(value: 0)
         var unzipError: NSError?
 
-        let success = SSZipArchive.unzipFile(atPath: sourceZip.path,
+        let success = ZipArchiveHelper.unzipFile(atPath: sourceZip.path,
                                              toDestination: destUnZip.path,
                                              preserveAttributes: true,
                                              overwrite: true,
