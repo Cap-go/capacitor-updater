@@ -41,10 +41,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "next", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "isAutoUpdateEnabled", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getBuiltinVersion", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "isAutoUpdateAvailable", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "isAutoUpdateAvailable", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getNextBundle", returnType: CAPPluginReturnPromise)
     ]
     public var implementation = CapacitorUpdater()
-    private let PLUGIN_VERSION: String = "6.7.2"
+    private let PLUGIN_VERSION: String = "6.11.0"
     static let updateUrlDefault = "https://plugin.capgo.app/updates"
     static let statsUrlDefault = "https://plugin.capgo.app/stats"
     static let channelUrlDefault = "https://plugin.capgo.app/channel_self"
@@ -60,6 +61,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var directUpdate = false
     private var autoDeleteFailed = false
     private var autoDeletePrevious = false
+    private var keepUrlPathAfterReload = false
     private var backgroundWork: DispatchWorkItem?
     private var taskRunning = false
     private var periodCheckDelay = 0
@@ -90,6 +92,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         implementation.versionBuild = getConfig().getString("version", Bundle.main.versionName)!
         autoDeleteFailed = getConfig().getBoolean("autoDeleteFailed", true)
         autoDeletePrevious = getConfig().getBoolean("autoDeletePrevious", true)
+        keepUrlPathAfterReload = getConfig().getBoolean("keepUrlPathAfterReload", false)
         directUpdate = getConfig().getBoolean("directUpdate", false)
         updateUrl = getConfig().getString("updateUrl", CapacitorUpdaterPlugin.updateUrlDefault)!
         autoUpdate = getConfig().getBoolean("autoUpdate", true)
@@ -335,7 +338,29 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         print("\(CapacitorUpdater.TAG) Reloading \(id)")
         if let vc = bridge.viewController as? CAPBridgeViewController {
-            vc.setServerBasePath(path: dest.path)
+            guard let capBridge = vc.bridge else {
+                print("\(CapacitorUpdater.TAG) Cannot get capBridge")
+                return false
+            }
+            if keepUrlPathAfterReload {
+                DispatchQueue.main.async {
+                    guard let url = vc.webView?.url else {
+                        print("\(CapacitorUpdater.TAG) vc.webView?.url is null?")
+                        return
+                    }
+                    capBridge.setServerBasePath(dest.path)
+                    var urlComponents = URLComponents(url: capBridge.config.serverURL, resolvingAgainstBaseURL: false)!
+                    urlComponents.path = url.path
+                    if let finalUrl = urlComponents.url {
+                        _ = vc.webView?.load(URLRequest(url: finalUrl))
+                        vc.webView?.backForwardList.perform(Selector(("_removeAllItems")))
+                    }
+                }
+            } else {
+                vc.setServerBasePath(path: dest.path)
+
+            }
+
             self.checkAppReady()
             self.notifyListeners("appReloaded", data: [:])
             return true
@@ -393,8 +418,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if res {
             call.resolve()
         } else {
-            print("\(CapacitorUpdater.TAG) Delete failed, id \(id) doesn't exist")
-            call.reject("Delete failed, id \(id) doesn't exist")
+            print("\(CapacitorUpdater.TAG) Delete failed, id \(id) doesn't exist or it cannot be deleted (perhaps it is the 'next' bundle)")
+            call.reject("Delete failed, id \(id) does not exist or it cannot be deleted (perhaps it is the 'next' bundle)")
         }
     }
 
@@ -410,8 +435,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func getLatest(_ call: CAPPluginCall) {
+        let channel = call.getString("channel")
         DispatchQueue.global(qos: .background).async {
-            let res = self.implementation.getLatest(url: URL(string: self.updateUrl)!)
+            let res = self.implementation.getLatest(url: URL(string: self.updateUrl)!, channel: channel)
             if res.error != nil {
                 call.reject( res.error!)
             } else if res.message != nil {
@@ -728,7 +754,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 self.endBackGroundTask()
             }
             print("\(CapacitorUpdater.TAG) Check for update via \(self.updateUrl)")
-            let res = self.implementation.getLatest(url: url)
+            let res = self.implementation.getLatest(url: url, channel: nil)
             let current = self.implementation.getCurrentBundle()
 
             if (res.message) != nil {
@@ -907,7 +933,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         let timer = Timer.scheduledTimer(withTimeInterval: TimeInterval(periodCheckDelay), repeats: true) { _ in
             DispatchQueue.global(qos: .background).async {
-                let res = self.implementation.getLatest(url: url)
+                let res = self.implementation.getLatest(url: url, channel: nil)
                 let current = self.implementation.getCurrentBundle()
 
                 if res.version != current.getVersionName() {
@@ -952,5 +978,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             self.installNext()
         }
 
+    }
+
+    @objc func getNextBundle(_ call: CAPPluginCall) {
+        let bundle = self.implementation.getNextBundle()
+        if bundle == nil || bundle?.isUnknown() == true {
+            call.resolve()
+            return
+        }
+
+        call.resolve(bundle!.toJSON())
     }
 }

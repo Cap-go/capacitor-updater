@@ -230,6 +230,15 @@ declare module "@capacitor/cli" {
        * @since  6.0.0
        */
       appId?: string;
+
+      /**
+       * Configure the plugin to keep the URL path after a reload.
+       * WARNING: When a reload is triggered, 'window.history' will be cleared.
+       *
+       * @default false
+       * @since  6.8.0
+       */
+      keepUrlPathAfterReload?: boolean;
     };
   }
 }
@@ -385,7 +394,7 @@ export interface CapacitorUpdaterPlugin {
    * @throws {Error}
    * @since 4.0.0
    */
-  getLatest(): Promise<LatestVersion>;
+  getLatest(options?: GetLatestOptions): Promise<LatestVersion>;
 
   /**
    * Sets the channel for this device. The channel has to allow for self assignment for this to work.
@@ -566,6 +575,16 @@ export interface CapacitorUpdaterPlugin {
    * @throws {Error}
    */
   isAutoUpdateAvailable(): Promise<AutoUpdateAvailable>;
+
+  /**
+   * Get the next bundle that will be used when the app reloads.
+   * Returns null if no next bundle is set.
+   *
+   * @returns {Promise<BundleInfo | null>} A Promise that resolves with the next bundle information or null
+   * @throws {Error}
+   * @since 6.8.0
+   */
+  getNextBundle(): Promise<BundleInfo | null>;
 }
 
 export type BundleStatus = "success" | "error" | "pending" | "downloading";
@@ -727,6 +746,16 @@ export interface DelayCondition {
    */
   kind: DelayUntilNext;
   value?: string;
+}
+
+export interface GetLatestOptions {
+  /**
+   * The channel to get the latest version for
+   * The channel must allow 'self_assign' for this to work
+   * @since 6.8.0
+   * @default undefined
+   */
+  channel?: string;
 }
 
 export interface AppReadyResult {
