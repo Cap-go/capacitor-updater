@@ -12,19 +12,10 @@ package ee.forgr.capacitor_updater;
  * references: http://stackoverflow.com/questions/12471999/rsa-encryption-decryption-in-android
  */
 import android.util.Base64;
-import android.util.Log;
-
-import java.io.BufferedInputStream;
-import java.io.DataInputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.KeyFactory;
-import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
 import java.security.spec.InvalidKeySpecException;
@@ -35,6 +26,7 @@ import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.IvParameterSpec;
+import javax.crypto.spec.PSource;
 import javax.crypto.spec.SecretKeySpec;
 
 public class CryptoCipherV2 {
@@ -140,140 +132,6 @@ public class CryptoCipherV2 {
     }
 
     return buf;
-  }
-
-  public static void decryptFile(
-      final File file,
-      final String publicKey,
-      final String ivSessionKey
-  ) throws IOException {
-    if (
-        publicKey.isEmpty() ||
-            ivSessionKey == null ||
-            ivSessionKey.isEmpty() ||
-            ivSessionKey.split(":").length != 2
-    ) {
-      Log.i(CapacitorUpdater.TAG, "Cannot found public key or sessionKey");
-      return;
-    }
-    if (!publicKey.startsWith("-----BEGIN RSA PUBLIC KEY-----")) {
-      Log.e(
-          CapacitorUpdater.TAG,
-          "The public key is not a valid RSA Public key"
-      );
-      return;
-    }
-
-    try {
-      String ivB64 = ivSessionKey.split(":")[0];
-      String sessionKeyB64 = ivSessionKey.split(":")[1];
-      byte[] iv = Base64.decode(ivB64.getBytes(), Base64.DEFAULT);
-      byte[] sessionKey = Base64.decode(
-          sessionKeyB64.getBytes(),
-          Base64.DEFAULT
-      );
-      PublicKey pKey = CryptoCipherV2.stringToPublicKey(publicKey);
-      byte[] decryptedSessionKey = CryptoCipherV2.decryptRSA(sessionKey, pKey);
-
-      SecretKey sKey = CryptoCipherV2.byteToSessionKey(decryptedSessionKey);
-      byte[] content = new byte[(int) file.length()];
-
-      try (
-          final FileInputStream fis = new FileInputStream(file);
-          final BufferedInputStream bis = new BufferedInputStream(fis);
-          final DataInputStream dis = new DataInputStream(bis)
-      ) {
-        dis.readFully(content);
-        dis.close();
-        byte[] decrypted = CryptoCipherV2.decryptAES(content, sKey, iv);
-        // write the decrypted string to the file
-        try (
-            final FileOutputStream fos = new FileOutputStream(
-                file.getAbsolutePath()
-            )
-        ) {
-          fos.write(decrypted);
-        }
-      }
-    } catch (GeneralSecurityException e) {
-      Log.i(CapacitorUpdater.TAG, "decryptFile fail");
-      e.printStackTrace();
-      throw new IOException("GeneralSecurityException");
-    }
-  }
-
-  public static String decryptChecksum(String checksum, String publicKey)
-      throws IOException {
-    if (publicKey.isEmpty()) {
-      Log.e(CapacitorUpdater.TAG, "The public key is empty");
-      return checksum;
-    }
-    try {
-      byte[] checksumBytes = Base64.decode(checksum, Base64.DEFAULT);
-      PublicKey pKey = CryptoCipherV2.stringToPublicKey(publicKey);
-      byte[] decryptedChecksum = CryptoCipherV2.decryptRSA(checksumBytes, pKey);
-      // return Base64.encodeToString(decryptedChecksum, Base64.DEFAULT);
-      String result = Base64.encodeToString(decryptedChecksum, Base64.DEFAULT);
-      return result.replaceAll("\\s", ""); // Remove all whitespace, including newlines
-    } catch (GeneralSecurityException e) {
-      Log.e(CapacitorUpdater.TAG, "decryptChecksum fail: " + e.getMessage());
-      throw new IOException("Decryption failed: " + e.getMessage());
-    }
-  }
-
-  public static String decryptChecksum(String checksum, String publicKey, String version)
-      throws IOException {
-    if (publicKey.isEmpty()) {
-      Log.e(CapacitorUpdater.TAG, "The public key is empty");
-      return checksum;
-    }
-    try {
-      byte[] checksumBytes = Base64.decode(checksum, Base64.DEFAULT);
-      PublicKey pKey = CryptoCipherV2.stringToPublicKey(publicKey);
-      byte[] decryptedChecksum = CryptoCipherV2.decryptRSA(checksumBytes, pKey);
-      // return Base64.encodeToString(decryptedChecksum, Base64.DEFAULT);
-      String result = Base64.encodeToString(decryptedChecksum, Base64.DEFAULT);
-      return result.replaceAll("\\s", ""); // Remove all whitespace, including newlines
-    } catch (GeneralSecurityException e) {
-      Log.e(CapacitorUpdater.TAG, "decryptChecksum fail: " + e.getMessage());
-      throw new IOException("Decryption failed: " + e.getMessage());
-    }
-  }
-
-  public static String calcChecksum(File file) {
-    final int BUFFER_SIZE = 1024 * 1024 * 5; // 5 MB buffer size
-    MessageDigest digest;
-    try {
-      digest = MessageDigest.getInstance("SHA-256");
-    } catch (java.security.NoSuchAlgorithmException e) {
-      System.err.println(CapacitorUpdater.TAG + " SHA-256 algorithm not available");
-      return "";
-    }
-
-    try (FileInputStream fis = new FileInputStream(file)) {
-      byte[] buffer = new byte[BUFFER_SIZE];
-      int length;
-      while ((length = fis.read(buffer)) != -1) {
-        digest.update(buffer, 0, length);
-      }
-      byte[] hash = digest.digest();
-      StringBuilder hexString = new StringBuilder();
-      for (byte b : hash) {
-        String hex = Integer.toHexString(0xff & b);
-        if (hex.length() == 1) hexString.append('0');
-        hexString.append(hex);
-      }
-      return hexString.toString();
-    } catch (IOException e) {
-      System.err.println(
-          CapacitorUpdater.TAG +
-              " Cannot calc checksum v2: " +
-              file.getPath() +
-              " " +
-              e.getMessage()
-      );
-      return "";
-    }
   }
 
   private static byte[] createDEREncoding(int tag, byte[] value) {

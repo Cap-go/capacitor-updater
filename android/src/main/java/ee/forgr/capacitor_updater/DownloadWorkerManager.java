@@ -47,7 +47,6 @@ public class DownloadWorkerManager {
     String version,
     String sessionKey,
     String checksum,
-    String publicKey,
     boolean isManifest
   ) {
     initializeIfNeeded(context.getApplicationContext());
@@ -69,7 +68,6 @@ public class DownloadWorkerManager {
       .putString(DownloadService.SESSIONKEY, sessionKey)
       .putString(DownloadService.CHECKSUM, checksum)
       .putBoolean(DownloadService.IS_MANIFEST, isManifest)
-      .putString(DownloadService.PUBLIC_KEY, publicKey)
       .build();
 
     // Create network constraints
