@@ -374,7 +374,6 @@ public class CapacitorUpdater {
     }
   }
 
-
   public Boolean finishDownload(
     String id,
     String dest,
@@ -395,7 +394,10 @@ public class CapacitorUpdater {
         String checksumDecrypted = Objects.requireNonNullElse(checksumRes, "");
         if (!this.hasOldPrivateKeyPropertyInConfig && !sessionKey.isEmpty()) {
           CryptoCipherV2.decryptFile(downloaded, publicKey, sessionKey);
-          checksumDecrypted = CryptoCipherV2.decryptChecksum(checksumRes, publicKey);
+          checksumDecrypted = CryptoCipherV2.decryptChecksum(
+            checksumRes,
+            publicKey
+          );
           checksum = CryptoCipherV2.calcChecksum(downloaded);
         } else {
           CryptoCipher.decryptFile(downloaded, privateKey, sessionKey, version);
