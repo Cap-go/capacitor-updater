@@ -6,20 +6,21 @@
 
 package ee.forgr.capacitor_updater;
 
-import static android.content.Context.RECEIVER_NOT_EXPORTED;
-
-import android.annotation.SuppressLint;
 import android.app.Activity;
-import android.content.BroadcastReceiver;
 import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.os.Build;
-import android.os.Bundle;
+import android.util.Base64;
 import android.util.Log;
+import androidx.annotation.NonNull;
+import androidx.lifecycle.LifecycleOwner;
+import androidx.work.Data;
+import androidx.work.WorkInfo;
+import androidx.work.WorkManager;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.plugin.WebView;
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
 import java.io.BufferedInputStream;
 import java.io.DataInputStream;
 import java.io.File;
@@ -28,17 +29,20 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.FilenameFilter;
 import java.io.IOException;
-import java.io.InputStream;
-import java.net.URL;
-import java.net.URLConnection;
+import java.security.GeneralSecurityException;
+import java.security.MessageDigest;
+import java.security.PrivateKey;
+import java.security.PublicKey;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
+import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+import javax.crypto.SecretKey;
 import okhttp3.*;
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -63,7 +67,7 @@ public class CapacitorUpdater {
   public OkHttpClient client;
 
   public File documentsDir;
-  public boolean directUpdate = false;
+  public Boolean directUpdate = false;
   public Activity activity;
   public String PLUGIN_VERSION = "";
   public String versionBuild = "";
@@ -244,96 +248,159 @@ public class CapacitorUpdater {
     sourceFile.delete();
   }
 
-  @SuppressLint("UnspecifiedRegisterReceiverFlag")
-  public void onResume() {
-    IntentFilter filter = new IntentFilter();
-    filter.addAction(DownloadService.NOTIFICATION);
-    filter.addAction(DownloadService.PERCENTDOWNLOAD);
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-      this.activity.registerReceiver(receiver, filter, RECEIVER_NOT_EXPORTED);
-    } else {
-      this.activity.registerReceiver(receiver, filter);
+  private void observeWorkProgress(Context context, String id) {
+    if (!(context instanceof LifecycleOwner)) {
+      Log.e(
+        TAG,
+        "Context is not a LifecycleOwner, cannot observe work progress"
+      );
+      return;
     }
-  }
 
-  public void onPause() {
-    this.activity.unregisterReceiver(receiver);
-  }
+    activity.runOnUiThread(() -> {
+      WorkManager.getInstance(context)
+        .getWorkInfosByTagLiveData(id)
+        .observe((LifecycleOwner) context, workInfos -> {
+          if (workInfos == null || workInfos.isEmpty()) return;
 
-  private final BroadcastReceiver receiver = new BroadcastReceiver() {
-    @Override
-    public void onReceive(Context context, Intent intent) {
-      String action = intent.getAction();
-      Bundle bundle = intent.getExtras();
-      if (bundle != null) {
-        if (Objects.equals(action, DownloadService.PERCENTDOWNLOAD)) {
-          String id = bundle.getString(DownloadService.ID);
-          int percent = bundle.getInt(DownloadService.PERCENT);
-          CapacitorUpdater.this.notifyDownload(id, percent);
-        } else if (Objects.equals(action, DownloadService.NOTIFICATION)) {
-          String id = bundle.getString(DownloadService.ID);
-          String dest = bundle.getString(DownloadService.FILEDEST);
-          String version = bundle.getString(DownloadService.VERSION);
-          String sessionKey = bundle.getString(DownloadService.SESSIONKEY);
-          String checksum = bundle.getString(DownloadService.CHECKSUM);
-          String error = bundle.getString(DownloadService.ERROR);
-          boolean isManifest = bundle.getBoolean(
-            DownloadService.IS_MANIFEST,
-            false
-          );
-          Log.i(
-            CapacitorUpdater.TAG,
-            "res " +
-            id +
-            " " +
-            dest +
-            " " +
-            version +
-            " " +
-            sessionKey +
-            " " +
-            checksum +
-            " " +
-            error
-          );
-          if (dest == null) {
-            final JSObject ret = new JSObject();
-            ret.put(
-              "version",
-              CapacitorUpdater.this.getCurrentBundle().getVersionName()
-            );
-            if ("low_mem_fail".equals(error)) {
-              CapacitorUpdater.this.sendStats("low_mem_fail", version);
-            }
-            ret.put("error", "download_fail");
-            CapacitorUpdater.this.sendStats("download_fail", version);
-            CapacitorUpdater.this.notifyListeners("downloadFailed", ret);
-            return;
+          WorkInfo workInfo = workInfos.get(0);
+          Data progress = workInfo.getProgress();
+
+          switch (workInfo.getState()) {
+            case RUNNING:
+              int percent = progress.getInt(DownloadService.PERCENT, 0);
+              notifyDownload(id, percent);
+              break;
+            case SUCCEEDED:
+              Data outputData = workInfo.getOutputData();
+              String dest = outputData.getString(DownloadService.FILEDEST);
+              String version = outputData.getString(DownloadService.VERSION);
+              String sessionKey = outputData.getString(
+                DownloadService.SESSIONKEY
+              );
+              String checksum = outputData.getString(DownloadService.CHECKSUM);
+              boolean isManifest = outputData.getBoolean(
+                DownloadService.IS_MANIFEST,
+                false
+              );
+
+              boolean success = finishDownload(
+                id,
+                dest,
+                version,
+                sessionKey,
+                checksum,
+                true,
+                isManifest
+              );
+              if (!success) {
+                saveBundleInfo(
+                  id,
+                  new BundleInfo(
+                    id,
+                    version,
+                    BundleStatus.ERROR,
+                    new Date(System.currentTimeMillis()),
+                    ""
+                  )
+                );
+                JSObject ret = new JSObject();
+                ret.put("version", getCurrentBundle().getVersionName());
+                ret.put("error", "finish_download_fail");
+                sendStats("finish_download_fail", version);
+                notifyListeners("downloadFailed", ret);
+              }
+              break;
+            case FAILED:
+              Data failedData = workInfo.getOutputData();
+              String error = failedData.getString(DownloadService.ERROR);
+              String failedVersion = failedData.getString(
+                DownloadService.VERSION
+              );
+              saveBundleInfo(
+                id,
+                new BundleInfo(
+                  id,
+                  failedVersion,
+                  BundleStatus.ERROR,
+                  new Date(System.currentTimeMillis()),
+                  ""
+                )
+              );
+              JSObject ret = new JSObject();
+              ret.put("version", getCurrentBundle().getVersionName());
+              if ("low_mem_fail".equals(error)) {
+                sendStats("low_mem_fail", failedVersion);
+              }
+              ret.put("error", error != null ? error : "download_fail");
+              sendStats("download_fail", failedVersion);
+              notifyListeners("downloadFailed", ret);
+              break;
           }
-          CapacitorUpdater.this.finishDownload(
-              id,
-              dest,
-              version,
-              sessionKey,
-              checksum,
-              true,
-              isManifest
-            );
-        } else {
-          Log.i(CapacitorUpdater.TAG, "Unknown action " + action);
-        }
-      }
-    }
-  };
+        });
+    });
+  }
 
-  public boolean finishDownload(
+  private void download(
+    final String id,
+    final String url,
+    final String dest,
+    final String version,
+    final String sessionKey,
+    final String checksum,
+    final JSONArray manifest
+  ) {
+    if (this.activity == null) {
+      Log.e(TAG, "Activity is null, cannot observe work progress");
+      return;
+    }
+    observeWorkProgress(this.activity, id);
+
+    DownloadWorkerManager.enqueueDownload(
+      this.activity,
+      url,
+      id,
+      this.documentsDir.getAbsolutePath(),
+      dest,
+      version,
+      sessionKey,
+      checksum,
+      manifest != null
+    );
+
+    if (manifest != null) {
+      DataManager.getInstance().setManifest(manifest);
+    }
+  }
+
+  private String decryptChecksum(String checksum, String version)
+    throws IOException {
+    if (this.publicKey.isEmpty()) {
+      Log.e(CapacitorUpdater.TAG, "The public key is empty");
+      return checksum;
+    }
+    try {
+      byte[] checksumBytes = Base64.decode(checksum, Base64.DEFAULT);
+      PublicKey pKey = CryptoCipherV2.stringToPublicKey(this.publicKey);
+      byte[] decryptedChecksum = CryptoCipherV2.decryptRSA(checksumBytes, pKey);
+      // return Base64.encodeToString(decryptedChecksum, Base64.DEFAULT);
+      String result = Base64.encodeToString(decryptedChecksum, Base64.DEFAULT);
+      return result.replaceAll("\\s", ""); // Remove all whitespace, including newlines
+    } catch (GeneralSecurityException e) {
+      Log.e(TAG, "decryptChecksum fail: " + e.getMessage());
+      this.sendStats("decrypt_fail", version);
+      throw new IOException("Decryption failed: " + e.getMessage());
+    }
+  }
+
+  public Boolean finishDownload(
     String id,
     String dest,
     String version,
     String sessionKey,
     String checksumRes,
-    boolean setNext,
-    boolean isManifest
+    Boolean setNext,
+    Boolean isManifest
   ) {
     File downloaded = null;
     String checksum = "";
@@ -344,32 +411,13 @@ public class CapacitorUpdater {
 
       if (!isManifest) {
         String checksumDecrypted = Objects.requireNonNullElse(checksumRes, "");
-        try {
-          if (!this.hasOldPrivateKeyPropertyInConfig && !sessionKey.isEmpty()) {
-            CryptoCipherV2.decryptFile(
-              downloaded,
-              this.publicKey,
-              sessionKey,
-              version
-            );
-            checksumDecrypted = CryptoCipherV2.decryptChecksum(
-              checksumRes,
-              this.publicKey,
-              version
-            );
-            checksum = CryptoCipherV2.calcChecksum(downloaded);
-          } else {
-            CryptoCipher.decryptFile(
-              downloaded,
-              this.privateKey,
-              sessionKey,
-              version
-            );
-            checksum = CryptoCipher.calcChecksum(downloaded);
-          }
-        } catch (Exception e) {
-          this.sendStats("decrypt_fail", version);
-          throw e;
+        if (!this.hasOldPrivateKeyPropertyInConfig && !sessionKey.isEmpty()) {
+          this.decryptFileV2(downloaded, sessionKey, version);
+          checksumDecrypted = this.decryptChecksum(checksumRes, version);
+          checksum = this.calcChecksumV2(downloaded);
+        } else {
+          this.decryptFile(downloaded, sessionKey, version);
+          checksum = this.calcChecksum(downloaded);
         }
         if (
           (!checksumDecrypted.isEmpty() || !this.publicKey.isEmpty()) &&
@@ -385,7 +433,7 @@ public class CapacitorUpdater {
       }
       // Remove the decryption for manifest downloads
     } catch (IOException e) {
-      final boolean res = this.delete(id);
+      final Boolean res = this.delete(id);
       if (!res) {
         Log.i(CapacitorUpdater.TAG, "Double error, cannot cleanup: " + version);
       }
@@ -449,83 +497,6 @@ public class CapacitorUpdater {
     return true;
   }
 
-  private void downloadFileBackground(
-    final String id,
-    final String url,
-    final String version,
-    final String sessionKey,
-    final String checksum,
-    final String dest,
-    final JSONArray manifest
-  ) {
-    Intent intent = new Intent(this.activity, DownloadService.class);
-    intent.putExtra(DownloadService.URL, url);
-    intent.putExtra(DownloadService.FILEDEST, dest);
-    intent.putExtra(
-      DownloadService.DOCDIR,
-      this.documentsDir.getAbsolutePath()
-    );
-    intent.putExtra(DownloadService.ID, id);
-    intent.putExtra(DownloadService.VERSION, version);
-    intent.putExtra(DownloadService.SESSIONKEY, sessionKey);
-    intent.putExtra(DownloadService.CHECKSUM, checksum);
-    intent.putExtra(DownloadService.PUBLIC_KEY, this.publicKey);
-    if (manifest != null) {
-      DataManager.getInstance().setManifest(manifest);
-      intent.putExtra(DownloadService.IS_MANIFEST, true);
-    }
-
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-      this.activity.startForegroundService(intent);
-    } else {
-      this.activity.startService(intent);
-    }
-  }
-
-  private void downloadFile(
-    final String id,
-    final String url,
-    final String dest
-  ) throws IOException {
-    final URL u = new URL(url);
-    final URLConnection connection = u.openConnection();
-
-    final File target = new File(this.documentsDir, dest);
-    Objects.requireNonNull(target.getParentFile()).mkdirs();
-    target.createNewFile();
-
-    final long totalLength = connection.getContentLength();
-    final int bufferSize = 1024;
-    final byte[] buffer = new byte[bufferSize];
-    int length;
-
-    int bytesRead = bufferSize;
-    int percent = 0;
-    this.notifyDownload(id, 10);
-    try (
-      final InputStream is = connection.getInputStream();
-      final DataInputStream dis = new DataInputStream(is);
-      final FileOutputStream fos = new FileOutputStream(target)
-    ) {
-      while ((length = dis.read(buffer)) > 0) {
-        fos.write(buffer, 0, length);
-        final int newPercent = (int) ((bytesRead / (float) totalLength) * 100);
-        if (totalLength > 1 && newPercent != percent) {
-          percent = newPercent;
-          this.notifyDownload(id, this.calcTotalPercent(percent, 10, 70));
-        }
-        bytesRead += length;
-      }
-      if (bytesRead == bufferSize) {
-        throw new IOException("Failed to download: No data read from URL");
-      }
-    } catch (OutOfMemoryError e) {
-      Log.e(CapacitorUpdater.TAG, "OutOfMemoryError while downloading file", e);
-      this.sendStats("low_mem_fail");
-      throw new IOException("OutOfMemoryError while downloading file");
-    }
-  }
-
   private void deleteDirectory(final File file) throws IOException {
     if (file.isDirectory()) {
       final File[] entries = file.listFiles();
@@ -542,8 +513,179 @@ public class CapacitorUpdater {
 
   private void setCurrentBundle(final File bundle) {
     this.editor.putString(WebView.CAP_SERVER_PATH, bundle.getPath());
-    Log.i(CapacitorUpdater.TAG, "Current bundle set to: " + bundle);
+    Log.i(TAG, "Current bundle set to: " + bundle);
     this.editor.commit();
+  }
+
+  private String calcChecksum(File file) {
+    final int BUFFER_SIZE = 1024 * 1024 * 5; // 5 MB buffer size
+    CRC32 crc = new CRC32();
+
+    try (FileInputStream fis = new FileInputStream(file)) {
+      byte[] buffer = new byte[BUFFER_SIZE];
+      int length;
+      while ((length = fis.read(buffer)) != -1) {
+        crc.update(buffer, 0, length);
+      }
+      return String.format("%08x", crc.getValue());
+    } catch (IOException e) {
+      System.err.println(
+        TAG + " Cannot calc checksum: " + file.getPath() + " " + e.getMessage()
+      );
+      return "";
+    }
+  }
+
+  private String calcChecksumV2(File file) {
+    final int BUFFER_SIZE = 1024 * 1024 * 5; // 5 MB buffer size
+    MessageDigest digest;
+    try {
+      digest = MessageDigest.getInstance("SHA-256");
+    } catch (java.security.NoSuchAlgorithmException e) {
+      System.err.println(TAG + " SHA-256 algorithm not available");
+      return "";
+    }
+
+    try (FileInputStream fis = new FileInputStream(file)) {
+      byte[] buffer = new byte[BUFFER_SIZE];
+      int length;
+      while ((length = fis.read(buffer)) != -1) {
+        digest.update(buffer, 0, length);
+      }
+      byte[] hash = digest.digest();
+      StringBuilder hexString = new StringBuilder();
+      for (byte b : hash) {
+        String hex = Integer.toHexString(0xff & b);
+        if (hex.length() == 1) hexString.append('0');
+        hexString.append(hex);
+      }
+      return hexString.toString();
+    } catch (IOException e) {
+      System.err.println(
+        TAG +
+        " Cannot calc checksum v2: " +
+        file.getPath() +
+        " " +
+        e.getMessage()
+      );
+      return "";
+    }
+  }
+
+  private void decryptFileV2(
+    final File file,
+    final String ivSessionKey,
+    final String version
+  ) throws IOException {
+    // (str != null && !str.isEmpty())
+    if (
+      this.publicKey.isEmpty() ||
+      ivSessionKey == null ||
+      ivSessionKey.isEmpty() ||
+      ivSessionKey.split(":").length != 2
+    ) {
+      Log.i(TAG, "Cannot found public key or sessionKey");
+      return;
+    }
+    if (!this.publicKey.startsWith("-----BEGIN RSA PUBLIC KEY-----")) {
+      Log.e(
+        CapacitorUpdater.TAG,
+        "The public key is not a valid RSA Public key"
+      );
+      return;
+    }
+    try {
+      String ivB64 = ivSessionKey.split(":")[0];
+      String sessionKeyB64 = ivSessionKey.split(":")[1];
+      byte[] iv = Base64.decode(ivB64.getBytes(), Base64.DEFAULT);
+      byte[] sessionKey = Base64.decode(
+        sessionKeyB64.getBytes(),
+        Base64.DEFAULT
+      );
+      PublicKey pKey = CryptoCipherV2.stringToPublicKey(this.publicKey);
+      byte[] decryptedSessionKey = CryptoCipherV2.decryptRSA(sessionKey, pKey);
+
+      SecretKey sKey = CryptoCipherV2.byteToSessionKey(decryptedSessionKey);
+      byte[] content = new byte[(int) file.length()];
+
+      try (
+        final FileInputStream fis = new FileInputStream(file);
+        final BufferedInputStream bis = new BufferedInputStream(fis);
+        final DataInputStream dis = new DataInputStream(bis)
+      ) {
+        dis.readFully(content);
+        dis.close();
+        byte[] decrypted = CryptoCipherV2.decryptAES(content, sKey, iv);
+        // write the decrypted string to the file
+        try (
+          final FileOutputStream fos = new FileOutputStream(
+            file.getAbsolutePath()
+          )
+        ) {
+          fos.write(decrypted);
+        }
+      }
+    } catch (GeneralSecurityException e) {
+      Log.i(TAG, "decryptFile fail");
+      this.sendStats("decrypt_fail", version);
+      e.printStackTrace();
+      throw new IOException("GeneralSecurityException");
+    }
+  }
+
+  private void decryptFile(
+    final File file,
+    final String ivSessionKey,
+    final String version
+  ) throws IOException {
+    // (str != null && !str.isEmpty())
+    if (this.privateKey == null || this.privateKey.isEmpty()) {
+      Log.i(TAG, "Cannot found privateKey");
+      return;
+    } else if (
+      ivSessionKey == null ||
+      ivSessionKey.isEmpty() ||
+      ivSessionKey.split(":").length != 2
+    ) {
+      Log.i(TAG, "Cannot found sessionKey");
+      return;
+    }
+    try {
+      String ivB64 = ivSessionKey.split(":")[0];
+      String sessionKeyB64 = ivSessionKey.split(":")[1];
+      byte[] iv = Base64.decode(ivB64.getBytes(), Base64.DEFAULT);
+      byte[] sessionKey = Base64.decode(
+        sessionKeyB64.getBytes(),
+        Base64.DEFAULT
+      );
+      PrivateKey pKey = CryptoCipher.stringToPrivateKey(this.privateKey);
+      byte[] decryptedSessionKey = CryptoCipher.decryptRSA(sessionKey, pKey);
+      SecretKey sKey = CryptoCipher.byteToSessionKey(decryptedSessionKey);
+      byte[] content = new byte[(int) file.length()];
+
+      try (
+        final FileInputStream fis = new FileInputStream(file);
+        final BufferedInputStream bis = new BufferedInputStream(fis);
+        final DataInputStream dis = new DataInputStream(bis)
+      ) {
+        dis.readFully(content);
+        dis.close();
+        byte[] decrypted = CryptoCipher.decryptAES(content, sKey, iv);
+        // write the decrypted string to the file
+        try (
+          final FileOutputStream fos = new FileOutputStream(
+            file.getAbsolutePath()
+          )
+        ) {
+          fos.write(decrypted);
+        }
+      }
+    } catch (GeneralSecurityException e) {
+      Log.i(TAG, "decryptFile fail");
+      this.sendStats("decrypt_fail", version);
+      e.printStackTrace();
+      throw new IOException("GeneralSecurityException");
+    }
   }
 
   public void downloadBackground(
@@ -554,6 +696,16 @@ public class CapacitorUpdater {
     final JSONArray manifest
   ) {
     final String id = this.randomString();
+
+    // Check if version is already downloading
+    if (
+      this.activity != null &&
+      DownloadWorkerManager.isVersionDownloading(version)
+    ) {
+      Log.i(TAG, "Version already downloading: " + version);
+      return;
+    }
+
     this.saveBundleInfo(
         id,
         new BundleInfo(
@@ -567,13 +719,13 @@ public class CapacitorUpdater {
     this.notifyDownload(id, 0);
     this.notifyDownload(id, 5);
 
-    this.downloadFileBackground(
+    this.download(
         id,
         url,
+        this.randomString(),
         version,
         sessionKey,
         checksum,
-        this.randomString(),
         manifest
       );
   }
@@ -598,52 +750,108 @@ public class CapacitorUpdater {
     this.notifyDownload(id, 0);
     this.notifyDownload(id, 5);
     final String dest = this.randomString();
-    this.downloadFile(id, url, dest);
-    final boolean finished =
-      this.finishDownload(
+
+    // Use the new WorkManager-based download
+    this.download(id, url, dest, version, sessionKey, checksum, null);
+
+    // Wait for completion
+    try {
+      ListenableFuture<List<WorkInfo>> future = WorkManager.getInstance(
+        activity
+      ).getWorkInfosByTag(id);
+
+      List<WorkInfo> workInfos = Futures.getChecked(future, IOException.class);
+
+      if (workInfos != null && !workInfos.isEmpty()) {
+        WorkInfo workInfo = workInfos.get(0);
+        while (!workInfo.getState().isFinished()) {
+          Thread.sleep(100);
+          workInfos = Futures.getChecked(
+            WorkManager.getInstance(activity).getWorkInfosByTag(id),
+            IOException.class
+          );
+          if (workInfos != null && !workInfos.isEmpty()) {
+            workInfo = workInfos.get(0);
+          }
+        }
+
+        if (workInfo.getState() == WorkInfo.State.SUCCEEDED) {
+          Data outputData = workInfo.getOutputData();
+          boolean success = finishDownload(
+            id,
+            outputData.getString(DownloadService.FILEDEST),
+            version,
+            sessionKey,
+            checksum,
+            true,
+            false
+          );
+          if (!success) {
+            throw new IOException("Failed to finish download");
+          }
+        } else {
+          Data outputData = workInfo.getOutputData();
+          String error = outputData.getString(DownloadService.ERROR);
+          throw new IOException(
+            error != null ? error : "Download failed: " + workInfo.getState()
+          );
+        }
+      }
+      return getBundleInfo(id);
+    } catch (Exception e) {
+      Log.e(TAG, "Error waiting for download", e);
+      saveBundleInfo(
+        id,
+        new BundleInfo(
           id,
-          dest,
           version,
-          sessionKey,
-          checksum,
-          false,
-          false
-        );
-    final BundleStatus status = finished
-      ? BundleStatus.PENDING
-      : BundleStatus.ERROR;
-    BundleInfo info = new BundleInfo(
-      id,
-      version,
-      status,
-      new Date(System.currentTimeMillis()),
-      checksum
-    );
-    this.saveBundleInfo(id, info);
-    return info;
+          BundleStatus.ERROR,
+          new Date(System.currentTimeMillis()),
+          ""
+        )
+      );
+      throw new IOException("Error waiting for download: " + e.getMessage());
+    }
   }
 
   public List<BundleInfo> list() {
     final List<BundleInfo> res = new ArrayList<>();
     final File destHot = new File(this.documentsDir, bundleDirectory);
-    Log.d(CapacitorUpdater.TAG, "list File : " + destHot.getPath());
+    Log.d(TAG, "list File : " + destHot.getPath());
     if (destHot.exists()) {
       for (final File i : Objects.requireNonNull(destHot.listFiles())) {
         final String id = i.getName();
         res.add(this.getBundleInfo(id));
       }
     } else {
-      Log.i(CapacitorUpdater.TAG, "No versions available to list" + destHot);
+      Log.i(TAG, "No versions available to list" + destHot);
     }
     return res;
   }
 
-  public boolean delete(final String id, final boolean removeInfo)
+  public Boolean delete(final String id, final Boolean removeInfo)
     throws IOException {
     final BundleInfo deleted = this.getBundleInfo(id);
     if (deleted.isBuiltin() || this.getCurrentBundleId().equals(id)) {
-      Log.e(CapacitorUpdater.TAG, "Cannot delete " + id);
+      Log.e(TAG, "Cannot delete " + id);
       return false;
+    }
+    final BundleInfo next = this.getNextBundle();
+    if (
+      next != null &&
+      !next.isDeleted() &&
+      !next.isErrorStatus() &&
+      next.getId().equals(id)
+    ) {
+      Log.e(TAG, "Cannot delete the next bundle" + id);
+      return false;
+    }
+    // Cancel download for this version if active
+    if (this.activity != null) {
+      DownloadWorkerManager.cancelVersionDownload(
+        this.activity,
+        deleted.getVersionName()
+      );
     }
     final File bundle = new File(this.documentsDir, bundleDirectory + "/" + id);
     if (bundle.exists()) {
@@ -655,12 +863,12 @@ public class CapacitorUpdater {
       }
       return true;
     }
-    Log.e(CapacitorUpdater.TAG, "bundle removed: " + deleted.getVersionName());
+    Log.e(TAG, "bundle removed: " + deleted.getVersionName());
     this.sendStats("delete", deleted.getVersionName());
     return false;
   }
 
-  public boolean delete(final String id) {
+  public Boolean delete(final String id) {
     try {
       return this.delete(id, true);
     } catch (IOException e) {
@@ -688,18 +896,18 @@ public class CapacitorUpdater {
     );
   }
 
-  public boolean set(final BundleInfo bundle) {
+  public Boolean set(final BundleInfo bundle) {
     return this.set(bundle.getId());
   }
 
-  public boolean set(final String id) {
+  public Boolean set(final String id) {
     final BundleInfo newBundle = this.getBundleInfo(id);
     if (newBundle.isBuiltin()) {
       this.reset();
       return true;
     }
     final File bundle = this.getBundleDirectory(id);
-    Log.i(CapacitorUpdater.TAG, "Setting next active bundle: " + id);
+    Log.i(TAG, "Setting next active bundle: " + id);
     if (this.bundleExists(id)) {
       var currentBundleName = this.getCurrentBundle().getVersionName();
       this.setCurrentBundle(bundle);
@@ -717,10 +925,7 @@ public class CapacitorUpdater {
     if (
       !currentBundle.isBuiltin() && !this.bundleExists(currentBundle.getId())
     ) {
-      Log.i(
-        CapacitorUpdater.TAG,
-        "Folder at bundle path does not exist. Triggering reset."
-      );
+      Log.i(TAG, "Folder at bundle path does not exist. Triggering reset.");
       this.reset();
     }
   }
@@ -738,7 +943,7 @@ public class CapacitorUpdater {
       "Version successfully loaded: " + bundle.getVersionName()
     );
     if (autoDeletePrevious && !fallback.isBuiltin()) {
-      final boolean res = this.delete(fallback.getId());
+      final Boolean res = this.delete(fallback.getId());
       if (res) {
         Log.i(
           CapacitorUpdater.TAG,
@@ -759,6 +964,10 @@ public class CapacitorUpdater {
     this.setCurrentBundle(new File("public"));
     this.setFallbackBundle(null);
     this.setNextBundle(null);
+    // Cancel any ongoing downloads
+    if (this.activity != null) {
+      DownloadWorkerManager.cancelAllDownloads(this.activity);
+    }
     if (!internal) {
       this.sendStats(
           "reset",
@@ -800,7 +1009,7 @@ public class CapacitorUpdater {
       .enqueue(
         new okhttp3.Callback() {
           @Override
-          public void onFailure(Call call, IOException e) {
+          public void onFailure(@NonNull Call call, @NonNull IOException e) {
             JSObject retError = new JSObject();
             retError.put("message", "Request failed: " + e.getMessage());
             retError.put("error", "network_error");
@@ -808,8 +1017,10 @@ public class CapacitorUpdater {
           }
 
           @Override
-          public void onResponse(Call call, Response response)
-            throws IOException {
+          public void onResponse(
+            @NonNull Call call,
+            @NonNull Response response
+          ) throws IOException {
             try (ResponseBody responseBody = response.body()) {
               if (!response.isSuccessful()) {
                 JSObject retError = new JSObject();
@@ -819,6 +1030,7 @@ public class CapacitorUpdater {
                 return;
               }
 
+              assert responseBody != null;
               String responseData = responseBody.string();
               JSONObject jsonResponse = new JSONObject(responseData);
               JSObject ret = new JSObject();
@@ -846,12 +1058,19 @@ public class CapacitorUpdater {
       );
   }
 
-  public void getLatest(final String updateUrl, final Callback callback) {
+  public void getLatest(
+    final String updateUrl,
+    final String channel,
+    final Callback callback
+  ) {
     JSONObject json;
     try {
       json = this.createInfoObject();
+      if (channel != null && json != null) {
+        json.put("defaultChannel", channel);
+      }
     } catch (JSONException e) {
-      Log.e(CapacitorUpdater.TAG, "Error getLatest JSONException", e);
+      Log.e(TAG, "Error getLatest JSONException", e);
       final JSObject retError = new JSObject();
       retError.put("message", "Cannot get info: " + e);
       retError.put("error", "json_error");
@@ -867,7 +1086,7 @@ public class CapacitorUpdater {
   public void unsetChannel(final Callback callback) {
     String channelUrl = this.channelUrl;
     if (channelUrl == null || channelUrl.isEmpty()) {
-      Log.e(CapacitorUpdater.TAG, "Channel URL is not set");
+      Log.e(TAG, "Channel URL is not set");
       final JSObject retError = new JSObject();
       retError.put("message", "channelUrl missing");
       retError.put("error", "missing_config");
@@ -878,7 +1097,7 @@ public class CapacitorUpdater {
     try {
       json = this.createInfoObject();
     } catch (JSONException e) {
-      Log.e(CapacitorUpdater.TAG, "Error unsetChannel JSONException", e);
+      Log.e(TAG, "Error unsetChannel JSONException", e);
       final JSObject retError = new JSObject();
       retError.put("message", "Cannot get info: " + e);
       retError.put("error", "json_error");
@@ -898,7 +1117,7 @@ public class CapacitorUpdater {
       .enqueue(
         new okhttp3.Callback() {
           @Override
-          public void onFailure(Call call, IOException e) {
+          public void onFailure(@NonNull Call call, @NonNull IOException e) {
             JSObject retError = new JSObject();
             retError.put("message", "Request failed: " + e.getMessage());
             retError.put("error", "network_error");
@@ -906,8 +1125,10 @@ public class CapacitorUpdater {
           }
 
           @Override
-          public void onResponse(Call call, Response response)
-            throws IOException {
+          public void onResponse(
+            @NonNull Call call,
+            @NonNull Response response
+          ) throws IOException {
             try (ResponseBody responseBody = response.body()) {
               if (!response.isSuccessful()) {
                 JSObject retError = new JSObject();
@@ -917,6 +1138,7 @@ public class CapacitorUpdater {
                 return;
               }
 
+              assert responseBody != null;
               String responseData = responseBody.string();
               JSONObject jsonResponse = new JSONObject(responseData);
               JSObject ret = new JSObject();
@@ -928,7 +1150,7 @@ public class CapacitorUpdater {
                   ret.put(key, jsonResponse.get(key));
                 }
               }
-              Log.i(CapacitorUpdater.TAG, "Channel unset");
+              Log.i(TAG, "Channel unset");
               callback.callback(ret);
             } catch (JSONException e) {
               JSObject retError = new JSObject();
@@ -944,7 +1166,7 @@ public class CapacitorUpdater {
   public void setChannel(final String channel, final Callback callback) {
     String channelUrl = this.channelUrl;
     if (channelUrl == null || channelUrl.isEmpty()) {
-      Log.e(CapacitorUpdater.TAG, "Channel URL is not set");
+      Log.e(TAG, "Channel URL is not set");
       final JSObject retError = new JSObject();
       retError.put("message", "channelUrl missing");
       retError.put("error", "missing_config");
@@ -956,7 +1178,7 @@ public class CapacitorUpdater {
       json = this.createInfoObject();
       json.put("channel", channel);
     } catch (JSONException e) {
-      Log.e(CapacitorUpdater.TAG, "Error setChannel JSONException", e);
+      Log.e(TAG, "Error setChannel JSONException", e);
       final JSObject retError = new JSObject();
       retError.put("message", "Cannot get info: " + e);
       retError.put("error", "json_error");
@@ -970,7 +1192,7 @@ public class CapacitorUpdater {
   public void getChannel(final Callback callback) {
     String channelUrl = this.channelUrl;
     if (channelUrl == null || channelUrl.isEmpty()) {
-      Log.e(CapacitorUpdater.TAG, "Channel URL is not set");
+      Log.e(TAG, "Channel URL is not set");
       final JSObject retError = new JSObject();
       retError.put("message", "Channel URL is not set");
       retError.put("error", "missing_config");
@@ -981,7 +1203,7 @@ public class CapacitorUpdater {
     try {
       json = this.createInfoObject();
     } catch (JSONException e) {
-      Log.e(CapacitorUpdater.TAG, "Error getChannel JSONException", e);
+      Log.e(TAG, "Error getChannel JSONException", e);
       final JSObject retError = new JSObject();
       retError.put("message", "Cannot get info: " + e);
       retError.put("error", "json_error");
@@ -1001,7 +1223,7 @@ public class CapacitorUpdater {
       .enqueue(
         new okhttp3.Callback() {
           @Override
-          public void onFailure(Call call, IOException e) {
+          public void onFailure(@NonNull Call call, @NonNull IOException e) {
             JSObject retError = new JSObject();
             retError.put("message", "Request failed: " + e.getMessage());
             retError.put("error", "network_error");
@@ -1009,10 +1231,13 @@ public class CapacitorUpdater {
           }
 
           @Override
-          public void onResponse(Call call, Response response)
-            throws IOException {
+          public void onResponse(
+            @NonNull Call call,
+            @NonNull Response response
+          ) throws IOException {
             try (ResponseBody responseBody = response.body()) {
               if (response.code() == 400) {
+                assert responseBody != null;
                 String data = responseBody.string();
                 if (
                   data.contains("channel_not_found") &&
@@ -1021,7 +1246,7 @@ public class CapacitorUpdater {
                   JSObject ret = new JSObject();
                   ret.put("channel", defaultChannel);
                   ret.put("status", "default");
-                  Log.i(CapacitorUpdater.TAG, "Channel get to \"" + ret);
+                  Log.i(TAG, "Channel get to \"" + ret);
                   callback.callback(ret);
                   return;
                 }
@@ -1035,6 +1260,7 @@ public class CapacitorUpdater {
                 return;
               }
 
+              assert responseBody != null;
               String responseData = responseBody.string();
               JSONObject jsonResponse = new JSONObject(responseData);
               JSObject ret = new JSObject();
@@ -1046,7 +1272,7 @@ public class CapacitorUpdater {
                   ret.put(key, jsonResponse.get(key));
                 }
               }
-              Log.i(CapacitorUpdater.TAG, "Channel get to \"" + ret);
+              Log.i(TAG, "Channel get to \"" + ret);
               callback.callback(ret);
             } catch (JSONException e) {
               JSObject retError = new JSObject();
@@ -1083,7 +1309,7 @@ public class CapacitorUpdater {
       json.put("old_version_name", oldVersionName);
       json.put("action", action);
     } catch (JSONException e) {
-      Log.e(CapacitorUpdater.TAG, "Error sendStats JSONException", e);
+      Log.e(TAG, "Error sendStats JSONException", e);
       return;
     }
 
@@ -1099,26 +1325,22 @@ public class CapacitorUpdater {
       .enqueue(
         new okhttp3.Callback() {
           @Override
-          public void onFailure(Call call, IOException e) {
-            Log.e(
-              CapacitorUpdater.TAG,
-              "Failed to send stats: " + e.getMessage()
-            );
+          public void onFailure(@NonNull Call call, @NonNull IOException e) {
+            Log.e(TAG, "Failed to send stats: " + e.getMessage());
           }
 
           @Override
-          public void onResponse(Call call, Response response)
-            throws IOException {
+          public void onResponse(
+            @NonNull Call call,
+            @NonNull Response response
+          ) throws IOException {
             if (response.isSuccessful()) {
               Log.i(
                 TAG,
                 "Stats send for \"" + action + "\", version " + versionName
               );
             } else {
-              Log.e(
-                CapacitorUpdater.TAG,
-                "Error sending stats: " + response.code()
-              );
+              Log.e(TAG, "Error sending stats: " + response.code());
             }
           }
         }
@@ -1140,15 +1362,11 @@ public class CapacitorUpdater {
         String stored = this.prefs.getString(trueId + INFO_SUFFIX, "");
         result = BundleInfo.fromJSON(stored);
       } catch (JSONException e) {
-        Log.e(
-          CapacitorUpdater.TAG,
-          "Failed to parse info for bundle [" + trueId + "] ",
-          e
-        );
+        Log.e(TAG, "Failed to parse info for bundle [" + trueId + "] ", e);
         result = new BundleInfo(trueId, null, BundleStatus.PENDING, "", "");
       }
     }
-    // Log.d(CapacitorUpdater.TAG, "Returning info [" + trueId + "] " + result);
+    // Log.d(TAG, "Returning info [" + trueId + "] " + result);
     return result;
   }
 
@@ -1170,22 +1388,16 @@ public class CapacitorUpdater {
     if (
       id == null || (info != null && (info.isBuiltin() || info.isUnknown()))
     ) {
-      Log.d(
-        CapacitorUpdater.TAG,
-        "Not saving info for bundle: [" + id + "] " + info
-      );
+      Log.d(TAG, "Not saving info for bundle: [" + id + "] " + info);
       return;
     }
 
     if (info == null) {
-      Log.d(CapacitorUpdater.TAG, "Removing info for bundle [" + id + "]");
+      Log.d(TAG, "Removing info for bundle [" + id + "]");
       this.editor.remove(id + INFO_SUFFIX);
     } else {
       final BundleInfo update = info.setId(id);
-      Log.d(
-        CapacitorUpdater.TAG,
-        "Storing info for bundle [" + id + "] " + update.toString()
-      );
+      Log.d(TAG, "Storing info for bundle [" + id + "] " + update.toString());
       this.editor.putString(id + INFO_SUFFIX, update.toString());
     }
     this.editor.commit();
@@ -1194,10 +1406,7 @@ public class CapacitorUpdater {
   private void setBundleStatus(final String id, final BundleStatus status) {
     if (id != null && status != null) {
       BundleInfo info = this.getBundleInfo(id);
-      Log.d(
-        CapacitorUpdater.TAG,
-        "Setting status for bundle [" + id + "] to " + status
-      );
+      Log.d(TAG, "Setting status for bundle [" + id + "] to " + status);
       this.saveBundleInfo(id, info.setStatus(status));
     }
   }
@@ -1223,7 +1432,7 @@ public class CapacitorUpdater {
     return path;
   }
 
-  public boolean isUsingBuiltin() {
+  public Boolean isUsingBuiltin() {
     return this.getCurrentBundlePath().equals("public");
   }
 

@@ -13,12 +13,6 @@ package ee.forgr.capacitor_updater;
  */
 import android.util.Base64;
 import android.util.Log;
-import java.io.BufferedInputStream;
-import java.io.DataInputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
@@ -30,7 +24,6 @@ import java.security.spec.InvalidKeySpecException;
 import java.security.spec.MGF1ParameterSpec;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
-import java.util.zip.CRC32;
 import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
 import javax.crypto.IllegalBlockSizeException;
@@ -151,84 +144,6 @@ public class CryptoCipher {
     );
     // extract the private key
     return readPkcs1PrivateKey(pkcs1EncodedBytes);
-  }
-
-  public static void decryptFile(
-    final File file,
-    final String privateKey,
-    final String ivSessionKey,
-    final String version
-  ) throws IOException {
-    // (str != null && !str.isEmpty())
-    if (privateKey == null || privateKey.isEmpty()) {
-      Log.i(CapacitorUpdater.TAG, "Cannot found privateKey");
-      return;
-    } else if (
-      ivSessionKey == null ||
-      ivSessionKey.isEmpty() ||
-      ivSessionKey.split(":").length != 2
-    ) {
-      Log.i(CapacitorUpdater.TAG, "Cannot found sessionKey");
-      return;
-    }
-    try {
-      String ivB64 = ivSessionKey.split(":")[0];
-      String sessionKeyB64 = ivSessionKey.split(":")[1];
-      byte[] iv = Base64.decode(ivB64.getBytes(), Base64.DEFAULT);
-      byte[] sessionKey = Base64.decode(
-        sessionKeyB64.getBytes(),
-        Base64.DEFAULT
-      );
-      PrivateKey pKey = CryptoCipher.stringToPrivateKey(privateKey);
-      byte[] decryptedSessionKey = CryptoCipher.decryptRSA(sessionKey, pKey);
-      SecretKey sKey = CryptoCipher.byteToSessionKey(decryptedSessionKey);
-      byte[] content = new byte[(int) file.length()];
-
-      try (
-        final FileInputStream fis = new FileInputStream(file);
-        final BufferedInputStream bis = new BufferedInputStream(fis);
-        final DataInputStream dis = new DataInputStream(bis)
-      ) {
-        dis.readFully(content);
-        dis.close();
-        byte[] decrypted = CryptoCipher.decryptAES(content, sKey, iv);
-        // write the decrypted string to the file
-        try (
-          final FileOutputStream fos = new FileOutputStream(
-            file.getAbsolutePath()
-          )
-        ) {
-          fos.write(decrypted);
-        }
-      }
-    } catch (GeneralSecurityException e) {
-      Log.i(CapacitorUpdater.TAG, "decryptFile fail");
-      e.printStackTrace();
-      throw new IOException("GeneralSecurityException");
-    }
-  }
-
-  public static String calcChecksum(File file) {
-    final int BUFFER_SIZE = 1024 * 1024 * 5; // 5 MB buffer size
-    CRC32 crc = new CRC32();
-
-    try (FileInputStream fis = new FileInputStream(file)) {
-      byte[] buffer = new byte[BUFFER_SIZE];
-      int length;
-      while ((length = fis.read(buffer)) != -1) {
-        crc.update(buffer, 0, length);
-      }
-      return String.format("%08x", crc.getValue());
-    } catch (IOException e) {
-      System.err.println(
-        CapacitorUpdater.TAG +
-        " Cannot calc checksum: " +
-        file.getPath() +
-        " " +
-        e.getMessage()
-      );
-      return "";
-    }
   }
 
   public static PublicKey stringToPublicKey(String publicKey) {
