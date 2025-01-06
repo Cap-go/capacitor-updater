@@ -5,9 +5,19 @@
  */
 
 import Foundation
+#if canImport(ZipArchive)
+import ZipArchive
+#else
 import SSZipArchive
+#endif
 import Alamofire
 import Compression
+
+#if canImport(ZipArchive)
+typealias ZipArchiveHelper = ZipArchive
+#else
+typealias ZipArchiveHelper = SSZipArchive
+#endif
 
 @objc public class CapacitorUpdater: NSObject {
 
@@ -183,7 +193,7 @@ import Compression
         let semaphore = DispatchSemaphore(value: 0)
         var unzipError: NSError?
 
-        let success = SSZipArchive.unzipFile(atPath: sourceZip.path,
+        let success = ZipArchiveHelper.unzipFile(atPath: sourceZip.path,
                                              toDestination: destUnZip.path,
                                              preserveAttributes: true,
                                              overwrite: true,
