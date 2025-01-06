@@ -5,7 +5,7 @@
  */
 
 import Foundation
-import SSZipArchive
+import ZipArchive // SPM imports ZipArchive, whereas Cocoa imports SSZipArchive: https://github.com/ZipArchive/ZipArchive?tab=readme-ov-file#swift
 import Alamofire
 import zlib
 import CryptoKit

@@ -3,17 +3,18 @@ import PackageDescription
 
 let package = Package(
     name: "CapgoCapacitorUpdater",
-    platforms: [.iOS(.v13)],
+    platforms: [.iOS(.v16)],
     products: [
         .library(
-            name: "CapacitorUpdaterPlugin",
+            name: "CapgoCapacitorUpdater",
             targets: ["CapacitorUpdaterPlugin"])
     ],
     dependencies: [
-        .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", branch: "6.0.0"),
+        .package(
+            url: "https://github.com/ionic-team/capacitor-swift-pm.git", .upToNextMajor(from: "6.0.0")),
         .package(url: "https://github.com/Alamofire/Alamofire.git", .upToNextMajor(from: "5.10.2")),
         .package(url: "https://github.com/ZipArchive/ZipArchive.git", .upToNextMajor(from: "2.6.0")),
-        .package(url: "https://github.com/mxcl/Version.git", .upToNextMajor(from: "2.1.0"))
+        .package(url: "https://github.com/mxcl/Version.git", .upToNextMajor(from: "2.1.0")),
     ],
     targets: [
         .target(
@@ -21,15 +22,14 @@ let package = Package(
             dependencies: [
                 .product(name: "Capacitor", package: "capacitor-swift-pm"),
                 .product(name: "Cordova", package: "capacitor-swift-pm"),
-                .product(name: "SSZipArchive", package: "ZipArchive"),
+                .product(name: "ZipArchive", package: "ZipArchive"),
                 .product(name: "Alamofire", package: "Alamofire"),
-                .product(name: "Version", package: "Version")
+                .product(name: "Version", package: "Version"),
             ],
-            path: "ios/Sources/CapacitorUpdaterPlugin"),
+            path: "ios/Plugin"),
         .testTarget(
-            name: "CapacitorUpdaterPluginTests",
+            name: "CapacitorUpdaterTests",
             dependencies: ["CapacitorUpdaterPlugin"],
-            path: "ios/Tests/CapacitorUpdaterPluginTests")
-    ],
-    swiftLanguageVersions: [.v5]
+            path: "ios/PluginTests"),
+    ]
 )
