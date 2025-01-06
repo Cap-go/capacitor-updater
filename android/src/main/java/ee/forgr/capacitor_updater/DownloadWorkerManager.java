@@ -47,7 +47,8 @@ public class DownloadWorkerManager {
     String version,
     String sessionKey,
     String checksum,
-    boolean isManifest
+    boolean isManifest,
+    String publicKey
   ) {
     initializeIfNeeded(context.getApplicationContext());
 
@@ -67,6 +68,7 @@ public class DownloadWorkerManager {
       .putString(DownloadService.VERSION, version)
       .putString(DownloadService.SESSIONKEY, sessionKey)
       .putString(DownloadService.CHECKSUM, checksum)
+      .putString(DownloadService.PUBLIC_KEY, publicKey)
       .putBoolean(DownloadService.IS_MANIFEST, isManifest)
       .build();
 

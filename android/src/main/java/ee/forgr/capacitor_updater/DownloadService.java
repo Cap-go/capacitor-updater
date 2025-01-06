@@ -50,7 +50,7 @@ public class DownloadService extends Worker {
   public static final String CHECKSUM = "checksum";
   public static final String IS_MANIFEST = "is_manifest";
   public static final String MANIFEST = "manifest";
-  public static final String  = "publickey";
+  public static final String PUBLIC_KEY  = "publickey";
   private static final String UPDATE_FILE = "update.dat";
 
   private final OkHttpClient client = new OkHttpClient.Builder()
@@ -95,15 +95,15 @@ public class DownloadService extends Worker {
   @Override
   public Result doWork() {
     try {
-      String url = intent.getStringExtra(URL);
-      String id = intent.getStringExtra(ID);
-      String documentsDir = intent.getStringExtra(DOCDIR);
-      String dest = intent.getStringExtra(FILEDEST);
-      String version = intent.getStringExtra(VERSION);
-      String sessionKey = intent.getStringExtra(SESSIONKEY);
-      String checksum = intent.getStringExtra(CHECKSUM);
-      String publicKey = intent.getStringExtra(PUBLIC_KEY);
-      boolean isManifest = intent.getBooleanExtra(IS_MANIFEST, false);
+      String url = getInputData().getString(URL);
+      String id = getInputData().getString(ID);
+      String documentsDir = getInputData().getString(DOCDIR);
+      String dest = getInputData().getString(FILEDEST);
+      String version = getInputData().getString(VERSION);
+      String sessionKey = getInputData().getString(SESSIONKEY);
+      String checksum = getInputData().getString(CHECKSUM);
+      String publicKey = getInputData().getString(PUBLIC_KEY);
+      boolean isManifest = getInputData().getBoolean(IS_MANIFEST, false);
 
 
       Log.d(CapacitorUpdater.TAG + " DLSrv", "doWork isManifest: " + isManifest);
@@ -204,15 +204,16 @@ public class DownloadService extends Worker {
         String downloadUrl = entry.getString("download_url");
 
         // Decrypt fileHash if encryption is enabled
-        if (
-          !publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()
-        ) {
-          fileHash = CryptoCipherV2.decryptChecksum(
-            fileHash,
-            publicKey,
-            version
-          );
-        }
+        // disable: TODO: fix the CLI
+//        if (
+//          !publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()
+//        ) {
+//          fileHash = CryptoCipherV2.decryptChecksum(
+//            fileHash,
+//            publicKey,
+//            version
+//          );
+//        }
 
         File targetFile = new File(destFolder, fileName);
         File cacheFile = new File(
@@ -258,8 +259,8 @@ public class DownloadService extends Worker {
                 cacheFile,
                 finalFileHash,
                 id,
-                publicKey,
                 sessionKey,
+                publicKey,
                 version
               );
             }
@@ -308,7 +309,6 @@ public class DownloadService extends Worker {
         "Error in handleManifestDownload",
         e
       );
-      publishResults("", id, version, "", sessionKey, e.getMessage(), true);
     }
   }
 
@@ -502,6 +502,15 @@ public class DownloadService extends Worker {
         }
       }
 
+      // Decrypt if public key and session key are available
+      if (!publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
+        Log.d(
+            CapacitorUpdater.TAG + " DLSrv",
+            "Decrypting file " + targetFile.getName()
+        );
+        CryptoCipherV2.decryptFile(compressedFile, publicKey, sessionKey, version);
+      }
+
       // Decompress the file
       try (
         FileInputStream fis = new FileInputStream(compressedFile);
@@ -518,14 +527,6 @@ public class DownloadService extends Worker {
       // Delete the compressed file
       compressedFile.delete();
 
-      // Decrypt if public key and session key are available
-      if (!publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
-        Log.d(
-          CapacitorUpdater.TAG + " DLSrv",
-          "Decrypting file " + targetFile.getName()
-        );
-        CryptoCipherV2.decryptFile(targetFile, publicKey, sessionKey, version);
-      }
       // Verify checksum
       String actualHash = calculateFileHash(targetFile);
       if (actualHash.equals(expectedHash)) {

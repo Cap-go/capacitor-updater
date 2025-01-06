@@ -339,13 +339,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         print("\(CapacitorUpdater.TAG) Reloading \(id)")
         if let vc = bridge.viewController as? CAPBridgeViewController {
             guard let capBridge = vc.bridge else {
-                print("\(self.implementation.TAG) Cannot get capBridge")
+                print("\(CapacitorUpdater.TAG) Cannot get capBridge")
                 return false
             }
             if keepUrlPathAfterReload {
                 DispatchQueue.main.async {
                     guard let url = vc.webView?.url else {
-                        print("\(self.implementation.TAG) vc.webView?.url is null?")
+                        print("\(CapacitorUpdater.TAG) vc.webView?.url is null?")
                         return
                     }
                     capBridge.setServerBasePath(dest.path)
@@ -418,7 +418,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if res {
             call.resolve()
         } else {
-            print("\(self.implementation.TAG) Delete failed, id \(id) doesn't exist or it cannot be deleted (perhaps it is the 'next' bundle)")
+            print("\(CapacitorUpdater.TAG) Delete failed, id \(id) doesn't exist or it cannot be deleted (perhaps it is the 'next' bundle)")
             call.reject("Delete failed, id \(id) does not exist or it cannot be deleted (perhaps it is the 'next' bundle)")
         }
     }
@@ -753,7 +753,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 // End the task if time expires.
                 self.endBackGroundTask()
             }
-            print("\(self.implementation.TAG) Check for update via \(self.updateUrl)")
+            print("\(CapacitorUpdater.TAG) Check for update via \(self.updateUrl)")
             let res = self.implementation.getLatest(url: url, channel: nil)
             let current = self.implementation.getCurrentBundle()
 

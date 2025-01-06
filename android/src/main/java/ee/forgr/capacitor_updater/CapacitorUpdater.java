@@ -367,7 +367,8 @@ public class CapacitorUpdater {
       version,
       sessionKey,
       checksum,
-      manifest != null
+      manifest != null,
+      this.publicKey
     );
 
     if (manifest != null) {

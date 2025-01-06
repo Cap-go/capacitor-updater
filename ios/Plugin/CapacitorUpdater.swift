@@ -242,7 +242,7 @@ import Compression
         if let channel = channel {
             parameters.defaultChannel = channel
         }
-        print("\(self.TAG) Auto-update parameters: \(parameters)")
+        print("\(CapacitorUpdater.TAG) Auto-update parameters: \(parameters)")
         let request = AF.request(url, method: .post, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
 
         request.validate().responseDecodable(of: AppVersionDec.self) { response in
@@ -366,26 +366,29 @@ import Compression
                     switch response.result {
                     case .success(let data):
                         do {
-                            // Decompress the Brotli data
-                            guard let decompressedData = self.decompressBrotli(data: data) else {
-                                throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data"])
-                            }
-
+                            var finalData = data;
                             // Add decryption step if public key is set and sessionKey is provided
-                            var finalData = decompressedData
                             if !self.publicKey.isEmpty && !sessionKey.isEmpty {
                                 let tempFile = self.cacheFolder.appendingPathComponent("temp_\(UUID().uuidString)")
-                                try decompressedData.write(to: tempFile)
+                                try data.write(to: tempFile)
                                 do {
                                     try CryptoCipherV2.decryptFile(filePath: tempFile, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
                                 } catch {
                                     self.sendStats(action: "decrypt_fail", versionName: version)
                                     throw error
                                 }
-                                // TODO: try and do             self.sendStats(action: "decrypt_fail", versionName: version) if fail
+                                // TODO: try and do self.sendStats(action: "decrypt_fail", versionName: version) if fail
                                 finalData = try Data(contentsOf: tempFile)
                                 try FileManager.default.removeItem(at: tempFile)
                             }
+                            
+                            // Decompress the Brotli data
+                            guard let decompressedData = self.decompressBrotli(data: finalData) else {
+                                throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data"])
+                            }
+
+                            finalData = decompressedData
+
 
                             // Save decrypted data to cache and destination
                             try finalData.write(to: cacheFilePath)
@@ -736,7 +739,7 @@ import Compression
            !next.isDeleted() && 
            !next.isErrorStatus() &&
            next.getId() == id {
-            print("\(self.TAG) Cannot delete the next bundle \(id)")
+            print("\(CapacitorUpdater.TAG) Cannot delete the next bundle \(id)")
             return false
         }
         
