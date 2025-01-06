@@ -2,6 +2,80 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [6.9.0](https://github.com/Cap-go/capacitor-updater/compare/6.8.0...6.9.0) (2025-01-03)
+
+
+### Features
+
+* getLatest({channel: string}) for Android ([c742e0a](https://github.com/Cap-go/capacitor-updater/commit/c742e0a4e380ecf8e17887073e23fdf6d641632e))
+* getLatest({channel: string}) for iOS ([68666a4](https://github.com/Cap-go/capacitor-updater/commit/68666a458026e645eaf782d4bd6f4918b562f54d))
+
+## [6.8.0](https://github.com/Cap-go/capacitor-updater/compare/6.7.8...6.8.0) (2025-01-03)
+
+
+### Features
+
+* preserve URL path after reload() ([02304e0](https://github.com/Cap-go/capacitor-updater/commit/02304e03de786a588257807f1a818001fbbe8e34))
+
+### [6.7.8](https://github.com/Cap-go/capacitor-updater/compare/6.7.7...6.7.8) (2025-01-03)
+
+
+### Bug Fixes
+
+* fix delete the 'next' bundle will cause a crash ([69f3eb2](https://github.com/Cap-go/capacitor-updater/commit/69f3eb20619974c0b58b1e5b2a4b928749a5f6b3)), closes [#499](https://github.com/Cap-go/capacitor-updater/issues/499)
+* prevent deleting the 'next' bundle and improve error message on iOS ([9132d97](https://github.com/Cap-go/capacitor-updater/commit/9132d97d8cb52dc757cae1e38059c974cefb7e90)), closes [#499](https://github.com/Cap-go/capacitor-updater/issues/499)
+
+### [6.7.7](https://github.com/Cap-go/capacitor-updater/compare/6.7.7-alpha.3...6.7.7) (2024-12-30)
+
+
+### Bug Fixes
+
+* deploy ([e3215ed](https://github.com/Cap-go/capacitor-updater/commit/e3215ed2c0a62600cee5fb0530d6a747e9d62c1d))
+
+### [6.7.7-alpha.3](https://github.com/Cap-go/capacitor-updater/compare/6.7.7-alpha.2...6.7.7-alpha.3) (2024-12-26)
+
+
+### Bug Fixes
+
+* fmt ([5652497](https://github.com/Cap-go/capacitor-updater/commit/5652497408c06d16e94e440beccd86093a5b0fa9))
+* proper await ([8ac7cfb](https://github.com/Cap-go/capacitor-updater/commit/8ac7cfba9c72d1c7111af14f4a31b5c3ad0ec96a))
+* remove comment ([5d69c7a](https://github.com/Cap-go/capacitor-updater/commit/5d69c7a9b27d5eddb5ed832460e6973c80b4f434))
+
+### [6.7.7-alpha.2](https://github.com/Cap-go/capacitor-updater/compare/6.7.7-alpha.1...6.7.7-alpha.2) (2024-12-25)
+
+
+### Bug Fixes
+
+* lock max 3 min ([70c8622](https://github.com/Cap-go/capacitor-updater/commit/70c8622169729e4c9bfc8e8c4aa46c8cc3b5fbe5))
+
+### [6.7.7-alpha.1](https://github.com/Cap-go/capacitor-updater/compare/6.7.7-alpha.0...6.7.7-alpha.1) (2024-12-25)
+
+
+### Bug Fixes
+
+* lint issue ([b6909c5](https://github.com/Cap-go/capacitor-updater/commit/b6909c5cb7df6ecb48b8970d09c59705ac5df5fd))
+
+### [6.7.7-alpha.0](https://github.com/Cap-go/capacitor-updater/compare/6.7.6...6.7.7-alpha.0) (2024-12-25)
+
+
+### Bug Fixes
+
+* perm issue foreground ([f522f92](https://github.com/Cap-go/capacitor-updater/commit/f522f9276ff3b4813e4bf2a64c47590b5bbffb78))
+
+### [6.7.6](https://github.com/Cap-go/capacitor-updater/compare/6.7.5...6.7.6) (2024-12-19)
+
+
+### Bug Fixes
+
+* prevent a crash in download service ([5502741](https://github.com/Cap-go/capacitor-updater/commit/5502741205657291be7b2579d5b496f22e3de121))
+* prevent downloadFileBackground from starting in the background ([8eabffb](https://github.com/Cap-go/capacitor-updater/commit/8eabffb3352fc88229873b1e0a07a865cfe0ae16))
+
+### [6.7.5](https://github.com/Cap-go/capacitor-updater/compare/6.7.4...6.7.5) (2024-12-16)
+
+### [6.7.4](https://github.com/Cap-go/capacitor-updater/compare/6.7.3...6.7.4) (2024-12-09)
+
+### [6.7.3](https://github.com/Cap-go/capacitor-updater/compare/6.7.2...6.7.3) (2024-12-09)
+
 ### [6.7.2](https://github.com/Cap-go/capacitor-updater/compare/6.7.1...6.7.2) (2024-12-08)
 
 

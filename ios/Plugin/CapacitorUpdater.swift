@@ -235,11 +235,14 @@ import Compression
         )
     }
 
-    public func getLatest(url: URL) -> AppVersion {
+    public func getLatest(url: URL, channel: String?) -> AppVersion {
         let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
         let latest: AppVersion = AppVersion()
-        let parameters: InfoObject = self.createInfoObject()
-        print("\(CapacitorUpdater.TAG) Auto-update parameters: \(parameters)")
+        var parameters: InfoObject = self.createInfoObject()
+        if let channel = channel {
+            parameters.defaultChannel = channel
+        }
+        print("\(self.TAG) Auto-update parameters: \(parameters)")
         let request = AF.request(url, method: .post, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
 
         request.validate().responseDecodable(of: AppVersionDec.self) { response in
@@ -727,6 +730,16 @@ import Compression
             print("\(CapacitorUpdater.TAG) Cannot delete \(id)")
             return false
         }
+        
+        // Check if this is the next bundle and prevent deletion if it is
+        if let next = self.getNextBundle(),
+           !next.isDeleted() && 
+           !next.isErrorStatus() &&
+           next.getId() == id {
+            print("\(self.TAG) Cannot delete the next bundle \(id)")
+            return false
+        }
+        
         let destPersist: URL = libraryDir.appendingPathComponent(bundleDirectory).appendingPathComponent(id)
         do {
             try FileManager.default.removeItem(atPath: destPersist.path)

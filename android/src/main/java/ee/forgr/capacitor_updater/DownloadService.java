@@ -5,15 +5,12 @@
  */
 package ee.forgr.capacitor_updater;
 
-import android.app.IntentService;
-import android.app.Notification;
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
-import android.content.Intent;
-import android.os.Build;
-import android.os.Handler;
-import android.os.Looper;
+import android.content.Context;
 import android.util.Log;
+import androidx.annotation.NonNull;
+import androidx.work.Data;
+import androidx.work.Worker;
+import androidx.work.WorkerParameters;
 import java.io.*;
 import java.io.FileInputStream;
 import java.net.HttpURLConnection;
@@ -23,7 +20,7 @@ import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
+import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -39,7 +36,7 @@ import org.brotli.dec.BrotliInputStream;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-public class DownloadService extends IntentService {
+public class DownloadService extends Worker {
 
   public static final String TAG = "Capacitor-updater";
   public static final String URL = "URL";
@@ -51,63 +48,99 @@ public class DownloadService extends IntentService {
   public static final String VERSION = "version";
   public static final String SESSIONKEY = "sessionkey";
   public static final String CHECKSUM = "checksum";
-  public static final String NOTIFICATION = "service receiver";
-  public static final String PERCENTDOWNLOAD = "percent receiver";
   public static final String IS_MANIFEST = "is_manifest";
   public static final String MANIFEST = "manifest";
-  public static final String PUBLIC_KEY = "publickey";
+  public static final String  = "publickey";
   private static final String UPDATE_FILE = "update.dat";
-  private static final int NOTIFICATION_ID = 1;
-  private static final long NOTIFICATION_DELAY_MS = 4000; // 4 seconds
 
   private final OkHttpClient client = new OkHttpClient.Builder()
     .protocols(Arrays.asList(Protocol.HTTP_2, Protocol.HTTP_1_1))
     .build();
-  private Handler handler = new Handler(Looper.getMainLooper());
-  private Runnable notificationRunnable;
-  private boolean isNotificationShown = false;
 
-  public DownloadService() {
-    super("Background DownloadService");
+  public DownloadService(
+    @NonNull Context context,
+    @NonNull WorkerParameters params
+  ) {
+    super(context, params);
   }
 
+  private void setProgress(int percent) {
+    Data progress = new Data.Builder().putInt(PERCENT, percent).build();
+    setProgressAsync(progress);
+  }
+
+  private Result createFailureResult(String error) {
+    Data output = new Data.Builder().putString(ERROR, error).build();
+    return Result.failure(output);
+  }
+
+  private Result createSuccessResult(
+    String dest,
+    String version,
+    String sessionKey,
+    String checksum,
+    boolean isManifest
+  ) {
+    Data output = new Data.Builder()
+      .putString(FILEDEST, dest)
+      .putString(VERSION, version)
+      .putString(SESSIONKEY, sessionKey)
+      .putString(CHECKSUM, checksum)
+      .putBoolean(IS_MANIFEST, isManifest)
+      .build();
+    return Result.success(output);
+  }
+
+  @NonNull
   @Override
-  public void onCreate() {
-    super.onCreate();
-    notificationRunnable = () -> startForeground();
-    handler.postDelayed(notificationRunnable, NOTIFICATION_DELAY_MS);
-  }
+  public Result doWork() {
+    try {
+      String url = intent.getStringExtra(URL);
+      String id = intent.getStringExtra(ID);
+      String documentsDir = intent.getStringExtra(DOCDIR);
+      String dest = intent.getStringExtra(FILEDEST);
+      String version = intent.getStringExtra(VERSION);
+      String sessionKey = intent.getStringExtra(SESSIONKEY);
+      String checksum = intent.getStringExtra(CHECKSUM);
+      String publicKey = intent.getStringExtra(PUBLIC_KEY);
+      boolean isManifest = intent.getBooleanExtra(IS_MANIFEST, false);
 
-  @Override
-  public void onDestroy() {
-    super.onDestroy();
-    handler.removeCallbacks(notificationRunnable);
-  }
 
-  private void startForeground() {
-    isNotificationShown = true;
-    String channelId = createNotificationChannel();
-    Notification.Builder builder = new Notification.Builder(this, channelId)
-      .setContentTitle("Downloading Update")
-      .setContentText("Download in progress")
-      .setSmallIcon(android.R.drawable.stat_sys_download)
-      .setOngoing(true);
+      Log.d(CapacitorUpdater.TAG + " DLSrv", "doWork isManifest: " + isManifest);
 
-    startForeground(NOTIFICATION_ID, builder.build());
-  }
-
-  private String createNotificationChannel() {
-    String channelId = "capacitor_updater_channel";
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-      NotificationChannel channel = new NotificationChannel(
-        channelId,
-        "Capacitor Updater Downloads",
-        NotificationManager.IMPORTANCE_LOW
-      );
-      NotificationManager manager = getSystemService(NotificationManager.class);
-      manager.createNotificationChannel(channel);
+      if (isManifest) {
+        JSONArray manifest = DataManager.getInstance().getAndClearManifest();
+        if (manifest != null) {
+          handleManifestDownload(
+            id,
+            documentsDir,
+            dest,
+            publicKey,
+            version,
+            sessionKey,
+            manifest.toString()
+          );
+          return createSuccessResult(dest, version, sessionKey, checksum, true);
+        } else {
+          Log.e(CapacitorUpdater.TAG + " DLSrv", "Manifest is null");
+          return createFailureResult("Manifest is null");
+        }
+      } else {
+        handleSingleFileDownload(
+          url,
+          id,
+          documentsDir,
+          dest,
+          version,
+          sessionKey,
+          checksum
+        );
+        return createSuccessResult(dest, version, sessionKey, checksum, false);
+      }
+    } catch (Exception e) {
+      Log.e(TAG, "Error in doWork", e);
+      return createFailureResult(e.getMessage());
     }
-    return channelId;
   }
 
   private int calcTotalPercent(long downloadedBytes, long contentLength) {
@@ -118,60 +151,6 @@ public class DownloadService extends IntentService {
     percent = Math.max(10, percent);
     percent = Math.min(70, percent);
     return percent;
-  }
-
-  @Override
-  protected void onHandleIntent(Intent intent) {
-    assert intent != null;
-    String url = intent.getStringExtra(URL);
-    String id = intent.getStringExtra(ID);
-    String documentsDir = intent.getStringExtra(DOCDIR);
-    String dest = intent.getStringExtra(FILEDEST);
-    String version = intent.getStringExtra(VERSION);
-    String sessionKey = intent.getStringExtra(SESSIONKEY);
-    String checksum = intent.getStringExtra(CHECKSUM);
-    String publicKey = intent.getStringExtra(PUBLIC_KEY);
-    boolean isManifest = intent.getBooleanExtra(IS_MANIFEST, false);
-
-    Log.d(
-      CapacitorUpdater.TAG + " DLSrv",
-      "onHandleIntent isManifest: " + isManifest
-    );
-    if (isManifest) {
-      JSONArray manifest = DataManager.getInstance().getAndClearManifest();
-      if (manifest != null) {
-        handleManifestDownload(
-          id,
-          documentsDir,
-          dest,
-          publicKey,
-          version,
-          sessionKey,
-          manifest.toString()
-        );
-      } else {
-        Log.e(CapacitorUpdater.TAG + " DLSrv", "Manifest is null");
-        publishResults(
-          "",
-          id,
-          version,
-          checksum,
-          sessionKey,
-          "Manifest is null",
-          false
-        );
-      }
-    } else {
-      handleSingleFileDownload(
-        url,
-        id,
-        documentsDir,
-        dest,
-        version,
-        sessionKey,
-        checksum
-      );
-    }
   }
 
   private void handleManifestDownload(
@@ -244,7 +223,7 @@ public class DownloadService extends IntentService {
 
         // Ensure parent directories of the target file exist
         if (
-          !targetFile.getParentFile().exists() &&
+          !Objects.requireNonNull(targetFile.getParentFile()).exists() &&
           !targetFile.getParentFile().mkdirs()
         ) {
           throw new IOException(
@@ -287,7 +266,7 @@ public class DownloadService extends IntentService {
 
             long completed = completedFiles.incrementAndGet();
             int percent = calcTotalPercent(completed, totalFiles);
-            notifyDownload(id, percent);
+            setProgress(percent);
           } catch (Exception e) {
             Log.e(TAG + " DLSrv", "Error processing file: " + fileName, e);
             hasError.set(true);
@@ -323,8 +302,6 @@ public class DownloadService extends IntentService {
       if (hasError.get()) {
         throw new IOException("One or more files failed to download");
       }
-
-      publishResults(dest, id, version, "", sessionKey, "", true);
     } catch (Exception e) {
       Log.e(
         CapacitorUpdater.TAG + " DLSrv",
@@ -333,7 +310,6 @@ public class DownloadService extends IntentService {
       );
       publishResults("", id, version, "", sessionKey, e.getMessage(), true);
     }
-    stopForegroundIfNeeded();
   }
 
   private void handleSingleFileDownload(
@@ -351,113 +327,110 @@ public class DownloadService extends IntentService {
     File tempFile = new File(documentsDir, "temp" + ".tmp"); // Temp file, where the downloaded data is stored
     try {
       URL u = new URL(url);
-      HttpURLConnection httpConn = (HttpURLConnection) u.openConnection();
+      HttpURLConnection httpConn = null;
+      try {
+        httpConn = (HttpURLConnection) u.openConnection();
 
-      // Reading progress file (if exist)
-      long downloadedBytes = 0;
+        // Reading progress file (if exist)
+        long downloadedBytes = 0;
 
-      if (infoFile.exists() && tempFile.exists()) {
-        try (
-          BufferedReader reader = new BufferedReader(new FileReader(infoFile))
-        ) {
-          String updateVersion = reader.readLine();
-          if (!updateVersion.equals(version)) {
-            clearDownloadData(documentsDir);
-            downloadedBytes = 0;
-          } else {
-            downloadedBytes = tempFile.length();
-          }
-        }
-      } else {
-        clearDownloadData(documentsDir);
-        downloadedBytes = 0;
-      }
-
-      if (downloadedBytes > 0) {
-        httpConn.setRequestProperty("Range", "bytes=" + downloadedBytes + "-");
-      }
-
-      int responseCode = httpConn.getResponseCode();
-
-      if (
-        responseCode == HttpURLConnection.HTTP_OK ||
-        responseCode == HttpURLConnection.HTTP_PARTIAL
-      ) {
-        String contentType = httpConn.getContentType();
-        long contentLength = httpConn.getContentLength() + downloadedBytes;
-
-        InputStream inputStream = httpConn.getInputStream();
-        FileOutputStream outputStream = new FileOutputStream(
-          tempFile,
-          downloadedBytes > 0
-        );
-        if (downloadedBytes == 0) {
+        if (infoFile.exists() && tempFile.exists()) {
           try (
-            BufferedWriter writer = new BufferedWriter(new FileWriter(infoFile))
+            BufferedReader reader = new BufferedReader(new FileReader(infoFile))
           ) {
-            writer.write(String.valueOf(version));
+            String updateVersion = reader.readLine();
+            if (!updateVersion.equals(version)) {
+              clearDownloadData(documentsDir);
+            } else {
+              downloadedBytes = tempFile.length();
+            }
           }
+        } else {
+          clearDownloadData(documentsDir);
         }
-        // Updating the info file
-        try (
-          BufferedWriter writer = new BufferedWriter(new FileWriter(infoFile))
+
+        if (downloadedBytes > 0) {
+          httpConn.setRequestProperty(
+            "Range",
+            "bytes=" + downloadedBytes + "-"
+          );
+        }
+
+        int responseCode = httpConn.getResponseCode();
+
+        if (
+          responseCode == HttpURLConnection.HTTP_OK ||
+          responseCode == HttpURLConnection.HTTP_PARTIAL
         ) {
-          writer.write(String.valueOf(version));
-        }
+          long contentLength = httpConn.getContentLength() + downloadedBytes;
 
-        int bytesRead = -1;
-        byte[] buffer = new byte[4096];
-        int lastNotifiedPercent = 0;
-        while ((bytesRead = inputStream.read(buffer)) != -1) {
-          outputStream.write(buffer, 0, bytesRead);
-          downloadedBytes += bytesRead;
-          // Saving progress (flushing every 100 Ko)
-          if (downloadedBytes % 102400 == 0) {
-            outputStream.flush();
+          try (
+            InputStream inputStream = httpConn.getInputStream();
+            FileOutputStream outputStream = new FileOutputStream(
+              tempFile,
+              downloadedBytes > 0
+            )
+          ) {
+            if (downloadedBytes == 0) {
+              try (
+                BufferedWriter writer = new BufferedWriter(
+                  new FileWriter(infoFile)
+                )
+              ) {
+                writer.write(String.valueOf(version));
+              }
+            }
+            // Updating the info file
+            try (
+              BufferedWriter writer = new BufferedWriter(
+                new FileWriter(infoFile)
+              )
+            ) {
+              writer.write(String.valueOf(version));
+            }
+
+            int bytesRead = -1;
+            byte[] buffer = new byte[4096];
+            int lastNotifiedPercent = 0;
+            while ((bytesRead = inputStream.read(buffer)) != -1) {
+              outputStream.write(buffer, 0, bytesRead);
+              downloadedBytes += bytesRead;
+              // Saving progress (flushing every 100 Ko)
+              if (downloadedBytes % 102400 == 0) {
+                outputStream.flush();
+              }
+              // Computing percentage
+              int percent = calcTotalPercent(downloadedBytes, contentLength);
+              while (lastNotifiedPercent + 10 <= percent) {
+                lastNotifiedPercent += 10;
+                // Artificial delay using CPU-bound calculation to take ~5 seconds
+                double result = 0;
+                setProgress(lastNotifiedPercent);
+              }
+            }
+
+            outputStream.close();
+            inputStream.close();
+
+            // Rename the temp file with the final name (dest)
+            tempFile.renameTo(new File(documentsDir, dest));
+            infoFile.delete();
           }
-          // Computing percentage
-          int percent = calcTotalPercent(downloadedBytes, contentLength);
-          while (lastNotifiedPercent + 10 <= percent) {
-            lastNotifiedPercent += 10;
-            notifyDownload(id, lastNotifiedPercent);
-          }
+        } else {
+          infoFile.delete();
         }
-
-        outputStream.close();
-        inputStream.close();
-
-        // Rename the temp file with the final name (dest)
-        tempFile.renameTo(new File(documentsDir, dest));
-        infoFile.delete();
-        publishResults(dest, id, version, checksum, sessionKey, "", false);
-      } else {
-        infoFile.delete();
+      } finally {
+        if (httpConn != null) {
+          httpConn.disconnect();
+        }
       }
-      httpConn.disconnect();
     } catch (OutOfMemoryError e) {
       e.printStackTrace();
-      publishResults(
-        "",
-        id,
-        version,
-        checksum,
-        sessionKey,
-        "low_mem_fail",
-        false
-      );
+      throw new RuntimeException("low_mem_fail");
     } catch (Exception e) {
       e.printStackTrace();
-      publishResults(
-        "",
-        id,
-        version,
-        checksum,
-        sessionKey,
-        e.getLocalizedMessage(),
-        false
-      );
+      throw new RuntimeException(e.getLocalizedMessage());
     }
-    stopForegroundIfNeeded();
   }
 
   private void clearDownloadData(String docDir) {
@@ -471,37 +444,6 @@ public class DownloadService extends IntentService {
     } catch (IOException e) {
       e.printStackTrace();
     }
-  }
-
-  private void notifyDownload(String id, int percent) {
-    Intent intent = new Intent(PERCENTDOWNLOAD);
-    intent.setPackage(getPackageName());
-    intent.putExtra(ID, id);
-    intent.putExtra(PERCENT, percent);
-    sendBroadcast(intent);
-  }
-
-  private void publishResults(
-    String dest,
-    String id,
-    String version,
-    String checksum,
-    String sessionKey,
-    String error,
-    boolean isManifest
-  ) {
-    Intent intent = new Intent(NOTIFICATION);
-    intent.setPackage(getPackageName());
-    if (dest != null && !dest.isEmpty()) {
-      intent.putExtra(FILEDEST, dest);
-    }
-    intent.putExtra(ERROR, error);
-    intent.putExtra(ID, id);
-    intent.putExtra(VERSION, version);
-    intent.putExtra(SESSIONKEY, sessionKey);
-    intent.putExtra(CHECKSUM, checksum);
-    intent.putExtra(IS_MANIFEST, isManifest);
-    sendBroadcast(intent);
   }
 
   // Helper methods
@@ -625,16 +567,5 @@ public class DownloadService extends IntentService {
       sb.append(Integer.toString((aByte & 0xff) + 0x100, 16).substring(1));
     }
     return sb.toString();
-  }
-
-  private void stopForegroundIfNeeded() {
-    handler.removeCallbacks(notificationRunnable);
-    if (isNotificationShown) {
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-        stopForeground(STOP_FOREGROUND_REMOVE);
-      } else {
-        stopForeground(true);
-      }
-    }
   }
 }
