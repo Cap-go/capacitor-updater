@@ -147,7 +147,7 @@ public struct RSAPublicKey {
 
         return Data(decryptedData)
     }
-    
+
     // code is copied from here: https://github.com/btnguyen2k/swiftutils/blob/88494f4c635b6c6d42ef0fb30a7d666acd38c4fa/SwiftUtils/RSAUtils.swift#L429
     private static func removePadding(_ data: [UInt8]) -> [UInt8] {
         var idxFirstZero = -1

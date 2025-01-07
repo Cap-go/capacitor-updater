@@ -212,7 +212,7 @@ fileprivate extension SecKey {
 }
 
 public struct CryptoCipher {
-    static public func calcChecksum(filePath: URL) -> String {
+    public static func calcChecksum(filePath: URL) -> String {
         let bufferSize = 1024 * 1024 * 5 // 5 MB
         var checksum = uLong(0)
 
@@ -240,7 +240,7 @@ public struct CryptoCipher {
             return ""
         }
     }
-    static public func decryptFile(filePath: URL, privateKey: String, sessionKey: String, version: String) throws {
+    public static func decryptFile(filePath: URL, privateKey: String, sessionKey: String, version: String) throws {
         if privateKey.isEmpty {
             print("\(CapacitorUpdater.TAG) Cannot found privateKey")
             return
