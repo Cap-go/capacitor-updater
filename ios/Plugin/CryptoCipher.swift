@@ -6,6 +6,7 @@
 
 import Foundation
 import CommonCrypto
+import zlib
 
 ///
 /// Constants
@@ -207,5 +208,81 @@ fileprivate extension SecKey {
             kSecAttrKeySizeInBits: CryptoCipherConstants.rsaKeySizeInBits
         ]
         return SecKeyCreateWithData(data as CFData, keyDict as CFDictionary, nil)
+    }
+}
+
+public struct CryptoCipher {
+    static public func calcChecksum(filePath: URL) -> String {
+        let bufferSize = 1024 * 1024 * 5 // 5 MB
+        var checksum = uLong(0)
+
+        do {
+            let fileHandle = try FileHandle(forReadingFrom: filePath)
+            defer {
+                fileHandle.closeFile()
+            }
+
+            while autoreleasepool(invoking: {
+                let fileData = fileHandle.readData(ofLength: bufferSize)
+                if fileData.count > 0 {
+                    checksum = fileData.withUnsafeBytes {
+                        crc32(checksum, $0.bindMemory(to: Bytef.self).baseAddress, uInt(fileData.count))
+                    }
+                    return true // Continue
+                } else {
+                    return false // End of file
+                }
+            }) {}
+
+            return String(format: "%08X", checksum).lowercased()
+        } catch {
+            print("\(CapacitorUpdater.TAG) Cannot get checksum: \(filePath.path)", error)
+            return ""
+        }
+    }
+    static public func decryptFile(filePath: URL, privateKey: String, sessionKey: String, version: String) throws {
+        if privateKey.isEmpty {
+            print("\(CapacitorUpdater.TAG) Cannot found privateKey")
+            return
+        } else if sessionKey.isEmpty  || sessionKey.components(separatedBy: ":").count != 2 {
+            print("\(CapacitorUpdater.TAG) Cannot found sessionKey")
+            return
+        }
+        do {
+            guard let rsaPrivateKey: RSAPrivateKey = .load(rsaPrivateKey: privateKey) else {
+                print("cannot decode privateKey", privateKey)
+                throw CustomError.cannotDecode
+            }
+
+            let sessionKeyArray: [String] = sessionKey.components(separatedBy: ":")
+            guard let ivData: Data = Data(base64Encoded: sessionKeyArray[0]) else {
+                print("cannot decode sessionKey", sessionKey)
+                throw CustomError.cannotDecode
+            }
+
+            guard let sessionKeyDataEncrypted = Data(base64Encoded: sessionKeyArray[1]) else {
+                throw NSError(domain: "Invalid session key data", code: 1, userInfo: nil)
+            }
+
+            guard let sessionKeyDataDecrypted = rsaPrivateKey.decrypt(data: sessionKeyDataEncrypted) else {
+                throw NSError(domain: "Failed to decrypt session key data", code: 2, userInfo: nil)
+            }
+
+            let aesPrivateKey = AES128Key(iv: ivData, aes128Key: sessionKeyDataDecrypted)
+
+            guard let encryptedData = try? Data(contentsOf: filePath) else {
+                throw NSError(domain: "Failed to read encrypted data", code: 3, userInfo: nil)
+            }
+
+            guard let decryptedData = aesPrivateKey.decrypt(data: encryptedData) else {
+                throw NSError(domain: "Failed to decrypt data", code: 4, userInfo: nil)
+            }
+
+            try decryptedData.write(to: filePath)
+
+        } catch {
+            print("\(CapacitorUpdater.TAG) Cannot decode: \(filePath.path)", error)
+            throw CustomError.cannotDecode
+        }
     }
 }
