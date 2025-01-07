@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [6.12.0](https://github.com/Cap-go/capacitor-updater/compare/6.11.2...6.12.0) (2025-01-07)
+
+
+### Features
+
+* add encryption for partial update ([e58040d](https://github.com/Cap-go/capacitor-updater/commit/e58040d40241b94582c8c329909c2fcf14242722))
+* encrypt partial updates (v2) ([bb9a298](https://github.com/Cap-go/capacitor-updater/commit/bb9a29828e27490e566e060a8bb90969d72f35f9))
+* fix partial encryption on iOS ([53ffd87](https://github.com/Cap-go/capacitor-updater/commit/53ffd87b95e3f8b0d75d44f45214a4bdd8c2650e))
+
 ### [6.11.2](https://github.com/Cap-go/capacitor-updater/compare/6.11.1...6.11.2) (2025-01-06)
 
 
