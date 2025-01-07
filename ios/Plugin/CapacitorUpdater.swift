@@ -34,7 +34,7 @@ typealias ZipArchiveHelper = SSZipArchive
     // Add this line to declare cacheFolder
     private let cacheFolder: URL = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!.appendingPathComponent("capgo_downloads")
 
-    static public let TAG: String = "✨  Capacitor-updater:"
+    public static let TAG: String = "✨  Capacitor-updater:"
     public let CAP_SERVER_PATH: String = "serverBasePath"
     public var versionBuild: String = ""
     public var customId: String = ""
