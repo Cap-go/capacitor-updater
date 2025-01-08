@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.12.2](https://github.com/Cap-go/capacitor-updater/compare/6.12.1...6.12.2) (2025-01-08)
+
+
+### Bug Fixes
+
+* podlock use explicit version ([80b1fed](https://github.com/Cap-go/capacitor-updater/commit/80b1fed57d455023c34c1bdf14feaef61aef324b))
+
 ### [6.12.1](https://github.com/Cap-go/capacitor-updater/compare/6.12.0...6.12.1) (2025-01-08)
 
 
