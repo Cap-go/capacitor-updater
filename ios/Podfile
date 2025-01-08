@@ -5,9 +5,9 @@ def capacitor_pods
   use_frameworks!
   pod 'Capacitor', :path => '../node_modules/@capacitor/ios'
   pod 'CapacitorCordova', :path => '../node_modules/@capacitor/ios'
-  pod 'SSZipArchive', '= 2.4.3'
+  pod 'SSZipArchive', '2.4.3'
   pod 'Alamofire', '5.10.2'
-  pod 'Version', '2.1.0'
+  pod 'Version', '0.8.0'
 end
 
 target 'Plugin' do
