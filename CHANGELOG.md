@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.12.1](https://github.com/Cap-go/capacitor-updater/compare/6.12.0...6.12.1) (2025-01-08)
+
+
+### Bug Fixes
+
+* exemple deps ([46b77c0](https://github.com/Cap-go/capacitor-updater/commit/46b77c0c2767b95dfc85166ecc3b23a830bf3054))
+* force 2.4.3 ZipArchive in SPM ([7ac7cc5](https://github.com/Cap-go/capacitor-updater/commit/7ac7cc5a2068e4f485917707d43a2cf99b406baa))
+* lint ([2fe34a1](https://github.com/Cap-go/capacitor-updater/commit/2fe34a112284fecee18a0957fd06636978e9ca2a))
+* lockfile ([a52aa36](https://github.com/Cap-go/capacitor-updater/commit/a52aa3644a1992fc39bc088c8172c6d94b83e88f))
+* log version of SSZipArchive to support ios 13 ([ccbc027](https://github.com/Cap-go/capacitor-updater/commit/ccbc027805a282a9db6f52b1c0548c1546eb2e08))
+* remove exemple folder ([14ee91f](https://github.com/Cap-go/capacitor-updater/commit/14ee91f5399562703b749df44cf4611d795054f1))
+
 ## [6.12.0](https://github.com/Cap-go/capacitor-updater/compare/6.11.2...6.12.0) (2025-01-07)
 
 
