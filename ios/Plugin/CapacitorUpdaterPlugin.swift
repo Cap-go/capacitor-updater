@@ -189,7 +189,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private func cleanupObsoleteVersions() {
         var LatestVersionNative: Version = "0.0.0"
         do {
-            LatestVersionNative = try Version(UserDefaults.standard.string(forKey: "LatestVersionNative") ?? "0.0.0")!
+            LatestVersionNative = try Version(UserDefaults.standard.string(forKey: "LatestVersionNative") ?? "0.0.0")
         } catch {
             print("\(CapacitorUpdater.TAG) Cannot get version native \(currentVersionNative)")
         }
