@@ -187,7 +187,7 @@ import UIKit
 
         let semaphore = DispatchSemaphore(value: 0)
         var unzipError: NSError?
-        
+
         let success = SSZipArchive.unzipFile(atPath: sourceZip.path,
                                              toDestination: destUnZip.path,
                                              preserveAttributes: true,
