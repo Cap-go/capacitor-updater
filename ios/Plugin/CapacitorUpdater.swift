@@ -797,6 +797,15 @@ extension CustomError: LocalizedError {
                     switch response.result {
                     case .success(let data):
                         do {
+                            let statusCode = response.response?.statusCode ?? 200
+                            if statusCode < 200 || statusCode >= 300 {
+                                if let stringData = String(data: data, encoding: .utf8) {
+                                    throw NSError(domain: "StatusCodeError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid. Data: \(stringData)"])
+                                } else {
+                                    throw NSError(domain: "StatusCodeError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid"])
+                                }
+                            }
+
                             // Decompress the Brotli data
                             guard let decompressedData = self.decompressBrotli(data: data) else {
                                 throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data"])
@@ -814,8 +823,7 @@ extension CustomError: LocalizedError {
                             print("\(self.TAG) downloadManifest \(id) \(fileName) error: \(error)")
                         }
                     case .failure(let error):
-                        downloadError = error
-                        print("\(self.TAG) downloadManifest \(id) \(fileName) download error: \(error)")
+                        print("\(self.TAG) downloadManifest \(id) \(fileName) download error: \(error). Debug response: \(response.debugDescription).")
                     }
                 }
             }
@@ -890,6 +898,14 @@ extension CustomError: LocalizedError {
                 break
             } else if status == COMPRESSION_STATUS_ERROR {
                 print("\(self.TAG) Error during Brotli decompression")
+                // Try to decode as text if mostly ASCII
+                if let text = String(data: data, encoding: .utf8) {
+                    let asciiCount = text.unicodeScalars.filter { $0.isASCII }.count
+                    let totalCount = text.unicodeScalars.count
+                    if totalCount > 0 && Double(asciiCount) / Double(totalCount) >= 0.8 {
+                        print("\(self.TAG) Compressed data as text: \(text)")
+                    }
+                }
                 return nil
             }
 
@@ -1140,16 +1156,16 @@ extension CustomError: LocalizedError {
             print("\(self.TAG) Cannot delete \(id)")
             return false
         }
-        
+
         // Check if this is the next bundle and prevent deletion if it is
         if let next = self.getNextBundle(),
-           !next.isDeleted() && 
+           !next.isDeleted() &&
            !next.isErrorStatus() &&
            next.getId() == id {
             print("\(self.TAG) Cannot delete the next bundle \(id)")
             return false
         }
-        
+
         let destPersist: URL = libraryDir.appendingPathComponent(bundleDirectory).appendingPathComponent(id)
         do {
             try FileManager.default.removeItem(atPath: destPersist.path)
