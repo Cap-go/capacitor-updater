@@ -2,6 +2,41 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.12.3](https://github.com/Cap-go/capacitor-updater/compare/6.12.2...6.12.3) (2025-01-08)
+
+
+### Bug Fixes
+
+* ios version package repo ([6d05f04](https://github.com/Cap-go/capacitor-updater/commit/6d05f04b19dde749065a8aa1e494168aae5a9c9d))
+
+### [6.12.2](https://github.com/Cap-go/capacitor-updater/compare/6.12.1...6.12.2) (2025-01-08)
+
+
+### Bug Fixes
+
+* podlock use explicit version ([80b1fed](https://github.com/Cap-go/capacitor-updater/commit/80b1fed57d455023c34c1bdf14feaef61aef324b))
+
+### [6.12.1](https://github.com/Cap-go/capacitor-updater/compare/6.12.0...6.12.1) (2025-01-08)
+
+
+### Bug Fixes
+
+* exemple deps ([46b77c0](https://github.com/Cap-go/capacitor-updater/commit/46b77c0c2767b95dfc85166ecc3b23a830bf3054))
+* force 2.4.3 ZipArchive in SPM ([7ac7cc5](https://github.com/Cap-go/capacitor-updater/commit/7ac7cc5a2068e4f485917707d43a2cf99b406baa))
+* lint ([2fe34a1](https://github.com/Cap-go/capacitor-updater/commit/2fe34a112284fecee18a0957fd06636978e9ca2a))
+* lockfile ([a52aa36](https://github.com/Cap-go/capacitor-updater/commit/a52aa3644a1992fc39bc088c8172c6d94b83e88f))
+* log version of SSZipArchive to support ios 13 ([ccbc027](https://github.com/Cap-go/capacitor-updater/commit/ccbc027805a282a9db6f52b1c0548c1546eb2e08))
+* remove exemple folder ([14ee91f](https://github.com/Cap-go/capacitor-updater/commit/14ee91f5399562703b749df44cf4611d795054f1))
+
+## [6.12.0](https://github.com/Cap-go/capacitor-updater/compare/6.11.2...6.12.0) (2025-01-07)
+
+
+### Features
+
+* add encryption for partial update ([e58040d](https://github.com/Cap-go/capacitor-updater/commit/e58040d40241b94582c8c329909c2fcf14242722))
+* encrypt partial updates (v2) ([bb9a298](https://github.com/Cap-go/capacitor-updater/commit/bb9a29828e27490e566e060a8bb90969d72f35f9))
+* fix partial encryption on iOS ([53ffd87](https://github.com/Cap-go/capacitor-updater/commit/53ffd87b95e3f8b0d75d44f45214a4bdd8c2650e))
+
 ### [6.11.2](https://github.com/Cap-go/capacitor-updater/compare/6.11.1...6.11.2) (2025-01-06)
 
 
