@@ -385,6 +385,15 @@ typealias ZipArchiveHelper = SSZipArchive
                     switch response.result {
                     case .success(let data):
                         do {
+                            let statusCode = response.response?.statusCode ?? 200
+                            if statusCode < 200 || statusCode >= 300 {
+                                if let stringData = String(data: data, encoding: .utf8) {
+                                    throw NSError(domain: "StatusCodeError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid. Data: \(stringData)"])
+                                } else {
+                                    throw NSError(domain: "StatusCodeError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid"])
+                                }
+                            }
+
                             // Add decryption step if public key is set and sessionKey is provided
                             var finalData = data
                             if !self.publicKey.isEmpty && !sessionKey.isEmpty {
@@ -428,8 +437,7 @@ typealias ZipArchiveHelper = SSZipArchive
                             print("\(CapacitorUpdater.TAG) downloadManifest \(id) \(fileName) error: \(error)")
                         }
                     case .failure(let error):
-                        downloadError = error
-                        print("\(CapacitorUpdater.TAG) downloadManifest \(id) \(fileName) download error: \(error)")
+                        print("\(CapacitorUpdater.TAG) downloadManifest \(id) \(fileName) download error: \(error). Debug response: \(response.debugDescription).")
                     }
                 }
             }
@@ -504,6 +512,14 @@ typealias ZipArchiveHelper = SSZipArchive
                 break
             } else if status == COMPRESSION_STATUS_ERROR {
                 print("\(CapacitorUpdater.TAG) Error during Brotli decompression")
+                // Try to decode as text if mostly ASCII
+                if let text = String(data: data, encoding: .utf8) {
+                    let asciiCount = text.unicodeScalars.filter { $0.isASCII }.count
+                    let totalCount = text.unicodeScalars.count
+                    if totalCount > 0 && Double(asciiCount) / Double(totalCount) >= 0.8 {
+                        print("\(CapacitorUpdater.TAG) Compressed data as text: \(text)")
+                    }
+                }
                 return nil
             }
 
@@ -759,16 +775,16 @@ typealias ZipArchiveHelper = SSZipArchive
             print("\(CapacitorUpdater.TAG) Cannot delete \(id)")
             return false
         }
-        
+
         // Check if this is the next bundle and prevent deletion if it is
         if let next = self.getNextBundle(),
-           !next.isDeleted() && 
+           !next.isDeleted() &&
            !next.isErrorStatus() &&
            next.getId() == id {
             print("\(CapacitorUpdater.TAG) Cannot delete the next bundle \(id)")
             return false
         }
-        
+
         let destPersist: URL = libraryDir.appendingPathComponent(bundleDirectory).appendingPathComponent(id)
         do {
             try FileManager.default.removeItem(atPath: destPersist.path)
