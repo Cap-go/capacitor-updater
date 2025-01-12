@@ -194,25 +194,25 @@ typealias ZipArchiveHelper = SSZipArchive
         var unzipError: NSError?
 
         let success = ZipArchiveHelper.unzipFile(atPath: sourceZip.path,
-                                             toDestination: destUnZip.path,
-                                             preserveAttributes: true,
-                                             overwrite: true,
-                                             nestedZipLevel: 1,
-                                             password: nil,
-                                             error: &unzipError,
-                                             delegate: nil,
-                                             progressHandler: { [weak self] (entry, zipInfo, entryNumber, total) in
-                                                DispatchQueue.global(qos: .background).async {
-                                                    guard let self = self else { return }
-                                                    if !notify {
-                                                        return
+                                                 toDestination: destUnZip.path,
+                                                 preserveAttributes: true,
+                                                 overwrite: true,
+                                                 nestedZipLevel: 1,
+                                                 password: nil,
+                                                 error: &unzipError,
+                                                 delegate: nil,
+                                                 progressHandler: { [weak self] (entry, zipInfo, entryNumber, total) in
+                                                    DispatchQueue.global(qos: .background).async {
+                                                        guard let self = self else { return }
+                                                        if !notify {
+                                                            return
+                                                        }
+                                                        self.unzipProgressHandler(entry: entry, zipInfo: zipInfo, entryNumber: entryNumber, total: total, destUnZip: destUnZip, id: id, unzipError: &unzipError)
                                                     }
-                                                    self.unzipProgressHandler(entry: entry, zipInfo: zipInfo, entryNumber: entryNumber, total: total, destUnZip: destUnZip, id: id, unzipError: &unzipError)
-                                                }
-                                             },
-                                             completionHandler: { _, _, _  in
-                                                semaphore.signal()
-                                             })
+                                                 },
+                                                 completionHandler: { _, _, _  in
+                                                    semaphore.signal()
+                                                 })
 
         semaphore.wait()
 
@@ -344,8 +344,8 @@ typealias ZipArchiveHelper = SSZipArchive
                   let downloadUrl = entry.download_url else {
                 continue
             }
-            
-            if (!self.hasOldPrivateKeyPropertyInConfig && !self.publicKey.isEmpty && !sessionKey.isEmpty) {
+
+            if !self.hasOldPrivateKeyPropertyInConfig && !self.publicKey.isEmpty && !sessionKey.isEmpty {
                 do {
                     fileHash = try CryptoCipherV2.decryptChecksum(checksum: fileHash, publicKey: self.publicKey, version: version)
                 } catch {
@@ -400,29 +400,28 @@ typealias ZipArchiveHelper = SSZipArchive
                                 finalData = try Data(contentsOf: tempFile)
                                 try FileManager.default.removeItem(at: tempFile)
                             }
-                            
+
                             // Decompress the Brotli data
                             guard let decompressedData = self.decompressBrotli(data: finalData) else {
                                 throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data"])
                             }
                             finalData = decompressedData
-                            
+
                             try finalData.write(to: destFilePath)
-                            if (!self.hasOldPrivateKeyPropertyInConfig && !self.publicKey.isEmpty && !sessionKey.isEmpty) {
+                            if !self.hasOldPrivateKeyPropertyInConfig && !self.publicKey.isEmpty && !sessionKey.isEmpty {
                                 // assume that calcChecksum != null
                                 let calculatedChecksum = CryptoCipherV2.calcChecksum(filePath: destFilePath)
-                                if (calculatedChecksum != fileHash) {
+                                if calculatedChecksum != fileHash {
                                     throw NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash))"])
                                 }
                             }
-                            
+
                             // Save decrypted data to cache and destination
                             try finalData.write(to: cacheFilePath)
-                            
 
                             completedFiles += 1
                             self.notifyDownload(id: id, percent: self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70))
-                            print("\(CapacitorUpdater.TAG) downloadManifest \(id) \(fileName) downloaded, decompressed, decrypted, and cached")
+                            print("\(CapacitorUpdater.TAG) downloadManifest \(id) \(fileName) downloaded, decompressed\(!self.publicKey.isEmpty && !sessionKey.isEmpty ? ", decrypted" : ""), and cached")
                         } catch {
                             downloadError = error
                             print("\(CapacitorUpdater.TAG) downloadManifest \(id) \(fileName) error: \(error)")
@@ -759,16 +758,16 @@ typealias ZipArchiveHelper = SSZipArchive
             print("\(CapacitorUpdater.TAG) Cannot delete \(id)")
             return false
         }
-        
+
         // Check if this is the next bundle and prevent deletion if it is
         if let next = self.getNextBundle(),
-           !next.isDeleted() && 
-           !next.isErrorStatus() &&
-           next.getId() == id {
+           !next.isDeleted() &&
+            !next.isErrorStatus() &&
+            next.getId() == id {
             print("\(CapacitorUpdater.TAG) Cannot delete the next bundle \(id)")
             return false
         }
-        
+
         let destPersist: URL = libraryDir.appendingPathComponent(bundleDirectory).appendingPathComponent(id)
         do {
             try FileManager.default.removeItem(atPath: destPersist.path)
