@@ -12,12 +12,7 @@ import SSZipArchive
 #endif
 import Alamofire
 import Compression
-
-#if canImport(ZipArchive)
-typealias ZipArchiveHelper = ZipArchive
-#else
-typealias ZipArchiveHelper = SSZipArchive
-#endif
+import UIKit
 
 @objc public class CapacitorUpdater: NSObject {
 
@@ -193,7 +188,7 @@ typealias ZipArchiveHelper = SSZipArchive
         let semaphore = DispatchSemaphore(value: 0)
         var unzipError: NSError?
 
-        let success = ZipArchiveHelper.unzipFile(atPath: sourceZip.path,
+        let success = SSZipArchive.unzipFile(atPath: sourceZip.path,
                                              toDestination: destUnZip.path,
                                              preserveAttributes: true,
                                              overwrite: true,
