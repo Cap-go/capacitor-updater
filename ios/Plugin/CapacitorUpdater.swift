@@ -411,7 +411,7 @@ typealias ZipArchiveHelper = SSZipArchive
                             }
 
                             // Decompress the Brotli data
-                            guard let decompressedData = self.decompressBrotli(data: finalData) else {
+                            guard let decompressedData = self.decompressBrotli(data: finalData, fileName: fileName) else {
                                 throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data"])
                             }
                             finalData = decompressedData
@@ -459,7 +459,7 @@ typealias ZipArchiveHelper = SSZipArchive
         return updatedBundle
     }
 
-    private func decompressBrotli(data: Data) -> Data? {
+    private func decompressBrotli(data: Data, fileName: String) -> Data? {
         let outputBufferSize = 65536
         var outputBuffer = [UInt8](repeating: 0, count: outputBufferSize)
         var decompressedData = Data()
@@ -467,7 +467,7 @@ typealias ZipArchiveHelper = SSZipArchive
         let streamPointer = UnsafeMutablePointer<compression_stream>.allocate(capacity: 1)
         var status = compression_stream_init(streamPointer, COMPRESSION_STREAM_DECODE, COMPRESSION_BROTLI)
         guard status != COMPRESSION_STATUS_ERROR else {
-            print("\(CapacitorUpdater.TAG) Unable to initialize the decompression stream.")
+            print("\(CapacitorUpdater.TAG) Unable to initialize the decompression stream. \(fileName)")
             return nil
         }
 
@@ -489,7 +489,7 @@ typealias ZipArchiveHelper = SSZipArchive
                     if let baseAddress = rawBufferPointer.baseAddress {
                         streamPointer.pointee.src_ptr = baseAddress.assumingMemoryBound(to: UInt8.self)
                     } else {
-                        print("\(CapacitorUpdater.TAG) Error: Unable to get base address of input data")
+                        print("\(CapacitorUpdater.TAG) Error: Unable to get base address of input data. \(fileName)")
                         status = COMPRESSION_STATUS_ERROR
                         return
                     }
@@ -510,7 +510,7 @@ typealias ZipArchiveHelper = SSZipArchive
             if status == COMPRESSION_STATUS_END {
                 break
             } else if status == COMPRESSION_STATUS_ERROR {
-                print("\(CapacitorUpdater.TAG) Error during Brotli decompression")
+                print("\(CapacitorUpdater.TAG) Error during Brotli decompression. \(fileName)")
                 // Try to decode as text if mostly ASCII
                 if let text = String(data: data, encoding: .utf8) {
                     let asciiCount = text.unicodeScalars.filter { $0.isASCII }.count

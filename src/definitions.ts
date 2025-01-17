@@ -6,9 +6,9 @@
 
 /// <reference types="@capacitor/cli" />
 
-import type { PluginListenerHandle } from "@capacitor/core";
+import type { PluginListenerHandle } from '@capacitor/core';
 
-declare module "@capacitor/cli" {
+declare module '@capacitor/cli' {
   export interface PluginsConfig {
     /**
      * CapacitorUpdater can be configured with these options:
@@ -483,20 +483,14 @@ export interface CapacitorUpdaterPlugin {
    *
    * @since 2.0.11
    */
-  addListener(
-    eventName: "download",
-    listenerFunc: (state: DownloadEvent) => void,
-  ): Promise<PluginListenerHandle>;
+  addListener(eventName: 'download', listenerFunc: (state: DownloadEvent) => void): Promise<PluginListenerHandle>;
 
   /**
    * Listen for no need to update event, useful when you want force check every time the app is launched
    *
    * @since 4.0.0
    */
-  addListener(
-    eventName: "noNeedUpdate",
-    listenerFunc: (state: NoNeedEvent) => void,
-  ): Promise<PluginListenerHandle>;
+  addListener(eventName: 'noNeedUpdate', listenerFunc: (state: NoNeedEvent) => void): Promise<PluginListenerHandle>;
 
   /**
    * Listen for available update event, useful when you want to force check every time the app is launched
@@ -504,7 +498,7 @@ export interface CapacitorUpdaterPlugin {
    * @since 4.0.0
    */
   addListener(
-    eventName: "updateAvailable",
+    eventName: 'updateAvailable',
     listenerFunc: (state: UpdateAvailableEvent) => void,
   ): Promise<PluginListenerHandle>;
 
@@ -514,7 +508,7 @@ export interface CapacitorUpdaterPlugin {
    * @since 4.0.0
    */
   addListener(
-    eventName: "downloadComplete",
+    eventName: 'downloadComplete',
     listenerFunc: (state: DownloadCompleteEvent) => void,
   ): Promise<PluginListenerHandle>;
 
@@ -524,7 +518,7 @@ export interface CapacitorUpdaterPlugin {
    * @since 2.3.0
    */
   addListener(
-    eventName: "majorAvailable",
+    eventName: 'majorAvailable',
     listenerFunc: (state: MajorAvailableEvent) => void,
   ): Promise<PluginListenerHandle>;
 
@@ -534,7 +528,7 @@ export interface CapacitorUpdaterPlugin {
    * @since 2.3.0
    */
   addListener(
-    eventName: "updateFailed",
+    eventName: 'updateFailed',
     listenerFunc: (state: UpdateFailedEvent) => void,
   ): Promise<PluginListenerHandle>;
 
@@ -544,7 +538,7 @@ export interface CapacitorUpdaterPlugin {
    * @since 4.0.0
    */
   addListener(
-    eventName: "downloadFailed",
+    eventName: 'downloadFailed',
     listenerFunc: (state: DownloadFailedEvent) => void,
   ): Promise<PluginListenerHandle>;
 
@@ -553,20 +547,14 @@ export interface CapacitorUpdaterPlugin {
    *
    * @since 4.3.0
    */
-  addListener(
-    eventName: "appReloaded",
-    listenerFunc: () => void,
-  ): Promise<PluginListenerHandle>;
+  addListener(eventName: 'appReloaded', listenerFunc: () => void): Promise<PluginListenerHandle>;
 
   /**
    * Listen for app ready event in the App, let you know when app is ready to use
    *
    * @since 5.1.0
    */
-  addListener(
-    eventName: "appReady",
-    listenerFunc: (state: AppReadyEvent) => void,
-  ): Promise<PluginListenerHandle>;
+  addListener(eventName: 'appReady', listenerFunc: (state: AppReadyEvent) => void): Promise<PluginListenerHandle>;
 
   /**
    * Get if auto update is available (not disabled by serverUrl).
@@ -587,9 +575,9 @@ export interface CapacitorUpdaterPlugin {
   getNextBundle(): Promise<BundleInfo | null>;
 }
 
-export type BundleStatus = "success" | "error" | "pending" | "downloading";
+export type BundleStatus = 'success' | 'error' | 'pending' | 'downloading';
 
-export type DelayUntilNext = "background" | "kill" | "nativeVersion" | "date";
+export type DelayUntilNext = 'background' | 'kill' | 'nativeVersion' | 'date';
 
 export interface NoNeedEvent {
   /**

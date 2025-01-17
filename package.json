@@ -48,7 +48,7 @@
     "lint": "npm run eslint && npm run prettier -- --check && npm run swiftlint -- lint",
     "fmt": "npm run eslint -- --fix && npm run prettier -- --write && npm run swiftlint -- --autocorrect --format",
     "eslint": "eslint . --ext .ts",
-    "prettier": "prettier --config .prettierrc.js \"**/*.{css,html,ts,js,java}\"",
+    "prettier": "prettier \"**/*.{css,html,ts,js,java}\" --plugin=prettier-plugin-java",
     "swiftlint": "node-swiftlint",
     "docgen": "docgen --api CapacitorUpdaterPlugin --output-readme README.md --output-json dist/docs.json",
     "docgen:api": "docgen --api CapacitorUpdaterPlugin --output-readme api.md --output-json dist/docs.json && awk '{sub(/###/,\"##\")}1' api.md > temp.txt && mv temp.txt api.md",
@@ -67,12 +67,10 @@
     "@ionic/prettier-config": "^4.0.0",
     "@ionic/swiftlint-config": "^2.0.0",
     "@types/node": "^22.10.5",
-    "@typescript-eslint/eslint-plugin": "^7.18.0",
-    "@typescript-eslint/parser": "^7.18.0",
     "eslint": "^8.57.1",
     "eslint-plugin-import": "^2.31.0",
     "prettier": "^3.4.2",
-    "prettier-plugin-java": "^2.6.5",
+    "prettier-plugin-java": "^2.6.6",
     "rimraf": "^6.0.1",
     "rollup": "^4.30.1",
     "swiftlint": "^2.0.0",
@@ -82,6 +80,7 @@
     "@capacitor/core": "^6.0.0"
   },
   "prettier": "@ionic/prettier-config",
+  "swiftlint": "@ionic/swiftlint-config",
   "eslintConfig": {
     "extends": "@ionic/eslint-config/recommended"
   },
@@ -92,6 +91,5 @@
     "android": {
       "src": "android"
     }
-  },
-  "packageManager": "pnpm@9.11.0"
+  }
 }
