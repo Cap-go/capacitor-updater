@@ -4,25 +4,25 @@ import org.json.JSONArray;
 
 public class DataManager {
 
-  private static DataManager instance;
-  private JSONArray currentManifest;
+    private static DataManager instance;
+    private JSONArray currentManifest;
 
-  private DataManager() {}
+    private DataManager() {}
 
-  public static synchronized DataManager getInstance() {
-    if (instance == null) {
-      instance = new DataManager();
+    public static synchronized DataManager getInstance() {
+        if (instance == null) {
+            instance = new DataManager();
+        }
+        return instance;
     }
-    return instance;
-  }
 
-  public void setManifest(JSONArray manifest) {
-    this.currentManifest = manifest;
-  }
+    public void setManifest(JSONArray manifest) {
+        this.currentManifest = manifest;
+    }
 
-  public JSONArray getAndClearManifest() {
-    JSONArray manifest = this.currentManifest;
-    this.currentManifest = null;
-    return manifest;
-  }
+    public JSONArray getAndClearManifest() {
+        JSONArray manifest = this.currentManifest;
+        this.currentManifest = null;
+        return manifest;
+    }
 }
