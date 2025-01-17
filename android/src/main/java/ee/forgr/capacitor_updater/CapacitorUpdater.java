@@ -627,19 +627,31 @@ public class CapacitorUpdater {
     }
   }
 
-  public List<BundleInfo> list() {
-    final List<BundleInfo> res = new ArrayList<>();
-    final File destHot = new File(this.documentsDir, bundleDirectory);
-    Log.d(TAG, "list File : " + destHot.getPath());
-    if (destHot.exists()) {
-      for (final File i : Objects.requireNonNull(destHot.listFiles())) {
-        final String id = i.getName();
-        res.add(this.getBundleInfo(id));
+  public List<BundleInfo> list(boolean rawList) {
+    if (!rawList) {
+      final List<BundleInfo> res = new ArrayList<>();
+      final File destHot = new File(this.documentsDir, bundleDirectory);
+      Log.d(TAG, "list File : " + destHot.getPath());
+      if (destHot.exists()) {
+        for (final File i : Objects.requireNonNull(destHot.listFiles())) {
+          final String id = i.getName();
+          res.add(this.getBundleInfo(id));
+        }
+      } else {
+        Log.i(TAG, "No versions available to list" + destHot);
       }
+      return res;
     } else {
-      Log.i(TAG, "No versions available to list" + destHot);
+      final List<BundleInfo> res = new ArrayList<>();
+      for (String value : this.prefs.getAll().keySet()) {
+        if (!value.matches("^[0-9A-Za-z]{10}_info$")) {
+          continue;
+        }
+
+        res.add(this.getBundleInfo(value.split("_")[0]));
+      }
+      return res;
     }
-    return res;
   }
 
   public Boolean delete(final String id, final Boolean removeInfo)
@@ -669,14 +681,18 @@ public class CapacitorUpdater {
     final File bundle = new File(this.documentsDir, bundleDirectory + "/" + id);
     if (bundle.exists()) {
       this.deleteDirectory(bundle);
-      if (removeInfo) {
-        this.removeBundleInfo(id);
-      } else {
+      if (!removeInfo) {
         this.saveBundleInfo(id, deleted.setStatus(BundleStatus.DELETED));
+      } else {
+        this.removeBundleInfo(id);
       }
       return true;
     }
     Log.e(TAG, "bundle removed: " + deleted.getVersionName());
+    // perhaps we did not find the bundle in the files, but if the user requested a delete, we delete
+    if (removeInfo) {
+      this.removeBundleInfo(id);
+    }
     this.sendStats("delete", deleted.getVersionName());
     return false;
   }
@@ -1184,7 +1200,7 @@ public class CapacitorUpdater {
   }
 
   public BundleInfo getBundleInfoByName(final String versionName) {
-    final List<BundleInfo> installed = this.list();
+    final List<BundleInfo> installed = this.list(false);
     for (final BundleInfo i : installed) {
       if (i.getVersionName().equals(versionName)) {
         return i;

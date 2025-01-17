@@ -339,8 +339,8 @@ import UIKit
                   let downloadUrl = entry.download_url else {
                 continue
             }
-            
-            if (!self.hasOldPrivateKeyPropertyInConfig && !self.publicKey.isEmpty && !sessionKey.isEmpty) {
+
+            if !self.hasOldPrivateKeyPropertyInConfig && !self.publicKey.isEmpty && !sessionKey.isEmpty {
                 do {
                     fileHash = try CryptoCipherV2.decryptChecksum(checksum: fileHash, publicKey: self.publicKey, version: version)
                 } catch {
@@ -404,25 +404,24 @@ import UIKit
                                 finalData = try Data(contentsOf: tempFile)
                                 try FileManager.default.removeItem(at: tempFile)
                             }
-                            
+
                             // Decompress the Brotli data
                             guard let decompressedData = self.decompressBrotli(data: finalData) else {
                                 throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data"])
                             }
                             finalData = decompressedData
-                            
+
                             try finalData.write(to: destFilePath)
-                            if (!self.hasOldPrivateKeyPropertyInConfig && !self.publicKey.isEmpty && !sessionKey.isEmpty) {
+                            if !self.hasOldPrivateKeyPropertyInConfig && !self.publicKey.isEmpty && !sessionKey.isEmpty {
                                 // assume that calcChecksum != null
                                 let calculatedChecksum = CryptoCipherV2.calcChecksum(filePath: destFilePath)
-                                if (calculatedChecksum != fileHash) {
+                                if calculatedChecksum != fileHash {
                                     throw NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash))"])
                                 }
                             }
-                            
+
                             // Save decrypted data to cache and destination
                             try finalData.write(to: cacheFilePath)
-                            
 
                             completedFiles += 1
                             self.notifyDownload(id: id, percent: self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70))
@@ -746,22 +745,40 @@ import UIKit
         return 0
     }
 
-    public func list() -> [BundleInfo] {
-        let dest: URL = libraryDir.appendingPathComponent(bundleDirectory)
-        do {
-            let files: [String] = try FileManager.default.contentsOfDirectory(atPath: dest.path)
-            var res: [BundleInfo] = []
-            print("\(CapacitorUpdater.TAG) list File : \(dest.path)")
-            if dest.exist {
-                for id: String in files {
-                    res.append(self.getBundleInfo(id: id))
+    public func list(raw: Bool = false) -> [BundleInfo] {
+        if !raw {
+            // UserDefaults.standard.dictionaryRepresentation().values
+            let dest: URL = libraryDir.appendingPathComponent(bundleDirectory)
+            do {
+                let files: [String] = try FileManager.default.contentsOfDirectory(atPath: dest.path)
+                var res: [BundleInfo] = []
+                print("\(CapacitorUpdater.TAG) list File : \(dest.path)")
+                if dest.exist {
+                    for id: String in files {
+                        res.append(self.getBundleInfo(id: id))
+                    }
                 }
+                return res
+            } catch {
+                print("\(CapacitorUpdater.TAG) No version available \(dest.path)")
+                return []
             }
-            return res
-        } catch {
-            print("\(CapacitorUpdater.TAG) No version available \(dest.path)")
-            return []
+        } else {
+            guard let regex = try? NSRegularExpression(pattern: "^[0-9A-Za-z]{10}_info$") else {
+                print("\(CapacitorUpdater.TAG) Invald regex ?????")
+                return []
+            }
+            return UserDefaults.standard.dictionaryRepresentation().keys.filter {
+                let range = NSRange($0.startIndex..., in: $0)
+                let matches = regex.matches(in: $0, range: range)
+                return !matches.isEmpty
+            }.map {
+                $0.components(separatedBy: "_")[0]
+            }.map {
+                self.getBundleInfo(id: $0)
+            }
         }
+
     }
 
     public func delete(id: String, removeInfo: Bool) -> Bool {
@@ -785,6 +802,11 @@ import UIKit
             try FileManager.default.removeItem(atPath: destPersist.path)
         } catch {
             print("\(CapacitorUpdater.TAG) Folder \(destPersist.path), not removed.")
+            // even if, we don;t care. Android doesn't care
+            if removeInfo {
+                self.removeBundleInfo(id: id)
+            }
+            self.sendStats(action: "delete", versionName: deleted.getVersionName())
             return false
         }
         if removeInfo {
