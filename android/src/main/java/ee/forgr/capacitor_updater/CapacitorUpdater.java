@@ -465,21 +465,7 @@ public class CapacitorUpdater {
                     }
                 }
 
-                if (workInfo.getState() == WorkInfo.State.SUCCEEDED) {
-                    Data outputData = workInfo.getOutputData();
-                    boolean success = finishDownload(
-                        id,
-                        outputData.getString(DownloadService.FILEDEST),
-                        version,
-                        sessionKey,
-                        checksum,
-                        true,
-                        false
-                    );
-                    if (!success) {
-                        throw new IOException("Failed to finish download");
-                    }
-                } else {
+                if (workInfo.getState() !== WorkInfo.State.SUCCEEDED) {
                     Data outputData = workInfo.getOutputData();
                     String error = outputData.getString(DownloadService.ERROR);
                     throw new IOException(error != null ? error : "Download failed: " + workInfo.getState());
