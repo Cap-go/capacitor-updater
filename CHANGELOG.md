@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.14.1](https://github.com/Cap-go/capacitor-updater/compare/6.14.0...6.14.1) (2025-01-17)
+
+
+### Bug Fixes
+
+* better loggin message for partial + fix lint ([184794a](https://github.com/Cap-go/capacitor-updater/commit/184794a2609c779c5e1da0587b45e52f84c08cd9))
+* doc ([75ad219](https://github.com/Cap-go/capacitor-updater/commit/75ad2193714f99b22816ca86532fc1d99e889eeb))
+* lint ([6948c54](https://github.com/Cap-go/capacitor-updater/commit/6948c547d4eba73d12f8cbdd428eda71d48f1074))
+* message add decrypt only if it was done ([b5e7c4c](https://github.com/Cap-go/capacitor-updater/commit/b5e7c4cb8befc684dbece139e6862d6f1ab8f6e5))
+
 ## [6.14.0](https://github.com/Cap-go/capacitor-updater/compare/6.13.2...6.14.0) (2025-01-17)
 
 
