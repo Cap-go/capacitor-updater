@@ -324,9 +324,10 @@ export interface CapacitorUpdaterPlugin {
    * Get all locally downloaded bundles in your app
    *
    * @returns {Promise<BundleListResult>} A Promise containing the {@link BundleListResult.bundles}
+   * @param options The {@link ListOptions} for listing bundles
    * @throws {Error}
    */
-  list(): Promise<BundleListResult>;
+  list(options?: ListOptions): Promise<BundleListResult>;
 
   /**
    * Reset the app to the `builtin` bundle (the one sent to Apple App Store / Google Play Store ) or the last successfully loaded bundle.
@@ -778,7 +779,7 @@ export interface DownloadOptions {
   /**
    * The URL of the bundle zip file (e.g: dist.zip) to be downloaded. (This can be any URL. E.g: Amazon S3, a GitHub tag, any other place you've hosted your bundle.)
    */
-  url: string;
+  url?: string;
   /**
    * The version code/name of this bundle/version
    */
@@ -807,6 +808,15 @@ export interface BundleListResult {
 
 export interface ResetOptions {
   toLastSuccessful: boolean;
+}
+
+export interface ListOptions {
+  /**
+   * Whether to return the raw bundle list or the manifest. If true, the list will attempt to read the internal database instead of files on disk.
+   * @since 6.14.0
+   * @default false
+   */
+  raw?: boolean;
 }
 
 export interface CurrentBundleResult {

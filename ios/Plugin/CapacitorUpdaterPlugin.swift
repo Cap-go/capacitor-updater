@@ -424,7 +424,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func list(_ call: CAPPluginCall) {
-        let res = implementation.list()
+        let raw = call.getBool("raw", false)
+        let res = implementation.list(raw: raw)
         var resArr: [[String: String]] = []
         for v in res {
             resArr.append(v.toJSON())
