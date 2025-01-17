@@ -12,12 +12,7 @@ import SSZipArchive
 #endif
 import Alamofire
 import Compression
-
-#if canImport(ZipArchive)
-typealias ZipArchiveHelper = ZipArchive
-#else
-typealias ZipArchiveHelper = SSZipArchive
-#endif
+import UIKit
 
 @objc public class CapacitorUpdater: NSObject {
 
@@ -193,26 +188,26 @@ typealias ZipArchiveHelper = SSZipArchive
         let semaphore = DispatchSemaphore(value: 0)
         var unzipError: NSError?
 
-        let success = ZipArchiveHelper.unzipFile(atPath: sourceZip.path,
-                                                 toDestination: destUnZip.path,
-                                                 preserveAttributes: true,
-                                                 overwrite: true,
-                                                 nestedZipLevel: 1,
-                                                 password: nil,
-                                                 error: &unzipError,
-                                                 delegate: nil,
-                                                 progressHandler: { [weak self] (entry, zipInfo, entryNumber, total) in
-                                                    DispatchQueue.global(qos: .background).async {
-                                                        guard let self = self else { return }
-                                                        if !notify {
-                                                            return
-                                                        }
-                                                        self.unzipProgressHandler(entry: entry, zipInfo: zipInfo, entryNumber: entryNumber, total: total, destUnZip: destUnZip, id: id, unzipError: &unzipError)
+        let success = SSZipArchive.unzipFile(atPath: sourceZip.path,
+                                             toDestination: destUnZip.path,
+                                             preserveAttributes: true,
+                                             overwrite: true,
+                                             nestedZipLevel: 1,
+                                             password: nil,
+                                             error: &unzipError,
+                                             delegate: nil,
+                                             progressHandler: { [weak self] (entry, zipInfo, entryNumber, total) in
+                                                DispatchQueue.global(qos: .background).async {
+                                                    guard let self = self else { return }
+                                                    if !notify {
+                                                        return
                                                     }
-                                                 },
-                                                 completionHandler: { _, _, _  in
-                                                    semaphore.signal()
-                                                 })
+                                                    self.unzipProgressHandler(entry: entry, zipInfo: zipInfo, entryNumber: entryNumber, total: total, destUnZip: destUnZip, id: id, unzipError: &unzipError)
+                                                }
+                                             },
+                                             completionHandler: { _, _, _  in
+                                                semaphore.signal()
+                                             })
 
         semaphore.wait()
 
@@ -750,22 +745,40 @@ typealias ZipArchiveHelper = SSZipArchive
         return 0
     }
 
-    public func list() -> [BundleInfo] {
-        let dest: URL = libraryDir.appendingPathComponent(bundleDirectory)
-        do {
-            let files: [String] = try FileManager.default.contentsOfDirectory(atPath: dest.path)
-            var res: [BundleInfo] = []
-            print("\(CapacitorUpdater.TAG) list File : \(dest.path)")
-            if dest.exist {
-                for id: String in files {
-                    res.append(self.getBundleInfo(id: id))
+    public func list(raw: Bool = false) -> [BundleInfo] {
+        if !raw {
+            // UserDefaults.standard.dictionaryRepresentation().values
+            let dest: URL = libraryDir.appendingPathComponent(bundleDirectory)
+            do {
+                let files: [String] = try FileManager.default.contentsOfDirectory(atPath: dest.path)
+                var res: [BundleInfo] = []
+                print("\(CapacitorUpdater.TAG) list File : \(dest.path)")
+                if dest.exist {
+                    for id: String in files {
+                        res.append(self.getBundleInfo(id: id))
+                    }
                 }
+                return res
+            } catch {
+                print("\(CapacitorUpdater.TAG) No version available \(dest.path)")
+                return []
             }
-            return res
-        } catch {
-            print("\(CapacitorUpdater.TAG) No version available \(dest.path)")
-            return []
+        } else {
+            guard let regex = try? NSRegularExpression(pattern: "^[0-9A-Za-z]{10}_info$") else {
+                print("\(CapacitorUpdater.TAG) Invald regex ?????")
+                return []
+            }
+            return UserDefaults.standard.dictionaryRepresentation().keys.filter {
+                let range = NSRange($0.startIndex..., in: $0)
+                let matches = regex.matches(in: $0, range: range)
+                return !matches.isEmpty
+            }.map {
+                $0.components(separatedBy: "_")[0]
+            }.map {
+                self.getBundleInfo(id: $0)
+            }
         }
+
     }
 
     public func delete(id: String, removeInfo: Bool) -> Bool {
@@ -789,6 +802,11 @@ typealias ZipArchiveHelper = SSZipArchive
             try FileManager.default.removeItem(atPath: destPersist.path)
         } catch {
             print("\(CapacitorUpdater.TAG) Folder \(destPersist.path), not removed.")
+            // even if, we don;t care. Android doesn't care
+            if removeInfo {
+                self.removeBundleInfo(id: id)
+            }
+            self.sendStats(action: "delete", versionName: deleted.getVersionName())
             return false
         }
         if removeInfo {

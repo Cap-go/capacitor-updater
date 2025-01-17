@@ -45,7 +45,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getNextBundle", returnType: CAPPluginReturnPromise)
     ]
     public var implementation = CapacitorUpdater()
-    private let PLUGIN_VERSION: String = "6.13.0"
+    private let PLUGIN_VERSION: String = "6.14.0"
     static let updateUrlDefault = "https://plugin.capgo.app/updates"
     static let statsUrlDefault = "https://plugin.capgo.app/stats"
     static let channelUrlDefault = "https://plugin.capgo.app/channel_self"
@@ -424,7 +424,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func list(_ call: CAPPluginCall) {
-        let res = implementation.list()
+        let raw = call.getBool("raw", false)
+        let res = implementation.list(raw: raw)
         var resArr: [[String: String]] = []
         for v in res {
             resArr.append(v.toJSON())

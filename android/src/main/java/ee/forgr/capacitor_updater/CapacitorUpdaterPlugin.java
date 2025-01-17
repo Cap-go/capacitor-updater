@@ -60,7 +60,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
   private static final String channelUrlDefault =
     "https://plugin.capgo.app/channel_self";
 
-  private final String PLUGIN_VERSION = "6.13.0";
+  private final String PLUGIN_VERSION = "6.14.0";
   private static final String DELAY_CONDITION_PREFERENCES = "";
 
   private SharedPreferences.Editor editor;
@@ -320,7 +320,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             "New native version detected: " + this.currentVersionNative
           );
           this.implementation.reset(true);
-          final List<BundleInfo> installed = this.implementation.list();
+          final List<BundleInfo> installed = this.implementation.list(false);
           for (final BundleInfo bundle : installed) {
             try {
               Log.i(
@@ -844,7 +844,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
   @PluginMethod
   public void list(final PluginCall call) {
     try {
-      final List<BundleInfo> res = this.implementation.list();
+      final List<BundleInfo> res =
+        this.implementation.list(call.getBoolean("raw", false));
       final JSObject ret = new JSObject();
       final JSArray values = new JSArray();
       for (final BundleInfo bundle : res) {
