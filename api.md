@@ -553,7 +553,7 @@ Remove all listeners for this plugin.
 ## addListener('download', ...)
 
 ```typescript
-addListener(eventName: "download", listenerFunc: (state: DownloadEvent) => void) => Promise<PluginListenerHandle>
+addListener(eventName: 'download', listenerFunc: (state: DownloadEvent) => void) => Promise<PluginListenerHandle>
 ```
 
 Listen for bundle download event in the App. Fires once a download has started, during downloading and when finished.
@@ -573,7 +573,7 @@ Listen for bundle download event in the App. Fires once a download has started, 
 ## addListener('noNeedUpdate', ...)
 
 ```typescript
-addListener(eventName: "noNeedUpdate", listenerFunc: (state: NoNeedEvent) => void) => Promise<PluginListenerHandle>
+addListener(eventName: 'noNeedUpdate', listenerFunc: (state: NoNeedEvent) => void) => Promise<PluginListenerHandle>
 ```
 
 Listen for no need to update event, useful when you want force check every time the app is launched
@@ -593,7 +593,7 @@ Listen for no need to update event, useful when you want force check every time 
 ## addListener('updateAvailable', ...)
 
 ```typescript
-addListener(eventName: "updateAvailable", listenerFunc: (state: UpdateAvailableEvent) => void) => Promise<PluginListenerHandle>
+addListener(eventName: 'updateAvailable', listenerFunc: (state: UpdateAvailableEvent) => void) => Promise<PluginListenerHandle>
 ```
 
 Listen for available update event, useful when you want to force check every time the app is launched
@@ -613,7 +613,7 @@ Listen for available update event, useful when you want to force check every tim
 ## addListener('downloadComplete', ...)
 
 ```typescript
-addListener(eventName: "downloadComplete", listenerFunc: (state: DownloadCompleteEvent) => void) => Promise<PluginListenerHandle>
+addListener(eventName: 'downloadComplete', listenerFunc: (state: DownloadCompleteEvent) => void) => Promise<PluginListenerHandle>
 ```
 
 Listen for downloadComplete events.
@@ -633,7 +633,7 @@ Listen for downloadComplete events.
 ## addListener('majorAvailable', ...)
 
 ```typescript
-addListener(eventName: "majorAvailable", listenerFunc: (state: MajorAvailableEvent) => void) => Promise<PluginListenerHandle>
+addListener(eventName: 'majorAvailable', listenerFunc: (state: MajorAvailableEvent) => void) => Promise<PluginListenerHandle>
 ```
 
 Listen for Major update event in the App, let you know when major update is blocked by setting disableAutoUpdateBreaking
@@ -653,7 +653,7 @@ Listen for Major update event in the App, let you know when major update is bloc
 ## addListener('updateFailed', ...)
 
 ```typescript
-addListener(eventName: "updateFailed", listenerFunc: (state: UpdateFailedEvent) => void) => Promise<PluginListenerHandle>
+addListener(eventName: 'updateFailed', listenerFunc: (state: UpdateFailedEvent) => void) => Promise<PluginListenerHandle>
 ```
 
 Listen for update fail event in the App, let you know when update has fail to install at next app start
@@ -673,7 +673,7 @@ Listen for update fail event in the App, let you know when update has fail to in
 ## addListener('downloadFailed', ...)
 
 ```typescript
-addListener(eventName: "downloadFailed", listenerFunc: (state: DownloadFailedEvent) => void) => Promise<PluginListenerHandle>
+addListener(eventName: 'downloadFailed', listenerFunc: (state: DownloadFailedEvent) => void) => Promise<PluginListenerHandle>
 ```
 
 Listen for download fail event in the App, let you know when a bundle download has failed
@@ -693,7 +693,7 @@ Listen for download fail event in the App, let you know when a bundle download h
 ## addListener('appReloaded', ...)
 
 ```typescript
-addListener(eventName: "appReloaded", listenerFunc: () => void) => Promise<PluginListenerHandle>
+addListener(eventName: 'appReloaded', listenerFunc: () => void) => Promise<PluginListenerHandle>
 ```
 
 Listen for reload event in the App, let you know when reload has happened
@@ -713,7 +713,7 @@ Listen for reload event in the App, let you know when reload has happened
 ## addListener('appReady', ...)
 
 ```typescript
-addListener(eventName: "appReady", listenerFunc: (state: AppReadyEvent) => void) => Promise<PluginListenerHandle>
+addListener(eventName: 'appReady', listenerFunc: (state: AppReadyEvent) => void) => Promise<PluginListenerHandle>
 ```
 
 Listen for app ready event in the App, let you know when app is ready to use
@@ -1040,11 +1040,11 @@ Returns null if no next bundle is set.
 
 ### BundleStatus
 
-<code>"success" | "error" | "pending" | "downloading"</code>
+<code>'success' | 'error' | 'pending' | 'downloading'</code>
 
 
 ### DelayUntilNext
 
-<code>"background" | "kill" | "nativeVersion" | "date"</code>
+<code>'background' | 'kill' | 'nativeVersion' | 'date'</code>
 
 </docgen-api>
