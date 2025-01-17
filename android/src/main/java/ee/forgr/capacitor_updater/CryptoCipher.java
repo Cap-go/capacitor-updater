@@ -121,7 +121,7 @@ public class CryptoCipher {
             0x4,
             (byte) 0x82,
             (byte) ((pkcs1Length >> 8) & 0xff),
-            (byte) (pkcs1Length & 0xff)// Octet string + length
+            (byte) (pkcs1Length & 0xff) // Octet string + length
         };
         byte[] pkcs8bytes = join(pkcs8Header, pkcs1Bytes);
         return readPkcs8PrivateKey(pkcs8bytes);
