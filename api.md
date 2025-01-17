@@ -134,7 +134,7 @@ export default config;
 * [`next(...)`](#next)
 * [`set(...)`](#set)
 * [`delete(...)`](#delete)
-* [`list()`](#list)
+* [`list(...)`](#list)
 * [`reset(...)`](#reset)
 * [`current()`](#current)
 * [`reload()`](#reload)
@@ -301,13 +301,17 @@ Deletes the specified bundle from the native app storage. Use with {@link list} 
 --------------------
 
 
-## list()
+## list(...)
 
 ```typescript
-list() => Promise<BundleListResult>
+list(options?: ListOptions | undefined) => Promise<BundleListResult>
 ```
 
 Get all locally downloaded bundles in your app
+
+| Param         | Type                                                | Description                                                            |
+| ------------- | --------------------------------------------------- | ---------------------------------------------------------------------- |
+| **`options`** | <code><a href="#listoptions">ListOptions</a></code> | The {@link <a href="#listoptions">ListOptions</a>} for listing bundles |
 
 **Returns:** <code>Promise&lt;<a href="#bundlelistresult">BundleListResult</a>&gt;</code>
 
@@ -819,6 +823,13 @@ Returns null if no next bundle is set.
 | Prop          | Type                      |
 | ------------- | ------------------------- |
 | **`bundles`** | <code>BundleInfo[]</code> |
+
+
+### ListOptions
+
+| Prop      | Type                 | Description                                                                                                                                   | Default            | Since  |
+| --------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ | ------ |
+| **`raw`** | <code>boolean</code> | Whether to return the raw bundle list or the manifest. If true, the list will attempt to read the internal database instead of files on disk. | <code>false</code> | 6.14.0 |
 
 
 ### ResetOptions
