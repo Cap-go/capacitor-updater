@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [6.14.0](https://github.com/Cap-go/capacitor-updater/compare/6.13.2...6.14.0) (2025-01-17)
+
+
+### Features
+
+* list({raw: true}) + better delete() ([c5a47e8](https://github.com/Cap-go/capacitor-updater/commit/c5a47e86a84fafe5063be0532e971144e42cdb24))
+
 ### [6.13.2](https://github.com/Cap-go/capacitor-updater/compare/6.13.1...6.13.2) (2025-01-13)
 
 ### [6.13.1](https://github.com/Cap-go/capacitor-updater/compare/6.13.0...6.13.1) (2025-01-13)
