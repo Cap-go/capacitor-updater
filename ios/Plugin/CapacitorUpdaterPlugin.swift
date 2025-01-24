@@ -110,7 +110,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         implementation.notifyDownloadRaw = notifyDownload
         implementation.PLUGIN_VERSION = self.PLUGIN_VERSION
         let config = (self.bridge?.viewController as? CAPBridgeViewController)?.instanceDescriptor().legacyConfig
-        implementation.appId = Bundle.main.infoDictionary?["CFBundleIdentifier"] as? String ?? ""
         implementation.appId = config?["appId"] as? String ?? implementation.appId
         implementation.appId = getConfig().getString("appId", implementation.appId)!
         if implementation.appId == "" {

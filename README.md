@@ -38,8 +38,9 @@ I maintain a more user-friendly and complete [documentation here](https://capgo.
 
 | Plugin version | Capacitor compatibility | Maintained        |
 | -------------- | ----------------------- | ----------------- |
-| v6.\*.\*       | v6.\*.\*                | ✅                 |
-| v5.\*.\*       | v5.\*.\*                | Critical bug only |
+| v7.\*.\*       | v7.\*.\*                | ✅                 |
+| v6.\*.\*       | v6.\*.\*                | Critical bug only |
+| v5.\*.\*       | v5.\*.\*                | ⚠️ Deprecated |
 | v4.\*.\*       | v4.\*.\*                | ⚠️ Deprecated |
 | v3.\*.\*       | v3.\*.\*                | ⚠️ Deprecated     |
 | > 7            | v4.\*.\*                | ⚠️ Deprecated, our CI got crazy and bumped too much version     |
@@ -101,6 +102,7 @@ Download update distribution zipfiles from a custom URL. Manually control the en
 	"appName": "Name",
 	"plugins": {
 		"CapacitorUpdater": {
+      "appId": "com.example.app",
 			"autoUpdate": false,
 		}
 	}
