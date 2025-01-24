@@ -6,7 +6,7 @@
 
 import Foundation
 import CommonCrypto
-import zlib
+import CryptoKit
 
 ///
 /// Constants
@@ -17,166 +17,122 @@ private enum CryptoCipherConstants {
     static let aesOptions: CCOptions = CCOptions(kCCOptionPKCS7Padding)
     static let rsaAlgorithm: SecKeyAlgorithm = .rsaEncryptionOAEPSHA256
 }
-///
-/// The AES key. Contains both the initialization vector and secret key.
-///
-public struct AES128Key {
-    /// Initialization vector
-    private let iv: Data
-    private let aes128Key: Data
-    #if DEBUG
-    public var __debug_iv: Data { iv }
-    public var __debug_aes128Key: Data { aes128Key }
-    #endif
-    init(iv: Data, aes128Key: Data) {
-        self.iv = iv
-        self.aes128Key = aes128Key
-    }
-    ///
-    /// Takes the data and uses the private key to decrypt it. Will call `CCCrypt` in CommonCrypto
-    /// and provide it `ivData` for the initialization vector. Will use cipher block chaining (CBC) as
-    /// the mode of operation.
-    ///
-    /// Returns the decrypted data.
-    ///
-    public func decrypt(data: Data) -> Data? {
-        let encryptedData: UnsafePointer<UInt8> = (data as NSData).bytes.bindMemory(to: UInt8.self, capacity: data.count)
-        let encryptedDataLength: Int = data.count
-
-        if let result: NSMutableData = NSMutableData(length: encryptedDataLength) {
-            let keyData: UnsafePointer<UInt8> = (self.aes128Key as NSData).bytes.bindMemory(to: UInt8.self, capacity: self.aes128Key.count)
-            let keyLength: size_t = size_t(self.aes128Key.count)
-            let ivData: UnsafePointer<UInt8> = (iv as NSData).bytes.bindMemory(to: UInt8.self, capacity: self.iv.count)
-
-            let decryptedData: UnsafeMutablePointer<UInt8> = UnsafeMutablePointer<UInt8>(result.mutableBytes.assumingMemoryBound(to: UInt8.self))
-            let decryptedDataLength: size_t = size_t(result.length)
-
-            var decryptedLength: size_t = 0
-
-            let status: CCCryptorStatus = CCCrypt(CCOperation(kCCDecrypt), CryptoCipherConstants.aesAlgorithm, CryptoCipherConstants.aesOptions, keyData, keyLength, ivData, encryptedData, encryptedDataLength, decryptedData, decryptedDataLength, &decryptedLength)
-
-            if Int32(status) == Int32(kCCSuccess) {
-                result.length = Int(decryptedLength)
-                return result as Data
-            } else {
-                return nil
-            }
-        } else {
-            return nil
-        }
-    }
-}
 
 ///
-/// The RSA keypair. Includes both private and public key.
+/// The RSA public key.
 ///
-public struct RSAKeyPair {
-    private let privateKey: SecKey
+public struct RSAPublicKey {
     private let publicKey: SecKey
 
     #if DEBUG
-    public var __debug_privateKey: SecKey { self.privateKey }
     public var __debug_publicKey: SecKey { self.publicKey }
     #endif
 
-    fileprivate init(privateKey: SecKey, publicKey: SecKey) {
-        self.privateKey = privateKey
+    fileprivate init(publicKey: SecKey) {
         self.publicKey = publicKey
     }
 
     ///
-    /// Takes the data and uses the private key to decrypt it.
+    /// Takes the data and uses the public key to decrypt it.
     /// Returns the decrypted data.
     ///
     public func decrypt(data: Data) -> Data? {
-        var error: Unmanaged<CFError>?
-        if let decryptedData: CFData = SecKeyCreateDecryptedData(self.privateKey, CryptoCipherConstants.rsaAlgorithm, data as CFData, &error) {
-            if error != nil {
-                return nil
-            } else {
-                return decryptedData as Data
+        do {
+            guard let decryptedData = RSAPublicKey.decryptWithRSAKey(data, rsaKeyRef: self.publicKey, padding: SecPadding()) else {
+                throw CustomError.cannotDecryptSessionKey
             }
-        } else {
+
+            return decryptedData
+        } catch {
+            print("Error decrypting data: \(error)")
             return nil
         }
-    }
-
-    ///
-    /// Takes the data and uses the public key to encrypt it.
-    /// Returns the encrypted data.
-    ///
-    public func encrypt(data: Data) -> Data? {
-        var error: Unmanaged<CFError>?
-        if let encryptedData: CFData = SecKeyCreateEncryptedData(self.publicKey, CryptoCipherConstants.rsaAlgorithm, data as CFData, &error) {
-            if error != nil {
-                return nil
-            } else {
-                return encryptedData as Data
-            }
-        } else {
-            return nil
-        }
-    }
-
-}
-///
-/// The RSA public key.
-///
-public struct RSAPrivateKey {
-    private let privateKey: SecKey
-
-    #if DEBUG
-    public var __debug_privateKey: SecKey { self.privateKey }
-    #endif
-
-    fileprivate init(privateKey: SecKey) {
-        self.privateKey = privateKey
-    }
-    ///
-    /// Takes the data and uses the private key to decrypt it.
-    /// Returns the decrypted data.
-    ///
-    public func decrypt(data: Data) -> Data? {
-        var error: Unmanaged<CFError>?
-        if let decryptedData: CFData = SecKeyCreateDecryptedData(self.privateKey, CryptoCipherConstants.rsaAlgorithm, data as CFData, &error) {
-            if error != nil {
-                return nil
-            } else {
-                return decryptedData as Data
-            }
-        } else {
-            return nil
-        }
-    }
-
-    ///
-    /// Allows you to export the RSA public key to a format (so you can send over the net).
-    ///
-    public func export() -> Data? {
-        return privateKey.exportToData()
     }
 
     ///
     /// Allows you to load an RSA public key (i.e. one downloaded from the net).
     ///
-    public static func load(rsaPrivateKey: String) -> RSAPrivateKey? {
-        var privKey: String = rsaPrivateKey
-        privKey = privKey.replacingOccurrences(of: "-----BEGIN RSA PRIVATE KEY-----", with: "")
-        privKey = privKey.replacingOccurrences(of: "-----END RSA PRIVATE KEY-----", with: "")
-        privKey = privKey.replacingOccurrences(of: "\\n+", with: "", options: .regularExpression)
-        privKey = privKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    public static func load(rsaPublicKey: String) -> RSAPublicKey? {
+        var pubKey: String = rsaPublicKey
+        pubKey = pubKey.replacingOccurrences(of: "-----BEGIN RSA PUBLIC KEY-----", with: "")
+        pubKey = pubKey.replacingOccurrences(of: "-----END RSA PUBLIC KEY-----", with: "")
+        pubKey = pubKey.replacingOccurrences(of: "\\n+", with: "", options: .regularExpression)
+        pubKey = pubKey.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
-            guard let rsaPrivateKeyData: Data  = Data(base64Encoded: privKey) else {
+            guard let rsaPublicKeyData: Data = Data(base64Encoded: String(pubKey)) else {
                 throw CustomError.cannotDecode
             }
-            guard let privateKey: SecKey = .loadPrivateFromData(rsaPrivateKeyData) else {
+
+            guard let publicKey: SecKey = .loadPublicFromData(rsaPublicKeyData) else {
                 throw CustomError.cannotDecode
             }
-            return RSAPrivateKey(privateKey: privateKey)
+
+            return RSAPublicKey(publicKey: publicKey)
         } catch {
             print("Error load RSA: \(error)")
             return nil
         }
+    }
+
+    // code is copied from here: https://github.com/btnguyen2k/swiftutils/blob/88494f4c635b6c6d42ef0fb30a7d666acd38c4fa/SwiftUtils/RSAUtils.swift#L393
+    public static func decryptWithRSAKey(_ encryptedData: Data, rsaKeyRef: SecKey, padding: SecPadding) -> Data? {
+        let blockSize = SecKeyGetBlockSize(rsaKeyRef)
+        let dataSize = encryptedData.count / MemoryLayout<UInt8>.size
+
+        var encryptedDataAsArray = [UInt8](repeating: 0, count: dataSize)
+        (encryptedData as NSData).getBytes(&encryptedDataAsArray, length: dataSize)
+
+        var decryptedData = [UInt8](repeating: 0, count: 0)
+        var idx = 0
+        while idx < encryptedDataAsArray.count {
+            var idxEnd = idx + blockSize
+            if idxEnd > encryptedDataAsArray.count {
+                idxEnd = encryptedDataAsArray.count
+            }
+            var chunkData = [UInt8](repeating: 0, count: blockSize)
+            for i in idx..<idxEnd {
+                chunkData[i-idx] = encryptedDataAsArray[i]
+            }
+
+            var decryptedDataBuffer = [UInt8](repeating: 0, count: blockSize)
+            var decryptedDataLength = blockSize
+
+            let status = SecKeyDecrypt(rsaKeyRef, padding, chunkData, idxEnd-idx, &decryptedDataBuffer, &decryptedDataLength)
+            if status != noErr {
+                return nil
+            }
+            let finalData = removePadding(decryptedDataBuffer)
+            decryptedData += finalData
+
+            idx += blockSize
+        }
+
+        return Data(decryptedData)
+    }
+
+    // code is copied from here: https://github.com/btnguyen2k/swiftutils/blob/88494f4c635b6c6d42ef0fb30a7d666acd38c4fa/SwiftUtils/RSAUtils.swift#L429
+    private static func removePadding(_ data: [UInt8]) -> [UInt8] {
+        var idxFirstZero = -1
+        var idxNextZero = data.count
+        for i in 0..<data.count {
+            if data[i] == 0 {
+                if idxFirstZero < 0 {
+                    idxFirstZero = i
+                } else {
+                    idxNextZero = i
+                    break
+                }
+            }
+        }
+        if idxNextZero-idxFirstZero-1 == 0 {
+            idxNextZero = idxFirstZero
+            idxFirstZero = -1
+        }
+        var newData = [UInt8](repeating: 0, count: idxNextZero-idxFirstZero-1)
+        for i in idxFirstZero+1..<idxNextZero {
+            newData[i-idxFirstZero-1] = data[i]
+        }
+        return newData
     }
 }
 
@@ -212,9 +168,29 @@ fileprivate extension SecKey {
 }
 
 public struct CryptoCipher {
+
+    public static func decryptChecksum(checksum: String, publicKey: String, version: String) throws -> String {
+        if publicKey.isEmpty {
+            return checksum
+        }
+        do {
+            let checksumBytes: Data = Data(base64Encoded: checksum)!
+            guard let rsaPublicKey: RSAPublicKey = .load(rsaPublicKey: publicKey) else {
+                print("cannot decode publicKey", publicKey)
+                throw CustomError.cannotDecode
+            }
+            guard let decryptedChecksum = rsaPublicKey.decrypt(data: checksumBytes) else {
+                throw NSError(domain: "Failed to decrypt session key data", code: 2, userInfo: nil)
+            }
+            return decryptedChecksum.base64EncodedString()
+        } catch {
+            print("\(CapacitorUpdater.TAG) Cannot decrypt checksum: \(checksum)", error)
+            throw CustomError.cannotDecode
+        }
+    }
     public static func calcChecksum(filePath: URL) -> String {
         let bufferSize = 1024 * 1024 * 5 // 5 MB
-        var checksum = uLong(0)
+        var sha256 = SHA256()
 
         do {
             let fileHandle = try FileHandle(forReadingFrom: filePath)
@@ -225,32 +201,29 @@ public struct CryptoCipher {
             while autoreleasepool(invoking: {
                 let fileData = fileHandle.readData(ofLength: bufferSize)
                 if fileData.count > 0 {
-                    checksum = fileData.withUnsafeBytes {
-                        crc32(checksum, $0.bindMemory(to: Bytef.self).baseAddress, uInt(fileData.count))
-                    }
+                    sha256.update(data: fileData)
                     return true // Continue
                 } else {
                     return false // End of file
                 }
             }) {}
 
-            return String(format: "%08X", checksum).lowercased()
+            let digest = sha256.finalize()
+            return digest.compactMap { String(format: "%02x", $0) }.joined()
         } catch {
             print("\(CapacitorUpdater.TAG) Cannot get checksum: \(filePath.path)", error)
             return ""
         }
     }
-    public static func decryptFile(filePath: URL, privateKey: String, sessionKey: String, version: String) throws {
-        if privateKey.isEmpty {
-            print("\(CapacitorUpdater.TAG) Cannot found privateKey")
-            return
-        } else if sessionKey.isEmpty  || sessionKey.components(separatedBy: ":").count != 2 {
-            print("\(CapacitorUpdater.TAG) Cannot found sessionKey")
+
+    public static func decryptFile(filePath: URL, publicKey: String, sessionKey: String, version: String) throws {
+        if publicKey.isEmpty || sessionKey.isEmpty  || sessionKey.components(separatedBy: ":").count != 2 {
+            print("\(CapacitorUpdater.TAG) Cannot find public key or sessionKey")
             return
         }
         do {
-            guard let rsaPrivateKey: RSAPrivateKey = .load(rsaPrivateKey: privateKey) else {
-                print("cannot decode privateKey", privateKey)
+            guard let rsaPublicKey: RSAPublicKey = .load(rsaPublicKey: publicKey) else {
+                print("cannot decode publicKey", publicKey)
                 throw CustomError.cannotDecode
             }
 
@@ -264,7 +237,7 @@ public struct CryptoCipher {
                 throw NSError(domain: "Invalid session key data", code: 1, userInfo: nil)
             }
 
-            guard let sessionKeyDataDecrypted = rsaPrivateKey.decrypt(data: sessionKeyDataEncrypted) else {
+            guard let sessionKeyDataDecrypted = rsaPublicKey.decrypt(data: sessionKeyDataEncrypted) else {
                 throw NSError(domain: "Failed to decrypt session key data", code: 2, userInfo: nil)
             }
 

@@ -23,37 +23,27 @@ import java.security.GeneralSecurityException;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.KeyFactory;
+import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.spec.InvalidKeySpecException;
-import java.security.spec.MGF1ParameterSpec;
-import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
-import java.util.zip.CRC32;
 import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
 import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.IvParameterSpec;
-import javax.crypto.spec.OAEPParameterSpec;
-import javax.crypto.spec.PSource;
 import javax.crypto.spec.SecretKeySpec;
 
 public class CryptoCipher {
 
-    public static byte[] decryptRSA(byte[] source, PrivateKey privateKey)
+    public static byte[] decryptRSA(byte[] source, PublicKey publicKey)
         throws NoSuchPaddingException, NoSuchAlgorithmException, InvalidAlgorithmParameterException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException {
-        Cipher cipher = Cipher.getInstance("RSA/ECB/OAEPPadding");
-        OAEPParameterSpec oaepParams = new OAEPParameterSpec(
-            "SHA-256",
-            "MGF1",
-            new MGF1ParameterSpec("SHA-256"),
-            PSource.PSpecified.DEFAULT
-        );
-        cipher.init(Cipher.DECRYPT_MODE, privateKey, oaepParams);
-        return cipher.doFinal(source);
+        Cipher cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+        cipher.init(Cipher.DECRYPT_MODE, publicKey);
+        byte[] decryptedBytes = cipher.doFinal(source);
+        return decryptedBytes;
     }
 
     public static byte[] decryptAES(byte[] cipherText, SecretKey key, byte[] iv) {
@@ -74,90 +64,93 @@ public class CryptoCipher {
         return new SecretKeySpec(sessionKey, 0, sessionKey.length, "AES");
     }
 
-    private static PrivateKey readPkcs8PrivateKey(byte[] pkcs8Bytes) throws GeneralSecurityException {
+    private static PublicKey readX509PublicKey(byte[] x509Bytes) throws GeneralSecurityException {
         KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-        PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(pkcs8Bytes);
+        X509EncodedKeySpec keySpec = new X509EncodedKeySpec(x509Bytes);
         try {
-            return keyFactory.generatePrivate(keySpec);
+            return keyFactory.generatePublic(keySpec);
         } catch (InvalidKeySpecException e) {
             throw new IllegalArgumentException("Unexpected key format!", e);
         }
     }
 
-    private static byte[] join(byte[] byteArray1, byte[] byteArray2) {
-        byte[] bytes = new byte[byteArray1.length + byteArray2.length];
-        System.arraycopy(byteArray1, 0, bytes, 0, byteArray1.length);
-        System.arraycopy(byteArray2, 0, bytes, byteArray1.length, byteArray2.length);
-        return bytes;
+    public static PublicKey stringToPublicKey(String public_key) throws GeneralSecurityException {
+        String pkcs1Pem = public_key
+            .replaceAll("\\s+", "")
+            .replace("-----BEGINRSAPUBLICKEY-----", "")
+            .replace("-----ENDRSAPUBLICKEY-----", "");
+
+        byte[] pkcs1EncodedBytes = Base64.decode(pkcs1Pem, Base64.DEFAULT);
+        return readPkcs1PublicKey(pkcs1EncodedBytes);
     }
 
-    private static PrivateKey readPkcs1PrivateKey(byte[] pkcs1Bytes) throws GeneralSecurityException {
-        // We can't use Java internal APIs to parse ASN.1 structures, so we build a PKCS#8 key Java can understand
-        int pkcs1Length = pkcs1Bytes.length;
-        int totalLength = pkcs1Length + 22;
-        byte[] pkcs8Header = new byte[] {
-            0x30,
-            (byte) 0x82,
-            (byte) ((totalLength >> 8) & 0xff),
-            (byte) (totalLength & 0xff), // Sequence + total length
-            0x2,
-            0x1,
-            0x0, // Integer (0)
-            0x30,
-            0xD,
-            0x6,
-            0x9,
-            0x2A,
-            (byte) 0x86,
-            0x48,
-            (byte) 0x86,
-            (byte) 0xF7,
-            0xD,
-            0x1,
-            0x1,
-            0x1,
-            0x5,
-            0x0, // Sequence: 1.2.840.113549.1.1.1, NULL
-            0x4,
-            (byte) 0x82,
-            (byte) ((pkcs1Length >> 8) & 0xff),
-            (byte) (pkcs1Length & 0xff) // Octet string + length
-        };
-        byte[] pkcs8bytes = join(pkcs8Header, pkcs1Bytes);
-        return readPkcs8PrivateKey(pkcs8bytes);
+    // since the public key is in pkcs1 format, we have to convert it to x509 format similar
+    // to what needs done with the private key converting to pkcs8 format
+    // so, the rest of the code below here is adapted from here https://stackoverflow.com/a/54246646
+    private static final int SEQUENCE_TAG = 0x30;
+    private static final int BIT_STRING_TAG = 0x03;
+    private static final byte[] NO_UNUSED_BITS = new byte[] { 0x00 };
+    private static final byte[] RSA_ALGORITHM_IDENTIFIER_SEQUENCE = {
+        (byte) 0x30,
+        (byte) 0x0d,
+        (byte) 0x06,
+        (byte) 0x09,
+        (byte) 0x2a,
+        (byte) 0x86,
+        (byte) 0x48,
+        (byte) 0x86,
+        (byte) 0xf7,
+        (byte) 0x0d,
+        (byte) 0x01,
+        (byte) 0x01,
+        (byte) 0x01,
+        (byte) 0x05,
+        (byte) 0x00
+    };
+
+    private static PublicKey readPkcs1PublicKey(byte[] pkcs1Bytes)
+        throws NoSuchAlgorithmException, InvalidKeySpecException, GeneralSecurityException {
+        // convert the pkcs1 public key to an x509 favorable format
+        byte[] keyBitString = createDEREncoding(BIT_STRING_TAG, joinPublic(NO_UNUSED_BITS, pkcs1Bytes));
+        byte[] keyInfoValue = joinPublic(RSA_ALGORITHM_IDENTIFIER_SEQUENCE, keyBitString);
+        byte[] keyInfoSequence = createDEREncoding(SEQUENCE_TAG, keyInfoValue);
+        return readX509PublicKey(keyInfoSequence);
     }
 
-    public static PrivateKey stringToPrivateKey(String private_key) throws GeneralSecurityException {
-        // Base64 decode the result
+    private static byte[] joinPublic(byte[]... bas) {
+        int len = 0;
+        for (int i = 0; i < bas.length; i++) {
+            len += bas[i].length;
+        }
 
-        String pkcs1Pem = private_key;
-        pkcs1Pem = pkcs1Pem.replace("-----BEGIN RSA PRIVATE KEY-----", "");
-        pkcs1Pem = pkcs1Pem.replace("-----END RSA PRIVATE KEY-----", "");
-        pkcs1Pem = pkcs1Pem.replace("\\n", "");
-        pkcs1Pem = pkcs1Pem.replace(" ", "");
+        byte[] buf = new byte[len];
+        int off = 0;
+        for (int i = 0; i < bas.length; i++) {
+            System.arraycopy(bas[i], 0, buf, off, bas[i].length);
+            off += bas[i].length;
+        }
 
-        byte[] pkcs1EncodedBytes = Base64.decode(pkcs1Pem.getBytes(), Base64.DEFAULT);
-        // extract the private key
-        return readPkcs1PrivateKey(pkcs1EncodedBytes);
+        return buf;
     }
 
-    public static void decryptFile(final File file, final String privateKey, final String ivSessionKey, final String version)
-        throws IOException {
-        // (str != null && !str.isEmpty())
-        if (privateKey == null || privateKey.isEmpty()) {
-            Log.i(CapacitorUpdater.TAG, "Cannot found privateKey");
-            return;
-        } else if (ivSessionKey == null || ivSessionKey.isEmpty() || ivSessionKey.split(":").length != 2) {
-            Log.i(CapacitorUpdater.TAG, "Cannot found sessionKey");
+    public static void decryptFile(final File file, final String publicKey, final String ivSessionKey) throws IOException {
+        if (publicKey.isEmpty() || ivSessionKey == null || ivSessionKey.isEmpty() || ivSessionKey.split(":").length != 2) {
+            Log.i(CapacitorUpdater.TAG, "Cannot found public key or sessionKey");
             return;
         }
+        if (!publicKey.startsWith("-----BEGIN RSA PUBLIC KEY-----")) {
+            Log.e(CapacitorUpdater.TAG, "The public key is not a valid RSA Public key");
+            return;
+        }
+
         try {
             String ivB64 = ivSessionKey.split(":")[0];
             String sessionKeyB64 = ivSessionKey.split(":")[1];
             byte[] iv = Base64.decode(ivB64.getBytes(), Base64.DEFAULT);
             byte[] sessionKey = Base64.decode(sessionKeyB64.getBytes(), Base64.DEFAULT);
-            PrivateKey pKey = CryptoCipher.stringToPrivateKey(privateKey);
+            PublicKey pKey = CryptoCipher.stringToPublicKey(publicKey);
             byte[] decryptedSessionKey = CryptoCipher.decryptRSA(sessionKey, pKey);
+
             SecretKey sKey = CryptoCipher.byteToSessionKey(decryptedSessionKey);
             byte[] content = new byte[(int) file.length()];
 
@@ -181,34 +174,103 @@ public class CryptoCipher {
         }
     }
 
+    public static String decryptChecksum(String checksum, String publicKey) throws IOException {
+        if (publicKey.isEmpty()) {
+            Log.e(CapacitorUpdater.TAG, "The public key is empty");
+            return checksum;
+        }
+        try {
+            byte[] checksumBytes = Base64.decode(checksum, Base64.DEFAULT);
+            PublicKey pKey = CryptoCipher.stringToPublicKey(publicKey);
+            byte[] decryptedChecksum = CryptoCipher.decryptRSA(checksumBytes, pKey);
+            // return Base64.encodeToString(decryptedChecksum, Base64.DEFAULT);
+            String result = Base64.encodeToString(decryptedChecksum, Base64.DEFAULT);
+            return result.replaceAll("\\s", ""); // Remove all whitespace, including newlines
+        } catch (GeneralSecurityException e) {
+            Log.e(CapacitorUpdater.TAG, "decryptChecksum fail: " + e.getMessage());
+            throw new IOException("Decryption failed: " + e.getMessage());
+        }
+    }
+
+    public static String decryptChecksum(String checksum, String publicKey, String version) throws IOException {
+        if (publicKey.isEmpty()) {
+            Log.e(CapacitorUpdater.TAG, "The public key is empty");
+            return checksum;
+        }
+        try {
+            byte[] checksumBytes = Base64.decode(checksum, Base64.DEFAULT);
+            PublicKey pKey = CryptoCipher.stringToPublicKey(publicKey);
+            byte[] decryptedChecksum = CryptoCipher.decryptRSA(checksumBytes, pKey);
+            // return Base64.encodeToString(decryptedChecksum, Base64.DEFAULT);
+            String result = Base64.encodeToString(decryptedChecksum, Base64.DEFAULT);
+            return result.replaceAll("\\s", ""); // Remove all whitespace, including newlines
+        } catch (GeneralSecurityException e) {
+            Log.e(CapacitorUpdater.TAG, "decryptChecksum fail: " + e.getMessage());
+            throw new IOException("Decryption failed: " + e.getMessage());
+        }
+    }
+
     public static String calcChecksum(File file) {
         final int BUFFER_SIZE = 1024 * 1024 * 5; // 5 MB buffer size
-        CRC32 crc = new CRC32();
+        MessageDigest digest;
+        try {
+            digest = MessageDigest.getInstance("SHA-256");
+        } catch (java.security.NoSuchAlgorithmException e) {
+            System.err.println(CapacitorUpdater.TAG + " SHA-256 algorithm not available");
+            return "";
+        }
 
         try (FileInputStream fis = new FileInputStream(file)) {
             byte[] buffer = new byte[BUFFER_SIZE];
             int length;
             while ((length = fis.read(buffer)) != -1) {
-                crc.update(buffer, 0, length);
+                digest.update(buffer, 0, length);
             }
-            return String.format("%08x", crc.getValue());
+            byte[] hash = digest.digest();
+            StringBuilder hexString = new StringBuilder();
+            for (byte b : hash) {
+                String hex = Integer.toHexString(0xff & b);
+                if (hex.length() == 1) hexString.append('0');
+                hexString.append(hex);
+            }
+            return hexString.toString();
         } catch (IOException e) {
-            System.err.println(CapacitorUpdater.TAG + " Cannot calc checksum: " + file.getPath() + " " + e.getMessage());
+            System.err.println(CapacitorUpdater.TAG + " Cannot calc checksum v2: " + file.getPath() + " " + e.getMessage());
             return "";
         }
     }
 
-    public static PublicKey stringToPublicKey(String publicKey) {
-        byte[] encoded = Base64.decode(publicKey, Base64.DEFAULT);
-
-        KeyFactory keyFactory = null;
-        try {
-            keyFactory = KeyFactory.getInstance("RSA");
-            X509EncodedKeySpec keySpec = new X509EncodedKeySpec(encoded);
-            return keyFactory.generatePublic(keySpec);
-        } catch (NoSuchAlgorithmException | InvalidKeySpecException e) {
-            Log.i("Capacitor-updater", "stringToPublicKey fail\nError:\n" + e.toString());
-            return null;
+    private static byte[] createDEREncoding(int tag, byte[] value) {
+        if (tag < 0 || tag >= 0xFF) {
+            throw new IllegalArgumentException("Currently only single byte tags supported");
         }
+
+        byte[] lengthEncoding = createDERLengthEncoding(value.length);
+
+        int size = 1 + lengthEncoding.length + value.length;
+        byte[] derEncodingBuf = new byte[size];
+
+        int off = 0;
+        derEncodingBuf[off++] = (byte) tag;
+        System.arraycopy(lengthEncoding, 0, derEncodingBuf, off, lengthEncoding.length);
+        off += lengthEncoding.length;
+        System.arraycopy(value, 0, derEncodingBuf, off, value.length);
+
+        return derEncodingBuf;
+    }
+
+    private static byte[] createDERLengthEncoding(int size) {
+        if (size <= 0x7F) {
+            // single byte length encoding
+            return new byte[] { (byte) size };
+        } else if (size <= 0xFF) {
+            // double byte length encoding
+            return new byte[] { (byte) 0x81, (byte) size };
+        } else if (size <= 0xFFFF) {
+            // triple byte length encoding
+            return new byte[] { (byte) 0x82, (byte) (size >> Byte.SIZE), (byte) size };
+        }
+
+        throw new IllegalArgumentException("size too large, only up to 64KiB length encoding supported: " + size);
     }
 }

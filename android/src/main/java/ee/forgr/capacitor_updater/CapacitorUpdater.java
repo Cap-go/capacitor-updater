@@ -78,9 +78,7 @@ public class CapacitorUpdater {
     public String channelUrl = "";
     public String defaultChannel = "";
     public String appId = "";
-    public String privateKey = "";
     public String publicKey = "";
-    public boolean hasOldPrivateKeyPropertyInConfig = false;
     public String deviceID = "";
     public int timeout = 20000;
 
@@ -329,14 +327,9 @@ public class CapacitorUpdater {
 
             if (!isManifest) {
                 String checksumDecrypted = Objects.requireNonNullElse(checksumRes, "");
-                if (!this.hasOldPrivateKeyPropertyInConfig && !sessionKey.isEmpty()) {
-                    CryptoCipherV2.decryptFile(downloaded, publicKey, sessionKey);
-                    checksumDecrypted = CryptoCipherV2.decryptChecksum(checksumRes, publicKey);
-                    checksum = CryptoCipherV2.calcChecksum(downloaded);
-                } else {
-                    CryptoCipher.decryptFile(downloaded, privateKey, sessionKey, version);
-                    checksum = CryptoCipher.calcChecksum(downloaded);
-                }
+                CryptoCipher.decryptFile(downloaded, publicKey, sessionKey);
+                checksumDecrypted = CryptoCipher.decryptChecksum(checksumRes, publicKey);
+                checksum = CryptoCipher.calcChecksum(downloaded);
                 if ((!checksumDecrypted.isEmpty() || !this.publicKey.isEmpty()) && !checksumDecrypted.equals(checksum)) {
                     Log.e(CapacitorUpdater.TAG, "Error checksum '" + checksumDecrypted + "' '" + checksum + "' '");
                     this.sendStats("checksum_fail");

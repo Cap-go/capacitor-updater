@@ -40,9 +40,7 @@ import UIKit
     public var defaultChannel: String = ""
     public var appId: String = ""
     public var deviceID = ""
-    public var privateKey: String = ""
     public var publicKey: String = ""
-    public var hasOldPrivateKeyPropertyInConfig: Bool = false
 
     public var notifyDownloadRaw: (String, Int, Bool) -> Void = { _, _, _  in }
     public func notifyDownload(id: String, percent: Int, ignoreMultipleOfTen: Bool = false) {
@@ -307,7 +305,7 @@ import UIKit
     private var tempData = Data()
 
     private func verifyChecksum(file: URL, expectedHash: String) -> Bool {
-        let actualHash = CryptoCipherV2.calcChecksum(filePath: file)
+        let actualHash = CryptoCipher.calcChecksum(filePath: file)
         return actualHash == expectedHash
     }
 
@@ -340,13 +338,11 @@ import UIKit
                 continue
             }
 
-            if !self.hasOldPrivateKeyPropertyInConfig && !self.publicKey.isEmpty && !sessionKey.isEmpty {
-                do {
-                    fileHash = try CryptoCipherV2.decryptChecksum(checksum: fileHash, publicKey: self.publicKey, version: version)
-                } catch {
-                    downloadError = error
-                    print("\(CapacitorUpdater.TAG) CryptoCipherV2.decryptChecksum error \(id) \(fileName) error: \(error)")
-                }
+            do {
+                fileHash = try CryptoCipher.decryptChecksum(checksum: fileHash, publicKey: self.publicKey, version: version)
+            } catch {
+                downloadError = error
+                print("\(CapacitorUpdater.TAG) CryptoCipher.decryptChecksum error \(id) \(fileName) error: \(error)")
             }
 
             let fileNameWithoutPath = (fileName as NSString).lastPathComponent
@@ -395,7 +391,7 @@ import UIKit
                                 let tempFile = self.cacheFolder.appendingPathComponent("temp_\(UUID().uuidString)")
                                 try finalData.write(to: tempFile)
                                 do {
-                                    try CryptoCipherV2.decryptFile(filePath: tempFile, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
+                                    try CryptoCipher.decryptFile(filePath: tempFile, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
                                 } catch {
                                     self.sendStats(action: "decrypt_fail", versionName: version)
                                     throw error
@@ -412,12 +408,10 @@ import UIKit
                             finalData = decompressedData
 
                             try finalData.write(to: destFilePath)
-                            if !self.hasOldPrivateKeyPropertyInConfig && !self.publicKey.isEmpty && !sessionKey.isEmpty {
-                                // assume that calcChecksum != null
-                                let calculatedChecksum = CryptoCipherV2.calcChecksum(filePath: destFilePath)
-                                if calculatedChecksum != fileHash {
-                                    throw NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash))"])
-                                }
+                            // assume that calcChecksum != null
+                            let calculatedChecksum = CryptoCipher.calcChecksum(filePath: destFilePath)
+                            if calculatedChecksum != fileHash {
+                                throw NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash))"])
                             }
 
                             // Save decrypted data to cache and destination
@@ -617,11 +611,7 @@ import UIKit
         do {
             var checksumDecrypted = checksum
             do {
-                if !self.hasOldPrivateKeyPropertyInConfig {
-                    try CryptoCipherV2.decryptFile(filePath: tempDataPath, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
-                } else {
-                    try CryptoCipher.decryptFile(filePath: tempDataPath, privateKey: self.privateKey, sessionKey: sessionKey, version: version)
-                }
+                try CryptoCipher.decryptFile(filePath: tempDataPath, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
             } catch {
                 self.sendStats(action: "decrypt_fail", versionName: version)
                 throw error
@@ -635,11 +625,7 @@ import UIKit
         }
 
         do {
-            if !self.hasOldPrivateKeyPropertyInConfig && !sessionKey.isEmpty {
-                checksum = CryptoCipherV2.calcChecksum(filePath: finalPath)
-            } else {
-                checksum = CryptoCipher.calcChecksum(filePath: finalPath)
-            }
+            checksum = CryptoCipher.calcChecksum(filePath: finalPath)
             print("\(CapacitorUpdater.TAG) Downloading: 80% (unzipping)")
             try self.saveDownloaded(sourceZip: finalPath, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: true)
 
