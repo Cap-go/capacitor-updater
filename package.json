@@ -1,6 +1,6 @@
 {
   "name": "@capgo/capacitor-updater",
-  "version": "6.14.7",
+  "version": "7.0.0",
   "license": "MPL-2.0",
   "description": "Live update for capacitor apps",
   "main": "dist/plugin.cjs.js",
@@ -58,16 +58,16 @@
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
-    "@capacitor/android": "^6.2.0",
-    "@capacitor/cli": "^6.2.0",
-    "@capacitor/core": "^6.2.0",
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/cli": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
     "@capacitor/docgen": "^0.3.0",
-    "@capacitor/ios": "^6.2.0",
+    "@capacitor/ios": "^7.0.0",
     "@ionic/eslint-config": "^0.4.0",
     "@ionic/prettier-config": "^4.0.0",
     "@ionic/swiftlint-config": "^2.0.0",
     "@types/node": "^22.10.5",
-    "eslint": "^8.57.1",
+    "eslint": "^8.57.0",
     "eslint-plugin-import": "^2.31.0",
     "prettier": "^3.4.2",
     "prettier-plugin-java": "^2.6.6",
@@ -77,7 +77,7 @@
     "typescript": "^5.7.2"
   },
   "peerDependencies": {
-    "@capacitor/core": "^6.0.0"
+    "@capacitor/core": ">=7.0.0"
   },
   "prettier": "@ionic/prettier-config",
   "swiftlint": "@ionic/swiftlint-config",
