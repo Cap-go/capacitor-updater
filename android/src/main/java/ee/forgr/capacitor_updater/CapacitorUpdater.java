@@ -356,6 +356,9 @@ public class CapacitorUpdater {
             CapacitorUpdater.this.notifyListeners("downloadFailed", ret);
             CapacitorUpdater.this.sendStats("download_fail");
             return false;
+        } catch (Exception e) {
+            Log.e(CapacitorUpdater.TAG, "Error decrypting bundle " + e );
+            return false;
         }
 
         try {
