@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.14.10](https://github.com/Cap-go/capacitor-updater/compare/6.14.9...6.14.10) (2025-02-03)
+
+
+### Bug Fixes
+
+* **deps:** update dependency androidx.work:work-runtime to v2.10.0 ([#532](https://github.com/Cap-go/capacitor-updater/issues/532)) ([df7cd7f](https://github.com/Cap-go/capacitor-updater/commit/df7cd7f43f8b4036af7080d6ae7930f26e2b125d))
+
 ### [6.14.9](https://github.com/Cap-go/capacitor-updater/compare/6.14.8...6.14.9) (2025-02-03)
 
 ### [6.14.8](https://github.com/Cap-go/capacitor-updater/compare/6.14.7...6.14.8) (2025-01-27)
