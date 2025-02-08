@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.14.11](https://github.com/Cap-go/capacitor-updater/compare/6.14.10...6.14.11) (2025-02-08)
+
+
+### Bug Fixes
+
+* lockfile format ([46aa1e4](https://github.com/Cap-go/capacitor-updater/commit/46aa1e4889b45b58757999218f506a21612f208e))
+
 ### [6.14.10](https://github.com/Cap-go/capacitor-updater/compare/6.14.9...6.14.10) (2025-02-03)
 
 
