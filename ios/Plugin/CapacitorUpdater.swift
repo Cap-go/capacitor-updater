@@ -142,7 +142,7 @@ import UIKit
 
     private func decryptFileV2(filePath: URL, sessionKey: String, version: String) throws {
         if self.publicKey.isEmpty || sessionKey.isEmpty  || sessionKey.components(separatedBy: ":").count != 2 {
-            print("\(self.TAG) Cannot find public key or sessionKey")
+            print("\(CapacitorUpdater.TAG) Cannot find public key or sessionKey")
             return
         }
         do {
@@ -178,7 +178,7 @@ import UIKit
             try decryptedData.write(to: filePath)
 
         } catch {
-            print("\(self.TAG) Cannot decode: \(filePath.path)", error)
+            print("\(CapacitorUpdater.TAG) Cannot decode: \(filePath.path)", error)
             self.sendStats(action: "decrypt_fail", versionName: version)
             throw CustomError.cannotDecode
         }
@@ -347,6 +347,11 @@ import UIKit
         return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent("update.dat")
     }
     private var tempData = Data()
+    
+    private func verifyChecksum(file: URL, expectedHash: String) -> Bool {
+        let actualHash = CryptoCipherV2.calcChecksum(filePath: file)
+        return actualHash == expectedHash
+    }
 
     public func decryptChecksum(checksum: String, version: String) throws -> String {
         if self.publicKey.isEmpty {
@@ -363,7 +368,7 @@ import UIKit
             }
             return decryptedChecksum.base64EncodedString()
         } catch {
-            print("\(self.TAG) Cannot decrypt checksum: \(checksum)", error)
+            print("\(CapacitorUpdater.TAG) Cannot decrypt checksum: \(checksum)", error)
             self.sendStats(action: "decrypt_fail", versionName: version)
             throw CustomError.cannotDecode
         }
@@ -398,7 +403,7 @@ import UIKit
                 continue
             }
 
-            if !self.hasOldPrivateKeyPropertyInConfig && !self.publicKey.isEmpty && !sessionKey.isEmpty {
+            if !self.publicKey.isEmpty && !sessionKey.isEmpty {
                 do {
                     fileHash = try CryptoCipherV2.decryptChecksum(checksum: fileHash, publicKey: self.publicKey, version: version)
                 } catch {
@@ -470,7 +475,7 @@ import UIKit
                             finalData = decompressedData
 
                             try finalData.write(to: destFilePath)
-                            if !self.hasOldPrivateKeyPropertyInConfig && !self.publicKey.isEmpty && !sessionKey.isEmpty {
+                            if !self.publicKey.isEmpty && !sessionKey.isEmpty {
                                 // assume that calcChecksum != null
                                 let calculatedChecksum = CryptoCipherV2.calcChecksum(filePath: destFilePath)
                                 if calculatedChecksum != fileHash {
@@ -683,8 +688,8 @@ import UIKit
         }
 
         do {
-            checksum = self.calcChecksumV2(filePath: finalPath)
-            print("\(self.TAG) Downloading: 80% (unzipping)")
+            checksum = CryptoCipherV2.calcChecksum(filePath: finalPath)
+            print("\(CapacitorUpdater.TAG) Downloading: 80% (unzipping)")
             try self.saveDownloaded(sourceZip: finalPath, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: true)
 
         } catch {
