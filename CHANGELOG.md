@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [8.0.1](https://github.com/Cap-go/capacitor-updater/compare/8.0.0...8.0.1) (2025-02-09)
+
+
+### Bug Fixes
+
+* CICD ([dd1bab3](https://github.com/Cap-go/capacitor-updater/commit/dd1bab37951674265609b150cd7eb361455e6806))
+
 ## [8.0.0](https://github.com/Cap-go/capacitor-updater/compare/6.14.11...8.0.0) (2025-02-09)
 
 
