@@ -97,23 +97,23 @@ public class CapacitorUpdater {
 
     private boolean isEmulator() {
         return (
-                (Build.BRAND.startsWith("generic") && Build.DEVICE.startsWith("generic")) ||
-                        Build.FINGERPRINT.startsWith("generic") ||
-                        Build.FINGERPRINT.startsWith("unknown") ||
-                        Build.HARDWARE.contains("goldfish") ||
-                        Build.HARDWARE.contains("ranchu") ||
-                        Build.MODEL.contains("google_sdk") ||
-                        Build.MODEL.contains("Emulator") ||
-                        Build.MODEL.contains("Android SDK built for x86") ||
-                        Build.MANUFACTURER.contains("Genymotion") ||
-                        Build.PRODUCT.contains("sdk_google") ||
-                        Build.PRODUCT.contains("google_sdk") ||
-                        Build.PRODUCT.contains("sdk") ||
-                        Build.PRODUCT.contains("sdk_x86") ||
-                        Build.PRODUCT.contains("sdk_gphone64_arm64") ||
-                        Build.PRODUCT.contains("vbox86p") ||
-                        Build.PRODUCT.contains("emulator") ||
-                        Build.PRODUCT.contains("simulator")
+            (Build.BRAND.startsWith("generic") && Build.DEVICE.startsWith("generic")) ||
+            Build.FINGERPRINT.startsWith("generic") ||
+            Build.FINGERPRINT.startsWith("unknown") ||
+            Build.HARDWARE.contains("goldfish") ||
+            Build.HARDWARE.contains("ranchu") ||
+            Build.MODEL.contains("google_sdk") ||
+            Build.MODEL.contains("Emulator") ||
+            Build.MODEL.contains("Android SDK built for x86") ||
+            Build.MANUFACTURER.contains("Genymotion") ||
+            Build.PRODUCT.contains("sdk_google") ||
+            Build.PRODUCT.contains("google_sdk") ||
+            Build.PRODUCT.contains("sdk") ||
+            Build.PRODUCT.contains("sdk_x86") ||
+            Build.PRODUCT.contains("sdk_gphone64_arm64") ||
+            Build.PRODUCT.contains("vbox86p") ||
+            Build.PRODUCT.contains("emulator") ||
+            Build.PRODUCT.contains("simulator")
         );
     }
 
@@ -136,8 +136,8 @@ public class CapacitorUpdater {
     private File unzip(final String id, final File zipFile, final String dest) throws IOException {
         final File targetDirectory = new File(this.documentsDir, dest);
         try (
-                final BufferedInputStream bis = new BufferedInputStream(new FileInputStream(zipFile));
-                final ZipInputStream zis = new ZipInputStream(bis)
+            final BufferedInputStream bis = new BufferedInputStream(new FileInputStream(zipFile));
+            final ZipInputStream zis = new ZipInputStream(bis)
         ) {
             int count;
             final int bufferSize = 8192;
@@ -161,7 +161,7 @@ public class CapacitorUpdater {
                 if (!canonicalPath.startsWith(canonicalDir)) {
                     this.sendStats("canonical_path_fail");
                     throw new FileNotFoundException(
-                            "SecurityException, Failed to ensure directory is the start path : " + canonicalDir + " of " + canonicalPath
+                        "SecurityException, Failed to ensure directory is the start path : " + canonicalDir + " of " + canonicalPath
                     );
                 }
 
@@ -221,69 +221,69 @@ public class CapacitorUpdater {
 
         activity.runOnUiThread(() -> {
             WorkManager.getInstance(context)
-                    .getWorkInfosByTagLiveData(id)
-                    .observe((LifecycleOwner) context, workInfos -> {
-                        if (workInfos == null || workInfos.isEmpty()) return;
+                .getWorkInfosByTagLiveData(id)
+                .observe((LifecycleOwner) context, workInfos -> {
+                    if (workInfos == null || workInfos.isEmpty()) return;
 
-                        WorkInfo workInfo = workInfos.get(0);
-                        Data progress = workInfo.getProgress();
+                    WorkInfo workInfo = workInfos.get(0);
+                    Data progress = workInfo.getProgress();
 
-                        switch (workInfo.getState()) {
-                            case RUNNING:
-                                int percent = progress.getInt(DownloadService.PERCENT, 0);
-                                notifyDownload(id, percent);
-                                break;
-                            case SUCCEEDED:
-                                Data outputData = workInfo.getOutputData();
-                                String dest = outputData.getString(DownloadService.FILEDEST);
-                                String version = outputData.getString(DownloadService.VERSION);
-                                String sessionKey = outputData.getString(DownloadService.SESSIONKEY);
-                                String checksum = outputData.getString(DownloadService.CHECKSUM);
-                                boolean isManifest = outputData.getBoolean(DownloadService.IS_MANIFEST, false);
+                    switch (workInfo.getState()) {
+                        case RUNNING:
+                            int percent = progress.getInt(DownloadService.PERCENT, 0);
+                            notifyDownload(id, percent);
+                            break;
+                        case SUCCEEDED:
+                            Data outputData = workInfo.getOutputData();
+                            String dest = outputData.getString(DownloadService.FILEDEST);
+                            String version = outputData.getString(DownloadService.VERSION);
+                            String sessionKey = outputData.getString(DownloadService.SESSIONKEY);
+                            String checksum = outputData.getString(DownloadService.CHECKSUM);
+                            boolean isManifest = outputData.getBoolean(DownloadService.IS_MANIFEST, false);
 
-                                boolean success = finishDownload(id, dest, version, sessionKey, checksum, true, isManifest);
-                                if (!success) {
-                                    saveBundleInfo(
-                                            id,
-                                            new BundleInfo(id, version, BundleStatus.ERROR, new Date(System.currentTimeMillis()), "")
-                                    );
-                                    JSObject ret = new JSObject();
-                                    ret.put("version", getCurrentBundle().getVersionName());
-                                    ret.put("error", "finish_download_fail");
-                                    sendStats("finish_download_fail", version);
-                                    notifyListeners("downloadFailed", ret);
-                                }
-                                break;
-                            case FAILED:
-                                Data failedData = workInfo.getOutputData();
-                                String error = failedData.getString(DownloadService.ERROR);
-                                String failedVersion = failedData.getString(DownloadService.VERSION);
+                            boolean success = finishDownload(id, dest, version, sessionKey, checksum, true, isManifest);
+                            if (!success) {
                                 saveBundleInfo(
-                                        id,
-                                        new BundleInfo(id, failedVersion, BundleStatus.ERROR, new Date(System.currentTimeMillis()), "")
+                                    id,
+                                    new BundleInfo(id, version, BundleStatus.ERROR, new Date(System.currentTimeMillis()), "")
                                 );
                                 JSObject ret = new JSObject();
                                 ret.put("version", getCurrentBundle().getVersionName());
-                                if ("low_mem_fail".equals(error)) {
-                                    sendStats("low_mem_fail", failedVersion);
-                                }
-                                ret.put("error", error != null ? error : "download_fail");
-                                sendStats("download_fail", failedVersion);
+                                ret.put("error", "finish_download_fail");
+                                sendStats("finish_download_fail", version);
                                 notifyListeners("downloadFailed", ret);
-                                break;
-                        }
-                    });
+                            }
+                            break;
+                        case FAILED:
+                            Data failedData = workInfo.getOutputData();
+                            String error = failedData.getString(DownloadService.ERROR);
+                            String failedVersion = failedData.getString(DownloadService.VERSION);
+                            saveBundleInfo(
+                                id,
+                                new BundleInfo(id, failedVersion, BundleStatus.ERROR, new Date(System.currentTimeMillis()), "")
+                            );
+                            JSObject ret = new JSObject();
+                            ret.put("version", getCurrentBundle().getVersionName());
+                            if ("low_mem_fail".equals(error)) {
+                                sendStats("low_mem_fail", failedVersion);
+                            }
+                            ret.put("error", error != null ? error : "download_fail");
+                            sendStats("download_fail", failedVersion);
+                            notifyListeners("downloadFailed", ret);
+                            break;
+                    }
+                });
         });
     }
 
     private void download(
-            final String id,
-            final String url,
-            final String dest,
-            final String version,
-            final String sessionKey,
-            final String checksum,
-            final JSONArray manifest
+        final String id,
+        final String url,
+        final String dest,
+        final String version,
+        final String sessionKey,
+        final String checksum,
+        final JSONArray manifest
     ) {
         if (this.activity == null) {
             Log.e(TAG, "Activity is null, cannot observe work progress");
@@ -292,16 +292,16 @@ public class CapacitorUpdater {
         observeWorkProgress(this.activity, id);
 
         DownloadWorkerManager.enqueueDownload(
-                this.activity,
-                url,
-                id,
-                this.documentsDir.getAbsolutePath(),
-                dest,
-                version,
-                sessionKey,
-                checksum,
-                this.publicKey,
-                manifest != null
+            this.activity,
+            url,
+            id,
+            this.documentsDir.getAbsolutePath(),
+            dest,
+            version,
+            sessionKey,
+            checksum,
+            this.publicKey,
+            manifest != null
         );
 
         if (manifest != null) {
@@ -310,13 +310,13 @@ public class CapacitorUpdater {
     }
 
     public Boolean finishDownload(
-            String id,
-            String dest,
-            String version,
-            String sessionKey,
-            String checksumRes,
-            Boolean setNext,
-            Boolean isManifest
+        String id,
+        String dest,
+        String version,
+        String sessionKey,
+        String checksumRes,
+        Boolean setNext,
+        Boolean isManifest
     ) {
         File downloaded = null;
         String checksum = "";
@@ -413,11 +413,11 @@ public class CapacitorUpdater {
     }
 
     public void downloadBackground(
-            final String url,
-            final String version,
-            final String sessionKey,
-            final String checksum,
-            final JSONArray manifest
+        final String url,
+        final String version,
+        final String sessionKey,
+        final String checksum,
+        final JSONArray manifest
     ) {
         final String id = this.randomString();
 
@@ -648,54 +648,54 @@ public class CapacitorUpdater {
         Request request = new Request.Builder().url(url).post(body).build();
 
         client
-                .newCall(request)
-                .enqueue(
-                        new okhttp3.Callback() {
-                            @Override
-                            public void onFailure(@NonNull Call call, @NonNull IOException e) {
+            .newCall(request)
+            .enqueue(
+                new okhttp3.Callback() {
+                    @Override
+                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                        JSObject retError = new JSObject();
+                        retError.put("message", "Request failed: " + e.getMessage());
+                        retError.put("error", "network_error");
+                        callback.callback(retError);
+                    }
+
+                    @Override
+                    public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                        try (ResponseBody responseBody = response.body()) {
+                            if (!response.isSuccessful()) {
                                 JSObject retError = new JSObject();
-                                retError.put("message", "Request failed: " + e.getMessage());
-                                retError.put("error", "network_error");
+                                retError.put("message", "Server error: " + response.code());
+                                retError.put("error", "response_error");
                                 callback.callback(retError);
+                                return;
                             }
 
-                            @Override
-                            public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                                try (ResponseBody responseBody = response.body()) {
-                                    if (!response.isSuccessful()) {
-                                        JSObject retError = new JSObject();
-                                        retError.put("message", "Server error: " + response.code());
-                                        retError.put("error", "response_error");
-                                        callback.callback(retError);
-                                        return;
-                                    }
+                            assert responseBody != null;
+                            String responseData = responseBody.string();
+                            JSONObject jsonResponse = new JSONObject(responseData);
+                            JSObject ret = new JSObject();
 
-                                    assert responseBody != null;
-                                    String responseData = responseBody.string();
-                                    JSONObject jsonResponse = new JSONObject(responseData);
-                                    JSObject ret = new JSObject();
-
-                                    Iterator<String> keys = jsonResponse.keys();
-                                    while (keys.hasNext()) {
-                                        String key = keys.next();
-                                        if (jsonResponse.has(key)) {
-                                            if ("session_key".equals(key)) {
-                                                ret.put("sessionKey", jsonResponse.get(key));
-                                            } else {
-                                                ret.put(key, jsonResponse.get(key));
-                                            }
-                                        }
+                            Iterator<String> keys = jsonResponse.keys();
+                            while (keys.hasNext()) {
+                                String key = keys.next();
+                                if (jsonResponse.has(key)) {
+                                    if ("session_key".equals(key)) {
+                                        ret.put("sessionKey", jsonResponse.get(key));
+                                    } else {
+                                        ret.put(key, jsonResponse.get(key));
                                     }
-                                    callback.callback(ret);
-                                } catch (JSONException e) {
-                                    JSObject retError = new JSObject();
-                                    retError.put("message", "JSON parse error: " + e.getMessage());
-                                    retError.put("error", "parse_error");
-                                    callback.callback(retError);
                                 }
                             }
+                            callback.callback(ret);
+                        } catch (JSONException e) {
+                            JSObject retError = new JSObject();
+                            retError.put("message", "JSON parse error: " + e.getMessage());
+                            retError.put("error", "parse_error");
+                            callback.callback(retError);
                         }
-                );
+                    }
+                }
+            );
     }
 
     public void getLatest(final String updateUrl, final String channel, final Callback callback) {
@@ -742,56 +742,56 @@ public class CapacitorUpdater {
         }
 
         Request request = new Request.Builder()
-                .url(channelUrl)
-                .delete(RequestBody.create(json.toString(), MediaType.get("application/json")))
-                .build();
+            .url(channelUrl)
+            .delete(RequestBody.create(json.toString(), MediaType.get("application/json")))
+            .build();
 
         client
-                .newCall(request)
-                .enqueue(
-                        new okhttp3.Callback() {
-                            @Override
-                            public void onFailure(@NonNull Call call, @NonNull IOException e) {
+            .newCall(request)
+            .enqueue(
+                new okhttp3.Callback() {
+                    @Override
+                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                        JSObject retError = new JSObject();
+                        retError.put("message", "Request failed: " + e.getMessage());
+                        retError.put("error", "network_error");
+                        callback.callback(retError);
+                    }
+
+                    @Override
+                    public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                        try (ResponseBody responseBody = response.body()) {
+                            if (!response.isSuccessful()) {
                                 JSObject retError = new JSObject();
-                                retError.put("message", "Request failed: " + e.getMessage());
-                                retError.put("error", "network_error");
+                                retError.put("message", "Server error: " + response.code());
+                                retError.put("error", "response_error");
                                 callback.callback(retError);
+                                return;
                             }
 
-                            @Override
-                            public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                                try (ResponseBody responseBody = response.body()) {
-                                    if (!response.isSuccessful()) {
-                                        JSObject retError = new JSObject();
-                                        retError.put("message", "Server error: " + response.code());
-                                        retError.put("error", "response_error");
-                                        callback.callback(retError);
-                                        return;
-                                    }
+                            assert responseBody != null;
+                            String responseData = responseBody.string();
+                            JSONObject jsonResponse = new JSONObject(responseData);
+                            JSObject ret = new JSObject();
 
-                                    assert responseBody != null;
-                                    String responseData = responseBody.string();
-                                    JSONObject jsonResponse = new JSONObject(responseData);
-                                    JSObject ret = new JSObject();
-
-                                    Iterator<String> keys = jsonResponse.keys();
-                                    while (keys.hasNext()) {
-                                        String key = keys.next();
-                                        if (jsonResponse.has(key)) {
-                                            ret.put(key, jsonResponse.get(key));
-                                        }
-                                    }
-                                    Log.i(TAG, "Channel unset");
-                                    callback.callback(ret);
-                                } catch (JSONException e) {
-                                    JSObject retError = new JSObject();
-                                    retError.put("message", "JSON parse error: " + e.getMessage());
-                                    retError.put("error", "parse_error");
-                                    callback.callback(retError);
+                            Iterator<String> keys = jsonResponse.keys();
+                            while (keys.hasNext()) {
+                                String key = keys.next();
+                                if (jsonResponse.has(key)) {
+                                    ret.put(key, jsonResponse.get(key));
                                 }
                             }
+                            Log.i(TAG, "Channel unset");
+                            callback.callback(ret);
+                        } catch (JSONException e) {
+                            JSObject retError = new JSObject();
+                            retError.put("message", "JSON parse error: " + e.getMessage());
+                            retError.put("error", "parse_error");
+                            callback.callback(retError);
                         }
-                );
+                    }
+                }
+            );
     }
 
     public void setChannel(final String channel, final Callback callback) {
@@ -843,69 +843,69 @@ public class CapacitorUpdater {
         }
 
         Request request = new Request.Builder()
-                .url(channelUrl)
-                .put(RequestBody.create(json.toString(), MediaType.get("application/json")))
-                .build();
+            .url(channelUrl)
+            .put(RequestBody.create(json.toString(), MediaType.get("application/json")))
+            .build();
 
         client
-                .newCall(request)
-                .enqueue(
-                        new okhttp3.Callback() {
-                            @Override
-                            public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                                JSObject retError = new JSObject();
-                                retError.put("message", "Request failed: " + e.getMessage());
-                                retError.put("error", "network_error");
-                                callback.callback(retError);
-                            }
+            .newCall(request)
+            .enqueue(
+                new okhttp3.Callback() {
+                    @Override
+                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                        JSObject retError = new JSObject();
+                        retError.put("message", "Request failed: " + e.getMessage());
+                        retError.put("error", "network_error");
+                        callback.callback(retError);
+                    }
 
-                            @Override
-                            public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                                try (ResponseBody responseBody = response.body()) {
-                                    if (response.code() == 400) {
-                                        assert responseBody != null;
-                                        String data = responseBody.string();
-                                        if (data.contains("channel_not_found") && !defaultChannel.isEmpty()) {
-                                            JSObject ret = new JSObject();
-                                            ret.put("channel", defaultChannel);
-                                            ret.put("status", "default");
-                                            Log.i(TAG, "Channel get to \"" + ret);
-                                            callback.callback(ret);
-                                            return;
-                                        }
-                                    }
-
-                                    if (!response.isSuccessful()) {
-                                        JSObject retError = new JSObject();
-                                        retError.put("message", "Server error: " + response.code());
-                                        retError.put("error", "response_error");
-                                        callback.callback(retError);
-                                        return;
-                                    }
-
-                                    assert responseBody != null;
-                                    String responseData = responseBody.string();
-                                    JSONObject jsonResponse = new JSONObject(responseData);
+                    @Override
+                    public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                        try (ResponseBody responseBody = response.body()) {
+                            if (response.code() == 400) {
+                                assert responseBody != null;
+                                String data = responseBody.string();
+                                if (data.contains("channel_not_found") && !defaultChannel.isEmpty()) {
                                     JSObject ret = new JSObject();
-
-                                    Iterator<String> keys = jsonResponse.keys();
-                                    while (keys.hasNext()) {
-                                        String key = keys.next();
-                                        if (jsonResponse.has(key)) {
-                                            ret.put(key, jsonResponse.get(key));
-                                        }
-                                    }
+                                    ret.put("channel", defaultChannel);
+                                    ret.put("status", "default");
                                     Log.i(TAG, "Channel get to \"" + ret);
                                     callback.callback(ret);
-                                } catch (JSONException e) {
-                                    JSObject retError = new JSObject();
-                                    retError.put("message", "JSON parse error: " + e.getMessage());
-                                    retError.put("error", "parse_error");
-                                    callback.callback(retError);
+                                    return;
                                 }
                             }
+
+                            if (!response.isSuccessful()) {
+                                JSObject retError = new JSObject();
+                                retError.put("message", "Server error: " + response.code());
+                                retError.put("error", "response_error");
+                                callback.callback(retError);
+                                return;
+                            }
+
+                            assert responseBody != null;
+                            String responseData = responseBody.string();
+                            JSONObject jsonResponse = new JSONObject(responseData);
+                            JSObject ret = new JSObject();
+
+                            Iterator<String> keys = jsonResponse.keys();
+                            while (keys.hasNext()) {
+                                String key = keys.next();
+                                if (jsonResponse.has(key)) {
+                                    ret.put(key, jsonResponse.get(key));
+                                }
+                            }
+                            Log.i(TAG, "Channel get to \"" + ret);
+                            callback.callback(ret);
+                        } catch (JSONException e) {
+                            JSObject retError = new JSObject();
+                            retError.put("message", "JSON parse error: " + e.getMessage());
+                            retError.put("error", "parse_error");
+                            callback.callback(retError);
                         }
-                );
+                    }
+                }
+            );
     }
 
     public void sendStats(final String action) {
@@ -933,29 +933,29 @@ public class CapacitorUpdater {
         }
 
         Request request = new Request.Builder()
-                .url(statsUrl)
-                .post(RequestBody.create(json.toString(), MediaType.get("application/json")))
-                .build();
+            .url(statsUrl)
+            .post(RequestBody.create(json.toString(), MediaType.get("application/json")))
+            .build();
 
         client
-                .newCall(request)
-                .enqueue(
-                        new okhttp3.Callback() {
-                            @Override
-                            public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                                Log.e(TAG, "Failed to send stats: " + e.getMessage());
-                            }
+            .newCall(request)
+            .enqueue(
+                new okhttp3.Callback() {
+                    @Override
+                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                        Log.e(TAG, "Failed to send stats: " + e.getMessage());
+                    }
 
-                            @Override
-                            public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                                if (response.isSuccessful()) {
-                                    Log.i(TAG, "Stats send for \"" + action + "\", version " + versionName);
-                                } else {
-                                    Log.e(TAG, "Error sending stats: " + response.code());
-                                }
-                            }
+                    @Override
+                    public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                        if (response.isSuccessful()) {
+                            Log.i(TAG, "Stats send for \"" + action + "\", version " + versionName);
+                        } else {
+                            Log.e(TAG, "Error sending stats: " + response.code());
                         }
-                );
+                    }
+                }
+            );
     }
 
     public BundleInfo getBundleInfo(final String id) {
