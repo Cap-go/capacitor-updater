@@ -50,7 +50,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
   private static final String updateUrlDefault =
     "https://plugin.capgo.app/updates";
-  private static final String statsUrlDefault = "https://plugin.capgo.app/stats";
+  private static final String statsUrlDefault =
+    "https://plugin.capgo.app/stats";
   private static final String channelUrlDefault =
     "https://plugin.capgo.app/channel_self";
 
@@ -215,9 +216,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     this.updateUrl = this.getConfig().getString("updateUrl", updateUrlDefault);
     this.autoUpdate = this.getConfig().getBoolean("autoUpdate", true);
     this.appReadyTimeout = this.getConfig().getInt("appReadyTimeout", 10000);
-    this.implementation.timeout = this.getConfig()
-      .getInt("responseTimeout", 20) *
-    1000;
+    this.implementation.timeout =
+      this.getConfig().getInt("responseTimeout", 20) * 1000;
     boolean resetWhenUpdate =
       this.getConfig().getBoolean("resetWhenUpdate", true);
 
