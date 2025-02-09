@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [8.0.0](https://github.com/Cap-go/capacitor-updater/compare/6.14.11...8.0.0) (2025-02-09)
+
+
+### ⚠ BREAKING CHANGES
+
+* upgrade to v7
+* delete old e2e
+
+### Features
+
+* delete old e2e ([364139d](https://github.com/Cap-go/capacitor-updater/commit/364139daa5eb37e3b220e5b7a5d35067aa37dbc0))
+* upgrade to v7 ([4b66916](https://github.com/Cap-go/capacitor-updater/commit/4b669168682dd70177c3c484f957bd5be4a2ed3d))
+
+
+### Bug Fixes
+
+* android ([bc47e33](https://github.com/Cap-go/capacitor-updater/commit/bc47e330b744709cb4bb4af118e3faaeb6472153))
+* doc ([3a26ce5](https://github.com/Cap-go/capacitor-updater/commit/3a26ce5d3383c2c0837176cf32e6970eed4a8c7a))
+* merge ([f647dc1](https://github.com/Cap-go/capacitor-updater/commit/f647dc18bc26b49ca85ff22ee800a0a1ade8c0ed))
+
 ### [6.14.11](https://github.com/Cap-go/capacitor-updater/compare/6.14.10...6.14.11) (2025-02-08)
 
 
