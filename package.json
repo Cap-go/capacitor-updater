@@ -13,7 +13,8 @@
     "android/build.gradle",
     "dist/",
     "ios/Plugin/",
-    "CapgoCapacitorUpdater.podspec"
+    "CapgoCapacitorUpdater.podspec",
+    "Package.swift"
   ],
   "author": "Martin Donadieu",
   "repository": {
@@ -41,12 +42,13 @@
   "scripts": {
     "verify": "npm run verify:ios && npm run verify:android && npm run verify:web",
     "verify:ios": "cd ios && pod install && xcodebuild -workspace Plugin.xcworkspace -scheme Plugin && cd ..",
+    "verify:iosSPM": "xcodebuild -workspace ios/Plugin.xcworkspace -scheme Plugin -destination generic/platform=iOS",
     "verify:android": "cd android && ./gradlew clean build test && cd ..",
     "verify:web": "npm run build",
     "lint": "npm run eslint && npm run prettier -- --check && npm run swiftlint -- lint",
     "fmt": "npm run eslint -- --fix && npm run prettier -- --write && npm run swiftlint -- --autocorrect --format",
     "eslint": "eslint . --ext .ts",
-    "prettier": "prettier --config .prettierrc.js \"**/*.{css,html,ts,js,java}\"",
+    "prettier": "prettier \"**/*.{css,html,ts,js,java}\" --plugin=prettier-plugin-java",
     "swiftlint": "node-swiftlint",
     "docgen": "docgen --api CapacitorUpdaterPlugin --output-readme README.md --output-json dist/docs.json",
     "docgen:api": "docgen --api CapacitorUpdaterPlugin --output-readme api.md --output-json dist/docs.json && awk '{sub(/###/,\"##\")}1' api.md > temp.txt && mv temp.txt api.md",
@@ -79,6 +81,7 @@
     "@capacitor/core": ">=7.0.0"
   },
   "prettier": "@ionic/prettier-config",
+  "swiftlint": "@ionic/swiftlint-config",
   "eslintConfig": {
     "extends": "@ionic/eslint-config/recommended"
   },

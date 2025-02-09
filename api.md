@@ -14,32 +14,33 @@ See the Github [Readme](https://github.com/Cap-go/capacitor-updater) for more in
 
 CapacitorUpdater can be configured with these options:
 
-| Prop                     | Type                 | Description                                                                                                                                                                                     | Default                                            | Since   |
-| ------------------------ | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ------- |
-| **`appReadyTimeout`**    | <code>number</code>  | Configure the number of milliseconds the native plugin should wait before considering an update 'failed'. Only available for Android and iOS.                                                   | <code>10000 // (10 seconds)</code>                 |         |
-| **`responseTimeout`**    | <code>number</code>  | Configure the number of milliseconds the native plugin should wait before considering API timeout. Only available for Android and iOS.                                                          | <code>20 // (20 second)</code>                     |         |
-| **`autoDeleteFailed`**   | <code>boolean</code> | Configure whether the plugin should use automatically delete failed bundles. Only available for Android and iOS.                                                                                | <code>true</code>                                  |         |
-| **`autoDeletePrevious`** | <code>boolean</code> | Configure whether the plugin should use automatically delete previous bundles after a successful update. Only available for Android and iOS.                                                    | <code>true</code>                                  |         |
-| **`autoUpdate`**         | <code>boolean</code> | Configure whether the plugin should use Auto Update via an update server. Only available for Android and iOS.                                                                                   | <code>true</code>                                  |         |
-| **`resetWhenUpdate`**    | <code>boolean</code> | Automatically delete previous downloaded bundles when a newer native app bundle is installed to the device. Only available for Android and iOS.                                                 | <code>true</code>                                  |         |
-| **`updateUrl`**          | <code>string</code>  | Configure the URL / endpoint to which update checks are sent. Only available for Android and iOS.                                                                                               | <code>https://plugin.capgo.app/updates</code>      |         |
-| **`channelUrl`**         | <code>string</code>  | Configure the URL / endpoint for channel operations. Only available for Android and iOS.                                                                                                        | <code>https://plugin.capgo.app/channel_self</code> |         |
-| **`statsUrl`**           | <code>string</code>  | Configure the URL / endpoint to which update statistics are sent. Only available for Android and iOS. Set to "" to disable stats reporting.                                                     | <code>https://plugin.capgo.app/stats</code>        |         |
-| **`privateKey`**         | <code>string</code>  | Configure the private key for end to end live update encryption. Only available for Android and iOS.                                                                                            | <code>undefined</code>                             |         |
-| **`publicKey`**          | <code>string</code>  | Configure the public key for end to end live update encryption Version 2 Only available for Android and iOS.                                                                                    | <code>undefined</code>                             | 6.2.0   |
-| **`version`**            | <code>string</code>  | Configure the current version of the app. This will be used for the first update request. If not set, the plugin will get the version from the native code. Only available for Android and iOS. | <code>undefined</code>                             | 4.17.48 |
-| **`directUpdate`**       | <code>boolean</code> | Make the plugin direct install the update when the app what just updated/installed. Only for autoUpdate mode. Only available for Android and iOS.                                               | <code>undefined</code>                             | 5.1.0   |
-| **`periodCheckDelay`**   | <code>number</code>  | Configure the delay period for period update check. the unit is in seconds. Only available for Android and iOS. Cannot be less than 600 seconds (10 minutes).                                   | <code>600 // (10 minutes)</code>                   |         |
-| **`localS3`**            | <code>boolean</code> | Configure the CLI to use a local server for testing or self-hosted update server.                                                                                                               | <code>undefined</code>                             | 4.17.48 |
-| **`localHost`**          | <code>string</code>  | Configure the CLI to use a local server for testing or self-hosted update server.                                                                                                               | <code>undefined</code>                             | 4.17.48 |
-| **`localWebHost`**       | <code>string</code>  | Configure the CLI to use a local server for testing or self-hosted update server.                                                                                                               | <code>undefined</code>                             | 4.17.48 |
-| **`localSupa`**          | <code>string</code>  | Configure the CLI to use a local server for testing or self-hosted update server.                                                                                                               | <code>undefined</code>                             | 4.17.48 |
-| **`localSupaAnon`**      | <code>string</code>  | Configure the CLI to use a local server for testing.                                                                                                                                            | <code>undefined</code>                             | 4.17.48 |
-| **`localApi`**           | <code>string</code>  | Configure the CLI to use a local api for testing.                                                                                                                                               | <code>undefined</code>                             | 6.3.3   |
-| **`localApiFiles`**      | <code>string</code>  | Configure the CLI to use a local file api for testing.                                                                                                                                          | <code>undefined</code>                             | 6.3.3   |
-| **`allowModifyUrl`**     | <code>boolean</code> | Allow the plugin to modify the updateUrl, statsUrl and channelUrl dynamically from the JavaScript side.                                                                                         | <code>false</code>                                 | 5.4.0   |
-| **`defaultChannel`**     | <code>string</code>  | Set the default channel for the app in the config.                                                                                                                                              | <code>undefined</code>                             | 5.5.0   |
-| **`appId`**              | <code>string</code>  | Configure the app id for the app in the config.                                                                                                                                                 | <code>undefined</code>                             | 6.0.0   |
+| Prop                         | Type                 | Description                                                                                                                                                                                     | Default                                            | Since   |
+| ---------------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ------- |
+| **`appReadyTimeout`**        | <code>number</code>  | Configure the number of milliseconds the native plugin should wait before considering an update 'failed'. Only available for Android and iOS.                                                   | <code>10000 // (10 seconds)</code>                 |         |
+| **`responseTimeout`**        | <code>number</code>  | Configure the number of milliseconds the native plugin should wait before considering API timeout. Only available for Android and iOS.                                                          | <code>20 // (20 second)</code>                     |         |
+| **`autoDeleteFailed`**       | <code>boolean</code> | Configure whether the plugin should use automatically delete failed bundles. Only available for Android and iOS.                                                                                | <code>true</code>                                  |         |
+| **`autoDeletePrevious`**     | <code>boolean</code> | Configure whether the plugin should use automatically delete previous bundles after a successful update. Only available for Android and iOS.                                                    | <code>true</code>                                  |         |
+| **`autoUpdate`**             | <code>boolean</code> | Configure whether the plugin should use Auto Update via an update server. Only available for Android and iOS.                                                                                   | <code>true</code>                                  |         |
+| **`resetWhenUpdate`**        | <code>boolean</code> | Automatically delete previous downloaded bundles when a newer native app bundle is installed to the device. Only available for Android and iOS.                                                 | <code>true</code>                                  |         |
+| **`updateUrl`**              | <code>string</code>  | Configure the URL / endpoint to which update checks are sent. Only available for Android and iOS.                                                                                               | <code>https://plugin.capgo.app/updates</code>      |         |
+| **`channelUrl`**             | <code>string</code>  | Configure the URL / endpoint for channel operations. Only available for Android and iOS.                                                                                                        | <code>https://plugin.capgo.app/channel_self</code> |         |
+| **`statsUrl`**               | <code>string</code>  | Configure the URL / endpoint to which update statistics are sent. Only available for Android and iOS. Set to "" to disable stats reporting.                                                     | <code>https://plugin.capgo.app/stats</code>        |         |
+| **`privateKey`**             | <code>string</code>  | Configure the private key for end to end live update encryption. Only available for Android and iOS. Deprecated in version 6.2.0. will be removed in version 7.0.0.                             | <code>undefined</code>                             |         |
+| **`publicKey`**              | <code>string</code>  | Configure the public key for end to end live update encryption Version 2 Only available for Android and iOS.                                                                                    | <code>undefined</code>                             | 6.2.0   |
+| **`version`**                | <code>string</code>  | Configure the current version of the app. This will be used for the first update request. If not set, the plugin will get the version from the native code. Only available for Android and iOS. | <code>undefined</code>                             | 4.17.48 |
+| **`directUpdate`**           | <code>boolean</code> | Make the plugin direct install the update when the app what just updated/installed. Only for autoUpdate mode. Only available for Android and iOS.                                               | <code>undefined</code>                             | 5.1.0   |
+| **`periodCheckDelay`**       | <code>number</code>  | Configure the delay period for period update check. the unit is in seconds. Only available for Android and iOS. Cannot be less than 600 seconds (10 minutes).                                   | <code>600 // (10 minutes)</code>                   |         |
+| **`localS3`**                | <code>boolean</code> | Configure the CLI to use a local server for testing or self-hosted update server.                                                                                                               | <code>undefined</code>                             | 4.17.48 |
+| **`localHost`**              | <code>string</code>  | Configure the CLI to use a local server for testing or self-hosted update server.                                                                                                               | <code>undefined</code>                             | 4.17.48 |
+| **`localWebHost`**           | <code>string</code>  | Configure the CLI to use a local server for testing or self-hosted update server.                                                                                                               | <code>undefined</code>                             | 4.17.48 |
+| **`localSupa`**              | <code>string</code>  | Configure the CLI to use a local server for testing or self-hosted update server.                                                                                                               | <code>undefined</code>                             | 4.17.48 |
+| **`localSupaAnon`**          | <code>string</code>  | Configure the CLI to use a local server for testing.                                                                                                                                            | <code>undefined</code>                             | 4.17.48 |
+| **`localApi`**               | <code>string</code>  | Configure the CLI to use a local api for testing.                                                                                                                                               | <code>undefined</code>                             | 6.3.3   |
+| **`localApiFiles`**          | <code>string</code>  | Configure the CLI to use a local file api for testing.                                                                                                                                          | <code>undefined</code>                             | 6.3.3   |
+| **`allowModifyUrl`**         | <code>boolean</code> | Allow the plugin to modify the updateUrl, statsUrl and channelUrl dynamically from the JavaScript side.                                                                                         | <code>false</code>                                 | 5.4.0   |
+| **`defaultChannel`**         | <code>string</code>  | Set the default channel for the app in the config.                                                                                                                                              | <code>undefined</code>                             | 5.5.0   |
+| **`appId`**                  | <code>string</code>  | Configure the app id for the app in the config.                                                                                                                                                 | <code>undefined</code>                             | 6.0.0   |
+| **`keepUrlPathAfterReload`** | <code>boolean</code> | Configure the plugin to keep the URL path after a reload. WARNING: When a reload is triggered, 'window.history' will be cleared.                                                                | <code>false</code>                                 | 6.8.0   |
 
 ## Examples
 
@@ -72,7 +73,8 @@ In `capacitor.config.json`:
       "localApiFiles": undefined,
       "allowModifyUrl": undefined,
       "defaultChannel": undefined,
-      "appId": undefined
+      "appId": undefined,
+      "keepUrlPathAfterReload": undefined
     }
   }
 }
@@ -112,6 +114,7 @@ const config: CapacitorConfig = {
       allowModifyUrl: undefined,
       defaultChannel: undefined,
       appId: undefined,
+      keepUrlPathAfterReload: undefined,
     },
   },
 };
@@ -131,13 +134,13 @@ export default config;
 * [`next(...)`](#next)
 * [`set(...)`](#set)
 * [`delete(...)`](#delete)
-* [`list()`](#list)
+* [`list(...)`](#list)
 * [`reset(...)`](#reset)
 * [`current()`](#current)
 * [`reload()`](#reload)
 * [`setMultiDelay(...)`](#setmultidelay)
 * [`cancelDelay()`](#canceldelay)
-* [`getLatest()`](#getlatest)
+* [`getLatest(...)`](#getlatest)
 * [`setChannel(...)`](#setchannel)
 * [`unsetChannel(...)`](#unsetchannel)
 * [`getChannel()`](#getchannel)
@@ -156,6 +159,8 @@ export default config;
 * [`addListener('downloadFailed', ...)`](#addlistenerdownloadfailed-)
 * [`addListener('appReloaded', ...)`](#addlistenerappreloaded-)
 * [`addListener('appReady', ...)`](#addlistenerappready-)
+* [`isAutoUpdateAvailable()`](#isautoupdateavailable)
+* [`getNextBundle()`](#getnextbundle)
 * [Interfaces](#interfaces)
 * [Type Aliases](#type-aliases)
 
@@ -296,13 +301,17 @@ Deletes the specified bundle from the native app storage. Use with {@link list} 
 --------------------
 
 
-## list()
+## list(...)
 
 ```typescript
-list() => Promise<BundleListResult>
+list(options?: ListOptions | undefined) => Promise<BundleListResult>
 ```
 
 Get all locally downloaded bundles in your app
+
+| Param         | Type                                                | Description                                                            |
+| ------------- | --------------------------------------------------- | ---------------------------------------------------------------------- |
+| **`options`** | <code><a href="#listoptions">ListOptions</a></code> | The {@link <a href="#listoptions">ListOptions</a>} for listing bundles |
 
 **Returns:** <code>Promise&lt;<a href="#bundlelistresult">BundleListResult</a>&gt;</code>
 
@@ -384,13 +393,17 @@ Cancels a {@link <a href="#delaycondition">DelayCondition</a>} to process an upd
 --------------------
 
 
-## getLatest()
+## getLatest(...)
 
 ```typescript
-getLatest() => Promise<LatestVersion>
+getLatest(options?: GetLatestOptions | undefined) => Promise<LatestVersion>
 ```
 
 Get Latest bundle available from update Url
+
+| Param         | Type                                                          |
+| ------------- | ------------------------------------------------------------- |
+| **`options`** | <code><a href="#getlatestoptions">GetLatestOptions</a></code> |
 
 **Returns:** <code>Promise&lt;<a href="#latestversion">LatestVersion</a>&gt;</code>
 
@@ -408,6 +421,7 @@ setChannel(options: SetChannelOptions) => Promise<ChannelRes>
 Sets the channel for this device. The channel has to allow for self assignment for this to work.
 Do not use this method to set the channel at boot when `autoUpdate` is enabled in the {@link PluginsConfig}.
 This method is to set the channel after the app is ready.
+This methods send to Capgo backend a request to link the device ID to the channel. Capgo can accept or refuse depending of the setting of your channel.
 
 | Param         | Type                                                            | Description                                                                      |
 | ------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------- |
@@ -539,7 +553,7 @@ Remove all listeners for this plugin.
 ## addListener('download', ...)
 
 ```typescript
-addListener(eventName: "download", listenerFunc: (state: DownloadEvent) => void) => Promise<PluginListenerHandle>
+addListener(eventName: 'download', listenerFunc: (state: DownloadEvent) => void) => Promise<PluginListenerHandle>
 ```
 
 Listen for bundle download event in the App. Fires once a download has started, during downloading and when finished.
@@ -559,7 +573,7 @@ Listen for bundle download event in the App. Fires once a download has started, 
 ## addListener('noNeedUpdate', ...)
 
 ```typescript
-addListener(eventName: "noNeedUpdate", listenerFunc: (state: NoNeedEvent) => void) => Promise<PluginListenerHandle>
+addListener(eventName: 'noNeedUpdate', listenerFunc: (state: NoNeedEvent) => void) => Promise<PluginListenerHandle>
 ```
 
 Listen for no need to update event, useful when you want force check every time the app is launched
@@ -579,7 +593,7 @@ Listen for no need to update event, useful when you want force check every time 
 ## addListener('updateAvailable', ...)
 
 ```typescript
-addListener(eventName: "updateAvailable", listenerFunc: (state: UpdateAvailableEvent) => void) => Promise<PluginListenerHandle>
+addListener(eventName: 'updateAvailable', listenerFunc: (state: UpdateAvailableEvent) => void) => Promise<PluginListenerHandle>
 ```
 
 Listen for available update event, useful when you want to force check every time the app is launched
@@ -599,7 +613,7 @@ Listen for available update event, useful when you want to force check every tim
 ## addListener('downloadComplete', ...)
 
 ```typescript
-addListener(eventName: "downloadComplete", listenerFunc: (state: DownloadCompleteEvent) => void) => Promise<PluginListenerHandle>
+addListener(eventName: 'downloadComplete', listenerFunc: (state: DownloadCompleteEvent) => void) => Promise<PluginListenerHandle>
 ```
 
 Listen for downloadComplete events.
@@ -619,7 +633,7 @@ Listen for downloadComplete events.
 ## addListener('majorAvailable', ...)
 
 ```typescript
-addListener(eventName: "majorAvailable", listenerFunc: (state: MajorAvailableEvent) => void) => Promise<PluginListenerHandle>
+addListener(eventName: 'majorAvailable', listenerFunc: (state: MajorAvailableEvent) => void) => Promise<PluginListenerHandle>
 ```
 
 Listen for Major update event in the App, let you know when major update is blocked by setting disableAutoUpdateBreaking
@@ -639,7 +653,7 @@ Listen for Major update event in the App, let you know when major update is bloc
 ## addListener('updateFailed', ...)
 
 ```typescript
-addListener(eventName: "updateFailed", listenerFunc: (state: UpdateFailedEvent) => void) => Promise<PluginListenerHandle>
+addListener(eventName: 'updateFailed', listenerFunc: (state: UpdateFailedEvent) => void) => Promise<PluginListenerHandle>
 ```
 
 Listen for update fail event in the App, let you know when update has fail to install at next app start
@@ -659,7 +673,7 @@ Listen for update fail event in the App, let you know when update has fail to in
 ## addListener('downloadFailed', ...)
 
 ```typescript
-addListener(eventName: "downloadFailed", listenerFunc: (state: DownloadFailedEvent) => void) => Promise<PluginListenerHandle>
+addListener(eventName: 'downloadFailed', listenerFunc: (state: DownloadFailedEvent) => void) => Promise<PluginListenerHandle>
 ```
 
 Listen for download fail event in the App, let you know when a bundle download has failed
@@ -679,7 +693,7 @@ Listen for download fail event in the App, let you know when a bundle download h
 ## addListener('appReloaded', ...)
 
 ```typescript
-addListener(eventName: "appReloaded", listenerFunc: () => void) => Promise<PluginListenerHandle>
+addListener(eventName: 'appReloaded', listenerFunc: () => void) => Promise<PluginListenerHandle>
 ```
 
 Listen for reload event in the App, let you know when reload has happened
@@ -699,7 +713,7 @@ Listen for reload event in the App, let you know when reload has happened
 ## addListener('appReady', ...)
 
 ```typescript
-addListener(eventName: "appReady", listenerFunc: (state: AppReadyEvent) => void) => Promise<PluginListenerHandle>
+addListener(eventName: 'appReady', listenerFunc: (state: AppReadyEvent) => void) => Promise<PluginListenerHandle>
 ```
 
 Listen for app ready event in the App, let you know when app is ready to use
@@ -712,6 +726,35 @@ Listen for app ready event in the App, let you know when app is ready to use
 **Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
 
 **Since:** 5.1.0
+
+--------------------
+
+
+## isAutoUpdateAvailable()
+
+```typescript
+isAutoUpdateAvailable() => Promise<AutoUpdateAvailable>
+```
+
+Get if auto update is available (not disabled by serverUrl).
+
+**Returns:** <code>Promise&lt;<a href="#autoupdateavailable">AutoUpdateAvailable</a>&gt;</code>
+
+--------------------
+
+
+## getNextBundle()
+
+```typescript
+getNextBundle() => Promise<BundleInfo | null>
+```
+
+Get the next bundle that will be used when the app reloads.
+Returns null if no next bundle is set.
+
+**Returns:** <code>Promise&lt;<a href="#bundleinfo">BundleInfo</a> | null&gt;</code>
+
+**Since:** 6.8.0
 
 --------------------
 
@@ -782,6 +825,13 @@ Listen for app ready event in the App, let you know when app is ready to use
 | **`bundles`** | <code>BundleInfo[]</code> |
 
 
+### ListOptions
+
+| Prop      | Type                 | Description                                                                                                                                   | Default            | Since  |
+| --------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ | ------ |
+| **`raw`** | <code>boolean</code> | Whether to return the raw bundle list or the manifest. If true, the list will attempt to read the internal database instead of files on disk. | <code>false</code> | 6.14.0 |
+
+
 ### ResetOptions
 
 | Prop                   | Type                 |
@@ -834,6 +884,13 @@ Listen for app ready event in the App, let you know when app is ready to use
 | **`file_name`**    | <code>string \| null</code> |
 | **`file_hash`**    | <code>string \| null</code> |
 | **`download_url`** | <code>string \| null</code> |
+
+
+### GetLatestOptions
+
+| Prop          | Type                | Description                                                                                     | Default                | Since |
+| ------------- | ------------------- | ----------------------------------------------------------------------------------------------- | ---------------------- | ----- |
+| **`channel`** | <code>string</code> | The channel to get the latest version for The channel must allow 'self_assign' for this to work | <code>undefined</code> | 6.8.0 |
 
 
 ### ChannelRes
@@ -971,16 +1028,23 @@ Listen for app ready event in the App, let you know when app is ready to use
 | **`status`** | <code>string</code>                               |                                       |       |
 
 
+### AutoUpdateAvailable
+
+| Prop            | Type                 |
+| --------------- | -------------------- |
+| **`available`** | <code>boolean</code> |
+
+
 ## Type Aliases
 
 
 ### BundleStatus
 
-<code>"success" | "error" | "pending" | "downloading"</code>
+<code>'success' | 'error' | 'pending' | 'downloading'</code>
 
 
 ### DelayUntilNext
 
-<code>"background" | "kill" | "nativeVersion" | "date"</code>
+<code>'background' | 'kill' | 'nativeVersion' | 'date'</code>
 
 </docgen-api>

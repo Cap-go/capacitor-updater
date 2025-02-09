@@ -5,262 +5,14 @@
  */
 
 import Foundation
+#if canImport(ZipArchive)
+import ZipArchive
+#else
 import SSZipArchive
+#endif
 import Alamofire
-import zlib
-import CryptoKit
 import Compression
-
-extension Collection {
-    subscript(safe index: Index) -> Element? {
-        return indices.contains(index) ? self[index] : nil
-    }
-}
-extension URL {
-    var isDirectory: Bool {
-        (try? resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
-    }
-    var exist: Bool {
-        return FileManager().fileExists(atPath: self.path)
-    }
-}
-struct SetChannelDec: Decodable {
-    let status: String?
-    let error: String?
-    let message: String?
-}
-public class SetChannel: NSObject {
-    var status: String = ""
-    var error: String = ""
-    var message: String = ""
-}
-extension SetChannel {
-    func toDict() -> [String: Any] {
-        var dict: [String: Any] = [String: Any]()
-        let otherSelf: Mirror = Mirror(reflecting: self)
-        for child: Mirror.Child in otherSelf.children {
-            if let key: String = child.label {
-                dict[key] = child.value
-            }
-        }
-        return dict
-    }
-}
-struct GetChannelDec: Decodable {
-    let channel: String?
-    let status: String?
-    let error: String?
-    let message: String?
-    let allowSet: Bool?
-}
-public class GetChannel: NSObject {
-    var channel: String = ""
-    var status: String = ""
-    var error: String = ""
-    var message: String = ""
-    var allowSet: Bool = true
-}
-extension GetChannel {
-    func toDict() -> [String: Any] {
-        var dict: [String: Any] = [String: Any]()
-        let otherSelf: Mirror = Mirror(reflecting: self)
-        for child: Mirror.Child in otherSelf.children {
-            if let key: String = child.label {
-                dict[key] = child.value
-            }
-        }
-        return dict
-    }
-}
-struct InfoObject: Codable {
-    let platform: String?
-    let device_id: String?
-    let app_id: String?
-    let custom_id: String?
-    let version_build: String?
-    let version_code: String?
-    let version_os: String?
-    var version_name: String?
-    var old_version_name: String?
-    let plugin_version: String?
-    let is_emulator: Bool?
-    let is_prod: Bool?
-    var action: String?
-    var channel: String?
-    var defaultChannel: String?
-}
-
-public struct ManifestEntry: Codable {
-    let file_name: String?
-    let file_hash: String?
-    let download_url: String?
-}
-
-extension ManifestEntry {
-    func toDict() -> [String: Any] {
-        var dict: [String: Any] = [String: Any]()
-        let mirror = Mirror(reflecting: self)
-        for child in mirror.children {
-            if let key = child.label {
-                dict[key] = child.value
-            }
-        }
-        return dict
-    }
-}
-
-struct AppVersionDec: Decodable {
-    let version: String?
-    let checksum: String?
-    let url: String?
-    let message: String?
-    let error: String?
-    let session_key: String?
-    let major: Bool?
-    let data: [String: String]?
-    let manifest: [ManifestEntry]?
-}
-
-public class AppVersion: NSObject {
-    var version: String = ""
-    var checksum: String = ""
-    var url: String = ""
-    var message: String?
-    var error: String?
-    var sessionKey: String?
-    var major: Bool?
-    var data: [String: String]?
-    var manifest: [ManifestEntry]?
-}
-
-extension AppVersion {
-    func toDict() -> [String: Any] {
-        var dict: [String: Any] = [String: Any]()
-        let otherSelf: Mirror = Mirror(reflecting: self)
-        for child: Mirror.Child in otherSelf.children {
-            if let key: String = child.label {
-                if key == "manifest", let manifestEntries = child.value as? [ManifestEntry] {
-                    dict[key] = manifestEntries.map { $0.toDict() }
-                } else {
-                    dict[key] = child.value
-                }
-            }
-        }
-        return dict
-    }
-}
-
-extension OperatingSystemVersion {
-    func getFullVersion(separator: String = ".") -> String {
-        return "\(majorVersion)\(separator)\(minorVersion)\(separator)\(patchVersion)"
-    }
-}
-extension Bundle {
-    var versionName: String? {
-        return infoDictionary?["CFBundleShortVersionString"] as? String
-    }
-    var versionCode: String? {
-        return infoDictionary?["CFBundleVersion"] as? String
-    }
-}
-
-extension ISO8601DateFormatter {
-    convenience init(_ formatOptions: Options) {
-        self.init()
-        self.formatOptions = formatOptions
-    }
-}
-extension Formatter {
-    static let iso8601withFractionalSeconds: ISO8601DateFormatter = ISO8601DateFormatter([.withInternetDateTime, .withFractionalSeconds])
-}
-extension Date {
-    var iso8601withFractionalSeconds: String { return Formatter.iso8601withFractionalSeconds.string(from: self) }
-}
-extension String {
-
-    var fileURL: URL {
-        return URL(fileURLWithPath: self)
-    }
-
-    var lastPathComponent: String {
-        get {
-            return fileURL.lastPathComponent
-        }
-    }
-    var iso8601withFractionalSeconds: Date? {
-        return Formatter.iso8601withFractionalSeconds.date(from: self)
-    }
-    func trim(using characterSet: CharacterSet = .whitespacesAndNewlines) -> String {
-        return trimmingCharacters(in: characterSet)
-    }
-}
-
-enum CustomError: Error {
-    // Throw when an unzip fail
-    case cannotUnzip
-    case cannotWrite
-    case cannotDecode
-    case cannotUnflat
-    case cannotCreateDirectory
-    case cannotDeleteDirectory
-    case cannotDecryptSessionKey
-    case invalidBase64
-
-    // Throw in all other cases
-    case unexpected(code: Int)
-}
-
-extension CustomError: LocalizedError {
-    public var errorDescription: String? {
-        switch self {
-        case .cannotUnzip:
-            return NSLocalizedString(
-                "The file cannot be unzip",
-                comment: "Invalid zip"
-            )
-        case .cannotCreateDirectory:
-            return NSLocalizedString(
-                "The folder cannot be created",
-                comment: "Invalid folder"
-            )
-        case .cannotDeleteDirectory:
-            return NSLocalizedString(
-                "The folder cannot be deleted",
-                comment: "Invalid folder"
-            )
-        case .cannotUnflat:
-            return NSLocalizedString(
-                "The file cannot be unflat",
-                comment: "Invalid folder"
-            )
-        case .unexpected:
-            return NSLocalizedString(
-                "An unexpected error occurred.",
-                comment: "Unexpected Error"
-            )
-        case .cannotDecode:
-            return NSLocalizedString(
-                "Decoding the zip failed with this key",
-                comment: "Invalid public key"
-            )
-        case .cannotWrite:
-            return NSLocalizedString(
-                "Cannot write to the destination",
-                comment: "Invalid destination"
-            )
-        case .cannotDecryptSessionKey:
-            return NSLocalizedString(
-                "Decrypting the session key failed",
-                comment: "Invalid session key"
-            )
-        case .invalidBase64:
-            return NSLocalizedString(
-                "Decrypting the base64 failed",
-                comment: "Invalid checksum key"
-            )
-        }
-    }
-}
+import UIKit
 
 @objc public class CapacitorUpdater: NSObject {
 
@@ -277,7 +29,7 @@ extension CustomError: LocalizedError {
     // Add this line to declare cacheFolder
     private let cacheFolder: URL = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!.appendingPathComponent("capgo_downloads")
 
-    public let TAG: String = "✨  Capacitor-updater:"
+    public static let TAG: String = "✨  Capacitor-updater:"
     public let CAP_SERVER_PATH: String = "serverBasePath"
     public var versionBuild: String = ""
     public var customId: String = ""
@@ -356,7 +108,7 @@ extension CustomError: LocalizedError {
             do {
                 try FileManager.default.createDirectory(atPath: source.path, withIntermediateDirectories: true, attributes: nil)
             } catch {
-                print("\(self.TAG) Cannot createDirectory \(source.path)")
+                print("\(CapacitorUpdater.TAG) Cannot createDirectory \(source.path)")
                 throw CustomError.cannotCreateDirectory
             }
         }
@@ -366,7 +118,7 @@ extension CustomError: LocalizedError {
         do {
             try FileManager.default.removeItem(atPath: source.path)
         } catch {
-            print("\(self.TAG) File not removed. \(source.path)")
+            print("\(CapacitorUpdater.TAG) File not removed. \(source.path)")
             throw CustomError.cannotDeleteDirectory
         }
     }
@@ -383,7 +135,7 @@ extension CustomError: LocalizedError {
                 return false
             }
         } catch {
-            print("\(self.TAG) File not moved. source: \(source.path) dest: \(dest.path)")
+            print("\(CapacitorUpdater.TAG) File not moved. source: \(source.path) dest: \(dest.path)")
             throw CustomError.cannotUnflat
         }
     }
@@ -434,7 +186,7 @@ extension CustomError: LocalizedError {
 
     private func unzipProgressHandler(entry: String, zipInfo: unz_file_info, entryNumber: Int, total: Int, destUnZip: URL, id: String, unzipError: inout NSError?) {
         if entry.contains("\\") {
-            print("\(self.TAG) unzip: Windows path is not supported, please use unix path as required by zip RFC: \(entry)")
+            print("\(CapacitorUpdater.TAG) unzip: Windows path is not supported, please use unix path as required by zip RFC: \(entry)")
             self.sendStats(action: "windows_path_fail")
         }
 
@@ -530,11 +282,14 @@ extension CustomError: LocalizedError {
         )
     }
 
-    public func getLatest(url: URL) -> AppVersion {
+    public func getLatest(url: URL, channel: String?) -> AppVersion {
         let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
         let latest: AppVersion = AppVersion()
-        let parameters: InfoObject = self.createInfoObject()
-        print("\(self.TAG) Auto-update parameters: \(parameters)")
+        var parameters: InfoObject = self.createInfoObject()
+        if let channel = channel {
+            parameters.defaultChannel = channel
+        }
+        print("\(CapacitorUpdater.TAG) Auto-update parameters: \(parameters)")
         let request = AF.request(url, method: .post, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
 
         request.validate().responseDecodable(of: AppVersionDec.self) { response in
@@ -568,7 +323,7 @@ extension CustomError: LocalizedError {
                     latest.manifest = manifest
                 }
             case let .failure(error):
-                print("\(self.TAG) Error getting Latest", response.value ?? "", error )
+                print("\(CapacitorUpdater.TAG) Error getting Latest", response.value ?? "", error )
                 latest.message = "Error getting Latest \(String(describing: response.value))"
                 latest.error = "response_error"
             }
@@ -581,63 +336,7 @@ extension CustomError: LocalizedError {
     private func setCurrentBundle(bundle: String) {
         UserDefaults.standard.set(bundle, forKey: self.CAP_SERVER_PATH)
         UserDefaults.standard.synchronize()
-        print("\(self.TAG) Current bundle set to: \((bundle ).isEmpty ? BundleInfo.ID_BUILTIN : bundle)")
-    }
-    private func calcChecksum(filePath: URL) -> String {
-        let bufferSize = 1024 * 1024 * 5 // 5 MB
-        var checksum = uLong(0)
-
-        do {
-            let fileHandle = try FileHandle(forReadingFrom: filePath)
-            defer {
-                fileHandle.closeFile()
-            }
-
-            while autoreleasepool(invoking: {
-                let fileData = fileHandle.readData(ofLength: bufferSize)
-                if fileData.count > 0 {
-                    checksum = fileData.withUnsafeBytes {
-                        crc32(checksum, $0.bindMemory(to: Bytef.self).baseAddress, uInt(fileData.count))
-                    }
-                    return true // Continue
-                } else {
-                    return false // End of file
-                }
-            }) {}
-
-            return String(format: "%08X", checksum).lowercased()
-        } catch {
-            print("\(self.TAG) Cannot get checksum: \(filePath.path)", error)
-            return ""
-        }
-    }
-
-    private func calcChecksumV2(filePath: URL) -> String {
-        let bufferSize = 1024 * 1024 * 5 // 5 MB
-        var sha256 = SHA256()
-
-        do {
-            let fileHandle = try FileHandle(forReadingFrom: filePath)
-            defer {
-                fileHandle.closeFile()
-            }
-
-            while autoreleasepool(invoking: {
-                let fileData = fileHandle.readData(ofLength: bufferSize)
-                if fileData.count > 0 {
-                    sha256.update(data: fileData)
-                    return true // Continue
-                } else {
-                    return false // End of file
-                }
-            }) {}
-
-            let digest = sha256.finalize()
-            return digest.compactMap { String(format: "%02x", $0) }.joined()
-        } catch {
-            print("\(self.TAG) Cannot get checksum: \(filePath.path)", error)
-            return ""
-        }
+        print("\(CapacitorUpdater.TAG) Current bundle set to: \((bundle ).isEmpty ? BundleInfo.ID_BUILTIN : bundle)")
     }
 
     private var tempDataPath: URL {
@@ -672,8 +371,9 @@ extension CustomError: LocalizedError {
 
     public func downloadManifest(manifest: [ManifestEntry], version: String, sessionKey: String) throws -> BundleInfo {
         let id = self.randomString(length: 10)
-        print("\(self.TAG) downloadManifest start \(id)")
+        print("\(CapacitorUpdater.TAG) downloadManifest start \(id)")
         let destFolder = self.getBundleDirectory(id: id)
+        let builtinFolder = Bundle.main.bundleURL.appendingPathComponent("public")
 
         try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true, attributes: nil)
         try FileManager.default.createDirectory(at: destFolder, withIntermediateDirectories: true, attributes: nil)
@@ -693,34 +393,43 @@ extension CustomError: LocalizedError {
 
         for entry in manifest {
             guard let fileName = entry.file_name,
-                  let fileHash = entry.file_hash,
+                  var fileHash = entry.file_hash,
                   let downloadUrl = entry.download_url else {
                 continue
+            }
+
+            if !self.hasOldPrivateKeyPropertyInConfig && !self.publicKey.isEmpty && !sessionKey.isEmpty {
+                do {
+                    fileHash = try CryptoCipherV2.decryptChecksum(checksum: fileHash, publicKey: self.publicKey, version: version)
+                } catch {
+                    downloadError = error
+                    print("\(CapacitorUpdater.TAG) CryptoCipherV2.decryptChecksum error \(id) \(fileName) error: \(error)")
+                }
             }
 
             let fileNameWithoutPath = (fileName as NSString).lastPathComponent
             let cacheFileName = "\(fileHash)_\(fileNameWithoutPath)"
             let cacheFilePath = cacheFolder.appendingPathComponent(cacheFileName)
             let destFilePath = destFolder.appendingPathComponent(fileName)
+            let builtinFilePath = builtinFolder.appendingPathComponent(fileName)
 
             // Create necessary subdirectories in the destination folder
             try FileManager.default.createDirectory(at: destFilePath.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
 
             dispatchGroup.enter()
 
-            if FileManager.default.fileExists(atPath: cacheFilePath.path) {
-                // File exists in cache, copy to destination
-                do {
-                    try FileManager.default.copyItem(at: cacheFilePath, to: destFilePath)
-                    print("\(self.TAG) downloadManifest \(fileName) copy from cache \(id)")
-                    completedFiles += 1
-                    self.notifyDownload(id: id, percent: self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70))
-                    dispatchGroup.leave()
-                } catch {
-                    downloadError = error
-                    print("\(self.TAG) downloadManifest \(fileName) cache error \(id): \(error)")
-                    dispatchGroup.leave()
-                }
+            if FileManager.default.fileExists(atPath: builtinFilePath.path) && verifyChecksum(file: builtinFilePath, expectedHash: fileHash) {
+                try FileManager.default.copyItem(at: builtinFilePath, to: destFilePath)
+                print("\(CapacitorUpdater.TAG) downloadManifest \(fileName) using builtin file \(id)")
+                completedFiles += 1
+                self.notifyDownload(id: id, percent: self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70))
+                dispatchGroup.leave()
+            } else if FileManager.default.fileExists(atPath: cacheFilePath.path) && verifyChecksum(file: cacheFilePath, expectedHash: fileHash) {
+                try FileManager.default.copyItem(at: cacheFilePath, to: destFilePath)
+                print("\(CapacitorUpdater.TAG) downloadManifest \(fileName) copy from cache \(id)")
+                completedFiles += 1
+                self.notifyDownload(id: id, percent: self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70))
+                dispatchGroup.leave()
             } else {
                 // File not in cache, download, decompress, and save to both cache and destination
                 AF.download(downloadUrl).responseData { response in
@@ -729,25 +438,58 @@ extension CustomError: LocalizedError {
                     switch response.result {
                     case .success(let data):
                         do {
+                            let statusCode = response.response?.statusCode ?? 200
+                            if statusCode < 200 || statusCode >= 300 {
+                                if let stringData = String(data: data, encoding: .utf8) {
+                                    throw NSError(domain: "StatusCodeError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid. Data: \(stringData)"])
+                                } else {
+                                    throw NSError(domain: "StatusCodeError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid"])
+                                }
+                            }
+
+                            // Add decryption step if public key is set and sessionKey is provided
+                            var finalData = data
+                            if !self.publicKey.isEmpty && !sessionKey.isEmpty {
+                                let tempFile = self.cacheFolder.appendingPathComponent("temp_\(UUID().uuidString)")
+                                try finalData.write(to: tempFile)
+                                do {
+                                    try CryptoCipherV2.decryptFile(filePath: tempFile, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
+                                } catch {
+                                    self.sendStats(action: "decrypt_fail", versionName: version)
+                                    throw error
+                                }
+                                // TODO: try and do             self.sendStats(action: "decrypt_fail", versionName: version) if fail
+                                finalData = try Data(contentsOf: tempFile)
+                                try FileManager.default.removeItem(at: tempFile)
+                            }
+
                             // Decompress the Brotli data
-                            guard let decompressedData = self.decompressBrotli(data: data) else {
+                            guard let decompressedData = self.decompressBrotli(data: finalData, fileName: fileName) else {
                                 throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data"])
                             }
-                            // Save decompressed data to cache
-                            try decompressedData.write(to: cacheFilePath)
-                            // Save decompressed data to destination
-                            try decompressedData.write(to: destFilePath)
+                            finalData = decompressedData
+
+                            try finalData.write(to: destFilePath)
+                            if !self.hasOldPrivateKeyPropertyInConfig && !self.publicKey.isEmpty && !sessionKey.isEmpty {
+                                // assume that calcChecksum != null
+                                let calculatedChecksum = CryptoCipherV2.calcChecksum(filePath: destFilePath)
+                                if calculatedChecksum != fileHash {
+                                    throw NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash))"])
+                                }
+                            }
+
+                            // Save decrypted data to cache and destination
+                            try finalData.write(to: cacheFilePath)
 
                             completedFiles += 1
                             self.notifyDownload(id: id, percent: self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70))
-                            print("\(self.TAG) downloadManifest \(id) \(fileName) downloaded, decompressed, and cached")
+                            print("\(CapacitorUpdater.TAG) downloadManifest \(id) \(fileName) downloaded, decompressed\(!self.publicKey.isEmpty && !sessionKey.isEmpty ? ", decrypted" : ""), and cached")
                         } catch {
                             downloadError = error
-                            print("\(self.TAG) downloadManifest \(id) \(fileName) error: \(error)")
+                            print("\(CapacitorUpdater.TAG) downloadManifest \(id) \(fileName) error: \(error)")
                         }
                     case .failure(let error):
-                        downloadError = error
-                        print("\(self.TAG) downloadManifest \(id) \(fileName) download error: \(error)")
+                        print("\(CapacitorUpdater.TAG) downloadManifest \(id) \(fileName) download error: \(error). Debug response: \(response.debugDescription).")
                     }
                 }
             }
@@ -766,11 +508,11 @@ extension CustomError: LocalizedError {
         let updatedBundle = bundleInfo.setStatus(status: BundleStatus.PENDING.localizedString)
         self.saveBundleInfo(id: id, bundle: updatedBundle)
 
-        print("\(self.TAG) downloadManifest done \(id)")
+        print("\(CapacitorUpdater.TAG) downloadManifest done \(id)")
         return updatedBundle
     }
 
-    private func decompressBrotli(data: Data) -> Data? {
+    private func decompressBrotli(data: Data, fileName: String) -> Data? {
         let outputBufferSize = 65536
         var outputBuffer = [UInt8](repeating: 0, count: outputBufferSize)
         var decompressedData = Data()
@@ -778,7 +520,7 @@ extension CustomError: LocalizedError {
         let streamPointer = UnsafeMutablePointer<compression_stream>.allocate(capacity: 1)
         var status = compression_stream_init(streamPointer, COMPRESSION_STREAM_DECODE, COMPRESSION_BROTLI)
         guard status != COMPRESSION_STATUS_ERROR else {
-            print("\(self.TAG) Unable to initialize the decompression stream.")
+            print("\(CapacitorUpdater.TAG) Unable to initialize the decompression stream. \(fileName)")
             return nil
         }
 
@@ -800,7 +542,7 @@ extension CustomError: LocalizedError {
                     if let baseAddress = rawBufferPointer.baseAddress {
                         streamPointer.pointee.src_ptr = baseAddress.assumingMemoryBound(to: UInt8.self)
                     } else {
-                        print("\(self.TAG) Error: Unable to get base address of input data")
+                        print("\(CapacitorUpdater.TAG) Error: Unable to get base address of input data. \(fileName)")
                         status = COMPRESSION_STATUS_ERROR
                         return
                     }
@@ -821,7 +563,15 @@ extension CustomError: LocalizedError {
             if status == COMPRESSION_STATUS_END {
                 break
             } else if status == COMPRESSION_STATUS_ERROR {
-                print("\(self.TAG) Error during Brotli decompression")
+                print("\(CapacitorUpdater.TAG) Error during Brotli decompression. \(fileName)")
+                // Try to decode as text if mostly ASCII
+                if let text = String(data: data, encoding: .utf8) {
+                    let asciiCount = text.unicodeScalars.filter { $0.isASCII }.count
+                    let totalCount = text.unicodeScalars.count
+                    if totalCount > 0 && Double(asciiCount) / Double(totalCount) >= 0.8 {
+                        print("\(CapacitorUpdater.TAG) Compressed data as text: \(text)")
+                    }
+                }
                 return nil
             }
 
@@ -859,7 +609,7 @@ extension CustomError: LocalizedError {
         let monitor = ClosureEventMonitor()
         monitor.requestDidCompleteTaskWithError = { (_, _, error) in
             if error != nil {
-                print("\(self.TAG) Downloading failed - ClosureEventMonitor activated")
+                print("\(CapacitorUpdater.TAG) Downloading failed - ClosureEventMonitor activated")
                 mainError = error as NSError?
             }
         }
@@ -890,11 +640,11 @@ extension CustomError: LocalizedError {
                     }
 
                 } else {
-                    print("\(self.TAG) Download failed")
+                    print("\(CapacitorUpdater.TAG) Download failed")
                 }
 
             case .complete:
-                print("\(self.TAG) Download complete, total received bytes: \(totalReceivedBytes)")
+                print("\(CapacitorUpdater.TAG) Download complete, total received bytes: \(totalReceivedBytes)")
                 self.notifyDownload(id: id, percent: 70, ignoreMultipleOfTen: true)
                 semaphore.signal()
             }
@@ -916,7 +666,7 @@ extension CustomError: LocalizedError {
         reachabilityManager?.stopListening()
 
         if mainError != nil {
-            print("\(self.TAG) Failed to download: \(String(describing: mainError))")
+            print("\(CapacitorUpdater.TAG) Failed to download: \(String(describing: mainError))")
             self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum))
             throw mainError!
         }
@@ -926,7 +676,7 @@ extension CustomError: LocalizedError {
             try self.decryptFileV2(filePath: tempDataPath, sessionKey: sessionKey, version: version)
             try FileManager.default.moveItem(at: tempDataPath, to: finalPath)
         } catch {
-            print("\(self.TAG) Failed decrypt file : \(error)")
+            print("\(CapacitorUpdater.TAG) Failed decrypt file : \(error)")
             self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum))
             cleanDownloadData()
             throw error
@@ -938,7 +688,7 @@ extension CustomError: LocalizedError {
             try self.saveDownloaded(sourceZip: finalPath, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: true)
 
         } catch {
-            print("\(self.TAG) Failed to unzip file: \(error)")
+            print("\(CapacitorUpdater.TAG) Failed to unzip file: \(error)")
             self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum))
             cleanDownloadData()
             // todo: cleanup zip attempts
@@ -946,25 +696,25 @@ extension CustomError: LocalizedError {
         }
 
         self.notifyDownload(id: id, percent: 90)
-        print("\(self.TAG) Downloading: 90% (wrapping up)")
+        print("\(CapacitorUpdater.TAG) Downloading: 90% (wrapping up)")
         let info = BundleInfo(id: id, version: version, status: BundleStatus.PENDING, downloaded: Date(), checksum: checksum)
         self.saveBundleInfo(id: id, bundle: info)
         self.cleanDownloadData()
         self.notifyDownload(id: id, percent: 100)
-        print("\(self.TAG) Downloading: 100% (complete)")
+        print("\(CapacitorUpdater.TAG) Downloading: 100% (complete)")
         return info
     }
     private func ensureResumableFilesExist() {
         let fileManager = FileManager.default
         if !fileManager.fileExists(atPath: tempDataPath.path) {
             if !fileManager.createFile(atPath: tempDataPath.path, contents: Data()) {
-                print("\(self.TAG) Cannot ensure that a file at \(tempDataPath.path) exists")
+                print("\(CapacitorUpdater.TAG) Cannot ensure that a file at \(tempDataPath.path) exists")
             }
         }
 
         if !fileManager.fileExists(atPath: updateInfo.path) {
             if !fileManager.createFile(atPath: updateInfo.path, contents: Data()) {
-                print("\(self.TAG) Cannot ensure that a file at \(updateInfo.path) exists")
+                print("\(CapacitorUpdater.TAG) Cannot ensure that a file at \(updateInfo.path) exists")
             }
         }
     }
@@ -976,7 +726,7 @@ extension CustomError: LocalizedError {
             do {
                 try fileManager.removeItem(at: tempDataPath)
             } catch {
-                print("\(self.TAG) Could not delete file at \(tempDataPath): \(error)")
+                print("\(CapacitorUpdater.TAG) Could not delete file at \(tempDataPath): \(error)")
             }
         }
         // Deleting update.dat
@@ -984,7 +734,7 @@ extension CustomError: LocalizedError {
             do {
                 try fileManager.removeItem(at: updateInfo)
             } catch {
-                print("\(self.TAG) Could not delete file at \(updateInfo): \(error)")
+                print("\(CapacitorUpdater.TAG) Could not delete file at \(updateInfo): \(error)")
             }
         }
     }
@@ -1012,7 +762,7 @@ extension CustomError: LocalizedError {
         do {
             try "\(version)".write(to: updateInfo, atomically: true, encoding: .utf8)
         } catch {
-            print("\(self.TAG) Failed to save progress: \(error)")
+            print("\(CapacitorUpdater.TAG) Failed to save progress: \(error)")
         }
     }
     private func getLocalUpdateVersion() -> String { // Return the version that was tried to be downloaded on last download attempt
@@ -1034,40 +784,73 @@ extension CustomError: LocalizedError {
                 return fileSize.int64Value
             }
         } catch {
-            print("\(self.TAG) Could not retrieve already downloaded data size : \(error)")
+            print("\(CapacitorUpdater.TAG) Could not retrieve already downloaded data size : \(error)")
         }
         return 0
     }
 
-    public func list() -> [BundleInfo] {
-        let dest: URL = libraryDir.appendingPathComponent(bundleDirectory)
-        do {
-            let files: [String] = try FileManager.default.contentsOfDirectory(atPath: dest.path)
-            var res: [BundleInfo] = []
-            print("\(self.TAG) list File : \(dest.path)")
-            if dest.exist {
-                for id: String in files {
-                    res.append(self.getBundleInfo(id: id))
+    public func list(raw: Bool = false) -> [BundleInfo] {
+        if !raw {
+            // UserDefaults.standard.dictionaryRepresentation().values
+            let dest: URL = libraryDir.appendingPathComponent(bundleDirectory)
+            do {
+                let files: [String] = try FileManager.default.contentsOfDirectory(atPath: dest.path)
+                var res: [BundleInfo] = []
+                print("\(CapacitorUpdater.TAG) list File : \(dest.path)")
+                if dest.exist {
+                    for id: String in files {
+                        res.append(self.getBundleInfo(id: id))
+                    }
                 }
+                return res
+            } catch {
+                print("\(CapacitorUpdater.TAG) No version available \(dest.path)")
+                return []
             }
-            return res
-        } catch {
-            print("\(self.TAG) No version available \(dest.path)")
-            return []
+        } else {
+            guard let regex = try? NSRegularExpression(pattern: "^[0-9A-Za-z]{10}_info$") else {
+                print("\(CapacitorUpdater.TAG) Invald regex ?????")
+                return []
+            }
+            return UserDefaults.standard.dictionaryRepresentation().keys.filter {
+                let range = NSRange($0.startIndex..., in: $0)
+                let matches = regex.matches(in: $0, range: range)
+                return !matches.isEmpty
+            }.map {
+                $0.components(separatedBy: "_")[0]
+            }.map {
+                self.getBundleInfo(id: $0)
+            }
         }
+
     }
 
     public func delete(id: String, removeInfo: Bool) -> Bool {
         let deleted: BundleInfo = self.getBundleInfo(id: id)
         if deleted.isBuiltin() || self.getCurrentBundleId() == id {
-            print("\(self.TAG) Cannot delete \(id)")
+            print("\(CapacitorUpdater.TAG) Cannot delete \(id)")
             return false
         }
+
+        // Check if this is the next bundle and prevent deletion if it is
+        if let next = self.getNextBundle(),
+           !next.isDeleted() &&
+            !next.isErrorStatus() &&
+            next.getId() == id {
+            print("\(CapacitorUpdater.TAG) Cannot delete the next bundle \(id)")
+            return false
+        }
+
         let destPersist: URL = libraryDir.appendingPathComponent(bundleDirectory).appendingPathComponent(id)
         do {
             try FileManager.default.removeItem(atPath: destPersist.path)
         } catch {
-            print("\(self.TAG) Folder \(destPersist.path), not removed.")
+            print("\(CapacitorUpdater.TAG) Folder \(destPersist.path), not removed.")
+            // even if, we don;t care. Android doesn't care
+            if removeInfo {
+                self.removeBundleInfo(id: id)
+            }
+            self.sendStats(action: "delete", versionName: deleted.getVersionName())
             return false
         }
         if removeInfo {
@@ -1075,7 +858,7 @@ extension CustomError: LocalizedError {
         } else {
             self.saveBundleInfo(id: id, bundle: deleted.setStatus(status: BundleStatus.DELETED.localizedString))
         }
-        print("\(self.TAG) bundle delete \(deleted.getVersionName())")
+        print("\(CapacitorUpdater.TAG) bundle delete \(deleted.getVersionName())")
         self.sendStats(action: "delete", versionName: deleted.getVersionName())
         return true
     }
@@ -1128,7 +911,7 @@ extension CustomError: LocalizedError {
     public func autoReset() {
         let currentBundle: BundleInfo = self.getCurrentBundle()
         if !currentBundle.isBuiltin() && !self.bundleExists(id: currentBundle.getId()) {
-            print("\(self.TAG) Folder at bundle path does not exist. Triggering reset.")
+            print("\(CapacitorUpdater.TAG) Folder at bundle path does not exist. Triggering reset.")
             self.reset()
         }
     }
@@ -1138,7 +921,7 @@ extension CustomError: LocalizedError {
     }
 
     public func reset(isInternal: Bool) {
-        print("\(self.TAG) reset: \(isInternal)")
+        print("\(CapacitorUpdater.TAG) reset: \(isInternal)")
         let currentBundleName = self.getCurrentBundle().getVersionName()
         self.setCurrentBundle(bundle: "")
         self.setFallbackBundle(fallback: Optional<BundleInfo>.none)
@@ -1151,14 +934,14 @@ extension CustomError: LocalizedError {
     public func setSuccess(bundle: BundleInfo, autoDeletePrevious: Bool) {
         self.setBundleStatus(id: bundle.getId(), status: BundleStatus.SUCCESS)
         let fallback: BundleInfo = self.getFallbackBundle()
-        print("\(self.TAG) Fallback bundle is: \(fallback.toString())")
-        print("\(self.TAG) Version successfully loaded: \(bundle.toString())")
+        print("\(CapacitorUpdater.TAG) Fallback bundle is: \(fallback.toString())")
+        print("\(CapacitorUpdater.TAG) Version successfully loaded: \(bundle.toString())")
         if autoDeletePrevious && !fallback.isBuiltin() && fallback.getId() != bundle.getId() {
             let res = self.delete(id: fallback.getId())
             if res {
-                print("\(self.TAG) Deleted previous bundle: \(fallback.toString())")
+                print("\(CapacitorUpdater.TAG) Deleted previous bundle: \(fallback.toString())")
             } else {
-                print("\(self.TAG) Failed to delete previous bundle: \(fallback.toString())")
+                print("\(CapacitorUpdater.TAG) Failed to delete previous bundle: \(fallback.toString())")
             }
         }
         self.setFallbackBundle(fallback: bundle)
@@ -1171,7 +954,7 @@ extension CustomError: LocalizedError {
     func unsetChannel() -> SetChannel {
         let setChannel: SetChannel = SetChannel()
         if (self.channelUrl ).isEmpty {
-            print("\(self.TAG) Channel URL is not set")
+            print("\(CapacitorUpdater.TAG) Channel URL is not set")
             setChannel.message = "Channel URL is not set"
             setChannel.error = "missing_config"
             return setChannel
@@ -1194,7 +977,7 @@ extension CustomError: LocalizedError {
                     setChannel.message = message
                 }
             case let .failure(error):
-                print("\(self.TAG) Error unset Channel", response.value ?? "", error)
+                print("\(CapacitorUpdater.TAG) Error unset Channel", response.value ?? "", error)
                 setChannel.message = "Error unset Channel \(String(describing: response.value))"
                 setChannel.error = "response_error"
             }
@@ -1207,7 +990,7 @@ extension CustomError: LocalizedError {
     func setChannel(channel: String) -> SetChannel {
         let setChannel: SetChannel = SetChannel()
         if (self.channelUrl ).isEmpty {
-            print("\(self.TAG) Channel URL is not set")
+            print("\(CapacitorUpdater.TAG) Channel URL is not set")
             setChannel.message = "Channel URL is not set"
             setChannel.error = "missing_config"
             return setChannel
@@ -1231,7 +1014,7 @@ extension CustomError: LocalizedError {
                     setChannel.message = message
                 }
             case let .failure(error):
-                print("\(self.TAG) Error set Channel", response.value ?? "", error)
+                print("\(CapacitorUpdater.TAG) Error set Channel", response.value ?? "", error)
                 setChannel.message = "Error set Channel \(String(describing: response.value))"
                 setChannel.error = "response_error"
             }
@@ -1244,7 +1027,7 @@ extension CustomError: LocalizedError {
     func getChannel() -> GetChannel {
         let getChannel: GetChannel = GetChannel()
         if (self.channelUrl ).isEmpty {
-            print("\(self.TAG) Channel URL is not set")
+            print("\(CapacitorUpdater.TAG) Channel URL is not set")
             getChannel.message = "Channel URL is not set"
             getChannel.error = "missing_config"
             return getChannel
@@ -1254,6 +1037,9 @@ extension CustomError: LocalizedError {
         let request = AF.request(self.channelUrl, method: .put, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
 
         request.validate().responseDecodable(of: GetChannelDec.self) { response in
+            defer {
+                semaphore.signal()
+            }
             switch response.result {
             case .success:
                 if let status = response.value?.status {
@@ -1272,11 +1058,18 @@ extension CustomError: LocalizedError {
                     getChannel.allowSet = allowSet
                 }
             case let .failure(error):
-                print("\(self.TAG) Error get Channel", response.value ?? "", error)
+                if let data = response.data, let bodyString = String(data: data, encoding: .utf8) {
+                    if bodyString.contains("channel_not_found") && response.response?.statusCode == 400 && !self.defaultChannel.isEmpty {
+                        getChannel.channel = self.defaultChannel
+                        getChannel.status = "default"
+                        return
+                    }
+                }
+
+                print("\(CapacitorUpdater.TAG) Error get Channel", response.value ?? "", error)
                 getChannel.message = "Error get Channel \(String(describing: response.value)))"
                 getChannel.error = "response_error"
             }
-            semaphore.signal()
         }
         semaphore.wait()
         return getChannel
@@ -1308,9 +1101,9 @@ extension CustomError: LocalizedError {
             ).responseData { response in
                 switch response.result {
                 case .success:
-                    print("\(self.TAG) Stats sent for \(action), version \(versionName)")
+                    print("\(CapacitorUpdater.TAG) Stats sent for \(action), version \(versionName)")
                 case let .failure(error):
-                    print("\(self.TAG) Error sending stats: ", response.value ?? "", error.localizedDescription)
+                    print("\(CapacitorUpdater.TAG) Error sending stats: ", response.value ?? "", error.localizedDescription)
                 }
                 semaphore.signal()
             }
@@ -1325,7 +1118,7 @@ extension CustomError: LocalizedError {
         if id != nil {
             trueId = id!
         }
-        // print("\(self.TAG) Getting info for bundle [\(trueId)]")
+        // print("\(CapacitorUpdater.TAG) Getting info for bundle [\(trueId)]")
         let result: BundleInfo
         if BundleInfo.ID_BUILTIN == trueId {
             result = BundleInfo(id: trueId, version: "", status: BundleStatus.SUCCESS, checksum: "")
@@ -1335,11 +1128,11 @@ extension CustomError: LocalizedError {
             do {
                 result = try UserDefaults.standard.getObj(forKey: "\(trueId)\(self.INFO_SUFFIX)", castTo: BundleInfo.self)
             } catch {
-                print("\(self.TAG) Failed to parse info for bundle [\(trueId)]", error.localizedDescription)
+                print("\(CapacitorUpdater.TAG) Failed to parse info for bundle [\(trueId)]", error.localizedDescription)
                 result = BundleInfo(id: trueId, version: "", status: BundleStatus.PENDING, checksum: "")
             }
         }
-        // print("\(self.TAG) Returning info bundle [\(result.toString())]")
+        // print("\(CapacitorUpdater.TAG) Returning info bundle [\(result.toString())]")
         return result
     }
 
@@ -1359,26 +1152,26 @@ extension CustomError: LocalizedError {
 
     public func saveBundleInfo(id: String, bundle: BundleInfo?) {
         if bundle != nil && (bundle!.isBuiltin() || bundle!.isUnknown()) {
-            print("\(self.TAG) Not saving info for bundle [\(id)]", bundle?.toString() ?? "")
+            print("\(CapacitorUpdater.TAG) Not saving info for bundle [\(id)]", bundle?.toString() ?? "")
             return
         }
         if bundle == nil {
-            print("\(self.TAG) Removing info for bundle [\(id)]")
+            print("\(CapacitorUpdater.TAG) Removing info for bundle [\(id)]")
             UserDefaults.standard.removeObject(forKey: "\(id)\(self.INFO_SUFFIX)")
         } else {
             let update = bundle!.setId(id: id)
-            print("\(self.TAG) Storing info for bundle [\(id)]", update.toString())
+            print("\(CapacitorUpdater.TAG) Storing info for bundle [\(id)]", update.toString())
             do {
                 try UserDefaults.standard.setObj(update, forKey: "\(id)\(self.INFO_SUFFIX)")
             } catch {
-                print("\(self.TAG) Failed to save info for bundle [\(id)]", error.localizedDescription)
+                print("\(CapacitorUpdater.TAG) Failed to save info for bundle [\(id)]", error.localizedDescription)
             }
         }
         UserDefaults.standard.synchronize()
     }
 
     private func setBundleStatus(id: String, status: BundleStatus) {
-        print("\(self.TAG) Setting status for bundle [\(id)] to \(status)")
+        print("\(CapacitorUpdater.TAG) Setting status for bundle [\(id)] to \(status)")
         let info = self.getBundleInfo(id: id)
         self.saveBundleInfo(id: id, bundle: info.setStatus(status: status.localizedString))
     }

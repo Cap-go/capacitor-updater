@@ -6,9 +6,9 @@
 
 /// <reference types="@capacitor/cli" />
 
-import type { PluginListenerHandle } from "@capacitor/core";
+import type { PluginListenerHandle } from '@capacitor/core';
 
-declare module "@capacitor/cli" {
+declare module '@capacitor/cli' {
   export interface PluginsConfig {
     /**
      * CapacitorUpdater can be configured with these options:
@@ -222,6 +222,15 @@ declare module "@capacitor/cli" {
        * @since  6.0.0
        */
       appId?: string;
+
+      /**
+       * Configure the plugin to keep the URL path after a reload.
+       * WARNING: When a reload is triggered, 'window.history' will be cleared.
+       *
+       * @default false
+       * @since  6.8.0
+       */
+      keepUrlPathAfterReload?: boolean;
     };
   }
 }
@@ -307,9 +316,10 @@ export interface CapacitorUpdaterPlugin {
    * Get all locally downloaded bundles in your app
    *
    * @returns {Promise<BundleListResult>} A Promise containing the {@link BundleListResult.bundles}
+   * @param options The {@link ListOptions} for listing bundles
    * @throws {Error}
    */
-  list(): Promise<BundleListResult>;
+  list(options?: ListOptions): Promise<BundleListResult>;
 
   /**
    * Reset the app to the `builtin` bundle (the one sent to Apple App Store / Google Play Store ) or the last successfully loaded bundle.
@@ -377,12 +387,15 @@ export interface CapacitorUpdaterPlugin {
    * @throws {Error}
    * @since 4.0.0
    */
-  getLatest(): Promise<LatestVersion>;
+  getLatest(options?: GetLatestOptions): Promise<LatestVersion>;
 
   /**
    * Sets the channel for this device. The channel has to allow for self assignment for this to work.
    * Do not use this method to set the channel at boot when `autoUpdate` is enabled in the {@link PluginsConfig}.
    * This method is to set the channel after the app is ready.
+   * This methods send to Capgo backend a request to link the device ID to the channel. Capgo can accept or refuse depending of the setting of your channel.
+   *
+   *
    *
    * @param options Is the {@link SetChannelOptions} channel to set
    * @returns {Promise<ChannelRes>} A Promise which is resolved when the new channel is set
@@ -463,20 +476,14 @@ export interface CapacitorUpdaterPlugin {
    *
    * @since 2.0.11
    */
-  addListener(
-    eventName: "download",
-    listenerFunc: (state: DownloadEvent) => void,
-  ): Promise<PluginListenerHandle>;
+  addListener(eventName: 'download', listenerFunc: (state: DownloadEvent) => void): Promise<PluginListenerHandle>;
 
   /**
    * Listen for no need to update event, useful when you want force check every time the app is launched
    *
    * @since 4.0.0
    */
-  addListener(
-    eventName: "noNeedUpdate",
-    listenerFunc: (state: NoNeedEvent) => void,
-  ): Promise<PluginListenerHandle>;
+  addListener(eventName: 'noNeedUpdate', listenerFunc: (state: NoNeedEvent) => void): Promise<PluginListenerHandle>;
 
   /**
    * Listen for available update event, useful when you want to force check every time the app is launched
@@ -484,7 +491,7 @@ export interface CapacitorUpdaterPlugin {
    * @since 4.0.0
    */
   addListener(
-    eventName: "updateAvailable",
+    eventName: 'updateAvailable',
     listenerFunc: (state: UpdateAvailableEvent) => void,
   ): Promise<PluginListenerHandle>;
 
@@ -494,7 +501,7 @@ export interface CapacitorUpdaterPlugin {
    * @since 4.0.0
    */
   addListener(
-    eventName: "downloadComplete",
+    eventName: 'downloadComplete',
     listenerFunc: (state: DownloadCompleteEvent) => void,
   ): Promise<PluginListenerHandle>;
 
@@ -504,7 +511,7 @@ export interface CapacitorUpdaterPlugin {
    * @since 2.3.0
    */
   addListener(
-    eventName: "majorAvailable",
+    eventName: 'majorAvailable',
     listenerFunc: (state: MajorAvailableEvent) => void,
   ): Promise<PluginListenerHandle>;
 
@@ -514,7 +521,7 @@ export interface CapacitorUpdaterPlugin {
    * @since 2.3.0
    */
   addListener(
-    eventName: "updateFailed",
+    eventName: 'updateFailed',
     listenerFunc: (state: UpdateFailedEvent) => void,
   ): Promise<PluginListenerHandle>;
 
@@ -524,7 +531,7 @@ export interface CapacitorUpdaterPlugin {
    * @since 4.0.0
    */
   addListener(
-    eventName: "downloadFailed",
+    eventName: 'downloadFailed',
     listenerFunc: (state: DownloadFailedEvent) => void,
   ): Promise<PluginListenerHandle>;
 
@@ -533,25 +540,37 @@ export interface CapacitorUpdaterPlugin {
    *
    * @since 4.3.0
    */
-  addListener(
-    eventName: "appReloaded",
-    listenerFunc: () => void,
-  ): Promise<PluginListenerHandle>;
+  addListener(eventName: 'appReloaded', listenerFunc: () => void): Promise<PluginListenerHandle>;
 
   /**
    * Listen for app ready event in the App, let you know when app is ready to use
    *
    * @since 5.1.0
    */
-  addListener(
-    eventName: "appReady",
-    listenerFunc: (state: AppReadyEvent) => void,
-  ): Promise<PluginListenerHandle>;
+  addListener(eventName: 'appReady', listenerFunc: (state: AppReadyEvent) => void): Promise<PluginListenerHandle>;
+
+  /**
+   * Get if auto update is available (not disabled by serverUrl).
+   *
+   * @returns {Promise<AutoUpdateAvailable>} The availability status for auto update. Evaluates to `false` when serverUrl is set.
+   * @throws {Error}
+   */
+  isAutoUpdateAvailable(): Promise<AutoUpdateAvailable>;
+
+  /**
+   * Get the next bundle that will be used when the app reloads.
+   * Returns null if no next bundle is set.
+   *
+   * @returns {Promise<BundleInfo | null>} A Promise that resolves with the next bundle information or null
+   * @throws {Error}
+   * @since 6.8.0
+   */
+  getNextBundle(): Promise<BundleInfo | null>;
 }
 
-export type BundleStatus = "success" | "error" | "pending" | "downloading";
+export type BundleStatus = 'success' | 'error' | 'pending' | 'downloading';
 
-export type DelayUntilNext = "background" | "kill" | "nativeVersion" | "date";
+export type DelayUntilNext = 'background' | 'kill' | 'nativeVersion' | 'date';
 
 export interface NoNeedEvent {
   /**
@@ -710,6 +729,16 @@ export interface DelayCondition {
   value?: string;
 }
 
+export interface GetLatestOptions {
+  /**
+   * The channel to get the latest version for
+   * The channel must allow 'self_assign' for this to work
+   * @since 6.8.0
+   * @default undefined
+   */
+  channel?: string;
+}
+
 export interface AppReadyResult {
   bundle: BundleInfo;
 }
@@ -730,7 +759,7 @@ export interface DownloadOptions {
   /**
    * The URL of the bundle zip file (e.g: dist.zip) to be downloaded. (This can be any URL. E.g: Amazon S3, a GitHub tag, any other place you've hosted your bundle.)
    */
-  url: string;
+  url?: string;
   /**
    * The version code/name of this bundle/version
    */
@@ -761,6 +790,15 @@ export interface ResetOptions {
   toLastSuccessful: boolean;
 }
 
+export interface ListOptions {
+  /**
+   * Whether to return the raw bundle list or the manifest. If true, the list will attempt to read the internal database instead of files on disk.
+   * @since 6.14.0
+   * @default false
+   */
+  raw?: boolean;
+}
+
 export interface CurrentBundleResult {
   bundle: BundleInfo;
   native: string;
@@ -784,4 +822,8 @@ export interface PluginVersion {
 
 export interface AutoUpdateEnabled {
   enabled: boolean;
+}
+
+export interface AutoUpdateAvailable {
+  available: boolean;
 }

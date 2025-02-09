@@ -17,25 +17,18 @@ jobs:
         with:
           fetch-depth: 0
           token: '${{ secrets.PERSONAL_ACCESS_TOKEN }}'
-      - uses: pnpm/action-setup@v3
-        with:
-          version: 9
-      - name: Use Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'pnpm'
+      - uses: oven-sh/setup-bun@v2
       - name: Install dependencies
         id: install_code
-        run: pnpm install --frozen-lockfile
+        run: bun i
       - name: Git config
         run: |
           git config --local user.name "github-actions[bot]"
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
       - name: Update Doc
-        run: pnpm docgen
+        run: bun run docgen
       - name: Update Doc
-        run: pnpm docgen:api
+        run: bun run docgen:api
       - name: Add doc to github
         run: |
           git add README.md
@@ -43,10 +36,10 @@ jobs:
           git commit --m "docs: update doc" || true
       - name: Create bump and changelog main
         if: github.ref == 'refs/heads/main'
-        run: pnpm dlx capacitor-plugin-standard-version@latest
+        run: bunx capacitor-plugin-standard-version@latest
       - name: Create bump and changelog development
         if: github.ref != 'refs/heads/main'
-        run: pnpm dlx capacitor-plugin-standard-version@latest --prerelease alpha
+        run: bunx capacitor-plugin-standard-version@latest --prerelease alpha
       - name: Push to origin
         run: |
           CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
@@ -54,7 +47,7 @@ jobs:
           git pull $remote_repo $CURRENT_BRANCH
           git push $remote_repo HEAD:$CURRENT_BRANCH --follow-tags --tags
       - name: Push generated doc to doc repo
-        uses: nkoppel/push-files-to-another-repository@v1.1.3
+        uses: nkoppel/push-files-to-another-repository@v1.1.4
         env:
           API_TOKEN_GITHUB: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
         with:
@@ -70,16 +63,9 @@ jobs:
     name: "Create global cache on main branch"
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v3
-        with:
-          version: 9
-      - name: Use Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'pnpm'
+      - uses: oven-sh/setup-bun@v2
       - name: Install dependencies
         id: install_code
-        run: pnpm install --frozen-lockfile
+        run: bun i
       - name: CLI capacitor-standard-version install
-        run: pnpm dlx capacitor-standard-version@latest --version
+        run: bunx capacitor-standard-version@latest --version
