@@ -13,7 +13,7 @@
     "android/build.gradle",
     "dist/",
     "ios/Plugin/",
-    "CapgoCapacitorUpdater.podspec",
+    "PayjustnowCapacitorUpdater.podspec",
     "Package.swift"
   ],
   "author": "Martin Donadieu",
