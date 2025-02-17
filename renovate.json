@@ -17,9 +17,14 @@
       "automerge": true
     },
     {
-      "extends": ["swift"],
-      "matchManagers": ["swift"],
-      "ignorePackageNames": ["ZipArchive"]
+      "matchPackageNames": ["ZipArchive"],
+      "matchManagers": ["swift", "cocoapods"],
+      "enabled": false
+    },
+    {
+      "matchPackageNames": ["eslint"],
+      "matchManagers": ["npm"],
+      "enabled": false
     }
   ]
 }
