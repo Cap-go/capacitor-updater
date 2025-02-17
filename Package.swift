@@ -12,7 +12,7 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", from: "7.0.1"),
         .package(url: "https://github.com/Alamofire/Alamofire.git", .upToNextMajor(from: "5.10.2")),
-        .package(url: "https://github.com/ZipArchive/ZipArchive.git", .upToNextMajor(exact: "2.4.3")),
+        .package(url: "https://github.com/ZipArchive/ZipArchive.git", exact: "2.4.3"),
         .package(url: "https://github.com/mxcl/Version.git", .upToNextMajor(from: "2.1.0"))
     ],
     targets: [
