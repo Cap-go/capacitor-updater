@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.0.12](https://github.com/Cap-go/capacitor-updater/compare/7.0.11...7.0.12) (2025-02-17)
+
+
+### Bug Fixes
+
+* add to test verify SPM ([b5969aa](https://github.com/Cap-go/capacitor-updater/commit/b5969aa132c2082296e1a198c098f6f7a085e637))
+
 ### [7.0.11](https://github.com/Cap-go/capacitor-updater/compare/7.0.10...7.0.11) (2025-02-17)
 
 
