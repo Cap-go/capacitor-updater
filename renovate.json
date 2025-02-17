@@ -15,6 +15,11 @@
       "matchUpdateTypes": ["minor", "patch"],
       "matchCurrentVersion": "!/^0/",
       "automerge": true
+    },
+    {
+      "extends": ["swift"],
+      "matchManagers": ["swift"],
+      "ignorePackageNames": ["ZipArchive"]
     }
   ]
 }
