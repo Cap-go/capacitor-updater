@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.0.10](https://github.com/Cap-go/capacitor-updater/compare/7.0.9...7.0.10) (2025-02-17)
+
+
+### Bug Fixes
+
+* stop proposing eslint as well ([5c0364f](https://github.com/Cap-go/capacitor-updater/commit/5c0364f963a4a4cec04f16a965381c60f8935883))
+
 ### [7.0.9](https://github.com/Cap-go/capacitor-updater/compare/7.0.8...7.0.9) (2025-02-17)
 
 
