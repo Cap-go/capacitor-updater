@@ -37,6 +37,9 @@ jobs:
       - name: Build
         id: build_code
         run: bun run verify:ios
+      - name: Build SPM
+        id: build_spm
+        run: bun run verify:iosSPM
   web:
     runs-on: ubuntu-latest
     name: 'Build code and test'
