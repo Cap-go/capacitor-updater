@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.0.8](https://github.com/Cap-go/capacitor-updater/compare/7.0.7...7.0.8) (2025-02-17)
+
+
+### Bug Fixes
+
+* use fucking exact as we should and stop renovate bot fucking the deps ([c07b454](https://github.com/Cap-go/capacitor-updater/commit/c07b454a2a791e553df2366c600d4b8ac569f52a))
+
 ### [7.0.7](https://github.com/Cap-go/capacitor-updater/compare/7.0.6...7.0.7) (2025-02-17)
 
 
