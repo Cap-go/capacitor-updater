@@ -16,7 +16,7 @@
     "CapgoCapacitorUpdater.podspec",
     "Package.swift"
   ],
-  "author": "Martin Donadieu",
+  "author": "Martin Donadieu <martin@capgo.app>",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Cap-go/capacitor-updater.git"
