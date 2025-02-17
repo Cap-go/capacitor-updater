@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.0.9](https://github.com/Cap-go/capacitor-updater/compare/7.0.8...7.0.9) (2025-02-17)
+
+
+### Bug Fixes
+
+* prevent renovate to mess with ZipArchive ([b3ac24d](https://github.com/Cap-go/capacitor-updater/commit/b3ac24d827139a0d01b331a13789b2527c5a97d5))
+
 ### [7.0.8](https://github.com/Cap-go/capacitor-updater/compare/7.0.7...7.0.8) (2025-02-17)
 
 
