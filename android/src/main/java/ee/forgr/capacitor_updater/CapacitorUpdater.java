@@ -331,7 +331,7 @@ public class CapacitorUpdater {
                 }
             }
             // Remove the decryption for manifest downloads
-        } catch (IOException e) {
+        } catch (Exception e) {
             final Boolean res = this.delete(id);
             if (!res) {
                 Log.i(CapacitorUpdater.TAG, "Double error, cannot cleanup: " + version);

@@ -419,6 +419,9 @@ public class DownloadService extends Worker {
                 targetFile.delete();
                 throw new IOException("Checksum verification failed for " + targetFile.getName());
             }
+        } catch (Exception e) {
+            Log.e(TAG, "Error in downloadAndVerify", e);
+            throw new IOException("Error in downloadAndVerify: " + e.getMessage());
         }
     }
 
