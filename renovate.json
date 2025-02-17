@@ -25,6 +25,11 @@
       "matchPackageNames": ["eslint"],
       "matchManagers": ["npm"],
       "enabled": false
+    },
+    {
+      "matchPackagePatterns": ["^com\\.google\\..*"],
+      "matchCurrentVersion": "/^.*-android$/",
+      "allowedVersions": "/^.*-android$/"
     }
   ]
 }
