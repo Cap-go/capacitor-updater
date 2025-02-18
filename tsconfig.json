@@ -14,7 +14,9 @@
     "pretty": true,
     "sourceMap": true,
     "strict": true,
-    "target": "es2017"
+    "target": "es2017",
+    "types": ["@capacitor/core"],
+    "skipLibCheck": true,
   },
   "files": ["src/index.ts"]
 }
