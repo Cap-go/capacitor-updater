@@ -109,7 +109,6 @@ public class DownloadService extends Worker {
                 return createSuccessResult(dest, version, sessionKey, checksum, false);
             }
         } catch (Exception e) {
-            Log.e(TAG, "Error in doWork", e);
             return createFailureResult(e.getMessage());
         }
     }
@@ -219,7 +218,7 @@ public class DownloadService extends Worker {
                 throw new IOException("One or more files failed to download");
             }
         } catch (Exception e) {
-            Log.e(TAG, "Error in handleManifestDownload", e);
+            throw new RuntimeException(e.getLocalizedMessage());
         }
     }
 
@@ -317,10 +316,8 @@ public class DownloadService extends Worker {
                 }
             }
         } catch (OutOfMemoryError e) {
-            e.printStackTrace();
             throw new RuntimeException("low_mem_fail");
         } catch (Exception e) {
-            e.printStackTrace();
             throw new RuntimeException(e.getLocalizedMessage());
         }
     }
@@ -334,7 +331,8 @@ public class DownloadService extends Worker {
             infoFile.createNewFile();
             tempFile.createNewFile();
         } catch (IOException e) {
-            e.printStackTrace();
+            Log.e(TAG, "Error in clearDownloadData", e);
+            // not a fatal error, so we don't throw an exception
         }
     }
 

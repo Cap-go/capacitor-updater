@@ -235,6 +235,7 @@ public class CapacitorUpdater {
 
                             boolean success = finishDownload(id, dest, version, sessionKey, checksum, true, isManifest);
                             if (!success) {
+                                Log.e(TAG, "Finish download failed: " + version);
                                 saveBundleInfo(
                                     id,
                                     new BundleInfo(id, version, BundleStatus.ERROR, new Date(System.currentTimeMillis()), "")
@@ -249,6 +250,7 @@ public class CapacitorUpdater {
                         case FAILED:
                             Data failedData = workInfo.getOutputData();
                             String error = failedData.getString(DownloadService.ERROR);
+                            Log.e(TAG, "Download failed: " + error + " " + workInfo.getState());
                             String failedVersion = failedData.getString(DownloadService.VERSION);
                             saveBundleInfo(
                                 id,
