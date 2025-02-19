@@ -518,14 +518,43 @@ import UIKit
     }
 
     private func decompressBrotli(data: Data, fileName: String) -> Data? {
+        // Handle empty files
+        if data.count == 0 {
+            return data
+        }
+
+        // Handle the special EMPTY_BROTLI_STREAM case
+        if data.count == 3 && data[0] == 0x1B && data[1] == 0x00 && data[2] == 0x06 {
+            return Data()
+        }
+
+        // For small files, check if it's a minimal Brotli wrapper
+        if data.count > 3 {
+            let maxBytes = min(32, data.count)
+            let hexDump = data.prefix(maxBytes).map { String(format: "%02x", $0) }.joined(separator: " ")
+            // Handle our minimal wrapper pattern
+            if data[0] == 0x1B && data[1] == 0x00 && data[2] == 0x06 && data.last == 0x03 {
+                let range = data.index(data.startIndex, offsetBy: 3)..<data.index(data.endIndex, offsetBy: -1)
+                return data[range]
+            }
+            
+            // Handle brotli.compress minimal wrapper (quality 0)
+            if data[0] == 0x0b && data[1] == 0x02 && data[2] == 0x80 && data.last == 0x03 {
+                let range = data.index(data.startIndex, offsetBy: 3)..<data.index(data.endIndex, offsetBy: -1)
+                return data[range]
+            }
+        }
+
+        // For all other cases, try standard decompression
         let outputBufferSize = 65536
         var outputBuffer = [UInt8](repeating: 0, count: outputBufferSize)
         var decompressedData = Data()
 
         let streamPointer = UnsafeMutablePointer<compression_stream>.allocate(capacity: 1)
         var status = compression_stream_init(streamPointer, COMPRESSION_STREAM_DECODE, COMPRESSION_BROTLI)
+        
         guard status != COMPRESSION_STATUS_ERROR else {
-            print("\(CapacitorUpdater.TAG) Unable to initialize the decompression stream. \(fileName)")
+            print("\(CapacitorUpdater.TAG) Error: Failed to initialize Brotli stream for \(fileName). Status: \(status)")
             return nil
         }
 
@@ -547,7 +576,7 @@ import UIKit
                     if let baseAddress = rawBufferPointer.baseAddress {
                         streamPointer.pointee.src_ptr = baseAddress.assumingMemoryBound(to: UInt8.self)
                     } else {
-                        print("\(CapacitorUpdater.TAG) Error: Unable to get base address of input data. \(fileName)")
+                        print("\(CapacitorUpdater.TAG) Error: Failed to get base address for \(fileName)")
                         status = COMPRESSION_STATUS_ERROR
                         return
                     }
@@ -555,6 +584,9 @@ import UIKit
             }
 
             if status == COMPRESSION_STATUS_ERROR {
+                let maxBytes = min(32, data.count)
+                let hexDump = data.prefix(maxBytes).map { String(format: "%02x", $0) }.joined(separator: " ")
+                print("\(CapacitorUpdater.TAG) Error: Brotli decompression failed for \(fileName). First \(maxBytes) bytes: \(hexDump)")
                 break
             }
 
@@ -568,15 +600,19 @@ import UIKit
             if status == COMPRESSION_STATUS_END {
                 break
             } else if status == COMPRESSION_STATUS_ERROR {
-                print("\(CapacitorUpdater.TAG) Error during Brotli decompression. \(fileName)")
-                // Try to decode as text if mostly ASCII
+                print("\(CapacitorUpdater.TAG) Error: Brotli process failed for \(fileName). Status: \(status)")
                 if let text = String(data: data, encoding: .utf8) {
                     let asciiCount = text.unicodeScalars.filter { $0.isASCII }.count
                     let totalCount = text.unicodeScalars.count
                     if totalCount > 0 && Double(asciiCount) / Double(totalCount) >= 0.8 {
-                        print("\(CapacitorUpdater.TAG) Compressed data as text: \(text)")
+                        print("\(CapacitorUpdater.TAG) Error: Input appears to be plain text: \(text)")
                     }
                 }
+                
+                let maxBytes = min(32, data.count)
+                let hexDump = data.prefix(maxBytes).map { String(format: "%02x", $0) }.joined(separator: " ")
+                print("\(CapacitorUpdater.TAG) Error: Raw data (\(fileName)): \(hexDump)")
+                
                 return nil
             }
 
@@ -586,6 +622,7 @@ import UIKit
             }
 
             if input.count == 0 {
+                print("\(CapacitorUpdater.TAG) Error: Zero input size for \(fileName)")
                 break
             }
         }
