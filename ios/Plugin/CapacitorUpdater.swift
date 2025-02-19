@@ -446,9 +446,9 @@ import UIKit
                             let statusCode = response.response?.statusCode ?? 200
                             if statusCode < 200 || statusCode >= 300 {
                                 if let stringData = String(data: data, encoding: .utf8) {
-                                    throw NSError(domain: "StatusCodeError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid. Data: \(stringData)"])
+                                        throw NSError(domain: "StatusCodeError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid. Data: \(stringData) for file \(fileName) at url \(downloadUrl)"])
                                 } else {
-                                    throw NSError(domain: "StatusCodeError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid"])
+                                    throw NSError(domain: "StatusCodeError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid for file \(fileName) at url \(downloadUrl)"])
                                 }
                             }
 
@@ -470,7 +470,7 @@ import UIKit
 
                             // Decompress the Brotli data
                             guard let decompressedData = self.decompressBrotli(data: finalData, fileName: fileName) else {
-                                throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data"])
+                                throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data for file \(fileName) at url \(downloadUrl)"])
                             }
                             finalData = decompressedData
 
@@ -479,7 +479,7 @@ import UIKit
                                 // assume that calcChecksum != null
                                 let calculatedChecksum = CryptoCipherV2.calcChecksum(filePath: destFilePath)
                                 if calculatedChecksum != fileHash {
-                                    throw NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash))"])
+                                    throw NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash)) for file \(fileName) at url \(downloadUrl)"])
                                 }
                             }
 
@@ -491,10 +491,10 @@ import UIKit
                             print("\(CapacitorUpdater.TAG) downloadManifest \(id) \(fileName) downloaded, decompressed\(!self.publicKey.isEmpty && !sessionKey.isEmpty ? ", decrypted" : ""), and cached")
                         } catch {
                             downloadError = error
-                            print("\(CapacitorUpdater.TAG) downloadManifest \(id) \(fileName) error: \(error)")
+                            NSLog("\(CapacitorUpdater.TAG) downloadManifest \(id) \(fileName) error: \(error.localizedDescription)")
                         }
                     case .failure(let error):
-                        print("\(CapacitorUpdater.TAG) downloadManifest \(id) \(fileName) download error: \(error). Debug response: \(response.debugDescription).")
+                        NSLog("\(CapacitorUpdater.TAG) downloadManifest \(id) \(fileName) download error: \(error.localizedDescription). Debug response: \(response.debugDescription).")
                     }
                 }
             }
