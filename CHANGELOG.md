@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.0.23](https://github.com/Cap-go/capacitor-updater/compare/7.0.22...7.0.23) (2025-02-19)
+
+
+### Bug Fixes
+
+* android brotli edge case ([30eecf8](https://github.com/Cap-go/capacitor-updater/commit/30eecf873c42a5467b104626c843a515c5747b38))
+
 ### [7.0.22](https://github.com/Cap-go/capacitor-updater/compare/7.0.21...7.0.22) (2025-02-19)
 
 
