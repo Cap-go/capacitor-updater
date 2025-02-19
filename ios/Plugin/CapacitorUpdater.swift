@@ -347,7 +347,7 @@ import UIKit
         return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent("update.dat")
     }
     private var tempData = Data()
-    
+
     private func verifyChecksum(file: URL, expectedHash: String) -> Bool {
         let actualHash = CryptoCipherV2.calcChecksum(filePath: file)
         return actualHash == expectedHash
@@ -446,7 +446,7 @@ import UIKit
                             let statusCode = response.response?.statusCode ?? 200
                             if statusCode < 200 || statusCode >= 300 {
                                 if let stringData = String(data: data, encoding: .utf8) {
-                                        throw NSError(domain: "StatusCodeError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid. Data: \(stringData) for file \(fileName) at url \(downloadUrl)"])
+                                    throw NSError(domain: "StatusCodeError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid. Data: \(stringData) for file \(fileName) at url \(downloadUrl)"])
                                 } else {
                                     throw NSError(domain: "StatusCodeError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid for file \(fileName) at url \(downloadUrl)"])
                                 }
@@ -537,7 +537,7 @@ import UIKit
                 let range = data.index(data.startIndex, offsetBy: 3)..<data.index(data.endIndex, offsetBy: -1)
                 return data[range]
             }
-            
+
             // Handle brotli.compress minimal wrapper (quality 0)
             if data[0] == 0x0b && data[1] == 0x02 && data[2] == 0x80 && data.last == 0x03 {
                 let range = data.index(data.startIndex, offsetBy: 3)..<data.index(data.endIndex, offsetBy: -1)
@@ -552,7 +552,7 @@ import UIKit
 
         let streamPointer = UnsafeMutablePointer<compression_stream>.allocate(capacity: 1)
         var status = compression_stream_init(streamPointer, COMPRESSION_STREAM_DECODE, COMPRESSION_BROTLI)
-        
+
         guard status != COMPRESSION_STATUS_ERROR else {
             print("\(CapacitorUpdater.TAG) Error: Failed to initialize Brotli stream for \(fileName). Status: \(status)")
             return nil
@@ -608,11 +608,11 @@ import UIKit
                         print("\(CapacitorUpdater.TAG) Error: Input appears to be plain text: \(text)")
                     }
                 }
-                
+
                 let maxBytes = min(32, data.count)
                 let hexDump = data.prefix(maxBytes).map { String(format: "%02x", $0) }.joined(separator: " ")
                 print("\(CapacitorUpdater.TAG) Error: Raw data (\(fileName)): \(hexDump)")
-                
+
                 return nil
             }
 

@@ -415,7 +415,16 @@ public class DownloadService extends Worker {
                 copyFile(targetFile, cacheFile);
             } else {
                 targetFile.delete();
-                throw new IOException("Checksum verification failed for: " + downloadUrl + " " + targetFile.getName() + " expected: " + decryptedExpectedHash + " calculated: " + calculatedHash);
+                throw new IOException(
+                    "Checksum verification failed for: " +
+                    downloadUrl +
+                    " " +
+                    targetFile.getName() +
+                    " expected: " +
+                    decryptedExpectedHash +
+                    " calculated: " +
+                    calculatedHash
+                );
             }
         } catch (Exception e) {
             throw new IOException("Error in downloadAndVerify: " + e.getMessage());
