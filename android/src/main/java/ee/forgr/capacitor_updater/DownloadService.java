@@ -35,6 +35,7 @@ import okhttp3.ResponseBody;
 import org.brotli.dec.BrotliInputStream;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import java.nio.file.Files;
 
 public class DownloadService extends Worker {
 
@@ -109,7 +110,6 @@ public class DownloadService extends Worker {
                 return createSuccessResult(dest, version, sessionKey, checksum, false);
             }
         } catch (Exception e) {
-            Log.e(TAG, "Error in doWork", e);
             return createFailureResult(e.getMessage());
         }
     }
@@ -219,7 +219,7 @@ public class DownloadService extends Worker {
                 throw new IOException("One or more files failed to download");
             }
         } catch (Exception e) {
-            Log.e(TAG, "Error in handleManifestDownload", e);
+            throw new RuntimeException(e.getLocalizedMessage());
         }
     }
 
@@ -317,10 +317,8 @@ public class DownloadService extends Worker {
                 }
             }
         } catch (OutOfMemoryError e) {
-            e.printStackTrace();
             throw new RuntimeException("low_mem_fail");
         } catch (Exception e) {
-            e.printStackTrace();
             throw new RuntimeException(e.getLocalizedMessage());
         }
     }
@@ -334,7 +332,8 @@ public class DownloadService extends Worker {
             infoFile.createNewFile();
             tempFile.createNewFile();
         } catch (IOException e) {
-            e.printStackTrace();
+            Log.e(TAG, "Error in clearDownloadData", e);
+            // not a fatal error, so we don't throw an exception
         }
     }
 
@@ -394,18 +393,10 @@ public class DownloadService extends Worker {
                 decryptedExpectedHash = CryptoCipherV2.decryptChecksum(decryptedExpectedHash, publicKey);
             }
 
-            // Decompress the file
-            try (
-                FileInputStream fis = new FileInputStream(compressedFile);
-                BrotliInputStream brotliInputStream = new BrotliInputStream(fis);
-                FileOutputStream fos = new FileOutputStream(targetFile)
-            ) {
-                byte[] buffer = new byte[8192];
-                int len;
-                while ((len = brotliInputStream.read(buffer)) != -1) {
-                    fos.write(buffer, 0, len);
-                }
-            }
+            // Use new decompression method
+            byte[] compressedData = Files.readAllBytes(compressedFile.toPath());
+            byte[] decompressedData = decompressBrotli(compressedData, targetFile.getName());
+            Files.write(targetFile.toPath(), decompressedData);
 
             // Delete the compressed file
             compressedFile.delete();
@@ -417,8 +408,19 @@ public class DownloadService extends Worker {
                 copyFile(targetFile, cacheFile);
             } else {
                 targetFile.delete();
-                throw new IOException("Checksum verification failed for " + targetFile.getName());
+                throw new IOException(
+                    "Checksum verification failed for: " +
+                    downloadUrl +
+                    " " +
+                    targetFile.getName() +
+                    " expected: " +
+                    decryptedExpectedHash +
+                    " calculated: " +
+                    calculatedHash
+                );
             }
+        } catch (Exception e) {
+            throw new IOException("Error in downloadAndVerify: " + e.getMessage());
         }
     }
 
@@ -449,5 +451,64 @@ public class DownloadService extends Worker {
             sb.append(Integer.toString((aByte & 0xff) + 0x100, 16).substring(1));
         }
         return sb.toString();
+    }
+
+    private byte[] decompressBrotli(byte[] data, String fileName) throws IOException {
+        // Validate input
+        if (data == null) {
+            Log.e(TAG, "Error: Null data received for " + fileName);
+            throw new IOException("Null data received");
+        }
+
+        // Handle empty files
+        if (data.length == 0) {
+            return new byte[0];
+        }
+
+        // Handle the special EMPTY_BROTLI_STREAM case
+        if (data.length == 3 && data[0] == 0x1B && data[1] == 0x00 && data[2] == 0x06) {
+            return new byte[0];
+        }
+
+        // For small files, check if it's a minimal Brotli wrapper
+        if (data.length > 3) {
+            try {
+                // Handle our minimal wrapper pattern
+                if (data[0] == 0x1B && data[1] == 0x00 && data[2] == 0x06 && data[data.length - 1] == 0x03) {
+                    return Arrays.copyOfRange(data, 3, data.length - 1);
+                }
+
+                // Handle brotli.compress minimal wrapper (quality 0)
+                if (data[0] == 0x0b && data[1] == 0x02 && data[2] == (byte)0x80 && data[data.length - 1] == 0x03) {
+                    return Arrays.copyOfRange(data, 3, data.length - 1);
+                }
+            } catch (ArrayIndexOutOfBoundsException e) {
+                Log.e(TAG, "Error: Malformed data for " + fileName);
+                throw new IOException("Malformed data structure");
+            }
+        }
+
+        // For all other cases, try standard decompression
+        try (
+            ByteArrayInputStream bis = new ByteArrayInputStream(data);
+            BrotliInputStream brotliInputStream = new BrotliInputStream(bis);
+            ByteArrayOutputStream bos = new ByteArrayOutputStream()
+        ) {
+            byte[] buffer = new byte[8192];
+            int len;
+            while ((len = brotliInputStream.read(buffer)) != -1) {
+                bos.write(buffer, 0, len);
+            }
+            return bos.toByteArray();
+        } catch (IOException e) {
+            Log.e(TAG, "Error: Brotli process failed for " + fileName + ". Status: " + e.getMessage());
+            // Add hex dump for debugging
+            StringBuilder hexDump = new StringBuilder();
+            for (int i = 0; i < Math.min(32, data.length); i++) {
+                hexDump.append(String.format("%02x ", data[i]));
+            }
+            Log.e(TAG, "Error: Raw data (" + fileName + "): " + hexDump.toString());
+            throw e;
+        }
     }
 }

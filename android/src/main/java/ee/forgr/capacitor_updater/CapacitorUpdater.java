@@ -10,7 +10,6 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Build;
-import android.util.Base64;
 import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.lifecycle.LifecycleOwner;
@@ -22,27 +21,20 @@ import com.getcapacitor.plugin.WebView;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import java.io.BufferedInputStream;
-import java.io.DataInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.FilenameFilter;
 import java.io.IOException;
-import java.security.GeneralSecurityException;
-import java.security.MessageDigest;
-import java.security.PrivateKey;
-import java.security.PublicKey;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
-import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
-import javax.crypto.SecretKey;
 import okhttp3.*;
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -245,6 +237,7 @@ public class CapacitorUpdater {
 
                             boolean success = finishDownload(id, dest, version, sessionKey, checksum, true, isManifest);
                             if (!success) {
+                                Log.e(TAG, "Finish download failed: " + version);
                                 saveBundleInfo(
                                     id,
                                     new BundleInfo(id, version, BundleStatus.ERROR, new Date(System.currentTimeMillis()), "")
@@ -259,6 +252,7 @@ public class CapacitorUpdater {
                         case FAILED:
                             Data failedData = workInfo.getOutputData();
                             String error = failedData.getString(DownloadService.ERROR);
+                            Log.e(TAG, "Download failed: " + error + " " + workInfo.getState());
                             String failedVersion = failedData.getString(DownloadService.VERSION);
                             saveBundleInfo(
                                 id,
@@ -344,7 +338,7 @@ public class CapacitorUpdater {
                 }
             }
             // Remove the decryption for manifest downloads
-        } catch (IOException e) {
+        } catch (Exception e) {
             final Boolean res = this.delete(id);
             if (!res) {
                 Log.i(CapacitorUpdater.TAG, "Double error, cannot cleanup: " + version);
