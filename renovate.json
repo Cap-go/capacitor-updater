@@ -30,6 +30,11 @@
       "matchPackagePatterns": ["^com\\.google\\..*"],
       "matchCurrentVersion": "/^.*-android$/",
       "allowedVersions": "/^.*-android$/"
+    },
+    {
+      "matchPackagePatterns": ["^com\\.android\\.tools\\.build\\:gradle$"],
+      "matchManagers": ["gradle"],
+      "enabled": false
     }
   ]
 }
