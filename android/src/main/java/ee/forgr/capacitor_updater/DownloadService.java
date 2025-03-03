@@ -16,6 +16,7 @@ import java.io.FileInputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.channels.FileChannel;
+import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -35,7 +36,6 @@ import okhttp3.ResponseBody;
 import org.brotli.dec.BrotliInputStream;
 import org.json.JSONArray;
 import org.json.JSONObject;
-import java.nio.file.Files;
 
 public class DownloadService extends Worker {
 
@@ -479,7 +479,7 @@ public class DownloadService extends Worker {
                 }
 
                 // Handle brotli.compress minimal wrapper (quality 0)
-                if (data[0] == 0x0b && data[1] == 0x02 && data[2] == (byte)0x80 && data[data.length - 1] == 0x03) {
+                if (data[0] == 0x0b && data[1] == 0x02 && data[2] == (byte) 0x80 && data[data.length - 1] == 0x03) {
                     return Arrays.copyOfRange(data, 3, data.length - 1);
                 }
             } catch (ArrayIndexOutOfBoundsException e) {
