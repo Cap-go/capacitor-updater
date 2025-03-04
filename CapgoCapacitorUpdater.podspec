@@ -14,7 +14,7 @@ Pod::Spec.new do |s|
   s.ios.deployment_target  = '13.0'
   s.dependency 'Capacitor'
   s.dependency 'SSZipArchive', '2.4.3'
-  s.dependency 'Alamofire'
-  s.dependency 'Version'
+  s.dependency 'Alamofire', '5.10.2'
+  s.dependency 'Version', '0.8.0'
   s.swift_version = '5.1'
 end
