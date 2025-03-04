@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.0.27](https://github.com/Cap-go/capacitor-updater/compare/7.0.26...7.0.27) (2025-03-04)
+
+
+### Bug Fixes
+
+* dup decrypt ([2094172](https://github.com/Cap-go/capacitor-updater/commit/209417289cd7b54680e802ff6c080b30e20c5e5c))
+
 ### [7.0.26](https://github.com/Cap-go/capacitor-updater/compare/7.0.25...7.0.26) (2025-03-04)
 
 
