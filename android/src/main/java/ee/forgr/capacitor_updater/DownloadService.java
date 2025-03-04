@@ -194,7 +194,7 @@ public class DownloadService extends Worker {
                             copyFile(cacheFile, targetFile);
                             Log.d(TAG, "already cached " + fileName);
                         } else {
-                            downloadAndVerify(downloadUrl, targetFile, cacheFile, finalFileHash, sessionKey, publicKey);
+                            downloadAndVerify(downloadUrl, targetFile, cacheFile, finalFileHash);
                         }
 
                         long completed = completedFiles.incrementAndGet();
@@ -365,14 +365,7 @@ public class DownloadService extends Worker {
         }
     }
 
-    private void downloadAndVerify(
-        String downloadUrl,
-        File targetFile,
-        File cacheFile,
-        String expectedHash,
-        String sessionKey,
-        String publicKey
-    ) throws Exception {
+    private void downloadAndVerify(String downloadUrl, File targetFile, File cacheFile, String expectedHash) throws Exception {
         Log.d(TAG, "downloadAndVerify " + downloadUrl);
 
         Request request = new Request.Builder().url(downloadUrl).build();
@@ -400,14 +393,6 @@ public class DownloadService extends Worker {
                 }
             }
 
-            String decryptedExpectedHash = expectedHash;
-
-            if (!publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
-                Log.d(CapacitorUpdater.TAG + " DLSrv", "Decrypting file " + targetFile.getName());
-                CryptoCipherV2.decryptFile(compressedFile, publicKey, sessionKey);
-                decryptedExpectedHash = CryptoCipherV2.decryptChecksum(decryptedExpectedHash, publicKey);
-            }
-
             // Use new decompression method
             byte[] compressedData = Files.readAllBytes(compressedFile.toPath());
             byte[] decompressedData = decompressBrotli(compressedData, targetFile.getName());
@@ -418,7 +403,7 @@ public class DownloadService extends Worker {
             String calculatedHash = CryptoCipherV2.calcChecksum(targetFile);
 
             // Verify checksum
-            if (calculatedHash.equals(decryptedExpectedHash)) {
+            if (calculatedHash.equals(expectedHash)) {
                 // Only cache if checksum is correct
                 copyFile(targetFile, cacheFile);
             } else {
@@ -429,7 +414,7 @@ public class DownloadService extends Worker {
                     " " +
                     targetFile.getName() +
                     " expected: " +
-                    decryptedExpectedHash +
+                    expectedHash +
                     " calculated: " +
                     calculatedHash
                 );
