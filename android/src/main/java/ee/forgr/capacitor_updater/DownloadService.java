@@ -16,6 +16,7 @@ import java.io.FileInputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.channels.FileChannel;
+import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -35,7 +36,6 @@ import okhttp3.ResponseBody;
 import org.brotli.dec.BrotliInputStream;
 import org.json.JSONArray;
 import org.json.JSONObject;
-import java.nio.file.Files;
 
 public class DownloadService extends Worker {
 
@@ -163,25 +163,38 @@ public class DownloadService extends Worker {
                 String fileHash = entry.getString("file_hash");
                 String downloadUrl = entry.getString("download_url");
 
+                if (!publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
+                    try {
+                        fileHash = CryptoCipherV2.decryptChecksum(fileHash, publicKey);
+                    } catch (Exception e) {
+                        Log.e(TAG, "Error decrypting checksum for " + fileName, e);
+                        hasError.set(true);
+                        continue;
+                    }
+                }
+
+                final String finalFileHash = fileHash;
                 File targetFile = new File(destFolder, fileName);
-                File cacheFile = new File(cacheFolder, fileHash + "_" + new File(fileName).getName());
+                File cacheFile = new File(cacheFolder, finalFileHash + "_" + new File(fileName).getName());
                 File builtinFile = new File(builtinFolder, fileName);
 
                 // Ensure parent directories of the target file exist
                 if (!Objects.requireNonNull(targetFile.getParentFile()).exists() && !targetFile.getParentFile().mkdirs()) {
-                    throw new IOException("Failed to create parent directory for: " + targetFile.getAbsolutePath());
+                    Log.e(TAG, "Failed to create parent directory for: " + targetFile.getAbsolutePath());
+                    hasError.set(true);
+                    continue;
                 }
 
                 Future<?> future = executor.submit(() -> {
                     try {
-                        if (builtinFile.exists() && verifyChecksum(builtinFile, fileHash)) {
+                        if (builtinFile.exists() && verifyChecksum(builtinFile, finalFileHash)) {
                             copyFile(builtinFile, targetFile);
                             Log.d(TAG, "using builtin file " + fileName);
-                        } else if (cacheFile.exists() && verifyChecksum(cacheFile, fileHash)) {
+                        } else if (cacheFile.exists() && verifyChecksum(cacheFile, finalFileHash)) {
                             copyFile(cacheFile, targetFile);
                             Log.d(TAG, "already cached " + fileName);
                         } else {
-                            downloadAndVerify(downloadUrl, targetFile, cacheFile, fileHash, sessionKey, publicKey);
+                            downloadAndVerify(downloadUrl, targetFile, cacheFile, finalFileHash, sessionKey, publicKey);
                         }
 
                         long completed = completedFiles.incrementAndGet();
@@ -479,7 +492,7 @@ public class DownloadService extends Worker {
                 }
 
                 // Handle brotli.compress minimal wrapper (quality 0)
-                if (data[0] == 0x0b && data[1] == 0x02 && data[2] == (byte)0x80 && data[data.length - 1] == 0x03) {
+                if (data[0] == 0x0b && data[1] == 0x02 && data[2] == (byte) 0x80 && data[data.length - 1] == 0x03) {
                     return Arrays.copyOfRange(data, 3, data.length - 1);
                 }
             } catch (ArrayIndexOutOfBoundsException e) {
