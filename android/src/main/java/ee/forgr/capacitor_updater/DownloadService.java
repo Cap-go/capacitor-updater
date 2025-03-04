@@ -194,7 +194,7 @@ public class DownloadService extends Worker {
                             copyFile(cacheFile, targetFile);
                             Log.d(TAG, "already cached " + fileName);
                         } else {
-                            downloadAndVerify(downloadUrl, targetFile, cacheFile, finalFileHash);
+                            downloadAndVerify(downloadUrl, targetFile, cacheFile, finalFileHash, sessionKey, publicKey);
                         }
 
                         long completed = completedFiles.incrementAndGet();
@@ -365,7 +365,14 @@ public class DownloadService extends Worker {
         }
     }
 
-    private void downloadAndVerify(String downloadUrl, File targetFile, File cacheFile, String expectedHash) throws Exception {
+    private void downloadAndVerify(
+        String downloadUrl,
+        File targetFile,
+        File cacheFile,
+        String expectedHash,
+        String sessionKey,
+        String publicKey
+    ) throws Exception {
         Log.d(TAG, "downloadAndVerify " + downloadUrl);
 
         Request request = new Request.Builder().url(downloadUrl).build();
@@ -391,6 +398,11 @@ public class DownloadService extends Worker {
                         compressedFos.write(buffer, 0, bytesRead);
                     }
                 }
+            }
+
+            if (!publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
+                Log.d(CapacitorUpdater.TAG + " DLSrv", "Decrypting file " + targetFile.getName());
+                CryptoCipherV2.decryptFile(compressedFile, publicKey, sessionKey);
             }
 
             // Use new decompression method
