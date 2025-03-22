@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.0.30](https://github.com/Cap-go/capacitor-updater/compare/7.0.29...7.0.30) (2025-03-22)
+
+
+### Bug Fixes
+
+* checksum for unencrypted bundles ([62961cb](https://github.com/Cap-go/capacitor-updater/commit/62961cb07bd89c90cf3d0dc86069419f043ed682))
+
 ### [7.0.29](https://github.com/Cap-go/capacitor-updater/compare/7.0.28...7.0.29) (2025-03-17)
 
 ### [7.0.28](https://github.com/Cap-go/capacitor-updater/compare/7.0.27...7.0.28) (2025-03-04)
