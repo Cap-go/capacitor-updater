@@ -325,6 +325,8 @@ public class CapacitorUpdater {
                     CryptoCipherV2.decryptFile(downloaded, publicKey, sessionKey);
                     checksumDecrypted = CryptoCipherV2.decryptChecksum(checksumRes, publicKey);
                     checksum = CryptoCipherV2.calcChecksum(downloaded);
+                } else {
+                    checksum = CryptoCipherV2.calcChecksum(downloaded);
                 }
                 if ((!checksumDecrypted.isEmpty() || !this.publicKey.isEmpty()) && !checksumDecrypted.equals(checksum)) {
                     Log.e(CapacitorUpdater.TAG, "Error checksum '" + checksumDecrypted + "' '" + checksum + "' '");
