@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.0.31](https://github.com/Cap-go/capacitor-updater/compare/7.0.30...7.0.31) (2025-03-24)
+
+
+### Bug Fixes
+
+* **deps:** update dependency com.google.android.gms:play-services-tasks to v18.2.1 ([#549](https://github.com/Cap-go/capacitor-updater/issues/549)) ([38b4790](https://github.com/Cap-go/capacitor-updater/commit/38b4790d69deb93ed9ccae07ca4606ace943cc4f))
+
 ### [7.0.30](https://github.com/Cap-go/capacitor-updater/compare/7.0.29...7.0.30) (2025-03-22)
 
 
