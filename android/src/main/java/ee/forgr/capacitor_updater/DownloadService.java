@@ -263,7 +263,7 @@ public class DownloadService extends Worker {
                 if (infoFile.exists() && tempFile.exists()) {
                     try (BufferedReader reader = new BufferedReader(new FileReader(infoFile))) {
                         String updateVersion = reader.readLine();
-                        if (!updateVersion.equals(version)) {
+                        if (updateVersion != null && !updateVersion.equals(version)) {
                             clearDownloadData(documentsDir);
                         } else {
                             downloadedBytes = tempFile.length();
