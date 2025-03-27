@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.0.34](https://github.com/Cap-go/capacitor-updater/compare/7.0.33...7.0.34) (2025-03-27)
+
+
+### Bug Fixes
+
+* remove duplicated function ([5a73795](https://github.com/Cap-go/capacitor-updater/commit/5a7379542d9eac96aea0003477e1624b8c462c33))
+
 ### [7.0.33](https://github.com/Cap-go/capacitor-updater/compare/7.0.32...7.0.33) (2025-03-27)
 
 
