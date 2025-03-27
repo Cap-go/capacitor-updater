@@ -140,50 +140,6 @@ import UIKit
         }
     }
 
-    private func decryptFileV2(filePath: URL, sessionKey: String, version: String) throws {
-        if self.publicKey.isEmpty || sessionKey.isEmpty  || sessionKey.components(separatedBy: ":").count != 2 {
-            print("\(CapacitorUpdater.TAG) Cannot find public key or sessionKey")
-            return
-        }
-        do {
-            guard let rsaPublicKey: RSAPublicKey = .load(rsaPublicKey: self.publicKey) else {
-                print("cannot decode publicKey", self.publicKey)
-                throw CustomError.cannotDecode
-            }
-
-            let sessionKeyArray: [String] = sessionKey.components(separatedBy: ":")
-            guard let ivData: Data = Data(base64Encoded: sessionKeyArray[0]) else {
-                print("cannot decode sessionKey", sessionKey)
-                throw CustomError.cannotDecode
-            }
-
-            guard let sessionKeyDataEncrypted = Data(base64Encoded: sessionKeyArray[1]) else {
-                throw NSError(domain: "Invalid session key data", code: 1, userInfo: nil)
-            }
-
-            guard let sessionKeyDataDecrypted = rsaPublicKey.decrypt(data: sessionKeyDataEncrypted) else {
-                throw NSError(domain: "Failed to decrypt session key data", code: 2, userInfo: nil)
-            }
-
-            let aesPrivateKey = AES128Key(iv: ivData, aes128Key: sessionKeyDataDecrypted)
-
-            guard let encryptedData = try? Data(contentsOf: filePath) else {
-                throw NSError(domain: "Failed to read encrypted data", code: 3, userInfo: nil)
-            }
-
-            guard let decryptedData = aesPrivateKey.decrypt(data: encryptedData) else {
-                throw NSError(domain: "Failed to decrypt data", code: 4, userInfo: nil)
-            }
-
-            try decryptedData.write(to: filePath)
-
-        } catch {
-            print("\(CapacitorUpdater.TAG) Cannot decode: \(filePath.path)", error)
-            self.sendStats(action: "decrypt_fail", versionName: version)
-            throw CustomError.cannotDecode
-        }
-    }
-
     private func unzipProgressHandler(entry: String, zipInfo: unz_file_info, entryNumber: Int, total: Int, destUnZip: URL, id: String, unzipError: inout NSError?) {
         if entry.contains("\\") {
             print("\(CapacitorUpdater.TAG) unzip: Windows path is not supported, please use unix path as required by zip RFC: \(entry)")
@@ -694,7 +650,7 @@ import UIKit
 
         let finalPath = tempDataPath.deletingLastPathComponent().appendingPathComponent("\(id)")
         do {
-            try self.decryptFileV2(filePath: tempDataPath, sessionKey: sessionKey, version: version)
+            try CryptoCipherV2.decryptFile(filePath: tempDataPath, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
             try FileManager.default.moveItem(at: tempDataPath, to: finalPath)
         } catch {
             print("\(CapacitorUpdater.TAG) Failed decrypt file : \(error)")
