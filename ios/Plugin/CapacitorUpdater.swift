@@ -353,27 +353,6 @@ import UIKit
         return actualHash == expectedHash
     }
 
-    public func decryptChecksum(checksum: String, version: String) throws -> String {
-        if self.publicKey.isEmpty {
-            return checksum
-        }
-        do {
-            let checksumBytes: Data = Data(base64Encoded: checksum)!
-            guard let rsaPublicKey: RSAPublicKey = .load(rsaPublicKey: self.publicKey) else {
-                print("cannot decode publicKey", self.publicKey)
-                throw CustomError.cannotDecode
-            }
-            guard let decryptedChecksum = rsaPublicKey.decrypt(data: checksumBytes) else {
-                throw NSError(domain: "Failed to decrypt session key data", code: 2, userInfo: nil)
-            }
-            return decryptedChecksum.base64EncodedString()
-        } catch {
-            print("\(CapacitorUpdater.TAG) Cannot decrypt checksum: \(checksum)", error)
-            self.sendStats(action: "decrypt_fail", versionName: version)
-            throw CustomError.cannotDecode
-        }
-    }
-
     public func downloadManifest(manifest: [ManifestEntry], version: String, sessionKey: String) throws -> BundleInfo {
         let id = self.randomString(length: 10)
         print("\(CapacitorUpdater.TAG) downloadManifest start \(id)")

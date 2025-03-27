@@ -291,7 +291,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.global(qos: .background).async {
             do {
                 let next = try self.implementation.download(url: url!, version: version, sessionKey: sessionKey)
-                checksum = try self.implementation.decryptChecksum(checksum: checksum, version: version)
+                checksum = try CryptoCipherV2.decryptChecksum(checksum: checksum, publicKey: self.implementation.publicKey, version: version)
                 if (checksum != "" || self.implementation.publicKey != "") && next.getChecksum() != checksum {
                     print("\(CapacitorUpdater.TAG) Error checksum", next.getChecksum(), checksum)
                     self.implementation.sendStats(action: "checksum_fail", versionName: next.getVersionName())
@@ -805,7 +805,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         self.endBackGroundTaskWithNotif(msg: "Latest version is in error state. Aborting update.", latestVersionName: latestVersionName, current: current)
                         return
                     }
-                    res.checksum = try self.implementation.decryptChecksum(checksum: res.checksum, version: latestVersionName)
+                    res.checksum = try CryptoCipherV2.decryptChecksum(checksum: res.checksum, publicKey: self.implementation.publicKey, version: latestVersionName)
                     if res.checksum != "" && next.getChecksum() != res.checksum && res.manifest == nil {
                         print("\(CapacitorUpdater.TAG) Error checksum", next.getChecksum(), res.checksum)
                         self.implementation.sendStats(action: "checksum_fail", versionName: next.getVersionName())
