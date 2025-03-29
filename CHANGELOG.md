@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.0.38](https://github.com/Cap-go/capacitor-updater/compare/7.0.37...7.0.38) (2025-03-29)
+
+
+### Bug Fixes
+
+* brotli issue allow ignore for certain files ([4e7a95e](https://github.com/Cap-go/capacitor-updater/commit/4e7a95e94461d82b28d3b958f2ebe28938d96788))
+
 ### [7.0.37](https://github.com/Cap-go/capacitor-updater/compare/7.0.36...7.0.37) (2025-03-29)
 
 
