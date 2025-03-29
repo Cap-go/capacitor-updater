@@ -167,7 +167,7 @@ public class DownloadService extends Worker {
                     try {
                         fileHash = CryptoCipherV2.decryptChecksum(fileHash, publicKey);
                     } catch (Exception e) {
-                        Log.e(TAG, "Error decrypting checksum for " + fileName, e);
+                        Log.e(TAG, "Error decrypting checksum for " + fileName + "fileHash: " + fileHash);
                         hasError.set(true);
                         continue;
                     }
