@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.0.37](https://github.com/Cap-go/capacitor-updater/compare/7.0.36...7.0.37) (2025-03-29)
+
+
+### Bug Fixes
+
+* encryption issue  RSA latest ios ([e799c1a](https://github.com/Cap-go/capacitor-updater/commit/e799c1aaa76b43467e4afc34b1c84aabb048249b))
+
 ### [7.0.36](https://github.com/Cap-go/capacitor-updater/compare/7.0.35...7.0.36) (2025-03-27)
 
 ### [7.0.35](https://github.com/Cap-go/capacitor-updater/compare/7.0.34...7.0.35) (2025-03-27)
