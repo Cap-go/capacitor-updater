@@ -10,7 +10,7 @@ import BigInt
 
 public struct CryptoCipherV2 {
 
-    public static func decryptChecksum(checksum: String, publicKey: String, version: String) throws -> String {
+    public static func decryptChecksum(checksum: String, publicKey: String) throws -> String {
         if publicKey.isEmpty {
             print("\(CapacitorUpdater.TAG) The public key is empty")
             return checksum

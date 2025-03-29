@@ -377,8 +377,16 @@ public class DownloadService extends Worker {
 
         Request request = new Request.Builder().url(downloadUrl).build();
 
+        // Check if file is a Brotli file
+        boolean isBrotli = targetFile.getName().endsWith(".br");
+
+        // Create final target file with .br extension removed if it's a Brotli file
+        File finalTargetFile = isBrotli
+            ? new File(targetFile.getParentFile(), targetFile.getName().substring(0, targetFile.getName().length() - 3))
+            : targetFile;
+
         // Create a temporary file for the compressed data
-        File compressedFile = new File(getApplicationContext().getCacheDir(), "temp_" + targetFile.getName() + ".br");
+        File compressedFile = new File(getApplicationContext().getCacheDir(), "temp_" + targetFile.getName() + ".tmp");
 
         try (Response response = client.newCall(request).execute()) {
             if (!response.isSuccessful()) {
@@ -405,21 +413,27 @@ public class DownloadService extends Worker {
                 CryptoCipherV2.decryptFile(compressedFile, publicKey, sessionKey);
             }
 
-            // Use new decompression method
-            byte[] compressedData = Files.readAllBytes(compressedFile.toPath());
-            byte[] decompressedData = decompressBrotli(compressedData, targetFile.getName());
-            Files.write(targetFile.toPath(), decompressedData);
+            // Only decompress if file has .br extension
+            if (isBrotli) {
+                // Use new decompression method
+                byte[] compressedData = Files.readAllBytes(compressedFile.toPath());
+                byte[] decompressedData = decompressBrotli(compressedData, targetFile.getName());
+                Files.write(finalTargetFile.toPath(), decompressedData);
+            } else {
+                // Just copy the file without decompression
+                Files.copy(compressedFile.toPath(), finalTargetFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
 
             // Delete the compressed file
             compressedFile.delete();
-            String calculatedHash = CryptoCipherV2.calcChecksum(targetFile);
+            String calculatedHash = CryptoCipherV2.calcChecksum(finalTargetFile);
 
             // Verify checksum
             if (calculatedHash.equals(expectedHash)) {
                 // Only cache if checksum is correct
-                copyFile(targetFile, cacheFile);
+                copyFile(finalTargetFile, cacheFile);
             } else {
-                targetFile.delete();
+                finalTargetFile.delete();
                 throw new IOException(
                     "Checksum verification failed for: " +
                     downloadUrl +

@@ -340,7 +340,7 @@ import UIKit
 
             if !self.publicKey.isEmpty && !sessionKey.isEmpty {
                 do {
-                    fileHash = try CryptoCipherV2.decryptChecksum(checksum: fileHash, publicKey: self.publicKey, version: version)
+                    fileHash = try CryptoCipherV2.decryptChecksum(checksum: fileHash, publicKey: self.publicKey)
                 } catch {
                     downloadError = error
                     print("\(CapacitorUpdater.TAG) CryptoCipherV2.decryptChecksum error \(id) \(fileName) error: \(error)")
@@ -403,11 +403,18 @@ import UIKit
                                 try FileManager.default.removeItem(at: tempFile)
                             }
 
-                            // Decompress the Brotli data
-                            guard let decompressedData = self.decompressBrotli(data: finalData, fileName: fileName) else {
-                                throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data for file \(fileName) at url \(downloadUrl)"])
+                            // Check if file has .br extension for Brotli decompression
+                            let isBrotli = fileName.hasSuffix(".br")
+                            let finalFileName = isBrotli ? String(fileName.dropLast(3)) : fileName
+                            let destFilePath = destFolder.appendingPathComponent(finalFileName)
+
+                            if isBrotli {
+                                // Decompress the Brotli data
+                                guard let decompressedData = self.decompressBrotli(data: finalData, fileName: fileName) else {
+                                    throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data for file \(fileName) at url \(downloadUrl)"])
+                                }
+                                finalData = decompressedData
                             }
-                            finalData = decompressedData
 
                             try finalData.write(to: destFilePath)
                             if !self.publicKey.isEmpty && !sessionKey.isEmpty {
@@ -423,7 +430,7 @@ import UIKit
 
                             completedFiles += 1
                             self.notifyDownload(id: id, percent: self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70))
-                            print("\(CapacitorUpdater.TAG) downloadManifest \(id) \(fileName) downloaded, decompressed\(!self.publicKey.isEmpty && !sessionKey.isEmpty ? ", decrypted" : ""), and cached")
+                            print("\(CapacitorUpdater.TAG) downloadManifest \(id) \(fileName) downloaded\(isBrotli ? ", decompressed" : "")\(!self.publicKey.isEmpty && !sessionKey.isEmpty ? ", decrypted" : ""), and cached")
                         } catch {
                             downloadError = error
                             NSLog("\(CapacitorUpdater.TAG) downloadManifest \(id) \(fileName) error: \(error.localizedDescription)")

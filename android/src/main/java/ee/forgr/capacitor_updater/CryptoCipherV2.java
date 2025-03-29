@@ -192,24 +192,6 @@ public class CryptoCipherV2 {
         }
     }
 
-    public static String decryptChecksum(String checksum, String publicKey, String version) throws IOException {
-        if (publicKey.isEmpty()) {
-            Log.e(CapacitorUpdater.TAG, "The public key is empty");
-            return checksum;
-        }
-        try {
-            byte[] checksumBytes = Base64.decode(checksum, Base64.DEFAULT);
-            PublicKey pKey = CryptoCipherV2.stringToPublicKey(publicKey);
-            byte[] decryptedChecksum = CryptoCipherV2.decryptRSA(checksumBytes, pKey);
-            // return Base64.encodeToString(decryptedChecksum, Base64.DEFAULT);
-            String result = Base64.encodeToString(decryptedChecksum, Base64.DEFAULT);
-            return result.replaceAll("\\s", ""); // Remove all whitespace, including newlines
-        } catch (GeneralSecurityException e) {
-            Log.e(CapacitorUpdater.TAG, "decryptChecksum fail: " + e.getMessage());
-            throw new IOException("Decryption failed: " + e.getMessage());
-        }
-    }
-
     public static String calcChecksum(File file) {
         final int BUFFER_SIZE = 1024 * 1024 * 5; // 5 MB buffer size
         MessageDigest digest;
