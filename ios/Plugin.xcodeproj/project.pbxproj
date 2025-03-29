@@ -18,6 +18,9 @@
 		863289042823450E0057FC90 /* BundleInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 863289032823450E0057FC90 /* BundleInfo.swift */; };
 		863289062823453C0057FC90 /* BundleStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 863289052823453C0057FC90 /* BundleStatus.swift */; };
 		8666E8DD2D0B5DC400C962FC /* InternalUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8666E8DC2D0B5DBD00C962FC /* InternalUtils.swift */; };
+		866F27452D977D6900813180 /* AES.swift in Sources */ = {isa = PBXBuildFile; fileRef = 866F27422D977D6900813180 /* AES.swift */; };
+		866F27462D977D6900813180 /* RSA.swift in Sources */ = {isa = PBXBuildFile; fileRef = 866F27442D977D6900813180 /* RSA.swift */; };
+		866F27472D977D6900813180 /* BigInt.swift in Sources */ = {isa = PBXBuildFile; fileRef = 866F27432D977D6900813180 /* BigInt.swift */; };
 		867499312C7AAC0300524CB6 /* CryptoCipherV2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 867499302C7AAC0300524CB6 /* CryptoCipherV2.swift */; };
 		B3F3EE2328CF27FA00663217 /* DelayCondition.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3F3EE2228CF27FA00663217 /* DelayCondition.swift */; };
 		B3F3EE2528CF287200663217 /* DelayUntilNext.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3F3EE2428CF287200663217 /* DelayUntilNext.swift */; };
@@ -48,6 +51,9 @@
 		863289032823450E0057FC90 /* BundleInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundleInfo.swift; sourceTree = "<group>"; };
 		863289052823453C0057FC90 /* BundleStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundleStatus.swift; sourceTree = "<group>"; };
 		8666E8DC2D0B5DBD00C962FC /* InternalUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InternalUtils.swift; sourceTree = "<group>"; };
+		866F27422D977D6900813180 /* AES.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AES.swift; sourceTree = "<group>"; };
+		866F27432D977D6900813180 /* BigInt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BigInt.swift; sourceTree = "<group>"; };
+		866F27442D977D6900813180 /* RSA.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RSA.swift; sourceTree = "<group>"; };
 		867499302C7AAC0300524CB6 /* CryptoCipherV2.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CryptoCipherV2.swift; sourceTree = "<group>"; };
 		91781294A431A2A7CC6EB714 /* Pods-Plugin.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Plugin.release.xcconfig"; path = "Pods/Target Support Files/Pods-Plugin/Pods-Plugin.release.xcconfig"; sourceTree = "<group>"; };
 		96ED1B6440D6672E406C8D19 /* Pods-PluginTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-PluginTests.debug.xcconfig"; path = "Pods/Target Support Files/Pods-PluginTests/Pods-PluginTests.debug.xcconfig"; sourceTree = "<group>"; };
@@ -104,6 +110,9 @@
 			children = (
 				50E1A94720377CB70090CE1A /* CapacitorUpdaterPlugin.swift */,
 				2F98D68124C9AAE400613A4C /* CapacitorUpdater.swift */,
+				866F27422D977D6900813180 /* AES.swift */,
+				866F27432D977D6900813180 /* BigInt.swift */,
+				866F27442D977D6900813180 /* RSA.swift */,
 				8666E8DC2D0B5DBD00C962FC /* InternalUtils.swift */,
 				863289032823450E0057FC90 /* BundleInfo.swift */,
 				863289052823453C0057FC90 /* BundleStatus.swift */,
@@ -283,6 +292,7 @@
 			inputPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-PluginTests/Pods-PluginTests-frameworks.sh",
 				"${BUILT_PRODUCTS_DIR}/Alamofire/Alamofire.framework",
+				"${BUILT_PRODUCTS_DIR}/BigInt/BigInt.framework",
 				"${BUILT_PRODUCTS_DIR}/Capacitor/Capacitor.framework",
 				"${BUILT_PRODUCTS_DIR}/CapacitorCordova/Cordova.framework",
 				"${BUILT_PRODUCTS_DIR}/SSZipArchive/SSZipArchive.framework",
@@ -291,6 +301,7 @@
 			name = "[CP] Embed Pods Frameworks";
 			outputPaths = (
 				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/Alamofire.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/BigInt.framework",
 				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/Capacitor.framework",
 				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/Cordova.framework",
 				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/SSZipArchive.framework",
@@ -327,6 +338,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				50E1A94820377CB70090CE1A /* CapacitorUpdaterPlugin.swift in Sources */,
+				866F27452D977D6900813180 /* AES.swift in Sources */,
+				866F27462D977D6900813180 /* RSA.swift in Sources */,
+				866F27472D977D6900813180 /* BigInt.swift in Sources */,
 				B3F3EE2328CF27FA00663217 /* DelayCondition.swift in Sources */,
 				B3F3EE2528CF287200663217 /* DelayUntilNext.swift in Sources */,
 				863289062823453C0057FC90 /* BundleStatus.swift in Sources */,
