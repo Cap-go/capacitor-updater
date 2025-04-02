@@ -24,7 +24,8 @@ let package = Package(
                 .product(name: "Cordova", package: "capacitor-swift-pm"),
                 .product(name: "ZipArchive", package: "ZipArchive"),
                 .product(name: "Alamofire", package: "Alamofire"),
-                .product(name: "Version", package: "Version")
+                .product(name: "Version", package: "Version"),
+                .product(name: "BigInt", package: "BigInt")
             ],
             path: "ios/Plugin"),
         .testTarget(
