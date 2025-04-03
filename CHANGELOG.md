@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.0.43](https://github.com/Cap-go/capacitor-updater/compare/7.0.42...7.0.43) (2025-04-03)
+
+
+### Bug Fixes
+
+* add missing import in SPM ([de905d8](https://github.com/Cap-go/capacitor-updater/commit/de905d838821062a27e6ff7f04fdf35c5b67a316))
+
 ### [7.0.42](https://github.com/Cap-go/capacitor-updater/compare/7.0.41...7.0.42) (2025-04-02)
 
 
