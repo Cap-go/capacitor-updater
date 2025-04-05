@@ -1117,7 +1117,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                                     latestVersionName,
                                                     latest,
                                                     false
-                                            );
+                                                );
                                             return;
                                         }
                                         CapacitorUpdaterPlugin.this.implementation.set(latest);
