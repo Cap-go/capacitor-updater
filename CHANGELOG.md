@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.0.46](https://github.com/Cap-go/capacitor-updater/compare/7.0.45...7.0.46) (2025-04-11)
+
+
+### Bug Fixes
+
+* make better definition of defaultChannel ([6aabc84](https://github.com/Cap-go/capacitor-updater/commit/6aabc84e555b32131060123dea5f827fde1c45a9))
+
 ### [7.0.45](https://github.com/Cap-go/capacitor-updater/compare/7.0.44...7.0.45) (2025-04-07)
 
 ### [7.0.44](https://github.com/Cap-go/capacitor-updater/compare/7.0.43...7.0.44) (2025-04-07)
