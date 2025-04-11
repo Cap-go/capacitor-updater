@@ -207,8 +207,8 @@ declare module '@capacitor/cli' {
       allowModifyUrl?: boolean;
 
       /**
-       * Set the default channel for the app in the config.
-       *
+       * Set the default channel for the app in the config. Case sensitive.
+       * This will setting will override the default channel set in the cloud, but will still respect overrides made in the cloud.
        *
        *
        * @default undefined
