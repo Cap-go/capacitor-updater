@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.0.47](https://github.com/Cap-go/capacitor-updater/compare/7.0.46...7.0.47) (2025-04-14)
+
+
+### Bug Fixes
+
+* **deps:** update dependency com.google.guava:guava to v33.4.7-android ([#558](https://github.com/Cap-go/capacitor-updater/issues/558)) ([85d1709](https://github.com/Cap-go/capacitor-updater/commit/85d17099c438581a3e62c93608de8a7309f650dd))
+
 ### [7.0.46](https://github.com/Cap-go/capacitor-updater/compare/7.0.45...7.0.46) (2025-04-11)
 
 
