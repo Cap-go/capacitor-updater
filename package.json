@@ -1,6 +1,6 @@
 {
   "name": "@capgo/capacitor-updater",
-  "version": "7.0.48",
+  "version": "7.0.49",
   "license": "MPL-2.0",
   "description": "Live update for capacitor apps",
   "main": "dist/plugin.cjs.js",
