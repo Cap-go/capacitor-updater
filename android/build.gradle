@@ -51,7 +51,7 @@ repositories {
 dependencies {
     def work_version = "2.10.0"
     implementation "androidx.work:work-runtime:$work_version"
-    implementation "com.google.android.gms:play-services-tasks:18.2.1"
+    implementation "com.google.android.gms:play-services-tasks:18.3.0"
     implementation "com.google.guava:guava:33.4.8-android"
     implementation fileTree(dir: 'libs', include: ['*.jar'])
     implementation project(':capacitor-android')
