@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.0.52](https://github.com/Cap-go/capacitor-updater/compare/7.0.51...7.0.52) (2025-04-28)
+
+
+### Bug Fixes
+
+* **deps:** update dependency com.google.code.gson:gson to v2.13.1 ([#564](https://github.com/Cap-go/capacitor-updater/issues/564)) ([e443fda](https://github.com/Cap-go/capacitor-updater/commit/e443fda0d251d9c7d4dc22a204269f9968b574b4))
+
 ### [7.0.51](https://github.com/Cap-go/capacitor-updater/compare/7.0.50...7.0.51) (2025-04-28)
 
 
