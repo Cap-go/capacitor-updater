@@ -49,7 +49,7 @@ repositories {
 
 
 dependencies {
-    def work_version = "2.10.0"
+    def work_version = "2.10.1"
     implementation "androidx.work:work-runtime:$work_version"
     implementation "com.google.android.gms:play-services-tasks:18.3.0"
     implementation "com.google.guava:guava:33.4.8-android"
@@ -57,7 +57,7 @@ dependencies {
     implementation project(':capacitor-android')
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     implementation 'io.github.g00fy2:versioncompare:1.5.0'
-    implementation 'com.google.code.gson:gson:2.13.0'
+    implementation 'com.google.code.gson:gson:2.13.1'
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
