@@ -44,7 +44,7 @@ jobs:
       - name: Create bump and changelog development
         if: github.ref != 'refs/heads/main'
         run: bunx capacitor-plugin-standard-version@latest --prerelease alpha
-      - name: Push generated doc to doc repo
+      - name: Push generated doc to website repo
         uses: nkoppel/push-files-to-another-repository@v1.1.4
         env:
           API_TOKEN_GITHUB: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
