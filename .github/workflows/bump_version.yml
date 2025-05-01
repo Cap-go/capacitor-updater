@@ -44,7 +44,13 @@ jobs:
       - name: Create bump and changelog development
         if: github.ref != 'refs/heads/main'
         run: bunx capacitor-plugin-standard-version@latest --prerelease alpha
-      - name: Push generated doc to website repo
+      - name: Push to origin
+        run: |
+          CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+          remote_repo="https://${GITHUB_ACTOR}:${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git"
+          git pull $remote_repo $CURRENT_BRANCH
+          git push $remote_repo HEAD:$CURRENT_BRANCH --follow-tags --tags
+      - name: Push generated doc to doc repo
         uses: nkoppel/push-files-to-another-repository@v1.1.4
         env:
           API_TOKEN_GITHUB: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
@@ -55,12 +61,6 @@ jobs:
           destination-directory: src/content/docs/docs/plugin
           destination-branch: main
           commit-email: martindonadieu@gmail.com
-      - name: Push to origin
-        run: |
-          CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-          remote_repo="https://${GITHUB_ACTOR}:${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git"
-          git pull $remote_repo $CURRENT_BRANCH
-          git push $remote_repo HEAD:$CURRENT_BRANCH --follow-tags --tags
   create-cache:
     if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
     runs-on: ubuntu-latest
