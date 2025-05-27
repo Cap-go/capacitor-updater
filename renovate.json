@@ -4,6 +4,7 @@
     "config:base",
     "schedule:earlyMondays"
   ],
+  "dependencyDashboard": false,
   "lockFileMaintenance": {
     "enabled": true,
     "automerge": true,
