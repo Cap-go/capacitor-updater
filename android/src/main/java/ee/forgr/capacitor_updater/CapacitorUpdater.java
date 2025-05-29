@@ -295,7 +295,8 @@ public class CapacitorUpdater {
             sessionKey,
             checksum,
             this.publicKey,
-            manifest != null
+            manifest != null,
+            this.isEmulator()
         );
 
         if (manifest != null) {

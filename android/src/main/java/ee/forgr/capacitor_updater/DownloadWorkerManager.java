@@ -46,7 +46,8 @@ public class DownloadWorkerManager {
         String sessionKey,
         String checksum,
         String publicKey,
-        boolean isManifest
+        boolean isManifest,
+        boolean isEmulator
     ) {
         initializeIfNeeded(context.getApplicationContext());
 
@@ -70,18 +71,33 @@ public class DownloadWorkerManager {
             .putString(DownloadService.PUBLIC_KEY, publicKey)
             .build();
 
-        // Create network constraints
-        Constraints constraints = new Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build();
+        // Create network constraints - be more lenient on emulators
+        Constraints.Builder constraintsBuilder = new Constraints.Builder();
+        if (isEmulator) {
+            Log.i(TAG, "Emulator detected - using lenient network constraints");
+            // On emulators, use UNMETERED to avoid background network issues
+            constraintsBuilder.setRequiredNetworkType(NetworkType.UNMETERED);
+        } else {
+            constraintsBuilder.setRequiredNetworkType(NetworkType.CONNECTED);
+        }
+        Constraints constraints = constraintsBuilder.build();
 
         // Create work request with tags for tracking
-        OneTimeWorkRequest workRequest = new OneTimeWorkRequest.Builder(DownloadService.class)
+        OneTimeWorkRequest.Builder workRequestBuilder = new OneTimeWorkRequest.Builder(DownloadService.class)
             .setConstraints(constraints)
             .setInputData(inputData)
             .addTag(id)
             .addTag(version) // Add version tag for tracking
-            .addTag("capacitor_updater_download")
-            .setBackoffCriteria(BackoffPolicy.LINEAR, WorkRequest.MIN_BACKOFF_MILLIS, TimeUnit.MILLISECONDS)
-            .build();
+            .addTag("capacitor_updater_download");
+
+        // More aggressive retry policy for emulators
+        if (isEmulator) {
+            workRequestBuilder.setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS);
+        } else {
+            workRequestBuilder.setBackoffCriteria(BackoffPolicy.LINEAR, WorkRequest.MIN_BACKOFF_MILLIS, TimeUnit.MILLISECONDS);
+        }
+
+        OneTimeWorkRequest workRequest = workRequestBuilder.build();
 
         // Enqueue work
         WorkManager.getInstance(context).enqueue(workRequest);
