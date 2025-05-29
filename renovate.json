@@ -28,6 +28,11 @@
       "enabled": false
     },
     {
+      "matchPackageNames": ["com.google.android.gms:play-services-tasks"],
+      "matchManagers": ["gradle"],
+      "enabled": false
+    },
+    {
       "matchPackagePatterns": ["^com\\.google\\..*"],
       "matchCurrentVersion": "/^.*-android$/",
       "allowedVersions": "/^.*-android$/"
