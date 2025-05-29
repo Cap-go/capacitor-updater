@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.0.56](https://github.com/Cap-go/capacitor-updater/compare/7.0.55...7.0.56) (2025-05-29)
+
+
+### Bug Fixes
+
+* reverte Android desugar pb ([d7216d0](https://github.com/Cap-go/capacitor-updater/commit/d7216d00acfa2e1449a0714f2aeddf1ad6abec31)), closes [1#comment3](https://github.com/Cap-go/1/issues/comment3)
+
 ### [7.0.55](https://github.com/Cap-go/capacitor-updater/compare/7.0.54...7.0.55) (2025-05-27)
 
 
