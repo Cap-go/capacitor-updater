@@ -75,8 +75,8 @@ public class DownloadWorkerManager {
         Constraints.Builder constraintsBuilder = new Constraints.Builder();
         if (isEmulator) {
             Log.i(TAG, "Emulator detected - using lenient network constraints");
-            // On emulators, use UNMETERED to avoid background network issues
-            constraintsBuilder.setRequiredNetworkType(NetworkType.UNMETERED);
+            // On emulators, use NOT_REQUIRED to avoid background network issues
+            constraintsBuilder.setRequiredNetworkType(NetworkType.NOT_REQUIRED);
         } else {
             constraintsBuilder.setRequiredNetworkType(NetworkType.CONNECTED);
         }
