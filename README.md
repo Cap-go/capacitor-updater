@@ -989,7 +989,7 @@ Returns null if no next bundle is set.
 
 #### DownloadOptions
 
-This URL and versions are used to download the bundle from the server, If you use backend all information will be gived by the method getLatest. 
+This URL and versions are used to download the bundle from the server, If you use backend all information will be gived by the method getLatest.
 If you don't use backend, you need to provide the URL and version of the bundle. Checksum and sessionKey are required if you encrypted the bundle with the CLI command encrypt, you should receive them as result of the command.
 
 | Prop             | Type                | Description                                                                                                                                                      | Default                | Since |
