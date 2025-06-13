@@ -568,6 +568,12 @@ export interface CapacitorUpdaterPlugin {
   getNextBundle(): Promise<BundleInfo | null>;
 }
 
+/**
+ * pending: The bundle is pending to be **SET** as the next bundle.
+ * downloading: The bundle is being downloaded.
+ * success: The bundle has been downloaded and is ready to be **SET** as the next bundle.
+ * error: The bundle has failed to download.
+ */
 export type BundleStatus = 'success' | 'error' | 'pending' | 'downloading';
 
 export type DelayUntilNext = 'background' | 'kill' | 'nativeVersion' | 'date';
