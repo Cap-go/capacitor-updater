@@ -2,6 +2,68 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.2.5](https://github.com/Cap-go/capacitor-updater/compare/7.2.4...7.2.5) (2025-06-10)
+
+
+### Bug Fixes
+
+* remove shit who prevent release to work ([37cf126](https://github.com/Cap-go/capacitor-updater/commit/37cf126e8146ae71da14443fe7cbfce8feec76c5))
+
+### [7.2.4](https://github.com/Cap-go/capacitor-updater/compare/7.2.3...7.2.4) (2025-06-10)
+
+
+### Bug Fixes
+
+* lint issue ([4bcf64e](https://github.com/Cap-go/capacitor-updater/commit/4bcf64e3a98177ed1764c9b6dd99e87b3fcb4e2c))
+
+### [7.2.3](https://github.com/Cap-go/capacitor-updater/compare/7.2.2...7.2.3) (2025-06-09)
+
+
+### Bug Fixes
+
+* better definition for download option ([9ac3914](https://github.com/Cap-go/capacitor-updater/commit/9ac3914f2dfc50c01fc723687c676115e7dfe46f))
+
+### [7.2.2](https://github.com/Cap-go/capacitor-updater/compare/7.2.1...7.2.2) (2025-06-02)
+
+### [7.2.1](https://github.com/Cap-go/capacitor-updater/compare/7.2.0...7.2.1) (2025-05-29)
+
+
+### Bug Fixes
+
+* update network constraints for emulators in DownloadWorkerManager ([0ddc5bc](https://github.com/Cap-go/capacitor-updater/commit/0ddc5bcbf06fccfc867bf341c1e9dc844dfb5b57))
+
+## [7.2.0](https://github.com/Cap-go/capacitor-updater/compare/7.1.0...7.2.0) (2025-05-29)
+
+
+### Features
+
+* enhance emulator support in download worker manager ([44a0cc6](https://github.com/Cap-go/capacitor-updater/commit/44a0cc6bae01d204d7d7c87dfc212a9fbda11329))
+
+## [7.1.0](https://github.com/Cap-go/capacitor-updater/compare/7.0.57...7.1.0) (2025-05-29)
+
+
+### Features
+
+* fix direct update delay ([8f758dc](https://github.com/Cap-go/capacitor-updater/commit/8f758dcee56b12f3a161edb71540f3e232abcf29))
+
+### [7.0.57](https://github.com/Cap-go/capacitor-updater/compare/7.0.56...7.0.57) (2025-05-29)
+
+### [7.0.56](https://github.com/Cap-go/capacitor-updater/compare/7.0.55...7.0.56) (2025-05-29)
+
+
+### Bug Fixes
+
+* reverte Android desugar pb ([d7216d0](https://github.com/Cap-go/capacitor-updater/commit/d7216d00acfa2e1449a0714f2aeddf1ad6abec31)), closes [1#comment3](https://github.com/Cap-go/1/issues/comment3)
+
+### [7.0.55](https://github.com/Cap-go/capacitor-updater/compare/7.0.54...7.0.55) (2025-05-27)
+
+
+### Bug Fixes
+
+* renovate ([71fa30a](https://github.com/Cap-go/capacitor-updater/commit/71fa30ac129e07b193ac469b6a4298c84747fc67))
+
+### [7.0.54](https://github.com/Cap-go/capacitor-updater/compare/7.0.53...7.0.54) (2025-05-19)
+
 ### [7.0.53](https://github.com/Cap-go/capacitor-updater/compare/7.0.52...7.0.53) (2025-05-01)
 
 

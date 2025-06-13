@@ -761,23 +761,27 @@ export interface ChannelUrl {
   url: string;
 }
 
+/**
+ * This URL and versions are used to download the bundle from the server, If you use backend all information will be gived by the method getLatest.
+ * If you don't use backend, you need to provide the URL and version of the bundle. Checksum and sessionKey are required if you encrypted the bundle with the CLI command encrypt, you should receive them as result of the command.
+ */
 export interface DownloadOptions {
   /**
    * The URL of the bundle zip file (e.g: dist.zip) to be downloaded. (This can be any URL. E.g: Amazon S3, a GitHub tag, any other place you've hosted your bundle.)
    */
-  url?: string;
+  url: string;
   /**
    * The version code/name of this bundle/version
    */
   version: string;
   /**
-   * The session key for the update
+   * The session key for the update, when the bundle is encrypted with a session key
    * @since 4.0.0
    * @default undefined
    */
   sessionKey?: string;
   /**
-   * The checksum for the update
+   * The checksum for the update, it should be in sha256 and encrypted with private key if the bundle is encrypted
    * @since 4.0.0
    * @default undefined
    */

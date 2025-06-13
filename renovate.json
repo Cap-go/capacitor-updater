@@ -4,6 +4,7 @@
     "config:base",
     "schedule:earlyMondays"
   ],
+  "dependencyDashboard": false,
   "lockFileMaintenance": {
     "enabled": true,
     "automerge": true,
@@ -24,6 +25,11 @@
     {
       "matchPackageNames": ["eslint"],
       "matchManagers": ["npm"],
+      "enabled": false
+    },
+    {
+      "matchPackageNames": ["com.google.android.gms:play-services-tasks"],
+      "matchManagers": ["gradle"],
       "enabled": false
     },
     {

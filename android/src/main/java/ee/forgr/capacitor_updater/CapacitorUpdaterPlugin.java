@@ -57,7 +57,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final String statsUrlDefault = "https://plugin.capgo.app/stats";
     private static final String channelUrlDefault = "https://plugin.capgo.app/channel_self";
 
-    private final String PLUGIN_VERSION = "7.0.53";
+    private final String PLUGIN_VERSION = "7.2.5";
     private static final String DELAY_CONDITION_PREFERENCES = "";
 
     private SharedPreferences.Editor editor;
@@ -1106,6 +1106,20 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                         "Latest bundle already exists and download is NOT required. " + messageUpdate
                                     );
                                     if (CapacitorUpdaterPlugin.this.implementation.directUpdate) {
+                                        Gson gson = new Gson();
+                                        String delayUpdatePreferences = prefs.getString(DELAY_CONDITION_PREFERENCES, "[]");
+                                        Type type = new TypeToken<ArrayList<DelayCondition>>() {}.getType();
+                                        ArrayList<DelayCondition> delayConditionList = gson.fromJson(delayUpdatePreferences, type);
+                                        if (delayConditionList != null && !delayConditionList.isEmpty()) {
+                                            Log.i(CapacitorUpdater.TAG, "Update delayed until delay conditions met");
+                                            CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                                                    "Update delayed until delay conditions met",
+                                                    latestVersionName,
+                                                    latest,
+                                                    false
+                                                );
+                                            return;
+                                        }
                                         CapacitorUpdaterPlugin.this.implementation.set(latest);
                                         CapacitorUpdaterPlugin.this._reload();
                                         CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
