@@ -176,7 +176,7 @@ public class CryptoCipherV2 {
 
     public static String decryptChecksum(String checksum, String publicKey) throws IOException {
         if (publicKey.isEmpty()) {
-            Log.e(CapacitorUpdater.TAG, "The public key is empty");
+            Log.e(CapacitorUpdater.TAG, "No encryption set (public key) ignored");
             return checksum;
         }
         try {

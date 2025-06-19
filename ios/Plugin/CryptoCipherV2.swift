@@ -12,7 +12,7 @@ public struct CryptoCipherV2 {
 
     public static func decryptChecksum(checksum: String, publicKey: String) throws -> String {
         if publicKey.isEmpty {
-            print("\(CapacitorUpdater.TAG) The public key is empty")
+            print("\(CapacitorUpdater.TAG) No encryption set (public key) ignored")
             return checksum
         }
         do {
