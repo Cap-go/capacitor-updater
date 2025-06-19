@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.2.11](https://github.com/Cap-go/capacitor-updater/compare/7.2.10...7.2.11) (2025-06-19)
+
+
+### Bug Fixes
+
+* remove log for semaphoreWait ([d06a749](https://github.com/Cap-go/capacitor-updater/commit/d06a749df6ef00e86b9e26d9ff86aee7c5754ea5))
+
 ### [7.2.10](https://github.com/Cap-go/capacitor-updater/compare/7.2.9...7.2.10) (2025-06-19)
 
 
