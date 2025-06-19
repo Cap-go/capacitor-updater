@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.2.12](https://github.com/Cap-go/capacitor-updater/compare/7.2.11...7.2.12) (2025-06-19)
+
+
+### Bug Fixes
+
+* setChannel doc explain better what shoudn't be done ([8ddfb14](https://github.com/Cap-go/capacitor-updater/commit/8ddfb14c18fac243f2de13c8e09fb80fbf354092))
+
 ### [7.2.11](https://github.com/Cap-go/capacitor-updater/compare/7.2.10...7.2.11) (2025-06-19)
 
 
