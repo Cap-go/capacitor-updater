@@ -168,7 +168,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func semaphoreWait(waitTime: Int) {
-        print("\(CapacitorUpdater.TAG) semaphoreWait \(waitTime)")
+        // print("\(CapacitorUpdater.TAG) semaphoreWait \(waitTime)")
         _ = semaphoreReady.wait(timeout: .now() + .milliseconds(waitTime))
     }
 

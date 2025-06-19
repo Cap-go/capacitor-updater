@@ -199,7 +199,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void semaphoreWait(Number waitTime) {
-        Log.i(CapacitorUpdater.TAG, "semaphoreWait " + waitTime);
+        // Log.i(CapacitorUpdater.TAG, "semaphoreWait " + waitTime);
         try {
             //        Log.i(CapacitorUpdater.TAG, "semaphoreReady count " + CapacitorUpdaterPlugin.this.semaphoreReady.getCount());
             semaphoreReady.awaitAdvanceInterruptibly(semaphoreReady.getPhase(), waitTime.longValue(), TimeUnit.SECONDS);
