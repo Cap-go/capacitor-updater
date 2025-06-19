@@ -94,7 +94,7 @@ public struct CryptoCipherV2 {
 
     public static func decryptFile(filePath: URL, publicKey: String, sessionKey: String, version: String) throws {
         if publicKey.isEmpty || sessionKey.isEmpty || sessionKey.components(separatedBy: ":").count != 2 {
-            print("\(CapacitorUpdater.TAG) Cannot found public key or sessionKey")
+            print("\(CapacitorUpdater.TAG) Encryption not set, no public key or seesion, ignored")
             return
         }
 
