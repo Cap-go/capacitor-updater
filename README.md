@@ -20,19 +20,35 @@
   <h2><a href="https://capgo.app/consulting/?ref=plugin"> Fix your annoying bug now, Hire a Capacitor expert 💪</a></h2>
 </div>
 
-Update Ionic Capacitor apps without App/Play Store review (Code-push / hot-code updates).
+Capacitor plugin to update your app remotely in real-time.
+
+Open-source Alternative to Appflow, Codepush or Capawesome
+
+## Features
+
+- 🔋 Supports **Android and iOS**
+- ⚡️ **Capacitor 7** support
+- 🔄 **Auto Update**: Automatically download and set the latest bundle for the app.
+- ☁️ **Cloud Support**: Use the [Capgo Cloud](https://capgo.app/) to manage your app updates.
+- 📦 **Bundle Management**: Download, set, and delete bundles.
+- 📺 **Channel Support**: Set a channel for the app to manage different versions.
+- 🛟 **Rollback**: Reset the app to any bundle if an incompatible bundle has been set.
+- 🔁 **Delta Updates**: Make instant updates by only downloading changed files.
+- 🔒 **Security**: Encrypt and sign each updates with best in class security standards.
+- ⚔️ **Battle-Tested**: Used in more than 2000 projects.
+- 🌐 **Open Source**: Licensed under the Mozilla Public License 2.0
+- 🌐 **Open Source Backend**: Self install [our backend](https://github.com/Cap-go/capgo) in your infra
 
 You have 3 ways possible :
 - Use [capgo.app](https://capgo.app) a full featured auto-update system in 5 min Setup, to manage version, update, revert and see stats.
 - Use your own server update with auto-update system
 - Use manual methods to zip, upload, download, from JS to do it when you want.
 
+## Documentation
+The most complete [documentation here](https://capgo.app/docs/).
 
 ## Community
 Join the [discord](https://discord.gg/VnYRvBfgA6) to get help.
-
-## Documentation
-I maintain a more user-friendly and complete [documentation here](https://capgo.app/docs/).
 
 ## Migration to v7
 
@@ -81,6 +97,10 @@ We recommend to declare [`CA92.1`](https://developer.apple.com/documentation/bun
 
 ## Installation
 
+Step by step here: [Getting started](https://capgo.app/docs/getting-started/add-an-app/)
+
+Or
+
 ```bash
 npm install @capgo/capacitor-updater
 npx cap sync
@@ -95,7 +115,7 @@ And follow the steps by step to setup your app.
 For detailed instructions on the auto-update setup, refer to the [Auto update documentation](https://capgo.app/docs/plugin/cloud-mode/getting-started/).
 
 
-## Manual setup
+## No Cloud setup
 
 Download update distribution zipfiles from a custom URL. Manually control the entire update process.
 
