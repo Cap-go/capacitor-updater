@@ -49,6 +49,7 @@ import okhttp3.OkHttpClient;
 import okhttp3.Protocol;
 import org.json.JSONArray;
 import org.json.JSONException;
+import org.json.JSONObject;
 
 @CapacitorPlugin(name = "CapacitorUpdater")
 public class CapacitorUpdaterPlugin extends Plugin {
@@ -58,7 +59,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final String channelUrlDefault = "https://plugin.capgo.app/channel_self";
 
     private final String PLUGIN_VERSION = "7.2.13";
-    private static final String DELAY_CONDITION_PREFERENCES = "";
 
     private SharedPreferences.Editor editor;
     private SharedPreferences prefs;
@@ -85,6 +85,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final Phaser semaphoreReady = new Phaser(1);
 
     private int lastNotifiedStatPercent = 0;
+
+    private DelayUpdateUtils delayUpdateUtils;
 
     public Thread startNewThread(final Runnable function, Number waitTime) {
         Thread bgTask = new Thread(() -> {
@@ -140,9 +142,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 .readTimeout(this.implementation.timeout, TimeUnit.MILLISECONDS)
                 .writeTimeout(this.implementation.timeout, TimeUnit.MILLISECONDS)
                 .build();
-
             this.implementation.directUpdate = this.getConfig().getBoolean("directUpdate", false);
             this.currentVersionNative = new Version(this.getConfig().getString("version", pInfo.versionName));
+            this.delayUpdateUtils = new DelayUpdateUtils(this.prefs, this.editor, this.currentVersionNative, CapacitorUpdaterPlugin.this::installNext);
         } catch (final PackageManager.NameNotFoundException e) {
             Log.e(CapacitorUpdater.TAG, "Error instantiating implementation", e);
             return;
@@ -831,13 +833,21 @@ public class CapacitorUpdaterPlugin extends Plugin {
     @PluginMethod
     public void setMultiDelay(final PluginCall call) {
         try {
-            final Object delayConditions = call.getData().opt("delayConditions");
+            final JSONArray delayConditions = call.getData().optJSONArray("delayConditions");
             if (delayConditions == null) {
                 Log.e(CapacitorUpdater.TAG, "setMultiDelay called without delayCondition");
                 call.reject("setMultiDelay called without delayCondition");
                 return;
             }
-            if (_setMultiDelay(delayConditions.toString())) {
+            for (int i = 0; i < delayConditions.length(); i++) {
+                final JSONObject object = delayConditions.optJSONObject(i);
+                if (object != null && object.optString("kind").equals("background") && object.optString("value").isEmpty()) {
+                    object.put("value", "0");
+                    delayConditions.put(i, object);
+                }
+            }
+
+            if (this.delayUpdateUtils.setMultiDelay(delayConditions.toString())) {
                 call.resolve();
             } else {
                 call.reject("Failed to delay update");
@@ -848,92 +858,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
-    private Boolean _setMultiDelay(String delayConditions) {
-        try {
-            this.editor.putString(DELAY_CONDITION_PREFERENCES, delayConditions);
-            this.editor.commit();
-            Log.i(CapacitorUpdater.TAG, "Delay update saved");
-            return true;
-        } catch (final Exception e) {
-            Log.e(CapacitorUpdater.TAG, "Failed to delay update, [Error calling '_setMultiDelay()']", e);
-            return false;
-        }
-    }
-
-    private boolean _cancelDelay(String source) {
-        try {
-            this.editor.remove(DELAY_CONDITION_PREFERENCES);
-            this.editor.commit();
-            Log.i(CapacitorUpdater.TAG, "All delays canceled from " + source);
-            return true;
-        } catch (final Exception e) {
-            Log.e(CapacitorUpdater.TAG, "Failed to cancel update delay", e);
-            return false;
-        }
-    }
-
     @PluginMethod
     public void cancelDelay(final PluginCall call) {
-        if (this._cancelDelay("JS")) {
+        if (this.delayUpdateUtils.cancelDelay("JS")) {
             call.resolve();
         } else {
             call.reject("Failed to cancel delay");
-        }
-    }
-
-    private void _checkCancelDelay(Boolean killed) {
-        Gson gson = new Gson();
-        String delayUpdatePreferences = prefs.getString(DELAY_CONDITION_PREFERENCES, "[]");
-        Type type = new TypeToken<ArrayList<DelayCondition>>() {}.getType();
-        ArrayList<DelayCondition> delayConditionList = gson.fromJson(delayUpdatePreferences, type);
-        for (DelayCondition condition : delayConditionList) {
-            String kind = condition.getKind().toString();
-            String value = condition.getValue();
-            if (!kind.isEmpty()) {
-                switch (kind) {
-                    case "background":
-                        if (!killed) {
-                            this._cancelDelay("background check");
-                        }
-                        break;
-                    case "kill":
-                        if (killed) {
-                            this._cancelDelay("kill check");
-                            this.installNext();
-                        }
-                        break;
-                    case "date":
-                        if (!"".equals(value)) {
-                            try {
-                                final SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS");
-                                Date date = sdf.parse(value);
-                                assert date != null;
-                                if (new Date().compareTo(date) > 0) {
-                                    this._cancelDelay("date expired");
-                                }
-                            } catch (final Exception e) {
-                                this._cancelDelay("date parsing issue");
-                            }
-                        } else {
-                            this._cancelDelay("delayVal absent");
-                        }
-                        break;
-                    case "nativeVersion":
-                        if (!"".equals(value)) {
-                            try {
-                                final Version versionLimit = new Version(value);
-                                if (this.currentVersionNative.isAtLeast(versionLimit)) {
-                                    this._cancelDelay("nativeVersion above limit");
-                                }
-                            } catch (final Exception e) {
-                                this._cancelDelay("nativeVersion parsing issue");
-                            }
-                        } else {
-                            this._cancelDelay("delayVal absent");
-                        }
-                        break;
-                }
-            }
         }
     }
 
@@ -1107,7 +1037,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     );
                                     if (CapacitorUpdaterPlugin.this.implementation.directUpdate) {
                                         Gson gson = new Gson();
-                                        String delayUpdatePreferences = prefs.getString(DELAY_CONDITION_PREFERENCES, "[]");
+                                        String delayUpdatePreferences = prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]");
                                         Type type = new TypeToken<ArrayList<DelayCondition>>() {}.getType();
                                         ArrayList<DelayCondition> delayConditionList = gson.fromJson(delayUpdatePreferences, type);
                                         if (delayConditionList != null && !delayConditionList.isEmpty()) {
@@ -1221,7 +1151,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private void installNext() {
         try {
             Gson gson = new Gson();
-            String delayUpdatePreferences = prefs.getString(DELAY_CONDITION_PREFERENCES, "[]");
+            String delayUpdatePreferences = prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]");
             Type type = new TypeToken<ArrayList<DelayCondition>>() {}.getType();
             ArrayList<DelayCondition> delayConditionList = gson.fromJson(delayUpdatePreferences, type);
             if (delayConditionList != null && !delayConditionList.isEmpty()) {
@@ -1302,7 +1232,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     public void appMovedToForeground() {
         final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
         CapacitorUpdaterPlugin.this.implementation.sendStats("app_moved_to_foreground", current.getVersionName());
-        this._checkCancelDelay(false);
+        this.delayUpdateUtils.checkCancelDelay(DelayUpdateUtils.CancelDelaySource.FOREGROUND);
+        this.delayUpdateUtils.unsetBackgroundTimestamp();
         if (
             CapacitorUpdaterPlugin.this._isAutoUpdateEnabled() &&
             (this.backgroundDownloadTask == null || !this.backgroundDownloadTask.isAlive())
@@ -1320,35 +1251,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
         CapacitorUpdaterPlugin.this.implementation.sendStats("app_moved_to_background", current.getVersionName());
         Log.i(CapacitorUpdater.TAG, "Checking for pending update");
         try {
-            Gson gson = new Gson();
-            String delayUpdatePreferences = prefs.getString(DELAY_CONDITION_PREFERENCES, "[]");
-            Type type = new TypeToken<ArrayList<DelayCondition>>() {}.getType();
-            ArrayList<DelayCondition> delayConditionList = gson.fromJson(delayUpdatePreferences, type);
-            String backgroundValue = null;
-            for (DelayCondition delayCondition : delayConditionList) {
-                if (delayCondition.getKind().toString().equals("background")) {
-                    String value = delayCondition.getValue();
-                    backgroundValue = (value != null && !value.isEmpty()) ? value : "0";
-                }
-            }
-            if (backgroundValue != null) {
-                taskRunning = true;
-                final Long timeout = Long.parseLong(backgroundValue);
-                if (backgroundTask != null) {
-                    backgroundTask.interrupt();
-                }
-                backgroundTask = startNewThread(
-                    () -> {
-                        taskRunning = false;
-                        _checkCancelDelay(false);
-                        installNext();
-                    },
-                    timeout
-                );
-            } else {
-                this._checkCancelDelay(false);
-                this.installNext();
-            }
+            // We need to set "backgrounded time"
+            this.delayUpdateUtils.setBackgroundTimestamp(System.currentTimeMillis());
+            this.delayUpdateUtils.checkCancelDelay(DelayUpdateUtils.CancelDelaySource.BACKGROUND);
+            this.installNext();
         } catch (final Exception e) {
             Log.e(CapacitorUpdater.TAG, "Error during onActivityStopped", e);
         }
@@ -1379,7 +1285,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private void appKilled() {
         Log.d(CapacitorUpdater.TAG, "onActivityDestroyed: all activity destroyed");
-        this._checkCancelDelay(true);
+        this.delayUpdateUtils.checkCancelDelay(DelayUpdateUtils.CancelDelaySource.KILLED);
     }
 
     @Override
