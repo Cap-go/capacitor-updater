@@ -2,16 +2,13 @@ package ee.forgr.capacitor_updater;
 
 import android.content.SharedPreferences;
 import android.util.Log;
-
 import com.google.common.reflect.TypeToken;
 import com.google.gson.Gson;
-
+import io.github.g00fy2.versioncompare.Version;
 import java.lang.reflect.Type;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
-
-import io.github.g00fy2.versioncompare.Version;
 
 public class DelayUpdateUtils {
 
@@ -57,25 +54,52 @@ public class DelayUpdateUtils {
                         try {
                             longValue = Long.parseLong(value);
                         } catch (NumberFormatException e) {
-                            Log.e(CapacitorUpdater.TAG, "Background condition (value: " + value + ") had an invalid value at index " + index + ". We will likely remove it.");
+                            Log.e(
+                                CapacitorUpdater.TAG,
+                                "Background condition (value: " +
+                                value +
+                                ") had an invalid value at index " +
+                                index +
+                                ". We will likely remove it."
+                            );
                         }
 
                         if (delta > longValue) {
-                            Log.i(CapacitorUpdater.TAG, "Background condition (value: " + value + ") deleted at index " + index + ". Delta: " + delta + ", longValue: " + longValue);
+                            Log.i(
+                                CapacitorUpdater.TAG,
+                                "Background condition (value: " +
+                                value +
+                                ") deleted at index " +
+                                index +
+                                ". Delta: " +
+                                delta +
+                                ", longValue: " +
+                                longValue
+                            );
                         }
-
                     } else {
                         delayConditionListToKeep.add(condition);
-                        Log.i(CapacitorUpdater.TAG, "Background delay (value: " + value + ") condition kept at index " + index + " (source: " + source.toString() + ")");
+                        Log.i(
+                            CapacitorUpdater.TAG,
+                            "Background delay (value: " +
+                            value +
+                            ") condition kept at index " +
+                            index +
+                            " (source: " +
+                            source.toString() +
+                            ")"
+                        );
                         break;
                     }
-
                 case DelayUntilNext.kill:
                     if (source == CancelDelaySource.KILLED) {
                         this.installNext.run();
                     } else {
                         delayConditionListToKeep.add(condition);
-                        Log.i(CapacitorUpdater.TAG, "Kill delay (value: " + value + ") condition kept at index " + index + " (source: " + source.toString() + ")");
+                        Log.i(
+                            CapacitorUpdater.TAG,
+                            "Kill delay (value: " + value + ") condition kept at index " + index + " (source: " + source.toString() + ")"
+                        );
                     }
                     break;
                 case DelayUntilNext.date:
@@ -85,16 +109,26 @@ public class DelayUpdateUtils {
                             Date date = sdf.parse(value);
                             assert date != null;
                             if (new Date().compareTo(date) > 0) {
-                                Log.i(CapacitorUpdater.TAG, "Date delay (value: " + value + ") condition removed due to expired date at index " + index);
+                                Log.i(
+                                    CapacitorUpdater.TAG,
+                                    "Date delay (value: " + value + ") condition removed due to expired date at index " + index
+                                );
                             } else {
                                 delayConditionListToKeep.add(condition);
                                 Log.i(CapacitorUpdater.TAG, "Date delay (value: " + value + ") condition kept at index " + index);
                             }
                         } catch (final Exception e) {
-                            Log.e(CapacitorUpdater.TAG, "Date delay (value: " + value + ") condition removed due to parsing issue at index " + index, e);
+                            Log.e(
+                                CapacitorUpdater.TAG,
+                                "Date delay (value: " + value + ") condition removed due to parsing issue at index " + index,
+                                e
+                            );
                         }
                     } else {
-                        Log.d(CapacitorUpdater.TAG, "Date delay (value: " + value + ") condition removed due to empty value at index " + index);
+                        Log.d(
+                            CapacitorUpdater.TAG,
+                            "Date delay (value: " + value + ") condition removed due to empty value at index " + index
+                        );
                     }
                     break;
                 case DelayUntilNext.nativeVersion:
@@ -102,16 +136,26 @@ public class DelayUpdateUtils {
                         try {
                             final Version versionLimit = new Version(value);
                             if (this.currentVersionNative.isAtLeast(versionLimit)) {
-                                Log.i(CapacitorUpdater.TAG, "Native version delay (value: " + value + ") condition removed due to above limit at index " + index);
+                                Log.i(
+                                    CapacitorUpdater.TAG,
+                                    "Native version delay (value: " + value + ") condition removed due to above limit at index " + index
+                                );
                             } else {
                                 delayConditionListToKeep.add(condition);
                                 Log.i(CapacitorUpdater.TAG, "Native version delay (value: " + value + ") condition kept at index " + index);
                             }
                         } catch (final Exception e) {
-                            Log.e(CapacitorUpdater.TAG, "Native version delay (value: " + value + ") condition removed due to parsing issue at index " + index, e);
+                            Log.e(
+                                CapacitorUpdater.TAG,
+                                "Native version delay (value: " + value + ") condition removed due to parsing issue at index " + index,
+                                e
+                            );
                         }
                     } else {
-                        Log.d(CapacitorUpdater.TAG, "Native version delay (value: " + value + ") condition removed due to empty value at index " + index);
+                        Log.d(
+                            CapacitorUpdater.TAG,
+                            "Native version delay (value: " + value + ") condition removed due to empty value at index " + index
+                        );
                     }
                     break;
             }
