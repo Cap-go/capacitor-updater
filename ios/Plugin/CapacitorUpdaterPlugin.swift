@@ -66,7 +66,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var taskRunning = false
     private var periodCheckDelay = 0
     let semaphoreReady = DispatchSemaphore(value: 0)
-    
+
     private var delayUpdateUtils: DelayUpdateUtils!
 
     override public func load() {
@@ -111,7 +111,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         implementation.publicKey = getConfig().getString("publicKey", "")!
         implementation.notifyDownloadRaw = notifyDownload
         implementation.PLUGIN_VERSION = self.PLUGIN_VERSION
-        
+
         // Initialize DelayUpdateUtils
         self.delayUpdateUtils = DelayUpdateUtils(currentVersionNative: currentVersionNative, installNext: { [weak self] in
             self?.installNext()
@@ -309,7 +309,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     }
                     throw ObjectSavableError.checksum
                 }
-                
+
                 checksum = try CryptoCipherV2.decryptChecksum(checksum: checksum, publicKey: self.implementation.publicKey)
                 if (checksum != "" || self.implementation.publicKey != "") && next.getChecksum() != checksum {
                     print("\(CapacitorUpdater.TAG) Error checksum", next.getChecksum(), checksum)
@@ -568,7 +568,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("setMultiDelay called without delayCondition")
             return
         }
-        
+
         // Handle background conditions with empty value (set to "0")
         if var modifiableList = delayConditionList as? [[String: Any]] {
             for i in 0..<modifiableList.count {
@@ -912,7 +912,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         let current: BundleInfo = self.implementation.getCurrentBundle()
         self.implementation.sendStats(action: "app_moved_to_background", versionName: current.getVersionName())
         print("\(CapacitorUpdater.TAG) Check for pending update")
-        
+
         // Set background timestamp
         let backgroundTimestamp = Int64(Date().timeIntervalSince1970 * 1000) // Convert to milliseconds
         self.delayUpdateUtils.setBackgroundTimestamp(backgroundTimestamp)
