@@ -474,6 +474,7 @@ export interface CapacitorUpdaterPlugin {
 
   /**
    * Listen for bundle download event in the App. Fires once a download has started, during downloading and when finished.
+   * This will return you all download percent during the download
    *
    * @since 2.0.11
    */
