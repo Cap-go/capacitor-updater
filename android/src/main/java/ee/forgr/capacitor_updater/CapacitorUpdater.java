@@ -322,6 +322,14 @@ public class CapacitorUpdater {
 
             if (!isManifest) {
                 String checksumDecrypted = Objects.requireNonNullElse(checksumRes, "");
+                
+                // If public key is present but no checksum provided, refuse installation
+                if (!this.publicKey.isEmpty() && checksumDecrypted.isEmpty()) {
+                    Log.e(CapacitorUpdater.TAG, "Public key present but no checksum provided");
+                    this.sendStats("checksum_required");
+                    throw new IOException("Checksum required when public key is present: " + id);
+                }
+                
                 if (!sessionKey.isEmpty()) {
                     CryptoCipherV2.decryptFile(downloaded, publicKey, sessionKey);
                     checksumDecrypted = CryptoCipherV2.decryptChecksum(checksumRes, publicKey);

@@ -291,6 +291,18 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.global(qos: .background).async {
             do {
                 let next = try self.implementation.download(url: url!, version: version, sessionKey: sessionKey)
+                // If public key is present but no checksum provided, refuse installation
+                if self.implementation.publicKey != "" && checksum == "" {
+                    print("\(CapacitorUpdater.TAG) Public key present but no checksum provided")
+                    self.implementation.sendStats(action: "checksum_required", versionName: next.getVersionName())
+                    let id = next.getId()
+                    let resDel = self.implementation.delete(id: id)
+                    if !resDel {
+                        print("\(CapacitorUpdater.TAG) Delete failed, id \(id) doesn't exist")
+                    }
+                    throw ObjectSavableError.checksum
+                }
+                
                 checksum = try CryptoCipherV2.decryptChecksum(checksum: checksum, publicKey: self.implementation.publicKey)
                 if (checksum != "" || self.implementation.publicKey != "") && next.getChecksum() != checksum {
                     print("\(CapacitorUpdater.TAG) Error checksum", next.getChecksum(), checksum)
