@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.2.16](https://github.com/Cap-go/capacitor-updater/compare/7.2.15...7.2.16) (2025-06-23)
+
+
+### Bug Fixes
+
+* multidelay for background ([0657d10](https://github.com/Cap-go/capacitor-updater/commit/0657d1022392fedcf0c0871e5ea4ff11b468d09e))
+* version dup ([0c4174d](https://github.com/Cap-go/capacitor-updater/commit/0c4174d7eee7cea00e00c5a71e6d2114bc5fe0cd))
+
 ### [7.2.15](https://github.com/Cap-go/capacitor-updater/compare/7.2.14...7.2.15) (2025-06-23)
 
 
