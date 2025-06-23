@@ -89,8 +89,8 @@ public class DelayUpdateUtils {
                             source.toString() +
                             ")"
                         );
-                        break;
                     }
+                    break;
                 case DelayUntilNext.kill:
                     if (source == CancelDelaySource.KILLED) {
                         this.installNext.run();
