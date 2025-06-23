@@ -49,7 +49,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     static let updateUrlDefault = "https://plugin.capgo.app/updates"
     static let statsUrlDefault = "https://plugin.capgo.app/stats"
     static let channelUrlDefault = "https://plugin.capgo.app/channel_self"
-    let DELAY_CONDITION_PREFERENCES = ""
+    // Note: DELAY_CONDITION_PREFERENCES is now defined in DelayUpdateUtils.DELAY_CONDITION_PREFERENCES
     private var updateUrl = ""
     private var statsUrl = ""
     private var backgroundTaskID: UIBackgroundTaskIdentifier = UIBackgroundTaskIdentifier.invalid
@@ -66,6 +66,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var taskRunning = false
     private var periodCheckDelay = 0
     let semaphoreReady = DispatchSemaphore(value: 0)
+    
+    private var delayUpdateUtils: DelayUpdateUtils!
 
     override public func load() {
         #if targetEnvironment(simulator)
@@ -109,6 +111,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         implementation.publicKey = getConfig().getString("publicKey", "")!
         implementation.notifyDownloadRaw = notifyDownload
         implementation.PLUGIN_VERSION = self.PLUGIN_VERSION
+        
+        // Initialize DelayUpdateUtils
+        self.delayUpdateUtils = DelayUpdateUtils(currentVersionNative: currentVersionNative, installNext: { [weak self] in
+            self?.installNext()
+        })
         let config = (self.bridge?.viewController as? CAPBridgeViewController)?.instanceDescriptor().legacyConfig
         implementation.appId = Bundle.main.infoDictionary?["CFBundleIdentifier"] as? String ?? ""
         implementation.appId = config?["appId"] as? String ?? implementation.appId
@@ -561,95 +568,44 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("setMultiDelay called without delayCondition")
             return
         }
-        let delayConditions: String = toJson(object: delayConditionList)
-        if _setMultiDelay(delayConditions: delayConditions) {
-            call.resolve()
-        } else {
-            call.reject("Failed to delay update")
-        }
-    }
-
-    private func _setMultiDelay(delayConditions: String?) -> Bool {
-        if delayConditions != nil && "" != delayConditions {
-            UserDefaults.standard.set(delayConditions, forKey: DELAY_CONDITION_PREFERENCES)
-            UserDefaults.standard.synchronize()
-            print("\(CapacitorUpdater.TAG) Delay update saved.")
-            return true
-        } else {
-            print("\(CapacitorUpdater.TAG) Failed to delay update, [Error calling '_setMultiDelay()']")
-            return false
-        }
-    }
-
-    private func _cancelDelay(source: String) {
-        print("\(CapacitorUpdater.TAG) delay Canceled from \(source)")
-        UserDefaults.standard.removeObject(forKey: DELAY_CONDITION_PREFERENCES)
-        UserDefaults.standard.synchronize()
-    }
-
-    @objc func cancelDelay(_ call: CAPPluginCall) {
-        self._cancelDelay(source: "JS")
-        call.resolve()
-    }
-
-    private func _checkCancelDelay(killed: Bool) {
-        let delayUpdatePreferences = UserDefaults.standard.string(forKey: DELAY_CONDITION_PREFERENCES) ?? "[]"
-        let delayConditionList: [DelayCondition] = fromJsonArr(json: delayUpdatePreferences).map { obj -> DelayCondition in
-            let kind: String = obj.value(forKey: "kind") as! String
-            let value: String? = obj.value(forKey: "value") as? String
-            return DelayCondition(kind: kind, value: value)
-        }
-        for condition in delayConditionList {
-            let kind: String? = condition.getKind()
-            let value: String? = condition.getValue()
-            if kind != nil {
-                switch kind {
-                case "background":
-                    if !killed {
-                        self._cancelDelay(source: "background check")
-                    }
-                case "kill":
-                    if killed {
-                        self._cancelDelay(source: "kill check")
-                        // instant install for kill action
-                        self.installNext()
-                    }
-                case "date":
-                    if value != nil && value != "" {
-                        let dateFormatter = ISO8601DateFormatter()
-                        dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                        guard let ExpireDate = dateFormatter.date(from: value!) else {
-                            self._cancelDelay(source: "date parsing issue")
-                            return
-                        }
-                        if ExpireDate < Date() {
-                            self._cancelDelay(source: "date expired")
-                        }
-                    } else {
-                        self._cancelDelay(source: "delayVal absent")
-                    }
-                case "nativeVersion":
-                    if value != nil && value != "" {
-                        do {
-                            let versionLimit = try Version(value!)
-                            if self.currentVersionNative >= versionLimit {
-                                self._cancelDelay(source: "nativeVersion above limit")
-                            }
-                        } catch {
-                            self._cancelDelay(source: "nativeVersion parsing issue")
-                        }
-                    } else {
-                        self._cancelDelay(source: "delayVal absent")
-                    }
-                case .none:
-                    print("\(CapacitorUpdater.TAG) _checkCancelDelay switch case none error")
-                case .some:
-                    print("\(CapacitorUpdater.TAG) _checkCancelDelay switch case some error")
+        
+        // Handle background conditions with empty value (set to "0")
+        if var modifiableList = delayConditionList as? [[String: Any]] {
+            for i in 0..<modifiableList.count {
+                if let kind = modifiableList[i]["kind"] as? String,
+                   kind == "background",
+                   let value = modifiableList[i]["value"] as? String,
+                   value.isEmpty {
+                    modifiableList[i]["value"] = "0"
                 }
             }
+            let delayConditions: String = toJson(object: modifiableList)
+            if delayUpdateUtils.setMultiDelay(delayConditions: delayConditions) {
+                call.resolve()
+            } else {
+                call.reject("Failed to delay update")
+            }
+        } else {
+            let delayConditions: String = toJson(object: delayConditionList)
+            if delayUpdateUtils.setMultiDelay(delayConditions: delayConditions) {
+                call.resolve()
+            } else {
+                call.reject("Failed to delay update")
+            }
         }
-        // self.checkAppReady() why this here?
     }
+
+    // Note: _setMultiDelay and _cancelDelay methods have been moved to DelayUpdateUtils class
+
+    @objc func cancelDelay(_ call: CAPPluginCall) {
+        if delayUpdateUtils.cancelDelay(source: "JS") {
+            call.resolve()
+        } else {
+            call.reject("Failed to cancel delay")
+        }
+    }
+
+    // Note: _checkCancelDelay method has been moved to DelayUpdateUtils class
 
     private func _isAutoUpdateEnabled() -> Bool {
         let instanceDescriptor = (self.bridge?.viewController as? CAPBridgeViewController)?.instanceDescriptor()
@@ -830,10 +786,20 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         return
                     }
                     if self.directUpdate {
+                        let delayUpdatePreferences = UserDefaults.standard.string(forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES) ?? "[]"
+                        let delayConditionList: [DelayCondition] = self.fromJsonArr(json: delayUpdatePreferences).map { obj -> DelayCondition in
+                            let kind: String = obj.value(forKey: "kind") as! String
+                            let value: String? = obj.value(forKey: "value") as? String
+                            return DelayCondition(kind: kind, value: value)
+                        }
+                        if !delayConditionList.isEmpty {
+                            print("\(CapacitorUpdater.TAG) Update delayed until delay conditions met")
+                            self.endBackGroundTaskWithNotif(msg: "Update delayed until delay conditions met", latestVersionName: latestVersionName, current: next, error: false)
+                            return
+                        }
                         _ = self.implementation.set(bundle: next)
                         _ = self._reload()
-                        self.directUpdate = false
-                        self.endBackGroundTaskWithNotif(msg: "update installed", latestVersionName: latestVersionName, current: current, error: false)
+                        self.endBackGroundTaskWithNotif(msg: "update installed", latestVersionName: latestVersionName, current: next, error: false)
                     } else {
                         self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
                         _ = self.implementation.setNextBundle(next: next.getId())
@@ -856,17 +822,17 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func appKilled() {
         print("\(CapacitorUpdater.TAG) onActivityDestroyed: all activity destroyed")
-        self._checkCancelDelay(killed: true)
+        self.delayUpdateUtils.checkCancelDelay(source: .killed)
     }
 
     private func installNext() {
-        let delayUpdatePreferences = UserDefaults.standard.string(forKey: DELAY_CONDITION_PREFERENCES) ?? "[]"
-        let delayConditionList: [DelayCondition]? = fromJsonArr(json: delayUpdatePreferences).map { obj -> DelayCondition in
+        let delayUpdatePreferences = UserDefaults.standard.string(forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES) ?? "[]"
+        let delayConditionList: [DelayCondition] = fromJsonArr(json: delayUpdatePreferences).map { obj -> DelayCondition in
             let kind: String = obj.value(forKey: "kind") as! String
             let value: String? = obj.value(forKey: "value") as? String
             return DelayCondition(kind: kind, value: value)
         }
-        if delayConditionList != nil && delayConditionList?.capacity != 0 {
+        if !delayConditionList.isEmpty {
             print("\(CapacitorUpdater.TAG) Update delayed until delay conditions met")
             return
         }
@@ -905,6 +871,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func appMovedToForeground() {
         let current: BundleInfo = self.implementation.getCurrentBundle()
         self.implementation.sendStats(action: "app_moved_to_foreground", versionName: current.getVersionName())
+        self.delayUpdateUtils.checkCancelDelay(source: .foreground)
+        self.delayUpdateUtils.unsetBackgroundTimestamp()
         if backgroundWork != nil && taskRunning {
             backgroundWork!.cancel()
             print("\(CapacitorUpdater.TAG) Background Timer Task canceled, Activity resumed before timer completes")
@@ -941,38 +909,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func appMovedToBackground() {
-        self.implementation.sendStats(action: "app_moved_to_background")
+        let current: BundleInfo = self.implementation.getCurrentBundle()
+        self.implementation.sendStats(action: "app_moved_to_background", versionName: current.getVersionName())
         print("\(CapacitorUpdater.TAG) Check for pending update")
-        let delayUpdatePreferences = UserDefaults.standard.string(forKey: DELAY_CONDITION_PREFERENCES) ?? "[]"
-
-        let delayConditionList: [DelayCondition] = fromJsonArr(json: delayUpdatePreferences).map { obj -> DelayCondition in
-            let kind: String = obj.value(forKey: "kind") as! String
-            let value: String? = obj.value(forKey: "value") as? String
-            return DelayCondition(kind: kind, value: value)
-        }
-        var backgroundValue: String?
-        for delayCondition in delayConditionList {
-            if delayCondition.getKind() == "background" {
-                let value: String? = delayCondition.getValue()
-                backgroundValue = (value != nil && value != "") ? value! : "0"
-            }
-        }
-        if backgroundValue != nil {
-            self.taskRunning = true
-            let interval: Double = (Double(backgroundValue!) ?? 0.0) / 1000
-            self.backgroundWork?.cancel()
-            self.backgroundWork = DispatchWorkItem(block: {
-                // IOS never executes this task in background
-                self.taskRunning = false
-                self._checkCancelDelay(killed: false)
-                self.installNext()
-            })
-            DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + interval, execute: self.backgroundWork!)
-        } else {
-            self._checkCancelDelay(killed: false)
-            self.installNext()
-        }
-
+        
+        // Set background timestamp
+        let backgroundTimestamp = Int64(Date().timeIntervalSince1970 * 1000) // Convert to milliseconds
+        self.delayUpdateUtils.setBackgroundTimestamp(backgroundTimestamp)
+        self.delayUpdateUtils.checkCancelDelay(source: .background)
+        self.installNext()
     }
 
     @objc func getNextBundle(_ call: CAPPluginCall) {
