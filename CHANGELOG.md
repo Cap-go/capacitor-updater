@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.2.18](https://github.com/Cap-go/capacitor-updater/compare/7.2.17...7.2.18) (2025-06-23)
+
+
+### Bug Fixes
+
+* Prevent fallthrough in android checkCancelDelay ([cb57e00](https://github.com/Cap-go/capacitor-updater/commit/cb57e00a1c36dbe19df13e5bf21f474c41a37b6c))
+
 ### [7.2.17](https://github.com/Cap-go/capacitor-updater/compare/7.2.16...7.2.17) (2025-06-23)
 
 
