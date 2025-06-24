@@ -361,7 +361,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     urlComponents.path = url.path
                     if let finalUrl = urlComponents.url {
                         _ = vc.webView?.load(URLRequest(url: finalUrl))
-                        vc.webView?.backForwardList.perform(Selector(("_removeAllItems")))
                     }
                 }
             } else {
