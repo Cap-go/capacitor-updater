@@ -36,6 +36,7 @@ import java.util.Arrays;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -89,6 +90,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private DelayUpdateUtils delayUpdateUtils;
 
+    private JSObject mapToJSObject(Map<String, Object> map) {
+        JSObject jsObject = new JSObject();
+        for (Map.Entry<String, Object> entry : map.entrySet()) {
+            jsObject.put(entry.getKey(), entry.getValue());
+        }
+        return jsObject;
+    }
+
     public Thread startNewThread(final Runnable function, Number waitTime) {
         Thread bgTask = new Thread(() -> {
             try {
@@ -128,13 +137,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 }
 
                 @Override
-                public void notifyListeners(final String id, final JSObject res) {
-                    CapacitorUpdaterPlugin.this.notifyListeners(id, res);
+                public void notifyListeners(final String id, final Map<String, Object> res) {
+                    CapacitorUpdaterPlugin.this.notifyListeners(id, CapacitorUpdaterPlugin.this.mapToJSObject(res));
                 }
             };
             final PackageInfo pInfo = this.getContext().getPackageManager().getPackageInfo(this.getContext().getPackageName(), 0);
             this.implementation.activity = this.getActivity();
             this.implementation.versionBuild = this.getConfig().getString("version", pInfo.versionName);
+            this.implementation.CAP_SERVER_PATH = WebView.CAP_SERVER_PATH;
             this.implementation.PLUGIN_VERSION = this.PLUGIN_VERSION;
             this.implementation.versionCode = Integer.toString(pInfo.versionCode);
             this.implementation.client = new OkHttpClient.Builder()
@@ -235,7 +245,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private void sendReadyToJs(final BundleInfo current, final String msg) {
         Log.i(CapacitorUpdater.TAG, "sendReadyToJs");
         final JSObject ret = new JSObject();
-        ret.put("bundle", current.toJSON());
+        ret.put("bundle", mapToJSObject(current.toJSONMap()));
         ret.put("status", msg);
         startNewThread(() -> {
             Log.i(CapacitorUpdater.TAG, "semaphoreReady sendReadyToJs");
@@ -286,7 +296,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             final JSObject ret = new JSObject();
             ret.put("percent", percent);
             final BundleInfo bundleInfo = this.implementation.getBundleInfo(id);
-            ret.put("bundle", bundleInfo.toJSON());
+            ret.put("bundle", mapToJSObject(bundleInfo.toJSONMap()));
             this.notifyListeners("download", ret);
 
             if (percent == 100) {
@@ -412,14 +422,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
             Log.i(CapacitorUpdater.TAG, "unsetChannel triggerAutoUpdate: " + triggerAutoUpdate);
             startNewThread(() ->
                 CapacitorUpdaterPlugin.this.implementation.unsetChannel(res -> {
-                        if (res.has("error")) {
-                            call.reject(res.getString("error"));
+                        JSObject jsRes = mapToJSObject(res);
+                        if (jsRes.has("error")) {
+                            call.reject(jsRes.getString("error"));
                         } else {
                             if (CapacitorUpdaterPlugin.this._isAutoUpdateEnabled() && Boolean.TRUE.equals(triggerAutoUpdate)) {
                                 Log.i(CapacitorUpdater.TAG, "Calling autoupdater after channel change!");
                                 backgroundDownload();
                             }
-                            call.resolve(res);
+                            call.resolve(jsRes);
                         }
                     })
             );
@@ -443,14 +454,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
             Log.i(CapacitorUpdater.TAG, "setChannel " + channel + " triggerAutoUpdate: " + triggerAutoUpdate);
             startNewThread(() ->
                 CapacitorUpdaterPlugin.this.implementation.setChannel(channel, res -> {
-                        if (res.has("error")) {
-                            call.reject(res.getString("error"));
+                        JSObject jsRes = mapToJSObject(res);
+                        if (jsRes.has("error")) {
+                            call.reject(jsRes.getString("error"));
                         } else {
                             if (CapacitorUpdaterPlugin.this._isAutoUpdateEnabled() && Boolean.TRUE.equals(triggerAutoUpdate)) {
                                 Log.i(CapacitorUpdater.TAG, "Calling autoupdater after channel change!");
                                 backgroundDownload();
                             }
-                            call.resolve(res);
+                            call.resolve(jsRes);
                         }
                     })
             );
@@ -466,10 +478,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
             Log.i(CapacitorUpdater.TAG, "getChannel");
             startNewThread(() ->
                 CapacitorUpdaterPlugin.this.implementation.getChannel(res -> {
-                        if (res.has("error")) {
-                            call.reject(res.getString("error"));
+                        JSObject jsRes = mapToJSObject(res);
+                        if (jsRes.has("error")) {
+                            call.reject(jsRes.getString("error"));
                         } else {
-                            call.resolve(res);
+                            call.resolve(jsRes);
                         }
                     })
             );
@@ -503,7 +516,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     if (downloaded.isErrorStatus()) {
                         throw new RuntimeException("Download failed: " + downloaded.getStatus());
                     } else {
-                        call.resolve(downloaded.toJSON());
+                        call.resolve(mapToJSObject(downloaded.toJSONMap()));
                     }
                 } catch (final Exception e) {
                     Log.e(CapacitorUpdater.TAG, "Failed to download from: " + url, e);
@@ -625,7 +638,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 Log.e(CapacitorUpdater.TAG, "Set next id failed. Bundle " + id + " does not exist.");
                 call.reject("Set next id failed. Bundle " + id + " does not exist.");
             } else {
-                call.resolve(this.implementation.getBundleInfo(id).toJSON());
+                call.resolve(mapToJSObject(this.implementation.getBundleInfo(id).toJSONMap()));
             }
         } catch (final Exception e) {
             Log.e(CapacitorUpdater.TAG, "Could not set next id " + id, e);
@@ -686,7 +699,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             final JSObject ret = new JSObject();
             final JSArray values = new JSArray();
             for (final BundleInfo bundle : res) {
-                values.put(bundle.toJSON());
+                values.put(mapToJSObject(bundle.toJSONMap()));
             }
             ret.put("bundles", values);
             call.resolve(ret);
@@ -701,28 +714,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final String channel = call.getString("channel");
         startNewThread(() ->
             CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.updateUrl, channel, res -> {
-                    if (res.has("error")) {
-                        call.reject(res.getString("error"));
+                    JSObject jsRes = mapToJSObject(res);
+                    if (jsRes.has("error")) {
+                        call.reject(jsRes.getString("error"));
                         return;
-                    } else if (res.has("message")) {
-                        call.reject(res.getString("message"));
+                    } else if (jsRes.has("message")) {
+                        call.reject(jsRes.getString("message"));
                         return;
                     } else {
-                        call.resolve(res);
+                        call.resolve(jsRes);
                     }
-                    final JSObject ret = new JSObject();
-                    Iterator<String> keys = res.keys();
-                    while (keys.hasNext()) {
-                        String key = keys.next();
-                        if (res.has(key)) {
-                            try {
-                                ret.put(key, res.get(key));
-                            } catch (JSONException e) {
-                                e.printStackTrace();
-                            }
-                        }
-                    }
-                    call.resolve(ret);
                 })
         );
     }
@@ -761,7 +762,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         try {
             final JSObject ret = new JSObject();
             final BundleInfo bundle = this.implementation.getCurrentBundle();
-            ret.put("bundle", bundle.toJSON());
+            ret.put("bundle", mapToJSObject(bundle.toJSONMap()));
             ret.put("native", this.currentVersionNative);
             call.resolve(ret);
         } catch (final Exception e) {
@@ -779,7 +780,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 return;
             }
 
-            call.resolve(bundle.toJSON());
+            call.resolve(mapToJSObject(bundle.toJSONMap()));
         } catch (final Exception e) {
             Log.e(CapacitorUpdater.TAG, "Could not get next bundle", e);
             call.reject("Could not get next bundle", e);
@@ -797,10 +798,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 public void run() {
                     try {
                         CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.updateUrl, null, res -> {
-                                if (res.has("error")) {
-                                    Log.e(CapacitorUpdater.TAG, Objects.requireNonNull(res.getString("error")));
-                                } else if (res.has("version")) {
-                                    String newVersion = res.getString("version");
+                                JSObject jsRes = mapToJSObject(res);
+                                if (jsRes.has("error")) {
+                                    Log.e(CapacitorUpdater.TAG, Objects.requireNonNull(jsRes.getString("error")));
+                                } else if (jsRes.has("version")) {
+                                    String newVersion = jsRes.getString("version");
                                     String currentVersion = String.valueOf(CapacitorUpdaterPlugin.this.implementation.getCurrentBundle());
                                     if (!Objects.equals(newVersion, currentVersion)) {
                                         Log.i(CapacitorUpdater.TAG, "New version found: " + newVersion);
@@ -828,7 +830,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.semaphoreDown();
             Log.i(CapacitorUpdater.TAG, "semaphoreReady countDown done");
             final JSObject ret = new JSObject();
-            ret.put("bundle", bundle.toJSON());
+            ret.put("bundle", mapToJSObject(bundle.toJSONMap()));
             call.resolve(ret);
         } catch (final Exception e) {
             Log.e(CapacitorUpdater.TAG, "Failed to notify app ready state. [Error calling 'notifyAppReady()']", e);
@@ -950,7 +952,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.notifyListeners("downloadFailed", ret);
         }
         final JSObject ret = new JSObject();
-        ret.put("bundle", current.toJSON());
+        ret.put("bundle", mapToJSObject(current.toJSONMap()));
         this.notifyListeners("noNeedUpdate", ret);
         this.sendReadyToJs(current, msg);
         this.backgroundDownloadTask = null;
@@ -964,17 +966,18 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return startNewThread(() -> {
             Log.i(CapacitorUpdater.TAG, "Check for update via: " + CapacitorUpdaterPlugin.this.updateUrl);
             CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.updateUrl, null, res -> {
+                    JSObject jsRes = mapToJSObject(res);
                     final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
                     try {
-                        if (res.has("message")) {
-                            Log.i(CapacitorUpdater.TAG, "API message: " + res.get("message"));
-                            if (res.has("major") && res.getBoolean("major") && res.has("version")) {
+                        if (jsRes.has("message")) {
+                            Log.i(CapacitorUpdater.TAG, "API message: " + jsRes.get("message"));
+                            if (jsRes.has("major") && jsRes.getBoolean("major") && jsRes.has("version")) {
                                 final JSObject majorAvailable = new JSObject();
-                                majorAvailable.put("version", res.getString("version"));
+                                majorAvailable.put("version", jsRes.getString("version"));
                                 CapacitorUpdaterPlugin.this.notifyListeners("majorAvailable", majorAvailable);
                             }
                             CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                                    res.getString("message"),
+                                    jsRes.getString("message"),
                                     current.getVersionName(),
                                     current,
                                     true
@@ -982,7 +985,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                             return;
                         }
 
-                        final String latestVersionName = res.getString("version");
+                        final String latestVersionName = jsRes.getString("version");
 
                         if ("builtin".equals(latestVersionName)) {
                             Log.i(CapacitorUpdater.TAG, "Latest version is builtin");
@@ -1008,7 +1011,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                             return;
                         }
 
-                        if (!res.has("url") || !CapacitorUpdaterPlugin.this.isValidURL(res.getString("url"))) {
+                        if (!jsRes.has("url") || !CapacitorUpdaterPlugin.this.isValidURL(jsRes.getString("url"))) {
                             Log.e(CapacitorUpdater.TAG, "Error no url or wrong format");
                             CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
                                     "Error no url or wrong format",
@@ -1025,7 +1028,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                             final BundleInfo latest = CapacitorUpdaterPlugin.this.implementation.getBundleInfoByName(latestVersionName);
                             if (latest != null) {
                                 final JSObject ret = new JSObject();
-                                ret.put("bundle", latest.toJSON());
+                                ret.put("bundle", mapToJSObject(latest.toJSONMap()));
                                 if (latest.isErrorStatus()) {
                                     Log.e(CapacitorUpdater.TAG, "Latest bundle already exists, and is in error state. Aborting update.");
                                     CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
@@ -1103,13 +1106,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                         messageUpdate
                                     );
 
-                                    final String url = res.getString("url");
-                                    final String sessionKey = res.has("sessionKey") ? res.getString("sessionKey") : "";
-                                    final String checksum = res.has("checksum") ? res.getString("checksum") : "";
+                                    final String url = jsRes.getString("url");
+                                    final String sessionKey = jsRes.has("sessionKey") ? jsRes.getString("sessionKey") : "";
+                                    final String checksum = jsRes.has("checksum") ? jsRes.getString("checksum") : "";
 
-                                    if (res.has("manifest")) {
+                                    if (jsRes.has("manifest")) {
                                         // Handle manifest-based download
-                                        JSONArray manifest = res.getJSONArray("manifest");
+                                        JSONArray manifest = jsRes.getJSONArray("manifest");
                                         CapacitorUpdaterPlugin.this.implementation.downloadBackground(
                                                 url,
                                                 latestVersionName,
@@ -1196,7 +1199,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             Log.e(CapacitorUpdater.TAG, "notifyAppReady was not called, roll back current bundle: " + current.getId());
             Log.i(CapacitorUpdater.TAG, "Did you forget to call 'notifyAppReady()' in your Capacitor App code?");
             final JSObject ret = new JSObject();
-            ret.put("bundle", current.toJSON());
+            ret.put("bundle", mapToJSObject(current.toJSONMap()));
             this.notifyListeners("updateFailed", ret);
             this.implementation.sendStats("update_fail", current.getVersionName());
             this.implementation.setError(current);

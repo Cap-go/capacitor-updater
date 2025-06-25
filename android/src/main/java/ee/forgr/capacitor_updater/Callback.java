@@ -6,8 +6,8 @@
 
 package ee.forgr.capacitor_updater;
 
-import com.getcapacitor.JSObject;
+import java.util.Map;
 
 public interface Callback {
-    void callback(JSObject jsoObject);
+    void callback(Map<String, Object> result);
 }

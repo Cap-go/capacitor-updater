@@ -16,8 +16,6 @@ import androidx.lifecycle.LifecycleOwner;
 import androidx.work.Data;
 import androidx.work.WorkInfo;
 import androidx.work.WorkManager;
-import com.getcapacitor.JSObject;
-import com.getcapacitor.plugin.WebView;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import java.io.BufferedInputStream;
@@ -30,8 +28,10 @@ import java.io.IOException;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -64,6 +64,7 @@ public class CapacitorUpdater {
     public String versionBuild = "";
     public String versionCode = "";
     public String versionOs = "";
+    public String CAP_SERVER_PATH = "";
 
     public String customId = "";
     public String statsUrl = "";
@@ -117,7 +118,7 @@ public class CapacitorUpdater {
 
     void directUpdateFinish(final BundleInfo latest) {}
 
-    void notifyListeners(final String id, final JSObject res) {}
+    void notifyListeners(final String id, final Map<String, Object> res) {}
 
     private String randomString() {
         final StringBuilder sb = new StringBuilder(10);
@@ -240,7 +241,7 @@ public class CapacitorUpdater {
                                     id,
                                     new BundleInfo(id, version, BundleStatus.ERROR, new Date(System.currentTimeMillis()), "")
                                 );
-                                JSObject ret = new JSObject();
+                                Map<String, Object> ret = new HashMap<>();
                                 ret.put("version", getCurrentBundle().getVersionName());
                                 ret.put("error", "finish_download_fail");
                                 sendStats("finish_download_fail", version);
@@ -256,7 +257,7 @@ public class CapacitorUpdater {
                                 id,
                                 new BundleInfo(id, failedVersion, BundleStatus.ERROR, new Date(System.currentTimeMillis()), "")
                             );
-                            JSObject ret = new JSObject();
+                            Map<String, Object> ret = new HashMap<>();
                             ret.put("version", getCurrentBundle().getVersionName());
                             if ("low_mem_fail".equals(error)) {
                                 sendStats("low_mem_fail", failedVersion);
@@ -350,7 +351,7 @@ public class CapacitorUpdater {
                 Log.i(CapacitorUpdater.TAG, "Double error, cannot cleanup: " + version);
             }
 
-            final JSObject ret = new JSObject();
+            final Map<String, Object> ret = new HashMap<>();
             ret.put("version", CapacitorUpdater.this.getCurrentBundle().getVersionName());
 
             CapacitorUpdater.this.notifyListeners("downloadFailed", ret);
@@ -375,8 +376,8 @@ public class CapacitorUpdater {
             BundleInfo next = new BundleInfo(id, version, BundleStatus.PENDING, new Date(System.currentTimeMillis()), checksum);
             this.saveBundleInfo(id, next);
 
-            final JSObject ret = new JSObject();
-            ret.put("bundle", next.toJSON());
+            final Map<String, Object> ret = new HashMap<>();
+            ret.put("bundle", next.toJSONMap());
             CapacitorUpdater.this.notifyListeners("updateAvailable", ret);
             if (setNext) {
                 if (this.directUpdate) {
@@ -388,7 +389,7 @@ public class CapacitorUpdater {
             }
         } catch (IOException e) {
             e.printStackTrace();
-            final JSObject ret = new JSObject();
+            final Map<String, Object> ret = new HashMap<>();
             ret.put("version", CapacitorUpdater.this.getCurrentBundle().getVersionName());
             CapacitorUpdater.this.notifyListeners("downloadFailed", ret);
             CapacitorUpdater.this.sendStats("download_fail");
@@ -412,7 +413,7 @@ public class CapacitorUpdater {
     }
 
     private void setCurrentBundle(final File bundle) {
-        this.editor.putString(WebView.CAP_SERVER_PATH, bundle.getPath());
+        this.editor.putString(this.CAP_SERVER_PATH, bundle.getPath());
         Log.i(TAG, "Current bundle set to: " + bundle);
         this.editor.commit();
     }
@@ -658,7 +659,7 @@ public class CapacitorUpdater {
                 new okhttp3.Callback() {
                     @Override
                     public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                        JSObject retError = new JSObject();
+                        Map<String, Object> retError = new HashMap<>();
                         retError.put("message", "Request failed: " + e.getMessage());
                         retError.put("error", "network_error");
                         callback.callback(retError);
@@ -668,7 +669,7 @@ public class CapacitorUpdater {
                     public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
                         try (ResponseBody responseBody = response.body()) {
                             if (!response.isSuccessful()) {
-                                JSObject retError = new JSObject();
+                                Map<String, Object> retError = new HashMap<>();
                                 retError.put("message", "Server error: " + response.code());
                                 retError.put("error", "response_error");
                                 callback.callback(retError);
@@ -678,7 +679,7 @@ public class CapacitorUpdater {
                             assert responseBody != null;
                             String responseData = responseBody.string();
                             JSONObject jsonResponse = new JSONObject(responseData);
-                            JSObject ret = new JSObject();
+                            Map<String, Object> ret = new HashMap<>();
 
                             Iterator<String> keys = jsonResponse.keys();
                             while (keys.hasNext()) {
@@ -693,7 +694,7 @@ public class CapacitorUpdater {
                             }
                             callback.callback(ret);
                         } catch (JSONException e) {
-                            JSObject retError = new JSObject();
+                            Map<String, Object> retError = new HashMap<>();
                             retError.put("message", "JSON parse error: " + e.getMessage());
                             retError.put("error", "parse_error");
                             callback.callback(retError);
@@ -712,7 +713,7 @@ public class CapacitorUpdater {
             }
         } catch (JSONException e) {
             Log.e(TAG, "Error getLatest JSONException", e);
-            final JSObject retError = new JSObject();
+            final Map<String, Object> retError = new HashMap<>();
             retError.put("message", "Cannot get info: " + e);
             retError.put("error", "json_error");
             callback.callback(retError);
@@ -728,7 +729,7 @@ public class CapacitorUpdater {
         String channelUrl = this.channelUrl;
         if (channelUrl == null || channelUrl.isEmpty()) {
             Log.e(TAG, "Channel URL is not set");
-            final JSObject retError = new JSObject();
+            final Map<String, Object> retError = new HashMap<>();
             retError.put("message", "channelUrl missing");
             retError.put("error", "missing_config");
             callback.callback(retError);
@@ -739,7 +740,7 @@ public class CapacitorUpdater {
             json = this.createInfoObject();
         } catch (JSONException e) {
             Log.e(TAG, "Error unsetChannel JSONException", e);
-            final JSObject retError = new JSObject();
+            final Map<String, Object> retError = new HashMap<>();
             retError.put("message", "Cannot get info: " + e);
             retError.put("error", "json_error");
             callback.callback(retError);
@@ -757,7 +758,7 @@ public class CapacitorUpdater {
                 new okhttp3.Callback() {
                     @Override
                     public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                        JSObject retError = new JSObject();
+                        Map<String, Object> retError = new HashMap<>();
                         retError.put("message", "Request failed: " + e.getMessage());
                         retError.put("error", "network_error");
                         callback.callback(retError);
@@ -767,7 +768,7 @@ public class CapacitorUpdater {
                     public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
                         try (ResponseBody responseBody = response.body()) {
                             if (!response.isSuccessful()) {
-                                JSObject retError = new JSObject();
+                                Map<String, Object> retError = new HashMap<>();
                                 retError.put("message", "Server error: " + response.code());
                                 retError.put("error", "response_error");
                                 callback.callback(retError);
@@ -777,7 +778,7 @@ public class CapacitorUpdater {
                             assert responseBody != null;
                             String responseData = responseBody.string();
                             JSONObject jsonResponse = new JSONObject(responseData);
-                            JSObject ret = new JSObject();
+                            Map<String, Object> ret = new HashMap<>();
 
                             Iterator<String> keys = jsonResponse.keys();
                             while (keys.hasNext()) {
@@ -789,7 +790,7 @@ public class CapacitorUpdater {
                             Log.i(TAG, "Channel unset");
                             callback.callback(ret);
                         } catch (JSONException e) {
-                            JSObject retError = new JSObject();
+                            Map<String, Object> retError = new HashMap<>();
                             retError.put("message", "JSON parse error: " + e.getMessage());
                             retError.put("error", "parse_error");
                             callback.callback(retError);
@@ -803,7 +804,7 @@ public class CapacitorUpdater {
         String channelUrl = this.channelUrl;
         if (channelUrl == null || channelUrl.isEmpty()) {
             Log.e(TAG, "Channel URL is not set");
-            final JSObject retError = new JSObject();
+            final Map<String, Object> retError = new HashMap<>();
             retError.put("message", "channelUrl missing");
             retError.put("error", "missing_config");
             callback.callback(retError);
@@ -815,7 +816,7 @@ public class CapacitorUpdater {
             json.put("channel", channel);
         } catch (JSONException e) {
             Log.e(TAG, "Error setChannel JSONException", e);
-            final JSObject retError = new JSObject();
+            final Map<String, Object> retError = new HashMap<>();
             retError.put("message", "Cannot get info: " + e);
             retError.put("error", "json_error");
             callback.callback(retError);
@@ -829,7 +830,7 @@ public class CapacitorUpdater {
         String channelUrl = this.channelUrl;
         if (channelUrl == null || channelUrl.isEmpty()) {
             Log.e(TAG, "Channel URL is not set");
-            final JSObject retError = new JSObject();
+            final Map<String, Object> retError = new HashMap<>();
             retError.put("message", "Channel URL is not set");
             retError.put("error", "missing_config");
             callback.callback(retError);
@@ -840,7 +841,7 @@ public class CapacitorUpdater {
             json = this.createInfoObject();
         } catch (JSONException e) {
             Log.e(TAG, "Error getChannel JSONException", e);
-            final JSObject retError = new JSObject();
+            final Map<String, Object> retError = new HashMap<>();
             retError.put("message", "Cannot get info: " + e);
             retError.put("error", "json_error");
             callback.callback(retError);
@@ -858,7 +859,7 @@ public class CapacitorUpdater {
                 new okhttp3.Callback() {
                     @Override
                     public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                        JSObject retError = new JSObject();
+                        Map<String, Object> retError = new HashMap<>();
                         retError.put("message", "Request failed: " + e.getMessage());
                         retError.put("error", "network_error");
                         callback.callback(retError);
@@ -871,7 +872,7 @@ public class CapacitorUpdater {
                                 assert responseBody != null;
                                 String data = responseBody.string();
                                 if (data.contains("channel_not_found") && !defaultChannel.isEmpty()) {
-                                    JSObject ret = new JSObject();
+                                    Map<String, Object> ret = new HashMap<>();
                                     ret.put("channel", defaultChannel);
                                     ret.put("status", "default");
                                     Log.i(TAG, "Channel get to \"" + ret);
@@ -881,7 +882,7 @@ public class CapacitorUpdater {
                             }
 
                             if (!response.isSuccessful()) {
-                                JSObject retError = new JSObject();
+                                Map<String, Object> retError = new HashMap<>();
                                 retError.put("message", "Server error: " + response.code());
                                 retError.put("error", "response_error");
                                 callback.callback(retError);
@@ -891,7 +892,7 @@ public class CapacitorUpdater {
                             assert responseBody != null;
                             String responseData = responseBody.string();
                             JSONObject jsonResponse = new JSONObject(responseData);
-                            JSObject ret = new JSObject();
+                            Map<String, Object> ret = new HashMap<>();
 
                             Iterator<String> keys = jsonResponse.keys();
                             while (keys.hasNext()) {
@@ -903,7 +904,7 @@ public class CapacitorUpdater {
                             Log.i(TAG, "Channel get to \"" + ret);
                             callback.callback(ret);
                         } catch (JSONException e) {
-                            JSObject retError = new JSObject();
+                            Map<String, Object> retError = new HashMap<>();
                             retError.put("message", "JSON parse error: " + e.getMessage());
                             retError.put("error", "parse_error");
                             callback.callback(retError);
@@ -1039,7 +1040,7 @@ public class CapacitorUpdater {
     }
 
     public String getCurrentBundlePath() {
-        String path = this.prefs.getString(WebView.CAP_SERVER_PATH, "public");
+        String path = this.prefs.getString(this.CAP_SERVER_PATH, "public");
         if (path.trim().isEmpty()) {
             return "public";
         }

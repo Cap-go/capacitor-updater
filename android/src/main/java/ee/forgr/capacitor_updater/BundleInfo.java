@@ -6,9 +6,10 @@
 
 package ee.forgr.capacitor_updater;
 
-import com.getcapacitor.JSObject;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.TimeZone;
 import org.json.JSONException;
@@ -109,10 +110,6 @@ public class BundleInfo {
         return new BundleInfo(this.id, this.version, status, this.downloaded, this.checksum);
     }
 
-    public static BundleInfo fromJSON(final JSObject json) throws JSONException {
-        return BundleInfo.fromJSON(json.toString());
-    }
-
     public static BundleInfo fromJSON(final String jsonString) throws JSONException {
         JSONObject json = new JSONObject(new JSONTokener(jsonString));
         return new BundleInfo(
@@ -124,8 +121,8 @@ public class BundleInfo {
         );
     }
 
-    public JSObject toJSON() {
-        final JSObject result = new JSObject();
+    public Map<String, Object> toJSONMap() {
+        final Map<String, Object> result = new HashMap<>();
         result.put("id", this.getId());
         result.put("version", this.getVersionName());
         result.put("downloaded", this.getDownloaded());
@@ -149,6 +146,23 @@ public class BundleInfo {
 
     @Override
     public String toString() {
-        return this.toJSON().toString();
+        return (
+            "BundleInfo{" +
+            "id='" +
+            getId() +
+            '\'' +
+            ", version='" +
+            getVersionName() +
+            '\'' +
+            ", downloaded='" +
+            getDownloaded() +
+            '\'' +
+            ", checksum='" +
+            getChecksum() +
+            '\'' +
+            ", status=" +
+            getStatus() +
+            '}'
+        );
     }
 }
