@@ -409,7 +409,7 @@ public class DownloadService extends Worker {
             }
 
             if (!publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
-                Log.d(CapacitorUpdater.TAG + " DLSrv", "Decrypting file " + targetFile.getName());
+                Log.d(CapgoUpdater.TAG + " DLSrv", "Decrypting file " + targetFile.getName());
                 CryptoCipherV2.decryptFile(compressedFile, publicKey, sessionKey);
             }
 

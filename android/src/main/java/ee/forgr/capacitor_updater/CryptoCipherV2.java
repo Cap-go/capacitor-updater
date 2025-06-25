@@ -135,11 +135,11 @@ public class CryptoCipherV2 {
 
     public static void decryptFile(final File file, final String publicKey, final String ivSessionKey) throws IOException {
         if (publicKey.isEmpty() || ivSessionKey == null || ivSessionKey.isEmpty() || ivSessionKey.split(":").length != 2) {
-            Log.i(CapacitorUpdater.TAG, "Encryption not set, no public key or seesion, ignored");
+            Log.i(CapgoUpdater.TAG, "Encryption not set, no public key or seesion, ignored");
             return;
         }
         if (!publicKey.startsWith("-----BEGIN RSA PUBLIC KEY-----")) {
-            Log.e(CapacitorUpdater.TAG, "The public key is not a valid RSA Public key");
+            Log.e(CapgoUpdater.TAG, "The public key is not a valid RSA Public key");
             return;
         }
 
@@ -168,7 +168,7 @@ public class CryptoCipherV2 {
                 }
             }
         } catch (GeneralSecurityException e) {
-            Log.i(CapacitorUpdater.TAG, "decryptFile fail");
+            Log.i(CapgoUpdater.TAG, "decryptFile fail");
             e.printStackTrace();
             throw new IOException("GeneralSecurityException");
         }
@@ -176,7 +176,7 @@ public class CryptoCipherV2 {
 
     public static String decryptChecksum(String checksum, String publicKey) throws IOException {
         if (publicKey.isEmpty()) {
-            Log.e(CapacitorUpdater.TAG, "No encryption set (public key) ignored");
+            Log.e(CapgoUpdater.TAG, "No encryption set (public key) ignored");
             return checksum;
         }
         try {
@@ -187,7 +187,7 @@ public class CryptoCipherV2 {
             String result = Base64.encodeToString(decryptedChecksum, Base64.DEFAULT);
             return result.replaceAll("\\s", ""); // Remove all whitespace, including newlines
         } catch (GeneralSecurityException e) {
-            Log.e(CapacitorUpdater.TAG, "decryptChecksum fail: " + e.getMessage());
+            Log.e(CapgoUpdater.TAG, "decryptChecksum fail: " + e.getMessage());
             throw new IOException("Decryption failed: " + e.getMessage());
         }
     }
@@ -198,7 +198,7 @@ public class CryptoCipherV2 {
         try {
             digest = MessageDigest.getInstance("SHA-256");
         } catch (java.security.NoSuchAlgorithmException e) {
-            System.err.println(CapacitorUpdater.TAG + " SHA-256 algorithm not available");
+            System.err.println(CapgoUpdater.TAG + " SHA-256 algorithm not available");
             return "";
         }
 
@@ -217,7 +217,7 @@ public class CryptoCipherV2 {
             }
             return hexString.toString();
         } catch (IOException e) {
-            System.err.println(CapacitorUpdater.TAG + " Cannot calc checksum v2: " + file.getPath() + " " + e.getMessage());
+            System.err.println(CapgoUpdater.TAG + " Cannot calc checksum v2: " + file.getPath() + " " + e.getMessage());
             return "";
         }
     }

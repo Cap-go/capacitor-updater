@@ -40,7 +40,7 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-public class CapacitorUpdater {
+public class CapgoUpdater {
 
     private static final String AB = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
     private static final SecureRandom rnd = new SecureRandom();
@@ -326,7 +326,7 @@ public class CapacitorUpdater {
 
                 // If public key is present but no checksum provided, refuse installation
                 if (!this.publicKey.isEmpty() && checksumDecrypted.isEmpty()) {
-                    Log.e(CapacitorUpdater.TAG, "Public key present but no checksum provided");
+                    Log.e(CapgoUpdater.TAG, "Public key present but no checksum provided");
                     this.sendStats("checksum_required");
                     throw new IOException("Checksum required when public key is present: " + id);
                 }
@@ -339,7 +339,7 @@ public class CapacitorUpdater {
                     checksum = CryptoCipherV2.calcChecksum(downloaded);
                 }
                 if ((!checksumDecrypted.isEmpty() || !this.publicKey.isEmpty()) && !checksumDecrypted.equals(checksum)) {
-                    Log.e(CapacitorUpdater.TAG, "Error checksum '" + checksumDecrypted + "' '" + checksum + "' '");
+                    Log.e(CapgoUpdater.TAG, "Error checksum '" + checksumDecrypted + "' '" + checksum + "' '");
                     this.sendStats("checksum_fail");
                     throw new IOException("Checksum failed: " + id);
                 }
@@ -348,14 +348,14 @@ public class CapacitorUpdater {
         } catch (Exception e) {
             final Boolean res = this.delete(id);
             if (!res) {
-                Log.i(CapacitorUpdater.TAG, "Double error, cannot cleanup: " + version);
+                Log.i(CapgoUpdater.TAG, "Double error, cannot cleanup: " + version);
             }
 
             final Map<String, Object> ret = new HashMap<>();
-            ret.put("version", CapacitorUpdater.this.getCurrentBundle().getVersionName());
+            ret.put("version", CapgoUpdater.this.getCurrentBundle().getVersionName());
 
-            CapacitorUpdater.this.notifyListeners("downloadFailed", ret);
-            CapacitorUpdater.this.sendStats("download_fail");
+            CapgoUpdater.this.notifyListeners("downloadFailed", ret);
+            CapgoUpdater.this.sendStats("download_fail");
             return false;
         }
 
@@ -378,10 +378,10 @@ public class CapacitorUpdater {
 
             final Map<String, Object> ret = new HashMap<>();
             ret.put("bundle", next.toJSONMap());
-            CapacitorUpdater.this.notifyListeners("updateAvailable", ret);
+            CapgoUpdater.this.notifyListeners("updateAvailable", ret);
             if (setNext) {
                 if (this.directUpdate) {
-                    CapacitorUpdater.this.directUpdateFinish(next);
+                    CapgoUpdater.this.directUpdateFinish(next);
                     this.directUpdate = false;
                 } else {
                     this.setNextBundle(next.getId());
@@ -390,9 +390,9 @@ public class CapacitorUpdater {
         } catch (IOException e) {
             e.printStackTrace();
             final Map<String, Object> ret = new HashMap<>();
-            ret.put("version", CapacitorUpdater.this.getCurrentBundle().getVersionName());
-            CapacitorUpdater.this.notifyListeners("downloadFailed", ret);
-            CapacitorUpdater.this.sendStats("download_fail");
+            ret.put("version", CapgoUpdater.this.getCurrentBundle().getVersionName());
+            CapgoUpdater.this.notifyListeners("downloadFailed", ret);
+            CapgoUpdater.this.sendStats("download_fail");
             return false;
         }
         return true;
@@ -546,7 +546,7 @@ public class CapacitorUpdater {
             return this.delete(id, true);
         } catch (IOException e) {
             e.printStackTrace();
-            Log.i(CapacitorUpdater.TAG, "Failed to delete bundle (" + id + ")" + "\nError:\n" + e.toString());
+            Log.i(CapgoUpdater.TAG, "Failed to delete bundle (" + id + ")" + "\nError:\n" + e.toString());
             return false;
         }
     }
@@ -600,12 +600,12 @@ public class CapacitorUpdater {
     public void setSuccess(final BundleInfo bundle, Boolean autoDeletePrevious) {
         this.setBundleStatus(bundle.getId(), BundleStatus.SUCCESS);
         final BundleInfo fallback = this.getFallbackBundle();
-        Log.d(CapacitorUpdater.TAG, "Fallback bundle is: " + fallback);
-        Log.i(CapacitorUpdater.TAG, "Version successfully loaded: " + bundle.getVersionName());
+        Log.d(CapgoUpdater.TAG, "Fallback bundle is: " + fallback);
+        Log.i(CapgoUpdater.TAG, "Version successfully loaded: " + bundle.getVersionName());
         if (autoDeletePrevious && !fallback.isBuiltin()) {
             final Boolean res = this.delete(fallback.getId());
             if (res) {
-                Log.i(CapacitorUpdater.TAG, "Deleted previous bundle: " + fallback.getVersionName());
+                Log.i(CapgoUpdater.TAG, "Deleted previous bundle: " + fallback.getVersionName());
             }
         }
         this.setFallbackBundle(bundle);
@@ -616,7 +616,7 @@ public class CapacitorUpdater {
     }
 
     public void reset(final boolean internal) {
-        Log.d(CapacitorUpdater.TAG, "reset: " + internal);
+        Log.d(CapgoUpdater.TAG, "reset: " + internal);
         var currentBundleName = this.getCurrentBundle().getVersionName();
         this.setCurrentBundle(new File("public"));
         this.setFallbackBundle(null);
@@ -720,7 +720,7 @@ public class CapacitorUpdater {
             return;
         }
 
-        Log.i(CapacitorUpdater.TAG, "Auto-update parameters: " + json);
+        Log.i(CapgoUpdater.TAG, "Auto-update parameters: " + json);
 
         makeJsonRequest(updateUrl, json, callback);
     }

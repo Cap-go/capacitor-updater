@@ -70,14 +70,14 @@ public class DelayUpdateUtils {
                     }
 
                     if delta > longValue {
-                        print("\(CapacitorUpdater.TAG) Background condition (value: \(value ?? "")) deleted at index \(index). Delta: \(delta), longValue: \(longValue)")
+                        print("\(CapgoUpdater.TAG) Background condition (value: \(value ?? "")) deleted at index \(index). Delta: \(delta), longValue: \(longValue)")
                     } else {
                         delayConditionListToKeep.append(condition)
-                        print("\(CapacitorUpdater.TAG) Background delay (value: \(value ?? "")) condition kept at index \(index) (source: \(source.description))")
+                        print("\(CapgoUpdater.TAG) Background delay (value: \(value ?? "")) condition kept at index \(index) (source: \(source.description))")
                     }
                 } else {
                     delayConditionListToKeep.append(condition)
-                    print("\(CapacitorUpdater.TAG) Background delay (value: \(value ?? "")) condition kept at index \(index) (source: \(source.description))")
+                    print("\(CapgoUpdater.TAG) Background delay (value: \(value ?? "")) condition kept at index \(index) (source: \(source.description))")
                 }
 
             case "kill":
@@ -85,7 +85,7 @@ public class DelayUpdateUtils {
                     self.installNext()
                 } else {
                     delayConditionListToKeep.append(condition)
-                    print("\(CapacitorUpdater.TAG) Kill delay (value: \(value ?? "")) condition kept at index \(index) (source: \(source.description))")
+                    print("\(CapgoUpdater.TAG) Kill delay (value: \(value ?? "")) condition kept at index \(index) (source: \(source.description))")
                 }
 
             case "date":
@@ -96,19 +96,19 @@ public class DelayUpdateUtils {
 
                         if let date = dateFormatter.date(from: value) {
                             if Date() > date {
-                                print("\(CapacitorUpdater.TAG) Date delay (value: \(value)) condition removed due to expired date at index \(index)")
+                                print("\(CapgoUpdater.TAG) Date delay (value: \(value)) condition removed due to expired date at index \(index)")
                             } else {
                                 delayConditionListToKeep.append(condition)
-                                print("\(CapacitorUpdater.TAG) Date delay (value: \(value)) condition kept at index \(index)")
+                                print("\(CapgoUpdater.TAG) Date delay (value: \(value)) condition kept at index \(index)")
                             }
                         } else {
-                            print("\(CapacitorUpdater.TAG) Date delay (value: \(value)) condition removed due to parsing issue at index \(index)")
+                            print("\(CapgoUpdater.TAG) Date delay (value: \(value)) condition removed due to parsing issue at index \(index)")
                         }
                     } catch {
-                        print("\(CapacitorUpdater.TAG) Date delay (value: \(value)) condition removed due to parsing issue at index \(index): \(error)")
+                        print("\(CapgoUpdater.TAG) Date delay (value: \(value)) condition removed due to parsing issue at index \(index): \(error)")
                     }
                 } else {
-                    print("\(CapacitorUpdater.TAG) Date delay (value: \(value ?? "")) condition removed due to empty value at index \(index)")
+                    print("\(CapgoUpdater.TAG) Date delay (value: \(value ?? "")) condition removed due to empty value at index \(index)")
                 }
 
             case "nativeVersion":
@@ -116,20 +116,20 @@ public class DelayUpdateUtils {
                     do {
                         let versionLimit = try Version(value)
                         if currentVersionNative >= versionLimit {
-                            print("\(CapacitorUpdater.TAG) Native version delay (value: \(value)) condition removed due to above limit at index \(index)")
+                            print("\(CapgoUpdater.TAG) Native version delay (value: \(value)) condition removed due to above limit at index \(index)")
                         } else {
                             delayConditionListToKeep.append(condition)
-                            print("\(CapacitorUpdater.TAG) Native version delay (value: \(value)) condition kept at index \(index)")
+                            print("\(CapgoUpdater.TAG) Native version delay (value: \(value)) condition kept at index \(index)")
                         }
                     } catch {
-                        print("\(CapacitorUpdater.TAG) Native version delay (value: \(value)) condition removed due to parsing issue at index \(index): \(error)")
+                        print("\(CapgoUpdater.TAG) Native version delay (value: \(value)) condition removed due to parsing issue at index \(index): \(error)")
                     }
                 } else {
-                    print("\(CapacitorUpdater.TAG) Native version delay (value: \(value ?? "")) condition removed due to empty value at index \(index)")
+                    print("\(CapgoUpdater.TAG) Native version delay (value: \(value ?? "")) condition removed due to empty value at index \(index)")
                 }
 
             default:
-                print("\(CapacitorUpdater.TAG) Unknown delay condition kind: \(kind) at index \(index)")
+                print("\(CapgoUpdater.TAG) Unknown delay condition kind: \(kind) at index \(index)")
             }
 
             index += 1
@@ -148,10 +148,10 @@ public class DelayUpdateUtils {
         do {
             UserDefaults.standard.set(delayConditions, forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES)
             UserDefaults.standard.synchronize()
-            print("\(CapacitorUpdater.TAG) Delay update saved")
+            print("\(CapgoUpdater.TAG) Delay update saved")
             return true
         } catch {
-            print("\(CapacitorUpdater.TAG) Failed to delay update, [Error calling 'setMultiDelay()']: \(error)")
+            print("\(CapgoUpdater.TAG) Failed to delay update, [Error calling 'setMultiDelay()']: \(error)")
             return false
         }
     }
@@ -160,9 +160,9 @@ public class DelayUpdateUtils {
         do {
             UserDefaults.standard.set(backgroundTimestamp, forKey: DelayUpdateUtils.BACKGROUND_TIMESTAMP_KEY)
             UserDefaults.standard.synchronize()
-            print("\(CapacitorUpdater.TAG) Background timestamp saved")
+            print("\(CapgoUpdater.TAG) Background timestamp saved")
         } catch {
-            print("\(CapacitorUpdater.TAG) Failed to save background timestamp, [Error calling 'setBackgroundTimestamp()']: \(error)")
+            print("\(CapgoUpdater.TAG) Failed to save background timestamp, [Error calling 'setBackgroundTimestamp()']: \(error)")
         }
     }
 
@@ -170,9 +170,9 @@ public class DelayUpdateUtils {
         do {
             UserDefaults.standard.removeObject(forKey: DelayUpdateUtils.BACKGROUND_TIMESTAMP_KEY)
             UserDefaults.standard.synchronize()
-            print("\(CapacitorUpdater.TAG) Background timestamp removed")
+            print("\(CapgoUpdater.TAG) Background timestamp removed")
         } catch {
-            print("\(CapacitorUpdater.TAG) Failed to remove background timestamp, [Error calling 'unsetBackgroundTimestamp()']: \(error)")
+            print("\(CapgoUpdater.TAG) Failed to remove background timestamp, [Error calling 'unsetBackgroundTimestamp()']: \(error)")
         }
     }
 
@@ -181,7 +181,7 @@ public class DelayUpdateUtils {
             let timestamp = UserDefaults.standard.object(forKey: DelayUpdateUtils.BACKGROUND_TIMESTAMP_KEY) as? Int64 ?? 0
             return timestamp
         } catch {
-            print("\(CapacitorUpdater.TAG) Failed to get background timestamp, [Error calling 'getBackgroundTimestamp()']: \(error)")
+            print("\(CapgoUpdater.TAG) Failed to get background timestamp, [Error calling 'getBackgroundTimestamp()']: \(error)")
             return 0
         }
     }
@@ -190,10 +190,10 @@ public class DelayUpdateUtils {
         do {
             UserDefaults.standard.removeObject(forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES)
             UserDefaults.standard.synchronize()
-            print("\(CapacitorUpdater.TAG) All delays canceled from \(source)")
+            print("\(CapgoUpdater.TAG) All delays canceled from \(source)")
             return true
         } catch {
-            print("\(CapacitorUpdater.TAG) Failed to cancel update delay: \(error)")
+            print("\(CapgoUpdater.TAG) Failed to cancel update delay: \(error)")
             return false
         }
     }
