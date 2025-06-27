@@ -141,6 +141,7 @@ This informs Capacitor Updater that the current update bundle has loaded succesf
 - Add this to your application.
 ```javascript
   const version = await CapacitorUpdater.download({
+    version: '0.0.4',
     url: 'https://github.com/Cap-go/demo-app/releases/download/0.0.4/dist.zip',
   })
   await CapacitorUpdater.set(version); // sets the new version, and reloads the app
@@ -158,6 +159,7 @@ You might also consider performing auto-update when application state changes, a
       if (state.isActive) {
         // Ensure download occurs while the app is active, or download may fail
         version = await CapacitorUpdater.download({
+          version: '0.0.4',
           url: 'https://github.com/Cap-go/demo-app/releases/download/0.0.4/dist.zip',
         })
       }

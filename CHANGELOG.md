@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.3.1](https://github.com/Cap-go/capacitor-updater/compare/7.3.0...7.3.1) (2025-06-27)
+
+## [7.3.0](https://github.com/Cap-go/capacitor-updater/compare/7.2.21...7.3.0) (2025-06-27)
+
+
+### Features
+
+* implement Js loggin to help people debug Capgo without the need to open Xcode or Android studio ([df569de](https://github.com/Cap-go/capacitor-updater/commit/df569de72093590503867037ae63822a65603f12))
+
 ### [7.2.21](https://github.com/Cap-go/capacitor-updater/compare/7.2.20...7.2.21) (2025-06-25)
 
 ### [7.2.20](https://github.com/Cap-go/capacitor-updater/compare/7.2.19...7.2.20) (2025-06-25)
