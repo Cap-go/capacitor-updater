@@ -12,7 +12,6 @@ package ee.forgr.capacitor_updater;
  * references: http://stackoverflow.com/questions/12471999/rsa-encryption-decryption-in-android
  */
 import android.util.Base64;
-import android.util.Log;
 import java.io.BufferedInputStream;
 import java.io.DataInputStream;
 import java.io.File;
@@ -37,6 +36,12 @@ import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
 public class CryptoCipherV2 {
+
+    private static Logger logger;
+
+    public static void setLogger(Logger loggerInstance) {
+        logger = loggerInstance;
+    }
 
     public static byte[] decryptRSA(byte[] source, PublicKey publicKey)
         throws NoSuchPaddingException, NoSuchAlgorithmException, InvalidAlgorithmParameterException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException {
@@ -135,11 +140,11 @@ public class CryptoCipherV2 {
 
     public static void decryptFile(final File file, final String publicKey, final String ivSessionKey) throws IOException {
         if (publicKey.isEmpty() || ivSessionKey == null || ivSessionKey.isEmpty() || ivSessionKey.split(":").length != 2) {
-            Log.i(CapgoUpdater.TAG, "Encryption not set, no public key or seesion, ignored");
+            logger.info("Encryption not set, no public key or seesion, ignored");
             return;
         }
         if (!publicKey.startsWith("-----BEGIN RSA PUBLIC KEY-----")) {
-            Log.e(CapgoUpdater.TAG, "The public key is not a valid RSA Public key");
+            logger.error("The public key is not a valid RSA Public key");
             return;
         }
 
@@ -168,7 +173,7 @@ public class CryptoCipherV2 {
                 }
             }
         } catch (GeneralSecurityException e) {
-            Log.i(CapgoUpdater.TAG, "decryptFile fail");
+            logger.info("decryptFile fail");
             e.printStackTrace();
             throw new IOException("GeneralSecurityException");
         }
@@ -176,7 +181,7 @@ public class CryptoCipherV2 {
 
     public static String decryptChecksum(String checksum, String publicKey) throws IOException {
         if (publicKey.isEmpty()) {
-            Log.e(CapgoUpdater.TAG, "No encryption set (public key) ignored");
+            logger.error("No encryption set (public key) ignored");
             return checksum;
         }
         try {
@@ -187,7 +192,7 @@ public class CryptoCipherV2 {
             String result = Base64.encodeToString(decryptedChecksum, Base64.DEFAULT);
             return result.replaceAll("\\s", ""); // Remove all whitespace, including newlines
         } catch (GeneralSecurityException e) {
-            Log.e(CapgoUpdater.TAG, "decryptChecksum fail: " + e.getMessage());
+            logger.error("decryptChecksum fail: " + e.getMessage());
             throw new IOException("Decryption failed: " + e.getMessage());
         }
     }
@@ -198,7 +203,7 @@ public class CryptoCipherV2 {
         try {
             digest = MessageDigest.getInstance("SHA-256");
         } catch (java.security.NoSuchAlgorithmException e) {
-            System.err.println(CapgoUpdater.TAG + " SHA-256 algorithm not available");
+            logger.error("SHA-256 algorithm not available");
             return "";
         }
 
@@ -217,7 +222,7 @@ public class CryptoCipherV2 {
             }
             return hexString.toString();
         } catch (IOException e) {
-            System.err.println(CapgoUpdater.TAG + " Cannot calc checksum v2: " + file.getPath() + " " + e.getMessage());
+            logger.error("Cannot calc checksum v2: " + file.getPath() + " " + e.getMessage());
             return "";
         }
     }

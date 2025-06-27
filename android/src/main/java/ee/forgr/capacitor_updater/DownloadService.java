@@ -6,7 +6,6 @@
 package ee.forgr.capacitor_updater;
 
 import android.content.Context;
-import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.work.Data;
 import androidx.work.Worker;
@@ -39,7 +38,12 @@ import org.json.JSONObject;
 
 public class DownloadService extends Worker {
 
-    public static final String TAG = "Capacitor-updater";
+    private static Logger logger;
+
+    public static void setLogger(Logger loggerInstance) {
+        logger = loggerInstance;
+    }
+
     public static final String URL = "URL";
     public static final String ID = "id";
     public static final String PERCENT = "percent";
@@ -94,7 +98,7 @@ public class DownloadService extends Worker {
             String publicKey = getInputData().getString(PUBLIC_KEY);
             boolean isManifest = getInputData().getBoolean(IS_MANIFEST, false);
 
-            Log.d(TAG, "doWork isManifest: " + isManifest);
+            logger.debug("doWork isManifest: " + isManifest);
 
             if (isManifest) {
                 JSONArray manifest = DataManager.getInstance().getAndClearManifest();
@@ -102,7 +106,7 @@ public class DownloadService extends Worker {
                     handleManifestDownload(id, documentsDir, dest, version, sessionKey, publicKey, manifest.toString());
                     return createSuccessResult(dest, version, sessionKey, checksum, true);
                 } else {
-                    Log.e(TAG, "Manifest is null");
+                    logger.error("Manifest is null");
                     return createFailureResult("Manifest is null");
                 }
             } else {
@@ -134,7 +138,7 @@ public class DownloadService extends Worker {
         String manifestString
     ) {
         try {
-            Log.d(TAG, "handleManifestDownload");
+            logger.debug("handleManifestDownload");
             JSONArray manifest = new JSONArray(manifestString);
             File destFolder = new File(documentsDir, dest);
             File cacheFolder = new File(getApplicationContext().getCacheDir(), "capgo_downloads");
@@ -167,7 +171,7 @@ public class DownloadService extends Worker {
                     try {
                         fileHash = CryptoCipherV2.decryptChecksum(fileHash, publicKey);
                     } catch (Exception e) {
-                        Log.e(TAG, "Error decrypting checksum for " + fileName + "fileHash: " + fileHash);
+                        logger.error("Error decrypting checksum for " + fileName + "fileHash: " + fileHash);
                         hasError.set(true);
                         continue;
                     }
@@ -180,7 +184,7 @@ public class DownloadService extends Worker {
 
                 // Ensure parent directories of the target file exist
                 if (!Objects.requireNonNull(targetFile.getParentFile()).exists() && !targetFile.getParentFile().mkdirs()) {
-                    Log.e(TAG, "Failed to create parent directory for: " + targetFile.getAbsolutePath());
+                    logger.error("Failed to create parent directory for: " + targetFile.getAbsolutePath());
                     hasError.set(true);
                     continue;
                 }
@@ -189,10 +193,10 @@ public class DownloadService extends Worker {
                     try {
                         if (builtinFile.exists() && verifyChecksum(builtinFile, finalFileHash)) {
                             copyFile(builtinFile, targetFile);
-                            Log.d(TAG, "using builtin file " + fileName);
+                            logger.debug("using builtin file " + fileName);
                         } else if (cacheFile.exists() && verifyChecksum(cacheFile, finalFileHash)) {
                             copyFile(cacheFile, targetFile);
-                            Log.d(TAG, "already cached " + fileName);
+                            logger.debug("already cached " + fileName);
                         } else {
                             downloadAndVerify(downloadUrl, targetFile, cacheFile, finalFileHash, sessionKey, publicKey);
                         }
@@ -201,7 +205,7 @@ public class DownloadService extends Worker {
                         int percent = calcTotalPercent(completed, totalFiles);
                         setProgress(percent);
                     } catch (Exception e) {
-                        Log.e(TAG, "Error processing file: " + fileName, e);
+                        logger.error("Error processing file: " + fileName + " " + e.getMessage());
                         hasError.set(true);
                     }
                 });
@@ -213,7 +217,7 @@ public class DownloadService extends Worker {
                 try {
                     future.get();
                 } catch (Exception e) {
-                    Log.e(TAG, "Error waiting for download", e);
+                    logger.error("Error waiting for download " + e.getMessage());
                     hasError.set(true);
                 }
             }
@@ -229,11 +233,11 @@ public class DownloadService extends Worker {
             }
 
             if (hasError.get()) {
-                Log.e(TAG, "One or more files failed to download");
+                logger.error("One or more files failed to download");
                 throw new IOException("One or more files failed to download");
             }
         } catch (Exception e) {
-            Log.e(TAG, "Error in handleManifestDownload", e);
+            logger.error("Error in handleManifestDownload " + e.getMessage());
             throw new RuntimeException(e.getLocalizedMessage());
         }
     }
@@ -347,7 +351,7 @@ public class DownloadService extends Worker {
             infoFile.createNewFile();
             tempFile.createNewFile();
         } catch (IOException e) {
-            Log.e(TAG, "Error in clearDownloadData", e);
+            logger.error("Error in clearDownloadData " + e.getMessage());
             // not a fatal error, so we don't throw an exception
         }
     }
@@ -373,7 +377,7 @@ public class DownloadService extends Worker {
         String sessionKey,
         String publicKey
     ) throws Exception {
-        Log.d(TAG, "downloadAndVerify " + downloadUrl);
+        logger.debug("downloadAndVerify " + downloadUrl);
 
         Request request = new Request.Builder().url(downloadUrl).build();
 
@@ -409,7 +413,7 @@ public class DownloadService extends Worker {
             }
 
             if (!publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
-                Log.d(CapgoUpdater.TAG + " DLSrv", "Decrypting file " + targetFile.getName());
+                logger.debug("Decrypting file " + targetFile.getName());
                 CryptoCipherV2.decryptFile(compressedFile, publicKey, sessionKey);
             }
 
@@ -482,7 +486,7 @@ public class DownloadService extends Worker {
     private byte[] decompressBrotli(byte[] data, String fileName) throws IOException {
         // Validate input
         if (data == null) {
-            Log.e(TAG, "Error: Null data received for " + fileName);
+            logger.error("Error: Null data received for " + fileName);
             throw new IOException("Null data received");
         }
 
@@ -509,7 +513,7 @@ public class DownloadService extends Worker {
                     return Arrays.copyOfRange(data, 3, data.length - 1);
                 }
             } catch (ArrayIndexOutOfBoundsException e) {
-                Log.e(TAG, "Error: Malformed data for " + fileName);
+                logger.error("Error: Malformed data for " + fileName);
                 throw new IOException("Malformed data structure");
             }
         }
@@ -527,13 +531,13 @@ public class DownloadService extends Worker {
             }
             return bos.toByteArray();
         } catch (IOException e) {
-            Log.e(TAG, "Error: Brotli process failed for " + fileName + ". Status: " + e.getMessage());
+            logger.error("Error: Brotli process failed for " + fileName + ". Status: " + e.getMessage());
             // Add hex dump for debugging
             StringBuilder hexDump = new StringBuilder();
             for (int i = 0; i < Math.min(32, data.length); i++) {
                 hexDump.append(String.format("%02x ", data[i]));
             }
-            Log.e(TAG, "Error: Raw data (" + fileName + "): " + hexDump.toString());
+            logger.error("Error: Raw data (" + fileName + "): " + hexDump.toString());
             throw e;
         }
     }

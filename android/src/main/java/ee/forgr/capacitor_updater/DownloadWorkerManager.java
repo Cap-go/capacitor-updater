@@ -1,7 +1,6 @@
 package ee.forgr.capacitor_updater;
 
 import android.content.Context;
-import android.util.Log;
 import androidx.work.BackoffPolicy;
 import androidx.work.Configuration;
 import androidx.work.Constraints;
@@ -16,7 +15,12 @@ import java.util.concurrent.TimeUnit;
 
 public class DownloadWorkerManager {
 
-    private static final String TAG = "DownloadWorkerManager";
+    private static Logger logger;
+
+    public static void setLogger(Logger loggerInstance) {
+        logger = loggerInstance;
+    }
+
     private static volatile boolean isInitialized = false;
     private static final Set<String> activeVersions = new HashSet<>();
 
@@ -53,7 +57,7 @@ public class DownloadWorkerManager {
 
         // If version is already downloading, don't start another one
         if (isVersionDownloading(version)) {
-            Log.i(TAG, "Version " + version + " is already downloading");
+            logger.info("Version " + version + " is already downloading");
             return;
         }
         activeVersions.add(version);
@@ -74,7 +78,7 @@ public class DownloadWorkerManager {
         // Create network constraints - be more lenient on emulators
         Constraints.Builder constraintsBuilder = new Constraints.Builder();
         if (isEmulator) {
-            Log.i(TAG, "Emulator detected - using lenient network constraints");
+            logger.info("Emulator detected - using lenient network constraints");
             // On emulators, use NOT_REQUIRED to avoid background network issues
             constraintsBuilder.setRequiredNetworkType(NetworkType.NOT_REQUIRED);
         } else {

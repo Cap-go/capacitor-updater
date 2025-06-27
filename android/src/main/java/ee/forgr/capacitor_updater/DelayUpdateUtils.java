@@ -1,7 +1,6 @@
 package ee.forgr.capacitor_updater;
 
 import android.content.SharedPreferences;
-import android.util.Log;
 import com.google.common.reflect.TypeToken;
 import com.google.gson.Gson;
 import io.github.g00fy2.versioncompare.Version;
@@ -12,6 +11,8 @@ import java.util.Date;
 
 public class DelayUpdateUtils {
 
+    private final Logger logger;
+
     public static final String DELAY_CONDITION_PREFERENCES = "DELAY_CONDITION_PREFERENCES_CAPGO";
     public static final String BACKGROUND_TIMESTAMP_KEY = "BACKGROUND_TIMESTAMP_KEY_CAPGO";
 
@@ -20,11 +21,18 @@ public class DelayUpdateUtils {
     private final Version currentVersionNative;
     private final Runnable installNext;
 
-    public DelayUpdateUtils(SharedPreferences prefs, SharedPreferences.Editor editor, Version currentVersionNative, Runnable installNext) {
+    public DelayUpdateUtils(
+        SharedPreferences prefs,
+        SharedPreferences.Editor editor,
+        Version currentVersionNative,
+        Runnable installNext,
+        Logger logger
+    ) {
         this.prefs = prefs;
         this.editor = editor;
         this.currentVersionNative = currentVersionNative;
         this.installNext = installNext;
+        this.logger = logger;
     }
 
     public enum CancelDelaySource {
@@ -54,8 +62,7 @@ public class DelayUpdateUtils {
                         try {
                             longValue = Long.parseLong(value);
                         } catch (NumberFormatException e) {
-                            Log.e(
-                                CapgoUpdater.TAG,
+                            logger.error(
                                 "Background condition (value: " +
                                 value +
                                 ") had an invalid value at index " +
@@ -65,8 +72,7 @@ public class DelayUpdateUtils {
                         }
 
                         if (delta > longValue) {
-                            Log.i(
-                                CapgoUpdater.TAG,
+                            logger.info(
                                 "Background condition (value: " +
                                 value +
                                 ") deleted at index " +
@@ -79,8 +85,7 @@ public class DelayUpdateUtils {
                         }
                     } else {
                         delayConditionListToKeep.add(condition);
-                        Log.i(
-                            CapgoUpdater.TAG,
+                        logger.info(
                             "Background delay (value: " +
                             value +
                             ") condition kept at index " +
@@ -96,8 +101,7 @@ public class DelayUpdateUtils {
                         this.installNext.run();
                     } else {
                         delayConditionListToKeep.add(condition);
-                        Log.i(
-                            CapgoUpdater.TAG,
+                        logger.info(
                             "Kill delay (value: " + value + ") condition kept at index " + index + " (source: " + source.toString() + ")"
                         );
                     }
@@ -109,23 +113,23 @@ public class DelayUpdateUtils {
                             Date date = sdf.parse(value);
                             assert date != null;
                             if (new Date().compareTo(date) > 0) {
-                                Log.i(
-                                    CapgoUpdater.TAG,
-                                    "Date delay (value: " + value + ") condition removed due to expired date at index " + index
-                                );
+                                logger.info("Date delay (value: " + value + ") condition removed due to expired date at index " + index);
                             } else {
                                 delayConditionListToKeep.add(condition);
-                                Log.i(CapgoUpdater.TAG, "Date delay (value: " + value + ") condition kept at index " + index);
+                                logger.info("Date delay (value: " + value + ") condition kept at index " + index);
                             }
                         } catch (final Exception e) {
-                            Log.e(
-                                CapgoUpdater.TAG,
-                                "Date delay (value: " + value + ") condition removed due to parsing issue at index " + index,
-                                e
+                            logger.error(
+                                "Date delay (value: " +
+                                value +
+                                ") condition removed due to parsing issue at index " +
+                                index +
+                                " " +
+                                e.getMessage()
                             );
                         }
                     } else {
-                        Log.d(CapgoUpdater.TAG, "Date delay (value: " + value + ") condition removed due to empty value at index " + index);
+                        logger.debug("Date delay (value: " + value + ") condition removed due to empty value at index " + index);
                     }
                     break;
                 case DelayUntilNext.nativeVersion:
@@ -133,26 +137,25 @@ public class DelayUpdateUtils {
                         try {
                             final Version versionLimit = new Version(value);
                             if (this.currentVersionNative.isAtLeast(versionLimit)) {
-                                Log.i(
-                                    CapgoUpdater.TAG,
+                                logger.info(
                                     "Native version delay (value: " + value + ") condition removed due to above limit at index " + index
                                 );
                             } else {
                                 delayConditionListToKeep.add(condition);
-                                Log.i(CapgoUpdater.TAG, "Native version delay (value: " + value + ") condition kept at index " + index);
+                                logger.info("Native version delay (value: " + value + ") condition kept at index " + index);
                             }
                         } catch (final Exception e) {
-                            Log.e(
-                                CapgoUpdater.TAG,
-                                "Native version delay (value: " + value + ") condition removed due to parsing issue at index " + index,
-                                e
+                            logger.error(
+                                "Native version delay (value: " +
+                                value +
+                                ") condition removed due to parsing issue at index " +
+                                index +
+                                " " +
+                                e.getMessage()
                             );
                         }
                     } else {
-                        Log.d(
-                            CapgoUpdater.TAG,
-                            "Native version delay (value: " + value + ") condition removed due to empty value at index " + index
-                        );
+                        logger.debug("Native version delay (value: " + value + ") condition removed due to empty value at index " + index);
                     }
                     break;
             }
@@ -168,10 +171,10 @@ public class DelayUpdateUtils {
         try {
             this.editor.putString(DELAY_CONDITION_PREFERENCES, delayConditions);
             this.editor.commit();
-            Log.i(CapgoUpdater.TAG, "Delay update saved");
+            logger.info("Delay update saved");
             return true;
         } catch (final Exception e) {
-            Log.e(CapgoUpdater.TAG, "Failed to delay update, [Error calling '_setMultiDelay()']", e);
+            logger.error("Failed to delay update, [Error calling '_setMultiDelay()'] " + e.getMessage());
             return false;
         }
     }
@@ -180,9 +183,9 @@ public class DelayUpdateUtils {
         try {
             this.editor.putLong(BACKGROUND_TIMESTAMP_KEY, backgroundTimestamp);
             this.editor.commit();
-            Log.i(CapgoUpdater.TAG, "Delay update saved");
+            logger.info("Delay update saved");
         } catch (final Exception e) {
-            Log.e(CapgoUpdater.TAG, "Failed to delay update, [Error calling '_setBackgroundTimestamp()']", e);
+            logger.error("Failed to delay update, [Error calling '_setBackgroundTimestamp()'] " + e.getMessage());
         }
     }
 
@@ -190,9 +193,9 @@ public class DelayUpdateUtils {
         try {
             this.editor.remove(BACKGROUND_TIMESTAMP_KEY);
             this.editor.commit();
-            Log.i(CapgoUpdater.TAG, "Delay update saved");
+            logger.info("Delay update saved");
         } catch (final Exception e) {
-            Log.e(CapgoUpdater.TAG, "Failed to delay update, [Error calling '_unsetBackgroundTimestamp()']", e);
+            logger.error("Failed to delay update, [Error calling '_unsetBackgroundTimestamp()'] " + e.getMessage());
         }
     }
 
@@ -200,7 +203,7 @@ public class DelayUpdateUtils {
         try {
             return this.prefs.getLong(BACKGROUND_TIMESTAMP_KEY, 0);
         } catch (final Exception e) {
-            Log.e(CapgoUpdater.TAG, "Failed to delay update, [Error calling '_getBackgroundTimestamp()']", e);
+            logger.error("Failed to delay update, [Error calling '_getBackgroundTimestamp()'] " + e.getMessage());
             return 0;
         }
     }
@@ -209,10 +212,10 @@ public class DelayUpdateUtils {
         try {
             this.editor.remove(DELAY_CONDITION_PREFERENCES);
             this.editor.commit();
-            Log.i(CapgoUpdater.TAG, "All delays canceled from " + source);
+            logger.info("All delays canceled from " + source);
             return true;
         } catch (final Exception e) {
-            Log.e(CapgoUpdater.TAG, "Failed to cancel update delay", e);
+            logger.error("Failed to cancel update delay " + e.getMessage());
             return false;
         }
     }

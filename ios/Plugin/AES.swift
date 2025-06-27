@@ -20,14 +20,16 @@ private enum AESConstants {
 public struct AES128Key {
     /// Initialization vector
     private let iv: Data
+    private let logger: Logger
     private let aes128Key: Data
     #if DEBUG
     public var __debug_iv: Data { iv }
     public var __debug_aes128Key: Data { aes128Key }
     #endif
-    init(iv: Data, aes128Key: Data) {
+    init(iv: Data, aes128Key: Data, logger: Logger) {
         self.iv = iv
         self.aes128Key = aes128Key
+        self.logger = logger
     }
     ///
     /// Takes the data and uses the private key to decrypt it. Will call `CCCrypt` in CommonCrypto
@@ -56,11 +58,11 @@ public struct AES128Key {
                 result.length = Int(decryptedLength)
                 return result as Data
             } else {
-                print("\(CapgoUpdater.TAG) AES decryption failed with status: \(status)")
+                logger.error("AES decryption failed with status: \(status)")
                 return nil
             }
         } else {
-            print("\(CapgoUpdater.TAG) Failed to allocate memory for AES decryption")
+            logger.error("Failed to allocate memory for AES decryption")
             return nil
         }
     }

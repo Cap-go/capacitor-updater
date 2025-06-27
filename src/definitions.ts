@@ -231,6 +231,13 @@ declare module '@capacitor/cli' {
        * @since  6.8.0
        */
       keepUrlPathAfterReload?: boolean;
+      /**
+       * Disable the JavaScript logging of the plugin. if true, the plugin will not log to the JavaScript console. only the native log will be done
+       *
+       * @default false
+       * @since  7.3.0
+       */
+      disableJSLogging?: boolean;
     };
   }
 }

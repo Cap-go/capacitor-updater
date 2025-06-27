@@ -15,6 +15,7 @@ import Compression
 import UIKit
 
 @objc public class CapgoUpdater: NSObject {
+    private var logger: Logger!
 
     private let versionCode: String = Bundle.main.versionCode ?? ""
     private let versionOs = UIDevice.current.systemVersion
@@ -29,7 +30,6 @@ import UIKit
     // Add this line to declare cacheFolder
     private let cacheFolder: URL = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!.appendingPathComponent("capgo_downloads")
 
-    public static let TAG: String = "✨  Capacitor-updater:"
     public let CAP_SERVER_PATH: String = "serverBasePath"
     public var versionBuild: String = ""
     public var customId: String = ""
@@ -47,6 +47,10 @@ import UIKit
         notifyDownloadRaw(id, percent, ignoreMultipleOfTen)
     }
     public var notifyDownload: (String, Int) -> Void = { _, _  in }
+
+    public func setLogger(_ logger: Logger) {
+        self.logger = logger
+    }
 
     private func calcTotalPercent(percent: Int, min: Int, max: Int) -> Int {
         return (percent * (max - min)) / 100 + min
@@ -108,7 +112,7 @@ import UIKit
             do {
                 try FileManager.default.createDirectory(atPath: source.path, withIntermediateDirectories: true, attributes: nil)
             } catch {
-                print("\(CapgoUpdater.TAG) Cannot createDirectory \(source.path)")
+                logger.error("Cannot createDirectory \(source.path)")
                 throw CustomError.cannotCreateDirectory
             }
         }
@@ -118,7 +122,7 @@ import UIKit
         do {
             try FileManager.default.removeItem(atPath: source.path)
         } catch {
-            print("\(CapgoUpdater.TAG) File not removed. \(source.path)")
+            logger.error("File not removed. \(source.path)")
             throw CustomError.cannotDeleteDirectory
         }
     }
@@ -135,14 +139,14 @@ import UIKit
                 return false
             }
         } catch {
-            print("\(CapgoUpdater.TAG) File not moved. source: \(source.path) dest: \(dest.path)")
+            logger.error("File not moved. source: \(source.path) dest: \(dest.path)")
             throw CustomError.cannotUnflat
         }
     }
 
     private func unzipProgressHandler(entry: String, zipInfo: unz_file_info, entryNumber: Int, total: Int, destUnZip: URL, id: String, unzipError: inout NSError?) {
         if entry.contains("\\") {
-            print("\(CapgoUpdater.TAG) unzip: Windows path is not supported, please use unix path as required by zip RFC: \(entry)")
+            logger.error("unzip: Windows path is not supported, please use unix path as required by zip RFC: \(entry)")
             self.sendStats(action: "windows_path_fail")
         }
 
@@ -245,7 +249,7 @@ import UIKit
         if let channel = channel {
             parameters.defaultChannel = channel
         }
-        print("\(CapgoUpdater.TAG) Auto-update parameters: \(parameters)")
+        logger.info("Auto-update parameters: \(parameters)")
         let request = AF.request(url, method: .post, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
 
         request.validate().responseDecodable(of: AppVersionDec.self) { response in
@@ -279,7 +283,7 @@ import UIKit
                     latest.manifest = manifest
                 }
             case let .failure(error):
-                print("\(CapgoUpdater.TAG) Error getting Latest", response.value ?? "", error )
+                self.logger.error("Error getting Latest \(response.value.debugDescription) \(error)")
                 latest.message = "Error getting Latest \(String(describing: response.value))"
                 latest.error = "response_error"
             }
@@ -292,7 +296,7 @@ import UIKit
     private func setCurrentBundle(bundle: String) {
         UserDefaults.standard.set(bundle, forKey: self.CAP_SERVER_PATH)
         UserDefaults.standard.synchronize()
-        print("\(CapgoUpdater.TAG) Current bundle set to: \((bundle ).isEmpty ? BundleInfo.ID_BUILTIN : bundle)")
+        logger.info("Current bundle set to: \((bundle ).isEmpty ? BundleInfo.ID_BUILTIN : bundle)")
     }
 
     private var tempDataPath: URL {
@@ -311,7 +315,7 @@ import UIKit
 
     public func downloadManifest(manifest: [ManifestEntry], version: String, sessionKey: String) throws -> BundleInfo {
         let id = self.randomString(length: 10)
-        print("\(CapgoUpdater.TAG) downloadManifest start \(id)")
+        logger.info("downloadManifest start \(id)")
         let destFolder = self.getBundleDirectory(id: id)
         let builtinFolder = Bundle.main.bundleURL.appendingPathComponent("public")
 
@@ -343,7 +347,7 @@ import UIKit
                     fileHash = try CryptoCipherV2.decryptChecksum(checksum: fileHash, publicKey: self.publicKey)
                 } catch {
                     downloadError = error
-                    print("\(CapgoUpdater.TAG) CryptoCipherV2.decryptChecksum error \(id) \(fileName) error: \(error)")
+                    logger.error("CryptoCipherV2.decryptChecksum error \(id) \(fileName) error: \(error)")
                 }
             }
 
@@ -360,13 +364,13 @@ import UIKit
 
             if FileManager.default.fileExists(atPath: builtinFilePath.path) && verifyChecksum(file: builtinFilePath, expectedHash: fileHash) {
                 try FileManager.default.copyItem(at: builtinFilePath, to: destFilePath)
-                print("\(CapgoUpdater.TAG) downloadManifest \(fileName) using builtin file \(id)")
+                logger.info("downloadManifest \(fileName) using builtin file \(id)")
                 completedFiles += 1
                 self.notifyDownload(id: id, percent: self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70))
                 dispatchGroup.leave()
             } else if FileManager.default.fileExists(atPath: cacheFilePath.path) && verifyChecksum(file: cacheFilePath, expectedHash: fileHash) {
                 try FileManager.default.copyItem(at: cacheFilePath, to: destFilePath)
-                print("\(CapgoUpdater.TAG) downloadManifest \(fileName) copy from cache \(id)")
+                logger.info("downloadManifest \(fileName) copy from cache \(id)")
                 completedFiles += 1
                 self.notifyDownload(id: id, percent: self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70))
                 dispatchGroup.leave()
@@ -430,13 +434,13 @@ import UIKit
 
                             completedFiles += 1
                             self.notifyDownload(id: id, percent: self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70))
-                            print("\(CapgoUpdater.TAG) downloadManifest \(id) \(fileName) downloaded\(isBrotli ? ", decompressed" : "")\(!self.publicKey.isEmpty && !sessionKey.isEmpty ? ", decrypted" : ""), and cached")
+                            self.logger.info("downloadManifest \(id) \(fileName) downloaded\(isBrotli ? ", decompressed" : "")\(!self.publicKey.isEmpty && !sessionKey.isEmpty ? ", decrypted" : ""), and cached")
                         } catch {
                             downloadError = error
-                            NSLog("\(CapgoUpdater.TAG) downloadManifest \(id) \(fileName) error: \(error.localizedDescription)")
+                            self.logger.error("downloadManifest \(id) \(fileName) error: \(error.localizedDescription)")
                         }
                     case .failure(let error):
-                        NSLog("\(CapgoUpdater.TAG) downloadManifest \(id) \(fileName) download error: \(error.localizedDescription). Debug response: \(response.debugDescription).")
+                        self.logger.error("downloadManifest \(id) \(fileName) download error: \(error.localizedDescription). Debug response: \(response.debugDescription).")
                     }
                 }
             }
@@ -455,7 +459,7 @@ import UIKit
         let updatedBundle = bundleInfo.setStatus(status: BundleStatus.PENDING.localizedString)
         self.saveBundleInfo(id: id, bundle: updatedBundle)
 
-        print("\(CapgoUpdater.TAG) downloadManifest done \(id)")
+        logger.info("downloadManifest done \(id)")
         return updatedBundle
     }
 
@@ -496,7 +500,7 @@ import UIKit
         var status = compression_stream_init(streamPointer, COMPRESSION_STREAM_DECODE, COMPRESSION_BROTLI)
 
         guard status != COMPRESSION_STATUS_ERROR else {
-            print("\(CapgoUpdater.TAG) Error: Failed to initialize Brotli stream for \(fileName). Status: \(status)")
+            logger.error("Error: Failed to initialize Brotli stream for \(fileName). Status: \(status)")
             return nil
         }
 
@@ -518,7 +522,7 @@ import UIKit
                     if let baseAddress = rawBufferPointer.baseAddress {
                         streamPointer.pointee.src_ptr = baseAddress.assumingMemoryBound(to: UInt8.self)
                     } else {
-                        print("\(CapgoUpdater.TAG) Error: Failed to get base address for \(fileName)")
+                        logger.error("Error: Failed to get base address for \(fileName)")
                         status = COMPRESSION_STATUS_ERROR
                         return
                     }
@@ -528,7 +532,7 @@ import UIKit
             if status == COMPRESSION_STATUS_ERROR {
                 let maxBytes = min(32, data.count)
                 let hexDump = data.prefix(maxBytes).map { String(format: "%02x", $0) }.joined(separator: " ")
-                print("\(CapgoUpdater.TAG) Error: Brotli decompression failed for \(fileName). First \(maxBytes) bytes: \(hexDump)")
+                logger.error("Error: Brotli decompression failed for \(fileName). First \(maxBytes) bytes: \(hexDump)")
                 break
             }
 
@@ -542,18 +546,18 @@ import UIKit
             if status == COMPRESSION_STATUS_END {
                 break
             } else if status == COMPRESSION_STATUS_ERROR {
-                print("\(CapgoUpdater.TAG) Error: Brotli process failed for \(fileName). Status: \(status)")
+                logger.error("Error: Brotli process failed for \(fileName). Status: \(status)")
                 if let text = String(data: data, encoding: .utf8) {
                     let asciiCount = text.unicodeScalars.filter { $0.isASCII }.count
                     let totalCount = text.unicodeScalars.count
                     if totalCount > 0 && Double(asciiCount) / Double(totalCount) >= 0.8 {
-                        print("\(CapgoUpdater.TAG) Error: Input appears to be plain text: \(text)")
+                        logger.error("Error: Input appears to be plain text: \(text)")
                     }
                 }
 
                 let maxBytes = min(32, data.count)
                 let hexDump = data.prefix(maxBytes).map { String(format: "%02x", $0) }.joined(separator: " ")
-                print("\(CapgoUpdater.TAG) Error: Raw data (\(fileName)): \(hexDump)")
+                logger.error("Error: Raw data (\(fileName)): \(hexDump)")
 
                 return nil
             }
@@ -564,7 +568,7 @@ import UIKit
             }
 
             if input.count == 0 {
-                print("\(CapgoUpdater.TAG) Error: Zero input size for \(fileName)")
+                logger.error("Error: Zero input size for \(fileName)")
                 break
             }
         }
@@ -593,7 +597,7 @@ import UIKit
         let monitor = ClosureEventMonitor()
         monitor.requestDidCompleteTaskWithError = { (_, _, error) in
             if error != nil {
-                print("\(CapgoUpdater.TAG) Downloading failed - ClosureEventMonitor activated")
+                self.logger.error("Downloading failed - ClosureEventMonitor activated")
                 mainError = error as NSError?
             }
         }
@@ -624,11 +628,11 @@ import UIKit
                     }
 
                 } else {
-                    print("\(CapgoUpdater.TAG) Download failed")
+                    self.logger.error("Download failed")
                 }
 
             case .complete:
-                print("\(CapgoUpdater.TAG) Download complete, total received bytes: \(totalReceivedBytes)")
+                self.logger.info("Download complete, total received bytes: \(totalReceivedBytes)")
                 self.notifyDownload(id: id, percent: 70, ignoreMultipleOfTen: true)
                 semaphore.signal()
             }
@@ -650,7 +654,7 @@ import UIKit
         reachabilityManager?.stopListening()
 
         if mainError != nil {
-            print("\(CapgoUpdater.TAG) Failed to download: \(String(describing: mainError))")
+            logger.error("Failed to download: \(String(describing: mainError))")
             self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum))
             throw mainError!
         }
@@ -660,7 +664,7 @@ import UIKit
             try CryptoCipherV2.decryptFile(filePath: tempDataPath, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
             try FileManager.default.moveItem(at: tempDataPath, to: finalPath)
         } catch {
-            print("\(CapgoUpdater.TAG) Failed decrypt file : \(error)")
+            logger.error("Failed decrypt file : \(error)")
             self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum))
             cleanDownloadData()
             throw error
@@ -668,11 +672,11 @@ import UIKit
 
         do {
             checksum = CryptoCipherV2.calcChecksum(filePath: finalPath)
-            print("\(CapgoUpdater.TAG) Downloading: 80% (unzipping)")
+            logger.info("Downloading: 80% (unzipping)")
             try self.saveDownloaded(sourceZip: finalPath, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: true)
 
         } catch {
-            print("\(CapgoUpdater.TAG) Failed to unzip file: \(error)")
+            logger.error("Failed to unzip file: \(error)")
             self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum))
             cleanDownloadData()
             // todo: cleanup zip attempts
@@ -680,25 +684,25 @@ import UIKit
         }
 
         self.notifyDownload(id: id, percent: 90)
-        print("\(CapgoUpdater.TAG) Downloading: 90% (wrapping up)")
+        logger.info("Downloading: 90% (wrapping up)")
         let info = BundleInfo(id: id, version: version, status: BundleStatus.PENDING, downloaded: Date(), checksum: checksum)
         self.saveBundleInfo(id: id, bundle: info)
         self.cleanDownloadData()
         self.notifyDownload(id: id, percent: 100)
-        print("\(CapgoUpdater.TAG) Downloading: 100% (complete)")
+        logger.info("Downloading: 100% (complete)")
         return info
     }
     private func ensureResumableFilesExist() {
         let fileManager = FileManager.default
         if !fileManager.fileExists(atPath: tempDataPath.path) {
             if !fileManager.createFile(atPath: tempDataPath.path, contents: Data()) {
-                print("\(CapgoUpdater.TAG) Cannot ensure that a file at \(tempDataPath.path) exists")
+                logger.error("Cannot ensure that a file at \(tempDataPath.path) exists")
             }
         }
 
         if !fileManager.fileExists(atPath: updateInfo.path) {
             if !fileManager.createFile(atPath: updateInfo.path, contents: Data()) {
-                print("\(CapgoUpdater.TAG) Cannot ensure that a file at \(updateInfo.path) exists")
+                logger.error("Cannot ensure that a file at \(updateInfo.path) exists")
             }
         }
     }
@@ -710,7 +714,7 @@ import UIKit
             do {
                 try fileManager.removeItem(at: tempDataPath)
             } catch {
-                print("\(CapgoUpdater.TAG) Could not delete file at \(tempDataPath): \(error)")
+                logger.error("Could not delete file at \(tempDataPath): \(error)")
             }
         }
         // Deleting update.dat
@@ -718,7 +722,7 @@ import UIKit
             do {
                 try fileManager.removeItem(at: updateInfo)
             } catch {
-                print("\(CapgoUpdater.TAG) Could not delete file at \(updateInfo): \(error)")
+                logger.error("Could not delete file at \(updateInfo): \(error)")
             }
         }
     }
@@ -737,7 +741,7 @@ import UIKit
                 fileHandle.closeFile()
             }
         } catch {
-            print("Failed to write data starting at byte \(byteOffset): \(error)")
+            logger.error("Failed to write data starting at byte \(byteOffset): \(error)")
         }
         self.tempData.removeAll() // Clearing tempData to avoid writing the same data multiple times
     }
@@ -746,7 +750,7 @@ import UIKit
         do {
             try "\(version)".write(to: updateInfo, atomically: true, encoding: .utf8)
         } catch {
-            print("\(CapgoUpdater.TAG) Failed to save progress: \(error)")
+            logger.error("Failed to save progress: \(error)")
         }
     }
     private func getLocalUpdateVersion() -> String { // Return the version that was tried to be downloaded on last download attempt
@@ -768,7 +772,7 @@ import UIKit
                 return fileSize.int64Value
             }
         } catch {
-            print("\(CapgoUpdater.TAG) Could not retrieve already downloaded data size : \(error)")
+            logger.error("Could not retrieve already downloaded data size : \(error)")
         }
         return 0
     }
@@ -780,7 +784,7 @@ import UIKit
             do {
                 let files: [String] = try FileManager.default.contentsOfDirectory(atPath: dest.path)
                 var res: [BundleInfo] = []
-                print("\(CapgoUpdater.TAG) list File : \(dest.path)")
+                logger.info("list File : \(dest.path)")
                 if dest.exist {
                     for id: String in files {
                         res.append(self.getBundleInfo(id: id))
@@ -788,12 +792,12 @@ import UIKit
                 }
                 return res
             } catch {
-                print("\(CapgoUpdater.TAG) No version available \(dest.path)")
+                logger.info("No version available \(dest.path)")
                 return []
             }
         } else {
             guard let regex = try? NSRegularExpression(pattern: "^[0-9A-Za-z]{10}_info$") else {
-                print("\(CapgoUpdater.TAG) Invald regex ?????")
+                logger.error("Invalid regex ?????")
                 return []
             }
             return UserDefaults.standard.dictionaryRepresentation().keys.filter {
@@ -812,7 +816,7 @@ import UIKit
     public func delete(id: String, removeInfo: Bool) -> Bool {
         let deleted: BundleInfo = self.getBundleInfo(id: id)
         if deleted.isBuiltin() || self.getCurrentBundleId() == id {
-            print("\(CapgoUpdater.TAG) Cannot delete \(id)")
+            logger.info("Cannot delete \(id)")
             return false
         }
 
@@ -821,7 +825,7 @@ import UIKit
            !next.isDeleted() &&
             !next.isErrorStatus() &&
             next.getId() == id {
-            print("\(CapgoUpdater.TAG) Cannot delete the next bundle \(id)")
+            logger.info("Cannot delete the next bundle \(id)")
             return false
         }
 
@@ -829,7 +833,7 @@ import UIKit
         do {
             try FileManager.default.removeItem(atPath: destPersist.path)
         } catch {
-            print("\(CapgoUpdater.TAG) Folder \(destPersist.path), not removed.")
+            logger.error("Folder \(destPersist.path), not removed.")
             // even if, we don;t care. Android doesn't care
             if removeInfo {
                 self.removeBundleInfo(id: id)
@@ -842,7 +846,7 @@ import UIKit
         } else {
             self.saveBundleInfo(id: id, bundle: deleted.setStatus(status: BundleStatus.DELETED.localizedString))
         }
-        print("\(CapgoUpdater.TAG) bundle delete \(deleted.getVersionName())")
+        logger.info("bundle delete \(deleted.getVersionName())")
         self.sendStats(action: "delete", versionName: deleted.getVersionName())
         return true
     }
@@ -895,7 +899,7 @@ import UIKit
     public func autoReset() {
         let currentBundle: BundleInfo = self.getCurrentBundle()
         if !currentBundle.isBuiltin() && !self.bundleExists(id: currentBundle.getId()) {
-            print("\(CapgoUpdater.TAG) Folder at bundle path does not exist. Triggering reset.")
+            logger.info("Folder at bundle path does not exist. Triggering reset.")
             self.reset()
         }
     }
@@ -905,7 +909,7 @@ import UIKit
     }
 
     public func reset(isInternal: Bool) {
-        print("\(CapgoUpdater.TAG) reset: \(isInternal)")
+        logger.info("reset: \(isInternal)")
         let currentBundleName = self.getCurrentBundle().getVersionName()
         self.setCurrentBundle(bundle: "")
         self.setFallbackBundle(fallback: Optional<BundleInfo>.none)
@@ -918,14 +922,14 @@ import UIKit
     public func setSuccess(bundle: BundleInfo, autoDeletePrevious: Bool) {
         self.setBundleStatus(id: bundle.getId(), status: BundleStatus.SUCCESS)
         let fallback: BundleInfo = self.getFallbackBundle()
-        print("\(CapgoUpdater.TAG) Fallback bundle is: \(fallback.toString())")
-        print("\(CapgoUpdater.TAG) Version successfully loaded: \(bundle.toString())")
+        logger.info("Fallback bundle is: \(fallback.toString())")
+        logger.info("Version successfully loaded: \(bundle.toString())")
         if autoDeletePrevious && !fallback.isBuiltin() && fallback.getId() != bundle.getId() {
             let res = self.delete(id: fallback.getId())
             if res {
-                print("\(CapgoUpdater.TAG) Deleted previous bundle: \(fallback.toString())")
+                logger.info("Deleted previous bundle: \(fallback.toString())")
             } else {
-                print("\(CapgoUpdater.TAG) Failed to delete previous bundle: \(fallback.toString())")
+                logger.error("Failed to delete previous bundle: \(fallback.toString())")
             }
         }
         self.setFallbackBundle(fallback: bundle)
@@ -938,7 +942,7 @@ import UIKit
     func unsetChannel() -> SetChannel {
         let setChannel: SetChannel = SetChannel()
         if (self.channelUrl ).isEmpty {
-            print("\(CapgoUpdater.TAG) Channel URL is not set")
+            logger.error("Channel URL is not set")
             setChannel.message = "Channel URL is not set"
             setChannel.error = "missing_config"
             return setChannel
@@ -961,7 +965,7 @@ import UIKit
                     setChannel.message = message
                 }
             case let .failure(error):
-                print("\(CapgoUpdater.TAG) Error unset Channel", response.value ?? "", error)
+                self.logger.error("Error unset Channel \(response.value.debugDescription) \(error)")
                 setChannel.message = "Error unset Channel \(String(describing: response.value))"
                 setChannel.error = "response_error"
             }
@@ -974,7 +978,7 @@ import UIKit
     func setChannel(channel: String) -> SetChannel {
         let setChannel: SetChannel = SetChannel()
         if (self.channelUrl ).isEmpty {
-            print("\(CapgoUpdater.TAG) Channel URL is not set")
+            logger.error("Channel URL is not set")
             setChannel.message = "Channel URL is not set"
             setChannel.error = "missing_config"
             return setChannel
@@ -998,7 +1002,7 @@ import UIKit
                     setChannel.message = message
                 }
             case let .failure(error):
-                print("\(CapgoUpdater.TAG) Error set Channel", response.value ?? "", error)
+                self.logger.error("Error set Channel \(response.value.debugDescription) \(error)")
                 setChannel.message = "Error set Channel \(String(describing: response.value))"
                 setChannel.error = "response_error"
             }
@@ -1011,7 +1015,7 @@ import UIKit
     func getChannel() -> GetChannel {
         let getChannel: GetChannel = GetChannel()
         if (self.channelUrl ).isEmpty {
-            print("\(CapgoUpdater.TAG) Channel URL is not set")
+            logger.error("Channel URL is not set")
             getChannel.message = "Channel URL is not set"
             getChannel.error = "missing_config"
             return getChannel
@@ -1050,7 +1054,7 @@ import UIKit
                     }
                 }
 
-                print("\(CapgoUpdater.TAG) Error get Channel", response.value ?? "", error)
+                self.logger.error("Error get Channel \(response.value.debugDescription) \(error)")
                 getChannel.message = "Error get Channel \(String(describing: response.value)))"
                 getChannel.error = "response_error"
             }
@@ -1085,9 +1089,9 @@ import UIKit
             ).responseData { response in
                 switch response.result {
                 case .success:
-                    print("\(CapgoUpdater.TAG) Stats sent for \(action), version \(versionName)")
+                    self.logger.info("Stats sent for \(action), version \(versionName)")
                 case let .failure(error):
-                    print("\(CapgoUpdater.TAG) Error sending stats: ", response.value ?? "", error.localizedDescription)
+                    self.logger.error("Error sending stats: \(response.value?.debugDescription ?? "") \(error.localizedDescription)")
                 }
                 semaphore.signal()
             }
@@ -1102,7 +1106,6 @@ import UIKit
         if id != nil {
             trueId = id!
         }
-        // print("\(CapgoUpdater.TAG) Getting info for bundle [\(trueId)]")
         let result: BundleInfo
         if BundleInfo.ID_BUILTIN == trueId {
             result = BundleInfo(id: trueId, version: "", status: BundleStatus.SUCCESS, checksum: "")
@@ -1112,11 +1115,10 @@ import UIKit
             do {
                 result = try UserDefaults.standard.getObj(forKey: "\(trueId)\(self.INFO_SUFFIX)", castTo: BundleInfo.self)
             } catch {
-                print("\(CapgoUpdater.TAG) Failed to parse info for bundle [\(trueId)]", error.localizedDescription)
+                logger.error("Failed to parse info for bundle [\(trueId)] \(error.localizedDescription)")
                 result = BundleInfo(id: trueId, version: "", status: BundleStatus.PENDING, checksum: "")
             }
         }
-        // print("\(CapgoUpdater.TAG) Returning info bundle [\(result.toString())]")
         return result
     }
 
@@ -1136,26 +1138,26 @@ import UIKit
 
     public func saveBundleInfo(id: String, bundle: BundleInfo?) {
         if bundle != nil && (bundle!.isBuiltin() || bundle!.isUnknown()) {
-            print("\(CapgoUpdater.TAG) Not saving info for bundle [\(id)]", bundle?.toString() ?? "")
+            logger.info("Not saving info for bundle [\(id)] \(bundle?.toString() ?? "")")
             return
         }
         if bundle == nil {
-            print("\(CapgoUpdater.TAG) Removing info for bundle [\(id)]")
+            logger.info("Removing info for bundle [\(id)]")
             UserDefaults.standard.removeObject(forKey: "\(id)\(self.INFO_SUFFIX)")
         } else {
             let update = bundle!.setId(id: id)
-            print("\(CapgoUpdater.TAG) Storing info for bundle [\(id)]", update.toString())
+            logger.info("Storing info for bundle [\(id)] \(update.toString())")
             do {
                 try UserDefaults.standard.setObj(update, forKey: "\(id)\(self.INFO_SUFFIX)")
             } catch {
-                print("\(CapgoUpdater.TAG) Failed to save info for bundle [\(id)]", error.localizedDescription)
+                logger.error("Failed to save info for bundle [\(id)] \(error.localizedDescription)")
             }
         }
         UserDefaults.standard.synchronize()
     }
 
     private func setBundleStatus(id: String, status: BundleStatus) {
-        print("\(CapgoUpdater.TAG) Setting status for bundle [\(id)] to \(status)")
+        logger.info("Setting status for bundle [\(id)] to \(status)")
         let info = self.getBundleInfo(id: id)
         self.saveBundleInfo(id: id, bundle: info.setStatus(status: status.localizedString))
     }

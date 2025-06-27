@@ -43,11 +43,11 @@ public class BundleInfo {
     }
 
     public BundleInfo(final String id, final String version, final BundleStatus status, final String downloaded, final String checksum) {
-        this.downloaded = downloaded.trim();
-        this.id = id;
+        this.downloaded = downloaded != null ? downloaded.trim() : "";
+        this.id = id != null ? id : "";
         this.version = version;
-        this.checksum = checksum;
-        this.status = status;
+        this.checksum = checksum != null ? checksum : "";
+        this.status = status != null ? status : BundleStatus.ERROR;
     }
 
     public Boolean isBuiltin() {
@@ -71,7 +71,7 @@ public class BundleInfo {
     }
 
     public String getDownloaded() {
-        return this.isBuiltin() ? DOWNLOADED_BUILTIN : this.downloaded;
+        return this.isBuiltin() ? DOWNLOADED_BUILTIN : (this.downloaded != null ? this.downloaded : "");
     }
 
     public BundleInfo setDownloaded(Date downloaded) {
@@ -79,7 +79,7 @@ public class BundleInfo {
     }
 
     public String getChecksum() {
-        return this.isBuiltin() ? "" : this.checksum;
+        return this.isBuiltin() ? "" : (this.checksum != null ? this.checksum : "");
     }
 
     public BundleInfo setChecksum(String checksum) {
@@ -103,7 +103,10 @@ public class BundleInfo {
     }
 
     public BundleStatus getStatus() {
-        return this.isBuiltin() ? BundleStatus.SUCCESS : this.status;
+        if (this.isBuiltin()) {
+            return BundleStatus.SUCCESS;
+        }
+        return this.status != null ? this.status : BundleStatus.ERROR;
     }
 
     public BundleInfo setStatus(BundleStatus status) {
@@ -127,7 +130,7 @@ public class BundleInfo {
         result.put("version", this.getVersionName());
         result.put("downloaded", this.getDownloaded());
         result.put("checksum", this.getChecksum());
-        result.put("status", this.getStatus());
+        result.put("status", this.getStatus().toString());
         return result;
     }
 
@@ -146,23 +149,42 @@ public class BundleInfo {
 
     @Override
     public String toString() {
-        return (
-            "BundleInfo{" +
-            "id='" +
-            getId() +
-            '\'' +
-            ", version='" +
-            getVersionName() +
-            '\'' +
-            ", downloaded='" +
-            getDownloaded() +
-            '\'' +
-            ", checksum='" +
-            getChecksum() +
-            '\'' +
-            ", status=" +
-            getStatus() +
-            '}'
-        );
+        try {
+            // Build JSON manually with extra safety checks
+            StringBuilder json = new StringBuilder();
+            json.append("{");
+
+            // Safe ID access
+            String safeId = this.id != null ? this.id : "";
+            if (this.isBuiltin()) safeId = ID_BUILTIN;
+            json.append("\"id\":\"").append(safeId).append("\",");
+
+            // Safe version access
+            String safeVersion = this.version != null ? this.version : ID_BUILTIN;
+            json.append("\"version\":\"").append(safeVersion).append("\",");
+
+            // Safe downloaded access
+            String safeDownloaded = this.downloaded != null ? this.downloaded : "";
+            if (this.isBuiltin()) safeDownloaded = DOWNLOADED_BUILTIN;
+            json.append("\"downloaded\":\"").append(safeDownloaded).append("\",");
+
+            // Safe checksum access
+            String safeChecksum = this.checksum != null ? this.checksum : "";
+            json.append("\"checksum\":\"").append(safeChecksum).append("\",");
+
+            // Safe status access
+            BundleStatus safeStatus = this.status != null ? this.status : BundleStatus.ERROR;
+            if (this.isBuiltin()) safeStatus = BundleStatus.SUCCESS;
+            json.append("\"status\":\"").append(safeStatus.toString()).append("\"");
+
+            json.append("}");
+            return json.toString();
+        } catch (Exception e) {
+            // Log the error for debugging but still return valid JSON
+            System.err.println("BundleInfo toString() error: " + e.getMessage());
+            e.printStackTrace();
+            // Return absolute minimal JSON
+            return "{\"id\":\"" + (this.id != null ? this.id : "unknown") + "\",\"status\":\"error\"}";
+        }
     }
 }
