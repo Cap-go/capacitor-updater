@@ -307,11 +307,29 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         let sessionKey = call.getString("sessionKey", "")
         var checksum = call.getString("checksum", "")
+        let manifestArray = call.getArray("manifest")
         let url = URL(string: urlString)
         logger.info("Downloading \(String(describing: url))")
         DispatchQueue.global(qos: .background).async {
             do {
-                let next = try self.implementation.download(url: url!, version: version, sessionKey: sessionKey)
+                let next: BundleInfo
+                if let manifestArray = manifestArray {
+                    // Convert JSArray to [ManifestEntry]
+                    var manifestEntries: [ManifestEntry] = []
+                    for item in manifestArray {
+                        if let manifestDict = item as? [String: Any] {
+                            let entry = ManifestEntry(
+                                file_name: manifestDict["file_name"] as? String,
+                                file_hash: manifestDict["file_hash"] as? String,
+                                download_url: manifestDict["download_url"] as? String
+                            )
+                            manifestEntries.append(entry)
+                        }
+                    }
+                    next = try self.implementation.downloadManifest(manifest: manifestEntries, version: version, sessionKey: sessionKey)
+                } else {
+                    next = try self.implementation.download(url: url!, version: version, sessionKey: sessionKey)
+                }
                 // If public key is present but no checksum provided, refuse installation
                 if self.implementation.publicKey != "" && checksum == "" {
                     self.logger.error("Public key present but no checksum provided")

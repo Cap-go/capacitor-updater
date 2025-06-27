@@ -134,7 +134,7 @@ public class Logger {
         withTag tag: String,
         config: InstanceConfiguration? = nil,
         options: Options? = nil
-        ) {
+    ) {
         self.tag = tag
         if let config = config {
             // The logger plugin's name is LoggerBridge, we want to look at the config

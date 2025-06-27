@@ -512,6 +512,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final String version = call.getString("version");
         final String sessionKey = call.getString("sessionKey", "");
         final String checksum = call.getString("checksum", "");
+        final JSONArray manifest = call.getData().optJSONArray("manifest");
         if (url == null) {
             logger.error("Download called without url");
             call.reject("Download called without url");
@@ -526,7 +527,19 @@ public class CapacitorUpdaterPlugin extends Plugin {
             logger.info("Downloading " + url);
             startNewThread(() -> {
                 try {
-                    final BundleInfo downloaded = CapacitorUpdaterPlugin.this.implementation.download(url, version, sessionKey, checksum);
+                    final BundleInfo downloaded;
+                    if (manifest != null) {
+                        // For manifest downloads, we need to handle this asynchronously
+                        // since there's no synchronous downloadManifest method in Java
+                        CapacitorUpdaterPlugin.this.implementation.downloadBackground(url, version, sessionKey, checksum, manifest);
+                        // Return immediately with a pending status - the actual result will come via listeners
+                        final String id = CapacitorUpdaterPlugin.this.implementation.randomString();
+                        downloaded = new BundleInfo(id, version, BundleStatus.DOWNLOADING, new Date(System.currentTimeMillis()), "");
+                        call.resolve(mapToJSObject(downloaded.toJSONMap()));
+                        return;
+                    } else {
+                        downloaded = CapacitorUpdaterPlugin.this.implementation.download(url, version, sessionKey, checksum);
+                    }
                     if (downloaded.isErrorStatus()) {
                         throw new RuntimeException("Download failed: " + downloaded.getStatus());
                     } else {

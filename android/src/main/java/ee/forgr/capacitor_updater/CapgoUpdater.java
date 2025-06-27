@@ -125,7 +125,7 @@ public class CapgoUpdater {
 
     void notifyListeners(final String id, final Map<String, Object> res) {}
 
-    private String randomString() {
+    public String randomString() {
         final StringBuilder sb = new StringBuilder(10);
         for (int i = 0; i < 10; i++) sb.append(AB.charAt(rnd.nextInt(AB.length())));
         return sb.toString();

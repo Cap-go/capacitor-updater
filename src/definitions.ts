@@ -795,6 +795,12 @@ export interface DownloadOptions {
    * @default undefined
    */
   checksum?: string;
+  /**
+   * The manifest for multi-file downloads
+   * @since 6.1.0
+   * @default undefined
+   */
+  manifest?: ManifestEntry[];
 }
 
 export interface BundleId {
