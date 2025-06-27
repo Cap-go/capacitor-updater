@@ -40,6 +40,7 @@ CapacitorUpdater can be configured with these options:
 | **`defaultChannel`**         | <code>string</code>  | Set the default channel for the app in the config. Case sensitive. This will setting will override the default channel set in the cloud, but will still respect overrides made in the cloud.    | <code>undefined</code>                             | 5.5.0   |
 | **`appId`**                  | <code>string</code>  | Configure the app id for the app in the config.                                                                                                                                                 | <code>undefined</code>                             | 6.0.0   |
 | **`keepUrlPathAfterReload`** | <code>boolean</code> | Configure the plugin to keep the URL path after a reload. WARNING: When a reload is triggered, 'window.history' will be cleared.                                                                | <code>false</code>                                 | 6.8.0   |
+| **`disableJSLogging`**       | <code>boolean</code> | Disable the JavaScript logging of the plugin. if true, the plugin will not log to the JavaScript console. only the native log will be done                                                      | <code>false</code>                                 | 7.3.0   |
 
 ## Examples
 
@@ -72,7 +73,8 @@ In `capacitor.config.json`:
       "allowModifyUrl": undefined,
       "defaultChannel": undefined,
       "appId": undefined,
-      "keepUrlPathAfterReload": undefined
+      "keepUrlPathAfterReload": undefined,
+      "disableJSLogging": undefined
     }
   }
 }
@@ -112,6 +114,7 @@ const config: CapacitorConfig = {
       defaultChannel: undefined,
       appId: undefined,
       keepUrlPathAfterReload: undefined,
+      disableJSLogging: undefined,
     },
   },
 };
