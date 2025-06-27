@@ -133,7 +133,7 @@ public class Logger {
     public init(
         withTag tag: String,
         config: InstanceConfiguration? = nil,
-        options: Options? = nil,
+        options: Options? = nil
         ) {
         self.tag = tag
         if let config = config {
