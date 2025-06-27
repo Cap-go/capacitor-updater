@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [7.4.0](https://github.com/Cap-go/capacitor-updater/compare/7.3.3...7.4.0) (2025-06-27)
+
+
+### Features
+
+* add manifest to manual download ([f30c325](https://github.com/Cap-go/capacitor-updater/commit/f30c325a61ff2b82d093d101ac89b99244b08ede))
+
 ### [7.3.3](https://github.com/Cap-go/capacitor-updater/compare/7.3.2...7.3.3) (2025-06-27)
 
 
