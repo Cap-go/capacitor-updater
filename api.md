@@ -808,12 +808,22 @@ Returns null if no next bundle is set.
 This URL and versions are used to download the bundle from the server, If you use backend all information will be gived by the method getLatest.
 If you don't use backend, you need to provide the URL and version of the bundle. Checksum and sessionKey are required if you encrypted the bundle with the CLI command encrypt, you should receive them as result of the command.
 
-| Prop             | Type                | Description                                                                                                                                                      | Default                | Since |
-| ---------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ----- |
-| **`url`**        | <code>string</code> | The URL of the bundle zip file (e.g: dist.zip) to be downloaded. (This can be any URL. E.g: Amazon S3, a GitHub tag, any other place you've hosted your bundle.) |                        |       |
-| **`version`**    | <code>string</code> | The version code/name of this bundle/version                                                                                                                     |                        |       |
-| **`sessionKey`** | <code>string</code> | The session key for the update, when the bundle is encrypted with a session key                                                                                  | <code>undefined</code> | 4.0.0 |
-| **`checksum`**   | <code>string</code> | The checksum for the update, it should be in sha256 and encrypted with private key if the bundle is encrypted                                                    | <code>undefined</code> | 4.0.0 |
+| Prop             | Type                         | Description                                                                                                                                                      | Default                | Since |
+| ---------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ----- |
+| **`url`**        | <code>string</code>          | The URL of the bundle zip file (e.g: dist.zip) to be downloaded. (This can be any URL. E.g: Amazon S3, a GitHub tag, any other place you've hosted your bundle.) |                        |       |
+| **`version`**    | <code>string</code>          | The version code/name of this bundle/version                                                                                                                     |                        |       |
+| **`sessionKey`** | <code>string</code>          | The session key for the update, when the bundle is encrypted with a session key                                                                                  | <code>undefined</code> | 4.0.0 |
+| **`checksum`**   | <code>string</code>          | The checksum for the update, it should be in sha256 and encrypted with private key if the bundle is encrypted                                                    | <code>undefined</code> | 4.0.0 |
+| **`manifest`**   | <code>ManifestEntry[]</code> | The manifest for multi-file downloads                                                                                                                            | <code>undefined</code> | 6.1.0 |
+
+
+### ManifestEntry
+
+| Prop               | Type                        |
+| ------------------ | --------------------------- |
+| **`file_name`**    | <code>string \| null</code> |
+| **`file_hash`**    | <code>string \| null</code> |
+| **`download_url`** | <code>string \| null</code> |
 
 
 ### BundleId
@@ -880,15 +890,6 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 | **`old`**        | <code>string</code>          |                            |       |
 | **`url`**        | <code>string</code>          |                            |       |
 | **`manifest`**   | <code>ManifestEntry[]</code> |                            | 6.1   |
-
-
-### ManifestEntry
-
-| Prop               | Type                        |
-| ------------------ | --------------------------- |
-| **`file_name`**    | <code>string \| null</code> |
-| **`file_hash`**    | <code>string \| null</code> |
-| **`download_url`** | <code>string \| null</code> |
 
 
 ### GetLatestOptions
