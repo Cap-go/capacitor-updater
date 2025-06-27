@@ -74,8 +74,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     override public func load() {
         let disableJSLogging = getConfig().getBoolean("disableJSLogging", false)
         // Set webView for logging to JavaScript console
-        if let webView = self.bridge?.webView && !disableJSLogging {
-            logger.setWebView(webView: webView)
+        if ((self.bridge?.webView) != nil) && !disableJSLogging {
+            logger.setWebView(webView: (self.bridge?.webView)!)
             logger.info("WebView set successfully for logging")
         } else {
             logger.error("Failed to get webView for logging")
