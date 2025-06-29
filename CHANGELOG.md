@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [7.5.0](https://github.com/Cap-go/capacitor-updater/compare/7.4.0...7.5.0) (2025-06-29)
+
+
+### Features
+
+* add shake menu in the plugin ([41a314d](https://github.com/Cap-go/capacitor-updater/commit/41a314d4cceb764325612157fe5e38916a2bbb68))
+* list channels who allow self assign ([2282fc9](https://github.com/Cap-go/capacitor-updater/commit/2282fc93c5ae9a42b3d9db854145dca5bbe71ae4))
+
 ## [7.4.0](https://github.com/Cap-go/capacitor-updater/compare/7.3.3...7.4.0) (2025-06-27)
 
 
