@@ -64,6 +64,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var appReadyCheck: DispatchWorkItem?
     private var resetWhenUpdate = true
     private var directUpdate = false
+    private var directUpdateMode: String = "false"
+    private var wasRecentlyInstalledOrUpdated = false
     private var autoSplashscreen = false
     private var autoDeleteFailed = false
     private var autoDeletePrevious = false
@@ -110,7 +112,22 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         autoDeleteFailed = getConfig().getBoolean("autoDeleteFailed", true)
         autoDeletePrevious = getConfig().getBoolean("autoDeletePrevious", true)
         keepUrlPathAfterReload = getConfig().getBoolean("keepUrlPathAfterReload", false)
-        directUpdate = getConfig().getBoolean("directUpdate", false)
+
+        // Handle directUpdate configuration - support string values and backward compatibility
+        if let directUpdateString = getConfig().getString("directUpdate") {
+            directUpdateMode = directUpdateString
+            directUpdate = directUpdateString == "always" || directUpdateString == "atInstall"
+        } else {
+            let directUpdateBool = getConfig().getBoolean("directUpdate", false)
+            if directUpdateBool {
+                directUpdateMode = "always" // backward compatibility: true = always
+                directUpdate = true
+            } else {
+                directUpdateMode = "false"
+                directUpdate = false
+            }
+        }
+
         autoSplashscreen = getConfig().getBoolean("autoSplashscreen", false)
         updateUrl = getConfig().getString("updateUrl", CapacitorUpdaterPlugin.updateUrlDefault)!
         autoUpdate = getConfig().getBoolean("autoUpdate", true)
@@ -149,6 +166,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         implementation.channelUrl = getConfig().getString("channelUrl", CapacitorUpdaterPlugin.channelUrlDefault)!
         implementation.defaultChannel = getConfig().getString("defaultChannel", "")!
         self.implementation.autoReset()
+
+        // Check if app was recently installed/updated BEFORE cleanupObsoleteVersions updates LatestVersionNative
+        self.wasRecentlyInstalledOrUpdated = self.checkIfRecentlyInstalledOrUpdated()
 
         if resetWhenUpdate {
             self.cleanupObsoleteVersions()
@@ -753,36 +773,73 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             self.notifyListeners("appReady", data: ["bundle": current.toJSON(), "status": msg])
 
             // Auto hide splashscreen if enabled
-            if self.autoSplashscreen && self.directUpdate {
+            if self.autoSplashscreen && self.shouldUseDirectUpdate() {
                 self.hideSplashscreen()
             }
         }
     }
 
-    private func hideSplashscreen() {
+        private func hideSplashscreen() {
         DispatchQueue.main.async {
-            guard let bridge = self.bridge,
-                  let splashScreenPlugin = bridge.plugin(withName: "SplashScreen") else {
-                self.logger.warn("SplashScreen plugin not found")
+            guard let bridge = self.bridge else {
+                self.logger.warn("Bridge not available for hiding splashscreen")
                 return
             }
-
-            // Create a fake call to trigger hide method
+            
+            // Create a plugin call for the hide method
             let call = CAPPluginCall(callbackId: "autoHideSplashscreen", options: [:], success: { (_, _) in
                 self.logger.info("Splashscreen hidden automatically")
             }, error: { (error) in
-                self.logger.error("Failed to auto-hide splashscreen: \(error?.localizedDescription ?? "Unknown error")")
+                self.logger.error("Failed to auto-hide splashscreen")
             })
-
-            // Call the hide method on SplashScreen plugin
-            if let hideSelector = NSSelectorFromString("hide:") {
-                if splashScreenPlugin.responds(to: hideSelector) {
-                    splashScreenPlugin.perform(hideSelector, with: call)
-                    return
+            
+            // Try to call the SplashScreen hide method directly through the bridge
+            if let splashScreenPlugin = bridge.plugin(withName: "SplashScreen") {
+                // Use runtime method invocation to call hide method
+                let selector = NSSelectorFromString("hide:")
+                if splashScreenPlugin.responds(to: selector) {
+                    _ = splashScreenPlugin.perform(selector, with: call)
+                    self.logger.info("Called SplashScreen hide method")
+                } else {
+                    self.logger.warn("SplashScreen plugin does not respond to hide: method")
                 }
+            } else {
+                self.logger.warn("SplashScreen plugin not found")
             }
+        }
+    }
 
-            self.logger.warn("Could not call hide method on SplashScreen plugin")
+    private func checkIfRecentlyInstalledOrUpdated() -> Bool {
+        let userDefaults = UserDefaults.standard
+        let currentVersion = self.currentVersionNative.description
+        let lastKnownVersion = userDefaults.string(forKey: "LatestVersionNative") ?? "0.0.0"
+
+        if lastKnownVersion == "0.0.0" {
+            // First time running, consider it as recently installed
+            return true
+        } else if lastKnownVersion != currentVersion {
+            // Version changed, consider it as recently updated
+            return true
+        }
+
+        return false
+    }
+
+    private func shouldUseDirectUpdate() -> Bool {
+        switch directUpdateMode {
+        case "false":
+            return false
+        case "always":
+            return true
+        case "atInstall":
+            if self.wasRecentlyInstalledOrUpdated {
+                // Reset the flag after first use to prevent subsequent foreground events from using direct update
+                self.wasRecentlyInstalledOrUpdated = false
+                return true
+            }
+            return false
+        default:
+            return false
         }
     }
 
@@ -798,7 +855,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     func backgroundDownload() {
-        let messageUpdate = self.directUpdate ? "Update will occur now." : "Update will occur next time app moves to background."
+        let shouldDirectUpdate = self.shouldUseDirectUpdate()
+        let messageUpdate = shouldDirectUpdate ? "Update will occur now." : "Update will occur next time app moves to background."
         guard let url = URL(string: self.updateUrl) else {
             logger.error("Error no url or wrong format")
             return
@@ -822,7 +880,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             if res.version == "builtin" {
                 self.logger.info("Latest version is builtin")
-                if self.directUpdate {
+                if shouldDirectUpdate {
                     self.logger.info("Direct update to builtin version")
                     _ = self._reset(toLastSuccessful: false)
                     self.endBackGroundTaskWithNotif(msg: "Updated to builtin version", latestVersionName: res.version, current: self.implementation.getCurrentBundle(), error: false)
@@ -882,7 +940,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         self.endBackGroundTaskWithNotif(msg: "Error checksum", latestVersionName: latestVersionName, current: current)
                         return
                     }
-                    if self.directUpdate {
+                    if shouldDirectUpdate {
                         let delayUpdatePreferences = UserDefaults.standard.string(forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES) ?? "[]"
                         let delayConditionList: [DelayCondition] = self.fromJsonArr(json: delayUpdatePreferences).map { obj -> DelayCondition in
                             let kind: String = obj.value(forKey: "kind") as! String

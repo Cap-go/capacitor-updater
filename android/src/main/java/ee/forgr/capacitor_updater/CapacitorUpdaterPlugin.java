@@ -79,6 +79,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private Boolean taskRunning = false;
     private Boolean keepUrlPathAfterReload = false;
     private Boolean autoSplashscreen = false;
+    private String directUpdateMode = "false";
+    private Boolean wasRecentlyInstalledOrUpdated = false;
     Boolean shakeMenuEnabled = false;
 
     private Boolean isPreviousMainActivity = true;
@@ -158,7 +160,21 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 .readTimeout(this.implementation.timeout, TimeUnit.MILLISECONDS)
                 .writeTimeout(this.implementation.timeout, TimeUnit.MILLISECONDS)
                 .build();
-            this.implementation.directUpdate = this.getConfig().getBoolean("directUpdate", false);
+            // Handle directUpdate configuration - support string values and backward compatibility
+            String directUpdateConfig = this.getConfig().getString("directUpdate", null);
+            if (directUpdateConfig != null) {
+                this.directUpdateMode = directUpdateConfig;
+                this.implementation.directUpdate = directUpdateConfig.equals("always") || directUpdateConfig.equals("atInstall");
+            } else {
+                Boolean directUpdateBool = this.getConfig().getBoolean("directUpdate", false);
+                if (directUpdateBool) {
+                    this.directUpdateMode = "always"; // backward compatibility: true = always
+                    this.implementation.directUpdate = true;
+                } else {
+                    this.directUpdateMode = "false";
+                    this.implementation.directUpdate = false;
+                }
+            }
             this.currentVersionNative = new Version(this.getConfig().getString("version", pInfo.versionName));
             this.delayUpdateUtils = new DelayUpdateUtils(
                 this.prefs,
@@ -232,6 +248,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.shakeMenuEnabled = this.getConfig().getBoolean("shakeMenu", false);
         boolean resetWhenUpdate = this.getConfig().getBoolean("resetWhenUpdate", true);
 
+        // Check if app was recently installed/updated BEFORE cleanupObsoleteVersions updates LatestVersionNative
+        this.wasRecentlyInstalledOrUpdated = this.checkIfRecentlyInstalledOrUpdated();
+
         this.implementation.autoReset();
         if (resetWhenUpdate) {
             this.cleanupObsoleteVersions();
@@ -274,33 +293,61 @@ public class CapacitorUpdaterPlugin extends Plugin {
             CapacitorUpdaterPlugin.this.notifyListeners("appReady", ret);
 
             // Auto hide splashscreen if enabled
-            if (CapacitorUpdaterPlugin.this.autoSplashscreen && CapacitorUpdaterPlugin.this.implementation.directUpdate) {
+            if (CapacitorUpdaterPlugin.this.autoSplashscreen && CapacitorUpdaterPlugin.this.shouldUseDirectUpdate()) {
                 CapacitorUpdaterPlugin.this.hideSplashscreen();
             }
         });
     }
 
-    private void hideSplashscreen() {
+        private void hideSplashscreen() {
         try {
-            PluginCall call = getBridge().getSavedCall("hideSplashscreen");
-            if (call == null) {
-                call = new PluginCall(getBridge().getMessageHandler(), "hideSplashscreen", "hideSplashscreen", new JSObject(), null);
-            }
-
-            Plugin splashScreenPlugin = getBridge().getPlugin("SplashScreen");
-            if (splashScreenPlugin != null) {
-                try {
-                    java.lang.reflect.Method hideMethod = splashScreenPlugin.getClass().getMethod("hide", PluginCall.class);
-                    hideMethod.invoke(splashScreenPlugin, call);
-                    logger.info("Splashscreen hidden automatically");
-                } catch (Exception e) {
-                    logger.error("Failed to hide splashscreen automatically: " + e.getMessage());
-                }
-            } else {
-                logger.warn("SplashScreen plugin not found");
-            }
+            // Create a simple PluginCall for the hide method
+            PluginCall call = new PluginCall(
+                null, // MessageHandler - can be null for this use case
+                "hideSplashscreen", 
+                "hide",
+                "autoHideSplashscreen", 
+                new JSObject()
+            );
+            
+            // Use bridge's callPluginMethod to call SplashScreen.hide()
+            getBridge().callPluginMethod("SplashScreen", "hide", call);
+            logger.info("Splashscreen hidden automatically via callPluginMethod");
         } catch (Exception e) {
             logger.error("Error hiding splashscreen: " + e.getMessage());
+        }
+    }
+
+    private boolean checkIfRecentlyInstalledOrUpdated() {
+        String currentVersion = this.currentVersionNative.getOriginalString();
+        String lastKnownVersion = this.prefs.getString("LatestVersionNative", "");
+
+        if (lastKnownVersion.isEmpty()) {
+            // First time running, consider it as recently installed
+            return true;
+        } else if (!lastKnownVersion.equals(currentVersion)) {
+            // Version changed, consider it as recently updated
+            return true;
+        }
+
+        return false;
+    }
+
+    private boolean shouldUseDirectUpdate() {
+        switch (this.directUpdateMode) {
+            case "false":
+                return false;
+            case "always":
+                return true;
+            case "atInstall":
+                if (this.wasRecentlyInstalledOrUpdated) {
+                    // Reset the flag after first use to prevent subsequent foreground events from using direct update
+                    this.wasRecentlyInstalledOrUpdated = false;
+                    return true;
+                }
+                return false;
+            default:
+                return false;
         }
     }
 
@@ -1080,9 +1127,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private Thread backgroundDownload() {
-        String messageUpdate = this.implementation.directUpdate
-            ? "Update will occur now."
-            : "Update will occur next time app moves to background.";
+        boolean shouldDirectUpdate = this.shouldUseDirectUpdate();
+        String messageUpdate = shouldDirectUpdate ? "Update will occur now." : "Update will occur next time app moves to background.";
         return startNewThread(() -> {
             logger.info("Check for update via: " + CapacitorUpdaterPlugin.this.updateUrl);
             CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.updateUrl, null, res -> {
@@ -1109,7 +1155,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
                         if ("builtin".equals(latestVersionName)) {
                             logger.info("Latest version is builtin");
-                            if (CapacitorUpdaterPlugin.this.implementation.directUpdate) {
+                            if (shouldDirectUpdate) {
                                 logger.info("Direct update to builtin version");
                                 this._reset(false);
                                 CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
@@ -1161,7 +1207,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                 }
                                 if (latest.isDownloaded()) {
                                     logger.info("Latest bundle already exists and download is NOT required. " + messageUpdate);
-                                    if (CapacitorUpdaterPlugin.this.implementation.directUpdate) {
+                                    if (shouldDirectUpdate) {
                                         Gson gson = new Gson();
                                         String delayUpdatePreferences = prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]");
                                         Type type = new TypeToken<ArrayList<DelayCondition>>() {}.getType();
