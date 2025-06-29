@@ -78,6 +78,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private Thread backgroundTask;
     private Boolean taskRunning = false;
     private Boolean keepUrlPathAfterReload = false;
+    Boolean shakeMenuEnabled = false;
 
     private Boolean isPreviousMainActivity = true;
 
@@ -90,6 +91,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private int lastNotifiedStatPercent = 0;
 
     private DelayUpdateUtils delayUpdateUtils;
+
+    private ShakeMenu shakeMenu;
 
     private JSObject mapToJSObject(Map<String, Object> map) {
         JSObject jsObject = new JSObject();
@@ -224,6 +227,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.appReadyTimeout = this.getConfig().getInt("appReadyTimeout", 10000);
         this.keepUrlPathAfterReload = this.getConfig().getBoolean("keepUrlPathAfterReload", false);
         this.implementation.timeout = this.getConfig().getInt("responseTimeout", 20) * 1000;
+        this.shakeMenuEnabled = this.getConfig().getBoolean("shakeMenu", false);
         boolean resetWhenUpdate = this.getConfig().getBoolean("resetWhenUpdate", true);
 
         this.implementation.autoReset();
@@ -1328,6 +1332,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         logger.info("onActivityStarted " + getActivity().getClass().getName());
         isPreviousMainActivity = true;
+        
+        // Initialize shake menu if enabled and activity is BridgeActivity
+        if (shakeMenuEnabled && getActivity() instanceof com.getcapacitor.BridgeActivity && shakeMenu == null) {
+            try {
+                shakeMenu = new ShakeMenu(this, (com.getcapacitor.BridgeActivity) getActivity(), logger);
+                logger.info("Shake menu initialized");
+            } catch (Exception e) {
+                logger.error("Failed to initialize shake menu: " + e.getMessage());
+            }
+        }
     }
 
     @Override
@@ -1358,6 +1372,62 @@ public class CapacitorUpdaterPlugin extends Plugin {
         counterActivityCreate--;
         if (counterActivityCreate == 0) {
             this.appKilled();
+        }
+        
+        // Clean up shake menu
+        if (shakeMenu != null) {
+            try {
+                shakeMenu.stop();
+                shakeMenu = null;
+                logger.info("Shake menu cleaned up");
+            } catch (Exception e) {
+                logger.error("Failed to clean up shake menu: " + e.getMessage());
+            }
+        }
+    }
+
+    @PluginMethod
+    public void setShakeMenu(final PluginCall call) {
+        final Boolean enabled = call.getBoolean("enabled");
+        if (enabled == null) {
+            logger.error("setShakeMenu called without enabled parameter");
+            call.reject("setShakeMenu called without enabled parameter");
+            return;
+        }
+        
+        this.shakeMenuEnabled = enabled;
+        logger.info("Shake menu " + (enabled ? "enabled" : "disabled"));
+        
+        // Manage shake menu instance based on enabled state
+        if (enabled && getActivity() instanceof com.getcapacitor.BridgeActivity && shakeMenu == null) {
+            try {
+                shakeMenu = new ShakeMenu(this, (com.getcapacitor.BridgeActivity) getActivity(), logger);
+                logger.info("Shake menu initialized");
+            } catch (Exception e) {
+                logger.error("Failed to initialize shake menu: " + e.getMessage());
+            }
+        } else if (!enabled && shakeMenu != null) {
+            try {
+                shakeMenu.stop();
+                shakeMenu = null;
+                logger.info("Shake menu stopped");
+            } catch (Exception e) {
+                logger.error("Failed to stop shake menu: " + e.getMessage());
+            }
+        }
+        
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void isShakeMenuEnabled(final PluginCall call) {
+        try {
+            final JSObject ret = new JSObject();
+            ret.put("enabled", this.shakeMenuEnabled);
+            call.resolve(ret);
+        } catch (final Exception e) {
+            logger.error("Could not get shake menu status " + e.getMessage());
+            call.reject("Could not get shake menu status", e);
         }
     }
 }

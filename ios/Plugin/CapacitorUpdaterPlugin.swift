@@ -14,7 +14,7 @@ import Version
  */
 @objc(CapacitorUpdaterPlugin)
 public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
-    private let logger = Logger(withTag: "✨  CapgoUpdater")
+    let logger = Logger(withTag: "✨  CapgoUpdater")
 
     public let identifier = "CapacitorUpdaterPlugin"
     public let jsName = "CapacitorUpdater"
@@ -44,7 +44,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "isAutoUpdateEnabled", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getBuiltinVersion", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "isAutoUpdateAvailable", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "getNextBundle", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "getNextBundle", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setShakeMenu", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "isShakeMenuEnabled", returnType: CAPPluginReturnPromise)
     ]
     public var implementation = CapgoUpdater()
     private let PLUGIN_VERSION: String = "7.4.0"
@@ -67,6 +69,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var backgroundWork: DispatchWorkItem?
     private var taskRunning = false
     private var periodCheckDelay = 0
+    private var shakeMenuEnabled = false
     let semaphoreReady = DispatchSemaphore(value: 0)
 
     private var delayUpdateUtils: DelayUpdateUtils!
@@ -111,6 +114,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         appReadyTimeout = getConfig().getInt("appReadyTimeout", 10000)
         implementation.timeout = Double(getConfig().getInt("responseTimeout", 20))
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
+        shakeMenuEnabled = getConfig().getBoolean("shakeMenu", false)
         let periodCheckDelayValue = getConfig().getInt("periodCheckDelay", 0)
         if periodCheckDelayValue >= 0 && periodCheckDelayValue > 600 {
             periodCheckDelay = 600
@@ -959,5 +963,23 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         call.resolve(bundle!.toJSON())
+    }
+
+    @objc func setShakeMenu(_ call: CAPPluginCall) {
+        guard let enabled = call.getBool("enabled") else {
+            logger.error("setShakeMenu called without enabled parameter")
+            call.reject("setShakeMenu called without enabled parameter")
+            return
+        }
+        
+        self.shakeMenuEnabled = enabled
+        logger.info("Shake menu \(enabled ? "enabled" : "disabled")")
+        call.resolve()
+    }
+
+    @objc func isShakeMenuEnabled(_ call: CAPPluginCall) {
+        call.resolve([
+            "enabled": self.shakeMenuEnabled
+        ])
     }
 }

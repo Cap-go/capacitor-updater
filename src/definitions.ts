@@ -238,6 +238,13 @@ declare module '@capacitor/cli' {
        * @since  7.3.0
        */
       disableJSLogging?: boolean;
+      /**
+       * Enable shake gesture to show update menu for debugging/testing purposes
+       *
+       * @default false
+       * @since  7.5.0
+       */
+      shakeMenu?: boolean;
     };
   }
 }
@@ -575,6 +582,25 @@ export interface CapacitorUpdaterPlugin {
    * @since 6.8.0
    */
   getNextBundle(): Promise<BundleInfo | null>;
+
+  /**
+   * Enable or disable the shake menu for debugging/testing purposes
+   *
+   * @param options Contains enabled boolean to enable or disable shake menu
+   * @returns {Promise<void>}
+   * @throws {Error}
+   * @since 7.5.0
+   */
+  setShakeMenu(options: SetShakeMenuOptions): Promise<void>;
+
+  /**
+   * Get the current state of the shake menu
+   *
+   * @returns {Promise<ShakeMenuEnabled>} The current state of shake menu
+   * @throws {Error}
+   * @since 7.5.0
+   */
+  isShakeMenuEnabled(): Promise<ShakeMenuEnabled>;
 }
 
 /**
@@ -851,4 +877,12 @@ export interface AutoUpdateEnabled {
 
 export interface AutoUpdateAvailable {
   available: boolean;
+}
+
+export interface SetShakeMenuOptions {
+  enabled: boolean;
+}
+
+export interface ShakeMenuEnabled {
+  enabled: boolean;
 }
