@@ -299,17 +299,17 @@ public class CapacitorUpdaterPlugin extends Plugin {
         });
     }
 
-        private void hideSplashscreen() {
+    private void hideSplashscreen() {
         try {
             // Create a simple PluginCall for the hide method
             PluginCall call = new PluginCall(
                 null, // MessageHandler - can be null for this use case
-                "hideSplashscreen", 
+                "hideSplashscreen",
                 "hide",
-                "autoHideSplashscreen", 
+                "autoHideSplashscreen",
                 new JSObject()
             );
-            
+
             // Use bridge's callPluginMethod to call SplashScreen.hide()
             getBridge().callPluginMethod("SplashScreen", "hide", call);
             logger.info("Splashscreen hidden automatically via callPluginMethod");

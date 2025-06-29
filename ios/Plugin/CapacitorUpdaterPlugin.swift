@@ -779,20 +779,20 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-        private func hideSplashscreen() {
+    private func hideSplashscreen() {
         DispatchQueue.main.async {
             guard let bridge = self.bridge else {
                 self.logger.warn("Bridge not available for hiding splashscreen")
                 return
             }
-            
+
             // Create a plugin call for the hide method
             let call = CAPPluginCall(callbackId: "autoHideSplashscreen", options: [:], success: { (_, _) in
                 self.logger.info("Splashscreen hidden automatically")
-            }, error: { (error) in
+            }, error: { (_) in
                 self.logger.error("Failed to auto-hide splashscreen")
             })
-            
+
             // Try to call the SplashScreen hide method directly through the bridge
             if let splashScreenPlugin = bridge.plugin(withName: "SplashScreen") {
                 // Use runtime method invocation to call hide method
