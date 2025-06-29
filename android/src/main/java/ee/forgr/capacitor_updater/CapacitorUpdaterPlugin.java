@@ -444,11 +444,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         if (jsRes.has("error")) {
                             String errorMessage = jsRes.has("message") ? jsRes.getString("message") : jsRes.getString("error");
                             String errorCode = jsRes.getString("error");
-                            
+
                             JSObject errorObj = new JSObject();
                             errorObj.put("message", errorMessage);
                             errorObj.put("error", errorCode);
-                            
+
                             call.reject(errorMessage, "UNSETCHANNEL_FAILED", null, errorObj);
                         } else {
                             if (CapacitorUpdaterPlugin.this._isAutoUpdateEnabled() && Boolean.TRUE.equals(triggerAutoUpdate)) {
@@ -486,11 +486,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         if (jsRes.has("error")) {
                             String errorMessage = jsRes.has("message") ? jsRes.getString("message") : jsRes.getString("error");
                             String errorCode = jsRes.getString("error");
-                            
+
                             JSObject errorObj = new JSObject();
                             errorObj.put("message", errorMessage);
                             errorObj.put("error", errorCode);
-                            
+
                             call.reject(errorMessage, "SETCHANNEL_FAILED", null, errorObj);
                         } else {
                             if (CapacitorUpdaterPlugin.this._isAutoUpdateEnabled() && Boolean.TRUE.equals(triggerAutoUpdate)) {
@@ -517,11 +517,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         if (jsRes.has("error")) {
                             String errorMessage = jsRes.has("message") ? jsRes.getString("message") : jsRes.getString("error");
                             String errorCode = jsRes.getString("error");
-                            
+
                             JSObject errorObj = new JSObject();
                             errorObj.put("message", errorMessage);
                             errorObj.put("error", errorCode);
-                            
+
                             call.reject(errorMessage, "GETCHANNEL_FAILED", null, errorObj);
                         } else {
                             call.resolve(jsRes);
@@ -544,11 +544,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         if (jsRes.has("error")) {
                             String errorMessage = jsRes.has("message") ? jsRes.getString("message") : jsRes.getString("error");
                             String errorCode = jsRes.getString("error");
-                            
+
                             JSObject errorObj = new JSObject();
                             errorObj.put("message", errorMessage);
                             errorObj.put("error", errorCode);
-                            
+
                             call.reject(errorMessage, "LISTCHANNELS_FAILED", null, errorObj);
                         } else {
                             call.resolve(jsRes);
@@ -1383,7 +1383,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         logger.info("onActivityStarted " + getActivity().getClass().getName());
         isPreviousMainActivity = true;
-        
+
         // Initialize shake menu if enabled and activity is BridgeActivity
         if (shakeMenuEnabled && getActivity() instanceof com.getcapacitor.BridgeActivity && shakeMenu == null) {
             try {
@@ -1424,7 +1424,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         if (counterActivityCreate == 0) {
             this.appKilled();
         }
-        
+
         // Clean up shake menu
         if (shakeMenu != null) {
             try {
@@ -1445,10 +1445,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
             call.reject("setShakeMenu called without enabled parameter");
             return;
         }
-        
+
         this.shakeMenuEnabled = enabled;
         logger.info("Shake menu " + (enabled ? "enabled" : "disabled"));
-        
+
         // Manage shake menu instance based on enabled state
         if (enabled && getActivity() instanceof com.getcapacitor.BridgeActivity && shakeMenu == null) {
             try {
@@ -1466,7 +1466,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 logger.error("Failed to stop shake menu: " + e.getMessage());
             }
         }
-        
+
         call.resolve();
     }
 

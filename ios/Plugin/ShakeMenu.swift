@@ -23,90 +23,90 @@ extension UIApplication {
 }
 
 extension UIWindow {
-    open override func motionEnded(_ motion: UIEvent.EventSubtype, with event: UIEvent?) {
+    override open func motionEnded(_ motion: UIEvent.EventSubtype, with event: UIEvent?) {
         if motion == .motionShake {
             // Find the CapacitorUpdaterPlugin instance
-            guard let bridge = (rootViewController as? CAPBridgeViewController),
-                  let plugin = bridge.getPlugin("CapacitorUpdaterPlugin") as? CapacitorUpdaterPlugin else {
+            guard let bridge = (rootViewController as? CAPBridgeProtocol),
+                  let plugin = bridge.plugin(withName: "CapacitorUpdaterPlugin") as? CapacitorUpdaterPlugin else {
                 return
             }
-            
+
             // Check if shake menu is enabled
             if !plugin.shakeMenuEnabled {
                 return
             }
-            
+
             showShakeMenu(plugin: plugin, bridge: bridge)
         }
     }
-    
-    private func showShakeMenu(plugin: CapacitorUpdaterPlugin, bridge: CAPBridgeViewController) {
+
+    private func showShakeMenu(plugin: CapacitorUpdaterPlugin, bridge: CAPBridgeProtocol) {
         // Prevent multiple alerts from showing
         if let topVC = UIApplication.topViewController(),
            topVC.isKind(of: UIAlertController.self) {
             plugin.logger.info("UIAlertController is already presented")
             return
         }
-        
+
         let appName = Bundle.main.infoDictionary?["CFBundleDisplayName"] as? String ?? "App"
         let title = "Preview \(appName) Menu"
         let message = "What would you like to do?"
         let okButtonTitle = "Go Home"
         let reloadButtonTitle = "Reload app"
         let cancelButtonTitle = "Close menu"
-        
+
         let updater = plugin.implementation
-        
+
         func resetBuiltin() {
-            updater?.reset()
-            bridge.setServerBasePath(path: "")
+            updater.reset()
+            bridge.setServerBasePath("")
             DispatchQueue.main.async {
-                bridge.loadView()
-                bridge.viewDidLoad()
-                if let bundleId = updater?.getCurrentBundleId() {
-                    _ = updater?.delete(id: bundleId)
+                if let vc = (self.rootViewController as? CAPBridgeViewController) {
+                    vc.loadView()
+                    vc.viewDidLoad()
                 }
+                _ = updater.delete(id: updater.getCurrentBundleId())
                 plugin.logger.info("Reset to builtin version")
             }
         }
-        
-        let bundleId = updater?.getCurrentBundleId() ?? ""
-        plugin.logger.info("getServerBasePath: \(bridge.getServerBasePath())")
+
+        let bundleId = updater.getCurrentBundleId()
+        if let vc = (self.rootViewController as? CAPBridgeViewController) {
+            plugin.logger.info("getServerBasePath: \(vc.getServerBasePath())")
+        }
         plugin.logger.info("bundleId: \(bundleId)")
-        
+
         let alertShake = UIAlertController(title: title, message: message, preferredStyle: .alert)
-        
+
         alertShake.addAction(UIAlertAction(title: okButtonTitle, style: .default) { _ in
-            guard let next = updater?.getNextBundle() else {
+            guard let next = updater.getNextBundle() else {
                 resetBuiltin()
                 return
             }
             if !next.isBuiltin() {
                 plugin.logger.info("Resetting to: \(next.toString())")
-                _ = updater?.set(bundle: next)
-                let destHot = updater?.getBundleDirectory(id: next.getId())
+                _ = updater.set(bundle: next)
+                let destHot = updater.getBundleDirectory(id: next.getId())
                 plugin.logger.info("Reloading \(next.toString())")
-                if let destPath = destHot?.path {
-                    bridge.setServerBasePath(path: destPath)
-                }
+                bridge.setServerBasePath(destHot.path)
             } else {
                 resetBuiltin()
             }
             plugin.logger.info("Reload app done")
         })
-        
+
         alertShake.addAction(UIAlertAction(title: cancelButtonTitle, style: .default))
-        
+
         alertShake.addAction(UIAlertAction(title: reloadButtonTitle, style: .default) { _ in
             DispatchQueue.main.async {
-                bridge.bridge?.webView?.reload()
+                bridge.webView?.reload()
             }
         })
-        
+
         DispatchQueue.main.async {
             if let topVC = UIApplication.topViewController() {
                 topVC.present(alertShake, animated: true)
             }
         }
     }
-} 
+}

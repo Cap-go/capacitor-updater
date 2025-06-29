@@ -70,16 +70,16 @@ extension GetChannel {
 struct ChannelInfo: Codable {
     let id: String?
     let name: String?
-    let public: Bool?
+    let `public`: Bool?
     let allow_self_set: Bool?
 }
 struct ListChannelsDec: Decodable {
     let channels: [ChannelInfo]?
     let error: String?
-    
+
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
-        
+
         if let channelsArray = try? container.decode([ChannelInfo].self) {
             // Backend returns direct array
             self.channels = channelsArray
@@ -91,7 +91,7 @@ struct ListChannelsDec: Decodable {
             self.error = try? errorContainer.decode(String.self, forKey: .error)
         }
     }
-    
+
     private enum CodingKeys: String, CodingKey {
         case error
     }

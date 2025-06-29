@@ -37,6 +37,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "setChannel", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "unsetChannel", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getChannel", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "listChannels", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setCustomId", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getDeviceId", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getPluginVersion", returnType: CAPPluginReturnPromise),
@@ -69,7 +70,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var backgroundWork: DispatchWorkItem?
     private var taskRunning = false
     private var periodCheckDelay = 0
-    private var shakeMenuEnabled = false
+    public var shakeMenuEnabled = false
     let semaphoreReady = DispatchSemaphore(value: 0)
 
     private var delayUpdateUtils: DelayUpdateUtils!
@@ -998,7 +999,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("setShakeMenu called without enabled parameter")
             return
         }
-        
+
         self.shakeMenuEnabled = enabled
         logger.info("Shake menu \(enabled ? "enabled" : "disabled")")
         call.resolve()

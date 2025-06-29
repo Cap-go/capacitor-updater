@@ -1060,15 +1060,15 @@ import UIKit
             listChannels.error = "Channel URL is not set"
             return listChannels
         }
-        
+
         let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
-        
+
         // Auto-detect values
         let appId = self.appId
         let platform = "ios"
         let isEmulator = self.isEmulator()
         let isProd = self.isProd()
-        
+
         // Create query parameters
         var urlComponents = URLComponents(string: self.channelUrl)
         urlComponents?.queryItems = [
@@ -1077,15 +1077,15 @@ import UIKit
             URLQueryItem(name: "is_emulator", value: String(isEmulator)),
             URLQueryItem(name: "is_prod", value: String(isProd))
         ]
-        
+
         guard let url = urlComponents?.url else {
             logger.error("Invalid channel URL")
             listChannels.error = "Invalid channel URL"
             return listChannels
         }
-        
+
         let request = AF.request(url, method: .get, requestModifier: { $0.timeoutInterval = self.timeout })
-        
+
         request.validate().responseDecodable(of: ListChannelsDec.self) { response in
             defer {
                 semaphore.signal()
@@ -1098,7 +1098,7 @@ import UIKit
                         listChannels.error = error
                         return
                     }
-                    
+
                     // Backend returns direct array, so channels should be populated by our custom decoder
                     if let channels = responseValue.channels {
                         listChannels.channels = channels.map { channel in

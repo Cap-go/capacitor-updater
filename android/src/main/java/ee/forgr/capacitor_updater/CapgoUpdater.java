@@ -700,7 +700,7 @@ public class CapgoUpdater {
                             assert responseBody != null;
                             String responseData = responseBody.string();
                             JSONObject jsonResponse = new JSONObject(responseData);
-                            
+
                             // Check for server-side errors first
                             if (jsonResponse.has("error")) {
                                 Map<String, Object> retError = new HashMap<>();
@@ -709,7 +709,7 @@ public class CapgoUpdater {
                                 callback.callback(retError);
                                 return;
                             }
-                            
+
                             Map<String, Object> ret = new HashMap<>();
 
                             Iterator<String> keys = jsonResponse.keys();
@@ -809,7 +809,7 @@ public class CapgoUpdater {
                             assert responseBody != null;
                             String responseData = responseBody.string();
                             JSONObject jsonResponse = new JSONObject(responseData);
-                            
+
                             // Check for server-side errors first
                             if (jsonResponse.has("error")) {
                                 Map<String, Object> retError = new HashMap<>();
@@ -818,7 +818,7 @@ public class CapgoUpdater {
                                 callback.callback(retError);
                                 return;
                             }
-                            
+
                             Map<String, Object> ret = new HashMap<>();
 
                             Iterator<String> keys = jsonResponse.keys();
@@ -933,7 +933,7 @@ public class CapgoUpdater {
                             assert responseBody != null;
                             String responseData = responseBody.string();
                             JSONObject jsonResponse = new JSONObject(responseData);
-                            
+
                             // Check for server-side errors first
                             if (jsonResponse.has("error")) {
                                 Map<String, Object> retError = new HashMap<>();
@@ -942,7 +942,7 @@ public class CapgoUpdater {
                                 callback.callback(retError);
                                 return;
                             }
-                            
+
                             Map<String, Object> ret = new HashMap<>();
 
                             Iterator<String> keys = jsonResponse.keys();
@@ -989,10 +989,7 @@ public class CapgoUpdater {
         urlBuilder.addQueryParameter("is_emulator", String.valueOf(isEmulator));
         urlBuilder.addQueryParameter("is_prod", String.valueOf(isProd));
 
-        Request request = new Request.Builder()
-            .url(urlBuilder.build())
-            .get()
-            .build();
+        Request request = new Request.Builder().url(urlBuilder.build()).get().build();
 
         client
             .newCall(request)
@@ -1019,15 +1016,15 @@ public class CapgoUpdater {
 
                             assert responseBody != null;
                             String data = responseBody.string();
-                            
+
                             try {
                                 Map<String, Object> ret = new HashMap<>();
-                                
+
                                 try {
                                     // Try to parse as direct array first
                                     JSONArray channelsJson = new JSONArray(data);
                                     List<Map<String, Object>> channelsList = new ArrayList<>();
-                                    
+
                                     for (int i = 0; i < channelsJson.length(); i++) {
                                         JSONObject channelJson = channelsJson.getJSONObject(i);
                                         Map<String, Object> channel = new HashMap<>();
@@ -1037,13 +1034,12 @@ public class CapgoUpdater {
                                         channel.put("allow_self_set", channelJson.optBoolean("allow_self_set", false));
                                         channelsList.add(channel);
                                     }
-                                    
+
                                     // Wrap in channels object for JS API
                                     ret.put("channels", channelsList);
-                                    
+
                                     logger.info("Channels listed successfully");
                                     callback.callback(ret);
-                                    
                                 } catch (JSONException arrayException) {
                                     // If not an array, try to parse as error object
                                     try {
