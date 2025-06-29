@@ -64,6 +64,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var appReadyCheck: DispatchWorkItem?
     private var resetWhenUpdate = true
     private var directUpdate = false
+    private var autoSplashscreen = false
     private var autoDeleteFailed = false
     private var autoDeletePrevious = false
     private var keepUrlPathAfterReload = false
@@ -110,6 +111,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         autoDeletePrevious = getConfig().getBoolean("autoDeletePrevious", true)
         keepUrlPathAfterReload = getConfig().getBoolean("keepUrlPathAfterReload", false)
         directUpdate = getConfig().getBoolean("directUpdate", false)
+        autoSplashscreen = getConfig().getBoolean("autoSplashscreen", false)
         updateUrl = getConfig().getString("updateUrl", CapacitorUpdaterPlugin.updateUrlDefault)!
         autoUpdate = getConfig().getBoolean("autoUpdate", true)
         appReadyTimeout = getConfig().getInt("appReadyTimeout", 10000)
@@ -749,6 +751,38 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.global().async {
             self.semaphoreWait(waitTime: self.appReadyTimeout)
             self.notifyListeners("appReady", data: ["bundle": current.toJSON(), "status": msg])
+
+            // Auto hide splashscreen if enabled
+            if self.autoSplashscreen && self.directUpdate {
+                self.hideSplashscreen()
+            }
+        }
+    }
+
+    private func hideSplashscreen() {
+        DispatchQueue.main.async {
+            guard let bridge = self.bridge,
+                  let splashScreenPlugin = bridge.plugin(withName: "SplashScreen") else {
+                self.logger.warn("SplashScreen plugin not found")
+                return
+            }
+
+            // Create a fake call to trigger hide method
+            let call = CAPPluginCall(callbackId: "autoHideSplashscreen", options: [:], success: { (_, _) in
+                self.logger.info("Splashscreen hidden automatically")
+            }, error: { (error) in
+                self.logger.error("Failed to auto-hide splashscreen: \(error?.localizedDescription ?? "Unknown error")")
+            })
+
+            // Call the hide method on SplashScreen plugin
+            if let hideSelector = NSSelectorFromString("hide:") {
+                if splashScreenPlugin.responds(to: hideSelector) {
+                    splashScreenPlugin.perform(hideSelector, with: call)
+                    return
+                }
+            }
+
+            self.logger.warn("Could not call hide method on SplashScreen plugin")
         }
     }
 

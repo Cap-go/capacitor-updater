@@ -78,6 +78,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private Thread backgroundTask;
     private Boolean taskRunning = false;
     private Boolean keepUrlPathAfterReload = false;
+    private Boolean autoSplashscreen = false;
     Boolean shakeMenuEnabled = false;
 
     private Boolean isPreviousMainActivity = true;
@@ -226,6 +227,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.autoUpdate = this.getConfig().getBoolean("autoUpdate", true);
         this.appReadyTimeout = this.getConfig().getInt("appReadyTimeout", 10000);
         this.keepUrlPathAfterReload = this.getConfig().getBoolean("keepUrlPathAfterReload", false);
+        this.autoSplashscreen = this.getConfig().getBoolean("autoSplashscreen", false);
         this.implementation.timeout = this.getConfig().getInt("responseTimeout", 20) * 1000;
         this.shakeMenuEnabled = this.getConfig().getBoolean("shakeMenu", false);
         boolean resetWhenUpdate = this.getConfig().getBoolean("resetWhenUpdate", true);
@@ -270,7 +272,36 @@ public class CapacitorUpdaterPlugin extends Plugin {
             semaphoreWait(CapacitorUpdaterPlugin.this.appReadyTimeout);
             logger.info("semaphoreReady sendReadyToJs done");
             CapacitorUpdaterPlugin.this.notifyListeners("appReady", ret);
+
+            // Auto hide splashscreen if enabled
+            if (CapacitorUpdaterPlugin.this.autoSplashscreen && CapacitorUpdaterPlugin.this.implementation.directUpdate) {
+                CapacitorUpdaterPlugin.this.hideSplashscreen();
+            }
         });
+    }
+
+    private void hideSplashscreen() {
+        try {
+            PluginCall call = getBridge().getSavedCall("hideSplashscreen");
+            if (call == null) {
+                call = new PluginCall(getBridge().getMessageHandler(), "hideSplashscreen", "hideSplashscreen", new JSObject(), null);
+            }
+
+            Plugin splashScreenPlugin = getBridge().getPlugin("SplashScreen");
+            if (splashScreenPlugin != null) {
+                try {
+                    java.lang.reflect.Method hideMethod = splashScreenPlugin.getClass().getMethod("hide", PluginCall.class);
+                    hideMethod.invoke(splashScreenPlugin, call);
+                    logger.info("Splashscreen hidden automatically");
+                } catch (Exception e) {
+                    logger.error("Failed to hide splashscreen automatically: " + e.getMessage());
+                }
+            } else {
+                logger.warn("SplashScreen plugin not found");
+            }
+        } catch (Exception e) {
+            logger.error("Error hiding splashscreen: " + e.getMessage());
+        }
     }
 
     private void directUpdateFinish(final BundleInfo latest) {

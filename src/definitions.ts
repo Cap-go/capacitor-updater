@@ -132,6 +132,19 @@ declare module '@capacitor/cli' {
       directUpdate?: boolean;
 
       /**
+       * Automatically handle splashscreen hiding when using directUpdate. When enabled, the plugin will automatically hide the splashscreen after updates are applied or when no update is needed.
+       * This removes the need to manually listen for appReady events and call SplashScreen.hide().
+       * Only works when directUpdate is also enabled.
+       * Requires the @capacitor/splash-screen plugin to be installed and configured with launchAutoHide: false.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default false
+       * @since  7.6.0
+       */
+      autoSplashscreen?: boolean;
+
+      /**
        * Configure the delay period for period update check. the unit is in seconds.
        *
        * Only available for Android and iOS.
