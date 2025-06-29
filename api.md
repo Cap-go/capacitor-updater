@@ -41,6 +41,7 @@ CapacitorUpdater can be configured with these options:
 | **`appId`**                  | <code>string</code>  | Configure the app id for the app in the config.                                                                                                                                                 | <code>undefined</code>                             | 6.0.0   |
 | **`keepUrlPathAfterReload`** | <code>boolean</code> | Configure the plugin to keep the URL path after a reload. WARNING: When a reload is triggered, 'window.history' will be cleared.                                                                | <code>false</code>                                 | 6.8.0   |
 | **`disableJSLogging`**       | <code>boolean</code> | Disable the JavaScript logging of the plugin. if true, the plugin will not log to the JavaScript console. only the native log will be done                                                      | <code>false</code>                                 | 7.3.0   |
+| **`shakeMenu`**              | <code>boolean</code> | Enable shake gesture to show update menu for debugging/testing purposes                                                                                                                         | <code>false</code>                                 | 7.5.0   |
 
 ## Examples
 
@@ -74,7 +75,8 @@ In `capacitor.config.json`:
       "defaultChannel": undefined,
       "appId": undefined,
       "keepUrlPathAfterReload": undefined,
-      "disableJSLogging": undefined
+      "disableJSLogging": undefined,
+      "shakeMenu": undefined
     }
   }
 }
@@ -115,6 +117,7 @@ const config: CapacitorConfig = {
       appId: undefined,
       keepUrlPathAfterReload: undefined,
       disableJSLogging: undefined,
+      shakeMenu: undefined,
     },
   },
 };
@@ -144,6 +147,7 @@ export default config;
 * [`setChannel(...)`](#setchannel)
 * [`unsetChannel(...)`](#unsetchannel)
 * [`getChannel()`](#getchannel)
+* [`listChannels()`](#listchannels)
 * [`setCustomId(...)`](#setcustomid)
 * [`getBuiltinVersion()`](#getbuiltinversion)
 * [`getDeviceId()`](#getdeviceid)
@@ -161,6 +165,8 @@ export default config;
 * [`addListener('appReady', ...)`](#addlistenerappready-)
 * [`isAutoUpdateAvailable()`](#isautoupdateavailable)
 * [`getNextBundle()`](#getnextbundle)
+* [`setShakeMenu(...)`](#setshakemenu)
+* [`isShakeMenuEnabled()`](#isshakemenuenabled)
 * [Interfaces](#interfaces)
 * [Type Aliases](#type-aliases)
 
@@ -776,6 +782,38 @@ Returns null if no next bundle is set.
 --------------------
 
 
+## setShakeMenu(...)
+
+```typescript
+setShakeMenu(options: SetShakeMenuOptions) => Promise<void>
+```
+
+Enable or disable the shake menu for debugging/testing purposes
+
+| Param         | Type                                                                | Description                                              |
+| ------------- | ------------------------------------------------------------------- | -------------------------------------------------------- |
+| **`options`** | <code><a href="#setshakemenuoptions">SetShakeMenuOptions</a></code> | Contains enabled boolean to enable or disable shake menu |
+
+**Since:** 7.5.0
+
+--------------------
+
+
+## isShakeMenuEnabled()
+
+```typescript
+isShakeMenuEnabled() => Promise<ShakeMenuEnabled>
+```
+
+Get the current state of the shake menu
+
+**Returns:** <code>Promise&lt;<a href="#shakemenuenabled">ShakeMenuEnabled</a>&gt;</code>
+
+**Since:** 7.5.0
+
+--------------------
+
+
 ## Interfaces
 
 
@@ -949,21 +987,21 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 | **`allowSet`** | <code>boolean</code> |                               |       |
 
 
-### ChannelInfo
-
-| Prop                 | Type                 | Description                              | Since |
-| -------------------- | -------------------- | ---------------------------------------- | ----- |
-| **`id`**             | <code>string</code>  | The channel ID                           | 7.5.0 |
-| **`name`**           | <code>string</code>  | The channel name                         | 7.5.0 |
-| **`public`**         | <code>boolean</code> | Whether this is a public channel         | 7.5.0 |
-| **`allow_self_set`** | <code>boolean</code> | Whether devices can self-assign to this channel | 7.5.0 |
-
-
 ### ListChannelsResult
 
-| Prop              | Type                                      | Description                           | Since |
-| ----------------- | ----------------------------------------- | ------------------------------------- | ----- |
-| **`channels`**    | <code>ChannelInfo[]</code>                | List of available channels            | 7.5.0 |
+| Prop           | Type                       | Description                | Since |
+| -------------- | -------------------------- | -------------------------- | ----- |
+| **`channels`** | <code>ChannelInfo[]</code> | List of available channels | 7.5.0 |
+
+
+### ChannelInfo
+
+| Prop                 | Type                 | Description                                     | Since |
+| -------------------- | -------------------- | ----------------------------------------------- | ----- |
+| **`id`**             | <code>string</code>  | The channel ID                                  | 7.5.0 |
+| **`name`**           | <code>string</code>  | The channel name                                | 7.5.0 |
+| **`public`**         | <code>boolean</code> | Whether this is a public channel                | 7.5.0 |
+| **`allow_self_set`** | <code>boolean</code> | Whether devices can self-assign to this channel | 7.5.0 |
 
 
 ### SetCustomIdOptions
@@ -1071,6 +1109,20 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 | Prop            | Type                 |
 | --------------- | -------------------- |
 | **`available`** | <code>boolean</code> |
+
+
+### SetShakeMenuOptions
+
+| Prop          | Type                 |
+| ------------- | -------------------- |
+| **`enabled`** | <code>boolean</code> |
+
+
+### ShakeMenuEnabled
+
+| Prop          | Type                 |
+| ------------- | -------------------- |
+| **`enabled`** | <code>boolean</code> |
 
 
 ## Type Aliases
