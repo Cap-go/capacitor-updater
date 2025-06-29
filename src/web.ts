@@ -21,6 +21,7 @@ import type {
   DownloadOptions,
   GetChannelRes,
   LatestVersion,
+  ListChannelsResult,
   MultiDelayConditions,
   PluginVersion,
   ResetOptions,
@@ -148,6 +149,14 @@ export class CapacitorUpdaterWeb extends WebPlugin implements CapacitorUpdaterPl
     return {
       status: 'error',
       error: 'Cannot getChannel in web',
+    };
+  }
+
+  async listChannels(): Promise<ListChannelsResult> {
+    console.warn('Cannot listChannels in web');
+    throw {
+      message: 'Cannot listChannels in web',
+      error: 'platform_not_supported',
     };
   }
 

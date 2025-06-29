@@ -497,7 +497,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.global(qos: .background).async {
             let res = self.implementation.unsetChannel()
             if res.error != "" {
-                call.reject(res.error)
+                call.reject(res.error, "UNSETCHANNEL_FAILED", nil, [
+                    "message": res.error,
+                    "error": res.error.contains("Channel URL") ? "missing_config" : "request_failed"
+                ])
             } else {
                 if self._isAutoUpdateEnabled() && triggerAutoUpdate {
                     self.logger.info("Calling autoupdater after channel change!")
@@ -511,14 +514,20 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func setChannel(_ call: CAPPluginCall) {
         guard let channel = call.getString("channel") else {
             logger.error("setChannel called without channel")
-            call.reject("setChannel called without channel")
+            call.reject("setChannel called without channel", "SETCHANNEL_INVALID_PARAMS", nil, [
+                "message": "setChannel called without channel",
+                "error": "missing_parameter"
+            ])
             return
         }
         let triggerAutoUpdate = call.getBool("triggerAutoUpdate") ?? false
         DispatchQueue.global(qos: .background).async {
             let res = self.implementation.setChannel(channel: channel)
             if res.error != "" {
-                call.reject(res.error)
+                call.reject(res.error, "SETCHANNEL_FAILED", nil, [
+                    "message": res.error,
+                    "error": res.error.contains("Channel URL") ? "missing_config" : "request_failed"
+                ])
             } else {
                 if self._isAutoUpdateEnabled() && triggerAutoUpdate {
                     self.logger.info("Calling autoupdater after channel change!")
@@ -533,12 +542,30 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.global(qos: .background).async {
             let res = self.implementation.getChannel()
             if res.error != "" {
-                call.reject(res.error)
+                call.reject(res.error, "GETCHANNEL_FAILED", nil, [
+                    "message": res.error,
+                    "error": res.error.contains("Channel URL") ? "missing_config" : "request_failed"
+                ])
             } else {
                 call.resolve(res.toDict())
             }
         }
     }
+
+    @objc func listChannels(_ call: CAPPluginCall) {
+        DispatchQueue.global(qos: .background).async {
+            let res = self.implementation.listChannels()
+            if res.error != "" {
+                call.reject(res.error, "LISTCHANNELS_FAILED", nil, [
+                    "message": res.error,
+                    "error": res.error.contains("Channel URL") ? "missing_config" : "request_failed"
+                ])
+            } else {
+                call.resolve(res.toDict())
+            }
+        }
+    }
+
     @objc func setCustomId(_ call: CAPPluginCall) {
         guard let customId = call.getString("customId") else {
             logger.error("setCustomId called without customId")

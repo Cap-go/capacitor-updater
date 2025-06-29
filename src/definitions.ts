@@ -438,6 +438,15 @@ export interface CapacitorUpdaterPlugin {
   getChannel(): Promise<GetChannelRes>;
 
   /**
+   * List all channels available for this device that allow self-assignment
+   *
+   * @returns {Promise<ListChannelsResult>} A Promise that resolves with the available channels
+   * @throws {Error}
+   * @since 7.5.0
+   */
+  listChannels(): Promise<ListChannelsResult>;
+
+  /**
    * Set a custom ID for this device
    *
    * @param options is the {@link SetCustomIdOptions} customId to set
@@ -653,6 +662,42 @@ export interface GetChannelRes {
   message?: string;
   status?: string;
   allowSet?: boolean;
+}
+
+export interface ChannelInfo {
+  /**
+   * The channel ID
+   *
+   * @since 7.5.0
+   */
+  id: string;
+  /**
+   * The channel name
+   *
+   * @since 7.5.0
+   */
+  name: string;
+  /**
+   * Whether this is a public channel
+   *
+   * @since 7.5.0
+   */
+  public: boolean;
+  /**
+   * Whether devices can self-assign to this channel
+   *
+   * @since 7.5.0
+   */
+  allow_self_set: boolean;
+}
+
+export interface ListChannelsResult {
+  /**
+   * List of available channels
+   *
+   * @since 7.5.0
+   */
+  channels: ChannelInfo[];
 }
 
 export interface DownloadEvent {

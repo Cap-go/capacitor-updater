@@ -955,19 +955,17 @@ import UIKit
         request.validate().responseDecodable(of: SetChannelDec.self) { response in
             switch response.result {
             case .success:
-                if let status = response.value?.status {
-                    setChannel.status = status
-                }
-                if let error = response.value?.error {
-                    setChannel.error = error
-                }
-                if let message = response.value?.message {
-                    setChannel.message = message
+                if let responseValue = response.value {
+                    if let error = responseValue.error {
+                        setChannel.error = error
+                    } else {
+                        setChannel.status = responseValue.status ?? ""
+                        setChannel.message = responseValue.message ?? ""
+                    }
                 }
             case let .failure(error):
-                self.logger.error("Error unset Channel \(response.value.debugDescription) \(error)")
-                setChannel.message = "Error unset Channel \(String(describing: response.value))"
-                setChannel.error = "response_error"
+                self.logger.error("Error unset Channel \(error)")
+                setChannel.error = "Request failed: \(error.localizedDescription)"
             }
             semaphore.signal()
         }
@@ -992,19 +990,17 @@ import UIKit
         request.validate().responseDecodable(of: SetChannelDec.self) { response in
             switch response.result {
             case .success:
-                if let status = response.value?.status {
-                    setChannel.status = status
-                }
-                if let error = response.value?.error {
-                    setChannel.error = error
-                }
-                if let message = response.value?.message {
-                    setChannel.message = message
+                if let responseValue = response.value {
+                    if let error = responseValue.error {
+                        setChannel.error = error
+                    } else {
+                        setChannel.status = responseValue.status ?? ""
+                        setChannel.message = responseValue.message ?? ""
+                    }
                 }
             case let .failure(error):
-                self.logger.error("Error set Channel \(response.value.debugDescription) \(error)")
-                setChannel.message = "Error set Channel \(String(describing: response.value))"
-                setChannel.error = "response_error"
+                self.logger.error("Error set Channel \(error)")
+                setChannel.error = "Request failed: \(error.localizedDescription)"
             }
             semaphore.signal()
         }
@@ -1030,20 +1026,15 @@ import UIKit
             }
             switch response.result {
             case .success:
-                if let status = response.value?.status {
-                    getChannel.status = status
-                }
-                if let error = response.value?.error {
-                    getChannel.error = error
-                }
-                if let message = response.value?.message {
-                    getChannel.message = message
-                }
-                if let channel = response.value?.channel {
-                    getChannel.channel = channel
-                }
-                if let allowSet = response.value?.allowSet {
-                    getChannel.allowSet = allowSet
+                if let responseValue = response.value {
+                    if let error = responseValue.error {
+                        getChannel.error = error
+                    } else {
+                        getChannel.status = responseValue.status ?? ""
+                        getChannel.message = responseValue.message ?? ""
+                        getChannel.channel = responseValue.channel ?? ""
+                        getChannel.allowSet = responseValue.allowSet ?? true
+                    }
                 }
             case let .failure(error):
                 if let data = response.data, let bodyString = String(data: data, encoding: .utf8) {
@@ -1054,13 +1045,79 @@ import UIKit
                     }
                 }
 
-                self.logger.error("Error get Channel \(response.value.debugDescription) \(error)")
-                getChannel.message = "Error get Channel \(String(describing: response.value)))"
-                getChannel.error = "response_error"
+                self.logger.error("Error get Channel \(error)")
+                getChannel.error = "Request failed: \(error.localizedDescription)"
             }
         }
         semaphore.wait()
         return getChannel
+    }
+
+    func listChannels() -> ListChannels {
+        let listChannels: ListChannels = ListChannels()
+        if (self.channelUrl).isEmpty {
+            logger.error("Channel URL is not set")
+            listChannels.error = "Channel URL is not set"
+            return listChannels
+        }
+        
+        let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
+        
+        // Auto-detect values
+        let appId = self.appId
+        let platform = "ios"
+        let isEmulator = self.isEmulator()
+        let isProd = self.isProd()
+        
+        // Create query parameters
+        var urlComponents = URLComponents(string: self.channelUrl)
+        urlComponents?.queryItems = [
+            URLQueryItem(name: "app_id", value: appId),
+            URLQueryItem(name: "platform", value: platform),
+            URLQueryItem(name: "is_emulator", value: String(isEmulator)),
+            URLQueryItem(name: "is_prod", value: String(isProd))
+        ]
+        
+        guard let url = urlComponents?.url else {
+            logger.error("Invalid channel URL")
+            listChannels.error = "Invalid channel URL"
+            return listChannels
+        }
+        
+        let request = AF.request(url, method: .get, requestModifier: { $0.timeoutInterval = self.timeout })
+        
+        request.validate().responseDecodable(of: ListChannelsDec.self) { response in
+            defer {
+                semaphore.signal()
+            }
+            switch response.result {
+            case .success:
+                if let responseValue = response.value {
+                    // Check for server-side errors
+                    if let error = responseValue.error {
+                        listChannels.error = error
+                        return
+                    }
+                    
+                    // Backend returns direct array, so channels should be populated by our custom decoder
+                    if let channels = responseValue.channels {
+                        listChannels.channels = channels.map { channel in
+                            var channelDict: [String: Any] = [:]
+                            channelDict["id"] = channel.id ?? ""
+                            channelDict["name"] = channel.name ?? ""
+                            channelDict["public"] = channel.public ?? false
+                            channelDict["allow_self_set"] = channel.allow_self_set ?? false
+                            return channelDict
+                        }
+                    }
+                }
+            case let .failure(error):
+                self.logger.error("Error list channels \(error)")
+                listChannels.error = "Request failed: \(error.localizedDescription)"
+            }
+        }
+        semaphore.wait()
+        return listChannels
     }
 
     private let operationQueue = OperationQueue()

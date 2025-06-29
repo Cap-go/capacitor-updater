@@ -467,6 +467,21 @@ Get the channel for this device
 --------------------
 
 
+## listChannels()
+
+```typescript
+listChannels() => Promise<ListChannelsResult>
+```
+
+List all channels available for this device that allow self-assignment
+
+**Returns:** <code>Promise&lt;<a href="#listchannelsresult">ListChannelsResult</a>&gt;</code>
+
+**Since:** 7.5.0
+
+--------------------
+
+
 ## setCustomId(...)
 
 ```typescript
@@ -932,6 +947,23 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 | **`message`**  | <code>string</code>  |                               |       |
 | **`status`**   | <code>string</code>  |                               |       |
 | **`allowSet`** | <code>boolean</code> |                               |       |
+
+
+### ChannelInfo
+
+| Prop                 | Type                 | Description                              | Since |
+| -------------------- | -------------------- | ---------------------------------------- | ----- |
+| **`id`**             | <code>string</code>  | The channel ID                           | 7.5.0 |
+| **`name`**           | <code>string</code>  | The channel name                         | 7.5.0 |
+| **`public`**         | <code>boolean</code> | Whether this is a public channel         | 7.5.0 |
+| **`allow_self_set`** | <code>boolean</code> | Whether devices can self-assign to this channel | 7.5.0 |
+
+
+### ListChannelsResult
+
+| Prop              | Type                                      | Description                           | Since |
+| ----------------- | ----------------------------------------- | ------------------------------------- | ----- |
+| **`channels`**    | <code>ChannelInfo[]</code>                | List of available channels            | 7.5.0 |
 
 
 ### SetCustomIdOptions

@@ -35,6 +35,7 @@ import java.util.Objects;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import okhttp3.*;
+import okhttp3.HttpUrl;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -699,6 +700,16 @@ public class CapgoUpdater {
                             assert responseBody != null;
                             String responseData = responseBody.string();
                             JSONObject jsonResponse = new JSONObject(responseData);
+                            
+                            // Check for server-side errors first
+                            if (jsonResponse.has("error")) {
+                                Map<String, Object> retError = new HashMap<>();
+                                retError.put("message", jsonResponse.getString("error"));
+                                retError.put("error", "server_error");
+                                callback.callback(retError);
+                                return;
+                            }
+                            
                             Map<String, Object> ret = new HashMap<>();
 
                             Iterator<String> keys = jsonResponse.keys();
@@ -798,6 +809,16 @@ public class CapgoUpdater {
                             assert responseBody != null;
                             String responseData = responseBody.string();
                             JSONObject jsonResponse = new JSONObject(responseData);
+                            
+                            // Check for server-side errors first
+                            if (jsonResponse.has("error")) {
+                                Map<String, Object> retError = new HashMap<>();
+                                retError.put("message", jsonResponse.getString("error"));
+                                retError.put("error", "server_error");
+                                callback.callback(retError);
+                                return;
+                            }
+                            
                             Map<String, Object> ret = new HashMap<>();
 
                             Iterator<String> keys = jsonResponse.keys();
@@ -912,6 +933,16 @@ public class CapgoUpdater {
                             assert responseBody != null;
                             String responseData = responseBody.string();
                             JSONObject jsonResponse = new JSONObject(responseData);
+                            
+                            // Check for server-side errors first
+                            if (jsonResponse.has("error")) {
+                                Map<String, Object> retError = new HashMap<>();
+                                retError.put("message", jsonResponse.getString("error"));
+                                retError.put("error", "server_error");
+                                callback.callback(retError);
+                                return;
+                            }
+                            
                             Map<String, Object> ret = new HashMap<>();
 
                             Iterator<String> keys = jsonResponse.keys();
@@ -928,6 +959,113 @@ public class CapgoUpdater {
                             retError.put("message", "JSON parse error: " + e.getMessage());
                             retError.put("error", "parse_error");
                             callback.callback(retError);
+                        }
+                    }
+                }
+            );
+    }
+
+    public void listChannels(final Callback callback) {
+        String channelUrl = this.channelUrl;
+        if (channelUrl == null || channelUrl.isEmpty()) {
+            logger.error("Channel URL is not set");
+            final Map<String, Object> retError = new HashMap<>();
+            retError.put("message", "Channel URL is not set");
+            retError.put("error", "missing_config");
+            callback.callback(retError);
+            return;
+        }
+
+        // Auto-detect values
+        String appId = this.appId;
+        String platform = "android";
+        boolean isEmulator = this.isEmulator();
+        boolean isProd = this.isProd();
+
+        // Build URL with query parameters
+        HttpUrl.Builder urlBuilder = HttpUrl.parse(channelUrl).newBuilder();
+        urlBuilder.addQueryParameter("app_id", appId);
+        urlBuilder.addQueryParameter("platform", platform);
+        urlBuilder.addQueryParameter("is_emulator", String.valueOf(isEmulator));
+        urlBuilder.addQueryParameter("is_prod", String.valueOf(isProd));
+
+        Request request = new Request.Builder()
+            .url(urlBuilder.build())
+            .get()
+            .build();
+
+        client
+            .newCall(request)
+            .enqueue(
+                new okhttp3.Callback() {
+                    @Override
+                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                        Map<String, Object> retError = new HashMap<>();
+                        retError.put("message", "Request failed: " + e.getMessage());
+                        retError.put("error", "network_error");
+                        callback.callback(retError);
+                    }
+
+                    @Override
+                    public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                        try (ResponseBody responseBody = response.body()) {
+                            if (!response.isSuccessful()) {
+                                Map<String, Object> retError = new HashMap<>();
+                                retError.put("message", "Server error: " + response.code());
+                                retError.put("error", "response_error");
+                                callback.callback(retError);
+                                return;
+                            }
+
+                            assert responseBody != null;
+                            String data = responseBody.string();
+                            
+                            try {
+                                Map<String, Object> ret = new HashMap<>();
+                                
+                                try {
+                                    // Try to parse as direct array first
+                                    JSONArray channelsJson = new JSONArray(data);
+                                    List<Map<String, Object>> channelsList = new ArrayList<>();
+                                    
+                                    for (int i = 0; i < channelsJson.length(); i++) {
+                                        JSONObject channelJson = channelsJson.getJSONObject(i);
+                                        Map<String, Object> channel = new HashMap<>();
+                                        channel.put("id", channelJson.optString("id", ""));
+                                        channel.put("name", channelJson.optString("name", ""));
+                                        channel.put("public", channelJson.optBoolean("public", false));
+                                        channel.put("allow_self_set", channelJson.optBoolean("allow_self_set", false));
+                                        channelsList.add(channel);
+                                    }
+                                    
+                                    // Wrap in channels object for JS API
+                                    ret.put("channels", channelsList);
+                                    
+                                    logger.info("Channels listed successfully");
+                                    callback.callback(ret);
+                                    
+                                } catch (JSONException arrayException) {
+                                    // If not an array, try to parse as error object
+                                    try {
+                                        JSONObject json = new JSONObject(data);
+                                        if (json.has("error")) {
+                                            Map<String, Object> retError = new HashMap<>();
+                                            retError.put("message", json.getString("error"));
+                                            retError.put("error", "server_error");
+                                            callback.callback(retError);
+                                            return;
+                                        }
+                                    } catch (JSONException objException) {
+                                        // If neither array nor object, throw parse error
+                                        throw arrayException;
+                                    }
+                                }
+                            } catch (JSONException e) {
+                                Map<String, Object> retError = new HashMap<>();
+                                retError.put("message", "JSON parse error: " + e.getMessage());
+                                retError.put("error", "parse_error");
+                                callback.callback(retError);
+                            }
                         }
                     }
                 }
