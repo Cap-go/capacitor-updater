@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [7.6.0](https://github.com/Cap-go/capacitor-updater/compare/7.5.1...7.6.0) (2025-06-29)
+
+
+### Features
+
+* auto hide splashscreen ([d3cdc06](https://github.com/Cap-go/capacitor-updater/commit/d3cdc0618f24dc9521be70a20599a4181c275ef0))
+* auto hide splashscreen ([d110d39](https://github.com/Cap-go/capacitor-updater/commit/d110d390b5a2e8c6d21a17d6edac48d0bb3dc7db))
+
+
+### Bug Fixes
+
+* lint ([fadb747](https://github.com/Cap-go/capacitor-updater/commit/fadb7470bbb1f28e9ca0cb73f613b11faa88bc28))
+
 ### [7.5.1](https://github.com/Cap-go/capacitor-updater/compare/7.5.0...7.5.1) (2025-06-29)
 
 
