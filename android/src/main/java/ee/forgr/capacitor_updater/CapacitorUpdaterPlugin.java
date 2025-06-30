@@ -282,7 +282,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void sendReadyToJs(final BundleInfo current, final String msg) {
-        logger.info("sendReadyToJs");
+        logger.info("sendReadyToJs: " + msg);
         final JSObject ret = new JSObject();
         ret.put("bundle", mapToJSObject(current.toJSONMap()));
         ret.put("status", msg);
@@ -301,18 +301,18 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private void hideSplashscreen() {
         try {
-            // Create a simple PluginCall for the hide method
-            PluginCall call = new PluginCall(
-                null, // MessageHandler - can be null for this use case
-                "hideSplashscreen",
-                "hide",
-                "autoHideSplashscreen",
-                new JSObject()
-            );
-
-            // Use bridge's callPluginMethod to call SplashScreen.hide()
-            getBridge().callPluginMethod("SplashScreen", "hide", call);
-            logger.info("Splashscreen hidden automatically via callPluginMethod");
+            // Use JavaScript evaluation to hide the splashscreen - simpler and more reliable
+            getBridge().getWebView().post(() -> {
+                getBridge().eval(
+                    "(function() { " +
+                    "  if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SplashScreen) { " +
+                    "    window.Capacitor.Plugins.SplashScreen.hide(); " +
+                    "  } " +
+                    "})()",
+                    null
+                );
+            });
+            logger.info("Splashscreen hidden automatically via JavaScript");
         } catch (Exception e) {
             logger.error("Error hiding splashscreen: " + e.getMessage());
         }
