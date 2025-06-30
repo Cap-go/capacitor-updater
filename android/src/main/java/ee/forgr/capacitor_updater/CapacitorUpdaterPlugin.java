@@ -302,16 +302,19 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private void hideSplashscreen() {
         try {
             // Use JavaScript evaluation to hide the splashscreen - simpler and more reliable
-            getBridge().getWebView().post(() -> {
-                getBridge().eval(
-                    "(function() { " +
-                    "  if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SplashScreen) { " +
-                    "    window.Capacitor.Plugins.SplashScreen.hide(); " +
-                    "  } " +
-                    "})()",
-                    null
-                );
-            });
+            getBridge()
+                .getWebView()
+                .post(() -> {
+                    getBridge()
+                        .eval(
+                            "(function() { " +
+                            "  if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SplashScreen) { " +
+                            "    window.Capacitor.Plugins.SplashScreen.hide(); " +
+                            "  } " +
+                            "})()",
+                            null
+                        );
+                });
             logger.info("Splashscreen hidden automatically via JavaScript");
         } catch (Exception e) {
             logger.error("Error hiding splashscreen: " + e.getMessage());
