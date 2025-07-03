@@ -282,36 +282,40 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void sendReadyToJs(final BundleInfo current, final String msg) {
+        sendReadyToJs(current, msg, false);
+    }
+
+    private void sendReadyToJs(final BundleInfo current, final String msg, final boolean isDirectUpdate) {
         logger.info("sendReadyToJs: " + msg);
         final JSObject ret = new JSObject();
         ret.put("bundle", mapToJSObject(current.toJSONMap()));
         ret.put("status", msg);
-        startNewThread(() -> {
-            logger.info("semaphoreReady sendReadyToJs");
-            semaphoreWait(CapacitorUpdaterPlugin.this.appReadyTimeout);
-            logger.info("semaphoreReady sendReadyToJs done");
-            CapacitorUpdaterPlugin.this.notifyListeners("appReady", ret);
 
-            // Auto hide splashscreen if enabled
-            if (CapacitorUpdaterPlugin.this.autoSplashscreen && CapacitorUpdaterPlugin.this.shouldUseDirectUpdate()) {
-                CapacitorUpdaterPlugin.this.hideSplashscreen();
-            }
-        });
+        // No need to wait for semaphore anymore since _reload() has already waited
+        this.notifyListeners("appReady", ret);
+
+        // Auto hide splashscreen if enabled and this is a direct update
+        if (this.autoSplashscreen && isDirectUpdate) {
+            this.hideSplashscreen();
+        }
     }
 
     private void hideSplashscreen() {
         try {
             // Use JavaScript evaluation to hide the splashscreen - simpler and more reliable
-            getBridge().getWebView().post(() -> {
-                getBridge().eval(
-                    "(function() { " +
-                    "  if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SplashScreen) { " +
-                    "    window.Capacitor.Plugins.SplashScreen.hide(); " +
-                    "  } " +
-                    "})()",
-                    null
-                );
-            });
+            getBridge()
+                .getWebView()
+                .post(() -> {
+                    getBridge()
+                        .eval(
+                            "(function() { " +
+                            "  if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SplashScreen) { " +
+                            "    window.Capacitor.Plugins.SplashScreen.hide(); " +
+                            "  } " +
+                            "})()",
+                            null
+                        );
+                });
             logger.info("Splashscreen hidden automatically via JavaScript");
         } catch (Exception e) {
             logger.error("Error hiding splashscreen: " + e.getMessage());
@@ -354,7 +358,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private void directUpdateFinish(final BundleInfo latest) {
         CapacitorUpdaterPlugin.this.implementation.set(latest);
         CapacitorUpdaterPlugin.this._reload();
-        sendReadyToJs(latest, "update installed");
+        sendReadyToJs(latest, "update installed", true);
     }
 
     private void cleanupObsoleteVersions() {
@@ -766,6 +770,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
         this.checkAppReady();
         this.notifyListeners("appReloaded", new JSObject());
+
+        // Wait for the reload to complete (until notifyAppReady is called)
+        this.semaphoreWait(this.appReadyTimeout);
+
         return true;
     }
 
@@ -1104,6 +1112,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void endBackGroundTaskWithNotif(String msg, String latestVersionName, BundleInfo current, Boolean error) {
+        endBackGroundTaskWithNotif(msg, latestVersionName, current, error, false);
+    }
+
+    private void endBackGroundTaskWithNotif(
+        String msg,
+        String latestVersionName,
+        BundleInfo current,
+        Boolean error,
+        Boolean isDirectUpdate
+    ) {
         if (error) {
             logger.info(
                 "endBackGroundTaskWithNotif error: " +
@@ -1121,7 +1139,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final JSObject ret = new JSObject();
         ret.put("bundle", mapToJSObject(current.toJSONMap()));
         this.notifyListeners("noNeedUpdate", ret);
-        this.sendReadyToJs(current, msg);
+        this.sendReadyToJs(current, msg, isDirectUpdate);
         this.backgroundDownloadTask = null;
         logger.info("endBackGroundTaskWithNotif " + msg);
     }
@@ -1146,7 +1164,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     jsRes.getString("message"),
                                     current.getVersionName(),
                                     current,
-                                    true
+                                    true,
+                                    shouldDirectUpdate
                                 );
                             return;
                         }
@@ -1162,7 +1181,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                         "Updated to builtin version",
                                         latestVersionName,
                                         CapacitorUpdaterPlugin.this.implementation.getCurrentBundle(),
-                                        false
+                                        false,
+                                        true
                                     );
                             } else {
                                 logger.info("Setting next bundle to builtin");
@@ -1183,7 +1203,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     "Error no url or wrong format",
                                     current.getVersionName(),
                                     current,
-                                    true
+                                    true,
+                                    shouldDirectUpdate
                                 );
                             return;
                         }
@@ -1201,7 +1222,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                             "Latest bundle already exists, and is in error state. Aborting update.",
                                             latestVersionName,
                                             current,
-                                            true
+                                            true,
+                                            shouldDirectUpdate
                                         );
                                     return;
                                 }
@@ -1218,7 +1240,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                                     "Update delayed until delay conditions met",
                                                     latestVersionName,
                                                     latest,
-                                                    false
+                                                    false,
+                                                    shouldDirectUpdate
                                                 );
                                             return;
                                         }
@@ -1228,7 +1251,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                                 "Update installed",
                                                 latestVersionName,
                                                 latest,
-                                                false
+                                                false,
+                                                true
                                             );
                                     } else {
                                         CapacitorUpdaterPlugin.this.notifyListeners("updateAvailable", ret);
@@ -1295,7 +1319,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                             "Error downloading file",
                                             latestVersionName,
                                             CapacitorUpdaterPlugin.this.implementation.getCurrentBundle(),
-                                            true
+                                            true,
+                                            shouldDirectUpdate
                                         );
                                 }
                             });
@@ -1309,7 +1334,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                 "Error parsing JSON",
                                 current.getVersionName(),
                                 current,
-                                true
+                                true,
+                                shouldDirectUpdate
                             );
                     }
                 });
