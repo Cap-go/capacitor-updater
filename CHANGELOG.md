@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [7.7.0](https://github.com/Cap-go/capacitor-updater/compare/7.6.1...7.7.0) (2025-07-03)
+
+
+### Features
+
+* wrap android lifecycle methods with try-catch ([b589888](https://github.com/Cap-go/capacitor-updater/commit/b5898888029e1c6e2824f302dc80667ac00d1bc2))
+
+
+### Bug Fixes
+
+* auto hide android ([8c450f5](https://github.com/Cap-go/capacitor-updater/commit/8c450f5581fbaeec110142dc4f1b6a0a16aec5a9))
+
 ### [7.6.1](https://github.com/Cap-go/capacitor-updater/compare/7.6.0...7.6.1) (2025-06-30)
 
 
