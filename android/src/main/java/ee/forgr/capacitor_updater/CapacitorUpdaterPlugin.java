@@ -302,16 +302,19 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private void hideSplashscreen() {
         try {
             // Use JavaScript evaluation to hide the splashscreen - simpler and more reliable
-            getBridge().getWebView().post(() -> {
-                getBridge().eval(
-                    "(function() { " +
-                    "  if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SplashScreen) { " +
-                    "    window.Capacitor.Plugins.SplashScreen.hide(); " +
-                    "  } " +
-                    "})()",
-                    null
-                );
-            });
+            getBridge()
+                .getWebView()
+                .post(() -> {
+                    getBridge()
+                        .eval(
+                            "(function() { " +
+                            "  if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SplashScreen) { " +
+                            "    window.Capacitor.Plugins.SplashScreen.hide(); " +
+                            "  } " +
+                            "})()",
+                            null
+                        );
+                });
             logger.info("Splashscreen hidden automatically via JavaScript");
         } catch (Exception e) {
             logger.error("Error hiding splashscreen: " + e.getMessage());
@@ -1455,62 +1458,82 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     @Override
     public void handleOnStart() {
-        if (isPreviousMainActivity) {
-            this.appMovedToForeground();
-        }
-        logger.info("onActivityStarted " + getActivity().getClass().getName());
-        isPreviousMainActivity = true;
-
-        // Initialize shake menu if enabled and activity is BridgeActivity
-        if (shakeMenuEnabled && getActivity() instanceof com.getcapacitor.BridgeActivity && shakeMenu == null) {
-            try {
-                shakeMenu = new ShakeMenu(this, (com.getcapacitor.BridgeActivity) getActivity(), logger);
-                logger.info("Shake menu initialized");
-            } catch (Exception e) {
-                logger.error("Failed to initialize shake menu: " + e.getMessage());
+        try {
+            if (isPreviousMainActivity) {
+                this.appMovedToForeground();
             }
+            logger.info("onActivityStarted " + getActivity().getClass().getName());
+            isPreviousMainActivity = true;
+
+            // Initialize shake menu if enabled and activity is BridgeActivity
+            if (shakeMenuEnabled && getActivity() instanceof com.getcapacitor.BridgeActivity && shakeMenu == null) {
+                try {
+                    shakeMenu = new ShakeMenu(this, (com.getcapacitor.BridgeActivity) getActivity(), logger);
+                    logger.info("Shake menu initialized");
+                } catch (Exception e) {
+                    logger.error("Failed to initialize shake menu: " + e.getMessage());
+                }
+            }
+        } catch (Exception e) {
+            logger.error("Failed to run handleOnStart: " + e.getMessage());
         }
     }
 
     @Override
     public void handleOnStop() {
-        isPreviousMainActivity = isMainActivity();
-        if (isPreviousMainActivity) {
-            this.appMovedToBackground();
+        try {
+            isPreviousMainActivity = isMainActivity();
+            if (isPreviousMainActivity) {
+                this.appMovedToBackground();
+            }
+        } catch (Exception e) {
+            logger.error("Failed to run handleOnStop: " + e.getMessage());
         }
     }
 
     @Override
     public void handleOnResume() {
-        if (backgroundTask != null && taskRunning) {
-            backgroundTask.interrupt();
+        try {
+            if (backgroundTask != null && taskRunning) {
+                backgroundTask.interrupt();
+            }
+            this.implementation.activity = getActivity();
+        } catch (Exception e) {
+            logger.error("Failed to run handleOnResume: " + e.getMessage());
         }
-        this.implementation.activity = getActivity();
     }
 
     @Override
     public void handleOnPause() {
-        this.implementation.activity = getActivity();
+        try {
+            this.implementation.activity = getActivity();
+        } catch (Exception e) {
+            logger.error("Failed to run handleOnPause: " + e.getMessage());
+        }
     }
 
     @Override
     public void handleOnDestroy() {
-        logger.info("onActivityDestroyed " + getActivity().getClass().getName());
-        this.implementation.activity = getActivity();
-        counterActivityCreate--;
-        if (counterActivityCreate == 0) {
-            this.appKilled();
-        }
-
-        // Clean up shake menu
-        if (shakeMenu != null) {
-            try {
-                shakeMenu.stop();
-                shakeMenu = null;
-                logger.info("Shake menu cleaned up");
-            } catch (Exception e) {
-                logger.error("Failed to clean up shake menu: " + e.getMessage());
+        try {
+            logger.info("onActivityDestroyed " + getActivity().getClass().getName());
+            this.implementation.activity = getActivity();
+            counterActivityCreate--;
+            if (counterActivityCreate == 0) {
+                this.appKilled();
             }
+
+            // Clean up shake menu
+            if (shakeMenu != null) {
+                try {
+                    shakeMenu.stop();
+                    shakeMenu = null;
+                    logger.info("Shake menu cleaned up");
+                } catch (Exception e) {
+                    logger.error("Failed to clean up shake menu: " + e.getMessage());
+                }
+            }
+        } catch (Exception e) {
+            logger.error("Failed to run handleOnDestroy: " + e.getMessage());
         }
     }
 
