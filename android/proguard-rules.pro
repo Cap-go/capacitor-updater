@@ -20,9 +20,11 @@
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
 
-# Necessary for Gson Deserialization
--keepattributes *Annotation*
+# Necessary for Gson Deserialization and generic type info
+-keepattributes *Annotation*, Signature
 
-# Necessary for Gson Deserialization
--keep class ee.forgr.capacitor_updater.DelayCondition { *; }
--keepattributes Signature
+# Preserve the entire Capgo plugin package
+-keep class ee.forgr.capacitor_updater.** { *; }
+
+# Keep all Guava reflect types (required for TypeToken)
+-keep class com.google.common.reflect.** { *; }
