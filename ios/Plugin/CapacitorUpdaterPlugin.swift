@@ -643,7 +643,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.semaphoreDown()
         let bundle = self.implementation.getCurrentBundle()
         self.implementation.setSuccess(bundle: bundle, autoDeletePrevious: self.autoDeletePrevious)
-        logger.info("Current bundle loaded successfully. ['notifyAppReady()' was called] \(bundle.toString())")
+        logger.info("Current bundle loaded successfully. [notifyAppReady was called] \(bundle.toString())")
         call.resolve(["bundle": bundle.toJSON()])
     }
 
