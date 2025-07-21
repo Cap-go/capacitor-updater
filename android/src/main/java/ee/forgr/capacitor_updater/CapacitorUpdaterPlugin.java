@@ -1148,6 +1148,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private Thread backgroundDownload() {
         boolean shouldDirectUpdate = this.shouldUseDirectUpdate();
+        this.implementation.directUpdate = shouldDirectUpdate;
         String messageUpdate = shouldDirectUpdate ? "Update will occur now." : "Update will occur next time app moves to background.";
         return startNewThread(() -> {
             logger.info("Check for update via: " + CapacitorUpdaterPlugin.this.updateUrl);
