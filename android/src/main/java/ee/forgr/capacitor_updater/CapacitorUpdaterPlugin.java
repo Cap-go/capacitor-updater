@@ -308,11 +308,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 .post(() -> {
                     getBridge()
                         .eval(
-                            "(function() { " +
-                            "  if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SplashScreen) { " +
-                            "    window.Capacitor.Plugins.SplashScreen.hide(); " +
-                            "  } " +
-                            "})()",
+                            """
+                            (function() {
+                              if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SplashScreen) {
+                                window.Capacitor.Plugins.SplashScreen.hide();
+                              }
+                            })()
+                            """,
                             null
                         );
                 });

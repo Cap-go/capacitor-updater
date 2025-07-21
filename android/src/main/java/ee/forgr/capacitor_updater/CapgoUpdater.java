@@ -233,6 +233,7 @@ public class CapgoUpdater {
                             notifyDownload(id, percent);
                             break;
                         case SUCCEEDED:
+                            logger.info("Download succeeded: " + workInfo.getState());
                             Data outputData = workInfo.getOutputData();
                             String dest = outputData.getString(DownloadService.FILEDEST);
                             String version = outputData.getString(DownloadService.VERSION);
@@ -384,8 +385,11 @@ public class CapgoUpdater {
 
             final Map<String, Object> ret = new HashMap<>();
             ret.put("bundle", next.toJSONMap());
+            logger.info("updateAvailable: " + ret);
             CapgoUpdater.this.notifyListeners("updateAvailable", ret);
+            logger.info("setNext: " + setNext);
             if (setNext) {
+                logger.info("directUpdate: " + this.directUpdate);
                 if (this.directUpdate) {
                     CapgoUpdater.this.directUpdateFinish(next);
                     this.directUpdate = false;
