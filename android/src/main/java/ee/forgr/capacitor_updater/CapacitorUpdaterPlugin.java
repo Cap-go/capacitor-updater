@@ -1485,9 +1485,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
     public void handleOnStart() {
         try {
             if (isPreviousMainActivity) {
+                logger.info("handleOnStart: appMovedToForeground");
                 this.appMovedToForeground();
             }
-            logger.info("onActivityStarted " + getActivity().getClass().getName());
+            logger.info("handleOnStart: onActivityStarted " + getActivity().getClass().getName());
             isPreviousMainActivity = true;
 
             // Initialize shake menu if enabled and activity is BridgeActivity
@@ -1509,6 +1510,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         try {
             isPreviousMainActivity = isMainActivity();
             if (isPreviousMainActivity) {
+                logger.info("handleOnStop: appMovedToBackground");
                 this.appMovedToBackground();
             }
         } catch (Exception e) {

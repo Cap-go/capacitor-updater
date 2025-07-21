@@ -183,7 +183,7 @@ public class DelayUpdateUtils {
         try {
             this.editor.putLong(BACKGROUND_TIMESTAMP_KEY, backgroundTimestamp);
             this.editor.commit();
-            logger.info("Delay update saved");
+            logger.info("Background timestamp set");
         } catch (final Exception e) {
             logger.error("Failed to delay update, [Error calling '_setBackgroundTimestamp()'] " + e.getMessage());
         }
@@ -193,7 +193,7 @@ public class DelayUpdateUtils {
         try {
             this.editor.remove(BACKGROUND_TIMESTAMP_KEY);
             this.editor.commit();
-            logger.info("Delay update saved");
+            logger.info("Background timestamp unset");
         } catch (final Exception e) {
             logger.error("Failed to delay update, [Error calling '_unsetBackgroundTimestamp()'] " + e.getMessage());
         }
