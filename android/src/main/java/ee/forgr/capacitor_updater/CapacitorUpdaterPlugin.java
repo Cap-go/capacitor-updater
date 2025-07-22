@@ -340,18 +340,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private void showSplashscreen() {
         try {
-            // Check if bridge is ready
-            if (getBridge() == null) {
-                logger.warn("Bridge not ready for showing splashscreen with autoSplashscreen. Retrying in 100ms.");
-                new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(
-                    () -> {
-                        showSplashscreen(); // Retry once
-                    },
-                    100
-                );
-                return;
-            }
-
             // Try to call the SplashScreen plugin directly through the bridge
             PluginHandle splashScreenPlugin = getBridge().getPlugin("SplashScreen");
             if (splashScreenPlugin != null) {
