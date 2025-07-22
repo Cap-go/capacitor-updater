@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [7.8.0](https://github.com/Cap-go/capacitor-updater/compare/7.7.10...7.8.0) (2025-07-22)
+
+
+### Features
+
+* add automatic splashscreen display on app backgrounding for both Android and iOS ([09bf6a2](https://github.com/Cap-go/capacitor-updater/commit/09bf6a27150ddd7cfb191ab61b1c8f4fe8c4ddf2))
+
 ### [7.7.10](https://github.com/Cap-go/capacitor-updater/compare/7.7.9...7.7.10) (2025-07-21)
 
 ### [7.7.9](https://github.com/Cap-go/capacitor-updater/compare/7.7.8...7.7.9) (2025-07-21)
