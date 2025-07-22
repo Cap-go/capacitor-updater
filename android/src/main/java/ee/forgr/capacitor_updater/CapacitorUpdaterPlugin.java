@@ -324,6 +324,30 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
+    private void showSplashscreen() {
+        try {
+            // Use JavaScript evaluation to show the splashscreen - simpler and more reliable
+            getBridge()
+                .getWebView()
+                .post(() -> {
+                    getBridge()
+                        .eval(
+                            """
+                            (function() {
+                              if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SplashScreen) {
+                                window.Capacitor.Plugins.SplashScreen.show();
+                              }
+                            })()
+                            """,
+                            null
+                        );
+                });
+            logger.info("Splashscreen shown automatically via JavaScript");
+        } catch (Exception e) {
+            logger.error("Error showing splashscreen: " + e.getMessage());
+        }
+    }
+
     private boolean checkIfRecentlyInstalledOrUpdated() {
         String currentVersion = this.currentVersionNative.getOriginalString();
         String lastKnownVersion = this.prefs.getString("LatestVersionNative", "");
@@ -1444,6 +1468,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
         CapacitorUpdaterPlugin.this.implementation.sendStats("app_moved_to_background", current.getVersionName());
         logger.info("Checking for pending update");
+        
+        // Show splashscreen if autoSplashscreen is enabled
+        if (this.autoSplashscreen) {
+            this.showSplashscreen();
+        }
+        
         try {
             // We need to set "backgrounded time"
             this.delayUpdateUtils.setBackgroundTimestamp(System.currentTimeMillis());

@@ -809,6 +809,36 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    private func showSplashscreen() {
+        DispatchQueue.main.async {
+            guard let bridge = self.bridge else {
+                self.logger.warn("Bridge not available for showing splashscreen")
+                return
+            }
+
+            // Create a plugin call for the show method
+            let call = CAPPluginCall(callbackId: "autoShowSplashscreen", options: [:], success: { (_, _) in
+                self.logger.info("Splashscreen shown automatically")
+            }, error: { (_) in
+                self.logger.error("Failed to auto-show splashscreen")
+            })
+
+            // Try to call the SplashScreen show method directly through the bridge
+            if let splashScreenPlugin = bridge.plugin(withName: "SplashScreen") {
+                // Use runtime method invocation to call show method
+                let selector = NSSelectorFromString("show:")
+                if splashScreenPlugin.responds(to: selector) {
+                    _ = splashScreenPlugin.perform(selector, with: call)
+                    self.logger.info("Called SplashScreen show method")
+                } else {
+                    self.logger.warn("SplashScreen plugin does not respond to show: method")
+                }
+            } else {
+                self.logger.warn("SplashScreen plugin not found")
+            }
+        }
+    }
+
     private func checkIfRecentlyInstalledOrUpdated() -> Bool {
         let userDefaults = UserDefaults.standard
         let currentVersion = self.currentVersionNative.description
@@ -1067,6 +1097,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         let current: BundleInfo = self.implementation.getCurrentBundle()
         self.implementation.sendStats(action: "app_moved_to_background", versionName: current.getVersionName())
         logger.info("Check for pending update")
+
+        // Show splashscreen if autoSplashscreen is enabled
+        if self.autoSplashscreen {
+            self.showSplashscreen()
+        }
 
         // Set background timestamp
         let backgroundTimestamp = Int64(Date().timeIntervalSince1970 * 1000) // Convert to milliseconds
