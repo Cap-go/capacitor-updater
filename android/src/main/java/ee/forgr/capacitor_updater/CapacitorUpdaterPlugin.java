@@ -19,6 +19,7 @@ import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
+import com.getcapacitor.PluginHandle;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.plugin.WebView;
@@ -29,11 +30,9 @@ import java.io.IOException;
 import java.lang.reflect.Type;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -294,57 +293,98 @@ public class CapacitorUpdaterPlugin extends Plugin {
         // No need to wait for semaphore anymore since _reload() has already waited
         this.notifyListeners("appReady", ret);
 
-        // Auto hide splashscreen if enabled and this is a direct update
-        if (this.autoSplashscreen && isDirectUpdate) {
+        // Auto hide splashscreen if enabled
+        // We show it on background when conditions are met, so we should hide it on foreground regardless of update outcome
+        if (this.autoSplashscreen) {
             this.hideSplashscreen();
         }
     }
 
     private void hideSplashscreen() {
         try {
-            // Use JavaScript evaluation to hide the splashscreen - simpler and more reliable
-            getBridge()
-                .getWebView()
-                .post(() -> {
-                    getBridge()
-                        .eval(
-                            """
-                            (function() {
-                              if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SplashScreen) {
-                                window.Capacitor.Plugins.SplashScreen.hide();
-                              }
-                            })()
-                            """,
-                            null
-                        );
-                });
-            logger.info("Splashscreen hidden automatically via JavaScript");
+            // Try to call the SplashScreen plugin directly through the bridge
+            PluginHandle splashScreenPlugin = getBridge().getPlugin("SplashScreen");
+            if (splashScreenPlugin != null) {
+                try {
+                    // Create a plugin call for the hide method using reflection to access private msgHandler
+                    JSObject options = new JSObject();
+                    java.lang.reflect.Field msgHandlerField = getBridge().getClass().getDeclaredField("msgHandler");
+                    msgHandlerField.setAccessible(true);
+                    Object msgHandler = msgHandlerField.get(getBridge());
+
+                    PluginCall call = new PluginCall(
+                        (com.getcapacitor.MessageHandler) msgHandler,
+                        "autoHideSplashscreen",
+                        PluginCall.CALLBACK_ID_DANGLING,
+                        "hide",
+                        options
+                    );
+
+                    // Call the hide method directly
+                    splashScreenPlugin.invoke("hide", call);
+                    logger.info("Splashscreen hidden automatically via direct plugin call");
+                } catch (Exception e) {
+                    logger.error("Failed to call SplashScreen hide method: " + e.getMessage());
+                }
+            } else {
+                logger.warn("autoSplashscreen: SplashScreen plugin not found. Install @capacitor/splash-screen plugin.");
+            }
         } catch (Exception e) {
-            logger.error("Error hiding splashscreen: " + e.getMessage());
+            logger.error(
+                "Error hiding splashscreen with autoSplashscreen: " +
+                e.getMessage() +
+                ". Make sure @capacitor/splash-screen plugin is installed and configured."
+            );
         }
     }
 
     private void showSplashscreen() {
         try {
-            // Use JavaScript evaluation to show the splashscreen - simpler and more reliable
-            getBridge()
-                .getWebView()
-                .post(() -> {
-                    getBridge()
-                        .eval(
-                            """
-                            (function() {
-                              if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SplashScreen) {
-                                window.Capacitor.Plugins.SplashScreen.show();
-                              }
-                            })()
-                            """,
-                            null
-                        );
-                });
-            logger.info("Splashscreen shown automatically via JavaScript");
+            // Check if bridge is ready
+            if (getBridge() == null) {
+                logger.warn("Bridge not ready for showing splashscreen with autoSplashscreen. Retrying in 100ms.");
+                new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(
+                    () -> {
+                        showSplashscreen(); // Retry once
+                    },
+                    100
+                );
+                return;
+            }
+
+            // Try to call the SplashScreen plugin directly through the bridge
+            PluginHandle splashScreenPlugin = getBridge().getPlugin("SplashScreen");
+            if (splashScreenPlugin != null) {
+                try {
+                    // Create a plugin call for the show method using reflection to access private msgHandler
+                    JSObject options = new JSObject();
+                    java.lang.reflect.Field msgHandlerField = getBridge().getClass().getDeclaredField("msgHandler");
+                    msgHandlerField.setAccessible(true);
+                    Object msgHandler = msgHandlerField.get(getBridge());
+
+                    PluginCall call = new PluginCall(
+                        (com.getcapacitor.MessageHandler) msgHandler,
+                        "autoShowSplashscreen",
+                        PluginCall.CALLBACK_ID_DANGLING,
+                        "show",
+                        options
+                    );
+
+                    // Call the show method directly
+                    splashScreenPlugin.invoke("show", call);
+                    logger.info("Splashscreen shown automatically via direct plugin call");
+                } catch (Exception e) {
+                    logger.error("Failed to call SplashScreen show method: " + e.getMessage());
+                }
+            } else {
+                logger.warn("autoSplashscreen: SplashScreen plugin not found. Install @capacitor/splash-screen plugin.");
+            }
         } catch (Exception e) {
-            logger.error("Error showing splashscreen: " + e.getMessage());
+            logger.error(
+                "Error showing splashscreen with autoSplashscreen: " +
+                e.getMessage() +
+                ". Make sure @capacitor/splash-screen plugin is installed and configured."
+            );
         }
     }
 
@@ -1176,19 +1216,17 @@ public class CapacitorUpdaterPlugin extends Plugin {
         String messageUpdate = shouldDirectUpdate ? "Update will occur now." : "Update will occur next time app moves to background.";
         return startNewThread(() -> {
             logger.info("Check for update via: " + CapacitorUpdaterPlugin.this.updateUrl);
-            CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.updateUrl, null, res -> {
-                    JSObject jsRes = mapToJSObject(res);
-                    final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
-                    try {
-                        if (jsRes.has("message")) {
-                            logger.info("API message: " + jsRes.get("message"));
-                            if (jsRes.has("major") && jsRes.getBoolean("major") && jsRes.has("version")) {
-                                final JSObject majorAvailable = new JSObject();
-                                majorAvailable.put("version", jsRes.getString("version"));
-                                CapacitorUpdaterPlugin.this.notifyListeners("majorAvailable", majorAvailable);
-                            }
+            try {
+                CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.updateUrl, null, res -> {
+                        JSObject jsRes = mapToJSObject(res);
+                        final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
+
+                        // Handle network errors and other failures first
+                        if (jsRes.has("error")) {
+                            String error = jsRes.getString("error");
+                            logger.error("getLatest failed with error: " + error);
                             CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                                    jsRes.getString("message"),
+                                    "Network error: " + error,
                                     current.getVersionName(),
                                     current,
                                     true,
@@ -1197,175 +1235,216 @@ public class CapacitorUpdaterPlugin extends Plugin {
                             return;
                         }
 
-                        final String latestVersionName = jsRes.getString("version");
-
-                        if ("builtin".equals(latestVersionName)) {
-                            logger.info("Latest version is builtin");
-                            if (shouldDirectUpdate) {
-                                logger.info("Direct update to builtin version");
-                                this._reset(false);
+                        try {
+                            if (jsRes.has("message")) {
+                                logger.info("API message: " + jsRes.get("message"));
+                                if (jsRes.has("major") && jsRes.getBoolean("major") && jsRes.has("version")) {
+                                    final JSObject majorAvailable = new JSObject();
+                                    majorAvailable.put("version", jsRes.getString("version"));
+                                    CapacitorUpdaterPlugin.this.notifyListeners("majorAvailable", majorAvailable);
+                                }
                                 CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                                        "Updated to builtin version",
-                                        latestVersionName,
-                                        CapacitorUpdaterPlugin.this.implementation.getCurrentBundle(),
-                                        false,
-                                        true
+                                        jsRes.getString("message"),
+                                        current.getVersionName(),
+                                        current,
+                                        true,
+                                        shouldDirectUpdate
                                     );
-                            } else {
-                                logger.info("Setting next bundle to builtin");
-                                CapacitorUpdaterPlugin.this.implementation.setNextBundle(BundleInfo.ID_BUILTIN);
+                                return;
+                            }
+
+                            final String latestVersionName = jsRes.getString("version");
+
+                            if ("builtin".equals(latestVersionName)) {
+                                logger.info("Latest version is builtin");
+                                if (shouldDirectUpdate) {
+                                    logger.info("Direct update to builtin version");
+                                    this._reset(false);
+                                    CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                                            "Updated to builtin version",
+                                            latestVersionName,
+                                            CapacitorUpdaterPlugin.this.implementation.getCurrentBundle(),
+                                            false,
+                                            true
+                                        );
+                                } else {
+                                    logger.info("Setting next bundle to builtin");
+                                    CapacitorUpdaterPlugin.this.implementation.setNextBundle(BundleInfo.ID_BUILTIN);
+                                    CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                                            "Next update will be to builtin version",
+                                            latestVersionName,
+                                            current,
+                                            false
+                                        );
+                                }
+                                return;
+                            }
+
+                            if (!jsRes.has("url") || !CapacitorUpdaterPlugin.this.isValidURL(jsRes.getString("url"))) {
+                                logger.error("Error no url or wrong format");
                                 CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                                        "Next update will be to builtin version",
+                                        "Error no url or wrong format",
+                                        current.getVersionName(),
+                                        current,
+                                        true,
+                                        shouldDirectUpdate
+                                    );
+                                return;
+                            }
+
+                            if (
+                                latestVersionName != null &&
+                                !latestVersionName.isEmpty() &&
+                                !current.getVersionName().equals(latestVersionName)
+                            ) {
+                                final BundleInfo latest = CapacitorUpdaterPlugin.this.implementation.getBundleInfoByName(latestVersionName);
+                                if (latest != null) {
+                                    final JSObject ret = new JSObject();
+                                    ret.put("bundle", mapToJSObject(latest.toJSONMap()));
+                                    if (latest.isErrorStatus()) {
+                                        logger.error("Latest bundle already exists, and is in error state. Aborting update.");
+                                        CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                                                "Latest bundle already exists, and is in error state. Aborting update.",
+                                                latestVersionName,
+                                                current,
+                                                true,
+                                                shouldDirectUpdate
+                                            );
+                                        return;
+                                    }
+                                    if (latest.isDownloaded()) {
+                                        logger.info("Latest bundle already exists and download is NOT required. " + messageUpdate);
+                                        if (shouldDirectUpdate) {
+                                            Gson gson = new Gson();
+                                            String delayUpdatePreferences = prefs.getString(
+                                                DelayUpdateUtils.DELAY_CONDITION_PREFERENCES,
+                                                "[]"
+                                            );
+                                            Type type = new TypeToken<ArrayList<DelayCondition>>() {}.getType();
+                                            ArrayList<DelayCondition> delayConditionList = gson.fromJson(delayUpdatePreferences, type);
+                                            if (delayConditionList != null && !delayConditionList.isEmpty()) {
+                                                logger.info("Update delayed until delay conditions met");
+                                                CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                                                        "Update delayed until delay conditions met",
+                                                        latestVersionName,
+                                                        latest,
+                                                        false,
+                                                        shouldDirectUpdate
+                                                    );
+                                                return;
+                                            }
+                                            CapacitorUpdaterPlugin.this.implementation.set(latest);
+                                            CapacitorUpdaterPlugin.this._reload();
+                                            CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                                                    "Update installed",
+                                                    latestVersionName,
+                                                    latest,
+                                                    false,
+                                                    true
+                                                );
+                                        } else {
+                                            CapacitorUpdaterPlugin.this.notifyListeners("updateAvailable", ret);
+                                            CapacitorUpdaterPlugin.this.implementation.setNextBundle(latest.getId());
+                                            CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                                                    "update downloaded, will install next background",
+                                                    latestVersionName,
+                                                    latest,
+                                                    false
+                                                );
+                                        }
+                                        return;
+                                    }
+                                    if (latest.isDeleted()) {
+                                        logger.info("Latest bundle already exists and will be deleted, download will overwrite it.");
+                                        try {
+                                            final Boolean deleted = CapacitorUpdaterPlugin.this.implementation.delete(latest.getId(), true);
+                                            if (deleted) {
+                                                logger.info("Failed bundle deleted: " + latest.getVersionName());
+                                            }
+                                        } catch (final IOException e) {
+                                            logger.error(
+                                                "Failed to delete failed bundle: " + latest.getVersionName() + " " + e.getMessage()
+                                            );
+                                        }
+                                    }
+                                }
+                                startNewThread(() -> {
+                                    try {
+                                        logger.info(
+                                            "New bundle: " +
+                                            latestVersionName +
+                                            " found. Current is: " +
+                                            current.getVersionName() +
+                                            ". " +
+                                            messageUpdate
+                                        );
+
+                                        final String url = jsRes.getString("url");
+                                        final String sessionKey = jsRes.has("sessionKey") ? jsRes.getString("sessionKey") : "";
+                                        final String checksum = jsRes.has("checksum") ? jsRes.getString("checksum") : "";
+
+                                        if (jsRes.has("manifest")) {
+                                            // Handle manifest-based download
+                                            JSONArray manifest = jsRes.getJSONArray("manifest");
+                                            CapacitorUpdaterPlugin.this.implementation.downloadBackground(
+                                                    url,
+                                                    latestVersionName,
+                                                    sessionKey,
+                                                    checksum,
+                                                    manifest
+                                                );
+                                        } else {
+                                            // Handle single file download (existing code)
+                                            CapacitorUpdaterPlugin.this.implementation.downloadBackground(
+                                                    url,
+                                                    latestVersionName,
+                                                    sessionKey,
+                                                    checksum,
+                                                    null
+                                                );
+                                        }
+                                    } catch (final Exception e) {
+                                        logger.error("error downloading file " + e.getMessage());
+                                        CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                                                "Error downloading file",
+                                                latestVersionName,
+                                                CapacitorUpdaterPlugin.this.implementation.getCurrentBundle(),
+                                                true,
+                                                shouldDirectUpdate
+                                            );
+                                    }
+                                });
+                            } else {
+                                logger.info("No need to update, " + current.getId() + " is the latest bundle.");
+                                CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                                        "No need to update",
                                         latestVersionName,
                                         current,
                                         false
                                     );
                             }
-                            return;
-                        }
-
-                        if (!jsRes.has("url") || !CapacitorUpdaterPlugin.this.isValidURL(jsRes.getString("url"))) {
-                            logger.error("Error no url or wrong format");
+                        } catch (final JSONException e) {
+                            logger.error("error parsing JSON " + e.getMessage());
                             CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                                    "Error no url or wrong format",
+                                    "Error parsing JSON",
                                     current.getVersionName(),
                                     current,
                                     true,
                                     shouldDirectUpdate
                                 );
-                            return;
                         }
-
-                        if (
-                            latestVersionName != null && !latestVersionName.isEmpty() && !current.getVersionName().equals(latestVersionName)
-                        ) {
-                            final BundleInfo latest = CapacitorUpdaterPlugin.this.implementation.getBundleInfoByName(latestVersionName);
-                            if (latest != null) {
-                                final JSObject ret = new JSObject();
-                                ret.put("bundle", mapToJSObject(latest.toJSONMap()));
-                                if (latest.isErrorStatus()) {
-                                    logger.error("Latest bundle already exists, and is in error state. Aborting update.");
-                                    CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                                            "Latest bundle already exists, and is in error state. Aborting update.",
-                                            latestVersionName,
-                                            current,
-                                            true,
-                                            shouldDirectUpdate
-                                        );
-                                    return;
-                                }
-                                if (latest.isDownloaded()) {
-                                    logger.info("Latest bundle already exists and download is NOT required. " + messageUpdate);
-                                    if (shouldDirectUpdate) {
-                                        Gson gson = new Gson();
-                                        String delayUpdatePreferences = prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]");
-                                        Type type = new TypeToken<ArrayList<DelayCondition>>() {}.getType();
-                                        ArrayList<DelayCondition> delayConditionList = gson.fromJson(delayUpdatePreferences, type);
-                                        if (delayConditionList != null && !delayConditionList.isEmpty()) {
-                                            logger.info("Update delayed until delay conditions met");
-                                            CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                                                    "Update delayed until delay conditions met",
-                                                    latestVersionName,
-                                                    latest,
-                                                    false,
-                                                    shouldDirectUpdate
-                                                );
-                                            return;
-                                        }
-                                        CapacitorUpdaterPlugin.this.implementation.set(latest);
-                                        CapacitorUpdaterPlugin.this._reload();
-                                        CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                                                "Update installed",
-                                                latestVersionName,
-                                                latest,
-                                                false,
-                                                true
-                                            );
-                                    } else {
-                                        CapacitorUpdaterPlugin.this.notifyListeners("updateAvailable", ret);
-                                        CapacitorUpdaterPlugin.this.implementation.setNextBundle(latest.getId());
-                                        CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                                                "update downloaded, will install next background",
-                                                latestVersionName,
-                                                latest,
-                                                false
-                                            );
-                                    }
-                                    return;
-                                }
-                                if (latest.isDeleted()) {
-                                    logger.info("Latest bundle already exists and will be deleted, download will overwrite it.");
-                                    try {
-                                        final Boolean deleted = CapacitorUpdaterPlugin.this.implementation.delete(latest.getId(), true);
-                                        if (deleted) {
-                                            logger.info("Failed bundle deleted: " + latest.getVersionName());
-                                        }
-                                    } catch (final IOException e) {
-                                        logger.error("Failed to delete failed bundle: " + latest.getVersionName() + " " + e.getMessage());
-                                    }
-                                }
-                            }
-                            startNewThread(() -> {
-                                try {
-                                    logger.info(
-                                        "New bundle: " +
-                                        latestVersionName +
-                                        " found. Current is: " +
-                                        current.getVersionName() +
-                                        ". " +
-                                        messageUpdate
-                                    );
-
-                                    final String url = jsRes.getString("url");
-                                    final String sessionKey = jsRes.has("sessionKey") ? jsRes.getString("sessionKey") : "";
-                                    final String checksum = jsRes.has("checksum") ? jsRes.getString("checksum") : "";
-
-                                    if (jsRes.has("manifest")) {
-                                        // Handle manifest-based download
-                                        JSONArray manifest = jsRes.getJSONArray("manifest");
-                                        CapacitorUpdaterPlugin.this.implementation.downloadBackground(
-                                                url,
-                                                latestVersionName,
-                                                sessionKey,
-                                                checksum,
-                                                manifest
-                                            );
-                                    } else {
-                                        // Handle single file download (existing code)
-                                        CapacitorUpdaterPlugin.this.implementation.downloadBackground(
-                                                url,
-                                                latestVersionName,
-                                                sessionKey,
-                                                checksum,
-                                                null
-                                            );
-                                    }
-                                } catch (final Exception e) {
-                                    logger.error("error downloading file " + e.getMessage());
-                                    CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                                            "Error downloading file",
-                                            latestVersionName,
-                                            CapacitorUpdaterPlugin.this.implementation.getCurrentBundle(),
-                                            true,
-                                            shouldDirectUpdate
-                                        );
-                                }
-                            });
-                        } else {
-                            logger.info("No need to update, " + current.getId() + " is the latest bundle.");
-                            CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif("No need to update", latestVersionName, current, false);
-                        }
-                    } catch (final JSONException e) {
-                        logger.error("error parsing JSON " + e.getMessage());
-                        CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                                "Error parsing JSON",
-                                current.getVersionName(),
-                                current,
-                                true,
-                                shouldDirectUpdate
-                            );
-                    }
-                });
+                    });
+            } catch (final Exception e) {
+                logger.error("getLatest call failed: " + e.getMessage());
+                final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
+                CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                        "Network connection failed",
+                        current.getVersionName(),
+                        current,
+                        true,
+                        shouldDirectUpdate
+                    );
+            }
         });
     }
 
@@ -1469,9 +1548,27 @@ public class CapacitorUpdaterPlugin extends Plugin {
         CapacitorUpdaterPlugin.this.implementation.sendStats("app_moved_to_background", current.getVersionName());
         logger.info("Checking for pending update");
 
-        // Show splashscreen if autoSplashscreen is enabled
+        // Show splashscreen only if autoSplashscreen is enabled AND autoUpdate is enabled AND directUpdate would be used
         if (this.autoSplashscreen) {
-            this.showSplashscreen();
+            boolean canShowSplashscreen = true;
+
+            if (!this._isAutoUpdateEnabled()) {
+                logger.warn(
+                    "autoSplashscreen is enabled but autoUpdate is disabled. Splashscreen will not be shown. Enable autoUpdate or disable autoSplashscreen."
+                );
+                canShowSplashscreen = false;
+            }
+
+            if (!this.shouldUseDirectUpdate()) {
+                logger.warn(
+                    "autoSplashscreen is enabled but directUpdate is not configured for immediate updates. Set directUpdate to 'always' or 'atInstall', or disable autoSplashscreen."
+                );
+                canShowSplashscreen = false;
+            }
+
+            if (canShowSplashscreen) {
+                this.showSplashscreen();
+            }
         }
 
         try {

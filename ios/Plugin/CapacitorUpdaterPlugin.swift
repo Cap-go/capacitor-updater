@@ -773,7 +773,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             self.notifyListeners("appReady", data: ["bundle": current.toJSON(), "status": msg])
 
             // Auto hide splashscreen if enabled
-            if self.autoSplashscreen && self.shouldUseDirectUpdate() {
+            // We show it on background when conditions are met, so we should hide it on foreground regardless of update outcome
+            if self.autoSplashscreen {
                 self.hideSplashscreen()
             }
         }
@@ -782,7 +783,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private func hideSplashscreen() {
         DispatchQueue.main.async {
             guard let bridge = self.bridge else {
-                self.logger.warn("Bridge not available for hiding splashscreen")
+                self.logger.warn("Bridge not available for hiding splashscreen with autoSplashscreen")
                 return
             }
 
@@ -801,10 +802,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     _ = splashScreenPlugin.perform(selector, with: call)
                     self.logger.info("Called SplashScreen hide method")
                 } else {
-                    self.logger.warn("SplashScreen plugin does not respond to hide: method")
+                    self.logger.warn("autoSplashscreen: SplashScreen plugin does not respond to hide: method. Make sure @capacitor/splash-screen plugin is properly installed.")
                 }
             } else {
-                self.logger.warn("SplashScreen plugin not found")
+                self.logger.warn("autoSplashscreen: SplashScreen plugin not found. Install @capacitor/splash-screen plugin.")
             }
         }
     }
@@ -812,7 +813,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private func showSplashscreen() {
         DispatchQueue.main.async {
             guard let bridge = self.bridge else {
-                self.logger.warn("Bridge not available for showing splashscreen")
+                self.logger.warn("Bridge not available for showing splashscreen with autoSplashscreen")
                 return
             }
 
@@ -831,10 +832,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     _ = splashScreenPlugin.perform(selector, with: call)
                     self.logger.info("Called SplashScreen show method")
                 } else {
-                    self.logger.warn("SplashScreen plugin does not respond to show: method")
+                    self.logger.warn("autoSplashscreen: SplashScreen plugin does not respond to show: method. Make sure @capacitor/splash-screen plugin is properly installed.")
                 }
             } else {
-                self.logger.warn("SplashScreen plugin not found")
+                self.logger.warn("autoSplashscreen: SplashScreen plugin not found. Install @capacitor/splash-screen plugin.")
             }
         }
     }
@@ -899,6 +900,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             self.logger.info("Check for update via \(self.updateUrl)")
             let res = self.implementation.getLatest(url: url, channel: nil)
             let current = self.implementation.getCurrentBundle()
+
+            // Handle network errors and other failures first
+            if res.error != nil {
+                self.logger.error("getLatest failed with error: \(res.error ?? "")")
+                self.endBackGroundTaskWithNotif(msg: "Network error: \(res.error ?? "")", latestVersionName: res.version, current: current, error: true)
+                return
+            }
 
             if (res.message) != nil {
                 self.logger.info("API message: \(res.message ?? "")")
@@ -1098,9 +1106,23 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.implementation.sendStats(action: "app_moved_to_background", versionName: current.getVersionName())
         logger.info("Check for pending update")
 
-        // Show splashscreen if autoSplashscreen is enabled
+        // Show splashscreen only if autoSplashscreen is enabled AND autoUpdate is enabled AND directUpdate would be used
         if self.autoSplashscreen {
-            self.showSplashscreen()
+            var canShowSplashscreen = true
+
+            if !self._isAutoUpdateEnabled() {
+                logger.warn("autoSplashscreen is enabled but autoUpdate is disabled. Splashscreen will not be shown. Enable autoUpdate or disable autoSplashscreen.")
+                canShowSplashscreen = false
+            }
+
+            if !self.shouldUseDirectUpdate() {
+                logger.warn("autoSplashscreen is enabled but directUpdate is not configured for immediate updates. Set directUpdate to 'always' or 'atInstall', or disable autoSplashscreen.")
+                canShowSplashscreen = false
+            }
+
+            if canShowSplashscreen {
+                self.showSplashscreen()
+            }
         }
 
         // Set background timestamp

@@ -140,6 +140,7 @@ declare module '@capacitor/cli' {
        * This removes the need to manually listen for appReady events and call SplashScreen.hide().
        * Only works when directUpdate is set to "atInstall", "always", or true.
        * Requires the @capacitor/splash-screen plugin to be installed and configured with launchAutoHide: false.
+       * Requires autoUpdate and directUpdate to be enabled.
        *
        * Only available for Android and iOS.
        *
