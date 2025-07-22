@@ -1468,12 +1468,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
         CapacitorUpdaterPlugin.this.implementation.sendStats("app_moved_to_background", current.getVersionName());
         logger.info("Checking for pending update");
-        
+
         // Show splashscreen if autoSplashscreen is enabled
         if (this.autoSplashscreen) {
             this.showSplashscreen();
         }
-        
+
         try {
             // We need to set "backgrounded time"
             this.delayUpdateUtils.setBackgroundTimestamp(System.currentTimeMillis());
