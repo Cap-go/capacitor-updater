@@ -314,8 +314,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
                     PluginCall call = new PluginCall(
                         (com.getcapacitor.MessageHandler) msgHandler,
-                        "autoHideSplashscreen",
-                        PluginCall.CALLBACK_ID_DANGLING,
+                        "SplashScreen",
+                        "FAKE_CALLBACK_ID_HIDE",
                         "hide",
                         options
                     );
@@ -340,39 +340,52 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private void showSplashscreen() {
         try {
-            // Try to call the SplashScreen plugin directly through the bridge
-            PluginHandle splashScreenPlugin = getBridge().getPlugin("SplashScreen");
-            if (splashScreenPlugin != null) {
-                try {
-                    // Create a plugin call for the show method using reflection to access private msgHandler
-                    JSObject options = new JSObject();
-                    java.lang.reflect.Field msgHandlerField = getBridge().getClass().getDeclaredField("msgHandler");
-                    msgHandlerField.setAccessible(true);
-                    Object msgHandler = msgHandlerField.get(getBridge());
+            // Show splashscreen immediately and synchronously when backgrounding
+            if (getBridge() == null) {
+                logger.warn("Bridge not ready for showing splashscreen with autoSplashscreen");
+                return;
+            }
 
-                    PluginCall call = new PluginCall(
-                        (com.getcapacitor.MessageHandler) msgHandler,
-                        "autoShowSplashscreen",
-                        PluginCall.CALLBACK_ID_DANGLING,
-                        "show",
-                        options
-                    );
-
-                    // Call the show method directly
-                    splashScreenPlugin.invoke("show", call);
-                    logger.info("Splashscreen shown automatically via direct plugin call");
-                } catch (Exception e) {
-                    logger.error("Failed to call SplashScreen show method: " + e.getMessage());
-                }
+            // Execute immediately on current thread if it's main, otherwise post to main thread
+            if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+                showSplashscreenNow();
             } else {
-                logger.warn("autoSplashscreen: SplashScreen plugin not found. Install @capacitor/splash-screen plugin.");
+                // Use runOnUiThread for immediate execution on main thread
+                if (getActivity() != null) {
+                    getActivity().runOnUiThread(() -> showSplashscreenNow());
+                } else {
+                    new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> showSplashscreenNow());
+                }
             }
         } catch (Exception e) {
-            logger.error(
-                "Error showing splashscreen with autoSplashscreen: " +
-                e.getMessage() +
-                ". Make sure @capacitor/splash-screen plugin is installed and configured."
-            );
+            logger.error("Error showing splashscreen when backgrounding: " + e.getMessage());
+        }
+    }
+
+    private void showSplashscreenNow() {
+        try {
+            PluginHandle splashScreenPlugin = getBridge().getPlugin("SplashScreen");
+            if (splashScreenPlugin != null) {
+                JSObject options = new JSObject();
+                java.lang.reflect.Field msgHandlerField = getBridge().getClass().getDeclaredField("msgHandler");
+                msgHandlerField.setAccessible(true);
+                Object msgHandler = msgHandlerField.get(getBridge());
+
+                PluginCall call = new PluginCall(
+                    (com.getcapacitor.MessageHandler) msgHandler,
+                    "SplashScreen",
+                    "FAKE_CALLBACK_ID_SHOW",
+                    "show",
+                    options
+                );
+
+                splashScreenPlugin.invoke("show", call);
+                logger.info("Splashscreen shown synchronously to prevent flash");
+            } else {
+                logger.warn("autoSplashscreen: SplashScreen plugin not found");
+            }
+        } catch (Exception e) {
+            logger.error("Failed to show splashscreen synchronously: " + e.getMessage());
         }
     }
 
@@ -1519,6 +1532,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         CapacitorUpdaterPlugin.this.implementation.sendStats("app_moved_to_foreground", current.getVersionName());
         this.delayUpdateUtils.checkCancelDelay(DelayUpdateUtils.CancelDelaySource.FOREGROUND);
         this.delayUpdateUtils.unsetBackgroundTimestamp();
+
         if (
             CapacitorUpdaterPlugin.this._isAutoUpdateEnabled() &&
             (this.backgroundDownloadTask == null || !this.backgroundDownloadTask.isAlive())
@@ -1533,10 +1547,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     public void appMovedToBackground() {
         final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
-        CapacitorUpdaterPlugin.this.implementation.sendStats("app_moved_to_background", current.getVersionName());
-        logger.info("Checking for pending update");
 
-        // Show splashscreen only if autoSplashscreen is enabled AND autoUpdate is enabled AND directUpdate would be used
+        // Show splashscreen FIRST, before any other background work to ensure launcher shows it
         if (this.autoSplashscreen) {
             boolean canShowSplashscreen = true;
 
@@ -1555,9 +1567,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
 
             if (canShowSplashscreen) {
+                logger.info("Showing splashscreen for launcher/task switcher");
                 this.showSplashscreen();
             }
         }
+
+        // Do other background work after splashscreen is shown
+        CapacitorUpdaterPlugin.this.implementation.sendStats("app_moved_to_background", current.getVersionName());
+        logger.info("Checking for pending update");
 
         try {
             // We need to set "backgrounded time"
