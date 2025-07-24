@@ -123,6 +123,8 @@ declare module '@capacitor/cli' {
       version?: string;
       /**
        * Configure when the plugin should direct install updates. Only for autoUpdate mode.
+       * Works well for apps less than 10MB and with uploads done using --partial flag.
+       * Zip or apps more than 10MB will be relatively slow for users to update.
        * - false: Never do direct updates (default behavior)
        * - atInstall: Direct update only when app is installed/updated from store, otherwise use normal background update
        * - always: Always do direct updates immediately when available
