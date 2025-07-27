@@ -28,3 +28,21 @@
 
 # Keep all Guava reflect types (required for TypeToken)
 -keep class com.google.common.reflect.** { *; }
+
+# Preserve Capacitor classes and members accessed via reflection for autoSplashscreen
+# These rules are safe even if SplashScreen plugin is not present - they only reference core Capacitor classes
+-keep class com.getcapacitor.Bridge {
+    com.getcapacitor.MessageHandler msgHandler;
+}
+
+-keep class com.getcapacitor.MessageHandler { *; }
+
+-keep class com.getcapacitor.PluginCall {
+    <init>(com.getcapacitor.MessageHandler, java.lang.String, java.lang.String, java.lang.String, com.getcapacitor.JSObject);
+}
+
+# Keep SplashScreen plugin methods that are called via reflection
+# This applies to any plugin, not just SplashScreen
+-keep class * implements com.getcapacitor.PluginHandle {
+    public void invoke(java.lang.String, com.getcapacitor.PluginCall);
+}
