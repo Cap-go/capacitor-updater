@@ -480,11 +480,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     }
                 }
             } else {
-                vc.setServerBasePath(path: dest.path)
-                // For setServerBasePath, we need to wait for the next page load
-                vc.webView?.navigationDelegate = navigationDelegate
-                // Trigger a reload to ensure the new path is loaded
                 DispatchQueue.main.async {
+                    vc.setServerBasePath(path: dest.path)
+                    // For setServerBasePath, we need to wait for the next page load
+                    vc.webView?.navigationDelegate = navigationDelegate
+                    // Trigger a reload to ensure the new path is loaded
                     vc.webView?.reload()
                 }
             }
