@@ -24,7 +24,7 @@ declare module '@capacitor/cli' {
        */
       appReadyTimeout?: number;
       /**
-       * Configure the number of milliseconds the native plugin should wait before considering API timeout.
+       * Configure the number of seconds the native plugin should wait before considering API timeout.
        *
        * Only available for Android and iOS.
        *
