@@ -1112,10 +1112,12 @@ public class CapgoUpdater {
 
                     @Override
                     public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                        if (response.isSuccessful()) {
-                            logger.info("Stats send for \"" + action + "\", version " + versionName);
-                        } else {
-                            logger.error("Error sending stats: " + response.code());
+                        try (ResponseBody responseBody = response.body()) {
+                            if (response.isSuccessful()) {
+                                logger.info("Stats send for \"" + action + "\", version " + versionName);
+                            } else {
+                                logger.error("Error sending stats: " + response.code());
+                            }
                         }
                     }
                 }
