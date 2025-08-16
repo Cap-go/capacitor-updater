@@ -42,6 +42,16 @@ import UIKit
     public var deviceID = ""
     public var publicKey: String = ""
 
+    private var userAgent: String {
+        return "CapacitorUpdater/\(PLUGIN_VERSION) (\(appId))"
+    }
+
+    private lazy var alamofireSession: Session = {
+        let configuration = URLSessionConfiguration.default
+        configuration.httpAdditionalHeaders = ["User-Agent": self.userAgent]
+        return Session(configuration: configuration)
+    }()
+
     public var notifyDownloadRaw: (String, Int, Bool) -> Void = { _, _, _  in }
     public func notifyDownload(id: String, percent: Int, ignoreMultipleOfTen: Bool = false) {
         notifyDownloadRaw(id, percent, ignoreMultipleOfTen)
@@ -250,7 +260,7 @@ import UIKit
             parameters.defaultChannel = channel
         }
         logger.info("Auto-update parameters: \(parameters)")
-        let request = AF.request(url, method: .post, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
+        let request = alamofireSession.request(url, method: .post, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
 
         request.validate().responseDecodable(of: AppVersionDec.self) { response in
             switch response.result {
@@ -376,7 +386,7 @@ import UIKit
                 dispatchGroup.leave()
             } else {
                 // File not in cache, download, decompress, and save to both cache and destination
-                AF.download(downloadUrl).responseData { response in
+                self.alamofireSession.download(downloadUrl).responseData { response in
                     defer { dispatchGroup.leave() }
 
                     switch response.result {
@@ -601,7 +611,9 @@ import UIKit
                 mainError = error as NSError?
             }
         }
-        let session = Session(eventMonitors: [monitor])
+        let configuration = URLSessionConfiguration.default
+        configuration.httpAdditionalHeaders = ["User-Agent": self.userAgent]
+        let session = Session(configuration: configuration, eventMonitors: [monitor])
 
         let request = session.streamRequest(url, headers: requestHeaders).validate().onHTTPResponse(perform: { response  in
             if let contentLength = response.headers.value(for: "Content-Length") {
@@ -950,7 +962,7 @@ import UIKit
         let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
         let parameters: InfoObject = self.createInfoObject()
 
-        let request = AF.request(self.channelUrl, method: .delete, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
+        let request = alamofireSession.request(self.channelUrl, method: .delete, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
 
         request.validate().responseDecodable(of: SetChannelDec.self) { response in
             switch response.result {
@@ -985,7 +997,7 @@ import UIKit
         var parameters: InfoObject = self.createInfoObject()
         parameters.channel = channel
 
-        let request = AF.request(self.channelUrl, method: .post, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
+        let request = alamofireSession.request(self.channelUrl, method: .post, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
 
         request.validate().responseDecodable(of: SetChannelDec.self) { response in
             switch response.result {
@@ -1018,7 +1030,7 @@ import UIKit
         }
         let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
         let parameters: InfoObject = self.createInfoObject()
-        let request = AF.request(self.channelUrl, method: .put, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
+        let request = alamofireSession.request(self.channelUrl, method: .put, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
 
         request.validate().responseDecodable(of: GetChannelDec.self) { response in
             defer {
@@ -1084,7 +1096,7 @@ import UIKit
             return listChannels
         }
 
-        let request = AF.request(url, method: .get, requestModifier: { $0.timeoutInterval = self.timeout })
+        let request = alamofireSession.request(url, method: .get, requestModifier: { $0.timeoutInterval = self.timeout })
 
         request.validate().responseDecodable(of: ListChannelsDec.self) { response in
             defer {
@@ -1137,7 +1149,7 @@ import UIKit
 
         let operation = BlockOperation {
             let semaphore = DispatchSemaphore(value: 0)
-            AF.request(
+            self.alamofireSession.request(
                 self.statsUrl,
                 method: .post,
                 parameters: parameters,

@@ -51,7 +51,9 @@ public class DownloadWorkerManager {
         String checksum,
         String publicKey,
         boolean isManifest,
-        boolean isEmulator
+        boolean isEmulator,
+        String appId,
+        String pluginVersion
     ) {
         initializeIfNeeded(context.getApplicationContext());
 
@@ -73,6 +75,8 @@ public class DownloadWorkerManager {
             .putString(DownloadService.CHECKSUM, checksum)
             .putBoolean(DownloadService.IS_MANIFEST, isManifest)
             .putString(DownloadService.PUBLIC_KEY, publicKey)
+            .putString(DownloadService.APP_ID, appId)
+            .putString(DownloadService.PLUGIN_VERSION, pluginVersion)
             .build();
 
         // Create network constraints - be more lenient on emulators

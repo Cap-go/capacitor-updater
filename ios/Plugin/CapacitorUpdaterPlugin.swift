@@ -13,12 +13,12 @@ import WebKit
 class WebViewLoadDelegate: NSObject, WKNavigationDelegate {
     private let completion: (Bool) -> Void
     private var hasCompleted = false
-    
+
     init(completion: @escaping (Bool) -> Void) {
         self.completion = completion
         super.init()
     }
-    
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         if !hasCompleted {
             hasCompleted = true
@@ -26,7 +26,7 @@ class WebViewLoadDelegate: NSObject, WKNavigationDelegate {
             completion(true)
         }
     }
-    
+
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         if !hasCompleted {
             hasCompleted = true
@@ -34,7 +34,7 @@ class WebViewLoadDelegate: NSObject, WKNavigationDelegate {
             completion(false)
         }
     }
-    
+
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         if !hasCompleted {
             hasCompleted = true
@@ -445,11 +445,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 logger.error("Cannot get capBridge")
                 return false
             }
-            
+
             // Use semaphore to wait for WebView load completion
             let loadSemaphore = DispatchSemaphore(value: 0)
             var loadSuccess = false
-            
+
             // Set up navigation delegate to detect when loading completes
             let navigationDelegate = WebViewLoadDelegate { [weak self] success in
                 loadSuccess = success
@@ -459,7 +459,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
                 loadSemaphore.signal()
             }
-            
+
             if keepUrlPathAfterReload {
                 DispatchQueue.main.async {
                     guard let url = vc.webView?.url else {
@@ -488,10 +488,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     vc.webView?.reload()
                 }
             }
-            
+
             // Wait for load completion with timeout
             let result = loadSemaphore.wait(timeout: .now() + 10) // 10 second timeout
-            
+
             if result == .timedOut {
                 logger.error("Reload timed out after 10 seconds")
                 DispatchQueue.main.async {
@@ -499,7 +499,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
                 return false
             }
-            
+
             return loadSuccess
         }
         return false

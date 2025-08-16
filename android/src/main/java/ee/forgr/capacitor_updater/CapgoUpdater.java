@@ -304,7 +304,9 @@ public class CapgoUpdater {
             checksum,
             this.publicKey,
             manifest != null,
-            this.isEmulator()
+            this.isEmulator(),
+            this.appId,
+            this.PLUGIN_VERSION
         );
 
         if (manifest != null) {

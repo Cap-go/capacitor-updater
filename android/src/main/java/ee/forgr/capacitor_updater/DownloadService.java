@@ -27,6 +27,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import okhttp3.Interceptor;
 import okhttp3.OkHttpClient;
 import okhttp3.Protocol;
 import okhttp3.Request;
@@ -55,12 +56,31 @@ public class DownloadService extends Worker {
     public static final String CHECKSUM = "checksum";
     public static final String PUBLIC_KEY = "publickey";
     public static final String IS_MANIFEST = "is_manifest";
+    public static final String APP_ID = "app_id";
+    public static final String PLUGIN_VERSION = "plugin_version";
     private static final String UPDATE_FILE = "update.dat";
 
-    private final OkHttpClient client = new OkHttpClient.Builder().protocols(Arrays.asList(Protocol.HTTP_2, Protocol.HTTP_1_1)).build();
+    private final OkHttpClient client;
 
     public DownloadService(@NonNull Context context, @NonNull WorkerParameters params) {
         super(context, params);
+        // Get appId and plugin version from input data
+        String appId = getInputData().getString(APP_ID);
+        String pluginVersion = getInputData().getString(PLUGIN_VERSION);
+
+        // Build user agent with appId and plugin version
+        String userAgent =
+            "CapacitorUpdater/" + (pluginVersion != null ? pluginVersion : "unknown") + " (" + (appId != null ? appId : "unknown") + ")";
+
+        // Create OkHttpClient with custom user agent
+        this.client = new OkHttpClient.Builder()
+            .protocols(Arrays.asList(Protocol.HTTP_2, Protocol.HTTP_1_1))
+            .addInterceptor(chain -> {
+                Request originalRequest = chain.request();
+                Request requestWithUserAgent = originalRequest.newBuilder().header("User-Agent", userAgent).build();
+                return chain.proceed(requestWithUserAgent);
+            })
+            .build();
     }
 
     private void setProgress(int percent) {
