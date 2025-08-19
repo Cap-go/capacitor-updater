@@ -23,6 +23,7 @@ public class DownloadWorkerManager {
 
     private static volatile boolean isInitialized = false;
     private static final Set<String> activeVersions = new HashSet<>();
+    private static final Object activeVersionsLock = new Object();
 
     private static synchronized void initializeIfNeeded(Context context) {
         if (!isInitialized) {
@@ -36,8 +37,10 @@ public class DownloadWorkerManager {
         }
     }
 
-    public static synchronized boolean isVersionDownloading(String version) {
-        return activeVersions.contains(version);
+    public static boolean isVersionDownloading(String version) {
+        synchronized (activeVersionsLock) {
+            return activeVersions.contains(version);
+        }
     }
 
     public static void enqueueDownload(
@@ -58,11 +61,13 @@ public class DownloadWorkerManager {
         initializeIfNeeded(context.getApplicationContext());
 
         // If version is already downloading, don't start another one
-        if (isVersionDownloading(version)) {
-            logger.info("Version " + version + " is already downloading");
-            return;
+        synchronized (activeVersionsLock) {
+            if (activeVersions.contains(version)) {
+                logger.info("Version " + version + " is already downloading");
+                return;
+            }
+            activeVersions.add(version);
         }
-        activeVersions.add(version);
 
         // Create input data
         Data inputData = new Data.Builder()
@@ -114,12 +119,16 @@ public class DownloadWorkerManager {
     public static void cancelVersionDownload(Context context, String version) {
         initializeIfNeeded(context.getApplicationContext());
         WorkManager.getInstance(context).cancelAllWorkByTag(version);
-        activeVersions.remove(version);
+        synchronized (activeVersionsLock) {
+            activeVersions.remove(version);
+        }
     }
 
     public static void cancelAllDownloads(Context context) {
         initializeIfNeeded(context.getApplicationContext());
         WorkManager.getInstance(context).cancelAllWorkByTag("capacitor_updater_download");
-        activeVersions.clear();
+        synchronized (activeVersionsLock) {
+            activeVersions.clear();
+        }
     }
 }

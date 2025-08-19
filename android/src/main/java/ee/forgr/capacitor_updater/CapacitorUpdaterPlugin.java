@@ -233,7 +233,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.implementation.versionOs = Build.VERSION.RELEASE;
         this.implementation.deviceID = this.prefs.getString("appUUID", UUID.randomUUID().toString()).toLowerCase();
         this.editor.putString("appUUID", this.implementation.deviceID);
-        this.editor.commit();
+        this.editor.apply();
         logger.info("init for device " + this.implementation.deviceID);
         logger.info("version native " + this.currentVersionNative.getOriginalString());
         this.autoDeleteFailed = this.getConfig().getBoolean("autoDeleteFailed", true);
@@ -455,7 +455,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             logger.error("Error calculating previous native version " + e.getMessage());
         }
         this.editor.putString("LatestVersionNative", this.currentVersionNative.toString());
-        this.editor.commit();
+        this.editor.apply();
     }
 
     public void notifyDownload(final String id, final int percent) {

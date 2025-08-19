@@ -1150,6 +1150,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.checkAppReady()
     }
 
+    private var periodicUpdateTimer: Timer?
+    
     @objc func checkForUpdateAfterDelay() {
         if periodCheckDelay == 0 || !self._isAutoUpdateEnabled() {
             return
@@ -1158,7 +1160,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             logger.error("Error no url or wrong format")
             return
         }
-        let timer = Timer.scheduledTimer(withTimeInterval: TimeInterval(periodCheckDelay), repeats: true) { _ in
+        
+        // Clean up any existing timer
+        periodicUpdateTimer?.invalidate()
+        
+        periodicUpdateTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(periodCheckDelay), repeats: true) { [weak self] _ in
+            guard let self = self else { return }
             DispatchQueue.global(qos: .background).async {
                 let res = self.implementation.getLatest(url: url, channel: nil)
                 let current = self.implementation.getCurrentBundle()
@@ -1169,7 +1176,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
             }
         }
-        RunLoop.current.add(timer, forMode: .default)
+        RunLoop.current.add(periodicUpdateTimer!, forMode: .default)
     }
 
     @objc func appMovedToBackground() {
