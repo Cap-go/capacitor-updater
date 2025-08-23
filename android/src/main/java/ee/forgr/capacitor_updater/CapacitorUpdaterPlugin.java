@@ -44,8 +44,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
-import okhttp3.OkHttpClient;
-import okhttp3.Protocol;
+// Removed OkHttpClient and Protocol imports - using shared client in DownloadService instead
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -153,12 +152,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.implementation.CAP_SERVER_PATH = WebView.CAP_SERVER_PATH;
             this.implementation.PLUGIN_VERSION = this.PLUGIN_VERSION;
             this.implementation.versionCode = Integer.toString(pInfo.versionCode);
-            this.implementation.client = new OkHttpClient.Builder()
-                .protocols(Arrays.asList(Protocol.HTTP_2, Protocol.HTTP_1_1))
-                .connectTimeout(this.implementation.timeout, TimeUnit.MILLISECONDS)
-                .readTimeout(this.implementation.timeout, TimeUnit.MILLISECONDS)
-                .writeTimeout(this.implementation.timeout, TimeUnit.MILLISECONDS)
-                .build();
+            // Removed unused OkHttpClient creation - using shared client in DownloadService instead
             // Handle directUpdate configuration - support string values and backward compatibility
             String directUpdateConfig = this.getConfig().getString("directUpdate", null);
             if (directUpdateConfig != null) {
@@ -209,12 +203,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.implementation.appId = config.getString("appId", this.implementation.appId);
         this.implementation.appId = this.getConfig().getString("appId", this.implementation.appId);
         if (this.implementation.appId == null || this.implementation.appId.isEmpty()) {
-            // crash the app
+            // crash the app on purpose it should not happen
             throw new RuntimeException(
                 "appId is missing in capacitor.config.json or plugin config, and cannot be retrieved from the native app, please add it globally or in the plugin config"
             );
         }
         logger.info("appId: " + implementation.appId);
+
+        // Update User-Agent for shared OkHttpClient
+        DownloadService.updateUserAgent(this.implementation.appId, this.PLUGIN_VERSION);
+
         this.implementation.publicKey = this.getConfig().getString("publicKey", "");
         this.implementation.statsUrl = this.getConfig().getString("statsUrl", statsUrlDefault);
         this.implementation.channelUrl = this.getConfig().getString("channelUrl", channelUrlDefault);
@@ -263,9 +261,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
             logger.info("semaphoreReady count " + semaphoreReady.getPhase());
         } catch (InterruptedException e) {
             logger.info("semaphoreWait InterruptedException");
-            e.printStackTrace();
+            Thread.currentThread().interrupt(); // Restore interrupted status
         } catch (TimeoutException e) {
-            throw new RuntimeException(e);
+            logger.error("Semaphore timeout: " + e.getMessage());
+            // Don't throw runtime exception, just log and continue
         }
     }
 
@@ -782,22 +781,37 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     Semaphore mainThreadSemaphore = new Semaphore(0);
                     this.bridge.executeOnMainThread(() -> {
                             try {
-                                url.set(new URL(this.bridge.getWebView().getUrl()));
+                                if (this.bridge != null && this.bridge.getWebView() != null) {
+                                    String currentUrl = this.bridge.getWebView().getUrl();
+                                    if (currentUrl != null) {
+                                        url.set(new URL(currentUrl));
+                                    }
+                                }
                             } catch (Exception e) {
                                 logger.error("Error executing on main thread " + e.getMessage());
                             }
                             mainThreadSemaphore.release();
                         });
-                    mainThreadSemaphore.acquire();
+
+                    // Add timeout to prevent indefinite blocking
+                    if (!mainThreadSemaphore.tryAcquire(10, TimeUnit.SECONDS)) {
+                        logger.error("Timeout waiting for main thread operation");
+                    }
                 } else {
                     try {
-                        url.set(new URL(this.bridge.getWebView().getUrl()));
+                        if (this.bridge != null && this.bridge.getWebView() != null) {
+                            String currentUrl = this.bridge.getWebView().getUrl();
+                            if (currentUrl != null) {
+                                url.set(new URL(currentUrl));
+                            }
+                        }
                     } catch (Exception e) {
                         logger.error("Error executing on main thread " + e.getMessage());
                     }
                 }
             } catch (InterruptedException e) {
                 logger.error("Error waiting for main thread or getting the current URL from webview " + e.getMessage());
+                Thread.currentThread().interrupt(); // Restore interrupted status
             }
         }
 
@@ -839,7 +853,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.notifyListeners("appReloaded", new JSObject());
 
         // Wait for the reload to complete (until notifyAppReady is called)
-        this.semaphoreWait(this.appReadyTimeout);
+        try {
+            this.semaphoreWait(this.appReadyTimeout);
+        } catch (Exception e) {
+            logger.error("Error waiting for app ready: " + e.getMessage());
+            return false;
+        }
 
         return true;
     }

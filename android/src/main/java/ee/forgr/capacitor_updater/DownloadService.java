@@ -16,6 +16,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -33,6 +34,11 @@ import okhttp3.Protocol;
 import okhttp3.Request;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
+import okio.Buffer;
+import okio.BufferedSink;
+import okio.BufferedSource;
+import okio.Okio;
+import okio.Source;
 import org.brotli.dec.BrotliInputStream;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -60,27 +66,42 @@ public class DownloadService extends Worker {
     public static final String PLUGIN_VERSION = "plugin_version";
     private static final String UPDATE_FILE = "update.dat";
 
-    private final OkHttpClient client;
+    // Shared OkHttpClient to prevent resource leaks
+    private static OkHttpClient sharedClient;
+    private static String currentAppId = "unknown";
+    private static String currentPluginVersion = "unknown";
 
-    public DownloadService(@NonNull Context context, @NonNull WorkerParameters params) {
-        super(context, params);
-        // Get appId and plugin version from input data
-        String appId = getInputData().getString(APP_ID);
-        String pluginVersion = getInputData().getString(PLUGIN_VERSION);
-
-        // Build user agent with appId and plugin version
-        String userAgent =
-            "CapacitorUpdater/" + (pluginVersion != null ? pluginVersion : "unknown") + " (" + (appId != null ? appId : "unknown") + ")";
-
-        // Create OkHttpClient with custom user agent
-        this.client = new OkHttpClient.Builder()
+    // Initialize shared client with User-Agent interceptor
+    static {
+        sharedClient = new OkHttpClient.Builder()
             .protocols(Arrays.asList(Protocol.HTTP_2, Protocol.HTTP_1_1))
             .addInterceptor(chain -> {
                 Request originalRequest = chain.request();
+                String userAgent =
+                    "CapacitorUpdater/" +
+                    (currentPluginVersion != null ? currentPluginVersion : "unknown") +
+                    " (" +
+                    (currentAppId != null ? currentAppId : "unknown") +
+                    ")";
                 Request requestWithUserAgent = originalRequest.newBuilder().header("User-Agent", userAgent).build();
                 return chain.proceed(requestWithUserAgent);
             })
             .build();
+    }
+
+    // Method to update User-Agent values
+    public static void updateUserAgent(String appId, String pluginVersion) {
+        currentAppId = appId != null ? appId : "unknown";
+        currentPluginVersion = pluginVersion != null ? pluginVersion : "unknown";
+        logger.debug("Updated User-Agent: CapacitorUpdater/" + currentPluginVersion + " (" + currentAppId + ")");
+    }
+
+    public DownloadService(@NonNull Context context, @NonNull WorkerParameters params) {
+        super(context, params);
+        // Use shared client - no need to create new instances
+
+        // Clean up old temporary files on service initialization
+        cleanupOldTempFiles(getApplicationContext().getCacheDir());
     }
 
     private void setProgress(int percent) {
@@ -272,93 +293,156 @@ public class DownloadService extends Worker {
         String checksum
     ) {
         File target = new File(documentsDir, dest);
-        File infoFile = new File(documentsDir, UPDATE_FILE); // The file where the download progress (how much byte
-        // downloaded) is stored
-        File tempFile = new File(documentsDir, "temp" + ".tmp"); // Temp file, where the downloaded data is stored
+        File infoFile = new File(documentsDir, UPDATE_FILE);
+        File tempFile = new File(documentsDir, "temp" + ".tmp");
+
+        // Check available disk space before starting
+        long availableSpace = target.getParentFile().getUsableSpace();
+        long estimatedSize = 50 * 1024 * 1024; // 50MB default estimate
+        if (availableSpace < estimatedSize * 2) {
+            throw new RuntimeException("insufficient_disk_space");
+        }
+
+        HttpURLConnection httpConn = null;
+        InputStream inputStream = null;
+        FileOutputStream outputStream = null;
+        BufferedReader reader = null;
+        BufferedWriter writer = null;
+
         try {
             URL u = new URL(url);
-            HttpURLConnection httpConn = null;
-            try {
-                httpConn = (HttpURLConnection) u.openConnection();
+            httpConn = (HttpURLConnection) u.openConnection();
 
-                // Reading progress file (if exist)
-                long downloadedBytes = 0;
+            // Set reasonable timeouts
+            httpConn.setConnectTimeout(30000); // 30 seconds
+            httpConn.setReadTimeout(60000); // 60 seconds
 
-                if (infoFile.exists() && tempFile.exists()) {
-                    try (BufferedReader reader = new BufferedReader(new FileReader(infoFile))) {
-                        String updateVersion = reader.readLine();
-                        if (updateVersion != null && !updateVersion.equals(version)) {
-                            clearDownloadData(documentsDir);
-                        } else {
-                            downloadedBytes = tempFile.length();
-                        }
+            // Reading progress file (if exist)
+            long downloadedBytes = 0;
+
+            if (infoFile.exists() && tempFile.exists()) {
+                try {
+                    reader = new BufferedReader(new FileReader(infoFile));
+                    String updateVersion = reader.readLine();
+                    if (updateVersion != null && !updateVersion.equals(version)) {
+                        clearDownloadData(documentsDir);
+                    } else {
+                        downloadedBytes = tempFile.length();
                     }
-                } else {
-                    clearDownloadData(documentsDir);
+                } finally {
+                    if (reader != null) {
+                        try {
+                            reader.close();
+                        } catch (Exception ignored) {}
+                    }
+                }
+            } else {
+                clearDownloadData(documentsDir);
+            }
+
+            if (downloadedBytes > 0) {
+                httpConn.setRequestProperty("Range", "bytes=" + downloadedBytes + "-");
+            }
+
+            int responseCode = httpConn.getResponseCode();
+
+            if (responseCode == HttpURLConnection.HTTP_OK || responseCode == HttpURLConnection.HTTP_PARTIAL) {
+                long contentLength = httpConn.getContentLength() + downloadedBytes;
+
+                // Check if we have enough space for the actual file
+                if (contentLength > 0 && availableSpace < contentLength * 2) {
+                    throw new RuntimeException("insufficient_disk_space");
                 }
 
-                if (downloadedBytes > 0) {
-                    httpConn.setRequestProperty("Range", "bytes=" + downloadedBytes + "-");
-                }
+                try {
+                    inputStream = httpConn.getInputStream();
+                    outputStream = new FileOutputStream(tempFile, downloadedBytes > 0);
 
-                int responseCode = httpConn.getResponseCode();
-
-                if (responseCode == HttpURLConnection.HTTP_OK || responseCode == HttpURLConnection.HTTP_PARTIAL) {
-                    long contentLength = httpConn.getContentLength() + downloadedBytes;
-
-                    try (
-                        InputStream inputStream = httpConn.getInputStream();
-                        FileOutputStream outputStream = new FileOutputStream(tempFile, downloadedBytes > 0)
-                    ) {
-                        if (downloadedBytes == 0) {
-                            try (BufferedWriter writer = new BufferedWriter(new FileWriter(infoFile))) {
-                                writer.write(String.valueOf(version));
-                            }
-                        }
-                        // Updating the info file
-                        try (BufferedWriter writer = new BufferedWriter(new FileWriter(infoFile))) {
-                            writer.write(String.valueOf(version));
-                        }
-
-                        int bytesRead = -1;
-                        byte[] buffer = new byte[4096];
-                        int lastNotifiedPercent = 0;
-                        while ((bytesRead = inputStream.read(buffer)) != -1) {
-                            outputStream.write(buffer, 0, bytesRead);
-                            downloadedBytes += bytesRead;
-                            // Saving progress (flushing every 100 Ko)
-                            if (downloadedBytes % 102400 == 0) {
-                                outputStream.flush();
-                            }
-                            // Computing percentage
-                            int percent = calcTotalPercent(downloadedBytes, contentLength);
-                            while (lastNotifiedPercent + 10 <= percent) {
-                                lastNotifiedPercent += 10;
-                                // Artificial delay using CPU-bound calculation to take ~5 seconds
-                                double result = 0;
-                                setProgress(lastNotifiedPercent);
-                            }
-                        }
-
-                        outputStream.close();
-                        inputStream.close();
-
-                        // Rename the temp file with the final name (dest)
-                        tempFile.renameTo(new File(documentsDir, dest));
-                        infoFile.delete();
+                    if (downloadedBytes == 0) {
+                        writer = new BufferedWriter(new FileWriter(infoFile));
+                        writer.write(String.valueOf(version));
+                        writer.close();
+                        writer = null;
                     }
-                } else {
+
+                    byte[] buffer = new byte[8192]; // Larger buffer for better performance
+                    int lastNotifiedPercent = 0;
+                    int bytesRead;
+
+                    while ((bytesRead = inputStream.read(buffer)) != -1) {
+                        outputStream.write(buffer, 0, bytesRead);
+                        downloadedBytes += bytesRead;
+
+                        // Flush every 1MB to ensure progress is saved
+                        if (downloadedBytes % (1024 * 1024) == 0) {
+                            outputStream.flush();
+                        }
+
+                        // Computing percentage
+                        int percent = calcTotalPercent(downloadedBytes, contentLength);
+                        if (percent >= lastNotifiedPercent + 10) {
+                            lastNotifiedPercent = (percent / 10) * 10;
+                            setProgress(lastNotifiedPercent);
+                        }
+                    }
+
+                    // Final flush
+                    outputStream.flush();
+                    outputStream.close();
+                    outputStream = null;
+
+                    inputStream.close();
+                    inputStream = null;
+
+                    // Rename the temp file with the final name (dest)
+                    if (!tempFile.renameTo(new File(documentsDir, dest))) {
+                        throw new RuntimeException("Failed to rename temp file to final destination");
+                    }
                     infoFile.delete();
+                } catch (OutOfMemoryError e) {
+                    logger.error("Out of memory during download: " + e.getMessage());
+                    // Try to free some memory
+                    System.gc();
+                    throw new RuntimeException("low_mem_fail");
+                } finally {
+                    // Ensure all resources are closed
+                    if (outputStream != null) {
+                        try {
+                            outputStream.close();
+                        } catch (Exception ignored) {}
+                    }
+                    if (inputStream != null) {
+                        try {
+                            inputStream.close();
+                        } catch (Exception ignored) {}
+                    }
+                    if (writer != null) {
+                        try {
+                            writer.close();
+                        } catch (Exception ignored) {}
+                    }
                 }
-            } finally {
-                if (httpConn != null) {
-                    httpConn.disconnect();
-                }
+            } else {
+                infoFile.delete();
+                throw new RuntimeException("HTTP error: " + responseCode);
             }
         } catch (OutOfMemoryError e) {
+            logger.error("Critical memory error: " + e.getMessage());
+            System.gc(); // Suggest garbage collection
             throw new RuntimeException("low_mem_fail");
+        } catch (SecurityException e) {
+            logger.error("Security error during download: " + e.getMessage());
+            throw new RuntimeException("security_error: " + e.getMessage());
         } catch (Exception e) {
-            throw new RuntimeException(e.getLocalizedMessage());
+            logger.error("Download error: " + e.getMessage());
+            throw new RuntimeException(e.getMessage());
+        } finally {
+            // Ensure connection is closed
+            if (httpConn != null) {
+                try {
+                    httpConn.disconnect();
+                } catch (Exception ignored) {}
+            }
         }
     }
 
@@ -412,25 +496,19 @@ public class DownloadService extends Worker {
         // Create a temporary file for the compressed data
         File compressedFile = new File(getApplicationContext().getCacheDir(), "temp_" + targetFile.getName() + ".tmp");
 
-        try (Response response = client.newCall(request).execute()) {
+        try (Response response = sharedClient.newCall(request).execute()) {
             if (!response.isSuccessful()) {
                 throw new IOException("Unexpected response code: " + response.code());
             }
 
-            // Download compressed file
-            try (ResponseBody responseBody = response.body(); FileOutputStream compressedFos = new FileOutputStream(compressedFile)) {
-                if (responseBody == null) {
-                    throw new IOException("Response body is null");
-                }
-
-                byte[] buffer = new byte[8192];
-                int bytesRead;
-                try (InputStream inputStream = responseBody.byteStream()) {
-                    while ((bytesRead = inputStream.read(buffer)) != -1) {
-                        compressedFos.write(buffer, 0, bytesRead);
-                    }
-                }
+            // Download compressed file atomically
+            ResponseBody responseBody = response.body();
+            if (responseBody == null) {
+                throw new IOException("Response body is null");
             }
+
+            // Use OkIO for atomic write
+            writeFileAtomic(compressedFile, responseBody.byteStream(), null);
 
             if (!publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
                 logger.debug("Decrypting file " + targetFile.getName());
@@ -439,13 +517,22 @@ public class DownloadService extends Worker {
 
             // Only decompress if file has .br extension
             if (isBrotli) {
-                // Use new decompression method
-                byte[] compressedData = Files.readAllBytes(compressedFile.toPath());
-                byte[] decompressedData = decompressBrotli(compressedData, targetFile.getName());
-                Files.write(finalTargetFile.toPath(), decompressedData);
+                // Use new decompression method with atomic write
+                try (FileInputStream fis = new FileInputStream(compressedFile)) {
+                    byte[] compressedData = new byte[(int) compressedFile.length()];
+                    fis.read(compressedData);
+                    byte[] decompressedData = decompressBrotli(compressedData, targetFile.getName());
+
+                    // Write decompressed data atomically
+                    try (java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(decompressedData)) {
+                        writeFileAtomic(finalTargetFile, bais, null);
+                    }
+                }
             } else {
-                // Just copy the file without decompression
-                Files.copy(compressedFile.toPath(), finalTargetFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                // Just copy the file without decompression using atomic operation
+                try (FileInputStream fis = new FileInputStream(compressedFile)) {
+                    writeFileAtomic(finalTargetFile, fis, null);
+                }
             }
 
             // Delete the compressed file
@@ -454,8 +541,10 @@ public class DownloadService extends Worker {
 
             // Verify checksum
             if (calculatedHash.equals(expectedHash)) {
-                // Only cache if checksum is correct
-                copyFile(finalTargetFile, cacheFile);
+                // Only cache if checksum is correct - use atomic copy
+                try (FileInputStream fis = new FileInputStream(finalTargetFile)) {
+                    writeFileAtomic(cacheFile, fis, expectedHash);
+                }
             } else {
                 finalTargetFile.delete();
                 throw new IOException(
@@ -559,6 +648,77 @@ public class DownloadService extends Worker {
             }
             logger.error("Error: Raw data (" + fileName + "): " + hexDump.toString());
             throw e;
+        }
+    }
+
+    /**
+     * Atomically write data to a file using OkIO
+     */
+    private void writeFileAtomic(File targetFile, InputStream inputStream, String expectedChecksum) throws IOException {
+        File tempFile = new File(targetFile.getParent(), targetFile.getName() + ".tmp");
+
+        try {
+            // Write to temp file first using OkIO
+            try (BufferedSink sink = Okio.buffer(Okio.sink(tempFile)); BufferedSource source = Okio.buffer(Okio.source(inputStream))) {
+                sink.writeAll(source);
+            }
+
+            // Verify checksum if provided
+            if (expectedChecksum != null && !expectedChecksum.isEmpty()) {
+                String actualChecksum = calculateFileChecksum(tempFile);
+                if (!expectedChecksum.equalsIgnoreCase(actualChecksum)) {
+                    tempFile.delete();
+                    throw new IOException("Checksum verification failed");
+                }
+            }
+
+            // Atomic rename (on same filesystem)
+            Files.move(tempFile.toPath(), targetFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        } catch (Exception e) {
+            // Clean up temp file on error
+            if (tempFile.exists()) {
+                tempFile.delete();
+            }
+            throw new IOException("Failed to write file atomically: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Calculate MD5 checksum of a file
+     */
+    private String calculateFileChecksum(File file) throws IOException {
+        try (FileInputStream fis = new FileInputStream(file)) {
+            MessageDigest md = MessageDigest.getInstance("MD5");
+            byte[] buffer = new byte[8192];
+            int bytesRead;
+            while ((bytesRead = fis.read(buffer)) != -1) {
+                md.update(buffer, 0, bytesRead);
+            }
+            byte[] digest = md.digest();
+            StringBuilder sb = new StringBuilder();
+            for (byte b : digest) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            throw new IOException("Failed to calculate checksum: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Clean up old temporary files
+     */
+    private void cleanupOldTempFiles(File directory) {
+        if (directory == null || !directory.exists()) return;
+
+        File[] tempFiles = directory.listFiles((dir, name) -> name.endsWith(".tmp"));
+        if (tempFiles != null) {
+            long oneHourAgo = System.currentTimeMillis() - 3600000;
+            for (File tempFile : tempFiles) {
+                if (tempFile.lastModified() < oneHourAgo) {
+                    tempFile.delete();
+                }
+            }
         }
     }
 }

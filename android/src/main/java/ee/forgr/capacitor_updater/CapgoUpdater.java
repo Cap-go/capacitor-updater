@@ -32,6 +32,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import okhttp3.*;
@@ -57,7 +58,7 @@ public class CapgoUpdater {
     public SharedPreferences.Editor editor;
     public SharedPreferences prefs;
 
-    public OkHttpClient client;
+    private OkHttpClient client;
 
     public File documentsDir;
     public Boolean directUpdate = false;
@@ -79,6 +80,8 @@ public class CapgoUpdater {
 
     public CapgoUpdater(Logger logger) {
         this.logger = logger;
+        // Simple OkHttpClient - actual configuration happens in plugin
+        this.client = new OkHttpClient.Builder().connectTimeout(30, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build();
     }
 
     private final FilenameFilter filter = (f, name) -> {
@@ -248,11 +251,16 @@ public class CapgoUpdater {
                                     id,
                                     new BundleInfo(id, version, BundleStatus.ERROR, new Date(System.currentTimeMillis()), "")
                                 );
+                                // Cleanup download tracking
+                                DownloadWorkerManager.cancelBundleDownload(activity, id, version);
                                 Map<String, Object> ret = new HashMap<>();
                                 ret.put("version", getCurrentBundle().getVersionName());
                                 ret.put("error", "finish_download_fail");
                                 sendStats("finish_download_fail", version);
                                 notifyListeners("downloadFailed", ret);
+                            } else {
+                                // Successful download - cleanup tracking
+                                DownloadWorkerManager.cancelBundleDownload(activity, id, version);
                             }
                             break;
                         case FAILED:
@@ -264,6 +272,8 @@ public class CapgoUpdater {
                                 id,
                                 new BundleInfo(id, failedVersion, BundleStatus.ERROR, new Date(System.currentTimeMillis()), "")
                             );
+                            // Cleanup download tracking for failed downloads
+                            DownloadWorkerManager.cancelBundleDownload(activity, id, failedVersion);
                             Map<String, Object> ret = new HashMap<>();
                             ret.put("version", getCurrentBundle().getVersionName());
                             if ("low_mem_fail".equals(error)) {
@@ -381,6 +391,7 @@ public class CapgoUpdater {
                 downloaded.delete();
             }
             this.notifyDownload(id, 100);
+            // Remove old bundle info and set new one
             this.saveBundleInfo(id, null);
             BundleInfo next = new BundleInfo(id, version, BundleStatus.PENDING, new Date(System.currentTimeMillis()), checksum);
             this.saveBundleInfo(id, next);
@@ -440,7 +451,7 @@ public class CapgoUpdater {
         final String id = this.randomString();
 
         // Check if version is already downloading, but allow retry if previous download failed
-        if (this.activity != null && DownloadWorkerManager.isVersionDownloading(version)) {
+        if (this.activity != null && DownloadWorkerManager.isVersionDownloading(this.activity, version)) {
             // Check if there's an existing bundle with error status that we can retry
             BundleInfo existingBundle = this.getBundleInfoByName(version);
             if (existingBundle != null && existingBundle.isErrorStatus()) {
@@ -453,7 +464,7 @@ public class CapgoUpdater {
             }
         }
 
-        this.saveBundleInfo(id, new BundleInfo(id, version, BundleStatus.DOWNLOADING, new Date(System.currentTimeMillis()), ""));
+        saveBundleInfo(id, new BundleInfo(id, version, BundleStatus.DOWNLOADING, new Date(System.currentTimeMillis()), ""));
         this.notifyDownload(id, 0);
         this.notifyDownload(id, 5);
 
@@ -469,7 +480,7 @@ public class CapgoUpdater {
         }
 
         final String id = this.randomString();
-        this.saveBundleInfo(id, new BundleInfo(id, version, BundleStatus.DOWNLOADING, new Date(System.currentTimeMillis()), ""));
+        saveBundleInfo(id, new BundleInfo(id, version, BundleStatus.DOWNLOADING, new Date(System.currentTimeMillis()), ""));
         this.notifyDownload(id, 0);
         this.notifyDownload(id, 5);
         final String dest = this.randomString();

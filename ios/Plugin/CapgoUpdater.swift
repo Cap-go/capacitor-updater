@@ -43,7 +43,9 @@ import UIKit
     public var publicKey: String = ""
 
     private var userAgent: String {
-        return "CapacitorUpdater/\(PLUGIN_VERSION) (\(appId))"
+        let safePluginVersion = PLUGIN_VERSION.isEmpty ? "unknown" : PLUGIN_VERSION
+        let safeAppId = appId.isEmpty ? "unknown" : appId
+        return "CapacitorUpdater/\(safePluginVersion) (\(safeAppId))"
     }
 
     private lazy var alamofireSession: Session = {

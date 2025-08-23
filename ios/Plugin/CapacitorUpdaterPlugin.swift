@@ -117,8 +117,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     override public func load() {
         let disableJSLogging = getConfig().getBoolean("disableJSLogging", false)
         // Set webView for logging to JavaScript console
-        if ((self.bridge?.webView) != nil) && !disableJSLogging {
-            logger.setWebView(webView: (self.bridge?.webView)!)
+        if let webView = self.bridge?.webView, !disableJSLogging {
+            logger.setWebView(webView: webView)
             logger.info("WebView set successfully for logging")
         } else {
             logger.error("Failed to get webView for logging")
@@ -135,7 +135,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         logger.info("init for device \(self.implementation.deviceID)")
         guard let versionName = getConfig().getString("version", Bundle.main.versionName) else {
             logger.error("Cannot get version name")
-            // crash the app
+            // crash the app on purpose
             fatalError("Cannot get version name")
         }
         do {
@@ -195,6 +195,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         implementation.appId = config?["appId"] as? String ?? implementation.appId
         implementation.appId = getConfig().getString("appId", implementation.appId)!
         if implementation.appId == "" {
+            // crash the app on purpose it should not happen
             fatalError("appId is missing in capacitor.config.json or plugin config, and cannot be retrieved from the native app, please add it globally or in the plugin config")
         }
         logger.info("appId \(implementation.appId)")
@@ -252,8 +253,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func semaphoreWait(waitTime: Int) {
-        // print("\(CapgoUpdater.TAG) semaphoreWait \(waitTime)")
-        _ = semaphoreReady.wait(timeout: .now() + .milliseconds(waitTime))
+        // print("\\(CapgoUpdater.TAG) semaphoreWait \\(waitTime)")
+        let result = semaphoreReady.wait(timeout: .now() + .milliseconds(waitTime))
+        if result == .timedOut {
+            logger.error("Semaphore wait timed out after \(waitTime)ms")
+        }
     }
 
     private func semaphoreUp() {
@@ -1087,6 +1091,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func appKilled() {
         logger.info("onActivityDestroyed: all activity destroyed")
         self.delayUpdateUtils.checkCancelDelay(source: .killed)
+        
+        // Clean up resources
+        periodicUpdateTimer?.invalidate()
+        periodicUpdateTimer = nil
+        backgroundWork?.cancel()
+        backgroundWork = nil
+        
+        // Signal any waiting semaphores to prevent deadlocks
+        semaphoreReady.signal()
     }
 
     private func installNext() {
@@ -1164,8 +1177,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         // Clean up any existing timer
         periodicUpdateTimer?.invalidate()
         
-        periodicUpdateTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(periodCheckDelay), repeats: true) { [weak self] _ in
-            guard let self = self else { return }
+        periodicUpdateTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(periodCheckDelay), repeats: true) { [weak self] timer in
+            guard let self = self else { 
+                timer.invalidate()
+                return 
+            }
             DispatchQueue.global(qos: .background).async {
                 let res = self.implementation.getLatest(url: url, channel: nil)
                 let current = self.implementation.getCurrentBundle()

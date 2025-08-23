@@ -5,12 +5,11 @@ import androidx.work.BackoffPolicy;
 import androidx.work.Configuration;
 import androidx.work.Constraints;
 import androidx.work.Data;
+import androidx.work.ExistingWorkPolicy;
 import androidx.work.NetworkType;
 import androidx.work.OneTimeWorkRequest;
 import androidx.work.WorkManager;
 import androidx.work.WorkRequest;
-import java.util.HashSet;
-import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 public class DownloadWorkerManager {
@@ -22,8 +21,6 @@ public class DownloadWorkerManager {
     }
 
     private static volatile boolean isInitialized = false;
-    private static final Set<String> activeVersions = new HashSet<>();
-    private static final Object activeVersionsLock = new Object();
 
     private static synchronized void initializeIfNeeded(Context context) {
         if (!isInitialized) {
@@ -37,9 +34,17 @@ public class DownloadWorkerManager {
         }
     }
 
-    public static boolean isVersionDownloading(String version) {
-        synchronized (activeVersionsLock) {
-            return activeVersions.contains(version);
+    public static boolean isVersionDownloading(Context context, String version) {
+        initializeIfNeeded(context.getApplicationContext());
+        try {
+            return WorkManager.getInstance(context)
+                .getWorkInfosByTag(version)
+                .get()
+                .stream()
+                .anyMatch(workInfo -> !workInfo.getState().isFinished());
+        } catch (Exception e) {
+            logger.error("Error checking download status: " + e.getMessage());
+            return false;
         }
     }
 
@@ -60,14 +65,8 @@ public class DownloadWorkerManager {
     ) {
         initializeIfNeeded(context.getApplicationContext());
 
-        // If version is already downloading, don't start another one
-        synchronized (activeVersionsLock) {
-            if (activeVersions.contains(version)) {
-                logger.info("Version " + version + " is already downloading");
-                return;
-            }
-            activeVersions.add(version);
-        }
+        // Use unique work name for this bundle to prevent duplicates
+        String uniqueWorkName = "bundle_" + id + "_" + version;
 
         // Create input data
         Data inputData = new Data.Builder()
@@ -100,7 +99,7 @@ public class DownloadWorkerManager {
             .setConstraints(constraints)
             .setInputData(inputData)
             .addTag(id)
-            .addTag(version) // Add version tag for tracking
+            .addTag(version)
             .addTag("capacitor_updater_download");
 
         // More aggressive retry policy for emulators
@@ -112,23 +111,29 @@ public class DownloadWorkerManager {
 
         OneTimeWorkRequest workRequest = workRequestBuilder.build();
 
-        // Enqueue work
-        WorkManager.getInstance(context).enqueue(workRequest);
+        // Use beginUniqueWork to prevent duplicate downloads
+        WorkManager.getInstance(context)
+            .beginUniqueWork(
+                uniqueWorkName,
+                ExistingWorkPolicy.KEEP, // Don't start if already running
+                workRequest
+            )
+            .enqueue();
     }
 
     public static void cancelVersionDownload(Context context, String version) {
         initializeIfNeeded(context.getApplicationContext());
         WorkManager.getInstance(context).cancelAllWorkByTag(version);
-        synchronized (activeVersionsLock) {
-            activeVersions.remove(version);
-        }
+    }
+
+    public static void cancelBundleDownload(Context context, String id, String version) {
+        String uniqueWorkName = "bundle_" + id + "_" + version;
+        initializeIfNeeded(context.getApplicationContext());
+        WorkManager.getInstance(context).cancelUniqueWork(uniqueWorkName);
     }
 
     public static void cancelAllDownloads(Context context) {
         initializeIfNeeded(context.getApplicationContext());
         WorkManager.getInstance(context).cancelAllWorkByTag("capacitor_updater_download");
-        synchronized (activeVersionsLock) {
-            activeVersions.clear();
-        }
     }
 }
