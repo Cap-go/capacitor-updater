@@ -229,6 +229,7 @@ declare module '@capacitor/cli' {
       /**
        * Set the default channel for the app in the config. Case sensitive.
        * This will setting will override the default channel set in the cloud, but will still respect overrides made in the cloud.
+       * This requires the channel to allow devices to self dissociate/associate in the channel settings. https://capgo.app/docs/public-api/channels/#channel-configuration-options
        *
        *
        * @default undefined
