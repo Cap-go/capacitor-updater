@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.10.0](https://github.com/Cap-go/capacitor-updater/compare/7.9.2...7.10.0) (2025-08-29)
+
+
+### Features
+
+* add unit and instrumented tests for CapacitorUpdater, enhance testing capabilities with Mockito and Robolectric, and update package.json for test scripts ([ed76421](https://github.com/Cap-go/capacitor-updater/commit/ed764218a98f5660356014ec6513334b91808aa4))
+
 ## [7.9.2](https://github.com/Cap-go/capacitor-updater/compare/7.9.1...7.9.2) (2025-08-23)
 
 ## [7.9.1](https://github.com/Cap-go/capacitor-updater/compare/7.9.0...7.9.1) (2025-08-19)
