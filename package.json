@@ -54,7 +54,7 @@
     "prettier": "prettier \"**/*.{css,html,ts,js,java}\" --plugin=prettier-plugin-java",
     "swiftlint": "node-swiftlint",
     "docgen": "docgen --api CapacitorUpdaterPlugin --output-readme README.md --output-json dist/docs.json",
-    "docs": "node scripts/generate-docs.js",
+    "docgen:api": "node scripts/generate-docs.js",
     "build": "npm run clean && npm run docs && tsc && rollup -c rollup.config.mjs",
     "clean": "rimraf ./dist",
     "watch": "tsc --watch",
