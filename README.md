@@ -298,7 +298,7 @@ In `capacitor.config.json`:
 In `capacitor.config.ts`:
 
 ```ts
-/// <reference types="undefined" />
+/// <reference types="@capgo/capacitor-updater" />
 
 import { CapacitorConfig } from '@capacitor/cli';
 
