@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.11.0](https://github.com/Cap-go/capacitor-updater/compare/7.10.0...7.11.0) (2025-08-30)
+
+
+### Features
+
+* implement documentation generation script and update build process ([e40524b](https://github.com/Cap-go/capacitor-updater/commit/e40524beed543bdb87c8e659a3c3138a83275841))
+
+
+### Bug Fixes
+
+* improve fallback bundle deletion logic to prevent unnecessary log spam ([7fc8378](https://github.com/Cap-go/capacitor-updater/commit/7fc83785a1a82da463e998daeec262fd352d36b1))
+* rename docs script to docgen:api for clarity ([3752389](https://github.com/Cap-go/capacitor-updater/commit/3752389a2f3f5eb95349b9c797761eee42731803))
+* streamline code formatting and improve readability in CapgoUpdater and generate-docs scripts ([d981d71](https://github.com/Cap-go/capacitor-updater/commit/d981d71bea5988aacc790a03ddd53fa3a84760dc))
+
 ## [7.10.0](https://github.com/Cap-go/capacitor-updater/compare/7.9.2...7.10.0) (2025-08-29)
 
 
