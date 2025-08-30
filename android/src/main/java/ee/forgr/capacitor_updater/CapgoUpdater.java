@@ -640,10 +640,22 @@ public class CapgoUpdater {
         final BundleInfo fallback = this.getFallbackBundle();
         logger.debug("Fallback bundle is: " + fallback);
         logger.info("Version successfully loaded: " + bundle.getVersionName());
-        if (autoDeletePrevious && !fallback.isBuiltin()) {
+        // Only attempt to delete when the fallback is a different bundle than the
+        // currently loaded one. Otherwise we spam logs with "Cannot delete <id>"
+        // because delete() protects the current bundle from removal.
+        if (
+            autoDeletePrevious &&
+            !fallback.isBuiltin() &&
+            fallback.getId() != null &&
+            !fallback.getId().equals(bundle.getId())
+        ) {
             final Boolean res = this.delete(fallback.getId());
             if (res) {
                 logger.info("Deleted previous bundle: " + fallback.getVersionName());
+            } else {
+                logger.debug(
+                    "Skip deleting previous bundle (same as current or protected): " + fallback.getId()
+                );
             }
         }
         this.setFallbackBundle(bundle);
