@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.11.5](https://github.com/Cap-go/capacitor-updater/compare/7.11.4...7.11.5) (2025-09-01)
+
+
+### Bug Fixes
+
+* update notifyListeners to retain events until consumed in both Android and iOS plugins for appReady event ([101e858](https://github.com/Cap-go/capacitor-updater/commit/101e8584b99bf699849678937be8cc815e26763f))
+
 ## [7.11.4](https://github.com/Cap-go/capacitor-updater/compare/7.11.3...7.11.4) (2025-09-01)
 
 
