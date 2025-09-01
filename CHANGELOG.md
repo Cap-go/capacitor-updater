@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.11.2](https://github.com/Cap-go/capacitor-updater/compare/7.11.1...7.11.2) (2025-09-01)
+
+
+### Bug Fixes
+
+* add cleanup for downloaded zip files after extraction and on unzip failure ([fe9c40d](https://github.com/Cap-go/capacitor-updater/commit/fe9c40d0815990dc7054a977f3fec1600762387a))
+
 ## [7.11.1](https://github.com/Cap-go/capacitor-updater/compare/7.11.0...7.11.1) (2025-09-01)
 
 ## [7.11.0](https://github.com/Cap-go/capacitor-updater/compare/7.10.0...7.11.0) (2025-08-30)
