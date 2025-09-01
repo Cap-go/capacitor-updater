@@ -75,7 +75,7 @@ public class DownloadService extends Worker {
     static {
         sharedClient = new OkHttpClient.Builder()
             .protocols(Arrays.asList(Protocol.HTTP_2, Protocol.HTTP_1_1))
-            .addInterceptor(chain -> {
+            .addInterceptor((chain) -> {
                 Request originalRequest = chain.request();
                 String userAgent =
                     "CapacitorUpdater/" +

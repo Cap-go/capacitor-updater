@@ -224,7 +224,7 @@ public class CapgoUpdater {
         activity.runOnUiThread(() -> {
             WorkManager.getInstance(context)
                 .getWorkInfosByTagLiveData(id)
-                .observe((LifecycleOwner) context, workInfos -> {
+                .observe((LifecycleOwner) context, (workInfos) -> {
                     if (workInfos == null || workInfos.isEmpty()) return;
 
                     WorkInfo workInfo = workInfos.get(0);
