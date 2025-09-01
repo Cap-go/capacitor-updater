@@ -774,7 +774,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         logger.info("sendReadyToJs")
         DispatchQueue.global().async {
             self.semaphoreWait(waitTime: self.appReadyTimeout)
-            self.notifyListeners("appReady", data: ["bundle": current.toJSON(), "status": msg])
+            self.notifyListeners("appReady", data: ["bundle": current.toJSON(), "status": msg], retainUntilConsumed: true)
 
             // Auto hide splashscreen if enabled
             // We show it on background when conditions are met, so we should hide it on foreground regardless of update outcome

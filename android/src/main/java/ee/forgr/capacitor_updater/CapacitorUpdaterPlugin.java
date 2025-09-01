@@ -290,7 +290,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         ret.put("status", msg);
 
         // No need to wait for semaphore anymore since _reload() has already waited
-        this.notifyListeners("appReady", ret);
+        this.notifyListeners("appReady", ret, true);
 
         // Auto hide splashscreen if enabled
         // We show it on background when conditions are met, so we should hide it on foreground regardless of update outcome
