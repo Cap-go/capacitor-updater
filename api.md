@@ -894,7 +894,7 @@ Listen for reload event in the App, let you know when reload has happened
 addListener(eventName: 'appReady', listenerFunc: (state: AppReadyEvent) => void) => Promise<PluginListenerHandle>
 ```
 
-Listen for app ready event in the App, let you know when app is ready to use
+Listen for app ready event in the App, let you know when app is ready to use, this event is retain till consumed.
 
 **Parameters**
 

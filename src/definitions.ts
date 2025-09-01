@@ -589,7 +589,7 @@ export interface CapacitorUpdaterPlugin {
   addListener(eventName: 'appReloaded', listenerFunc: () => void): Promise<PluginListenerHandle>;
 
   /**
-   * Listen for app ready event in the App, let you know when app is ready to use
+   * Listen for app ready event in the App, let you know when app is ready to use, this event is retain till consumed.
    *
    * @since 5.1.0
    */
