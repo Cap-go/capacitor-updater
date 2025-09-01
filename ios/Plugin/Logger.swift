@@ -201,10 +201,31 @@ public class Logger {
             log(atLevel: level, label: label, tag: tag, message: message)
             if let webView = self.webView {
                 DispatchQueue.main.async {
-                    webView.evaluateJavaScript("console.\(level.asString())('\(label) \(self.tag) : \(message)')", completionHandler: nil)
+                    let combined = "\(label) \(self.tag) : \(message)"
+                    let jsArg = self.toJSStringLiteral(combined)
+                    webView.evaluateJavaScript("console.\(level.asString())(\(jsArg))", completionHandler: nil)
                 }
             }
         }
+    }
+
+    private func toJSStringLiteral(_ value: String) -> String {
+        // Prefer JSON encoding to produce a valid JS string literal
+        if let data = try? JSONEncoder().encode(value),
+           let encoded = String(data: data, encoding: .utf8) {
+            return encoded
+        }
+
+        // Fallback manual escaping (unlikely to be used)
+        var s = value
+        s = s.replacingOccurrences(of: "\\", with: "\\\\")
+        s = s.replacingOccurrences(of: "\"", with: "\\\"")
+        s = s.replacingOccurrences(of: "'", with: "\\'")
+        s = s.replacingOccurrences(of: "\n", with: "\\n")
+        s = s.replacingOccurrences(of: "\r", with: "\\r")
+        s = s.replacingOccurrences(of: "\u{2028}", with: "\\u2028")
+        s = s.replacingOccurrences(of: "\u{2029}", with: "\\u2029")
+        return "\"\(s)\""
     }
 
     public func log(atLevel level: LogLevel, label: String?, tag: String, message: String) {
