@@ -254,7 +254,7 @@ public class CapgoUpdater {
                                 // Cleanup download tracking
                                 DownloadWorkerManager.cancelBundleDownload(activity, id, version);
                                 Map<String, Object> ret = new HashMap<>();
-                                ret.put("version", getCurrentBundle().getVersionName());
+                                ret.put("version", version);
                                 ret.put("error", "finish_download_fail");
                                 sendStats("finish_download_fail", version);
                                 notifyListeners("downloadFailed", ret);
@@ -275,7 +275,7 @@ public class CapgoUpdater {
                             // Cleanup download tracking for failed downloads
                             DownloadWorkerManager.cancelBundleDownload(activity, id, failedVersion);
                             Map<String, Object> ret = new HashMap<>();
-                            ret.put("version", getCurrentBundle().getVersionName());
+                            ret.put("version", failedVersion);
                             if ("low_mem_fail".equals(error)) {
                                 sendStats("low_mem_fail", failedVersion);
                             }
@@ -371,7 +371,7 @@ public class CapgoUpdater {
             }
 
             final Map<String, Object> ret = new HashMap<>();
-            ret.put("version", CapgoUpdater.this.getCurrentBundle().getVersionName());
+            ret.put("version", version);
 
             CapgoUpdater.this.notifyListeners("downloadFailed", ret);
             CapgoUpdater.this.sendStats("download_fail");
@@ -413,7 +413,7 @@ public class CapgoUpdater {
         } catch (IOException e) {
             e.printStackTrace();
             final Map<String, Object> ret = new HashMap<>();
-            ret.put("version", CapgoUpdater.this.getCurrentBundle().getVersionName());
+            ret.put("version", version);
             CapgoUpdater.this.notifyListeners("downloadFailed", ret);
             CapgoUpdater.this.sendStats("download_fail");
             return false;
