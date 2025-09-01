@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.11.7](https://github.com/Cap-go/capacitor-updater/compare/7.11.6...7.11.7) (2025-09-01)
+
+
+### Bug Fixes
+
+* update appReady event description to clarify event retention until consumed ([e5be942](https://github.com/Cap-go/capacitor-updater/commit/e5be942fe8ca663fd4ab943b158bed4cc87b5d83))
+
 ## [7.11.6](https://github.com/Cap-go/capacitor-updater/compare/7.11.5...7.11.6) (2025-09-01)
 
 
