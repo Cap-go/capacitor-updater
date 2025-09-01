@@ -233,6 +233,15 @@ import UIKit
         if try unflatFolder(source: destUnZip, dest: destPersist) {
             try deleteFolder(source: destUnZip)
         }
+
+        // Cleanup: remove the downloaded/decrypted zip after successful extraction
+        do {
+            if FileManager.default.fileExists(atPath: sourceZip.path) {
+                try FileManager.default.removeItem(at: sourceZip)
+            }
+        } catch {
+            logger.error("Could not delete source zip at \(sourceZip.path): \(error)")
+        }
     }
 
     private func createInfoObject() -> InfoObject {
@@ -692,8 +701,15 @@ import UIKit
         } catch {
             logger.error("Failed to unzip file: \(error)")
             self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum))
+            // Best-effort cleanup of the decrypted zip file when unzip fails
+            do {
+                if FileManager.default.fileExists(atPath: finalPath.path) {
+                    try FileManager.default.removeItem(at: finalPath)
+                }
+            } catch {
+                logger.error("Could not delete failed zip at \(finalPath.path): \(error)")
+            }
             cleanDownloadData()
-            // todo: cleanup zip attempts
             throw error
         }
 
