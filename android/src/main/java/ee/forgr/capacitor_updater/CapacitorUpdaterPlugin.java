@@ -73,6 +73,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private Boolean autoUpdate = false;
     private String updateUrl = "";
     private Version currentVersionNative;
+    private String currentBuildVersion;
     private Thread backgroundTask;
     private Boolean taskRunning = false;
     private Boolean keepUrlPathAfterReload = false;
@@ -169,6 +170,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 }
             }
             this.currentVersionNative = new Version(this.getConfig().getString("version", pInfo.versionName));
+            this.currentBuildVersion = Integer.toString(pInfo.versionCode);
             this.delayUpdateUtils = new DelayUpdateUtils(
                 this.prefs,
                 this.editor,
@@ -389,8 +391,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private boolean checkIfRecentlyInstalledOrUpdated() {
-        String currentVersion = this.currentVersionNative.getOriginalString();
-        String lastKnownVersion = this.prefs.getString("LatestVersionNative", "");
+        String currentVersion = this.currentBuildVersion;
+        String lastKnownVersion = this.prefs.getString("LatestNativeBuildVersion", "");
 
         if (lastKnownVersion.isEmpty()) {
             // First time running, consider it as recently installed
@@ -428,32 +430,21 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void cleanupObsoleteVersions() {
-        try {
-            final Version previous = new Version(this.prefs.getString("LatestVersionNative", ""));
-            try {
-                if (
-                    !"".equals(previous.getOriginalString()) &&
-                    !Objects.equals(this.currentVersionNative.getOriginalString(), previous.getOriginalString())
-                ) {
-                    logger.info("New native version detected: " + this.currentVersionNative);
-                    this.implementation.reset(true);
-                    final List<BundleInfo> installed = this.implementation.list(false);
-                    for (final BundleInfo bundle : installed) {
-                        try {
-                            logger.info("Deleting obsolete bundle: " + bundle.getId());
-                            this.implementation.delete(bundle.getId());
-                        } catch (final Exception e) {
-                            logger.error("Failed to delete: " + bundle.getId() + " " + e.getMessage());
-                        }
-                    }
+        final String previous = this.prefs.getString("LatestNativeBuildVersion", "");
+        if (!"".equals(previous) && !Objects.equals(this.currentBuildVersion, previous)) {
+            logger.info("New native build version detected: " + this.currentBuildVersion);
+            this.implementation.reset(true);
+            final List<BundleInfo> installed = this.implementation.list(false);
+            for (final BundleInfo bundle : installed) {
+                try {
+                    logger.info("Deleting obsolete bundle: " + bundle.getId());
+                    this.implementation.delete(bundle.getId());
+                } catch (final Exception e) {
+                    logger.error("Failed to delete: " + bundle.getId() + " " + e.getMessage());
                 }
-            } catch (final Exception e) {
-                logger.error("Could not determine the current version " + e.getMessage());
             }
-        } catch (final Exception e) {
-            logger.error("Error calculating previous native version " + e.getMessage());
         }
-        this.editor.putString("LatestVersionNative", this.currentVersionNative.toString());
+        this.editor.putString("LatestNativeBuildVersion", this.currentBuildVersion);
         this.editor.apply();
     }
 

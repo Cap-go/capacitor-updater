@@ -59,6 +59,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var statsUrl = ""
     private var backgroundTaskID: UIBackgroundTaskIdentifier = UIBackgroundTaskIdentifier.invalid
     private var currentVersionNative: Version = "0.0.0"
+    private var currentBuildVersion: String = "0"
     private var autoUpdate = false
     private var appReadyTimeout = 10000
     private var appReadyCheck: DispatchWorkItem?
@@ -107,6 +108,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         } catch {
             logger.error("Cannot parse versionName \(versionName)")
         }
+        currentBuildVersion = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
         logger.info("version native \(self.currentVersionNative.description)")
         implementation.versionBuild = getConfig().getString("version", Bundle.main.versionName)!
         autoDeleteFailed = getConfig().getBoolean("autoDeleteFailed", true)
@@ -235,13 +237,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func cleanupObsoleteVersions() {
-        var LatestVersionNative: Version = "0.0.0"
-        do {
-            LatestVersionNative = try Version(UserDefaults.standard.string(forKey: "LatestVersionNative") ?? "0.0.0")
-        } catch {
-            logger.error("Cannot get version native \(currentVersionNative)")
-        }
-        if LatestVersionNative != "0.0.0" && self.currentVersionNative.description != LatestVersionNative.description {
+        let previous = UserDefaults.standard.string(forKey: "LatestNativeBuildVersion") ?? "0"
+        if previous != "0" && self.currentBuildVersion != previous {
             _ = self._reset(toLastSuccessful: false)
             let res = implementation.list()
             res.forEach { version in
@@ -252,7 +249,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
             }
         }
-        UserDefaults.standard.set( self.currentVersionNative.description, forKey: "LatestVersionNative")
+        UserDefaults.standard.set(self.currentBuildVersion, forKey: "LatestNativeBuildVersion")
         UserDefaults.standard.synchronize()
     }
 
@@ -846,10 +843,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func checkIfRecentlyInstalledOrUpdated() -> Bool {
         let userDefaults = UserDefaults.standard
-        let currentVersion = self.currentVersionNative.description
-        let lastKnownVersion = userDefaults.string(forKey: "LatestVersionNative") ?? "0.0.0"
+        let currentVersion = self.currentBuildVersion
+        let lastKnownVersion = userDefaults.string(forKey: "LatestNativeBuildVersion") ?? "0"
 
-        if lastKnownVersion == "0.0.0" {
+        if lastKnownVersion == "0" {
             // First time running, consider it as recently installed
             return true
         } else if lastKnownVersion != currentVersion {
