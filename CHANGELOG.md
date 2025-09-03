@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.13.0](https://github.com/Cap-go/capacitor-updater/compare/7.12.0...7.13.0) (2025-09-03)
+
+
+### Features
+
+* implement CompletableFuture for download tracking and error handling ([dd2b0c4](https://github.com/Cap-go/capacitor-updater/commit/dd2b0c405537e20ec0d122e38e7a9952ce2e1c29))
+
 ## [7.12.0](https://github.com/Cap-go/capacitor-updater/compare/7.11.13...7.12.0) (2025-09-01)
 
 
