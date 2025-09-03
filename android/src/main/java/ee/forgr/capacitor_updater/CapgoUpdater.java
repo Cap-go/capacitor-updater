@@ -32,6 +32,8 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -77,6 +79,8 @@ public class CapgoUpdater {
     public String publicKey = "";
     public String deviceID = "";
     public int timeout = 20000;
+
+    private final Map<String, CompletableFuture<BundleInfo>> downloadFutures = new ConcurrentHashMap<>();
 
     public CapgoUpdater(Logger logger) {
         this.logger = logger;
@@ -245,12 +249,11 @@ public class CapgoUpdater {
                             boolean isManifest = outputData.getBoolean(DownloadService.IS_MANIFEST, false);
 
                             boolean success = finishDownload(id, dest, version, sessionKey, checksum, true, isManifest);
+                            BundleInfo resultBundle;
                             if (!success) {
                                 logger.error("Finish download failed: " + version);
-                                saveBundleInfo(
-                                    id,
-                                    new BundleInfo(id, version, BundleStatus.ERROR, new Date(System.currentTimeMillis()), "")
-                                );
+                                resultBundle = new BundleInfo(id, version, BundleStatus.ERROR, new Date(System.currentTimeMillis()), "");
+                                saveBundleInfo(id, resultBundle);
                                 // Cleanup download tracking
                                 DownloadWorkerManager.cancelBundleDownload(activity, id, version);
                                 Map<String, Object> ret = new HashMap<>();
@@ -261,6 +264,13 @@ public class CapgoUpdater {
                             } else {
                                 // Successful download - cleanup tracking
                                 DownloadWorkerManager.cancelBundleDownload(activity, id, version);
+                                resultBundle = getBundleInfo(id);
+                            }
+
+                            // Complete the future if it exists
+                            CompletableFuture<BundleInfo> future = downloadFutures.remove(id);
+                            if (future != null) {
+                                future.complete(resultBundle);
                             }
                             break;
                         case FAILED:
@@ -268,10 +278,14 @@ public class CapgoUpdater {
                             String error = failedData.getString(DownloadService.ERROR);
                             logger.error("Download failed: " + error + " " + workInfo.getState());
                             String failedVersion = failedData.getString(DownloadService.VERSION);
-                            saveBundleInfo(
+                            BundleInfo failedBundle = new BundleInfo(
                                 id,
-                                new BundleInfo(id, failedVersion, BundleStatus.ERROR, new Date(System.currentTimeMillis()), "")
+                                failedVersion,
+                                BundleStatus.ERROR,
+                                new Date(System.currentTimeMillis()),
+                                ""
                             );
+                            saveBundleInfo(id, failedBundle);
                             // Cleanup download tracking for failed downloads
                             DownloadWorkerManager.cancelBundleDownload(activity, id, failedVersion);
                             Map<String, Object> ret = new HashMap<>();
@@ -282,6 +296,12 @@ public class CapgoUpdater {
                             ret.put("error", error != null ? error : "download_fail");
                             sendStats("download_fail", failedVersion);
                             notifyListeners("downloadFailed", ret);
+
+                            // Complete the future with error status
+                            CompletableFuture<BundleInfo> failedFuture = downloadFutures.remove(id);
+                            if (failedFuture != null) {
+                                failedFuture.complete(failedBundle);
+                            }
                             break;
                     }
                 });
@@ -485,36 +505,30 @@ public class CapgoUpdater {
         this.notifyDownload(id, 5);
         final String dest = this.randomString();
 
-        // Use the new WorkManager-based download
+        // Create a CompletableFuture to track download completion
+        CompletableFuture<BundleInfo> downloadFuture = new CompletableFuture<>();
+        downloadFutures.put(id, downloadFuture);
+
+        // Start the download
         this.download(id, url, dest, version, sessionKey, checksum, null);
 
-        // Wait for completion
+        // Wait for completion without timeout
         try {
-            ListenableFuture<List<WorkInfo>> future = WorkManager.getInstance(activity).getWorkInfosByTag(id);
-
-            List<WorkInfo> workInfos = Futures.getChecked(future, IOException.class);
-
-            if (workInfos != null && !workInfos.isEmpty()) {
-                WorkInfo workInfo = workInfos.get(0);
-                while (!workInfo.getState().isFinished()) {
-                    Thread.sleep(100);
-                    workInfos = Futures.getChecked(WorkManager.getInstance(activity).getWorkInfosByTag(id), IOException.class);
-                    if (workInfos != null && !workInfos.isEmpty()) {
-                        workInfo = workInfos.get(0);
-                    }
-                }
-
-                if (workInfo.getState() != WorkInfo.State.SUCCEEDED) {
-                    Data outputData = workInfo.getOutputData();
-                    String error = outputData.getString(DownloadService.ERROR);
-                    throw new IOException(error != null ? error : "Download failed: " + workInfo.getState());
-                }
+            BundleInfo result = downloadFuture.get();
+            if (result.isErrorStatus()) {
+                throw new IOException("Download failed with status: " + result.getStatus());
             }
-            return getBundleInfo(id);
+            return result;
         } catch (Exception e) {
-            logger.error("Error waiting for download " + e.getMessage());
-            saveBundleInfo(id, new BundleInfo(id, version, BundleStatus.ERROR, new Date(System.currentTimeMillis()), ""));
-            throw new IOException("Error waiting for download: " + e.getMessage());
+            // Clean up on failure
+            downloadFutures.remove(id);
+            logger.error("Error waiting for download: " + e.getMessage());
+            BundleInfo errorBundle = new BundleInfo(id, version, BundleStatus.ERROR, new Date(System.currentTimeMillis()), "");
+            saveBundleInfo(id, errorBundle);
+            if (e instanceof IOException) {
+                throw (IOException) e;
+            }
+            throw new IOException("Error waiting for download: " + e.getMessage(), e);
         }
     }
 
