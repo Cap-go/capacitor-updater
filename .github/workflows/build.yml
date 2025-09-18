@@ -10,7 +10,20 @@ on:
       - "*"
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        id: install_code
+        run: bun i
+      - name: Lint
+        id: lint_code
+        run: bun run lint
   build_android:
+    needs: lint
     runs-on: ubuntu-latest
     steps:
       - name: Check out
@@ -35,6 +48,7 @@ jobs:
         id: test_android
         run: npm run test:android
   build_ios:
+    needs: lint
     runs-on: macOS-latest
     steps:
       - name: Check out
@@ -73,9 +87,6 @@ jobs:
       - name: Install dependencies
         id: install_code
         run: bun i
-      - name: Lint
-        id: lint_code
-        run: bun run lint
       - name: Build
         id: build_code
         run: bun run build
