@@ -2,6 +2,8 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.13.9](https://github.com/Cap-go/capacitor-updater/compare/7.13.8...7.13.9) (2025-09-18)
+
 ## [7.13.8](https://github.com/Cap-go/capacitor-updater/compare/7.13.7...7.13.8) (2025-09-18)
 
 ## [7.13.7](https://github.com/Cap-go/capacitor-updater/compare/7.13.6...7.13.7) (2025-09-18)
