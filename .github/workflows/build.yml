@@ -22,6 +22,12 @@ jobs:
       - name: Lint
         id: lint_code
         run: bun run lint
+      - name: Build
+        id: build_code
+        run: bun run build
+      - name: Verify
+        id: verify_code
+        run: bun run verify:web
   build_android:
     needs: lint
     runs-on: ubuntu-latest
@@ -90,9 +96,6 @@ jobs:
       - name: Build
         id: build_code
         run: bun run build
-      - name: Verify
-        id: verify_code
-        run: bun run verify:web
       - uses: JS-DevTools/npm-publish@v3
         if: ${{ !contains(github.ref, '-alpha.') }}
         with:
