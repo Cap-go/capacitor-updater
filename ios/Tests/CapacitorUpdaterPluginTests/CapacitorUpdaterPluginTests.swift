@@ -1,5 +1,5 @@
 import XCTest
-@testable import Plugin
+@testable import CapacitorUpdaterPlugin
 
 class CapacitorUpdaterTests: XCTestCase {
     
