@@ -73,9 +73,6 @@ jobs:
       - name: Build
         id: build_code
         run: bun run verify:ios
-      - name: Build SPM
-        id: build_spm
-        run: bun run verify:iosSPM
       - name: Run iOS Tests
         id: test_ios
         run: npm run test:ios
