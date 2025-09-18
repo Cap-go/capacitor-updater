@@ -330,7 +330,7 @@ import UIKit
     private var tempData = Data()
 
     private func verifyChecksum(file: URL, expectedHash: String) -> Bool {
-        let actualHash = CryptoCipherV2.calcChecksum(filePath: file)
+        let actualHash = CryptoCipher.calcChecksum(filePath: file)
         return actualHash == expectedHash
     }
 
@@ -365,10 +365,10 @@ import UIKit
 
             if !self.publicKey.isEmpty && !sessionKey.isEmpty {
                 do {
-                    fileHash = try CryptoCipherV2.decryptChecksum(checksum: fileHash, publicKey: self.publicKey)
+                    fileHash = try CryptoCipher.decryptChecksum(checksum: fileHash, publicKey: self.publicKey)
                 } catch {
                     downloadError = error
-                    logger.error("CryptoCipherV2.decryptChecksum error \(id) \(fileName) error: \(error)")
+                    logger.error("CryptoCipher.decryptChecksum error \(id) \(fileName) error: \(error)")
                 }
             }
 
@@ -418,7 +418,7 @@ import UIKit
                                 let tempFile = self.cacheFolder.appendingPathComponent("temp_\(UUID().uuidString)")
                                 try finalData.write(to: tempFile)
                                 do {
-                                    try CryptoCipherV2.decryptFile(filePath: tempFile, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
+                                    try CryptoCipher.decryptFile(filePath: tempFile, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
                                 } catch {
                                     self.sendStats(action: "decrypt_fail", versionName: version)
                                     throw error
@@ -444,7 +444,7 @@ import UIKit
                             try finalData.write(to: destFilePath)
                             if !self.publicKey.isEmpty && !sessionKey.isEmpty {
                                 // assume that calcChecksum != null
-                                let calculatedChecksum = CryptoCipherV2.calcChecksum(filePath: destFilePath)
+                                let calculatedChecksum = CryptoCipher.calcChecksum(filePath: destFilePath)
                                 if calculatedChecksum != fileHash {
                                     throw NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash)) for file \(fileName) at url \(downloadUrl)"])
                                 }
@@ -684,7 +684,7 @@ import UIKit
 
         let finalPath = tempDataPath.deletingLastPathComponent().appendingPathComponent("\(id)")
         do {
-            try CryptoCipherV2.decryptFile(filePath: tempDataPath, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
+            try CryptoCipher.decryptFile(filePath: tempDataPath, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
             try FileManager.default.moveItem(at: tempDataPath, to: finalPath)
         } catch {
             logger.error("Failed decrypt file : \(error)")
@@ -694,7 +694,7 @@ import UIKit
         }
 
         do {
-            checksum = CryptoCipherV2.calcChecksum(filePath: finalPath)
+            checksum = CryptoCipher.calcChecksum(filePath: finalPath)
             logger.info("Downloading: 80% (unzipping)")
             try self.saveDownloaded(sourceZip: finalPath, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: true)
 

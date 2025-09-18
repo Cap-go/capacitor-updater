@@ -150,7 +150,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         // Set logger for shared classes
         implementation.setLogger(logger)
-        CryptoCipherV2.setLogger(logger)
+        CryptoCipher.setLogger(logger)
 
         // Initialize DelayUpdateUtils
         self.delayUpdateUtils = DelayUpdateUtils(currentVersionNative: currentVersionNative, installNext: { [weak self] in
@@ -370,7 +370,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     throw ObjectSavableError.checksum
                 }
 
-                checksum = try CryptoCipherV2.decryptChecksum(checksum: checksum, publicKey: self.implementation.publicKey)
+                checksum = try CryptoCipher.decryptChecksum(checksum: checksum, publicKey: self.implementation.publicKey)
                 if (checksum != "" || self.implementation.publicKey != "") && next.getChecksum() != checksum {
                     self.logger.error("Error checksum \(next.getChecksum()) \(checksum)")
                     self.implementation.sendStats(action: "checksum_fail", versionName: next.getVersionName())
@@ -967,7 +967,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         self.endBackGroundTaskWithNotif(msg: "Latest version is in error state. Aborting update.", latestVersionName: latestVersionName, current: current)
                         return
                     }
-                    res.checksum = try CryptoCipherV2.decryptChecksum(checksum: res.checksum, publicKey: self.implementation.publicKey)
+                    res.checksum = try CryptoCipher.decryptChecksum(checksum: res.checksum, publicKey: self.implementation.publicKey)
                     if res.checksum != "" && next.getChecksum() != res.checksum && res.manifest == nil {
                         self.logger.error("Error checksum \(next.getChecksum()) \(res.checksum)")
                         self.implementation.sendStats(action: "checksum_fail", versionName: next.getVersionName())

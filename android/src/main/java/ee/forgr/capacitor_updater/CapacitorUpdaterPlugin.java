@@ -196,7 +196,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
 
         // Set logger for shared classes
-        CryptoCipherV2.setLogger(logger);
+        CryptoCipher.setLogger(logger);
         DownloadService.setLogger(logger);
         DownloadWorkerManager.setLogger(logger);
 

@@ -8,7 +8,7 @@ import Foundation
 import CryptoKit
 import BigInt
 
-public struct CryptoCipherV2 {
+public struct CryptoCipher {
     private static var logger: Logger!
 
     public static func setLogger(_ logger: Logger) {

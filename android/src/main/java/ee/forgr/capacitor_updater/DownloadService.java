@@ -210,7 +210,7 @@ public class DownloadService extends Worker {
 
                 if (!publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
                     try {
-                        fileHash = CryptoCipherV2.decryptChecksum(fileHash, publicKey);
+                        fileHash = CryptoCipher.decryptChecksum(fileHash, publicKey);
                     } catch (Exception e) {
                         logger.error("Error decrypting checksum for " + fileName + "fileHash: " + fileHash);
                         hasError.set(true);
@@ -512,7 +512,7 @@ public class DownloadService extends Worker {
 
             if (!publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
                 logger.debug("Decrypting file " + targetFile.getName());
-                CryptoCipherV2.decryptFile(compressedFile, publicKey, sessionKey);
+                CryptoCipher.decryptFile(compressedFile, publicKey, sessionKey);
             }
 
             // Only decompress if file has .br extension
@@ -537,7 +537,7 @@ public class DownloadService extends Worker {
 
             // Delete the compressed file
             compressedFile.delete();
-            String calculatedHash = CryptoCipherV2.calcChecksum(finalTargetFile);
+            String calculatedHash = CryptoCipher.calcChecksum(finalTargetFile);
 
             // Verify checksum
             if (calculatedHash.equals(expectedHash)) {

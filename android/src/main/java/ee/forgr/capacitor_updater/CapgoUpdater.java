@@ -371,11 +371,11 @@ public class CapgoUpdater {
                 }
 
                 if (!sessionKey.isEmpty()) {
-                    CryptoCipherV2.decryptFile(downloaded, publicKey, sessionKey);
-                    checksumDecrypted = CryptoCipherV2.decryptChecksum(checksumRes, publicKey);
-                    checksum = CryptoCipherV2.calcChecksum(downloaded);
+                    CryptoCipher.decryptFile(downloaded, publicKey, sessionKey);
+                    checksumDecrypted = CryptoCipher.decryptChecksum(checksumRes, publicKey);
+                    checksum = CryptoCipher.calcChecksum(downloaded);
                 } else {
-                    checksum = CryptoCipherV2.calcChecksum(downloaded);
+                    checksum = CryptoCipher.calcChecksum(downloaded);
                 }
                 if ((!checksumDecrypted.isEmpty() || !this.publicKey.isEmpty()) && !checksumDecrypted.equals(checksum)) {
                     logger.error("Error checksum '" + checksumDecrypted + "' '" + checksum + "' '");
