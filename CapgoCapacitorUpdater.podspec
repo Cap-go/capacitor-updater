@@ -16,6 +16,7 @@ Pod::Spec.new do |s|
   s.dependency 'SSZipArchive', '2.4.3'
   s.dependency 'Alamofire', '5.10.2'
   s.dependency 'Version', '0.8.0'
+  # We cannot update to latest because it not published anymore in cocoa https://github.com/attaswift/BigInt/issues/94
   s.dependency 'BigInt', '5.2.0'
   s.swift_version = '5.1'
 end
