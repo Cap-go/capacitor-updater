@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.13.16](https://github.com/Cap-go/capacitor-updater/compare/7.13.15...7.13.16) (2025-09-19)
+
+
+### Bug Fixes
+
+* revert bigint in cocoa ([c0dfa8c](https://github.com/Cap-go/capacitor-updater/commit/c0dfa8c1469e77fa0e3bc3b196dfe34276c2cb85))
+
 ## [7.13.15](https://github.com/Cap-go/capacitor-updater/compare/7.13.14...7.13.15) (2025-09-19)
 
 
