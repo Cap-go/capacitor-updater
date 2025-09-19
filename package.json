@@ -12,7 +12,7 @@
     "android/proguard-rules.pro",
     "android/build.gradle",
     "dist/",
-    "ios/Plugin/",
+    "ios/Sources/",
     "CapgoCapacitorUpdater.podspec",
     "Package.swift"
   ],
