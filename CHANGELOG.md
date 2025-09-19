@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.13.18](https://github.com/Cap-go/capacitor-updater/compare/7.13.17...7.13.18) (2025-09-19)
+
+
+### Bug Fixes
+
+* update iOS file path in package.json ([c4fc076](https://github.com/Cap-go/capacitor-updater/commit/c4fc076879830cde7bf5470000f7ea427fbddb1a))
+
 ## [7.13.17](https://github.com/Cap-go/capacitor-updater/compare/7.13.16...7.13.17) (2025-09-19)
 
 ## [7.13.16](https://github.com/Cap-go/capacitor-updater/compare/7.13.15...7.13.16) (2025-09-19)
