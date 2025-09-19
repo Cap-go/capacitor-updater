@@ -104,18 +104,18 @@ jobs:
           token: ${{ secrets.NPM_TOKEN }}
           tag: next
           provenance: true
+      # - name: Run release LLM
+      #   uses: constantincerdan/anno@v4
+      #   with:
+      #     mode: release-summary
+      #     github_token: ${{ secrets.GITHUB_TOKEN }}
+      #     release_tag: ${{ github.ref_name }}
+      #     chat_gpt_api_key: ${{ secrets.OPENAI_API_TOKEN }}
+      #     chat_gpt_model: "gpt-5-mini"
       - name: Create GitHub release
         id: create_release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          # body: ${{ steps.create_release.outputs. }}
           prerelease: ${{ contains(github.ref, '-alpha.') }}
-      - name: AI Release Notes Action
-        uses: reservamos/ai-release-notes-action@v0.0.1
-        with:
-          openai-api-key: ${{ secrets.OPENAI_API_TOKEN }}
-          version: ${{ github.ref_name }}
-          language: "en"
-          token: ${{ secrets.GITHUB_TOKEN }}
-          model: "gpt-5"
-          use-github-generated-notes: true
