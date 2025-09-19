@@ -110,3 +110,12 @@ jobs:
         with:
           generate_release_notes: true
           prerelease: ${{ contains(github.ref, '-alpha.') }}
+      - name: AI Release Notes Action
+        uses: reservamos/ai-release-notes-action@v1.0.0
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_TOKEN }}
+          version: ${{ github.ref_name }}
+          language: "en"
+          token: ${{ secrets.GITHUB_TOKEN }}
+          model: "gpt-5"
+          use-github-generated-notes: true
