@@ -111,7 +111,7 @@ jobs:
           generate_release_notes: true
           prerelease: ${{ contains(github.ref, '-alpha.') }}
       - name: AI Release Notes Action
-        uses: reservamos/ai-release-notes-action@v1.0.0
+        uses: reservamos/ai-release-notes-action@v.0.1
         with:
           openai-api-key: ${{ secrets.OPENAI_API_TOKEN }}
           version: ${{ github.ref_name }}
