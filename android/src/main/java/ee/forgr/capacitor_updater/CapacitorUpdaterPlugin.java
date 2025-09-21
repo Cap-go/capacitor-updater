@@ -1750,4 +1750,33 @@ public class CapacitorUpdaterPlugin extends Plugin {
             call.reject("Could not get shake menu status", e);
         }
     }
+
+    @PluginMethod
+    public void getAppId(final PluginCall call) {
+        try {
+            final JSObject ret = new JSObject();
+            ret.put("appId", this.implementation.appId);
+            call.resolve(ret);
+        } catch (final Exception e) {
+            logger.error("Could not get appId " + e.getMessage());
+            call.reject("Could not get appId", e);
+        }
+    }
+
+    @PluginMethod
+    public void setAppId(final PluginCall call) {
+        if (!this.getConfig().getBoolean("allowModifyAppId", false)) {
+            logger.error("setAppId not allowed set allowModifyAppId in your config to true to allow it");
+            call.reject("setAppId not allowed");
+            return;
+        }
+        final String appId = call.getString("appId");
+        if (appId == null) {
+            logger.error("setAppId called without appId");
+            call.reject("setAppId called without appId");
+            return;
+        }
+        this.implementation.appId = appId;
+        call.resolve();
+    }
 }

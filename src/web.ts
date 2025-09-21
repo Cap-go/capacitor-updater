@@ -201,4 +201,14 @@ export class CapacitorUpdaterWeb extends WebPlugin implements CapacitorUpdaterPl
   async isShakeMenuEnabled(): Promise<ShakeMenuEnabled> {
     return Promise.resolve({ enabled: false });
   }
+
+  async getAppId(): Promise<{ appId: string }> {
+    console.warn('Cannot getAppId in web');
+    return { appId: 'default' };
+  }
+
+  async setAppId(options: { appId: string }): Promise<void> {
+    console.warn('Cannot setAppId in web', options);
+    return;
+  }
 }

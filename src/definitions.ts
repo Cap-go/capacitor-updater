@@ -227,6 +227,15 @@ declare module '@capacitor/cli' {
       allowModifyUrl?: boolean;
 
       /**
+       * Allow the plugin to modify the appId dynamically from the JavaScript side.
+       *
+       *
+       * @default false
+       * @since  7.14.0
+       */
+      allowModifyAppId?: boolean;
+
+      /**
        * Set the default channel for the app in the config. Case sensitive.
        * This will setting will override the default channel set in the cloud, but will still respect overrides made in the cloud.
        * This requires the channel to allow devices to self dissociate/associate in the channel settings. https://capgo.app/docs/public-api/channels/#channel-configuration-options
@@ -631,6 +640,25 @@ export interface CapacitorUpdaterPlugin {
    * @since 7.5.0
    */
   isShakeMenuEnabled(): Promise<ShakeMenuEnabled>;
+
+  /**
+   * Get the configured App ID
+   *
+   * @returns {Promise<GetAppIdRes>} The current App ID
+   * @throws {Error}
+   * @since 7.14.0
+   */
+  getAppId(): Promise<GetAppIdRes>;
+
+  /**
+   * Set the App ID for the app (requires allowModifyAppId to be true in config)
+   *
+   * @param options The new App ID to set
+   * @returns {Promise<void>}
+   * @throws {Error} If allowModifyAppId is false or if the operation fails
+   * @since 7.14.0
+   */
+  setAppId(options: SetAppIdOptions): Promise<void>;
 }
 
 /**
@@ -951,4 +979,12 @@ export interface SetShakeMenuOptions {
 
 export interface ShakeMenuEnabled {
   enabled: boolean;
+}
+
+export interface GetAppIdRes {
+  appId: string;
+}
+
+export interface SetAppIdOptions {
+  appId: string;
 }

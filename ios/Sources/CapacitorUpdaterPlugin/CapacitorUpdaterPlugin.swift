@@ -1017,13 +1017,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func appKilled() {
         logger.info("onActivityDestroyed: all activity destroyed")
         self.delayUpdateUtils.checkCancelDelay(source: .killed)
-        
+
         // Clean up resources
         periodicUpdateTimer?.invalidate()
         periodicUpdateTimer = nil
         backgroundWork?.cancel()
         backgroundWork = nil
-        
+
         // Signal any waiting semaphores to prevent deadlocks
         semaphoreReady.signal()
     }
@@ -1090,7 +1090,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private var periodicUpdateTimer: Timer?
-    
+
     @objc func checkForUpdateAfterDelay() {
         if periodCheckDelay == 0 || !self._isAutoUpdateEnabled() {
             return
@@ -1099,14 +1099,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             logger.error("Error no url or wrong format")
             return
         }
-        
+
         // Clean up any existing timer
         periodicUpdateTimer?.invalidate()
-        
+
         periodicUpdateTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(periodCheckDelay), repeats: true) { [weak self] timer in
-            guard let self = self else { 
+            guard let self = self else {
                 timer.invalidate()
-                return 
+                return
             }
             DispatchQueue.global(qos: .background).async {
                 let res = self.implementation.getLatest(url: url, channel: nil)
@@ -1178,5 +1178,26 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         call.resolve([
             "enabled": self.shakeMenuEnabled
         ])
+    }
+
+    @objc func getAppId(_ call: CAPPluginCall) {
+        call.resolve([
+            "appId": implementation.appId
+        ])
+    }
+
+    @objc func setAppId(_ call: CAPPluginCall) {
+        if !getConfig().getBoolean("allowModifyAppId", false) {
+            logger.error("setAppId called without allowModifyAppId")
+            call.reject("setAppId called without allowModifyAppId set allowModifyAppId in your config to true to allow it")
+            return
+        }
+        guard let appId = call.getString("appId") else {
+            logger.error("setAppId called without appId")
+            call.reject("setAppId called without appId")
+            return
+        }
+        implementation.appId = appId
+        call.resolve()
     }
 }
