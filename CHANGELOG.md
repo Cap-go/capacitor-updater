@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.14.0](https://github.com/Cap-go/capacitor-updater/compare/7.13.18...7.14.0) (2025-09-21)
+
+
+### Features
+
+* add getAppId and setAppId methods to CapacitorUpdaterPlugin, allow dynamic modification of appId ([ef7f2f9](https://github.com/Cap-go/capacitor-updater/commit/ef7f2f9f0077c05df4a698ab2dc50813d0fcc0e9))
+
 ## [7.13.18](https://github.com/Cap-go/capacitor-updater/compare/7.13.17...7.13.18) (2025-09-19)
 
 
