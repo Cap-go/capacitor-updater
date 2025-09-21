@@ -36,6 +36,7 @@ CapacitorUpdater can be configured with these options:
 | **`localApi`** | `string` | Configure the CLI to use a local api for testing. | `undefined` | 6.3.3 |
 | **`localApiFiles`** | `string` | Configure the CLI to use a local file api for testing. | `undefined` | 6.3.3 |
 | **`allowModifyUrl`** | `boolean` | Allow the plugin to modify the updateUrl, statsUrl and channelUrl dynamically from the JavaScript side. | `false` | 5.4.0 |
+| **`allowModifyAppId`** | `boolean` | Allow the plugin to modify the appId dynamically from the JavaScript side. | `false` | 7.14.0 |
 | **`defaultChannel`** | `string` | Set the default channel for the app in the config. Case sensitive. This will setting will override the default channel set in the cloud, but will still respect overrides made in the cloud. This requires the channel to allow devices to self dissociate/associate in the channel settings. https://capgo.app/docs/public-api/channels/#channel-configuration-options | `undefined` | 5.5.0 |
 | **`appId`** | `string` | Configure the app id for the app in the config. | `undefined` | 6.0.0 |
 | **`keepUrlPathAfterReload`** | `boolean` | Configure the plugin to keep the URL path after a reload. WARNING: When a reload is triggered, 'window.history' will be cleared. | `false` | 6.8.0 |
@@ -88,6 +89,8 @@ CapacitorUpdater can be configured with these options:
 - [`getNextBundle`](#getnextbundle)
 - [`setShakeMenu`](#setshakemenu)
 - [`isShakeMenuEnabled`](#isshakemenuenabled)
+- [`getAppId`](#getappid)
+- [`setAppId`](#setappid)
 
 </docgen-index>
 
@@ -993,6 +996,52 @@ Get the current state of the shake menu
 **Since:** 7.5.0
 
 **Throws:** {Error}
+
+
+--------------------
+
+
+### getAppId
+
+```typescript
+getAppId() => Promise<GetAppIdRes>
+```
+
+Get the configured App ID
+
+**Returns**
+
+`Promise<GetAppIdRes>` — The current App ID
+
+**Since:** 7.14.0
+
+**Throws:** {Error}
+
+
+--------------------
+
+
+### setAppId
+
+```typescript
+setAppId(options: SetAppIdOptions) => Promise<void>
+```
+
+Set the App ID for the app (requires allowModifyAppId to be true in config)
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `options` | `SetAppIdOptions` | The new App ID to set |
+
+**Returns**
+
+`Promise<void>`
+
+**Since:** 7.14.0
+
+**Throws:** {Error} If allowModifyAppId is false or if the operation fails
 
 
 --------------------
