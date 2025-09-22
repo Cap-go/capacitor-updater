@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [6.14.22](https://github.com/Cap-go/capacitor-updater/compare/6.14.21...6.14.22) (2025-09-22)
+
+
+### Bug Fixes
+
+* dependency issue in SPM  and build ([db04d55](https://github.com/Cap-go/capacitor-updater/commit/db04d55911139c5d967943d304bd01626db469a9))
+
 ## [6.14.21](https://github.com/Cap-go/capacitor-updater/compare/6.14.20...6.14.21) (2025-09-22)
 
 
