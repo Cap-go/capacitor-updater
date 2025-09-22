@@ -227,7 +227,7 @@ import UIKit
                 try FileManager.default.removeItem(at: sourceZip)
             }
         } catch {
-            logger.error("Could not delete source zip at \(sourceZip.path): \(error)")
+            print("\(CapacitorUpdater.TAG) Could not delete source zip at \(sourceZip.path): \(error)")
         }
     }
 
