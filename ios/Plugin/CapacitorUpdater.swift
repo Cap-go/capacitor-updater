@@ -213,11 +213,21 @@ import UIKit
 
         if !success || unzipError != nil {
             self.sendStats(action: "unzip_fail")
+            try? FileManager.default.removeItem(at: destUnZip)
             throw unzipError ?? CustomError.cannotUnzip
         }
 
         if try unflatFolder(source: destUnZip, dest: destPersist) {
             try deleteFolder(source: destUnZip)
+        }
+
+        // Cleanup: remove the downloaded/decrypted zip after successful extraction
+        do {
+            if FileManager.default.fileExists(atPath: sourceZip.path) {
+                try FileManager.default.removeItem(at: sourceZip)
+            }
+        } catch {
+            logger.error("Could not delete source zip at \(sourceZip.path): \(error)")
         }
     }
 
