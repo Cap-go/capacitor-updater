@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - development
+      - v6
 
 jobs:
   bump-version:
@@ -13,7 +14,7 @@ jobs:
     name: "Bump version and create changelog with standard version"
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           token: '${{ secrets.PERSONAL_ACCESS_TOKEN }}'
@@ -37,8 +38,11 @@ jobs:
       - name: Create bump and changelog main
         if: github.ref == 'refs/heads/main'
         run: bunx capacitor-plugin-standard-version@latest
+      - name: Create bump and changelog v6
+        if: github.ref == 'refs/heads/v6'
+        run: bunx capacitor-plugin-standard-version@latest --release-as patch
       - name: Create bump and changelog development
-        if: github.ref != 'refs/heads/main'
+        if: github.ref == 'refs/heads/development'
         run: bunx capacitor-plugin-standard-version@latest --prerelease alpha
       - name: Push to origin
         run: |
@@ -62,7 +66,7 @@ jobs:
     runs-on: ubuntu-latest
     name: "Create global cache on main branch"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
       - name: Install dependencies
         id: install_code
