@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.14.1](https://github.com/Cap-go/capacitor-updater/compare/7.14.0...7.14.1) (2025-09-22)
+
+
+### Bug Fixes
+
+* **deps:** update dependency androidx.work:work-runtime to v2.10.4 ([35daf04](https://github.com/Cap-go/capacitor-updater/commit/35daf04ac9d0bea30250896098c43d53a9f9b561))
+
 ## [7.14.0](https://github.com/Cap-go/capacitor-updater/compare/7.13.18...7.14.0) (2025-09-21)
 
 
