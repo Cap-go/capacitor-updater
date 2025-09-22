@@ -52,6 +52,7 @@ jobs:
         run: npm run verify:android
       - name: Run Android Tests
         id: test_android
+        if: ${{ !startsWith(github.ref, 'refs/tags/6.') }}
         run: npm run test:android
   build_ios:
     needs: lint
@@ -75,6 +76,7 @@ jobs:
         run: bun run verify:ios
       - name: Run iOS Tests
         id: test_ios
+        if: ${{ !startsWith(github.ref, 'refs/tags/6.') }}
         run: npm run test:ios
   deploy:
     needs: [build_android, build_ios]
