@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - development
+      - v6
 
 jobs:
   bump-version:
@@ -37,8 +38,11 @@ jobs:
       - name: Create bump and changelog main
         if: github.ref == 'refs/heads/main'
         run: bunx capacitor-plugin-standard-version@latest
+      - name: Create bump and changelog v6
+        if: github.ref == 'refs/heads/v6'
+        run: bunx capacitor-plugin-standard-version@latest --release-as patch
       - name: Create bump and changelog development
-        if: github.ref != 'refs/heads/main'
+        if: github.ref == 'refs/heads/development'
         run: bunx capacitor-plugin-standard-version@latest --prerelease alpha
       - name: Push to origin
         run: |

@@ -94,7 +94,13 @@ jobs:
         id: build_code
         run: bun run build
       - uses: JS-DevTools/npm-publish@v3
-        if: ${{ !contains(github.ref, '-alpha.') }}
+        if: ${{ startsWith(github.ref, 'refs/tags/6.') }}
+        with:
+          token: ${{ secrets.NPM_TOKEN }}
+          tag: lts-v6
+          provenance: true
+      - uses: JS-DevTools/npm-publish@v3
+        if: ${{ !contains(github.ref, '-alpha.') && !startsWith(github.ref, 'refs/tags/6.') }}
         with:
           token: ${{ secrets.NPM_TOKEN }}
           provenance: true
@@ -118,4 +124,5 @@ jobs:
         with:
           generate_release_notes: true
           # body: ${{ steps.create_release.outputs. }}
+          name: ${{ startsWith(github.ref, 'refs/tags/6.') && 'v6 LTS - ' || '' }}${{ github.ref_name }}
           prerelease: ${{ contains(github.ref, '-alpha.') }}
