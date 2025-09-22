@@ -212,12 +212,22 @@ import UIKit
         semaphore.wait()
 
         if !success || unzipError != nil {
+            try? FileManager.default.removeItem(at: destUnZip)
             self.sendStats(action: "unzip_fail")
             throw unzipError ?? CustomError.cannotUnzip
         }
 
         if try unflatFolder(source: destUnZip, dest: destPersist) {
             try deleteFolder(source: destUnZip)
+            if FileManager.default.fileExists(atPath: sourceZip.path) {
+                do {
+                    try FileManager.default.removeItem(at: sourceZip)
+                } catch {
+                    print("\(CapacitorUpdater.TAG) saveDownloaded: Failed to delete sourceZip: \(error)")
+                }
+            } else {
+                print("\(CapacitorUpdater.TAG) saveDownloaded: sourceZip already deleted")
+            }
         }
     }
 
@@ -571,7 +581,7 @@ import UIKit
         let id: String = self.randomString(length: 10)
         let semaphore = DispatchSemaphore(value: 0)
         if version != getLocalUpdateVersion() {
-            cleanDownloadData()
+            cleanDownloadData(bundleId: id)
         }
         ensureResumableFilesExist()
         saveDownloadInfo(version)
@@ -667,7 +677,7 @@ import UIKit
         } catch {
             print("\(CapacitorUpdater.TAG) Failed decrypt file : \(error)")
             self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum))
-            cleanDownloadData()
+            cleanDownloadData(bundleId: id)
             throw error
         }
 
@@ -683,7 +693,7 @@ import UIKit
         } catch {
             print("\(CapacitorUpdater.TAG) Failed to unzip file: \(error)")
             self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum))
-            cleanDownloadData()
+            cleanDownloadData(bundleId: id)
             // todo: cleanup zip attempts
             throw error
         }
@@ -692,7 +702,7 @@ import UIKit
         print("\(CapacitorUpdater.TAG) Downloading: 90% (wrapping up)")
         let info = BundleInfo(id: id, version: version, status: BundleStatus.PENDING, downloaded: Date(), checksum: checksum)
         self.saveBundleInfo(id: id, bundle: info)
-        self.cleanDownloadData()
+        self.cleanDownloadData(bundleId: id)
         self.notifyDownload(id: id, percent: 100)
         print("\(CapacitorUpdater.TAG) Downloading: 100% (complete)")
         return info
@@ -712,7 +722,7 @@ import UIKit
         }
     }
 
-    private func cleanDownloadData() {
+    private func cleanDownloadData(bundleId: String? = nil) {
         // Deleting package.tmp
         let fileManager = FileManager.default
         if fileManager.fileExists(atPath: tempDataPath.path) {
@@ -728,6 +738,19 @@ import UIKit
                 try fileManager.removeItem(at: updateInfo)
             } catch {
                 print("\(CapacitorUpdater.TAG) Could not delete file at \(updateInfo): \(error)")
+            }
+        }
+
+        // Deleting leftover bundle file
+        if let bundleId = bundleId {
+            let bundleFilePath = tempDataPath.deletingLastPathComponent().appendingPathComponent(bundleId)
+            if fileManager.fileExists(atPath: bundleFilePath.path) {
+                do {
+                    try fileManager.removeItem(at: bundleFilePath)
+                    print("\(CapacitorUpdater.TAG) Deleted bundle file: \(bundleId)")
+                } catch {
+                    print("\(CapacitorUpdater.TAG) Could not delete bundle file \(bundleId): \(error)")
+                }
             }
         }
     }
