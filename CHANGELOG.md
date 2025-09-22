@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.15.0](https://github.com/Cap-go/capacitor-updater/compare/7.14.1...7.15.0) (2025-09-22)
+
+
+### Features
+
+* **ci:** enhance version bumping for v6 branch and add changelog generation ([3ffc24a](https://github.com/Cap-go/capacitor-updater/commit/3ffc24a91cc0f1b6d86aeb1a18ca9bae1867ef20))
+
 ## [7.14.1](https://github.com/Cap-go/capacitor-updater/compare/7.14.0...7.14.1) (2025-09-22)
 
 
