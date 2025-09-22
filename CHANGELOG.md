@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [6.14.21](https://github.com/Cap-go/capacitor-updater/compare/6.14.20...6.14.21) (2025-09-22)
+
+
+### Bug Fixes
+
+* delete zip tmp ([01774a4](https://github.com/Cap-go/capacitor-updater/commit/01774a4c972b1ea8057687fb2c49fb83e555d218))
+
 ## [6.14.20](https://github.com/Cap-go/capacitor-updater/compare/6.14.19...6.14.20) (2025-09-22)
 
 
