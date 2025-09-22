@@ -1,6 +1,20 @@
 # Changelog
 
-All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
+All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
+
+## [6.14.18](https://github.com/Cap-go/capacitor-updater/compare/6.14.11...6.14.18) (2025-09-22)
+
+
+### Bug Fixes
+
+* author ([3857a6d](https://github.com/Cap-go/capacitor-updater/commit/3857a6d33315b75090758ef482944fa6ea5fcae8))
+* backport brotli fix in v6 ([b79a762](https://github.com/Cap-go/capacitor-updater/commit/b79a76225eedd3137708651b901afbd609a87ba6))
+* cache issue android ([dc78ba4](https://github.com/Cap-go/capacitor-updater/commit/dc78ba40fe55cd6f42a8165fc6a3a0305f2f2952))
+* decrypt file missing in partial ([e678c66](https://github.com/Cap-go/capacitor-updater/commit/e678c66c7ac5646e5d8548842def824c03de6a0d))
+* deploy ([17675d0](https://github.com/Cap-go/capacitor-updater/commit/17675d0c381c52d30425991c492741aaed7f8ffe))
+* double decrypt android ([c608664](https://github.com/Cap-go/capacitor-updater/commit/c6086648a866e55833ae1f5aaf811971e9904e48))
+* enforce version properly ([42b486d](https://github.com/Cap-go/capacitor-updater/commit/42b486d100445d2facfa82bbd7d0b6850f775c25))
+* ios issue ([3f05828](https://github.com/Cap-go/capacitor-updater/commit/3f0582812744ecb9a7b263926eec0e4aa34e3311))
 
 ### [6.14.11](https://github.com/Cap-go/capacitor-updater/compare/6.14.10...6.14.11) (2025-02-08)
 
