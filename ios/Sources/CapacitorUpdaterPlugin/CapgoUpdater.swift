@@ -227,6 +227,7 @@ import UIKit
 
         if !success || unzipError != nil {
             self.sendStats(action: "unzip_fail")
+            try? FileManager.default.removeItem(at: destUnZip)
             throw unzipError ?? CustomError.cannotUnzip
         }
 
