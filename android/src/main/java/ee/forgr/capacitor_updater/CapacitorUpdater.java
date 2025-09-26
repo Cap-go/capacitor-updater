@@ -339,6 +339,9 @@ public class CapacitorUpdater {
             }
             // Remove the decryption for manifest downloads
         } catch (Exception e) {
+            if (downloaded != null && downloaded.exists()) {
+              downloaded.delete();
+            }
             final Boolean res = this.delete(id);
             if (!res) {
                 Log.i(CapacitorUpdater.TAG, "Double error, cannot cleanup: " + version);
@@ -362,8 +365,8 @@ public class CapacitorUpdater {
                 this.notifyDownload(id, 91);
                 final String idName = bundleDirectory + "/" + id;
                 this.flattenAssets(downloaded, idName);
-                downloaded.delete();
             }
+            downloaded.delete();
             this.notifyDownload(id, 100);
             this.saveBundleInfo(id, null);
             BundleInfo next = new BundleInfo(id, version, BundleStatus.PENDING, new Date(System.currentTimeMillis()), checksum);
