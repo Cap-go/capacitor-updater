@@ -354,6 +354,7 @@ public class CapgoUpdater {
         Boolean isManifest
     ) {
         File downloaded = null;
+        File extractedDir = null;
         String checksum = "";
 
         try {
@@ -385,6 +386,9 @@ public class CapgoUpdater {
             }
             // Remove the decryption for manifest downloads
         } catch (Exception e) {
+            if (!isManifest) {
+                safeDelete(downloaded);
+            }
             final Boolean res = this.delete(id);
             if (!res) {
                 logger.info("Double error, cannot cleanup: " + version);
@@ -400,10 +404,10 @@ public class CapgoUpdater {
 
         try {
             if (!isManifest) {
-                final File unzipped = this.unzip(id, downloaded, this.randomString());
+                extractedDir = this.unzip(id, downloaded, this.randomString());
                 this.notifyDownload(id, 91);
                 final String idName = bundleDirectory + "/" + id;
-                this.flattenAssets(unzipped, idName);
+                this.flattenAssets(extractedDir, idName);
             } else {
                 this.notifyDownload(id, 91);
                 final String idName = bundleDirectory + "/" + id;
@@ -431,12 +435,19 @@ public class CapgoUpdater {
                 }
             }
         } catch (IOException e) {
+            if (!isManifest) {
+                safeDelete(extractedDir);
+                safeDelete(downloaded);
+            }
             e.printStackTrace();
             final Map<String, Object> ret = new HashMap<>();
             ret.put("version", version);
             CapgoUpdater.this.notifyListeners("downloadFailed", ret);
             CapgoUpdater.this.sendStats("download_fail");
             return false;
+        }
+        if (!isManifest) {
+            safeDelete(downloaded);
         }
         return true;
     }
@@ -452,6 +463,21 @@ public class CapgoUpdater {
         }
         if (!file.delete()) {
             throw new IOException("Failed to delete: " + file);
+        }
+    }
+
+    private void safeDelete(final File target) {
+        if (target == null || !target.exists()) {
+            return;
+        }
+        try {
+            if (target.isDirectory()) {
+                this.deleteDirectory(target);
+            } else if (!target.delete()) {
+                logger.warn("Failed to delete file: " + target.getAbsolutePath());
+            }
+        } catch (IOException cleanupError) {
+            logger.warn("Cleanup failed for " + target.getAbsolutePath() + ": " + cleanupError.getMessage());
         }
     }
 
