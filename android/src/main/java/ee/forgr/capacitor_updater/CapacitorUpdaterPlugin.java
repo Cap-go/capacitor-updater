@@ -1002,6 +1002,17 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void endBackGroundTaskWithNotif(String msg, String latestVersionName, BundleInfo current, Boolean error) {
+        endBackGroundTaskWithNotif(msg, latestVersionName, current, error, "download_fail", "downloadFailed");
+    }
+
+    private void endBackGroundTaskWithNotif(
+        String msg,
+        String latestVersionName,
+        BundleInfo current,
+        Boolean error,
+        String failureAction,
+        String failureEvent
+    ) {
         if (error) {
             Log.i(
                 CapacitorUpdater.TAG,
@@ -1012,10 +1023,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 "latestVersionName: " +
                 latestVersionName
             );
-            this.implementation.sendStats("download_fail", current.getVersionName());
+            this.implementation.sendStats(failureAction, current.getVersionName());
             final JSObject ret = new JSObject();
             ret.put("version", latestVersionName);
-            this.notifyListeners("downloadFailed", ret);
+            this.notifyListeners(failureEvent, ret);
         }
         final JSObject ret = new JSObject();
         ret.put("bundle", current.toJSON());
@@ -1034,6 +1045,34 @@ public class CapacitorUpdaterPlugin extends Plugin {
             CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.updateUrl, null, res -> {
                     final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
                     try {
+                        if (res.has("error")) {
+                            final String error = res.optString("error", "");
+                            if (error != null && !error.isEmpty()) {
+                                Log.e(CapacitorUpdater.TAG, "getLatest failed with error: " + error);
+                                final String latestVersion = res.has("version")
+                                    ? res.optString("version", current.getVersionName())
+                                    : current.getVersionName();
+                                if ("response_error".equals(error)) {
+                                    CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                                            "Network error: " + error,
+                                            latestVersion,
+                                            current,
+                                            true
+                                        );
+                                } else {
+                                    CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                                            error,
+                                            latestVersion,
+                                            current,
+                                            true,
+                                            "backend_refusal",
+                                            "backendRefused"
+                                        );
+                                }
+                                return;
+                            }
+                        }
+
                         if (res.has("message")) {
                             Log.i(CapacitorUpdater.TAG, "API message: " + res.get("message"));
                             if (res.has("major") && res.getBoolean("major") && res.has("version")) {
@@ -1041,11 +1080,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                 majorAvailable.put("version", res.getString("version"));
                                 CapacitorUpdaterPlugin.this.notifyListeners("majorAvailable", majorAvailable);
                             }
+                            final String latestVersion = res.has("version")
+                                ? res.optString("version", current.getVersionName())
+                                : current.getVersionName();
                             CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
                                     res.getString("message"),
-                                    current.getVersionName(),
+                                    latestVersion,
                                     current,
-                                    true
+                                    true,
+                                    "backend_refusal",
+                                    "backendRefused"
                                 );
                             return;
                         }

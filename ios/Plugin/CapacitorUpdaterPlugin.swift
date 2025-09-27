@@ -732,10 +732,17 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    func endBackGroundTaskWithNotif(msg: String, latestVersionName: String, current: BundleInfo, error: Bool = true) {
+    func endBackGroundTaskWithNotif(
+        msg: String,
+        latestVersionName: String,
+        current: BundleInfo,
+        error: Bool = true,
+        failureAction: String = "download_fail",
+        failureEvent: String = "downloadFailed"
+    ) {
         if error {
-            self.implementation.sendStats(action: "download_fail", versionName: current.getVersionName())
-            self.notifyListeners("downloadFailed", data: ["version": latestVersionName])
+            self.implementation.sendStats(action: failureAction, versionName: current.getVersionName())
+            self.notifyListeners(failureEvent, data: ["version": latestVersionName])
         }
         self.notifyListeners("noNeedUpdate", data: ["bundle": current.toJSON()])
         self.sendReadyToJs(current: current, msg: msg)
@@ -758,12 +765,43 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             let res = self.implementation.getLatest(url: url, channel: nil)
             let current = self.implementation.getCurrentBundle()
 
-            if (res.message) != nil {
-                print("\(CapacitorUpdater.TAG) API message: \(res.message ?? "")")
+            if let backendError = res.error, !backendError.isEmpty {
+                print("\(CapacitorUpdater.TAG) getLatest failed with error: \(backendError)")
+                let latestVersionName = res.version.isEmpty ? current.getVersionName() : res.version
+                if backendError == "response_error" {
+                    self.endBackGroundTaskWithNotif(
+                        msg: "Network error: \(backendError)",
+                        latestVersionName: latestVersionName,
+                        current: current,
+                        error: true
+                    )
+                } else {
+                    self.endBackGroundTaskWithNotif(
+                        msg: backendError,
+                        latestVersionName: latestVersionName,
+                        current: current,
+                        error: true,
+                        failureAction: "backend_refusal",
+                        failureEvent: "backendRefused"
+                    )
+                }
+                return
+            }
+
+            if let message = res.message, !message.isEmpty {
+                print("\(CapacitorUpdater.TAG) API message: \(message)")
                 if res.major == true {
                     self.notifyListeners("majorAvailable", data: ["version": res.version])
                 }
-                self.endBackGroundTaskWithNotif(msg: res.message ?? "", latestVersionName: res.version, current: current, error: true)
+                let latestVersionName = res.version.isEmpty ? current.getVersionName() : res.version
+                self.endBackGroundTaskWithNotif(
+                    msg: message,
+                    latestVersionName: latestVersionName,
+                    current: current,
+                    error: true,
+                    failureAction: "backend_refusal",
+                    failureEvent: "backendRefused"
+                )
                 return
             }
             if res.version == "builtin" {
