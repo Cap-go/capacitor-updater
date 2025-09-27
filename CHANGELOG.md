@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.17.0](https://github.com/Cap-go/capacitor-updater/compare/7.16.0...7.17.0) (2025-09-27)
+
+
+### Features
+
+* enhance error handling in background task notifications for download failures ([b23dc7b](https://github.com/Cap-go/capacitor-updater/commit/b23dc7bb122fa5e21d372d3a412e80cceb55212b))
+
 ## [7.16.0](https://github.com/Cap-go/capacitor-updater/compare/7.15.3...7.16.0) (2025-09-27)
 
 
