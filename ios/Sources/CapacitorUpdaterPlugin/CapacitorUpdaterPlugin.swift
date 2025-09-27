@@ -882,10 +882,17 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    func endBackGroundTaskWithNotif(msg: String, latestVersionName: String, current: BundleInfo, error: Bool = true) {
+    func endBackGroundTaskWithNotif(
+        msg: String,
+        latestVersionName: String,
+        current: BundleInfo,
+        error: Bool = true,
+        failureAction: String = "download_fail",
+        failureEvent: String = "downloadFailed"
+    ) {
         if error {
-            self.implementation.sendStats(action: "download_fail", versionName: current.getVersionName())
-            self.notifyListeners("downloadFailed", data: ["version": latestVersionName])
+            self.implementation.sendStats(action: failureAction, versionName: current.getVersionName())
+            self.notifyListeners(failureEvent, data: ["version": latestVersionName])
         }
         self.notifyListeners("noNeedUpdate", data: ["bundle": current.toJSON()])
         self.sendReadyToJs(current: current, msg: msg)
@@ -910,18 +917,41 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             let current = self.implementation.getCurrentBundle()
 
             // Handle network errors and other failures first
-            if res.error != nil {
-                self.logger.error("getLatest failed with error: \(res.error ?? "")")
-                self.endBackGroundTaskWithNotif(msg: "Network error: \(res.error ?? "")", latestVersionName: res.version, current: current, error: true)
+            if let backendError = res.error, !backendError.isEmpty {
+                self.logger.error("getLatest failed with error: \(backendError)")
+                if backendError == "response_error" {
+                    self.endBackGroundTaskWithNotif(
+                        msg: "Network error: \(backendError)",
+                        latestVersionName: res.version,
+                        current: current,
+                        error: true
+                    )
+                } else {
+                    self.endBackGroundTaskWithNotif(
+                        msg: backendError,
+                        latestVersionName: res.version,
+                        current: current,
+                        error: true,
+                        failureAction: "backend_refusal",
+                        failureEvent: "backendRefused"
+                    )
+                }
                 return
             }
 
-            if (res.message) != nil {
-                self.logger.info("API message: \(res.message ?? "")")
+            if let message = res.message, !message.isEmpty {
+                self.logger.info("API message: \(message)")
                 if res.major == true {
                     self.notifyListeners("majorAvailable", data: ["version": res.version])
                 }
-                self.endBackGroundTaskWithNotif(msg: res.message ?? "", latestVersionName: res.version, current: current, error: true)
+                self.endBackGroundTaskWithNotif(
+                    msg: message,
+                    latestVersionName: res.version,
+                    current: current,
+                    error: true,
+                    failureAction: "backend_refusal",
+                    failureEvent: "backendRefused"
+                )
                 return
             }
             if res.version == "builtin" {
