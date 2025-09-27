@@ -315,6 +315,7 @@ public class CapacitorUpdater {
         Boolean isManifest
     ) {
         File downloaded = null;
+        File extractedDir = null;
         String checksum = "";
 
         try {
@@ -339,6 +340,9 @@ public class CapacitorUpdater {
             }
             // Remove the decryption for manifest downloads
         } catch (Exception e) {
+            if (!isManifest) {
+                safeDelete(downloaded);
+            }
             final Boolean res = this.delete(id);
             if (!res) {
                 Log.i(CapacitorUpdater.TAG, "Double error, cannot cleanup: " + version);
@@ -354,10 +358,10 @@ public class CapacitorUpdater {
 
         try {
             if (!isManifest) {
-                final File unzipped = this.unzip(id, downloaded, this.randomString());
+                extractedDir = this.unzip(id, downloaded, this.randomString());
                 this.notifyDownload(id, 91);
                 final String idName = bundleDirectory + "/" + id;
-                this.flattenAssets(unzipped, idName);
+                this.flattenAssets(extractedDir, idName);
             } else {
                 this.notifyDownload(id, 91);
                 final String idName = bundleDirectory + "/" + id;
@@ -381,12 +385,19 @@ public class CapacitorUpdater {
                 }
             }
         } catch (IOException e) {
+            if (!isManifest) {
+                safeDelete(extractedDir);
+                safeDelete(downloaded);
+            }
             e.printStackTrace();
             final JSObject ret = new JSObject();
             ret.put("version", CapacitorUpdater.this.getCurrentBundle().getVersionName());
             CapacitorUpdater.this.notifyListeners("downloadFailed", ret);
             CapacitorUpdater.this.sendStats("download_fail");
             return false;
+        }
+        if (!isManifest) {
+            safeDelete(downloaded);
         }
         return true;
     }
@@ -402,6 +413,21 @@ public class CapacitorUpdater {
         }
         if (!file.delete()) {
             throw new IOException("Failed to delete: " + file);
+        }
+    }
+
+    private void safeDelete(final File target) {
+        if (target == null || !target.exists()) {
+            return;
+        }
+        try {
+            if (target.isDirectory()) {
+                this.deleteDirectory(target);
+            } else if (!target.delete()) {
+                Log.w(TAG, "Failed to delete file: " + target.getAbsolutePath());
+            }
+        } catch (IOException cleanupError) {
+            Log.w(TAG, "Cleanup failed for " + target.getAbsolutePath() + ": " + cleanupError.getMessage());
         }
     }
 
