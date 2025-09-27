@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.16.0](https://github.com/Cap-go/capacitor-updater/compare/7.15.3...7.16.0) (2025-09-27)
+
+
+### Features
+
+* implement cleanup of orphan bundle directories in iOS and Android plugins ([b0efcf2](https://github.com/Cap-go/capacitor-updater/commit/b0efcf2ff3d6c7d87dc6929cd5b56516c29e34fa))
+
 ## [7.15.3](https://github.com/Cap-go/capacitor-updater/compare/7.15.2...7.15.3) (2025-09-27)
 
 
