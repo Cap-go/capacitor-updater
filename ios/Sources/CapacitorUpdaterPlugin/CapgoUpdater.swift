@@ -886,6 +886,42 @@ import UIKit
         return self.delete(id: id, removeInfo: true)
     }
 
+    public func cleanupDownloadDirectories(allowedIds: Set<String>) {
+        let bundleRoot = libraryDir.appendingPathComponent(bundleDirectory)
+        let fileManager = FileManager.default
+
+        guard fileManager.fileExists(atPath: bundleRoot.path) else {
+            return
+        }
+
+        do {
+            let contents = try fileManager.contentsOfDirectory(at: bundleRoot, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])
+
+            for url in contents {
+                let resourceValues = try url.resourceValues(forKeys: [.isDirectoryKey])
+                if resourceValues.isDirectory != true {
+                    continue
+                }
+
+                let id = url.lastPathComponent
+
+                if allowedIds.contains(id) {
+                    continue
+                }
+
+                do {
+                    try fileManager.removeItem(at: url)
+                    self.removeBundleInfo(id: id)
+                    logger.info("Deleted orphan bundle directory: \(id)")
+                } catch {
+                    logger.error("Failed to delete orphan bundle directory: \(id) \(error.localizedDescription)")
+                }
+            }
+        } catch {
+            logger.error("Failed to enumerate bundle directory for cleanup: \(error.localizedDescription)")
+        }
+    }
+
     public func getBundleDirectory(id: String) -> URL {
         return libraryDir.appendingPathComponent(self.bundleDirectory).appendingPathComponent(id)
     }

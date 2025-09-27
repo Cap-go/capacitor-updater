@@ -33,9 +33,11 @@ import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.UUID;
@@ -443,6 +445,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     logger.error("Failed to delete: " + bundle.getId() + " " + e.getMessage());
                 }
             }
+            final List<BundleInfo> storedBundles = this.implementation.list(true);
+            final Set<String> allowedIds = new HashSet<>();
+            for (final BundleInfo info : storedBundles) {
+                if (info != null && info.getId() != null && !info.getId().isEmpty()) {
+                    allowedIds.add(info.getId());
+                }
+            }
+            this.implementation.cleanupDownloadDirectories(allowedIds);
         }
         this.editor.putString("LatestNativeBuildVersion", this.currentBuildVersion);
         this.editor.apply();

@@ -248,6 +248,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     logger.error("Delete failed, id \(version.getId()) doesn't exist")
                 }
             }
+
+            let storedBundles = implementation.list(raw: true)
+            let allowedIds = Set(storedBundles.compactMap { info -> String? in
+                let id = info.getId()
+                return id.isEmpty ? nil : id
+            })
+            implementation.cleanupDownloadDirectories(allowedIds: allowedIds)
         }
         UserDefaults.standard.set(self.currentBuildVersion, forKey: "LatestNativeBuildVersion")
         UserDefaults.standard.synchronize()

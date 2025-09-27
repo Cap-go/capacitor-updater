@@ -32,6 +32,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -463,6 +464,41 @@ public class CapgoUpdater {
         }
         if (!file.delete()) {
             throw new IOException("Failed to delete: " + file);
+        }
+    }
+
+    public void cleanupDownloadDirectories(final Set<String> allowedIds) {
+        if (this.documentsDir == null) {
+            logger.warn("Documents directory is null, skipping download cleanup");
+            return;
+        }
+
+        final File bundleRoot = new File(this.documentsDir, bundleDirectory);
+        if (!bundleRoot.exists() || !bundleRoot.isDirectory()) {
+            return;
+        }
+
+        final File[] entries = bundleRoot.listFiles();
+        if (entries != null) {
+            for (final File entry : entries) {
+                if (!entry.isDirectory()) {
+                    continue;
+                }
+
+                final String id = entry.getName();
+
+                if (allowedIds != null && allowedIds.contains(id)) {
+                    continue;
+                }
+
+                try {
+                    this.deleteDirectory(entry);
+                    this.removeBundleInfo(id);
+                    logger.info("Deleted orphan bundle directory: " + id);
+                } catch (IOException e) {
+                    logger.error("Failed to delete orphan bundle directory: " + id + " " + e.getMessage());
+                }
+            }
         }
     }
 
