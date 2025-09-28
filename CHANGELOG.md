@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.17.3](https://github.com/Cap-go/capacitor-updater/compare/7.17.2...7.17.3) (2025-09-28)
+
+
+### Bug Fixes
+
+* remove gsjon lib as it's not well compatible with Android ([0365551](https://github.com/Cap-go/capacitor-updater/commit/0365551690927a103bc51932c18f62586a61d460))
+
 ## [7.17.2](https://github.com/Cap-go/capacitor-updater/compare/7.17.1...7.17.2) (2025-09-28)
 
 
