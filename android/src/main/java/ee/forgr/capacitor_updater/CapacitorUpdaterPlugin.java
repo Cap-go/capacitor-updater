@@ -56,6 +56,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final String updateUrlDefault = "https://plugin.capgo.app/updates";
     private static final String statsUrlDefault = "https://plugin.capgo.app/stats";
     private static final String channelUrlDefault = "https://plugin.capgo.app/channel_self";
+    private static final String CUSTOM_ID_PREF_KEY = "CapacitorUpdater.customId";
 
     private final String PLUGIN_VERSION = "7.17.2";
     private static final String DELAY_CONDITION_PREFERENCES = "";
@@ -63,6 +64,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private SharedPreferences.Editor editor;
     private SharedPreferences prefs;
     protected CapgoUpdater implementation;
+    private Boolean persistCustomId = false;
 
     private Integer appReadyTimeout = 10000;
     private Integer counterActivityCreate = 0;
@@ -214,6 +216,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         // Update User-Agent for shared OkHttpClient
         DownloadService.updateUserAgent(this.implementation.appId, this.PLUGIN_VERSION);
 
+        this.persistCustomId = this.getConfig().getBoolean("persistCustomId", false);
         this.implementation.publicKey = this.getConfig().getString("publicKey", "");
         this.implementation.statsUrl = this.getConfig().getString("statsUrl", statsUrlDefault);
         this.implementation.channelUrl = this.getConfig().getString("channelUrl", channelUrlDefault);
@@ -233,6 +236,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.implementation.deviceID = this.prefs.getString("appUUID", UUID.randomUUID().toString()).toLowerCase();
         this.editor.putString("appUUID", this.implementation.deviceID);
         this.editor.apply();
+        if (Boolean.TRUE.equals(this.persistCustomId)) {
+            final String storedCustomId = this.prefs.getString(CUSTOM_ID_PREF_KEY, "");
+            if (storedCustomId != null && !storedCustomId.isEmpty()) {
+                this.implementation.customId = storedCustomId;
+                logger.info("Loaded persisted customId");
+            }
+        }
         logger.info("init for device " + this.implementation.deviceID);
         logger.info("version native " + this.currentVersionNative.getOriginalString());
         this.autoDeleteFailed = this.getConfig().getBoolean("autoDeleteFailed", true);
@@ -564,6 +574,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return;
         }
         this.implementation.customId = customId;
+        if (Boolean.TRUE.equals(this.persistCustomId)) {
+            if (customId.isEmpty()) {
+                this.editor.remove(CUSTOM_ID_PREF_KEY);
+            } else {
+                this.editor.putString(CUSTOM_ID_PREF_KEY, customId);
+            }
+            this.editor.apply();
+        }
+        call.resolve();
     }
 
     @PluginMethod

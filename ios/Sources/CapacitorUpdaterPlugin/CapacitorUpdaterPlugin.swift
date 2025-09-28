@@ -54,6 +54,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     static let updateUrlDefault = "https://plugin.capgo.app/updates"
     static let statsUrlDefault = "https://plugin.capgo.app/stats"
     static let channelUrlDefault = "https://plugin.capgo.app/channel_self"
+    private let customIdDefaultsKey = "CapacitorUpdater.customId"
     // Note: DELAY_CONDITION_PREFERENCES is now defined in DelayUpdateUtils.DELAY_CONDITION_PREFERENCES
     private var updateUrl = ""
     private var statsUrl = ""
@@ -74,6 +75,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var backgroundWork: DispatchWorkItem?
     private var taskRunning = false
     private var periodCheckDelay = 0
+    private var persistCustomId = false
     public var shakeMenuEnabled = false
     let semaphoreReady = DispatchSemaphore(value: 0)
 
@@ -97,6 +99,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.implementation.deviceID = (UserDefaults.standard.string(forKey: "appUUID") ?? UUID().uuidString).lowercased()
         UserDefaults.standard.set( self.implementation.deviceID, forKey: "appUUID")
         UserDefaults.standard.synchronize()
+        persistCustomId = getConfig().getBoolean("persistCustomId", false)
+        if persistCustomId {
+            let storedCustomId = UserDefaults.standard.string(forKey: customIdDefaultsKey) ?? ""
+            if !storedCustomId.isEmpty {
+                implementation.customId = storedCustomId
+                logger.info("Loaded persisted customId")
+            }
+        }
         logger.info("init for device \(self.implementation.deviceID)")
         guard let versionName = getConfig().getString("version", Bundle.main.versionName) else {
             logger.error("Cannot get version name")
@@ -604,6 +614,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         self.implementation.customId = customId
+        if persistCustomId {
+            if customId.isEmpty {
+                UserDefaults.standard.removeObject(forKey: customIdDefaultsKey)
+            } else {
+                UserDefaults.standard.set(customId, forKey: customIdDefaultsKey)
+            }
+            UserDefaults.standard.synchronize()
+        }
+        call.resolve()
     }
 
     @objc func _reset(toLastSuccessful: Bool) -> Bool {

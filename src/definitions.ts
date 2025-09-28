@@ -236,6 +236,16 @@ declare module '@capacitor/cli' {
       allowModifyAppId?: boolean;
 
       /**
+       * Persist the customId set through {@link CapacitorUpdaterPlugin.setCustomId} across app restarts.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default false (will be true by default in a future major release v8.x.x)
+       * @since  7.17.3
+       */
+      persistCustomId?: boolean;
+
+      /**
        * Set the default channel for the app in the config. Case sensitive.
        * This will setting will override the default channel set in the cloud, but will still respect overrides made in the cloud.
        * This requires the channel to allow devices to self dissociate/associate in the channel settings. https://capgo.app/docs/public-api/channels/#channel-configuration-options
@@ -478,6 +488,9 @@ export interface CapacitorUpdaterPlugin {
 
   /**
    * Set a custom ID for this device
+   *
+   * When {@link PluginsConfig.CapacitorUpdater.persistCustomId} is true, the value will be stored natively and restored on the next app launch.
+   * Pass an empty string to remove any previously stored customId.
    *
    * @param options is the {@link SetCustomIdOptions} customId to set
    * @returns {Promise<void>} an Promise resolved instantly
@@ -852,6 +865,9 @@ export interface UnsetChannelOptions {
 }
 
 export interface SetCustomIdOptions {
+  /**
+   * Custom identifier to associate with the device. Use an empty string to clear any saved value.
+   */
   customId: string;
 }
 
