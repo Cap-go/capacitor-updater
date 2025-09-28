@@ -1,13 +1,11 @@
 package ee.forgr.capacitor_updater;
 
 import android.content.SharedPreferences;
-import com.google.common.reflect.TypeToken;
-import com.google.gson.Gson;
 import io.github.g00fy2.versioncompare.Version;
-import java.lang.reflect.Type;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 
 public class DelayUpdateUtils {
 
@@ -42,10 +40,9 @@ public class DelayUpdateUtils {
     }
 
     public void checkCancelDelay(CancelDelaySource source) {
-        Gson gson = new Gson();
         String delayUpdatePreferences = prefs.getString(DELAY_CONDITION_PREFERENCES, "[]");
-        Type type = new TypeToken<ArrayList<DelayCondition>>() {}.getType();
-        ArrayList<DelayCondition> delayConditionList = gson.fromJson(delayUpdatePreferences, type);
+        List<DelayCondition> parsedConditions = DelayConditionJsonUtils.parse(delayUpdatePreferences, logger);
+        ArrayList<DelayCondition> delayConditionList = new ArrayList<>(parsedConditions);
         ArrayList<DelayCondition> delayConditionListToKeep = new ArrayList<>(delayConditionList.size());
         int index = 0;
 
@@ -163,7 +160,7 @@ public class DelayUpdateUtils {
         }
 
         if (!delayConditionListToKeep.isEmpty()) {
-            this.setMultiDelay(gson.toJson(delayConditionListToKeep));
+            this.setMultiDelay(DelayConditionJsonUtils.toJson(delayConditionListToKeep));
         }
     }
 
