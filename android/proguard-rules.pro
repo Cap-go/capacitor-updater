@@ -20,14 +20,11 @@
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
 
-# Necessary for Gson Deserialization and generic type info
+# Preserve annotation and signature metadata used by runtime checks
 -keepattributes *Annotation*, Signature
 
 # Preserve the entire Capgo plugin package
 -keep class ee.forgr.capacitor_updater.** { *; }
-
-# Keep all Guava reflect types (required for TypeToken)
--keep class com.google.common.reflect.** { *; }
 
 # Preserve Capacitor classes and members accessed via reflection for autoSplashscreen
 # These rules are safe even if SplashScreen plugin is not present - they only reference core Capacitor classes
@@ -46,6 +43,3 @@
 -keep class * implements com.getcapacitor.PluginHandle {
     public void invoke(java.lang.String, com.getcapacitor.PluginCall);
 }
--keepattributes Signature
--keep class com.google.common.reflect.TypeToken
--keep class com.google.common.reflect.TypeToken$TypeSet

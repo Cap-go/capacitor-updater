@@ -1,13 +1,13 @@
 package ee.forgr.capacitor_updater;
 
 import android.content.SharedPreferences;
-import com.google.common.reflect.TypeToken;
-import com.google.gson.Gson;
 import io.github.g00fy2.versioncompare.Version;
-import java.lang.reflect.Type;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 public class DelayUpdateUtils {
 
@@ -42,10 +42,8 @@ public class DelayUpdateUtils {
     }
 
     public void checkCancelDelay(CancelDelaySource source) {
-        Gson gson = new Gson();
         String delayUpdatePreferences = prefs.getString(DELAY_CONDITION_PREFERENCES, "[]");
-        Type type = new TypeToken<ArrayList<DelayCondition>>() {}.getType();
-        ArrayList<DelayCondition> delayConditionList = gson.fromJson(delayUpdatePreferences, type);
+        ArrayList<DelayCondition> delayConditionList = parseDelayConditions(delayUpdatePreferences);
         ArrayList<DelayCondition> delayConditionListToKeep = new ArrayList<>(delayConditionList.size());
         int index = 0;
 
@@ -163,8 +161,54 @@ public class DelayUpdateUtils {
         }
 
         if (!delayConditionListToKeep.isEmpty()) {
-            this.setMultiDelay(gson.toJson(delayConditionListToKeep));
+            this.setMultiDelay(convertDelayConditionsToJson(delayConditionListToKeep));
         }
+    }
+
+    public ArrayList<DelayCondition> parseDelayConditions(String json) {
+        ArrayList<DelayCondition> conditions = new ArrayList<>();
+        if (json == null || json.isEmpty()) {
+            return conditions;
+        }
+        try {
+            JSONArray array = new JSONArray(json);
+            for (int i = 0; i < array.length(); i++) {
+                JSONObject item = array.optJSONObject(i);
+                if (item == null) {
+                    continue;
+                }
+                String kindValue = item.optString("kind", "");
+                String value = item.optString("value", "");
+                if (kindValue.isEmpty()) {
+                    logger.warn("Delay condition missing kind at index " + i);
+                    continue;
+                }
+                try {
+                    DelayUntilNext kind = DelayUntilNext.valueOf(kindValue);
+                    conditions.add(new DelayCondition(kind, value));
+                } catch (IllegalArgumentException e) {
+                    logger.warn("Unknown delay condition kind '" + kindValue + "' at index " + i);
+                }
+            }
+        } catch (JSONException e) {
+            logger.error("Failed to parse delay conditions: " + e.getMessage());
+        }
+        return conditions;
+    }
+
+    private String convertDelayConditionsToJson(ArrayList<DelayCondition> conditions) {
+        JSONArray array = new JSONArray();
+        for (DelayCondition condition : conditions) {
+            try {
+                JSONObject obj = new JSONObject();
+                obj.put("kind", condition.getKind().name());
+                obj.put("value", condition.getValue());
+                array.put(obj);
+            } catch (JSONException e) {
+                logger.error("Failed to serialize delay condition: " + e.getMessage());
+            }
+        }
+        return array.toString();
     }
 
     public Boolean setMultiDelay(String delayConditions) {

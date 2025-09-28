@@ -23,11 +23,8 @@ import com.getcapacitor.PluginHandle;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.plugin.WebView;
-import com.google.gson.Gson;
-import com.google.gson.reflect.TypeToken;
 import io.github.g00fy2.versioncompare.Version;
 import java.io.IOException;
-import java.lang.reflect.Type;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
@@ -1363,14 +1360,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     if (latest.isDownloaded()) {
                                         logger.info("Latest bundle already exists and download is NOT required. " + messageUpdate);
                                         if (shouldDirectUpdate) {
-                                            Gson gson = new Gson();
                                             String delayUpdatePreferences = prefs.getString(
                                                 DelayUpdateUtils.DELAY_CONDITION_PREFERENCES,
                                                 "[]"
                                             );
-                                            Type type = new TypeToken<ArrayList<DelayCondition>>() {}.getType();
-                                            ArrayList<DelayCondition> delayConditionList = gson.fromJson(delayUpdatePreferences, type);
-                                            if (delayConditionList != null && !delayConditionList.isEmpty()) {
+                                            ArrayList<DelayCondition> delayConditionList = delayUpdateUtils.parseDelayConditions(
+                                                delayUpdatePreferences
+                                            );
+                                            if (!delayConditionList.isEmpty()) {
                                                 logger.info("Update delayed until delay conditions met");
                                                 CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
                                                     "Update delayed until delay conditions met",
@@ -1498,11 +1495,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private void installNext() {
         try {
-            Gson gson = new Gson();
             String delayUpdatePreferences = prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]");
-            Type type = new TypeToken<ArrayList<DelayCondition>>() {}.getType();
-            ArrayList<DelayCondition> delayConditionList = gson.fromJson(delayUpdatePreferences, type);
-            if (delayConditionList != null && !delayConditionList.isEmpty()) {
+            ArrayList<DelayCondition> delayConditionList = delayUpdateUtils.parseDelayConditions(delayUpdatePreferences);
+            if (!delayConditionList.isEmpty()) {
                 logger.info("Update delayed until delay conditions met");
                 return;
             }
