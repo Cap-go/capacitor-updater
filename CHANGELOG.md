@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.18.0](https://github.com/Cap-go/capacitor-updater/compare/7.17.3...7.18.0) (2025-09-28)
+
+
+### Features
+
+* add persistCustomId option to store customId across app restarts ([408c708](https://github.com/Cap-go/capacitor-updater/commit/408c7087e5a84184780a5fb35bdf7d8a9800b4cd))
+
 ## [7.17.3](https://github.com/Cap-go/capacitor-updater/compare/7.17.2...7.17.3) (2025-09-28)
 
 
