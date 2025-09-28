@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.17.2](https://github.com/Cap-go/capacitor-updater/compare/7.17.1...7.17.2) (2025-09-28)
+
+
+### Bug Fixes
+
+* keep reflect for JSON serialization when using obfuscation ([487d2a1](https://github.com/Cap-go/capacitor-updater/commit/487d2a165227bf79ba542abe0b8ed778d0d803cb))
+
 ## [7.17.1](https://github.com/Cap-go/capacitor-updater/compare/7.17.0...7.17.1) (2025-09-28)
 
 
