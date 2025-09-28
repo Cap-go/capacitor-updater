@@ -161,7 +161,6 @@ export class CapacitorUpdaterWeb extends WebPlugin implements CapacitorUpdaterPl
   }
 
   async notifyAppReady(): Promise<AppReadyResult> {
-    console.warn('Cannot notify App Ready in web');
     return { bundle: BUNDLE_BUILTIN };
   }
 
