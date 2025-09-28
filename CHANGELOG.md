@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.17.1](https://github.com/Cap-go/capacitor-updater/compare/7.17.0...7.17.1) (2025-09-28)
+
+
+### Bug Fixes
+
+* remove unnecessary warning in web plugin ([49ad3d9](https://github.com/Cap-go/capacitor-updater/commit/49ad3d9b654307a85c14915b862c84650ef50b1c))
+
 ## [7.17.0](https://github.com/Cap-go/capacitor-updater/compare/7.16.0...7.17.0) (2025-09-27)
 
 
