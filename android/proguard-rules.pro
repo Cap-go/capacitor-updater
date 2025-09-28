@@ -46,3 +46,6 @@
 -keep class * implements com.getcapacitor.PluginHandle {
     public void invoke(java.lang.String, com.getcapacitor.PluginCall);
 }
+-keepattributes Signature
+-keep class com.google.common.reflect.TypeToken
+-keep class com.google.common.reflect.TypeToken$TypeSet
