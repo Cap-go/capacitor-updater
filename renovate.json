@@ -41,6 +41,19 @@
       "matchPackagePatterns": ["^com\\.android\\.tools\\.build\\:gradle$"],
       "matchManagers": ["gradle"],
       "enabled": false
+    },
+    {
+      "matchDepTypes": ["peerDependencies"],
+      "matchPackageNames": ["@capacitor/core"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "enabled": false
+    },
+    {
+      "matchDepTypes": ["peerDependencies"],
+      "matchPackageNames": ["@capacitor/core"],
+      "matchUpdateTypes": ["major"],
+      "rangeStrategy": "replace",
+      "allowedVersions": "/^>=\\d+\\.0\\.0$/"
     }
   ]
 }
