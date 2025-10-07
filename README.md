@@ -26,18 +26,21 @@ Open-source Alternative to Appflow, Codepush or Capawesome
 
 ## Features
 
-- 🔋 Supports **Android and iOS**
-- ⚡️ **Capacitor 7** support
-- 🔄 **Auto Update**: Automatically download and set the latest bundle for the app.
-- ☁️ **Cloud Support**: Use the [Capgo Cloud](https://capgo.app/) to manage your app updates.
-- 📦 **Bundle Management**: Download, set, and delete bundles.
-- 📺 **Channel Support**: Set a channel for the app to manage different versions.
-- 🛟 **Rollback**: Reset the app to any bundle if an incompatible bundle has been set.
+- ☁️ Cloud / Self hosted Support: Use our [Cloud](https://capgo.app/) to manage your app updates or yours.
+- 📦 Bundle Management: Download, assign to channel, rollback.
+- 📺 Channel Support: Use channels to manage different environements.
+- 🎯 Set Channel to specific device to do QA or debug one user.
+- 🔄 Auto Update: Automatically download and set the latest bundle for the app.
+- 🛟 Rollback: Reset the app to last working bundle if an incompatible bundle has been set.
 - 🔁 **Delta Updates**: Make instant updates by only downloading changed files.
 - 🔒 **Security**: Encrypt and sign each updates with best in class security standards.
-- ⚔️ **Battle-Tested**: Used in more than 2000 projects.
+- ⚔️ **Battle-Tested**: Used in more than 3000 projects.
+- 📊 View your deployment statistics
+- 🔋 Supports Android and iOS
+- ⚡️ Capacitor 6/7 support
 - 🌐 **Open Source**: Licensed under the Mozilla Public License 2.0
 - 🌐 **Open Source Backend**: Self install [our backend](https://github.com/Cap-go/capgo) in your infra
+
 
 You have 3 ways possible :
 - Use [capgo.app](https://capgo.app) a full featured auto-update system in 5 min Setup, to manage version, update, revert and see stats.
