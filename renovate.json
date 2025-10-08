@@ -51,7 +51,6 @@
     {
       "matchDepTypes": ["peerDependencies"],
       "matchPackageNames": ["@capacitor/core"],
-      "matchUpdateTypes": ["major"],
       "rangeStrategy": "replace",
       "allowedVersions": "/^>=\\d+\\.0\\.0$/"
     }
