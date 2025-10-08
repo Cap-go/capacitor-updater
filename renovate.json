@@ -18,18 +18,8 @@
       "automerge": true
     },
     {
-      "matchPackageNames": ["ZipArchive"],
-      "matchManagers": ["swift", "cocoapods"],
-      "enabled": false
-    },
-    {
       "matchPackageNames": ["eslint"],
       "matchManagers": ["npm"],
-      "enabled": false
-    },
-    {
-      "matchPackageNames": ["com.google.android.gms:play-services-tasks"],
-      "matchManagers": ["gradle"],
       "enabled": false
     },
     {
@@ -40,6 +30,11 @@
     {
       "matchPackagePatterns": ["^com\\.android\\.tools\\.build\\:gradle$"],
       "matchManagers": ["gradle"],
+      "enabled": false
+    },
+    {
+      "matchPackageNames": ["capacitor-swift-pm"],
+      "matchManagers": ["swift"],
       "enabled": false
     },
     {
