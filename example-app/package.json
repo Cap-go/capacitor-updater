@@ -1,0 +1,27 @@
+{
+  "name": "capacitor-app",
+  "version": "1.0.0",
+  "description": "Example Capacitor app for @capgo/capacitor-updater",
+  "type": "module",
+  "keywords": [
+    "capacitor",
+    "mobile"
+  ],
+  "scripts": {
+    "start": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@capacitor/core": "latest",
+    "@capacitor/android": "7.0.0",
+    "@capacitor/ios": "7.0.0",
+    "@capgo/capacitor-updater": "file:.."
+  },
+  "devDependencies": {
+    "@capacitor/cli": "latest",
+    "vite": "^5.4.2"
+  },
+  "author": "",
+  "license": "ISC"
+}
