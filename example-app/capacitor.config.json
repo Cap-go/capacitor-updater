@@ -1,6 +1,6 @@
 {
-  "appId": "com.example.capgo.capacitor.updater",
-  "appName": "@capgo/capacitor-updater example",
+  "appId": "app.capgo.updater",
+  "appName": "Updater Example",
   "webDir": "dist",
   "plugins": {
     "SplashScreen": {
