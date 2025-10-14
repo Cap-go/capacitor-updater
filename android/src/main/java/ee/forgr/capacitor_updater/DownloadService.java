@@ -67,7 +67,7 @@ public class DownloadService extends Worker {
     private static final String UPDATE_FILE = "update.dat";
 
     // Shared OkHttpClient to prevent resource leaks
-    private static OkHttpClient sharedClient;
+    protected static OkHttpClient sharedClient;
     private static String currentAppId = "unknown";
     private static String currentPluginVersion = "unknown";
 

@@ -61,8 +61,6 @@ public class CapgoUpdater {
     public SharedPreferences.Editor editor;
     public SharedPreferences prefs;
 
-    private OkHttpClient client;
-
     public File documentsDir;
     public Boolean directUpdate = false;
     public Activity activity;
@@ -85,8 +83,6 @@ public class CapgoUpdater {
 
     public CapgoUpdater(Logger logger) {
         this.logger = logger;
-        // Simple OkHttpClient - actual configuration happens in plugin
-        this.client = new OkHttpClient.Builder().connectTimeout(30, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build();
     }
 
     private final FilenameFilter filter = (f, name) -> {
@@ -772,7 +768,7 @@ public class CapgoUpdater {
 
         Request request = new Request.Builder().url(url).post(body).build();
 
-        client
+        DownloadService.sharedClient
             .newCall(request)
             .enqueue(
                 new okhttp3.Callback() {
@@ -881,7 +877,7 @@ public class CapgoUpdater {
             .delete(RequestBody.create(json.toString(), MediaType.get("application/json")))
             .build();
 
-        client
+        DownloadService.sharedClient
             .newCall(request)
             .enqueue(
                 new okhttp3.Callback() {
@@ -992,7 +988,7 @@ public class CapgoUpdater {
             .put(RequestBody.create(json.toString(), MediaType.get("application/json")))
             .build();
 
-        client
+        DownloadService.sharedClient
             .newCall(request)
             .enqueue(
                 new okhttp3.Callback() {
@@ -1089,7 +1085,7 @@ public class CapgoUpdater {
 
         Request request = new Request.Builder().url(urlBuilder.build()).get().build();
 
-        client
+        DownloadService.sharedClient
             .newCall(request)
             .enqueue(
                 new okhttp3.Callback() {
@@ -1195,7 +1191,7 @@ public class CapgoUpdater {
             .post(RequestBody.create(json.toString(), MediaType.get("application/json")))
             .build();
 
-        client
+        DownloadService.sharedClient
             .newCall(request)
             .enqueue(
                 new okhttp3.Callback() {
