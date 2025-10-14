@@ -95,18 +95,18 @@ jobs:
       - name: Build
         id: build_code
         run: bun run build
-      - uses: JS-DevTools/npm-publish@v3
+      - uses: js-devtools/npm-publish@v4
         if: ${{ startsWith(github.ref, 'refs/tags/6.') }}
         with:
           token: ${{ secrets.NPM_TOKEN }}
           tag: lts-v6
           provenance: true
-      - uses: JS-DevTools/npm-publish@v3
+      - uses: js-devtools/npm-publish@v4
         if: ${{ !contains(github.ref, '-alpha.') && !startsWith(github.ref, 'refs/tags/6.') }}
         with:
           token: ${{ secrets.NPM_TOKEN }}
           provenance: true
-      - uses: JS-DevTools/npm-publish@v3
+      - uses: js-devtools/npm-publish@v4
         if: ${{ contains(github.ref, '-alpha.') }}
         with:
           token: ${{ secrets.NPM_TOKEN }}
