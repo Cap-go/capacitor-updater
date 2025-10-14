@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.18.12](https://github.com/Cap-go/capacitor-updater/compare/7.18.11...7.18.12) (2025-10-14)
+
+
+### Bug Fixes
+
+* use DownloadService sharedClient in CapgoUpdater to set user-agent ([ca77597](https://github.com/Cap-go/capacitor-updater/commit/ca77597840729179a69ab77289a2f416b0f5261d))
+
 ## [7.18.11](https://github.com/Cap-go/capacitor-updater/compare/7.18.10...7.18.11) (2025-10-14)
 
 ## [7.18.10](https://github.com/Cap-go/capacitor-updater/compare/7.18.9...7.18.10) (2025-10-11)
