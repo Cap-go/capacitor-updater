@@ -1235,11 +1235,11 @@ public class CapgoUpdater {
             } catch (JSONException e) {
                 logger.error(
                     "Failed to parse info for bundle [" +
-                    trueId +
-                    "] stored value: '" +
-                    this.prefs.getString(trueId + INFO_SUFFIX, "") +
-                    "' error: " +
-                    e.getMessage()
+                        trueId +
+                        "] stored value: '" +
+                        this.prefs.getString(trueId + INFO_SUFFIX, "") +
+                        "' error: " +
+                        e.getMessage()
                 );
                 // Clear corrupted data
                 this.editor.remove(trueId + INFO_SUFFIX);

@@ -549,13 +549,13 @@ public class DownloadService extends Worker {
                 finalTargetFile.delete();
                 throw new IOException(
                     "Checksum verification failed for: " +
-                    downloadUrl +
-                    " " +
-                    targetFile.getName() +
-                    " expected: " +
-                    expectedHash +
-                    " calculated: " +
-                    calculatedHash
+                        downloadUrl +
+                        " " +
+                        targetFile.getName() +
+                        " expected: " +
+                        expectedHash +
+                        " calculated: " +
+                        calculatedHash
                 );
             }
         } catch (Exception e) {

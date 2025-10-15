@@ -62,35 +62,35 @@ public class DelayUpdateUtils {
                         } catch (NumberFormatException e) {
                             logger.error(
                                 "Background condition (value: " +
-                                value +
-                                ") had an invalid value at index " +
-                                index +
-                                ". We will likely remove it."
+                                    value +
+                                    ") had an invalid value at index " +
+                                    index +
+                                    ". We will likely remove it."
                             );
                         }
 
                         if (delta > longValue) {
                             logger.info(
                                 "Background condition (value: " +
-                                value +
-                                ") deleted at index " +
-                                index +
-                                ". Delta: " +
-                                delta +
-                                ", longValue: " +
-                                longValue
+                                    value +
+                                    ") deleted at index " +
+                                    index +
+                                    ". Delta: " +
+                                    delta +
+                                    ", longValue: " +
+                                    longValue
                             );
                         }
                     } else {
                         delayConditionListToKeep.add(condition);
                         logger.info(
                             "Background delay (value: " +
-                            value +
-                            ") condition kept at index " +
-                            index +
-                            " (source: " +
-                            source.toString() +
-                            ")"
+                                value +
+                                ") condition kept at index " +
+                                index +
+                                " (source: " +
+                                source.toString() +
+                                ")"
                         );
                     }
                     break;
@@ -119,11 +119,11 @@ public class DelayUpdateUtils {
                         } catch (final Exception e) {
                             logger.error(
                                 "Date delay (value: " +
-                                value +
-                                ") condition removed due to parsing issue at index " +
-                                index +
-                                " " +
-                                e.getMessage()
+                                    value +
+                                    ") condition removed due to parsing issue at index " +
+                                    index +
+                                    " " +
+                                    e.getMessage()
                             );
                         }
                     } else {
@@ -145,11 +145,11 @@ public class DelayUpdateUtils {
                         } catch (final Exception e) {
                             logger.error(
                                 "Native version delay (value: " +
-                                value +
-                                ") condition removed due to parsing issue at index " +
-                                index +
-                                " " +
-                                e.getMessage()
+                                    value +
+                                    ") condition removed due to parsing issue at index " +
+                                    index +
+                                    " " +
+                                    e.getMessage()
                             );
                         }
                     } else {
