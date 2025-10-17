@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [Unreleased]
+
+### Features
+
+* add breakingAvailable event and deprecate majorAvailable in favor of backend breaking flag ([#517](https://github.com/Cap-go/capacitor-updater/issues/517))
+
 ## [7.21.1](https://github.com/Cap-go/capacitor-updater/compare/7.21.0...7.21.1) (2025-10-17)
 
 

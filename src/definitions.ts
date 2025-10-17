@@ -632,8 +632,20 @@ export interface CapacitorUpdaterPlugin {
   ): Promise<PluginListenerHandle>;
 
   /**
+   * Listen for breaking update events when the backend flags an update as incompatible with the current app.
+   * Emits the same payload as the legacy `majorAvailable` listener.
+   *
+   * @since 7.22.0
+   */
+  addListener(
+    eventName: 'breakingAvailable',
+    listenerFunc: (state: BreakingAvailableEvent) => void,
+  ): Promise<PluginListenerHandle>;
+
+  /**
    * Listen for Major update event in the App, let you know when major update is blocked by setting disableAutoUpdateBreaking
    *
+   * @deprecated Deprecated alias for {@link addListener} with `breakingAvailable`. Emits the same payload. will be removed in v8
    * @since 2.3.0
    */
   addListener(
@@ -692,6 +704,15 @@ export interface CapacitorUpdaterPlugin {
    * @since 6.8.0
    */
   getNextBundle(): Promise<BundleInfo | null>;
+
+  /**
+   * Get the most recent update that failed to install, if any. The stored value is cleared after it is retrieved once.
+   *
+   * @returns {Promise<UpdateFailedEvent | null>} The last failed update or null when no failure has been recorded. Value is cleared after it is returned once.
+   * @throws {Error}
+   * @since 7.22.0
+   */
+  getFailedUpdate(): Promise<UpdateFailedEvent | null>;
 
   /**
    * Enable or disable the shake menu for debugging/testing purposes
@@ -832,12 +853,20 @@ export interface DownloadEvent {
 
 export interface MajorAvailableEvent {
   /**
-   * Emit when a new major bundle is available.
+   * Emit when a breaking update is available.
    *
+   * @deprecated Deprecated alias for {@link BreakingAvailableEvent}. Receives the same payload.
    * @since  4.0.0
    */
   version: string;
 }
+
+/**
+ * Payload emitted by {@link CapacitorUpdaterPlugin.addListener} with `breakingAvailable`.
+ *
+ * @since 7.22.0
+ */
+export type BreakingAvailableEvent = MajorAvailableEvent;
 
 export interface DownloadFailedEvent {
   /**
@@ -893,6 +922,15 @@ export interface LatestVersion {
    * @since 6
    */
   checksum?: string;
+  /**
+   * Indicates whether the update was flagged as breaking by the backend.
+   *
+   * @since 7.22.0
+   */
+  breaking?: boolean;
+  /**
+   * @deprecated Use {@link LatestVersion.breaking} instead.
+   */
   major?: boolean;
   message?: string;
   sessionKey?: string;

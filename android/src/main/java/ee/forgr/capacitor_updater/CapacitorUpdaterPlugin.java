@@ -68,6 +68,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final String UPDATE_URL_PREF_KEY = "CapacitorUpdater.updateUrl";
     private static final String STATS_URL_PREF_KEY = "CapacitorUpdater.statsUrl";
     private static final String CHANNEL_URL_PREF_KEY = "CapacitorUpdater.channelUrl";
+    private static final String[] BREAKING_EVENT_NAMES = { "breakingAvailable", "majorAvailable" };
+    private static final String LAST_FAILED_BUNDLE_PREF_KEY = "CapacitorUpdater.lastFailedBundle";
 
     private final String PLUGIN_VERSION = "7.21.1";
     private static final String DELAY_CONDITION_PREFERENCES = "";
@@ -116,12 +118,54 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private FrameLayout splashscreenLoaderOverlay;
     private Runnable splashscreenTimeoutRunnable;
 
+    private void notifyBreakingEvents(final String version) {
+        if (version == null || version.isEmpty()) {
+            return;
+        }
+        for (final String eventName : BREAKING_EVENT_NAMES) {
+            final JSObject payload = new JSObject();
+            payload.put("version", version);
+            CapacitorUpdaterPlugin.this.notifyListeners(eventName, payload);
+        }
+    }
+
     private JSObject mapToJSObject(Map<String, Object> map) {
         JSObject jsObject = new JSObject();
         for (Map.Entry<String, Object> entry : map.entrySet()) {
             jsObject.put(entry.getKey(), entry.getValue());
         }
         return jsObject;
+    }
+
+    private void persistLastFailedBundle(BundleInfo bundle) {
+        if (this.prefs == null) {
+            return;
+        }
+        final SharedPreferences.Editor localEditor = this.prefs.edit();
+        if (bundle == null) {
+            localEditor.remove(LAST_FAILED_BUNDLE_PREF_KEY);
+        } else {
+            final JSONObject json = new JSONObject(bundle.toJSONMap());
+            localEditor.putString(LAST_FAILED_BUNDLE_PREF_KEY, json.toString());
+        }
+        localEditor.apply();
+    }
+
+    private BundleInfo readLastFailedBundle() {
+        if (this.prefs == null) {
+            return null;
+        }
+        final String raw = this.prefs.getString(LAST_FAILED_BUNDLE_PREF_KEY, null);
+        if (raw == null || raw.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            return BundleInfo.fromJSON(raw);
+        } catch (final JSONException e) {
+            logger.error("Failed to parse failed bundle info: " + e.getMessage());
+            this.persistLastFailedBundle(null);
+            return null;
+        }
     }
 
     public Thread startNewThread(final Runnable function, Number waitTime) {
@@ -1298,6 +1342,26 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
+    @PluginMethod
+    public void getFailedUpdate(final PluginCall call) {
+        try {
+            final BundleInfo bundle = this.readLastFailedBundle();
+            if (bundle == null || bundle.isUnknown()) {
+                call.resolve(null);
+                return;
+            }
+
+            this.persistLastFailedBundle(null);
+
+            final JSObject ret = new JSObject();
+            ret.put("bundle", mapToJSObject(bundle.toJSONMap()));
+            call.resolve(ret);
+        } catch (final Exception e) {
+            logger.error("Could not get failed update " + e.getMessage());
+            call.reject("Could not get failed update", e);
+        }
+    }
+
     public void checkForUpdateAfterDelay() {
         if (this.periodCheckDelay == 0 || !this._isAutoUpdateEnabled()) {
             return;
@@ -1542,10 +1606,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     try {
                         if (jsRes.has("message")) {
                             logger.info("API message: " + jsRes.get("message"));
-                            if (jsRes.has("major") && jsRes.getBoolean("major") && jsRes.has("version")) {
-                                final JSObject majorAvailable = new JSObject();
-                                majorAvailable.put("version", jsRes.getString("version"));
-                                CapacitorUpdaterPlugin.this.notifyListeners("majorAvailable", majorAvailable);
+                            if (jsRes.has("version") && (jsRes.has("breaking") || jsRes.has("major"))) {
+                                CapacitorUpdaterPlugin.this.notifyBreakingEvents(jsRes.getString("version"));
                             }
                             String latestVersion = jsRes.has("version") ? jsRes.getString("version") : current.getVersionName();
                             CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
@@ -1800,6 +1862,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             logger.info("Did you forget to call 'notifyAppReady()' in your Capacitor App code?");
             final JSObject ret = new JSObject();
             ret.put("bundle", mapToJSObject(current.toJSONMap()));
+            this.persistLastFailedBundle(current);
             this.notifyListeners("updateFailed", ret);
             this.implementation.sendStats("update_fail", current.getVersionName());
             this.implementation.setError(current);

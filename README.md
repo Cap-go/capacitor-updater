@@ -397,6 +397,7 @@ export default config;
 * [`addListener('noNeedUpdate', ...)`](#addlistenernoneedupdate-)
 * [`addListener('updateAvailable', ...)`](#addlistenerupdateavailable-)
 * [`addListener('downloadComplete', ...)`](#addlistenerdownloadcomplete-)
+* [`addListener('breakingAvailable', ...)`](#addlistenerbreakingavailable-)
 * [`addListener('majorAvailable', ...)`](#addlistenermajoravailable-)
 * [`addListener('updateFailed', ...)`](#addlistenerupdatefailed-)
 * [`addListener('downloadFailed', ...)`](#addlistenerdownloadfailed-)
@@ -404,6 +405,7 @@ export default config;
 * [`addListener('appReady', ...)`](#addlistenerappready-)
 * [`isAutoUpdateAvailable()`](#isautoupdateavailable)
 * [`getNextBundle()`](#getnextbundle)
+* [`getFailedUpdate()`](#getfailedupdate)
 * [`setShakeMenu(...)`](#setshakemenu)
 * [`isShakeMenuEnabled()`](#isshakemenuenabled)
 * [`getAppId()`](#getappid)
@@ -914,6 +916,27 @@ Listen for downloadComplete events.
 --------------------
 
 
+#### addListener('breakingAvailable', ...)
+
+```typescript
+addListener(eventName: 'breakingAvailable', listenerFunc: (state: BreakingAvailableEvent) => void) => Promise<PluginListenerHandle>
+```
+
+Listen for breaking update events when the backend flags an update as incompatible with the current app.
+Emits the same payload as the legacy `majorAvailable` listener.
+
+| Param              | Type                                                                                    |
+| ------------------ | --------------------------------------------------------------------------------------- |
+| **`eventName`**    | <code>'breakingAvailable'</code>                                                        |
+| **`listenerFunc`** | <code>(state: <a href="#majoravailableevent">MajorAvailableEvent</a>) =&gt; void</code> |
+
+**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
+
+**Since:** 7.22.0
+
+--------------------
+
+
 #### addListener('majorAvailable', ...)
 
 ```typescript
@@ -1039,6 +1062,21 @@ Returns null if no next bundle is set.
 **Returns:** <code>Promise&lt;<a href="#bundleinfo">BundleInfo</a> | null&gt;</code>
 
 **Since:** 6.8.0
+
+--------------------
+
+
+#### getFailedUpdate()
+
+```typescript
+getFailedUpdate() => Promise<UpdateFailedEvent | null>
+```
+
+Get the most recent update that failed to install, if any. The stored value is cleared after it is retrieved once.
+
+**Returns:** <code>Promise&lt;<a href="#updatefailedevent">UpdateFailedEvent</a> | null&gt;</code>
+
+**Since:** 7.22.0
 
 --------------------
 
@@ -1225,17 +1263,18 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 
 ##### LatestVersion
 
-| Prop             | Type                         | Description                | Since |
-| ---------------- | ---------------------------- | -------------------------- | ----- |
-| **`version`**    | <code>string</code>          | Result of getLatest method | 4.0.0 |
-| **`checksum`**   | <code>string</code>          |                            | 6     |
-| **`major`**      | <code>boolean</code>         |                            |       |
-| **`message`**    | <code>string</code>          |                            |       |
-| **`sessionKey`** | <code>string</code>          |                            |       |
-| **`error`**      | <code>string</code>          |                            |       |
-| **`old`**        | <code>string</code>          |                            |       |
-| **`url`**        | <code>string</code>          |                            |       |
-| **`manifest`**   | <code>ManifestEntry[]</code> |                            | 6.1   |
+| Prop             | Type                         | Description                                                          | Since  |
+| ---------------- | ---------------------------- | -------------------------------------------------------------------- | ------ |
+| **`version`**    | <code>string</code>          | Result of getLatest method                                           | 4.0.0  |
+| **`checksum`**   | <code>string</code>          |                                                                      | 6      |
+| **`breaking`**   | <code>boolean</code>         | Indicates whether the update was flagged as breaking by the backend. | 7.22.0 |
+| **`major`**      | <code>boolean</code>         |                                                                      |        |
+| **`message`**    | <code>string</code>          |                                                                      |        |
+| **`sessionKey`** | <code>string</code>          |                                                                      |        |
+| **`error`**      | <code>string</code>          |                                                                      |        |
+| **`old`**        | <code>string</code>          |                                                                      |        |
+| **`url`**        | <code>string</code>          |                                                                      |        |
+| **`manifest`**   | <code>ManifestEntry[]</code> |                                                                      | 6.1    |
 
 
 ##### GetLatestOptions
@@ -1370,9 +1409,9 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 
 ##### MajorAvailableEvent
 
-| Prop          | Type                | Description                                | Since |
-| ------------- | ------------------- | ------------------------------------------ | ----- |
-| **`version`** | <code>string</code> | Emit when a new major bundle is available. | 4.0.0 |
+| Prop          | Type                | Description                               | Since |
+| ------------- | ------------------- | ----------------------------------------- | ----- |
+| **`version`** | <code>string</code> | Emit when a breaking update is available. | 4.0.0 |
 
 
 ##### UpdateFailedEvent
@@ -1448,6 +1487,13 @@ error: The bundle has failed to download.
 ##### DelayUntilNext
 
 <code>'background' | 'kill' | 'nativeVersion' | 'date'</code>
+
+
+##### BreakingAvailableEvent
+
+Payload emitted by {@link CapacitorUpdaterPlugin.addListener} with `breakingAvailable`.
+
+<code><a href="#majoravailableevent">MajorAvailableEvent</a></code>
 
 </docgen-api>
 

@@ -86,6 +86,7 @@ CapacitorUpdater can be configured with these options:
 - [`addListener('noNeedUpdate')`](#addlistenernoneedupdate-)
 - [`addListener('updateAvailable')`](#addlistenerupdateavailable-)
 - [`addListener('downloadComplete')`](#addlistenerdownloadcomplete-)
+- [`addListener('breakingAvailable')`](#addlistenerbreakingavailable-)
 - [`addListener('majorAvailable')`](#addlistenermajoravailable-)
 - [`addListener('updateFailed')`](#addlistenerupdatefailed-)
 - [`addListener('downloadFailed')`](#addlistenerdownloadfailed-)
@@ -93,6 +94,7 @@ CapacitorUpdater can be configured with these options:
 - [`addListener('appReady')`](#addlistenerappready-)
 - [`isAutoUpdateAvailable`](#isautoupdateavailable)
 - [`getNextBundle`](#getnextbundle)
+- [`getFailedUpdate`](#getfailedupdate)
 - [`setShakeMenu`](#setshakemenu)
 - [`isShakeMenuEnabled`](#isshakemenuenabled)
 - [`getAppId`](#getappid)
@@ -826,6 +828,32 @@ Listen for downloadComplete events.
 --------------------
 
 
+### addListener('breakingAvailable')
+
+```typescript
+addListener(eventName: 'breakingAvailable', listenerFunc: (state: BreakingAvailableEvent) => void) => Promise<PluginListenerHandle>
+```
+
+Listen for breaking update events when the backend flags an update as incompatible with the current app.
+Emits the same payload as the legacy `majorAvailable` listener.
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `eventName` | `'breakingAvailable'` |  |
+| `listenerFunc` | `(state: MajorAvailableEvent) => void` |  |
+
+**Returns**
+
+`Promise<PluginListenerHandle>`
+
+**Since:** 7.22.0
+
+
+--------------------
+
+
 ### addListener('majorAvailable')
 
 ```typescript
@@ -983,6 +1011,26 @@ Returns null if no next bundle is set.
 `Promise<BundleInfo | null>` — A Promise that resolves with the next bundle information or null
 
 **Since:** 6.8.0
+
+**Throws:** {Error}
+
+
+--------------------
+
+
+### getFailedUpdate
+
+```typescript
+getFailedUpdate() => Promise<UpdateFailedEvent | null>
+```
+
+Get the most recent update that failed to install, if any. The stored value is cleared after it is retrieved once.
+
+**Returns**
+
+`Promise<UpdateFailedEvent | null>` — The last failed update or null when no failure has been recorded. Value is cleared after it is returned once.
+
+**Since:** 7.22.0
 
 **Throws:** {Error}
 

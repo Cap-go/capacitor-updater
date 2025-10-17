@@ -34,6 +34,7 @@ import type {
   AutoUpdateAvailable,
   SetShakeMenuOptions,
   ShakeMenuEnabled,
+  UpdateFailedEvent,
 } from './definitions';
 
 const BUNDLE_BUILTIN: BundleInfo = {
@@ -196,6 +197,11 @@ export class CapacitorUpdaterWeb extends WebPlugin implements CapacitorUpdaterPl
 
   async getNextBundle(): Promise<BundleInfo | null> {
     return Promise.resolve(null);
+  }
+
+  async getFailedUpdate(): Promise<UpdateFailedEvent | null> {
+    console.warn('Cannot getFailedUpdate in web');
+    return null;
   }
 
   async setShakeMenu(_options: SetShakeMenuOptions): Promise<void> {

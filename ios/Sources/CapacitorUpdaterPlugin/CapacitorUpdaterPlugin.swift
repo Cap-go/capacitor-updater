@@ -49,6 +49,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getBuiltinVersion", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "isAutoUpdateAvailable", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getNextBundle", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getFailedUpdate", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setShakeMenu", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "isShakeMenuEnabled", returnType: CAPPluginReturnPromise)
     ]
@@ -62,6 +63,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private let updateUrlDefaultsKey = "CapacitorUpdater.updateUrl"
     private let statsUrlDefaultsKey = "CapacitorUpdater.statsUrl"
     private let channelUrlDefaultsKey = "CapacitorUpdater.channelUrl"
+    private let lastFailedBundleDefaultsKey = "CapacitorUpdater.lastFailedBundle"
     // Note: DELAY_CONDITION_PREFERENCES is now defined in DelayUpdateUtils.DELAY_CONDITION_PREFERENCES
     private var updateUrl = ""
     private var backgroundTaskID: UIBackgroundTaskIdentifier = UIBackgroundTaskIdentifier.invalid
@@ -256,6 +258,33 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 self.keepUrlPathFlagLastValue = enabled
             }
             webView.evaluateJavaScript(script, completionHandler: nil)
+        }
+    }
+
+    private func persistLastFailedBundle(_ bundle: BundleInfo?) {
+        if let bundle = bundle {
+            do {
+                try UserDefaults.standard.setObj(bundle, forKey: lastFailedBundleDefaultsKey)
+            } catch {
+                logger.error("Failed to persist failed bundle info \(error.localizedDescription)")
+            }
+        } else {
+            UserDefaults.standard.removeObject(forKey: lastFailedBundleDefaultsKey)
+        }
+        UserDefaults.standard.synchronize()
+    }
+
+    private func readLastFailedBundle() -> BundleInfo? {
+        do {
+            let bundle: BundleInfo = try UserDefaults.standard.getObj(forKey: lastFailedBundleDefaultsKey, castTo: BundleInfo.self)
+            return bundle
+        } catch ObjectSavableError.noValue {
+            return nil
+        } catch {
+            logger.error("Failed to read failed bundle info \(error.localizedDescription)")
+            UserDefaults.standard.removeObject(forKey: lastFailedBundleDefaultsKey)
+            UserDefaults.standard.synchronize()
+            return nil
         }
     }
 
@@ -880,6 +909,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             self.notifyListeners("updateFailed", data: [
                 "bundle": current.toJSON()
             ])
+            self.persistLastFailedBundle(current)
             self.implementation.sendStats(action: "update_fail", versionName: current.getVersionName())
             self.implementation.setError(bundle: current)
             _ = self._reset(toLastSuccessful: true)
@@ -1161,6 +1191,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    private func notifyBreakingEvents(version: String) {
+        guard !version.isEmpty else {
+            return
+        }
+        let payload: [String: Any] = ["version": version]
+        self.notifyListeners("breakingAvailable", data: payload)
+        self.notifyListeners("majorAvailable", data: payload)
+    }
+
     func endBackGroundTaskWithNotif(
         msg: String,
         latestVersionName: String,
@@ -1220,8 +1259,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
             if let message = res.message, !message.isEmpty {
                 self.logger.info("API message: \(message)")
-                if res.major == true {
-                    self.notifyListeners("majorAvailable", data: ["version": res.version])
+                if res.breaking == true || res.major == true {
+                    self.notifyBreakingEvents(version: res.version)
                 }
                 self.endBackGroundTaskWithNotif(
                     msg: message,
@@ -1484,6 +1523,19 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         call.resolve(bundle!.toJSON())
+    }
+
+    @objc func getFailedUpdate(_ call: CAPPluginCall) {
+        let bundle = self.readLastFailedBundle()
+        if bundle == nil || bundle?.isUnknown() == true {
+            call.resolve()
+            return
+        }
+
+        self.persistLastFailedBundle(nil)
+        call.resolve([
+            "bundle": bundle!.toJSON()
+        ])
     }
 
     @objc func setShakeMenu(_ call: CAPPluginCall) {

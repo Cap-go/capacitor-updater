@@ -289,6 +289,9 @@ import UIKit
                 if let major = response.value?.major {
                     latest.major = major
                 }
+                if let breaking = response.value?.breaking {
+                    latest.breaking = breaking
+                }
                 if let error = response.value?.error {
                     latest.error = error
                 }

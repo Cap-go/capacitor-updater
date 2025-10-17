@@ -253,7 +253,13 @@ public class CapgoUpdater {
                                 BundleInfo resultBundle;
                                 if (!success) {
                                     logger.error("Finish download failed: " + version);
-                                    resultBundle = new BundleInfo(id, version, BundleStatus.ERROR, new Date(System.currentTimeMillis()), "");
+                                    resultBundle = new BundleInfo(
+                                        id,
+                                        version,
+                                        BundleStatus.ERROR,
+                                        new Date(System.currentTimeMillis()),
+                                        ""
+                                    );
                                     saveBundleInfo(id, resultBundle);
                                     // Cleanup download tracking
                                     DownloadWorkerManager.cancelBundleDownload(activity, id, version);
