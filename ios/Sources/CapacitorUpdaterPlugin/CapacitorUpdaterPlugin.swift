@@ -56,6 +56,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     static let statsUrlDefault = "https://plugin.capgo.app/stats"
     static let channelUrlDefault = "https://plugin.capgo.app/channel_self"
     private let customIdDefaultsKey = "CapacitorUpdater.customId"
+    private let updateUrlDefaultsKey = "CapacitorUpdater.updateUrl"
+    private let statsUrlDefaultsKey = "CapacitorUpdater.statsUrl"
+    private let channelUrlDefaultsKey = "CapacitorUpdater.channelUrl"
     // Note: DELAY_CONDITION_PREFERENCES is now defined in DelayUpdateUtils.DELAY_CONDITION_PREFERENCES
     private var updateUrl = ""
     private var backgroundTaskID: UIBackgroundTaskIdentifier = UIBackgroundTaskIdentifier.invalid
@@ -82,6 +85,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var taskRunning = false
     private var periodCheckDelay = 0
     private var persistCustomId = false
+    private var persistModifyUrl = false
     public var shakeMenuEnabled = false
     let semaphoreReady = DispatchSemaphore(value: 0)
 
@@ -113,6 +117,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 logger.info("Loaded persisted customId")
             }
         }
+        persistModifyUrl = getConfig().getBoolean("persistModifyUrl", false)
         logger.info("init for device \(self.implementation.deviceID)")
         guard let versionName = getConfig().getString("version", Bundle.main.versionName) else {
             logger.error("Cannot get version name")
@@ -151,6 +156,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         let splashscreenTimeoutValue = getConfig().getInt("autoSplashscreenTimeout", 10000)
         autoSplashscreenTimeout = max(0, splashscreenTimeoutValue)
         updateUrl = getConfig().getString("updateUrl", CapacitorUpdaterPlugin.updateUrlDefault)!
+        if persistModifyUrl, let storedUpdateUrl = UserDefaults.standard.object(forKey: updateUrlDefaultsKey) as? String {
+            updateUrl = storedUpdateUrl
+            logger.info("Loaded persisted updateUrl")
+        }
         autoUpdate = getConfig().getBoolean("autoUpdate", true)
         appReadyTimeout = getConfig().getInt("appReadyTimeout", 10000)
         implementation.timeout = Double(getConfig().getInt("responseTimeout", 20))
@@ -184,6 +193,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         logger.info("appId \(implementation.appId)")
         implementation.statsUrl = getConfig().getString("statsUrl", CapacitorUpdaterPlugin.statsUrlDefault)!
         implementation.channelUrl = getConfig().getString("channelUrl", CapacitorUpdaterPlugin.channelUrlDefault)!
+        if persistModifyUrl {
+            if let storedStatsUrl = UserDefaults.standard.object(forKey: statsUrlDefaultsKey) as? String {
+                implementation.statsUrl = storedStatsUrl
+                logger.info("Loaded persisted statsUrl")
+            }
+            if let storedChannelUrl = UserDefaults.standard.object(forKey: channelUrlDefaultsKey) as? String {
+                implementation.channelUrl = storedChannelUrl
+                logger.info("Loaded persisted channelUrl")
+            }
+        }
         implementation.defaultChannel = getConfig().getString("defaultChannel", "")!
         self.implementation.autoReset()
 
@@ -300,6 +319,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         self.updateUrl = url
+        if persistModifyUrl {
+            UserDefaults.standard.set(url, forKey: updateUrlDefaultsKey)
+            UserDefaults.standard.synchronize()
+        }
         call.resolve()
     }
 
@@ -315,6 +338,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         self.implementation.statsUrl = url
+        if persistModifyUrl {
+            UserDefaults.standard.set(url, forKey: statsUrlDefaultsKey)
+            UserDefaults.standard.synchronize()
+        }
         call.resolve()
     }
 
@@ -330,6 +357,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         self.implementation.channelUrl = url
+        if persistModifyUrl {
+            UserDefaults.standard.set(url, forKey: channelUrlDefaultsKey)
+            UserDefaults.standard.synchronize()
+        }
         call.resolve()
     }
 

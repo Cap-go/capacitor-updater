@@ -256,6 +256,7 @@ CapacitorUpdater can be configured with these options:
 | **`allowModifyUrl`**          | <code>boolean</code>                            | Allow the plugin to modify the updateUrl, statsUrl and channelUrl dynamically from the JavaScript side.                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | <code>false</code>                                                            | 5.4.0   |
 | **`allowModifyAppId`**        | <code>boolean</code>                            | Allow the plugin to modify the appId dynamically from the JavaScript side.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | <code>false</code>                                                            | 7.14.0  |
 | **`persistCustomId`**         | <code>boolean</code>                            | Persist the customId set through {@link CapacitorUpdaterPlugin.setCustomId} across app restarts. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                              | <code>false (will be true by default in a future major release v8.x.x)</code> | 7.17.3  |
+| **`persistModifyUrl`**        | <code>boolean</code>                            | Persist the updateUrl, statsUrl and channelUrl set through {@link CapacitorUpdaterPlugin.setUpdateUrl}, {@link CapacitorUpdaterPlugin.setStatsUrl} and {@link CapacitorUpdaterPlugin.setChannelUrl} across app restarts. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                      | <code>false</code>                                                            | 7.20.0  |
 | **`defaultChannel`**          | <code>string</code>                             | Set the default channel for the app in the config. Case sensitive. This will setting will override the default channel set in the cloud, but will still respect overrides made in the cloud. This requires the channel to allow devices to self dissociate/associate in the channel settings. https://capgo.app/docs/public-api/channels/#channel-configuration-options                                                                                                                                                                                                           | <code>undefined</code>                                                        | 5.5.0   |
 | **`appId`**                   | <code>string</code>                             | Configure the app id for the app in the config.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | <code>undefined</code>                                                        | 6.0.0   |
 | **`keepUrlPathAfterReload`**  | <code>boolean</code>                            | Configure the plugin to keep the URL path after a reload. WARNING: When a reload is triggered, 'window.history' will be cleared.                                                                                                                                                                                                                                                                                                                                                                                                                                                  | <code>false</code>                                                            | 6.8.0   |
@@ -296,6 +297,7 @@ In `capacitor.config.json`:
       "allowModifyUrl": undefined,
       "allowModifyAppId": undefined,
       "persistCustomId": undefined,
+      "persistModifyUrl": undefined,
       "defaultChannel": undefined,
       "appId": undefined,
       "keepUrlPathAfterReload": undefined,
@@ -342,6 +344,7 @@ const config: CapacitorConfig = {
       allowModifyUrl: undefined,
       allowModifyAppId: undefined,
       persistCustomId: undefined,
+      persistModifyUrl: undefined,
       defaultChannel: undefined,
       appId: undefined,
       keepUrlPathAfterReload: undefined,
@@ -761,7 +764,7 @@ Get the native app version or the builtin version if set in config
 getDeviceId() => Promise<DeviceId>
 ```
 
-Get unique ID used to identify device (sent to auto update server)
+Get unique ID used to identify device (sent to auto update server), this ID is made following Apple and Google privacy best practices, and not persisted between installs
 
 **Returns:** <code>Promise&lt;<a href="#deviceid">DeviceId</a>&gt;</code>
 

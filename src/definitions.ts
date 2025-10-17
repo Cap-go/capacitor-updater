@@ -274,6 +274,17 @@ declare module '@capacitor/cli' {
       persistCustomId?: boolean;
 
       /**
+       * Persist the updateUrl, statsUrl and channelUrl set through {@link CapacitorUpdaterPlugin.setUpdateUrl},
+       * {@link CapacitorUpdaterPlugin.setStatsUrl} and {@link CapacitorUpdaterPlugin.setChannelUrl} across app restarts.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default false
+       * @since  7.20.0
+       */
+      persistModifyUrl?: boolean;
+
+      /**
        * Set the default channel for the app in the config. Case sensitive.
        * This will setting will override the default channel set in the cloud, but will still respect overrides made in the cloud.
        * This requires the channel to allow devices to self dissociate/associate in the channel settings. https://capgo.app/docs/public-api/channels/#channel-configuration-options
@@ -536,7 +547,7 @@ export interface CapacitorUpdaterPlugin {
   getBuiltinVersion(): Promise<BuiltinVersion>;
 
   /**
-   * Get unique ID used to identify device (sent to auto update server)
+   * Get unique ID used to identify device (sent to auto update server), this ID is made following Apple and Google privacy best practices, and not persisted between installs
    *
    * @returns {Promise<DeviceId>} A Promise with id for this device
    * @throws {Error}

@@ -64,6 +64,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final String statsUrlDefault = "https://plugin.capgo.app/stats";
     private static final String channelUrlDefault = "https://plugin.capgo.app/channel_self";
     private static final String CUSTOM_ID_PREF_KEY = "CapacitorUpdater.customId";
+    private static final String UPDATE_URL_PREF_KEY = "CapacitorUpdater.updateUrl";
+    private static final String STATS_URL_PREF_KEY = "CapacitorUpdater.statsUrl";
+    private static final String CHANNEL_URL_PREF_KEY = "CapacitorUpdater.channelUrl";
 
     private final String PLUGIN_VERSION = "7.19.3";
     private static final String DELAY_CONDITION_PREFERENCES = "";
@@ -72,6 +75,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private SharedPreferences prefs;
     protected CapgoUpdater implementation;
     private Boolean persistCustomId = false;
+    private Boolean persistModifyUrl = false;
 
     private Integer appReadyTimeout = 10000;
     private Integer counterActivityCreate = 0;
@@ -224,9 +228,26 @@ public class CapacitorUpdaterPlugin extends Plugin {
         DownloadService.updateUserAgent(this.implementation.appId, this.PLUGIN_VERSION);
 
         this.persistCustomId = this.getConfig().getBoolean("persistCustomId", false);
+        this.persistModifyUrl = this.getConfig().getBoolean("persistModifyUrl", false);
         this.implementation.publicKey = this.getConfig().getString("publicKey", "");
         this.implementation.statsUrl = this.getConfig().getString("statsUrl", statsUrlDefault);
         this.implementation.channelUrl = this.getConfig().getString("channelUrl", channelUrlDefault);
+        if (Boolean.TRUE.equals(this.persistModifyUrl)) {
+            if (this.prefs.contains(STATS_URL_PREF_KEY)) {
+                final String storedStatsUrl = this.prefs.getString(STATS_URL_PREF_KEY, this.implementation.statsUrl);
+                if (storedStatsUrl != null) {
+                    this.implementation.statsUrl = storedStatsUrl;
+                    logger.info("Loaded persisted statsUrl");
+                }
+            }
+            if (this.prefs.contains(CHANNEL_URL_PREF_KEY)) {
+                final String storedChannelUrl = this.prefs.getString(CHANNEL_URL_PREF_KEY, this.implementation.channelUrl);
+                if (storedChannelUrl != null) {
+                    this.implementation.channelUrl = storedChannelUrl;
+                    logger.info("Loaded persisted channelUrl");
+                }
+            }
+        }
         int userValue = this.getConfig().getInt("periodCheckDelay", 0);
         this.implementation.defaultChannel = this.getConfig().getString("defaultChannel", "");
 
@@ -255,6 +276,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.autoDeleteFailed = this.getConfig().getBoolean("autoDeleteFailed", true);
         this.autoDeletePrevious = this.getConfig().getBoolean("autoDeletePrevious", true);
         this.updateUrl = this.getConfig().getString("updateUrl", updateUrlDefault);
+        if (Boolean.TRUE.equals(this.persistModifyUrl)) {
+            if (this.prefs.contains(UPDATE_URL_PREF_KEY)) {
+                final String storedUpdateUrl = this.prefs.getString(UPDATE_URL_PREF_KEY, this.updateUrl);
+                if (storedUpdateUrl != null) {
+                    this.updateUrl = storedUpdateUrl;
+                    logger.info("Loaded persisted updateUrl");
+                }
+            }
+        }
         this.autoUpdate = this.getConfig().getBoolean("autoUpdate", true);
         this.appReadyTimeout = this.getConfig().getInt("appReadyTimeout", 10000);
         this.keepUrlPathAfterReload = this.getConfig().getBoolean("keepUrlPathAfterReload", false);
@@ -619,6 +649,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return;
         }
         this.updateUrl = url;
+        if (Boolean.TRUE.equals(this.persistModifyUrl)) {
+            this.editor.putString(UPDATE_URL_PREF_KEY, url);
+            this.editor.apply();
+        }
         call.resolve();
     }
 
@@ -636,6 +670,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return;
         }
         this.implementation.statsUrl = url;
+        if (Boolean.TRUE.equals(this.persistModifyUrl)) {
+            this.editor.putString(STATS_URL_PREF_KEY, url);
+            this.editor.apply();
+        }
         call.resolve();
     }
 
@@ -653,6 +691,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return;
         }
         this.implementation.channelUrl = url;
+        if (Boolean.TRUE.equals(this.persistModifyUrl)) {
+            this.editor.putString(CHANNEL_URL_PREF_KEY, url);
+            this.editor.apply();
+        }
         call.resolve();
     }
 
