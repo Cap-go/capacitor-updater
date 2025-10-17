@@ -445,12 +445,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             progressBar.setIndeterminate(true);
 
             FrameLayout overlay = new FrameLayout(activity);
-            overlay.setLayoutParams(
-                new FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
-                )
-            );
+            overlay.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
             overlay.setClickable(false);
             overlay.setFocusable(false);
             overlay.setBackgroundColor(Color.TRANSPARENT);
@@ -1450,7 +1445,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
                         if ("builtin".equals(latestVersionName)) {
                             logger.info("Latest version is builtin");
-                            final boolean directUpdateAllowedNow = CapacitorUpdaterPlugin.this.isDirectUpdateCurrentlyAllowed(plannedDirectUpdate);
+                            final boolean directUpdateAllowedNow = CapacitorUpdaterPlugin.this.isDirectUpdateCurrentlyAllowed(
+                                plannedDirectUpdate
+                            );
                             if (directUpdateAllowedNow) {
                                 logger.info("Direct update to builtin version");
                                 this._reset(false);
@@ -1463,7 +1460,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                 );
                             } else {
                                 if (plannedDirectUpdate && !directUpdateAllowedNow) {
-                                    logger.info("Direct update skipped because splashscreen timeout occurred. Update will be applied later.");
+                                    logger.info(
+                                        "Direct update skipped because splashscreen timeout occurred. Update will be applied later."
+                                    );
                                 }
                                 logger.info("Setting next bundle to builtin");
                                 CapacitorUpdaterPlugin.this.implementation.setNextBundle(BundleInfo.ID_BUILTIN);
@@ -1509,7 +1508,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                 }
                                 if (latest.isDownloaded()) {
                                     logger.info("Latest bundle already exists and download is NOT required. " + messageUpdate);
-                                    final boolean directUpdateAllowedNow = CapacitorUpdaterPlugin.this.isDirectUpdateCurrentlyAllowed(plannedDirectUpdate);
+                                    final boolean directUpdateAllowedNow = CapacitorUpdaterPlugin.this.isDirectUpdateCurrentlyAllowed(
+                                        plannedDirectUpdate
+                                    );
                                     if (directUpdateAllowedNow) {
                                         String delayUpdatePreferences = prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]");
                                         ArrayList<DelayCondition> delayConditionList = delayUpdateUtils.parseDelayConditions(
@@ -1537,7 +1538,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                         );
                                     } else {
                                         if (plannedDirectUpdate && !directUpdateAllowedNow) {
-                                            logger.info("Direct update skipped because splashscreen timeout occurred. Update will install on next background.");
+                                            logger.info(
+                                                "Direct update skipped because splashscreen timeout occurred. Update will install on next background."
+                                            );
                                         }
                                         CapacitorUpdaterPlugin.this.notifyListeners("updateAvailable", ret);
                                         CapacitorUpdaterPlugin.this.implementation.setNextBundle(latest.getId());
