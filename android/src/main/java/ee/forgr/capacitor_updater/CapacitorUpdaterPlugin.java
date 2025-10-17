@@ -1055,6 +1055,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
             } else {
                 this.bridge.setServerBasePath(path);
             }
+            if (this.bridge != null && this.bridge.getWebView() != null) {
+                this.bridge.getWebView().post(() -> {
+                    if (this.bridge.getWebView() != null) {
+                        this.bridge.getWebView().loadUrl(this.bridge.getAppUrl());
+                        if (!this.keepUrlPathAfterReload) {
+                            this.bridge.getWebView().clearHistory();
+                        }
+                    }
+                });
+            }
         }
 
         this.checkAppReady();
