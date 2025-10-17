@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.18.15](https://github.com/Cap-go/capacitor-updater/compare/7.18.14...7.18.15) (2025-10-17)
+
+
+### Bug Fixes
+
+* **deps:** update dependency androidx.work:work-runtime to v2.10.5 ([bbb715a](https://github.com/Cap-go/capacitor-updater/commit/bbb715a0ba087a15cda0fb621bc0cc7f10057155))
+* **deps:** update dependency com.google.gms:google-services to v4.4.4 ([cd44c0e](https://github.com/Cap-go/capacitor-updater/commit/cd44c0efd4da85017dd259e60fec7aea6e1019e2))
+* remove old checksum md5 left issue ([02e2d93](https://github.com/Cap-go/capacitor-updater/commit/02e2d933b9aeb876124f96b05ca8a1769a5f0382))
+
 ## [7.18.14](https://github.com/Cap-go/capacitor-updater/compare/7.18.13...7.18.14) (2025-10-16)
 
 ## [7.18.13](https://github.com/Cap-go/capacitor-updater/compare/7.18.12...7.18.13) (2025-10-15)
