@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.20.0](https://github.com/Cap-go/capacitor-updater/compare/7.19.3...7.20.0) (2025-10-17)
+
+
+### Features
+
+* add persistModifyUrl to persis setting between app kill ([ca3a8d7](https://github.com/Cap-go/capacitor-updater/commit/ca3a8d75f936ec03731c0d5d225a01e0fd1eefc3))
+
 ## [7.19.3](https://github.com/Cap-go/capacitor-updater/compare/7.19.2...7.19.3) (2025-10-17)
 
 
