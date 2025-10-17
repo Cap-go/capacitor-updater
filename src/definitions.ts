@@ -152,6 +152,32 @@ declare module '@capacitor/cli' {
       autoSplashscreen?: boolean;
 
       /**
+       * Display a native loading indicator on top of the splashscreen while automatic direct updates are running.
+       * Only takes effect when {@link autoSplashscreen} is enabled.
+       * Requires the @capacitor/splash-screen plugin to be installed and configured with launchAutoHide: false.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default false
+       * @since  7.19.0
+       */
+      autoSplashscreenLoader?: boolean;
+
+      /**
+       * Automatically hide the splashscreen after the specified number of milliseconds when using automatic direct updates.
+       * If the timeout elapses, the update continues to download in the background while the splashscreen is dismissed.
+       * Set to `0` (zero) to disable the timeout.
+       * When the timeout fires, the direct update flow is skipped and the downloaded bundle is installed on the next background/launch.
+       * Requires {@link autoSplashscreen} to be enabled.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default 10000 // (10 seconds)
+       * @since  7.19.0
+       */
+      autoSplashscreenTimeout?: number;
+
+      /**
        * Configure the delay period for period update check. the unit is in seconds.
        *
        * Only available for Android and iOS.
