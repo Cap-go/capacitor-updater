@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.21.0](https://github.com/Cap-go/capacitor-updater/compare/7.20.2...7.21.0) (2025-10-17)
+
+
+### Features
+
+* add setBundleError and fix ios reload for main thread or background ([0bce678](https://github.com/Cap-go/capacitor-updater/commit/0bce678fa6823a8556104dc761fee8d87619c000))
+
 ## [7.20.2](https://github.com/Cap-go/capacitor-updater/compare/7.20.1...7.20.2) (2025-10-17)
 
 ## [7.20.1](https://github.com/Cap-go/capacitor-updater/compare/7.20.0...7.20.1) (2025-10-17)
