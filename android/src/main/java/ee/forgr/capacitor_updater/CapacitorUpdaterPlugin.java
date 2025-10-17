@@ -153,17 +153,23 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.implementation = new CapgoUpdater(logger) {
                 @Override
                 public void notifyDownload(final String id, final int percent) {
-                    CapacitorUpdaterPlugin.this.notifyDownload(id, percent);
+                    activity.runOnUiThread(() -> {
+                        CapacitorUpdaterPlugin.this.notifyDownload(id, percent);
+                    });
                 }
 
                 @Override
                 public void directUpdateFinish(final BundleInfo latest) {
-                    CapacitorUpdaterPlugin.this.directUpdateFinish(latest);
+                    activity.runOnUiThread(() -> {
+                        CapacitorUpdaterPlugin.this.directUpdateFinish(latest);
+                    });
                 }
 
                 @Override
                 public void notifyListeners(final String id, final Map<String, Object> res) {
-                    CapacitorUpdaterPlugin.this.notifyListeners(id, CapacitorUpdaterPlugin.this.mapToJSObject(res));
+                    activity.runOnUiThread(() -> {
+                        CapacitorUpdaterPlugin.this.notifyListeners(id, CapacitorUpdaterPlugin.this.mapToJSObject(res));
+                    });
                 }
             };
             final PackageInfo pInfo = this.getContext().getPackageManager().getPackageInfo(this.getContext().getPackageName(), 0);
@@ -586,30 +592,36 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void cleanupObsoleteVersions() {
-        final String previous = this.prefs.getString("LatestNativeBuildVersion", "");
-        if (!"".equals(previous) && !Objects.equals(this.currentBuildVersion, previous)) {
-            logger.info("New native build version detected: " + this.currentBuildVersion);
-            this.implementation.reset(true);
-            final List<BundleInfo> installed = this.implementation.list(false);
-            for (final BundleInfo bundle : installed) {
-                try {
-                    logger.info("Deleting obsolete bundle: " + bundle.getId());
-                    this.implementation.delete(bundle.getId());
-                } catch (final Exception e) {
-                    logger.error("Failed to delete: " + bundle.getId() + " " + e.getMessage());
+        startNewThread(() -> {
+            try {
+                final String previous = this.prefs.getString("LatestNativeBuildVersion", "");
+                if (!"".equals(previous) && !Objects.equals(this.currentBuildVersion, previous)) {
+                    logger.info("New native build version detected: " + this.currentBuildVersion);
+                    this.implementation.reset(true);
+                    final List<BundleInfo> installed = this.implementation.list(false);
+                    for (final BundleInfo bundle : installed) {
+                        try {
+                            logger.info("Deleting obsolete bundle: " + bundle.getId());
+                            this.implementation.delete(bundle.getId());
+                        } catch (final Exception e) {
+                            logger.error("Failed to delete: " + bundle.getId() + " " + e.getMessage());
+                        }
+                    }
+                    final List<BundleInfo> storedBundles = this.implementation.list(true);
+                    final Set<String> allowedIds = new HashSet<>();
+                    for (final BundleInfo info : storedBundles) {
+                        if (info != null && info.getId() != null && !info.getId().isEmpty()) {
+                            allowedIds.add(info.getId());
+                        }
+                    }
+                    this.implementation.cleanupDownloadDirectories(allowedIds);
                 }
+                this.editor.putString("LatestNativeBuildVersion", this.currentBuildVersion);
+                this.editor.apply();
+            } catch (Exception e) {
+                logger.error("Error during cleanupObsoleteVersions: " + e.getMessage());
             }
-            final List<BundleInfo> storedBundles = this.implementation.list(true);
-            final Set<String> allowedIds = new HashSet<>();
-            for (final BundleInfo info : storedBundles) {
-                if (info != null && info.getId() != null && !info.getId().isEmpty()) {
-                    allowedIds.add(info.getId());
-                }
-            }
-            this.implementation.cleanupDownloadDirectories(allowedIds);
-        }
-        this.editor.putString("LatestNativeBuildVersion", this.currentBuildVersion);
-        this.editor.apply();
+        });
     }
 
     public void notifyDownload(final String id, final int percent) {
