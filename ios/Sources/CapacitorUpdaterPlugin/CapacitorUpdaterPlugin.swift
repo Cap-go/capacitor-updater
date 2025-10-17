@@ -51,7 +51,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "isShakeMenuEnabled", returnType: CAPPluginReturnPromise)
     ]
     public var implementation = CapgoUpdater()
-    private let PLUGIN_VERSION: String = "7.18.14"
+    private let PLUGIN_VERSION: String = "7.18.15"
     static let updateUrlDefault = "https://plugin.capgo.app/updates"
     static let statsUrlDefault = "https://plugin.capgo.app/stats"
     static let channelUrlDefault = "https://plugin.capgo.app/channel_self"
