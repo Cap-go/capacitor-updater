@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.19.0](https://github.com/Cap-go/capacitor-updater/compare/7.18.15...7.19.0) (2025-10-17)
+
+
+### Features
+
+* add autoSplashscreenLoader and autoSplashscreenTimeout ([134be5f](https://github.com/Cap-go/capacitor-updater/commit/134be5f17f579882e5dbc5cbcb64254b39cbb24b))
+
 ## [7.18.15](https://github.com/Cap-go/capacitor-updater/compare/7.18.14...7.18.15) (2025-10-17)
 
 
