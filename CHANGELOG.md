@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.22.0](https://github.com/Cap-go/capacitor-updater/compare/7.21.2...7.22.0) (2025-10-17)
+
+
+### Features
+
+* [#542](https://github.com/Cap-go/capacitor-updater/issues/542) add method GetFailedUpdate + deprecate majorAvailable in favor of breakingAvailable ([2f9afc5](https://github.com/Cap-go/capacitor-updater/commit/2f9afc5a9379441dbd15b8be4bcb01a1649dbcd5))
+
 ## [7.21.2](https://github.com/Cap-go/capacitor-updater/compare/7.21.1...7.21.2) (2025-10-17)
 
 
