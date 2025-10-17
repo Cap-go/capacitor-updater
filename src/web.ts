@@ -99,6 +99,11 @@ export class CapacitorUpdaterWeb extends WebPlugin implements CapacitorUpdaterPl
     console.warn('Cannot delete bundle in web', options);
   }
 
+  async setBundleError(options: BundleId): Promise<BundleInfo> {
+    console.warn('Cannot setBundleError in web', options);
+    return BUNDLE_BUILTIN;
+  }
+
   async list(): Promise<BundleListResult> {
     console.warn('Cannot list bundles in web');
     return { bundles: [] };
