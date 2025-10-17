@@ -63,6 +63,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final String updateUrlDefault = "https://plugin.capgo.app/updates";
     private static final String statsUrlDefault = "https://plugin.capgo.app/stats";
     private static final String channelUrlDefault = "https://plugin.capgo.app/channel_self";
+    private static final String KEEP_URL_FLAG_KEY = "__capgo_keep_url_path_after_reload";
     private static final String CUSTOM_ID_PREF_KEY = "CapacitorUpdater.customId";
     private static final String UPDATE_URL_PREF_KEY = "CapacitorUpdater.updateUrl";
     private static final String STATS_URL_PREF_KEY = "CapacitorUpdater.statsUrl";
@@ -288,6 +289,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.autoUpdate = this.getConfig().getBoolean("autoUpdate", true);
         this.appReadyTimeout = this.getConfig().getInt("appReadyTimeout", 10000);
         this.keepUrlPathAfterReload = this.getConfig().getBoolean("keepUrlPathAfterReload", false);
+        this.syncKeepUrlPathFlag(this.keepUrlPathAfterReload);
         this.autoSplashscreen = this.getConfig().getBoolean("autoSplashscreen", false);
         this.autoSplashscreenLoader = this.getConfig().getBoolean("autoSplashscreenLoader", false);
         int splashscreenTimeoutValue = this.getConfig().getInt("autoSplashscreenTimeout", 10000);
@@ -943,8 +945,25 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
+    private void syncKeepUrlPathFlag(final boolean enabled) {
+        if (this.bridge == null || this.bridge.getWebView() == null) {
+            return;
+        }
+        final String script = enabled
+            ? "(function(){try{localStorage.setItem('" +
+              KEEP_URL_FLAG_KEY +
+              "','1');}catch(e){}window.__capgoKeepUrlPathAfterReload=true;var evt;try{evt=new CustomEvent('CapacitorUpdaterKeepUrlPathAfterReload',{detail:{enabled:true}});}catch(err){evt=document.createEvent('CustomEvent');evt.initCustomEvent('CapacitorUpdaterKeepUrlPathAfterReload',false,false,{enabled:true});}window.dispatchEvent(evt);})();"
+            : "(function(){try{localStorage.removeItem('" +
+              KEEP_URL_FLAG_KEY +
+              "');}catch(e){}delete window.__capgoKeepUrlPathAfterReload;var evt;try{evt=new CustomEvent('CapacitorUpdaterKeepUrlPathAfterReload',{detail:{enabled:false}});}catch(err){evt=document.createEvent('CustomEvent');evt.initCustomEvent('CapacitorUpdaterKeepUrlPathAfterReload',false,false,{enabled:false});}window.dispatchEvent(evt);})();";
+        this.bridge.getWebView().post(() -> this.bridge.getWebView().evaluateJavascript(script, null));
+    }
+
     protected boolean _reload() {
         final String path = this.implementation.getCurrentBundlePath();
+        if (this.keepUrlPathAfterReload) {
+            this.syncKeepUrlPathFlag(true);
+        }
         this.semaphoreUp();
         logger.info("Reloading: " + path);
 
@@ -1003,7 +1022,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 URL finalUrl1 = finalUrl;
                 this.bridge.getWebView().post(() -> {
                     this.bridge.getWebView().loadUrl(finalUrl1.toString());
-                    this.bridge.getWebView().clearHistory();
+                    if (!this.keepUrlPathAfterReload) {
+                        this.bridge.getWebView().clearHistory();
+                    }
                 });
             } catch (MalformedURLException e) {
                 logger.error("Cannot get finalUrl from capacitor bridge " + e.getMessage());

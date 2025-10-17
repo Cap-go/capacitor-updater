@@ -7,6 +7,7 @@
 import Foundation
 import Capacitor
 import UIKit
+import WebKit
 import Version
 
 /**
@@ -55,6 +56,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     static let updateUrlDefault = "https://plugin.capgo.app/updates"
     static let statsUrlDefault = "https://plugin.capgo.app/stats"
     static let channelUrlDefault = "https://plugin.capgo.app/channel_self"
+    private let keepUrlPathFlagKey = "__capgo_keep_url_path_after_reload"
     private let customIdDefaultsKey = "CapacitorUpdater.customId"
     private let updateUrlDefaultsKey = "CapacitorUpdater.updateUrl"
     private let statsUrlDefaultsKey = "CapacitorUpdater.statsUrl"
@@ -86,6 +88,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var periodCheckDelay = 0
     private var persistCustomId = false
     private var persistModifyUrl = false
+    private var keepUrlPathFlagLastValue: Bool?
     public var shakeMenuEnabled = false
     let semaphoreReady = DispatchSemaphore(value: 0)
 
@@ -135,6 +138,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         autoDeleteFailed = getConfig().getBoolean("autoDeleteFailed", true)
         autoDeletePrevious = getConfig().getBoolean("autoDeletePrevious", true)
         keepUrlPathAfterReload = getConfig().getBoolean("keepUrlPathAfterReload", false)
+        syncKeepUrlPathFlag(enabled: keepUrlPathAfterReload)
 
         // Handle directUpdate configuration - support string values and backward compatibility
         if let directUpdateString = getConfig().getString("directUpdate") {
@@ -232,8 +236,31 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.checkForUpdateAfterDelay()
     }
 
+    private func syncKeepUrlPathFlag(enabled: Bool) {
+        let script: String
+        if enabled {
+            script = "(function(){ try { localStorage.setItem('\(keepUrlPathFlagKey)', '1'); } catch (err) {} window.__capgoKeepUrlPathAfterReload = true; var evt; try { evt = new CustomEvent('CapacitorUpdaterKeepUrlPathAfterReload', { detail: { enabled: true } }); } catch (e) { evt = document.createEvent('CustomEvent'); evt.initCustomEvent('CapacitorUpdaterKeepUrlPathAfterReload', false, false, { enabled: true }); } window.dispatchEvent(evt); })();"
+        } else {
+            script = "(function(){ try { localStorage.removeItem('\(keepUrlPathFlagKey)'); } catch (err) {} delete window.__capgoKeepUrlPathAfterReload; var evt; try { evt = new CustomEvent('CapacitorUpdaterKeepUrlPathAfterReload', { detail: { enabled: false } }); } catch (e) { evt = document.createEvent('CustomEvent'); evt.initCustomEvent('CapacitorUpdaterKeepUrlPathAfterReload', false, false, { enabled: false }); } window.dispatchEvent(evt); })();"
+        }
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, let webView = self.bridge?.webView else {
+                return
+            }
+            if self.keepUrlPathFlagLastValue != enabled {
+                let userScript = WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+                webView.configuration.userContentController.addUserScript(userScript)
+                self.keepUrlPathFlagLastValue = enabled
+            }
+            webView.evaluateJavaScript(script, completionHandler: nil)
+        }
+    }
+
     private func initialLoad() -> Bool {
         guard let bridge = self.bridge else { return false }
+        if keepUrlPathAfterReload {
+            syncKeepUrlPathFlag(enabled: true)
+        }
 
         let id = self.implementation.getCurrentBundleId()
         var dest: URL
