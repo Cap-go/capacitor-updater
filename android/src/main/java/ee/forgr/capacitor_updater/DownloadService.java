@@ -665,7 +665,7 @@ public class DownloadService extends Worker {
 
             // Verify checksum if provided
             if (expectedChecksum != null && !expectedChecksum.isEmpty()) {
-                String actualChecksum = calculateFileChecksum(tempFile);
+                String actualChecksum = CryptoCipher.calcChecksum(tempFile);
                 if (!expectedChecksum.equalsIgnoreCase(actualChecksum)) {
                     tempFile.delete();
                     throw new IOException("Checksum verification failed");
@@ -680,28 +680,6 @@ public class DownloadService extends Worker {
                 tempFile.delete();
             }
             throw new IOException("Failed to write file atomically: " + e.getMessage(), e);
-        }
-    }
-
-    /**
-     * Calculate MD5 checksum of a file
-     */
-    private String calculateFileChecksum(File file) throws IOException {
-        try (FileInputStream fis = new FileInputStream(file)) {
-            MessageDigest md = MessageDigest.getInstance("MD5");
-            byte[] buffer = new byte[8192];
-            int bytesRead;
-            while ((bytesRead = fis.read(buffer)) != -1) {
-                md.update(buffer, 0, bytesRead);
-            }
-            byte[] digest = md.digest();
-            StringBuilder sb = new StringBuilder();
-            for (byte b : digest) {
-                sb.append(String.format("%02x", b));
-            }
-            return sb.toString();
-        } catch (Exception e) {
-            throw new IOException("Failed to calculate checksum: " + e.getMessage(), e);
         }
     }
 
