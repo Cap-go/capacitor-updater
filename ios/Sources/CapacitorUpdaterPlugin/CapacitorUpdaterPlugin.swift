@@ -58,7 +58,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private let customIdDefaultsKey = "CapacitorUpdater.customId"
     // Note: DELAY_CONDITION_PREFERENCES is now defined in DelayUpdateUtils.DELAY_CONDITION_PREFERENCES
     private var updateUrl = ""
-    private var statsUrl = ""
     private var backgroundTaskID: UIBackgroundTaskIdentifier = UIBackgroundTaskIdentifier.invalid
     private var currentVersionNative: Version = "0.0.0"
     private var currentBuildVersion: String = "0"
@@ -315,7 +314,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("setStatsUrl called without url")
             return
         }
-        self.statsUrl = url
         self.implementation.statsUrl = url
         call.resolve()
     }
