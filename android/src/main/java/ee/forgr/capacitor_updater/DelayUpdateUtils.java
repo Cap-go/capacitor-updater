@@ -20,12 +20,7 @@ public class DelayUpdateUtils {
     private final SharedPreferences.Editor editor;
     private final Version currentVersionNative;
 
-    public DelayUpdateUtils(
-        SharedPreferences prefs,
-        SharedPreferences.Editor editor,
-        Version currentVersionNative,
-        Logger logger
-    ) {
+    public DelayUpdateUtils(SharedPreferences prefs, SharedPreferences.Editor editor, Version currentVersionNative, Logger logger) {
         this.prefs = prefs;
         this.editor = editor;
         this.currentVersionNative = currentVersionNative;

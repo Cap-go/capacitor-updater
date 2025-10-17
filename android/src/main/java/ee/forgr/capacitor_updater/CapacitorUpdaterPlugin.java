@@ -185,12 +185,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
             this.currentVersionNative = new Version(this.getConfig().getString("version", pInfo.versionName));
             this.currentBuildVersion = Integer.toString(pInfo.versionCode);
-            this.delayUpdateUtils = new DelayUpdateUtils(
-                this.prefs,
-                this.editor,
-                this.currentVersionNative,
-                logger
-            );
+            this.delayUpdateUtils = new DelayUpdateUtils(this.prefs, this.editor, this.currentVersionNative, logger);
         } catch (final PackageManager.NameNotFoundException e) {
             logger.error("Error instantiating implementation " + e.getMessage());
             return;
