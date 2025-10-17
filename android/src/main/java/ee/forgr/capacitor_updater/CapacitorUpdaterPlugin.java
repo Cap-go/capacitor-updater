@@ -69,7 +69,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final String STATS_URL_PREF_KEY = "CapacitorUpdater.statsUrl";
     private static final String CHANNEL_URL_PREF_KEY = "CapacitorUpdater.channelUrl";
 
-    private final String PLUGIN_VERSION = "7.20.0";
+    private final String PLUGIN_VERSION = "7.20.1";
     private static final String DELAY_CONDITION_PREFERENCES = "";
 
     private SharedPreferences.Editor editor;
