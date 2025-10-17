@@ -97,6 +97,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private String directUpdateMode = "false";
     private Boolean wasRecentlyInstalledOrUpdated = false;
     Boolean shakeMenuEnabled = false;
+    private Boolean allowManualBundleError = false;
 
     private Boolean isPreviousMainActivity = true;
 
@@ -290,6 +291,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.appReadyTimeout = this.getConfig().getInt("appReadyTimeout", 10000);
         this.keepUrlPathAfterReload = this.getConfig().getBoolean("keepUrlPathAfterReload", false);
         this.syncKeepUrlPathFlag(this.keepUrlPathAfterReload);
+        this.allowManualBundleError = this.getConfig().getBoolean("allowManualBundleError", false);
         this.autoSplashscreen = this.getConfig().getBoolean("autoSplashscreen", false);
         this.autoSplashscreenLoader = this.getConfig().getBoolean("autoSplashscreenLoader", false);
         int splashscreenTimeoutValue = this.getConfig().getInt("autoSplashscreenTimeout", 10000);
@@ -1137,6 +1139,44 @@ public class CapacitorUpdaterPlugin extends Plugin {
         } catch (final Exception e) {
             logger.error("Could not delete id " + id + " " + e.getMessage());
             call.reject("Could not delete id " + id, e);
+        }
+    }
+
+    @PluginMethod
+    public void setBundleError(final PluginCall call) {
+        if (!Boolean.TRUE.equals(this.allowManualBundleError)) {
+            logger.error("setBundleError called without allowManualBundleError");
+            call.reject("setBundleError not allowed. Set allowManualBundleError to true in your config to enable it.");
+            return;
+        }
+        final String id = call.getString("id");
+        if (id == null) {
+            logger.error("setBundleError called without id");
+            call.reject("setBundleError called without id");
+            return;
+        }
+        try {
+            final BundleInfo bundle = this.implementation.getBundleInfo(id);
+            if (bundle == null || bundle.isUnknown()) {
+                logger.error("setBundleError called with unknown bundle " + id);
+                call.reject("Bundle " + id + " does not exist");
+                return;
+            }
+            if (bundle.isBuiltin()) {
+                logger.error("setBundleError called on builtin bundle");
+                call.reject("Cannot set builtin bundle to error state");
+                return;
+            }
+            if (Boolean.TRUE.equals(this.autoUpdate)) {
+                logger.warn("setBundleError used while autoUpdate is enabled; this method is intended for manual mode");
+            }
+            this.implementation.setError(bundle);
+            final JSObject ret = new JSObject();
+            ret.put("bundle", mapToJSObject(this.implementation.getBundleInfo(id).toJSONMap()));
+            call.resolve(ret);
+        } catch (final Exception e) {
+            logger.error("Could not set bundle error for id " + id + " " + e.getMessage());
+            call.reject("Could not set bundle error for id " + id, e);
         }
     }
 

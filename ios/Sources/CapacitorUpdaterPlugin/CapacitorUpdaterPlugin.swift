@@ -28,6 +28,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "set", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "list", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "delete", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setBundleError", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "reset", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "current", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "reload", returnType: CAPPluginReturnPromise),
@@ -88,6 +89,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var periodCheckDelay = 0
     private var persistCustomId = false
     private var persistModifyUrl = false
+    private var allowManualBundleError = false
     private var keepUrlPathFlagLastValue: Bool?
     public var shakeMenuEnabled = false
     let semaphoreReady = DispatchSemaphore(value: 0)
@@ -121,6 +123,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
         }
         persistModifyUrl = getConfig().getBoolean("persistModifyUrl", false)
+        allowManualBundleError = getConfig().getBoolean("allowManualBundleError", false)
         logger.info("init for device \(self.implementation.deviceID)")
         guard let versionName = getConfig().getString("version", Bundle.main.versionName) else {
             logger.error("Cannot get version name")
@@ -487,34 +490,50 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             dest = self.implementation.getBundleDirectory(id: id)
         }
         logger.info("Reloading \(id)")
-        if let vc = bridge.viewController as? CAPBridgeViewController {
-            guard let capBridge = vc.bridge else {
-                logger.error("Cannot get capBridge")
+
+        let performReload: () -> Bool = {
+            guard let vc = bridge.viewController as? CAPBridgeViewController else {
+                self.logger.error("Cannot get viewController")
                 return false
             }
-            if keepUrlPathAfterReload {
-                DispatchQueue.main.async {
-                    guard let url = vc.webView?.url else {
-                        self.logger.error("vc.webView?.url is null?")
-                        return
-                    }
+            guard let capBridge = vc.bridge else {
+                self.logger.error("Cannot get capBridge")
+                return false
+            }
+            if self.keepUrlPathAfterReload {
+                if let currentURL = vc.webView?.url {
                     capBridge.setServerBasePath(dest.path)
                     var urlComponents = URLComponents(url: capBridge.config.serverURL, resolvingAgainstBaseURL: false)!
-                    urlComponents.path = url.path
+                    urlComponents.path = currentURL.path
+                    urlComponents.query = currentURL.query
+                    urlComponents.fragment = currentURL.fragment
                     if let finalUrl = urlComponents.url {
                         _ = vc.webView?.load(URLRequest(url: finalUrl))
+                    } else {
+                        self.logger.error("Unable to build final URL when keeping path after reload; falling back to base path")
+                        vc.setServerBasePath(path: dest.path)
                     }
+                } else {
+                    self.logger.error("vc.webView?.url is null? Falling back to base path reload.")
+                    vc.setServerBasePath(path: dest.path)
                 }
             } else {
                 vc.setServerBasePath(path: dest.path)
-
             }
-
             self.checkAppReady()
             self.notifyListeners("appReloaded", data: [:])
             return true
         }
-        return false
+
+        if Thread.isMainThread {
+            return performReload()
+        } else {
+            var result = false
+            DispatchQueue.main.sync {
+                result = performReload()
+            }
+            return result
+        }
     }
 
     @objc func reload(_ call: CAPPluginCall) {
@@ -570,6 +589,36 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             logger.error("Delete failed, id \(id) doesn't exist or it cannot be deleted (perhaps it is the 'next' bundle)")
             call.reject("Delete failed, id \(id) does not exist or it cannot be deleted (perhaps it is the 'next' bundle)")
         }
+    }
+
+    @objc func setBundleError(_ call: CAPPluginCall) {
+        if !allowManualBundleError {
+            logger.error("setBundleError called without allowManualBundleError")
+            call.reject("setBundleError not allowed. Set allowManualBundleError to true in your config to enable it.")
+            return
+        }
+        guard let id = call.getString("id") else {
+            logger.error("setBundleError called without id")
+            call.reject("setBundleError called without id")
+            return
+        }
+        let bundle = implementation.getBundleInfo(id: id)
+        if bundle.isUnknown() {
+            logger.error("setBundleError called with unknown bundle \(id)")
+            call.reject("Bundle \(id) does not exist")
+            return
+        }
+        if bundle.isBuiltin() {
+            logger.error("setBundleError called on builtin bundle")
+            call.reject("Cannot set builtin bundle to error state")
+            return
+        }
+        if self._isAutoUpdateEnabled() {
+            logger.warn("setBundleError used while autoUpdate is enabled; this method is intended for manual mode")
+        }
+        implementation.setError(bundle: bundle)
+        let updated = implementation.getBundleInfo(id: id)
+        call.resolve(["bundle": updated.toJSON()])
     }
 
     @objc func list(_ call: CAPPluginCall) {

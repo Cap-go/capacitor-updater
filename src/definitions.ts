@@ -264,6 +264,15 @@ declare module '@capacitor/cli' {
       allowModifyAppId?: boolean;
 
       /**
+       * Allow marking bundles as errored from JavaScript while using manual update flows.
+       * When enabled, {@link CapacitorUpdaterPlugin.setBundleError} can change a bundle status to `error`.
+       *
+       * @default false
+       * @since 7.20.0
+       */
+      allowManualBundleError?: boolean;
+
+      /**
        * Persist the customId set through {@link CapacitorUpdaterPlugin.setCustomId} across app restarts.
        *
        * Only available for Android and iOS.
@@ -404,6 +413,16 @@ export interface CapacitorUpdaterPlugin {
    * @throws {Error}
    */
   delete(options: BundleId): Promise<void>;
+
+  /**
+   * Mark an installed bundle as errored. Only available when {@link PluginsConfig.CapacitorUpdater.allowManualBundleError} is true.
+   *
+   * @param options A {@link BundleId} object containing the bundle id to mark as errored.
+   * @returns {Promise<BundleInfo>} The updated {@link BundleInfo} for the bundle.
+   * @throws {Error} When the bundle does not exist or the feature is disabled.
+   * @since 7.20.0
+   */
+  setBundleError(options: BundleId): Promise<BundleInfo>;
 
   /**
    * Get all locally downloaded bundles in your app

@@ -255,6 +255,7 @@ CapacitorUpdater can be configured with these options:
 | **`localApiFiles`**           | <code>string</code>                             | Configure the CLI to use a local file api for testing.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | <code>undefined</code>                                                        | 6.3.3   |
 | **`allowModifyUrl`**          | <code>boolean</code>                            | Allow the plugin to modify the updateUrl, statsUrl and channelUrl dynamically from the JavaScript side.                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | <code>false</code>                                                            | 5.4.0   |
 | **`allowModifyAppId`**        | <code>boolean</code>                            | Allow the plugin to modify the appId dynamically from the JavaScript side.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | <code>false</code>                                                            | 7.14.0  |
+| **`allowManualBundleError`**  | <code>boolean</code>                            | Allow marking bundles as errored from JavaScript while using manual update flows. When enabled, {@link CapacitorUpdaterPlugin.setBundleError} can change a bundle status to `error`.                                                                                                                                                                                                                                                                                                                                                                                              | <code>false</code>                                                            | 7.20.0  |
 | **`persistCustomId`**         | <code>boolean</code>                            | Persist the customId set through {@link CapacitorUpdaterPlugin.setCustomId} across app restarts. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                              | <code>false (will be true by default in a future major release v8.x.x)</code> | 7.17.3  |
 | **`persistModifyUrl`**        | <code>boolean</code>                            | Persist the updateUrl, statsUrl and channelUrl set through {@link CapacitorUpdaterPlugin.setUpdateUrl}, {@link CapacitorUpdaterPlugin.setStatsUrl} and {@link CapacitorUpdaterPlugin.setChannelUrl} across app restarts. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                      | <code>false</code>                                                            | 7.20.0  |
 | **`defaultChannel`**          | <code>string</code>                             | Set the default channel for the app in the config. Case sensitive. This will setting will override the default channel set in the cloud, but will still respect overrides made in the cloud. This requires the channel to allow devices to self dissociate/associate in the channel settings. https://capgo.app/docs/public-api/channels/#channel-configuration-options                                                                                                                                                                                                           | <code>undefined</code>                                                        | 5.5.0   |
@@ -296,6 +297,7 @@ In `capacitor.config.json`:
       "localApiFiles": undefined,
       "allowModifyUrl": undefined,
       "allowModifyAppId": undefined,
+      "allowManualBundleError": undefined,
       "persistCustomId": undefined,
       "persistModifyUrl": undefined,
       "defaultChannel": undefined,
@@ -343,6 +345,7 @@ const config: CapacitorConfig = {
       localApiFiles: undefined,
       allowModifyUrl: undefined,
       allowModifyAppId: undefined,
+      allowManualBundleError: undefined,
       persistCustomId: undefined,
       persistModifyUrl: undefined,
       defaultChannel: undefined,
@@ -372,6 +375,7 @@ export default config;
 * [`next(...)`](#next)
 * [`set(...)`](#set)
 * [`delete(...)`](#delete)
+* [`setBundleError(...)`](#setbundleerror)
 * [`list(...)`](#list)
 * [`reset(...)`](#reset)
 * [`current()`](#current)
@@ -538,6 +542,25 @@ Deletes the specified bundle from the native app storage. Use with {@link list} 
 | Param         | Type                                          | Description                                                                                                                                   |
 | ------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | **`options`** | <code><a href="#bundleid">BundleId</a></code> | A {@link <a href="#bundleid">BundleId</a>} object containing the ID of a bundle to delete (note, this is the bundle id, NOT the version name) |
+
+--------------------
+
+
+#### setBundleError(...)
+
+```typescript
+setBundleError(options: BundleId) => Promise<BundleInfo>
+```
+
+Mark an installed bundle as errored. Only available when {@link PluginsConfig.CapacitorUpdater.allowManualBundleError} is true.
+
+| Param         | Type                                          | Description                                                                                    |
+| ------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| **`options`** | <code><a href="#bundleid">BundleId</a></code> | A {@link <a href="#bundleid">BundleId</a>} object containing the bundle id to mark as errored. |
+
+**Returns:** <code>Promise&lt;<a href="#bundleinfo">BundleInfo</a>&gt;</code>
+
+**Since:** 7.20.0
 
 --------------------
 

@@ -39,6 +39,7 @@ CapacitorUpdater can be configured with these options:
 | **`localApiFiles`** | `string` | Configure the CLI to use a local file api for testing. | `undefined` | 6.3.3 |
 | **`allowModifyUrl`** | `boolean` | Allow the plugin to modify the updateUrl, statsUrl and channelUrl dynamically from the JavaScript side. | `false` | 5.4.0 |
 | **`allowModifyAppId`** | `boolean` | Allow the plugin to modify the appId dynamically from the JavaScript side. | `false` | 7.14.0 |
+| **`allowManualBundleError`** | `boolean` | Allow marking bundles as errored from JavaScript while using manual update flows. When enabled, {@link CapacitorUpdaterPlugin.setBundleError} can change a bundle status to `error`. | `false` | 7.20.0 |
 | **`persistCustomId`** | `boolean` | Persist the customId set through {@link CapacitorUpdaterPlugin.setCustomId} across app restarts. Only available for Android and iOS. | `false (will be true by default in a future major release v8.x.x)` | 7.17.3 |
 | **`persistModifyUrl`** | `boolean` | Persist the updateUrl, statsUrl and channelUrl set through {@link CapacitorUpdaterPlugin.setUpdateUrl}, {@link CapacitorUpdaterPlugin.setStatsUrl} and {@link CapacitorUpdaterPlugin.setChannelUrl} across app restarts. Only available for Android and iOS. | `false` | 7.20.0 |
 | **`defaultChannel`** | `string` | Set the default channel for the app in the config. Case sensitive. This will setting will override the default channel set in the cloud, but will still respect overrides made in the cloud. This requires the channel to allow devices to self dissociate/associate in the channel settings. https://capgo.app/docs/public-api/channels/#channel-configuration-options | `undefined` | 5.5.0 |
@@ -63,6 +64,7 @@ CapacitorUpdater can be configured with these options:
 - [`next`](#next)
 - [`set`](#set)
 - [`delete`](#delete)
+- [`setBundleError`](#setbundleerror)
 - [`list`](#list)
 - [`reset`](#reset)
 - [`current`](#current)
@@ -294,6 +296,32 @@ Deletes the specified bundle from the native app storage. Use with {@link list} 
 `Promise<void>` — When the bundle is deleted
 
 **Throws:** {Error}
+
+
+--------------------
+
+
+### setBundleError
+
+```typescript
+setBundleError(options: BundleId) => Promise<BundleInfo>
+```
+
+Mark an installed bundle as errored. Only available when {@link PluginsConfig.CapacitorUpdater.allowManualBundleError} is true.
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `options` | `BundleId` | A {@link BundleId} object containing the bundle id to mark as errored. |
+
+**Returns**
+
+`Promise<BundleInfo>` — The updated {@link BundleInfo} for the bundle.
+
+**Since:** 7.20.0
+
+**Throws:** {Error} When the bundle does not exist or the feature is disabled.
 
 
 --------------------
