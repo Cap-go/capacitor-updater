@@ -173,9 +173,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CryptoCipher.setLogger(logger)
 
         // Initialize DelayUpdateUtils
-        self.delayUpdateUtils = DelayUpdateUtils(currentVersionNative: currentVersionNative, installNext: { [weak self] in
-            self?.installNext()
-        }, logger: logger)
+        self.delayUpdateUtils = DelayUpdateUtils(currentVersionNative: currentVersionNative, logger: logger)
         let config = (self.bridge?.viewController as? CAPBridgeViewController)?.instanceDescriptor().legacyConfig
         implementation.appId = Bundle.main.infoDictionary?["CFBundleIdentifier"] as? String ?? ""
         implementation.appId = config?["appId"] as? String ?? implementation.appId
@@ -318,6 +316,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         self.statsUrl = url
+        self.implementation.statsUrl = url
         call.resolve()
     }
 

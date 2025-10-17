@@ -22,7 +22,6 @@ public class DelayUpdateUtils {
     private let logger: Logger
 
     private let currentVersionNative: Version
-    private let installNext: () -> Void
 
     public enum CancelDelaySource {
         case killed
@@ -38,9 +37,8 @@ public class DelayUpdateUtils {
         }
     }
 
-    public init(currentVersionNative: Version, installNext: @escaping () -> Void, logger: Logger) {
+    public init(currentVersionNative: Version, logger: Logger) {
         self.currentVersionNative = currentVersionNative
-        self.installNext = installNext
         self.logger = logger
     }
 
@@ -84,7 +82,7 @@ public class DelayUpdateUtils {
 
             case "kill":
                 if source == .killed {
-                    self.installNext()
+                    logger.info("Kill delay (value: \(value ?? "")) condition removed at index \(index) after app kill")
                 } else {
                     delayConditionListToKeep.append(condition)
                     logger.info("Kill delay (value: \(value ?? "")) condition kept at index \(index) (source: \(source.description))")

@@ -28,13 +28,11 @@ public class DelayUpdateUtilsTest {
     @Mock
     private Logger logger;
 
-    private Runnable installNext;
     private DelayUpdateUtils utils;
 
     @Before
     public void setUp() {
         MockitoAnnotations.openMocks(this);
-        installNext = mock(Runnable.class);
 
         when(prefs.getString(eq(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES), anyString())).thenReturn("[]");
         when(prefs.getLong(eq(DelayUpdateUtils.BACKGROUND_TIMESTAMP_KEY), anyLong())).thenReturn(0L);
@@ -42,7 +40,7 @@ public class DelayUpdateUtilsTest {
         when(editor.remove(anyString())).thenReturn(editor);
         when(editor.commit()).thenReturn(true);
 
-        utils = new DelayUpdateUtils(prefs, editor, new Version("1.0.0"), installNext, logger);
+        utils = new DelayUpdateUtils(prefs, editor, new Version("1.0.0"), logger);
     }
 
     @Test
@@ -104,14 +102,36 @@ public class DelayUpdateUtilsTest {
     }
 
     @Test
-    public void checkCancelDelay_killedRunsInstallNextAndClearsDelays() throws Exception {
+    public void checkCancelDelay_killedClearsDelaysWithoutInstalling() throws Exception {
         JSONArray stored = new JSONArray();
         stored.put(new JSONObject().put("kind", "kill").put("value", ""));
         when(prefs.getString(eq(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES), anyString())).thenReturn(stored.toString());
 
         utils.checkCancelDelay(DelayUpdateUtils.CancelDelaySource.KILLED);
 
-        verify(installNext).run();
+        verify(editor).remove(eq(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES));
+        verify(editor).commit();
         verify(editor, never()).putString(eq(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES), anyString());
+    }
+
+    @Test
+    public void checkCancelDelay_killedKeepsOtherConditions() throws Exception {
+        JSONArray stored = new JSONArray();
+        stored.put(new JSONObject().put("kind", "kill").put("value", ""));
+        stored.put(new JSONObject().put("kind", "background").put("value", "5000"));
+        when(prefs.getString(eq(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES), anyString())).thenReturn(stored.toString());
+
+        utils.checkCancelDelay(DelayUpdateUtils.CancelDelaySource.KILLED);
+
+        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+        verify(editor).putString(eq(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES), captor.capture());
+        verify(editor).commit();
+        verify(editor, never()).remove(eq(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES));
+
+        JSONArray updated = new JSONArray(captor.getValue());
+        assertEquals(1, updated.length());
+        JSONObject remaining = updated.getJSONObject(0);
+        assertEquals("background", remaining.getString("kind"));
+        assertEquals("5000", remaining.getString("value"));
     }
 }

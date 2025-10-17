@@ -19,19 +19,16 @@ public class DelayUpdateUtils {
     private final SharedPreferences prefs;
     private final SharedPreferences.Editor editor;
     private final Version currentVersionNative;
-    private final Runnable installNext;
 
     public DelayUpdateUtils(
         SharedPreferences prefs,
         SharedPreferences.Editor editor,
         Version currentVersionNative,
-        Runnable installNext,
         Logger logger
     ) {
         this.prefs = prefs;
         this.editor = editor;
         this.currentVersionNative = currentVersionNative;
-        this.installNext = installNext;
         this.logger = logger;
     }
 
@@ -96,7 +93,7 @@ public class DelayUpdateUtils {
                     break;
                 case DelayUntilNext.kill:
                     if (source == CancelDelaySource.KILLED) {
-                        this.installNext.run();
+                        logger.info("Kill delay (value: " + value + ") condition removed at index " + index + " after app kill");
                     } else {
                         delayConditionListToKeep.add(condition);
                         logger.info(
@@ -160,7 +157,9 @@ public class DelayUpdateUtils {
             index++;
         }
 
-        if (!delayConditionListToKeep.isEmpty()) {
+        if (delayConditionListToKeep.isEmpty()) {
+            this.cancelDelay("checkCancelDelay");
+        } else {
             this.setMultiDelay(convertDelayConditionsToJson(delayConditionListToKeep));
         }
     }
