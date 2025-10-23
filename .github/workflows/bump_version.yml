@@ -37,13 +37,13 @@ jobs:
           git commit --m "docs: update doc" || true
       - name: Create bump and changelog main
         if: github.ref == 'refs/heads/main'
-        run: bunx capacitor-plugin-standard-version@latest
+        run: bunx capacitor-plugin-standard-version@latest -t '@${{ github.repository }}@'
       - name: Create bump and changelog v6
         if: github.ref == 'refs/heads/v6'
-        run: bunx capacitor-plugin-standard-version@latest --release-as patch
+        run: bunx capacitor-plugin-standard-version@latest --release-as patch -t '@${{ github.repository }}@'
       - name: Create bump and changelog development
         if: github.ref == 'refs/heads/development'
-        run: bunx capacitor-plugin-standard-version@latest --prerelease alpha
+        run: bunx capacitor-plugin-standard-version@latest --prerelease alpha -t '@${{ github.repository }}@'
       - name: Push to origin
         run: |
           CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
