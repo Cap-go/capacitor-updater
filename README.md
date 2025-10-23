@@ -409,6 +409,7 @@ export default config;
 * [`isShakeMenuEnabled()`](#isshakemenuenabled)
 * [`getAppId()`](#getappid)
 * [`setAppId(...)`](#setappid)
+* [`getPluginVersion()`](#getpluginversion)
 * [Interfaces](#interfaces)
 * [Type Aliases](#type-aliases)
 
@@ -1140,6 +1141,19 @@ Set the App ID for the app (requires allowModifyAppId to be true in config)
 | **`options`** | <code><a href="#setappidoptions">SetAppIdOptions</a></code> | The new App ID to set |
 
 **Since:** 7.14.0
+
+--------------------
+
+
+### getPluginVersion()
+
+```typescript
+getPluginVersion() => Promise<{ version: string; }>
+```
+
+Get the native Capacitor plugin version
+
+**Returns:** <code>Promise&lt;{ version: string; }&gt;</code>
 
 --------------------
 
