@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.23.0](https://github.com/Cap-go/capacitor-updater/compare/7.22.0...7.23.0) (2025-10-23)
+
+
+### Features
+
+* update build workflows and remove deprecated test steps; add Discord release notifications ([17a1a8e](https://github.com/Cap-go/capacitor-updater/commit/17a1a8e3b38284e187872e211b3c6a9c0315baa7))
+
+
+### Bug Fixes
+
+* remove tag ([d2a75f5](https://github.com/Cap-go/capacitor-updater/commit/d2a75f58ab3b5c689ad0b845210220682a0a708f))
+* revert to v7 ([03f12a2](https://github.com/Cap-go/capacitor-updater/commit/03f12a2cc3c8fad24fb90b2415b412ebb68e6e26))
+
 ## [7.22.0](https://github.com/Cap-go/capacitor-updater/compare/7.21.2...7.22.0) (2025-10-17)
 
 
