@@ -365,6 +365,7 @@ export default config;
 ## API
 
 <docgen-index>
+<!--Auto-generated, compact index-->
 
 * [`notifyAppReady()`](#notifyappready)
 * [`setUpdateUrl(...)`](#setupdateurl)
@@ -418,7 +419,7 @@ export default config;
 <docgen-api>
 <!--Update the source file JSDoc comments and rerun docgen to update the docs below-->
 
-### notifyAppReady()
+#### notifyAppReady()
 
 ```typescript
 notifyAppReady() => Promise<AppReadyResult>
@@ -433,7 +434,7 @@ Change this behaviour with {@link appReadyTimeout}
 --------------------
 
 
-### setUpdateUrl(...)
+#### setUpdateUrl(...)
 
 ```typescript
 setUpdateUrl(options: UpdateUrl) => Promise<void>
@@ -450,7 +451,7 @@ Set the updateUrl for the app, this will be used to check for updates.
 --------------------
 
 
-### setStatsUrl(...)
+#### setStatsUrl(...)
 
 ```typescript
 setStatsUrl(options: StatsUrl) => Promise<void>
@@ -467,7 +468,7 @@ Set the statsUrl for the app, this will be used to send statistics. Passing an e
 --------------------
 
 
-### setChannelUrl(...)
+#### setChannelUrl(...)
 
 ```typescript
 setChannelUrl(options: ChannelUrl) => Promise<void>
@@ -484,7 +485,7 @@ Set the channelUrl for the app, this will be used to set the channel.
 --------------------
 
 
-### download(...)
+#### download(...)
 
 ```typescript
 download(options: DownloadOptions) => Promise<BundleInfo>
@@ -501,7 +502,7 @@ Download a new bundle from the provided URL, it should be a zip file, with files
 --------------------
 
 
-### next(...)
+#### next(...)
 
 ```typescript
 next(options: BundleId) => Promise<BundleInfo>
@@ -518,7 +519,7 @@ Set the next bundle to be used when the app is reloaded.
 --------------------
 
 
-### set(...)
+#### set(...)
 
 ```typescript
 set(options: BundleId) => Promise<void>
@@ -533,7 +534,7 @@ Set the current bundle and immediately reloads the app.
 --------------------
 
 
-### delete(...)
+#### delete(...)
 
 ```typescript
 delete(options: BundleId) => Promise<void>
@@ -548,7 +549,7 @@ Deletes the specified bundle from the native app storage. Use with {@link list} 
 --------------------
 
 
-### setBundleError(...)
+#### setBundleError(...)
 
 ```typescript
 setBundleError(options: BundleId) => Promise<BundleInfo>
@@ -567,7 +568,7 @@ Mark an installed bundle as errored. Only available when {@link PluginsConfig.Ca
 --------------------
 
 
-### list(...)
+#### list(...)
 
 ```typescript
 list(options?: ListOptions | undefined) => Promise<BundleListResult>
@@ -584,7 +585,7 @@ Get all locally downloaded bundles in your app
 --------------------
 
 
-### reset(...)
+#### reset(...)
 
 ```typescript
 reset(options?: ResetOptions | undefined) => Promise<void>
@@ -599,7 +600,7 @@ Reset the app to the `builtin` bundle (the one sent to Apple App Store / Google 
 --------------------
 
 
-### current()
+#### current()
 
 ```typescript
 current() => Promise<CurrentBundleResult>
@@ -612,7 +613,7 @@ Get the current bundle, if none are set it returns `builtin`. currentNative is t
 --------------------
 
 
-### reload()
+#### reload()
 
 ```typescript
 reload() => Promise<void>
@@ -623,7 +624,7 @@ Reload the view
 --------------------
 
 
-### setMultiDelay(...)
+#### setMultiDelay(...)
 
 ```typescript
 setMultiDelay(options: MultiDelayConditions) => Promise<void>
@@ -646,7 +647,7 @@ The function has unconsistent behavior the option kill do trigger the update aft
 --------------------
 
 
-### cancelDelay()
+#### cancelDelay()
 
 ```typescript
 cancelDelay() => Promise<void>
@@ -659,7 +660,7 @@ Cancels a {@link <a href="#delaycondition">DelayCondition</a>} to process an upd
 --------------------
 
 
-### getLatest(...)
+#### getLatest(...)
 
 ```typescript
 getLatest(options?: GetLatestOptions | undefined) => Promise<LatestVersion>
@@ -678,7 +679,7 @@ Get Latest bundle available from update Url
 --------------------
 
 
-### setChannel(...)
+#### setChannel(...)
 
 ```typescript
 setChannel(options: SetChannelOptions) => Promise<ChannelRes>
@@ -701,7 +702,7 @@ This methods send to Capgo backend a request to link the device ID to the channe
 --------------------
 
 
-### unsetChannel(...)
+#### unsetChannel(...)
 
 ```typescript
 unsetChannel(options: UnsetChannelOptions) => Promise<void>
@@ -718,7 +719,7 @@ Unset the channel for this device. The device will then return to the default ch
 --------------------
 
 
-### getChannel()
+#### getChannel()
 
 ```typescript
 getChannel() => Promise<GetChannelRes>
@@ -733,7 +734,7 @@ Get the channel for this device
 --------------------
 
 
-### listChannels()
+#### listChannels()
 
 ```typescript
 listChannels() => Promise<ListChannelsResult>
@@ -748,7 +749,7 @@ List all channels available for this device that allow self-assignment
 --------------------
 
 
-### setCustomId(...)
+#### setCustomId(...)
 
 ```typescript
 setCustomId(options: SetCustomIdOptions) => Promise<void>
@@ -768,7 +769,7 @@ Pass an empty string to remove any previously stored customId.
 --------------------
 
 
-### getBuiltinVersion()
+#### getBuiltinVersion()
 
 ```typescript
 getBuiltinVersion() => Promise<BuiltinVersion>
@@ -783,7 +784,7 @@ Get the native app version or the builtin version if set in config
 --------------------
 
 
-### getDeviceId()
+#### getDeviceId()
 
 ```typescript
 getDeviceId() => Promise<DeviceId>
@@ -796,7 +797,7 @@ Get unique ID used to identify device (sent to auto update server), this ID is m
 --------------------
 
 
-### getPluginVersion()
+#### getPluginVersion()
 
 ```typescript
 getPluginVersion() => Promise<PluginVersion>
@@ -809,7 +810,7 @@ Get the native Capacitor Updater plugin version (sent to auto update server)
 --------------------
 
 
-### isAutoUpdateEnabled()
+#### isAutoUpdateEnabled()
 
 ```typescript
 isAutoUpdateEnabled() => Promise<AutoUpdateEnabled>
@@ -822,7 +823,7 @@ Get the state of auto update config.
 --------------------
 
 
-### removeAllListeners()
+#### removeAllListeners()
 
 ```typescript
 removeAllListeners() => Promise<void>
@@ -835,7 +836,7 @@ Remove all listeners for this plugin.
 --------------------
 
 
-### addListener('download', ...)
+#### addListener('download', ...)
 
 ```typescript
 addListener(eventName: 'download', listenerFunc: (state: DownloadEvent) => void) => Promise<PluginListenerHandle>
@@ -856,7 +857,7 @@ This will return you all download percent during the download
 --------------------
 
 
-### addListener('noNeedUpdate', ...)
+#### addListener('noNeedUpdate', ...)
 
 ```typescript
 addListener(eventName: 'noNeedUpdate', listenerFunc: (state: NoNeedEvent) => void) => Promise<PluginListenerHandle>
@@ -876,7 +877,7 @@ Listen for no need to update event, useful when you want force check every time 
 --------------------
 
 
-### addListener('updateAvailable', ...)
+#### addListener('updateAvailable', ...)
 
 ```typescript
 addListener(eventName: 'updateAvailable', listenerFunc: (state: UpdateAvailableEvent) => void) => Promise<PluginListenerHandle>
@@ -896,7 +897,7 @@ Listen for available update event, useful when you want to force check every tim
 --------------------
 
 
-### addListener('downloadComplete', ...)
+#### addListener('downloadComplete', ...)
 
 ```typescript
 addListener(eventName: 'downloadComplete', listenerFunc: (state: DownloadCompleteEvent) => void) => Promise<PluginListenerHandle>
@@ -916,7 +917,7 @@ Listen for downloadComplete events.
 --------------------
 
 
-### addListener('breakingAvailable', ...)
+#### addListener('breakingAvailable', ...)
 
 ```typescript
 addListener(eventName: 'breakingAvailable', listenerFunc: (state: BreakingAvailableEvent) => void) => Promise<PluginListenerHandle>
@@ -937,7 +938,7 @@ Emits the same payload as the legacy `majorAvailable` listener.
 --------------------
 
 
-### addListener('majorAvailable', ...)
+#### addListener('majorAvailable', ...)
 
 ```typescript
 addListener(eventName: 'majorAvailable', listenerFunc: (state: MajorAvailableEvent) => void) => Promise<PluginListenerHandle>
@@ -957,7 +958,7 @@ Listen for Major update event in the App, let you know when major update is bloc
 --------------------
 
 
-### addListener('updateFailed', ...)
+#### addListener('updateFailed', ...)
 
 ```typescript
 addListener(eventName: 'updateFailed', listenerFunc: (state: UpdateFailedEvent) => void) => Promise<PluginListenerHandle>
@@ -977,7 +978,7 @@ Listen for update fail event in the App, let you know when update has fail to in
 --------------------
 
 
-### addListener('downloadFailed', ...)
+#### addListener('downloadFailed', ...)
 
 ```typescript
 addListener(eventName: 'downloadFailed', listenerFunc: (state: DownloadFailedEvent) => void) => Promise<PluginListenerHandle>
@@ -997,7 +998,7 @@ Listen for download fail event in the App, let you know when a bundle download h
 --------------------
 
 
-### addListener('appReloaded', ...)
+#### addListener('appReloaded', ...)
 
 ```typescript
 addListener(eventName: 'appReloaded', listenerFunc: () => void) => Promise<PluginListenerHandle>
@@ -1017,7 +1018,7 @@ Listen for reload event in the App, let you know when reload has happened
 --------------------
 
 
-### addListener('appReady', ...)
+#### addListener('appReady', ...)
 
 ```typescript
 addListener(eventName: 'appReady', listenerFunc: (state: AppReadyEvent) => void) => Promise<PluginListenerHandle>
@@ -1037,7 +1038,7 @@ Listen for app ready event in the App, let you know when app is ready to use, th
 --------------------
 
 
-### isAutoUpdateAvailable()
+#### isAutoUpdateAvailable()
 
 ```typescript
 isAutoUpdateAvailable() => Promise<AutoUpdateAvailable>
@@ -1050,7 +1051,7 @@ Get if auto update is available (not disabled by serverUrl).
 --------------------
 
 
-### getNextBundle()
+#### getNextBundle()
 
 ```typescript
 getNextBundle() => Promise<BundleInfo | null>
@@ -1066,7 +1067,7 @@ Returns null if no next bundle is set.
 --------------------
 
 
-### getFailedUpdate()
+#### getFailedUpdate()
 
 ```typescript
 getFailedUpdate() => Promise<UpdateFailedEvent | null>
@@ -1081,7 +1082,7 @@ Get the most recent update that failed to install, if any. The stored value is c
 --------------------
 
 
-### setShakeMenu(...)
+#### setShakeMenu(...)
 
 ```typescript
 setShakeMenu(options: SetShakeMenuOptions) => Promise<void>
@@ -1098,7 +1099,7 @@ Enable or disable the shake menu for debugging/testing purposes
 --------------------
 
 
-### isShakeMenuEnabled()
+#### isShakeMenuEnabled()
 
 ```typescript
 isShakeMenuEnabled() => Promise<ShakeMenuEnabled>
@@ -1113,7 +1114,7 @@ Get the current state of the shake menu
 --------------------
 
 
-### getAppId()
+#### getAppId()
 
 ```typescript
 getAppId() => Promise<GetAppIdRes>
@@ -1128,7 +1129,7 @@ Get the configured App ID
 --------------------
 
 
-### setAppId(...)
+#### setAppId(...)
 
 ```typescript
 setAppId(options: SetAppIdOptions) => Promise<void>
@@ -1145,7 +1146,7 @@ Set the App ID for the app (requires allowModifyAppId to be true in config)
 --------------------
 
 
-### getPluginVersion()
+#### getPluginVersion()
 
 ```typescript
 getPluginVersion() => Promise<{ version: string; }>
@@ -1158,17 +1159,17 @@ Get the native Capacitor plugin version
 --------------------
 
 
-### Interfaces
+#### Interfaces
 
 
-#### AppReadyResult
+##### AppReadyResult
 
 | Prop         | Type                                              |
 | ------------ | ------------------------------------------------- |
 | **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> |
 
 
-#### BundleInfo
+##### BundleInfo
 
 | Prop             | Type                                                  |
 | ---------------- | ----------------------------------------------------- |
@@ -1179,28 +1180,28 @@ Get the native Capacitor plugin version
 | **`status`**     | <code><a href="#bundlestatus">BundleStatus</a></code> |
 
 
-#### UpdateUrl
+##### UpdateUrl
 
 | Prop      | Type                |
 | --------- | ------------------- |
 | **`url`** | <code>string</code> |
 
 
-#### StatsUrl
+##### StatsUrl
 
 | Prop      | Type                |
 | --------- | ------------------- |
 | **`url`** | <code>string</code> |
 
 
-#### ChannelUrl
+##### ChannelUrl
 
 | Prop      | Type                |
 | --------- | ------------------- |
 | **`url`** | <code>string</code> |
 
 
-#### DownloadOptions
+##### DownloadOptions
 
 This URL and versions are used to download the bundle from the server, If you use backend all information will be gived by the method getLatest.
 If you don't use backend, you need to provide the URL and version of the bundle. Checksum and sessionKey are required if you encrypted the bundle with the CLI command encrypt, you should receive them as result of the command.
@@ -1214,7 +1215,7 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 | **`manifest`**   | <code>ManifestEntry[]</code> | The manifest for multi-file downloads                                                                                                                            | <code>undefined</code> | 6.1.0 |
 
 
-#### ManifestEntry
+##### ManifestEntry
 
 | Prop               | Type                        |
 | ------------------ | --------------------------- |
@@ -1223,35 +1224,35 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 | **`download_url`** | <code>string \| null</code> |
 
 
-#### BundleId
+##### BundleId
 
 | Prop     | Type                |
 | -------- | ------------------- |
 | **`id`** | <code>string</code> |
 
 
-#### BundleListResult
+##### BundleListResult
 
 | Prop          | Type                      |
 | ------------- | ------------------------- |
 | **`bundles`** | <code>BundleInfo[]</code> |
 
 
-#### ListOptions
+##### ListOptions
 
 | Prop      | Type                 | Description                                                                                                                                   | Default            | Since  |
 | --------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ | ------ |
 | **`raw`** | <code>boolean</code> | Whether to return the raw bundle list or the manifest. If true, the list will attempt to read the internal database instead of files on disk. | <code>false</code> | 6.14.0 |
 
 
-#### ResetOptions
+##### ResetOptions
 
 | Prop                   | Type                 |
 | ---------------------- | -------------------- |
 | **`toLastSuccessful`** | <code>boolean</code> |
 
 
-#### CurrentBundleResult
+##### CurrentBundleResult
 
 | Prop         | Type                                              |
 | ------------ | ------------------------------------------------- |
@@ -1259,14 +1260,14 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 | **`native`** | <code>string</code>                               |
 
 
-#### MultiDelayConditions
+##### MultiDelayConditions
 
 | Prop                  | Type                          |
 | --------------------- | ----------------------------- |
 | **`delayConditions`** | <code>DelayCondition[]</code> |
 
 
-#### DelayCondition
+##### DelayCondition
 
 | Prop        | Type                                                      | Description                              |
 | ----------- | --------------------------------------------------------- | ---------------------------------------- |
@@ -1274,7 +1275,7 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 | **`value`** | <code>string</code>                                       |                                          |
 
 
-#### LatestVersion
+##### LatestVersion
 
 | Prop             | Type                         | Description                                                          | Since  |
 | ---------------- | ---------------------------- | -------------------------------------------------------------------- | ------ |
@@ -1290,14 +1291,14 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 | **`manifest`**   | <code>ManifestEntry[]</code> |                                                                      | 6.1    |
 
 
-#### GetLatestOptions
+##### GetLatestOptions
 
 | Prop          | Type                | Description                                                                                     | Default                | Since |
 | ------------- | ------------------- | ----------------------------------------------------------------------------------------------- | ---------------------- | ----- |
 | **`channel`** | <code>string</code> | The channel to get the latest version for The channel must allow 'self_assign' for this to work | <code>undefined</code> | 6.8.0 |
 
 
-#### ChannelRes
+##### ChannelRes
 
 | Prop          | Type                | Description                   | Since |
 | ------------- | ------------------- | ----------------------------- | ----- |
@@ -1306,7 +1307,7 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 | **`message`** | <code>string</code> |                               |       |
 
 
-#### SetChannelOptions
+##### SetChannelOptions
 
 | Prop                    | Type                 |
 | ----------------------- | -------------------- |
@@ -1314,14 +1315,14 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 | **`triggerAutoUpdate`** | <code>boolean</code> |
 
 
-#### UnsetChannelOptions
+##### UnsetChannelOptions
 
 | Prop                    | Type                 |
 | ----------------------- | -------------------- |
 | **`triggerAutoUpdate`** | <code>boolean</code> |
 
 
-#### GetChannelRes
+##### GetChannelRes
 
 | Prop           | Type                 | Description                   | Since |
 | -------------- | -------------------- | ----------------------------- | ----- |
@@ -1332,14 +1333,14 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 | **`allowSet`** | <code>boolean</code> |                               |       |
 
 
-#### ListChannelsResult
+##### ListChannelsResult
 
 | Prop           | Type                       | Description                | Since |
 | -------------- | -------------------------- | -------------------------- | ----- |
 | **`channels`** | <code>ChannelInfo[]</code> | List of available channels | 7.5.0 |
 
 
-#### ChannelInfo
+##### ChannelInfo
 
 | Prop                 | Type                 | Description                                     | Since |
 | -------------------- | -------------------- | ----------------------------------------------- | ----- |
@@ -1349,49 +1350,49 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 | **`allow_self_set`** | <code>boolean</code> | Whether devices can self-assign to this channel | 7.5.0 |
 
 
-#### SetCustomIdOptions
+##### SetCustomIdOptions
 
 | Prop           | Type                | Description                                                                                   |
 | -------------- | ------------------- | --------------------------------------------------------------------------------------------- |
 | **`customId`** | <code>string</code> | Custom identifier to associate with the device. Use an empty string to clear any saved value. |
 
 
-#### BuiltinVersion
+##### BuiltinVersion
 
 | Prop          | Type                |
 | ------------- | ------------------- |
 | **`version`** | <code>string</code> |
 
 
-#### DeviceId
+##### DeviceId
 
 | Prop           | Type                |
 | -------------- | ------------------- |
 | **`deviceId`** | <code>string</code> |
 
 
-#### PluginVersion
+##### PluginVersion
 
 | Prop          | Type                |
 | ------------- | ------------------- |
 | **`version`** | <code>string</code> |
 
 
-#### AutoUpdateEnabled
+##### AutoUpdateEnabled
 
 | Prop          | Type                 |
 | ------------- | -------------------- |
 | **`enabled`** | <code>boolean</code> |
 
 
-#### PluginListenerHandle
+##### PluginListenerHandle
 
 | Prop         | Type                                      |
 | ------------ | ----------------------------------------- |
 | **`remove`** | <code>() =&gt; Promise&lt;void&gt;</code> |
 
 
-#### DownloadEvent
+##### DownloadEvent
 
 | Prop          | Type                                              | Description                                    | Since |
 | ------------- | ------------------------------------------------- | ---------------------------------------------- | ----- |
@@ -1399,49 +1400,49 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 | **`bundle`**  | <code><a href="#bundleinfo">BundleInfo</a></code> |                                                |       |
 
 
-#### NoNeedEvent
+##### NoNeedEvent
 
 | Prop         | Type                                              | Description                                    | Since |
 | ------------ | ------------------------------------------------- | ---------------------------------------------- | ----- |
 | **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Current status of download, between 0 and 100. | 4.0.0 |
 
 
-#### UpdateAvailableEvent
+##### UpdateAvailableEvent
 
 | Prop         | Type                                              | Description                                    | Since |
 | ------------ | ------------------------------------------------- | ---------------------------------------------- | ----- |
 | **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Current status of download, between 0 and 100. | 4.0.0 |
 
 
-#### DownloadCompleteEvent
+##### DownloadCompleteEvent
 
 | Prop         | Type                                              | Description                          | Since |
 | ------------ | ------------------------------------------------- | ------------------------------------ | ----- |
 | **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emit when a new update is available. | 4.0.0 |
 
 
-#### MajorAvailableEvent
+##### MajorAvailableEvent
 
 | Prop          | Type                | Description                               | Since |
 | ------------- | ------------------- | ----------------------------------------- | ----- |
 | **`version`** | <code>string</code> | Emit when a breaking update is available. | 4.0.0 |
 
 
-#### UpdateFailedEvent
+##### UpdateFailedEvent
 
 | Prop         | Type                                              | Description                           | Since |
 | ------------ | ------------------------------------------------- | ------------------------------------- | ----- |
 | **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emit when a update failed to install. | 4.0.0 |
 
 
-#### DownloadFailedEvent
+##### DownloadFailedEvent
 
 | Prop          | Type                | Description                | Since |
 | ------------- | ------------------- | -------------------------- | ----- |
 | **`version`** | <code>string</code> | Emit when a download fail. | 4.0.0 |
 
 
-#### AppReadyEvent
+##### AppReadyEvent
 
 | Prop         | Type                                              | Description                           | Since |
 | ------------ | ------------------------------------------------- | ------------------------------------- | ----- |
@@ -1449,45 +1450,45 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 | **`status`** | <code>string</code>                               |                                       |       |
 
 
-#### AutoUpdateAvailable
+##### AutoUpdateAvailable
 
 | Prop            | Type                 |
 | --------------- | -------------------- |
 | **`available`** | <code>boolean</code> |
 
 
-#### SetShakeMenuOptions
+##### SetShakeMenuOptions
 
 | Prop          | Type                 |
 | ------------- | -------------------- |
 | **`enabled`** | <code>boolean</code> |
 
 
-#### ShakeMenuEnabled
+##### ShakeMenuEnabled
 
 | Prop          | Type                 |
 | ------------- | -------------------- |
 | **`enabled`** | <code>boolean</code> |
 
 
-#### GetAppIdRes
+##### GetAppIdRes
 
 | Prop        | Type                |
 | ----------- | ------------------- |
 | **`appId`** | <code>string</code> |
 
 
-#### SetAppIdOptions
+##### SetAppIdOptions
 
 | Prop        | Type                |
 | ----------- | ------------------- |
 | **`appId`** | <code>string</code> |
 
 
-### Type Aliases
+#### Type Aliases
 
 
-#### BundleStatus
+##### BundleStatus
 
 pending: The bundle is pending to be **SET** as the next bundle.
 downloading: The bundle is being downloaded.
@@ -1497,12 +1498,12 @@ error: The bundle has failed to download.
 <code>'success' | 'error' | 'pending' | 'downloading'</code>
 
 
-#### DelayUntilNext
+##### DelayUntilNext
 
 <code>'background' | 'kill' | 'nativeVersion' | 'date'</code>
 
 
-#### BreakingAvailableEvent
+##### BreakingAvailableEvent
 
 Payload emitted by {@link CapacitorUpdaterPlugin.addListener} with `breakingAvailable`.
 
