@@ -70,6 +70,7 @@ public class DownloadService extends Worker {
     protected static OkHttpClient sharedClient;
     private static String currentAppId = "unknown";
     private static String currentPluginVersion = "unknown";
+    private static String currentVersionOs = "unknown";
 
     // Initialize shared client with User-Agent interceptor
     static {
@@ -82,7 +83,8 @@ public class DownloadService extends Worker {
                     (currentPluginVersion != null ? currentPluginVersion : "unknown") +
                     " (" +
                     (currentAppId != null ? currentAppId : "unknown") +
-                    ")";
+                    ") android/" +
+                    (currentVersionOs != null ? currentVersionOs : "unknown");
                 Request requestWithUserAgent = originalRequest.newBuilder().header("User-Agent", userAgent).build();
                 return chain.proceed(requestWithUserAgent);
             })
@@ -90,10 +92,13 @@ public class DownloadService extends Worker {
     }
 
     // Method to update User-Agent values
-    public static void updateUserAgent(String appId, String pluginVersion) {
+    public static void updateUserAgent(String appId, String pluginVersion, String versionOs) {
         currentAppId = appId != null ? appId : "unknown";
         currentPluginVersion = pluginVersion != null ? pluginVersion : "unknown";
-        logger.debug("Updated User-Agent: CapacitorUpdater/" + currentPluginVersion + " (" + currentAppId + ")");
+        currentVersionOs = versionOs != null ? versionOs : "unknown";
+        logger.debug(
+            "Updated User-Agent: CapacitorUpdater/" + currentPluginVersion + " (" + currentAppId + ") android/" + currentVersionOs
+        );
     }
 
     public DownloadService(@NonNull Context context, @NonNull WorkerParameters params) {

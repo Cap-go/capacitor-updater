@@ -99,7 +99,6 @@ CapacitorUpdater can be configured with these options:
 - [`isShakeMenuEnabled`](#isshakemenuenabled)
 - [`getAppId`](#getappid)
 - [`setAppId`](#setappid)
-- [`getPluginVersion`](#getpluginversion)
 
 </docgen-index>
 
@@ -1126,24 +1125,6 @@ Set the App ID for the app (requires allowModifyAppId to be true in config)
 **Since:** 7.14.0
 
 **Throws:** {Error} If allowModifyAppId is false or if the operation fails
-
-
---------------------
-
-
-### getPluginVersion
-
-```typescript
-getPluginVersion() => Promise<{ version: string; }>
-```
-
-Get the native Capacitor plugin version
-
-**Returns**
-
-`Promise<{ version: string; }>` — an Promise with version for this device
-
-**Throws:** An error if the something went wrong
 
 
 --------------------

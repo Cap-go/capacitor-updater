@@ -276,9 +276,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         logger.info("appId: " + implementation.appId);
 
-        // Update User-Agent for shared OkHttpClient
-        DownloadService.updateUserAgent(this.implementation.appId, this.PLUGIN_VERSION);
-
         this.persistCustomId = this.getConfig().getBoolean("persistCustomId", false);
         this.persistModifyUrl = this.getConfig().getBoolean("persistModifyUrl", false);
         this.implementation.publicKey = this.getConfig().getString("publicKey", "");
@@ -316,6 +313,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.implementation.deviceID = this.prefs.getString("appUUID", UUID.randomUUID().toString()).toLowerCase();
         this.editor.putString("appUUID", this.implementation.deviceID);
         this.editor.apply();
+
+        // Update User-Agent for shared OkHttpClient with OS version
+        DownloadService.updateUserAgent(this.implementation.appId, this.PLUGIN_VERSION, this.implementation.versionOs);
+
         if (Boolean.TRUE.equals(this.persistCustomId)) {
             final String storedCustomId = this.prefs.getString(CUSTOM_ID_PREF_KEY, "");
             if (storedCustomId != null && !storedCustomId.isEmpty()) {
