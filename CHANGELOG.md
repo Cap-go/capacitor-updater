@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.23.1](https://github.com/Cap-go/capacitor-updater/compare/7.23.0...7.23.1) (2025-10-23)
+
+
+### Bug Fixes
+
+* remove content field from Discord release notification ([e132fd8](https://github.com/Cap-go/capacitor-updater/commit/e132fd87527502b62ec3dcd4aeee6c78107a0749))
+* remove footer in discord ([3627c52](https://github.com/Cap-go/capacitor-updater/commit/3627c5292884a341c58cbeda01c628322d8a8a6c))
+
 ## [7.23.0](https://github.com/Cap-go/capacitor-updater/compare/7.22.0...7.23.0) (2025-10-23)
 
 
