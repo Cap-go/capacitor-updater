@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [6.14.26](https://github.com/Cap-go/capacitor-updater/compare/6.14.25...6.14.26) (2025-10-24)
+
+
+### Bug Fixes
+
+* kill check at app load not at kill as it's not reliable ([777c7c0](https://github.com/Cap-go/capacitor-updater/commit/777c7c0c3ea49b825b428400b8cab561e913bbdb))
+
 ## [6.14.25](https://github.com/Cap-go/capacitor-updater/compare/6.14.24...6.14.25) (2025-09-27)
 
 ## [6.14.24](https://github.com/Cap-go/capacitor-updater/compare/6.14.23...6.14.24) (2025-09-27)
