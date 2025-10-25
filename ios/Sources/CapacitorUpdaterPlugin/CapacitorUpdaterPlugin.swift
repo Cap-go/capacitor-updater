@@ -236,7 +236,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         let nc = NotificationCenter.default
         nc.addObserver(self, selector: #selector(appMovedToBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
         nc.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
-        nc.addObserver(self, selector: #selector(appKilled), name: UIApplication.willTerminateNotification, object: nil)
+
+        // Check for 'kill' delay condition on app launch
+        // This handles cases where the app was killed (willTerminateNotification is not reliable for system kills)
+        self.delayUpdateUtils.checkCancelDelay(source: .killed)
+
         self.appMovedToForeground()
         self.checkForUpdateAfterDelay()
     }
@@ -1375,20 +1379,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
         }
-    }
-
-    @objc func appKilled() {
-        logger.info("onActivityDestroyed: all activity destroyed")
-        self.delayUpdateUtils.checkCancelDelay(source: .killed)
-
-        // Clean up resources
-        periodicUpdateTimer?.invalidate()
-        periodicUpdateTimer = nil
-        backgroundWork?.cancel()
-        backgroundWork = nil
-
-        // Signal any waiting semaphores to prevent deadlocks
-        semaphoreReady.signal()
     }
 
     private func installNext() {

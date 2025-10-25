@@ -81,7 +81,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private Boolean persistModifyUrl = false;
 
     private Integer appReadyTimeout = 10000;
-    private Integer counterActivityCreate = 0;
     private Integer periodCheckDelay = 0;
     private Boolean autoDeleteFailed = true;
     private Boolean autoDeletePrevious = true;
@@ -190,7 +189,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
     @Override
     public void load() {
         super.load();
-        this.counterActivityCreate++;
         this.prefs = this.getContext().getSharedPreferences(WebView.WEBVIEW_PREFS_NAME, Activity.MODE_PRIVATE);
         this.editor = this.prefs.edit();
 
@@ -358,6 +356,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
         if (resetWhenUpdate) {
             this.cleanupObsoleteVersions();
         }
+
+        // Check for 'kill' delay condition on app launch
+        // This handles cases where the app was killed by the system (onDestroy is not reliable)
+        this._checkCancelDelay(true);
+
         this.checkForUpdateAfterDelay();
     }
 
@@ -1981,11 +1984,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
-    private void appKilled() {
-        logger.debug("onActivityDestroyed: all activity destroyed");
-        this.delayUpdateUtils.checkCancelDelay(DelayUpdateUtils.CancelDelaySource.KILLED);
-    }
-
     @Override
     public void handleOnStart() {
         try {
@@ -2049,10 +2047,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
         try {
             logger.info("onActivityDestroyed " + getActivity().getClass().getName());
             this.implementation.activity = getActivity();
-            counterActivityCreate--;
-            if (counterActivityCreate == 0) {
-                this.appKilled();
-            }
 
             // Clean up shake menu
             if (shakeMenu != null) {
