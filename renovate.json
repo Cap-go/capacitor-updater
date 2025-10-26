@@ -28,6 +28,11 @@
       "allowedVersions": "/^.*-android$/"
     },
     {
+      "matchPackageNames": ["ZipArchive"],
+      "matchManagers": ["swift", "cocoapods"],
+      "enabled": false
+    },
+    {
       "matchPackagePatterns": ["^com\\.android\\.tools\\.build\\:gradle$"],
       "matchManagers": ["gradle"],
       "enabled": false
