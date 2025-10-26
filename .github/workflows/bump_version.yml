@@ -6,6 +6,8 @@ on:
       - main
       - development
       - v6
+    paths-ignore:
+      - 'example-app/**'
 
 jobs:
   bump-version:
