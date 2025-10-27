@@ -81,6 +81,9 @@ public class CapgoUpdater {
     public String deviceID = "";
     public int timeout = 20000;
 
+    // Flag to track if we received a 429 response - stops requests until app restart
+    private static volatile boolean rateLimitExceeded = false;
+
     private final Map<String, CompletableFuture<BundleInfo>> downloadFutures = new ConcurrentHashMap<>();
     private final ExecutorService io = Executors.newSingleThreadExecutor();
 
@@ -776,6 +779,18 @@ public class CapgoUpdater {
         return json;
     }
 
+    /**
+     * Check if a 429 (Too Many Requests) response was received and set the flag
+     */
+    private boolean checkAndHandleRateLimitResponse(Response response) {
+        if (response.code() == 429) {
+            rateLimitExceeded = true;
+            logger.warn("Rate limit exceeded (429). Stopping all stats and channel requests until app restart.");
+            return true;
+        }
+        return false;
+    }
+
     private void makeJsonRequest(String url, JSONObject jsonBody, Callback callback) {
         MediaType JSON = MediaType.get("application/json; charset=utf-8");
         RequestBody body = RequestBody.create(jsonBody.toString(), JSON);
@@ -797,6 +812,15 @@ public class CapgoUpdater {
                     @Override
                     public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
                         try (ResponseBody responseBody = response.body()) {
+                            // Check for 429 rate limit
+                            if (checkAndHandleRateLimitResponse(response)) {
+                                Map<String, Object> retError = new HashMap<>();
+                                retError.put("message", "Rate limit exceeded");
+                                retError.put("error", "rate_limit_exceeded");
+                                callback.callback(retError);
+                                return;
+                            }
+
                             if (!response.isSuccessful()) {
                                 Map<String, Object> retError = new HashMap<>();
                                 retError.put("message", "Server error: " + response.code());
@@ -865,6 +889,16 @@ public class CapgoUpdater {
     }
 
     public void unsetChannel(final Callback callback) {
+        // Check if rate limit was exceeded
+        if (rateLimitExceeded) {
+            logger.debug("Skipping unsetChannel due to rate limit (429). Requests will resume after app restart.");
+            final Map<String, Object> retError = new HashMap<>();
+            retError.put("message", "Rate limit exceeded");
+            retError.put("error", "rate_limit_exceeded");
+            callback.callback(retError);
+            return;
+        }
+
         String channelUrl = this.channelUrl;
         if (channelUrl == null || channelUrl.isEmpty()) {
             logger.error("Channel URL is not set");
@@ -906,6 +940,15 @@ public class CapgoUpdater {
                     @Override
                     public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
                         try (ResponseBody responseBody = response.body()) {
+                            // Check for 429 rate limit
+                            if (checkAndHandleRateLimitResponse(response)) {
+                                Map<String, Object> retError = new HashMap<>();
+                                retError.put("message", "Rate limit exceeded");
+                                retError.put("error", "rate_limit_exceeded");
+                                callback.callback(retError);
+                                return;
+                            }
+
                             if (!response.isSuccessful()) {
                                 Map<String, Object> retError = new HashMap<>();
                                 retError.put("message", "Server error: " + response.code());
@@ -950,6 +993,16 @@ public class CapgoUpdater {
     }
 
     public void setChannel(final String channel, final Callback callback) {
+        // Check if rate limit was exceeded
+        if (rateLimitExceeded) {
+            logger.debug("Skipping setChannel due to rate limit (429). Requests will resume after app restart.");
+            final Map<String, Object> retError = new HashMap<>();
+            retError.put("message", "Rate limit exceeded");
+            retError.put("error", "rate_limit_exceeded");
+            callback.callback(retError);
+            return;
+        }
+
         String channelUrl = this.channelUrl;
         if (channelUrl == null || channelUrl.isEmpty()) {
             logger.error("Channel URL is not set");
@@ -976,6 +1029,16 @@ public class CapgoUpdater {
     }
 
     public void getChannel(final Callback callback) {
+        // Check if rate limit was exceeded
+        if (rateLimitExceeded) {
+            logger.debug("Skipping getChannel due to rate limit (429). Requests will resume after app restart.");
+            final Map<String, Object> retError = new HashMap<>();
+            retError.put("message", "Rate limit exceeded");
+            retError.put("error", "rate_limit_exceeded");
+            callback.callback(retError);
+            return;
+        }
+
         String channelUrl = this.channelUrl;
         if (channelUrl == null || channelUrl.isEmpty()) {
             logger.error("Channel URL is not set");
@@ -1017,6 +1080,15 @@ public class CapgoUpdater {
                     @Override
                     public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
                         try (ResponseBody responseBody = response.body()) {
+                            // Check for 429 rate limit
+                            if (checkAndHandleRateLimitResponse(response)) {
+                                Map<String, Object> retError = new HashMap<>();
+                                retError.put("message", "Rate limit exceeded");
+                                retError.put("error", "rate_limit_exceeded");
+                                callback.callback(retError);
+                                return;
+                            }
+
                             if (response.code() == 400) {
                                 assert responseBody != null;
                                 String data = responseBody.string();
@@ -1074,6 +1146,16 @@ public class CapgoUpdater {
     }
 
     public void listChannels(final Callback callback) {
+        // Check if rate limit was exceeded
+        if (rateLimitExceeded) {
+            logger.debug("Skipping listChannels due to rate limit (429). Requests will resume after app restart.");
+            final Map<String, Object> retError = new HashMap<>();
+            retError.put("message", "Rate limit exceeded");
+            retError.put("error", "rate_limit_exceeded");
+            callback.callback(retError);
+            return;
+        }
+
         String channelUrl = this.channelUrl;
         if (channelUrl == null || channelUrl.isEmpty()) {
             logger.error("Channel URL is not set");
@@ -1114,6 +1196,15 @@ public class CapgoUpdater {
                     @Override
                     public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
                         try (ResponseBody responseBody = response.body()) {
+                            // Check for 429 rate limit
+                            if (checkAndHandleRateLimitResponse(response)) {
+                                Map<String, Object> retError = new HashMap<>();
+                                retError.put("message", "Rate limit exceeded");
+                                retError.put("error", "rate_limit_exceeded");
+                                callback.callback(retError);
+                                return;
+                            }
+
                             if (!response.isSuccessful()) {
                                 Map<String, Object> retError = new HashMap<>();
                                 retError.put("message", "Server error: " + response.code());
@@ -1185,6 +1276,12 @@ public class CapgoUpdater {
     }
 
     public void sendStats(final String action, final String versionName, final String oldVersionName) {
+        // Check if rate limit was exceeded
+        if (rateLimitExceeded) {
+            logger.debug("Skipping sendStats due to rate limit (429). Stats will resume after app restart.");
+            return;
+        }
+
         String statsUrl = this.statsUrl;
         if (statsUrl == null || statsUrl.isEmpty()) {
             return;
@@ -1217,6 +1314,11 @@ public class CapgoUpdater {
                     @Override
                     public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
                         try (ResponseBody responseBody = response.body()) {
+                            // Check for 429 rate limit
+                            if (checkAndHandleRateLimitResponse(response)) {
+                                return;
+                            }
+
                             if (response.isSuccessful()) {
                                 logger.info("Stats send for \"" + action + "\", version " + versionName);
                             } else {

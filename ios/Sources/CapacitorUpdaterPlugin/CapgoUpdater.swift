@@ -42,6 +42,9 @@ import UIKit
     public var deviceID = ""
     public var publicKey: String = ""
 
+    // Flag to track if we received a 429 response - stops requests until app restart
+    private static var rateLimitExceeded = false
+
     private var userAgent: String {
         let safePluginVersion = PLUGIN_VERSION.isEmpty ? "unknown" : PLUGIN_VERSION
         let safeAppId = appId.isEmpty ? "unknown" : appId
@@ -83,6 +86,18 @@ import UIKit
 
     private func isProd() -> Bool {
         return !self.isDevEnvironment && !self.isAppStoreReceiptSandbox() && !self.hasEmbeddedMobileProvision()
+    }
+
+    /**
+     * Check if a 429 (Too Many Requests) response was received and set the flag
+     */
+    private func checkAndHandleRateLimitResponse(statusCode: Int?) -> Bool {
+        if statusCode == 429 {
+            CapgoUpdater.rateLimitExceeded = true
+            logger.warn("Rate limit exceeded (429). Stopping all stats and channel requests until app restart.")
+            return true
+        }
+        return false
     }
 
     // MARK: Private
@@ -1011,6 +1026,15 @@ import UIKit
 
     func unsetChannel() -> SetChannel {
         let setChannel: SetChannel = SetChannel()
+
+        // Check if rate limit was exceeded
+        if CapgoUpdater.rateLimitExceeded {
+            logger.debug("Skipping unsetChannel due to rate limit (429). Requests will resume after app restart.")
+            setChannel.message = "Rate limit exceeded"
+            setChannel.error = "rate_limit_exceeded"
+            return setChannel
+        }
+
         if (self.channelUrl ).isEmpty {
             logger.error("Channel URL is not set")
             setChannel.message = "Channel URL is not set"
@@ -1023,6 +1047,14 @@ import UIKit
         let request = alamofireSession.request(self.channelUrl, method: .delete, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
 
         request.validate().responseDecodable(of: SetChannelDec.self) { response in
+            // Check for 429 rate limit
+            if self.checkAndHandleRateLimitResponse(statusCode: response.response?.statusCode) {
+                setChannel.message = "Rate limit exceeded"
+                setChannel.error = "rate_limit_exceeded"
+                semaphore.signal()
+                return
+            }
+
             switch response.result {
             case .success:
                 if let responseValue = response.value {
@@ -1045,6 +1077,15 @@ import UIKit
 
     func setChannel(channel: String) -> SetChannel {
         let setChannel: SetChannel = SetChannel()
+
+        // Check if rate limit was exceeded
+        if CapgoUpdater.rateLimitExceeded {
+            logger.debug("Skipping setChannel due to rate limit (429). Requests will resume after app restart.")
+            setChannel.message = "Rate limit exceeded"
+            setChannel.error = "rate_limit_exceeded"
+            return setChannel
+        }
+
         if (self.channelUrl ).isEmpty {
             logger.error("Channel URL is not set")
             setChannel.message = "Channel URL is not set"
@@ -1058,6 +1099,14 @@ import UIKit
         let request = alamofireSession.request(self.channelUrl, method: .post, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
 
         request.validate().responseDecodable(of: SetChannelDec.self) { response in
+            // Check for 429 rate limit
+            if self.checkAndHandleRateLimitResponse(statusCode: response.response?.statusCode) {
+                setChannel.message = "Rate limit exceeded"
+                setChannel.error = "rate_limit_exceeded"
+                semaphore.signal()
+                return
+            }
+
             switch response.result {
             case .success:
                 if let responseValue = response.value {
@@ -1080,6 +1129,15 @@ import UIKit
 
     func getChannel() -> GetChannel {
         let getChannel: GetChannel = GetChannel()
+
+        // Check if rate limit was exceeded
+        if CapgoUpdater.rateLimitExceeded {
+            logger.debug("Skipping getChannel due to rate limit (429). Requests will resume after app restart.")
+            getChannel.message = "Rate limit exceeded"
+            getChannel.error = "rate_limit_exceeded"
+            return getChannel
+        }
+
         if (self.channelUrl ).isEmpty {
             logger.error("Channel URL is not set")
             getChannel.message = "Channel URL is not set"
@@ -1094,6 +1152,14 @@ import UIKit
             defer {
                 semaphore.signal()
             }
+
+            // Check for 429 rate limit
+            if self.checkAndHandleRateLimitResponse(statusCode: response.response?.statusCode) {
+                getChannel.message = "Rate limit exceeded"
+                getChannel.error = "rate_limit_exceeded"
+                return
+            }
+
             switch response.result {
             case .success:
                 if let responseValue = response.value {
@@ -1125,6 +1191,14 @@ import UIKit
 
     func listChannels() -> ListChannels {
         let listChannels: ListChannels = ListChannels()
+
+        // Check if rate limit was exceeded
+        if CapgoUpdater.rateLimitExceeded {
+            logger.debug("Skipping listChannels due to rate limit (429). Requests will resume after app restart.")
+            listChannels.error = "rate_limit_exceeded"
+            return listChannels
+        }
+
         if (self.channelUrl).isEmpty {
             logger.error("Channel URL is not set")
             listChannels.error = "Channel URL is not set"
@@ -1160,6 +1234,13 @@ import UIKit
             defer {
                 semaphore.signal()
             }
+
+            // Check for 429 rate limit
+            if self.checkAndHandleRateLimitResponse(statusCode: response.response?.statusCode) {
+                listChannels.error = "rate_limit_exceeded"
+                return
+            }
+
             switch response.result {
             case .success:
                 if let responseValue = response.value {
@@ -1193,6 +1274,12 @@ import UIKit
     private let operationQueue = OperationQueue()
 
     func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {
+        // Check if rate limit was exceeded
+        if CapgoUpdater.rateLimitExceeded {
+            logger.debug("Skipping sendStats due to rate limit (429). Stats will resume after app restart.")
+            return
+        }
+
         guard !statsUrl.isEmpty else {
             return
         }
@@ -1214,6 +1301,12 @@ import UIKit
                 encoder: JSONParameterEncoder.default,
                 requestModifier: { $0.timeoutInterval = self.timeout }
             ).responseData { response in
+                // Check for 429 rate limit
+                if self.checkAndHandleRateLimitResponse(statusCode: response.response?.statusCode) {
+                    semaphore.signal()
+                    return
+                }
+
                 switch response.result {
                 case .success:
                     self.logger.info("Stats sent for \(action), version \(versionName)")
@@ -1222,7 +1315,7 @@ import UIKit
                 }
                 semaphore.signal()
             }
-            semaphore.signal()
+            semaphore.wait()
         }
         operationQueue.addOperation(operation)
 
