@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.23.8](https://github.com/Cap-go/capacitor-updater/compare/7.23.7...7.23.8) (2025-10-27)
+
+
+### Bug Fixes
+
+* prevent auto DDOS ([4216aab](https://github.com/Cap-go/capacitor-updater/commit/4216aab4c7190242cd8a3f26f3d01c451fb53f2f))
+
 ## [7.23.7](https://github.com/Cap-go/capacitor-updater/compare/7.23.6...7.23.7) (2025-10-27)
 
 
