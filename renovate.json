@@ -39,7 +39,7 @@
     },
     {
       "matchPackageNames": ["capacitor-swift-pm"],
-      "matchManagers": ["swift"],
+      "matchManagers": ["swift-pm"],
       "enabled": false
     },
     {
