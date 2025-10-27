@@ -8,6 +8,7 @@ on:
       - v6
     paths-ignore:
       - 'example-app/**'
+      - '.github/**'
 
 jobs:
   bump-version:
