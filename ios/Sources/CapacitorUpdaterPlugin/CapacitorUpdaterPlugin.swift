@@ -1442,6 +1442,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if self._isAutoUpdateEnabled() {
             self.backgroundDownload()
         } else {
+            let instanceDescriptor = (self.bridge?.viewController as? CAPBridgeViewController)?.instanceDescriptor()
+            if instanceDescriptor?.serverURL != nil {
+                self.implementation.sendStats(action: "blocked_by_server_url", versionName: current.getVersionName())
+            }
             logger.info("Auto update is disabled")
             self.sendReadyToJs(current: current, msg: "disabled")
         }

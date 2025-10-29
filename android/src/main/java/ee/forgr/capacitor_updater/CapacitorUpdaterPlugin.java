@@ -1915,6 +1915,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
         ) {
             this.backgroundDownloadTask = this.backgroundDownload();
         } else {
+            final CapConfig config = CapConfig.loadDefault(this.getActivity());
+            String serverUrl = config.getServerUrl();
+            if (serverUrl != null && !serverUrl.isEmpty()) {
+                CapacitorUpdaterPlugin.this.implementation.sendStats("blocked_by_server_url", current.getVersionName());
+            }
             logger.info("Auto update is disabled");
             this.sendReadyToJs(current, "disabled");
         }
