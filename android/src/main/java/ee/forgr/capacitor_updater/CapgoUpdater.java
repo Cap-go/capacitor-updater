@@ -823,16 +823,14 @@ public class CapgoUpdater {
             json.put("old_version_name", "");
             json.put("action", "rate_limit_reached");
 
-            MediaType JSON = MediaType.get("application/json; charset=utf-8");
-            RequestBody body = RequestBody.create(json.toString(), JSON);
             Request request = new Request.Builder()
                     .url(statsUrl)
-                    .header("User-Agent", getUserAgent())
-                    .post(body)
+                    .post(RequestBody.create(json.toString(), MediaType.get("application/json")))
                     .build();
 
             // Send synchronously to ensure it goes out before the flag is set
-            try (Response response = client.newCall(request).execute()) {
+            // User-Agent header is automatically added by DownloadService.sharedClient interceptor
+            try (Response response = DownloadService.sharedClient.newCall(request).execute()) {
                 if (response.isSuccessful()) {
                     logger.info("Rate limit statistic sent");
                 } else {
