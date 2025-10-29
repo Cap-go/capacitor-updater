@@ -16,30 +16,55 @@
 [![Rewarded Bounties](https://img.shields.io/endpoint?url=https%3A%2F%2Fconsole.algora.io%2Fapi%2Fshields%2FCapgo%2Fbounties%3Fstatus%3Dcompleted)](https://console.algora.io/org/Capgo/bounties?status=completed)
 
 <div align="center">
-  <h2><a href="https://capgo.app/?ref=plugin"> ➡️ Get Instant updates for your App with Capgo 🚀</a></h2>
-  <h2><a href="https://capgo.app/consulting/?ref=plugin"> Fix your annoying bug now, Hire a Capacitor expert 💪</a></h2>
+  <h2><a href="https://capgo.app/?ref=plugin"> ➡️ Get Instant updates for your App with Capgo</a></h2>
+  <h2><a href="https://capgo.app/consulting/?ref=plugin"> Missing a feature? We’ll build the plugin for you 💪</a></h2>
 </div>
 
-Update Ionic Capacitor apps without App/Play Store review (Code-push / hot-code updates).
+Capacitor plugin to update your app remotely in real-time.
+
+Open-source Alternative to Appflow, Codepush or Capawesome
+
+## Features
+
+- ☁️ Cloud / Self hosted Support: Use our [Cloud](https://capgo.app/) to manage your app updates or yours.
+- 📦 Bundle Management: Download, assign to channel, rollback.
+- 📺 Channel Support: Use channels to manage different environements.
+- 🎯 Set Channel to specific device to do QA or debug one user.
+- 🔄 Auto Update: Automatically download and set the latest bundle for the app.
+- 🛟 Rollback: Reset the app to last working bundle if an incompatible bundle has been set.
+- 🔁 **Delta Updates**: Make instant updates by only downloading changed files.
+- 🔒 **Security**: Encrypt and sign each updates with best in class security standards.
+- ⚔️ **Battle-Tested**: Used in more than 3000 projects.
+- 📊 View your deployment statistics
+- 🔋 Supports Android and iOS
+- ⚡️ Capacitor 6/7 support
+- 🌐 **Open Source**: Licensed under the Mozilla Public License 2.0
+- 🌐 **Open Source Backend**: Self install [our backend](https://github.com/Cap-go/capgo) in your infra
+
 
 You have 3 ways possible :
 - Use [capgo.app](https://capgo.app) a full featured auto-update system in 5 min Setup, to manage version, update, revert and see stats.
 - Use your own server update with auto-update system
 - Use manual methods to zip, upload, download, from JS to do it when you want.
 
+## Documentation
+The most complete [documentation here](https://capgo.app/docs/).
 
 ## Community
 Join the [discord](https://discord.gg/VnYRvBfgA6) to get help.
 
-## Documentation
-I maintain a more user-friendly and complete [documentation here](https://capgo.app/docs/).
+## Migration to v7
+
+- `privateKey` is not available anymore, it was used for the old encryption method. to migrate follow this guide : [https://capgo.app/docs/plugin/cloud-mode/getting-started/](https://capgo.app/docs/cli/migrations/encryption/)
+- To capacitor v7 : [https://capacitorjs.com/docs/updating/7-0](https://capacitorjs.com/docs/updating/7-0)
 
 ## Compatibility
 
 | Plugin version | Capacitor compatibility | Maintained        |
 | -------------- | ----------------------- | ----------------- |
-| v6.\*.\*       | v6.\*.\*                | ✅                 |
-| v5.\*.\*       | v5.\*.\*                | Critical bug only |
+| v7.\*.\*       | v7.\*.\*                | ✅                 |
+| v6.\*.\*       | v6.\*.\*                | Critical bug only  |
+| v5.\*.\*       | v5.\*.\*                | ⚠️ Deprecated |
 | v4.\*.\*       | v4.\*.\*                | ⚠️ Deprecated |
 | v3.\*.\*       | v3.\*.\*                | ⚠️ Deprecated     |
 | > 7            | v4.\*.\*                | ⚠️ Deprecated, our CI got crazy and bumped too much version     |
@@ -75,6 +100,10 @@ We recommend to declare [`CA92.1`](https://developer.apple.com/documentation/bun
 
 ## Installation
 
+Step by step here: [Getting started](https://capgo.app/docs/getting-started/add-an-app/)
+
+Or
+
 ```bash
 npm install @capgo/capacitor-updater
 npx cap sync
@@ -89,7 +118,7 @@ And follow the steps by step to setup your app.
 For detailed instructions on the auto-update setup, refer to the [Auto update documentation](https://capgo.app/docs/plugin/cloud-mode/getting-started/).
 
 
-## Manual setup
+## No Cloud setup
 
 Download update distribution zipfiles from a custom URL. Manually control the entire update process.
 
@@ -115,6 +144,7 @@ This informs Capacitor Updater that the current update bundle has loaded succesf
 - Add this to your application.
 ```javascript
   const version = await CapacitorUpdater.download({
+    version: '0.0.4',
     url: 'https://github.com/Cap-go/demo-app/releases/download/0.0.4/dist.zip',
   })
   await CapacitorUpdater.set(version); // sets the new version, and reloads the app
@@ -132,6 +162,7 @@ You might also consider performing auto-update when application state changes, a
       if (state.isActive) {
         // Ensure download occurs while the app is active, or download may fail
         version = await CapacitorUpdater.download({
+          version: '0.0.4',
           url: 'https://github.com/Cap-go/demo-app/releases/download/0.0.4/dist.zip',
         })
       }
@@ -197,33 +228,42 @@ Capacitor Updater works by unzipping a compiled app bundle to the native device 
 
 CapacitorUpdater can be configured with these options:
 
-| Prop                         | Type                 | Description                                                                                                                                                                                     | Default                                            | Since   |
-| ---------------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ------- |
-| **`appReadyTimeout`**        | <code>number</code>  | Configure the number of milliseconds the native plugin should wait before considering an update 'failed'. Only available for Android and iOS.                                                   | <code>10000 // (10 seconds)</code>                 |         |
-| **`responseTimeout`**        | <code>number</code>  | Configure the number of milliseconds the native plugin should wait before considering API timeout. Only available for Android and iOS.                                                          | <code>20 // (20 second)</code>                     |         |
-| **`autoDeleteFailed`**       | <code>boolean</code> | Configure whether the plugin should use automatically delete failed bundles. Only available for Android and iOS.                                                                                | <code>true</code>                                  |         |
-| **`autoDeletePrevious`**     | <code>boolean</code> | Configure whether the plugin should use automatically delete previous bundles after a successful update. Only available for Android and iOS.                                                    | <code>true</code>                                  |         |
-| **`autoUpdate`**             | <code>boolean</code> | Configure whether the plugin should use Auto Update via an update server. Only available for Android and iOS.                                                                                   | <code>true</code>                                  |         |
-| **`resetWhenUpdate`**        | <code>boolean</code> | Automatically delete previous downloaded bundles when a newer native app bundle is installed to the device. Only available for Android and iOS.                                                 | <code>true</code>                                  |         |
-| **`updateUrl`**              | <code>string</code>  | Configure the URL / endpoint to which update checks are sent. Only available for Android and iOS.                                                                                               | <code>https://plugin.capgo.app/updates</code>      |         |
-| **`channelUrl`**             | <code>string</code>  | Configure the URL / endpoint for channel operations. Only available for Android and iOS.                                                                                                        | <code>https://plugin.capgo.app/channel_self</code> |         |
-| **`statsUrl`**               | <code>string</code>  | Configure the URL / endpoint to which update statistics are sent. Only available for Android and iOS. Set to "" to disable stats reporting.                                                     | <code>https://plugin.capgo.app/stats</code>        |         |
-| **`privateKey`**             | <code>string</code>  | Configure the private key for end to end live update encryption. Only available for Android and iOS. Deprecated in version 6.2.0. will be removed in version 7.0.0.                             | <code>undefined</code>                             |         |
-| **`publicKey`**              | <code>string</code>  | Configure the public key for end to end live update encryption Version 2 Only available for Android and iOS.                                                                                    | <code>undefined</code>                             | 6.2.0   |
-| **`version`**                | <code>string</code>  | Configure the current version of the app. This will be used for the first update request. If not set, the plugin will get the version from the native code. Only available for Android and iOS. | <code>undefined</code>                             | 4.17.48 |
-| **`directUpdate`**           | <code>boolean</code> | Make the plugin direct install the update when the app what just updated/installed. Only for autoUpdate mode. Only available for Android and iOS.                                               | <code>undefined</code>                             | 5.1.0   |
-| **`periodCheckDelay`**       | <code>number</code>  | Configure the delay period for period update check. the unit is in seconds. Only available for Android and iOS. Cannot be less than 600 seconds (10 minutes).                                   | <code>600 // (10 minutes)</code>                   |         |
-| **`localS3`**                | <code>boolean</code> | Configure the CLI to use a local server for testing or self-hosted update server.                                                                                                               | <code>undefined</code>                             | 4.17.48 |
-| **`localHost`**              | <code>string</code>  | Configure the CLI to use a local server for testing or self-hosted update server.                                                                                                               | <code>undefined</code>                             | 4.17.48 |
-| **`localWebHost`**           | <code>string</code>  | Configure the CLI to use a local server for testing or self-hosted update server.                                                                                                               | <code>undefined</code>                             | 4.17.48 |
-| **`localSupa`**              | <code>string</code>  | Configure the CLI to use a local server for testing or self-hosted update server.                                                                                                               | <code>undefined</code>                             | 4.17.48 |
-| **`localSupaAnon`**          | <code>string</code>  | Configure the CLI to use a local server for testing.                                                                                                                                            | <code>undefined</code>                             | 4.17.48 |
-| **`localApi`**               | <code>string</code>  | Configure the CLI to use a local api for testing.                                                                                                                                               | <code>undefined</code>                             | 6.3.3   |
-| **`localApiFiles`**          | <code>string</code>  | Configure the CLI to use a local file api for testing.                                                                                                                                          | <code>undefined</code>                             | 6.3.3   |
-| **`allowModifyUrl`**         | <code>boolean</code> | Allow the plugin to modify the updateUrl, statsUrl and channelUrl dynamically from the JavaScript side.                                                                                         | <code>false</code>                                 | 5.4.0   |
-| **`defaultChannel`**         | <code>string</code>  | Set the default channel for the app in the config.                                                                                                                                              | <code>undefined</code>                             | 5.5.0   |
-| **`appId`**                  | <code>string</code>  | Configure the app id for the app in the config.                                                                                                                                                 | <code>undefined</code>                             | 6.0.0   |
-| **`keepUrlPathAfterReload`** | <code>boolean</code> | Configure the plugin to keep the URL path after a reload. WARNING: When a reload is triggered, 'window.history' will be cleared.                                                                | <code>false</code>                                 | 6.8.0   |
+| Prop                          | Type                                            | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Default                                                                       | Since   |
+| ----------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ------- |
+| **`appReadyTimeout`**         | <code>number</code>                             | Configure the number of milliseconds the native plugin should wait before considering an update 'failed'. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                     | <code>10000 // (10 seconds)</code>                                            |         |
+| **`responseTimeout`**         | <code>number</code>                             | Configure the number of seconds the native plugin should wait before considering API timeout. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                 | <code>20 // (20 second)</code>                                                |         |
+| **`autoDeleteFailed`**        | <code>boolean</code>                            | Configure whether the plugin should use automatically delete failed bundles. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | <code>true</code>                                                             |         |
+| **`autoDeletePrevious`**      | <code>boolean</code>                            | Configure whether the plugin should use automatically delete previous bundles after a successful update. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                      | <code>true</code>                                                             |         |
+| **`autoUpdate`**              | <code>boolean</code>                            | Configure whether the plugin should use Auto Update via an update server. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | <code>true</code>                                                             |         |
+| **`resetWhenUpdate`**         | <code>boolean</code>                            | Automatically delete previous downloaded bundles when a newer native app bundle is installed to the device. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                   | <code>true</code>                                                             |         |
+| **`updateUrl`**               | <code>string</code>                             | Configure the URL / endpoint to which update checks are sent. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | <code>https://plugin.capgo.app/updates</code>                                 |         |
+| **`channelUrl`**              | <code>string</code>                             | Configure the URL / endpoint for channel operations. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | <code>https://plugin.capgo.app/channel_self</code>                            |         |
+| **`statsUrl`**                | <code>string</code>                             | Configure the URL / endpoint to which update statistics are sent. Only available for Android and iOS. Set to "" to disable stats reporting.                                                                                                                                                                                                                                                                                                                                                                                                                                       | <code>https://plugin.capgo.app/stats</code>                                   |         |
+| **`privateKey`**              | <code>string</code>                             | Configure the private key for end to end live update encryption. Only available for Android and iOS. Deprecated in version 6.2.0 in favor of publicKey. Still supported for backwards compatibility.                                                                                                                                                                                                                                                                                                                                                                              | <code>undefined</code>                                                        |         |
+| **`publicKey`**               | <code>string</code>                             | Configure the public key for end to end live update encryption Version 2 Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | <code>undefined</code>                                                        | 6.2.0   |
+| **`version`**                 | <code>string</code>                             | Configure the current version of the app. This will be used for the first update request. If not set, the plugin will get the version from the native code. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                   | <code>undefined</code>                                                        | 4.17.48 |
+| **`directUpdate`**            | <code>boolean \| 'always' \| 'atInstall'</code> | Configure when the plugin should direct install updates. Only for autoUpdate mode. Works well for apps less than 10MB and with uploads done using --partial flag. Zip or apps more than 10MB will be relatively slow for users to update. - false: Never do direct updates (default behavior) - atInstall: Direct update only when app is installed/updated from store, otherwise use normal background update - always: Always do direct updates immediately when available - true: (deprecated) Same as "always" for backward compatibility Only available for Android and iOS. | <code>false</code>                                                            | 5.1.0   |
+| **`autoSplashscreen`**        | <code>boolean</code>                            | Automatically handle splashscreen hiding when using directUpdate. When enabled, the plugin will automatically hide the splashscreen after updates are applied or when no update is needed. This removes the need to manually listen for appReady events and call SplashScreen.hide(). Only works when directUpdate is set to "atInstall", "always", or true. Requires the @capacitor/splash-screen plugin to be installed and configured with launchAutoHide: false. Requires autoUpdate and directUpdate to be enabled. Only available for Android and iOS.                      | <code>false</code>                                                            | 7.6.0   |
+| **`autoSplashscreenLoader`**  | <code>boolean</code>                            | Display a native loading indicator on top of the splashscreen while automatic direct updates are running. Only takes effect when {@link autoSplashscreen} is enabled. Requires the @capacitor/splash-screen plugin to be installed and configured with launchAutoHide: false. Only available for Android and iOS.                                                                                                                                                                                                                                                                 | <code>false</code>                                                            | 7.19.0  |
+| **`autoSplashscreenTimeout`** | <code>number</code>                             | Automatically hide the splashscreen after the specified number of milliseconds when using automatic direct updates. If the timeout elapses, the update continues to download in the background while the splashscreen is dismissed. Set to `0` (zero) to disable the timeout. When the timeout fires, the direct update flow is skipped and the downloaded bundle is installed on the next background/launch. Requires {@link autoSplashscreen} to be enabled. Only available for Android and iOS.                                                                                | <code>10000 // (10 seconds)</code>                                            | 7.19.0  |
+| **`periodCheckDelay`**        | <code>number</code>                             | Configure the delay period for period update check. the unit is in seconds. Only available for Android and iOS. Cannot be less than 600 seconds (10 minutes).                                                                                                                                                                                                                                                                                                                                                                                                                     | <code>0 (disabled)</code>                                                     |         |
+| **`localS3`**                 | <code>boolean</code>                            | Configure the CLI to use a local server for testing or self-hosted update server.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | <code>undefined</code>                                                        | 4.17.48 |
+| **`localHost`**               | <code>string</code>                             | Configure the CLI to use a local server for testing or self-hosted update server.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | <code>undefined</code>                                                        | 4.17.48 |
+| **`localWebHost`**            | <code>string</code>                             | Configure the CLI to use a local server for testing or self-hosted update server.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | <code>undefined</code>                                                        | 4.17.48 |
+| **`localSupa`**               | <code>string</code>                             | Configure the CLI to use a local server for testing or self-hosted update server.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | <code>undefined</code>                                                        | 4.17.48 |
+| **`localSupaAnon`**           | <code>string</code>                             | Configure the CLI to use a local server for testing.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | <code>undefined</code>                                                        | 4.17.48 |
+| **`localApi`**                | <code>string</code>                             | Configure the CLI to use a local api for testing.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | <code>undefined</code>                                                        | 6.3.3   |
+| **`localApiFiles`**           | <code>string</code>                             | Configure the CLI to use a local file api for testing.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | <code>undefined</code>                                                        | 6.3.3   |
+| **`allowModifyUrl`**          | <code>boolean</code>                            | Allow the plugin to modify the updateUrl, statsUrl and channelUrl dynamically from the JavaScript side.                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | <code>false</code>                                                            | 5.4.0   |
+| **`allowModifyAppId`**        | <code>boolean</code>                            | Allow the plugin to modify the appId dynamically from the JavaScript side.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | <code>false</code>                                                            | 7.14.0  |
+| **`allowManualBundleError`**  | <code>boolean</code>                            | Allow marking bundles as errored from JavaScript while using manual update flows. When enabled, {@link CapacitorUpdaterPlugin.setBundleError} can change a bundle status to `error`.                                                                                                                                                                                                                                                                                                                                                                                              | <code>false</code>                                                            | 7.20.0  |
+| **`persistCustomId`**         | <code>boolean</code>                            | Persist the customId set through {@link CapacitorUpdaterPlugin.setCustomId} across app restarts. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                              | <code>false (will be true by default in a future major release v8.x.x)</code> | 7.17.3  |
+| **`persistModifyUrl`**        | <code>boolean</code>                            | Persist the updateUrl, statsUrl and channelUrl set through {@link CapacitorUpdaterPlugin.setUpdateUrl}, {@link CapacitorUpdaterPlugin.setStatsUrl} and {@link CapacitorUpdaterPlugin.setChannelUrl} across app restarts. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                      | <code>false</code>                                                            | 7.20.0  |
+| **`defaultChannel`**          | <code>string</code>                             | Set the default channel for the app in the config. Case sensitive. This will setting will override the default channel set in the cloud, but will still respect overrides made in the cloud. This requires the channel to allow devices to self dissociate/associate in the channel settings. https://capgo.app/docs/public-api/channels/#channel-configuration-options                                                                                                                                                                                                           | <code>undefined</code>                                                        | 5.5.0   |
+| **`appId`**                   | <code>string</code>                             | Configure the app id for the app in the config.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | <code>undefined</code>                                                        | 6.0.0   |
+| **`keepUrlPathAfterReload`**  | <code>boolean</code>                            | Configure the plugin to keep the URL path after a reload. WARNING: When a reload is triggered, 'window.history' will be cleared.                                                                                                                                                                                                                                                                                                                                                                                                                                                  | <code>false</code>                                                            | 6.8.0   |
+| **`disableJSLogging`**        | <code>boolean</code>                            | Disable the JavaScript logging of the plugin. if true, the plugin will not log to the JavaScript console. only the native log will be done                                                                                                                                                                                                                                                                                                                                                                                                                                        | <code>false</code>                                                            | 7.3.0   |
+| **`shakeMenu`**               | <code>boolean</code>                            | Enable shake gesture to show update menu for debugging/testing purposes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | <code>false</code>                                                            | 7.5.0   |
 
 ### Examples
 
@@ -246,7 +286,10 @@ In `capacitor.config.json`:
       "publicKey": undefined,
       "version": undefined,
       "directUpdate": undefined,
-      "periodCheckDelay": undefined,
+      "autoSplashscreen": undefined,
+      "autoSplashscreenLoader": undefined,
+      "autoSplashscreenTimeout": undefined,
+      "periodCheckDelay": 3600 (1 hour),
       "localS3": undefined,
       "localHost": undefined,
       "localWebHost": undefined,
@@ -255,9 +298,15 @@ In `capacitor.config.json`:
       "localApi": undefined,
       "localApiFiles": undefined,
       "allowModifyUrl": undefined,
+      "allowModifyAppId": undefined,
+      "allowManualBundleError": undefined,
+      "persistCustomId": undefined,
+      "persistModifyUrl": undefined,
       "defaultChannel": undefined,
       "appId": undefined,
-      "keepUrlPathAfterReload": undefined
+      "keepUrlPathAfterReload": undefined,
+      "disableJSLogging": undefined,
+      "shakeMenu": undefined
     }
   }
 }
@@ -286,7 +335,10 @@ const config: CapacitorConfig = {
       publicKey: undefined,
       version: undefined,
       directUpdate: undefined,
-      periodCheckDelay: undefined,
+      autoSplashscreen: undefined,
+      autoSplashscreenLoader: undefined,
+      autoSplashscreenTimeout: undefined,
+      periodCheckDelay: 3600 (1 hour),
       localS3: undefined,
       localHost: undefined,
       localWebHost: undefined,
@@ -295,9 +347,15 @@ const config: CapacitorConfig = {
       localApi: undefined,
       localApiFiles: undefined,
       allowModifyUrl: undefined,
+      allowModifyAppId: undefined,
+      allowManualBundleError: undefined,
+      persistCustomId: undefined,
+      persistModifyUrl: undefined,
       defaultChannel: undefined,
       appId: undefined,
       keepUrlPathAfterReload: undefined,
+      disableJSLogging: undefined,
+      shakeMenu: undefined,
     },
   },
 };
@@ -319,6 +377,7 @@ export default config;
 * [`next(...)`](#next)
 * [`set(...)`](#set)
 * [`delete(...)`](#delete)
+* [`setBundleError(...)`](#setbundleerror)
 * [`list(...)`](#list)
 * [`reset(...)`](#reset)
 * [`current()`](#current)
@@ -329,6 +388,7 @@ export default config;
 * [`setChannel(...)`](#setchannel)
 * [`unsetChannel(...)`](#unsetchannel)
 * [`getChannel()`](#getchannel)
+* [`listChannels()`](#listchannels)
 * [`setCustomId(...)`](#setcustomid)
 * [`getBuiltinVersion()`](#getbuiltinversion)
 * [`getDeviceId()`](#getdeviceid)
@@ -339,6 +399,7 @@ export default config;
 * [`addListener('noNeedUpdate', ...)`](#addlistenernoneedupdate-)
 * [`addListener('updateAvailable', ...)`](#addlistenerupdateavailable-)
 * [`addListener('downloadComplete', ...)`](#addlistenerdownloadcomplete-)
+* [`addListener('breakingAvailable', ...)`](#addlistenerbreakingavailable-)
 * [`addListener('majorAvailable', ...)`](#addlistenermajoravailable-)
 * [`addListener('updateFailed', ...)`](#addlistenerupdatefailed-)
 * [`addListener('downloadFailed', ...)`](#addlistenerdownloadfailed-)
@@ -346,6 +407,11 @@ export default config;
 * [`addListener('appReady', ...)`](#addlistenerappready-)
 * [`isAutoUpdateAvailable()`](#isautoupdateavailable)
 * [`getNextBundle()`](#getnextbundle)
+* [`getFailedUpdate()`](#getfailedupdate)
+* [`setShakeMenu(...)`](#setshakemenu)
+* [`isShakeMenuEnabled()`](#isshakemenuenabled)
+* [`getAppId()`](#getappid)
+* [`setAppId(...)`](#setappid)
 * [Interfaces](#interfaces)
 * [Type Aliases](#type-aliases)
 
@@ -484,6 +550,25 @@ Deletes the specified bundle from the native app storage. Use with {@link list} 
 --------------------
 
 
+### setBundleError(...)
+
+```typescript
+setBundleError(options: BundleId) => Promise<BundleInfo>
+```
+
+Mark an installed bundle as errored. Only available when {@link PluginsConfig.CapacitorUpdater.allowManualBundleError} is true.
+
+| Param         | Type                                          | Description                                                                                    |
+| ------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| **`options`** | <code><a href="#bundleid">BundleId</a></code> | A {@link <a href="#bundleid">BundleId</a>} object containing the bundle id to mark as errored. |
+
+**Returns:** <code>Promise&lt;<a href="#bundleinfo">BundleInfo</a>&gt;</code>
+
+**Since:** 7.20.0
+
+--------------------
+
+
 ### list(...)
 
 ```typescript
@@ -602,8 +687,9 @@ setChannel(options: SetChannelOptions) => Promise<ChannelRes>
 ```
 
 Sets the channel for this device. The channel has to allow for self assignment for this to work.
-Do not use this method to set the channel at boot when `autoUpdate` is enabled in the {@link PluginsConfig}.
-This method is to set the channel after the app is ready.
+Do not use this method to set the channel at boot.
+This method is to set the channel after the app is ready, and user interacted.
+If you want to set the channel at boot, use the {@link PluginsConfig} to set the default channel.
 This methods send to Capgo backend a request to link the device ID to the channel. Capgo can accept or refuse depending of the setting of your channel.
 
 | Param         | Type                                                            | Description                                                                      |
@@ -649,6 +735,21 @@ Get the channel for this device
 --------------------
 
 
+### listChannels()
+
+```typescript
+listChannels() => Promise<ListChannelsResult>
+```
+
+List all channels available for this device that allow self-assignment
+
+**Returns:** <code>Promise&lt;<a href="#listchannelsresult">ListChannelsResult</a>&gt;</code>
+
+**Since:** 7.5.0
+
+--------------------
+
+
 ### setCustomId(...)
 
 ```typescript
@@ -656,6 +757,9 @@ setCustomId(options: SetCustomIdOptions) => Promise<void>
 ```
 
 Set a custom ID for this device
+
+When {@link PluginsConfig.CapacitorUpdater.persistCustomId} is true, the value will be stored natively and restored on the next app launch.
+Pass an empty string to remove any previously stored customId.
 
 | Param         | Type                                                              | Description                                                                         |
 | ------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
@@ -687,7 +791,7 @@ Get the native app version or the builtin version if set in config
 getDeviceId() => Promise<DeviceId>
 ```
 
-Get unique ID used to identify device (sent to auto update server)
+Get unique ID used to identify device (sent to auto update server), this ID is made following Apple and Google privacy best practices, and not persisted between installs
 
 **Returns:** <code>Promise&lt;<a href="#deviceid">DeviceId</a>&gt;</code>
 
@@ -740,6 +844,7 @@ addListener(eventName: 'download', listenerFunc: (state: DownloadEvent) => void)
 ```
 
 Listen for bundle download event in the App. Fires once a download has started, during downloading and when finished.
+This will return you all download percent during the download
 
 | Param              | Type                                                                        |
 | ------------------ | --------------------------------------------------------------------------- |
@@ -809,6 +914,27 @@ Listen for downloadComplete events.
 **Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
 
 **Since:** 4.0.0
+
+--------------------
+
+
+### addListener('breakingAvailable', ...)
+
+```typescript
+addListener(eventName: 'breakingAvailable', listenerFunc: (state: BreakingAvailableEvent) => void) => Promise<PluginListenerHandle>
+```
+
+Listen for breaking update events when the backend flags an update as incompatible with the current app.
+Emits the same payload as the legacy `majorAvailable` listener.
+
+| Param              | Type                                                                                    |
+| ------------------ | --------------------------------------------------------------------------------------- |
+| **`eventName`**    | <code>'breakingAvailable'</code>                                                        |
+| **`listenerFunc`** | <code>(state: <a href="#majoravailableevent">MajorAvailableEvent</a>) =&gt; void</code> |
+
+**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
+
+**Since:** 7.22.0
 
 --------------------
 
@@ -899,7 +1025,7 @@ Listen for reload event in the App, let you know when reload has happened
 addListener(eventName: 'appReady', listenerFunc: (state: AppReadyEvent) => void) => Promise<PluginListenerHandle>
 ```
 
-Listen for app ready event in the App, let you know when app is ready to use
+Listen for app ready event in the App, let you know when app is ready to use, this event is retain till consumed.
 
 | Param              | Type                                                                        |
 | ------------------ | --------------------------------------------------------------------------- |
@@ -938,6 +1064,85 @@ Returns null if no next bundle is set.
 **Returns:** <code>Promise&lt;<a href="#bundleinfo">BundleInfo</a> | null&gt;</code>
 
 **Since:** 6.8.0
+
+--------------------
+
+
+### getFailedUpdate()
+
+```typescript
+getFailedUpdate() => Promise<UpdateFailedEvent | null>
+```
+
+Get the most recent update that failed to install, if any. The stored value is cleared after it is retrieved once.
+
+**Returns:** <code>Promise&lt;<a href="#updatefailedevent">UpdateFailedEvent</a> | null&gt;</code>
+
+**Since:** 7.22.0
+
+--------------------
+
+
+### setShakeMenu(...)
+
+```typescript
+setShakeMenu(options: SetShakeMenuOptions) => Promise<void>
+```
+
+Enable or disable the shake menu for debugging/testing purposes
+
+| Param         | Type                                                                | Description                                              |
+| ------------- | ------------------------------------------------------------------- | -------------------------------------------------------- |
+| **`options`** | <code><a href="#setshakemenuoptions">SetShakeMenuOptions</a></code> | Contains enabled boolean to enable or disable shake menu |
+
+**Since:** 7.5.0
+
+--------------------
+
+
+### isShakeMenuEnabled()
+
+```typescript
+isShakeMenuEnabled() => Promise<ShakeMenuEnabled>
+```
+
+Get the current state of the shake menu
+
+**Returns:** <code>Promise&lt;<a href="#shakemenuenabled">ShakeMenuEnabled</a>&gt;</code>
+
+**Since:** 7.5.0
+
+--------------------
+
+
+### getAppId()
+
+```typescript
+getAppId() => Promise<GetAppIdRes>
+```
+
+Get the configured App ID
+
+**Returns:** <code>Promise&lt;<a href="#getappidres">GetAppIdRes</a>&gt;</code>
+
+**Since:** 7.14.0
+
+--------------------
+
+
+### setAppId(...)
+
+```typescript
+setAppId(options: SetAppIdOptions) => Promise<void>
+```
+
+Set the App ID for the app (requires allowModifyAppId to be true in config)
+
+| Param         | Type                                                        | Description           |
+| ------------- | ----------------------------------------------------------- | --------------------- |
+| **`options`** | <code><a href="#setappidoptions">SetAppIdOptions</a></code> | The new App ID to set |
+
+**Since:** 7.14.0
 
 --------------------
 
@@ -986,12 +1191,25 @@ Returns null if no next bundle is set.
 
 #### DownloadOptions
 
-| Prop             | Type                | Description                                                                                                                                                      | Default                | Since |
-| ---------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ----- |
-| **`url`**        | <code>string</code> | The URL of the bundle zip file (e.g: dist.zip) to be downloaded. (This can be any URL. E.g: Amazon S3, a GitHub tag, any other place you've hosted your bundle.) |                        |       |
-| **`version`**    | <code>string</code> | The version code/name of this bundle/version                                                                                                                     |                        |       |
-| **`sessionKey`** | <code>string</code> | The session key for the update                                                                                                                                   | <code>undefined</code> | 4.0.0 |
-| **`checksum`**   | <code>string</code> | The checksum for the update                                                                                                                                      | <code>undefined</code> | 4.0.0 |
+This URL and versions are used to download the bundle from the server, If you use backend all information will be gived by the method getLatest.
+If you don't use backend, you need to provide the URL and version of the bundle. Checksum and sessionKey are required if you encrypted the bundle with the CLI command encrypt, you should receive them as result of the command.
+
+| Prop             | Type                         | Description                                                                                                                                                      | Default                | Since |
+| ---------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ----- |
+| **`url`**        | <code>string</code>          | The URL of the bundle zip file (e.g: dist.zip) to be downloaded. (This can be any URL. E.g: Amazon S3, a GitHub tag, any other place you've hosted your bundle.) |                        |       |
+| **`version`**    | <code>string</code>          | The version code/name of this bundle/version                                                                                                                     |                        |       |
+| **`sessionKey`** | <code>string</code>          | The session key for the update, when the bundle is encrypted with a session key                                                                                  | <code>undefined</code> | 4.0.0 |
+| **`checksum`**   | <code>string</code>          | The checksum for the update, it should be in sha256 and encrypted with private key if the bundle is encrypted                                                    | <code>undefined</code> | 4.0.0 |
+| **`manifest`**   | <code>ManifestEntry[]</code> | The manifest for multi-file downloads                                                                                                                            | <code>undefined</code> | 6.1.0 |
+
+
+#### ManifestEntry
+
+| Prop               | Type                        |
+| ------------------ | --------------------------- |
+| **`file_name`**    | <code>string \| null</code> |
+| **`file_hash`**    | <code>string \| null</code> |
+| **`download_url`** | <code>string \| null</code> |
 
 
 #### BundleId
@@ -1047,26 +1265,18 @@ Returns null if no next bundle is set.
 
 #### LatestVersion
 
-| Prop             | Type                         | Description                | Since |
-| ---------------- | ---------------------------- | -------------------------- | ----- |
-| **`version`**    | <code>string</code>          | Result of getLatest method | 4.0.0 |
-| **`checksum`**   | <code>string</code>          |                            | 6     |
-| **`major`**      | <code>boolean</code>         |                            |       |
-| **`message`**    | <code>string</code>          |                            |       |
-| **`sessionKey`** | <code>string</code>          |                            |       |
-| **`error`**      | <code>string</code>          |                            |       |
-| **`old`**        | <code>string</code>          |                            |       |
-| **`url`**        | <code>string</code>          |                            |       |
-| **`manifest`**   | <code>ManifestEntry[]</code> |                            | 6.1   |
-
-
-#### ManifestEntry
-
-| Prop               | Type                        |
-| ------------------ | --------------------------- |
-| **`file_name`**    | <code>string \| null</code> |
-| **`file_hash`**    | <code>string \| null</code> |
-| **`download_url`** | <code>string \| null</code> |
+| Prop             | Type                         | Description                                                          | Since  |
+| ---------------- | ---------------------------- | -------------------------------------------------------------------- | ------ |
+| **`version`**    | <code>string</code>          | Result of getLatest method                                           | 4.0.0  |
+| **`checksum`**   | <code>string</code>          |                                                                      | 6      |
+| **`breaking`**   | <code>boolean</code>         | Indicates whether the update was flagged as breaking by the backend. | 7.22.0 |
+| **`major`**      | <code>boolean</code>         |                                                                      |        |
+| **`message`**    | <code>string</code>          |                                                                      |        |
+| **`sessionKey`** | <code>string</code>          |                                                                      |        |
+| **`error`**      | <code>string</code>          |                                                                      |        |
+| **`old`**        | <code>string</code>          |                                                                      |        |
+| **`url`**        | <code>string</code>          |                                                                      |        |
+| **`manifest`**   | <code>ManifestEntry[]</code> |                                                                      | 6.1    |
 
 
 #### GetLatestOptions
@@ -1111,11 +1321,28 @@ Returns null if no next bundle is set.
 | **`allowSet`** | <code>boolean</code> |                               |       |
 
 
+#### ListChannelsResult
+
+| Prop           | Type                       | Description                | Since |
+| -------------- | -------------------------- | -------------------------- | ----- |
+| **`channels`** | <code>ChannelInfo[]</code> | List of available channels | 7.5.0 |
+
+
+#### ChannelInfo
+
+| Prop                 | Type                 | Description                                     | Since |
+| -------------------- | -------------------- | ----------------------------------------------- | ----- |
+| **`id`**             | <code>string</code>  | The channel ID                                  | 7.5.0 |
+| **`name`**           | <code>string</code>  | The channel name                                | 7.5.0 |
+| **`public`**         | <code>boolean</code> | Whether this is a public channel                | 7.5.0 |
+| **`allow_self_set`** | <code>boolean</code> | Whether devices can self-assign to this channel | 7.5.0 |
+
+
 #### SetCustomIdOptions
 
-| Prop           | Type                |
-| -------------- | ------------------- |
-| **`customId`** | <code>string</code> |
+| Prop           | Type                | Description                                                                                   |
+| -------------- | ------------------- | --------------------------------------------------------------------------------------------- |
+| **`customId`** | <code>string</code> | Custom identifier to associate with the device. Use an empty string to clear any saved value. |
 
 
 #### BuiltinVersion
@@ -1184,9 +1411,9 @@ Returns null if no next bundle is set.
 
 #### MajorAvailableEvent
 
-| Prop          | Type                | Description                                | Since |
-| ------------- | ------------------- | ------------------------------------------ | ----- |
-| **`version`** | <code>string</code> | Emit when a new major bundle is available. | 4.0.0 |
+| Prop          | Type                | Description                               | Since |
+| ------------- | ------------------- | ----------------------------------------- | ----- |
+| **`version`** | <code>string</code> | Emit when a breaking update is available. | 4.0.0 |
 
 
 #### UpdateFailedEvent
@@ -1218,10 +1445,43 @@ Returns null if no next bundle is set.
 | **`available`** | <code>boolean</code> |
 
 
+#### SetShakeMenuOptions
+
+| Prop          | Type                 |
+| ------------- | -------------------- |
+| **`enabled`** | <code>boolean</code> |
+
+
+#### ShakeMenuEnabled
+
+| Prop          | Type                 |
+| ------------- | -------------------- |
+| **`enabled`** | <code>boolean</code> |
+
+
+#### GetAppIdRes
+
+| Prop        | Type                |
+| ----------- | ------------------- |
+| **`appId`** | <code>string</code> |
+
+
+#### SetAppIdOptions
+
+| Prop        | Type                |
+| ----------- | ------------------- |
+| **`appId`** | <code>string</code> |
+
+
 ### Type Aliases
 
 
 #### BundleStatus
+
+pending: The bundle is pending to be **SET** as the next bundle.
+downloading: The bundle is being downloaded.
+success: The bundle has been downloaded and is ready to be **SET** as the next bundle.
+error: The bundle has failed to download.
 
 <code>'success' | 'error' | 'pending' | 'downloading'</code>
 
@@ -1229,6 +1489,13 @@ Returns null if no next bundle is set.
 #### DelayUntilNext
 
 <code>'background' | 'kill' | 'nativeVersion' | 'date'</code>
+
+
+#### BreakingAvailableEvent
+
+Payload emitted by {@link CapacitorUpdaterPlugin.addListener} with `breakingAvailable`.
+
+<code><a href="#majoravailableevent">MajorAvailableEvent</a></code>
 
 </docgen-api>
 

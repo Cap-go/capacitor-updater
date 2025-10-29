@@ -88,6 +88,9 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
       - uses: oven-sh/setup-bun@v2
       - name: Install dependencies
         id: install_code
@@ -95,36 +98,41 @@ jobs:
       - name: Build
         id: build_code
         run: bun run build
-      - uses: JS-DevTools/npm-publish@v3
+      - name: Generate AI changelog
+        id: changelog
+        uses: mistricky/ccc@v0.2.3
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: js-devtools/npm-publish@v4
         if: ${{ startsWith(github.ref, 'refs/tags/6.') }}
         with:
           token: ${{ secrets.NPM_TOKEN }}
           tag: lts-v6
           provenance: true
-      - uses: JS-DevTools/npm-publish@v3
+      - uses: js-devtools/npm-publish@v4
         if: ${{ !contains(github.ref, '-alpha.') && !startsWith(github.ref, 'refs/tags/6.') }}
         with:
           token: ${{ secrets.NPM_TOKEN }}
           provenance: true
-      - uses: JS-DevTools/npm-publish@v3
-        if: ${{ contains(github.ref, '-alpha.') }}
+      - uses: js-devtools/npm-publish@v4
+        if: ${{ contains(github.ref, '-alpha.') && !startsWith(github.ref, 'refs/tags/6.')  }}
         with:
           token: ${{ secrets.NPM_TOKEN }}
           tag: next
           provenance: true
-      # - name: Run release LLM
-      #   uses: constantincerdan/anno@v4
-      #   with:
-      #     mode: release-summary
-      #     github_token: ${{ secrets.GITHUB_TOKEN }}
-      #     release_tag: ${{ github.ref_name }}
-      #     chat_gpt_api_key: ${{ secrets.OPENAI_API_TOKEN }}
-      #     chat_gpt_model: "gpt-5-mini"
       - name: Create GitHub release
         id: create_release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
-          # body: ${{ steps.create_release.outputs. }}
-          name: ${{ startsWith(github.ref, 'refs/tags/6.') && 'v6 LTS - ' || '' }}${{ github.ref_name }}
+          body: |
+            ## 🆕 Changelog
+            
+            ${{ steps.changelog.outputs.result }}
+            
+            ---
+
+            🔗 **Full Changelog**: https://github.com/${{ github.repository }}/compare/${{ steps.changelog.outputs.from_tag }}...${{ steps.changelog.outputs.to_tag }}
+          make_latest: true
+          token: '${{ secrets.PERSONAL_ACCESS_TOKEN }}'
           prerelease: ${{ contains(github.ref, '-alpha.') }}

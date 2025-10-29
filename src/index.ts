@@ -5,6 +5,7 @@
  */
 
 import { registerPlugin } from '@capacitor/core';
+import './history';
 
 import type { CapacitorUpdaterPlugin } from './definitions';
 

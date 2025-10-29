@@ -7,15 +7,12 @@
 package ee.forgr.capacitor_updater;
 
 import androidx.annotation.NonNull;
-import com.google.gson.annotations.SerializedName;
 import java.util.Objects;
 
 public class DelayCondition {
 
-    @SerializedName("kind")
     private DelayUntilNext kind;
 
-    @SerializedName("value")
     private String value;
 
     public DelayCondition(DelayUntilNext kind, String value) {

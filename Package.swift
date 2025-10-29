@@ -27,11 +27,11 @@ let package = Package(
                 .product(name: "Version", package: "Version"),
                 .product(name: "BigInt", package: "BigInt")
             ],
-            path: "ios/Plugin"),
+            path: "ios/Sources/CapacitorUpdaterPlugin"),
         .testTarget(
             name: "CapacitorUpdaterPluginTests",
             dependencies: ["CapacitorUpdaterPlugin"],
-            path: "ios/PluginTests")
+            path: "ios/Tests/CapacitorUpdaterPluginTests")
     ],
     swiftLanguageVersions: [.v5]
 )

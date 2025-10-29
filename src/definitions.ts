@@ -24,7 +24,7 @@ declare module '@capacitor/cli' {
        */
       appReadyTimeout?: number;
       /**
-       * Configure the number of milliseconds the native plugin should wait before considering API timeout.
+       * Configure the number of seconds the native plugin should wait before considering API timeout.
        *
        * Only available for Android and iOS.
        *
@@ -104,9 +104,11 @@ declare module '@capacitor/cli' {
       /**
        * Configure the private key for end to end live update encryption.
        *
-       * Only available for Android and iOS. Deprecated in version 6.2.0. will be removed in version 7.0.0.
+       * Only available for Android and iOS. Deprecated in version 6.2.0 in favor of publicKey.
+       * Still supported for backwards compatibility.
        *
        * @default undefined
+       * @deprecated Use publicKey instead
        */
       privateKey?: string;
       /**
@@ -130,14 +132,60 @@ declare module '@capacitor/cli' {
        */
       version?: string;
       /**
-       * Make the plugin direct install the update when the app what just updated/installed. Only for autoUpdate mode.
+       * Configure when the plugin should direct install updates. Only for autoUpdate mode.
+       * Works well for apps less than 10MB and with uploads done using --partial flag.
+       * Zip or apps more than 10MB will be relatively slow for users to update.
+       * - false: Never do direct updates (default behavior)
+       * - atInstall: Direct update only when app is installed/updated from store, otherwise use normal background update
+       * - always: Always do direct updates immediately when available
+       * - true: (deprecated) Same as "always" for backward compatibility
        *
        * Only available for Android and iOS.
        *
-       * @default undefined
+       * @default false
        * @since  5.1.0
        */
-      directUpdate?: boolean;
+      directUpdate?: boolean | 'atInstall' | 'always';
+
+      /**
+       * Automatically handle splashscreen hiding when using directUpdate. When enabled, the plugin will automatically hide the splashscreen after updates are applied or when no update is needed.
+       * This removes the need to manually listen for appReady events and call SplashScreen.hide().
+       * Only works when directUpdate is set to "atInstall", "always", or true.
+       * Requires the @capacitor/splash-screen plugin to be installed and configured with launchAutoHide: false.
+       * Requires autoUpdate and directUpdate to be enabled.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default false
+       * @since  7.6.0
+       */
+      autoSplashscreen?: boolean;
+
+      /**
+       * Display a native loading indicator on top of the splashscreen while automatic direct updates are running.
+       * Only takes effect when {@link autoSplashscreen} is enabled.
+       * Requires the @capacitor/splash-screen plugin to be installed and configured with launchAutoHide: false.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default false
+       * @since  7.19.0
+       */
+      autoSplashscreenLoader?: boolean;
+
+      /**
+       * Automatically hide the splashscreen after the specified number of milliseconds when using automatic direct updates.
+       * If the timeout elapses, the update continues to download in the background while the splashscreen is dismissed.
+       * Set to `0` (zero) to disable the timeout.
+       * When the timeout fires, the direct update flow is skipped and the downloaded bundle is installed on the next background/launch.
+       * Requires {@link autoSplashscreen} to be enabled.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default 10000 // (10 seconds)
+       * @since  7.19.0
+       */
+      autoSplashscreenTimeout?: number;
 
       /**
        * Configure the delay period for period update check. the unit is in seconds.
@@ -145,7 +193,9 @@ declare module '@capacitor/cli' {
        * Only available for Android and iOS.
        * Cannot be less than 600 seconds (10 minutes).
        *
-       * @default 600 // (10 minutes)
+       * @default 0 (disabled)
+       * @example 3600 (1 hour)
+       * @example 86400 (24 hours)
        */
       periodCheckDelay?: number;
 
@@ -215,8 +265,48 @@ declare module '@capacitor/cli' {
       allowModifyUrl?: boolean;
 
       /**
-       * Set the default channel for the app in the config.
+       * Allow the plugin to modify the appId dynamically from the JavaScript side.
        *
+       *
+       * @default false
+       * @since  7.14.0
+       */
+      allowModifyAppId?: boolean;
+
+      /**
+       * Allow marking bundles as errored from JavaScript while using manual update flows.
+       * When enabled, {@link CapacitorUpdaterPlugin.setBundleError} can change a bundle status to `error`.
+       *
+       * @default false
+       * @since 7.20.0
+       */
+      allowManualBundleError?: boolean;
+
+      /**
+       * Persist the customId set through {@link CapacitorUpdaterPlugin.setCustomId} across app restarts.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default false (will be true by default in a future major release v8.x.x)
+       * @since  7.17.3
+       */
+      persistCustomId?: boolean;
+
+      /**
+       * Persist the updateUrl, statsUrl and channelUrl set through {@link CapacitorUpdaterPlugin.setUpdateUrl},
+       * {@link CapacitorUpdaterPlugin.setStatsUrl} and {@link CapacitorUpdaterPlugin.setChannelUrl} across app restarts.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default false
+       * @since  7.20.0
+       */
+      persistModifyUrl?: boolean;
+
+      /**
+       * Set the default channel for the app in the config. Case sensitive.
+       * This will setting will override the default channel set in the cloud, but will still respect overrides made in the cloud.
+       * This requires the channel to allow devices to self dissociate/associate in the channel settings. https://capgo.app/docs/public-api/channels/#channel-configuration-options
        *
        *
        * @default undefined
@@ -239,6 +329,20 @@ declare module '@capacitor/cli' {
        * @since  6.8.0
        */
       keepUrlPathAfterReload?: boolean;
+      /**
+       * Disable the JavaScript logging of the plugin. if true, the plugin will not log to the JavaScript console. only the native log will be done
+       *
+       * @default false
+       * @since  7.3.0
+       */
+      disableJSLogging?: boolean;
+      /**
+       * Enable shake gesture to show update menu for debugging/testing purposes
+       *
+       * @default false
+       * @since  7.5.0
+       */
+      shakeMenu?: boolean;
     };
   }
 }
@@ -321,6 +425,16 @@ export interface CapacitorUpdaterPlugin {
   delete(options: BundleId): Promise<void>;
 
   /**
+   * Mark an installed bundle as errored. Only available when {@link PluginsConfig.CapacitorUpdater.allowManualBundleError} is true.
+   *
+   * @param options A {@link BundleId} object containing the bundle id to mark as errored.
+   * @returns {Promise<BundleInfo>} The updated {@link BundleInfo} for the bundle.
+   * @throws {Error} When the bundle does not exist or the feature is disabled.
+   * @since 7.20.0
+   */
+  setBundleError(options: BundleId): Promise<BundleInfo>;
+
+  /**
    * Get all locally downloaded bundles in your app
    *
    * @returns {Promise<BundleListResult>} A Promise containing the {@link BundleListResult.bundles}
@@ -399,8 +513,9 @@ export interface CapacitorUpdaterPlugin {
 
   /**
    * Sets the channel for this device. The channel has to allow for self assignment for this to work.
-   * Do not use this method to set the channel at boot when `autoUpdate` is enabled in the {@link PluginsConfig}.
-   * This method is to set the channel after the app is ready.
+   * Do not use this method to set the channel at boot.
+   * This method is to set the channel after the app is ready, and user interacted.
+   * If you want to set the channel at boot, use the {@link PluginsConfig} to set the default channel.
    * This methods send to Capgo backend a request to link the device ID to the channel. Capgo can accept or refuse depending of the setting of your channel.
    *
    *
@@ -431,7 +546,19 @@ export interface CapacitorUpdaterPlugin {
   getChannel(): Promise<GetChannelRes>;
 
   /**
+   * List all channels available for this device that allow self-assignment
+   *
+   * @returns {Promise<ListChannelsResult>} A Promise that resolves with the available channels
+   * @throws {Error}
+   * @since 7.5.0
+   */
+  listChannels(): Promise<ListChannelsResult>;
+
+  /**
    * Set a custom ID for this device
+   *
+   * When {@link PluginsConfig.CapacitorUpdater.persistCustomId} is true, the value will be stored natively and restored on the next app launch.
+   * Pass an empty string to remove any previously stored customId.
    *
    * @param options is the {@link SetCustomIdOptions} customId to set
    * @returns {Promise<void>} an Promise resolved instantly
@@ -449,7 +576,7 @@ export interface CapacitorUpdaterPlugin {
   getBuiltinVersion(): Promise<BuiltinVersion>;
 
   /**
-   * Get unique ID used to identify device (sent to auto update server)
+   * Get unique ID used to identify device (sent to auto update server), this ID is made following Apple and Google privacy best practices, and not persisted between installs
    *
    * @returns {Promise<DeviceId>} A Promise with id for this device
    * @throws {Error}
@@ -481,6 +608,7 @@ export interface CapacitorUpdaterPlugin {
 
   /**
    * Listen for bundle download event in the App. Fires once a download has started, during downloading and when finished.
+   * This will return you all download percent during the download
    *
    * @since 2.0.11
    */
@@ -514,8 +642,20 @@ export interface CapacitorUpdaterPlugin {
   ): Promise<PluginListenerHandle>;
 
   /**
+   * Listen for breaking update events when the backend flags an update as incompatible with the current app.
+   * Emits the same payload as the legacy `majorAvailable` listener.
+   *
+   * @since 7.22.0
+   */
+  addListener(
+    eventName: 'breakingAvailable',
+    listenerFunc: (state: BreakingAvailableEvent) => void,
+  ): Promise<PluginListenerHandle>;
+
+  /**
    * Listen for Major update event in the App, let you know when major update is blocked by setting disableAutoUpdateBreaking
    *
+   * @deprecated Deprecated alias for {@link addListener} with `breakingAvailable`. Emits the same payload. will be removed in v8
    * @since 2.3.0
    */
   addListener(
@@ -551,7 +691,7 @@ export interface CapacitorUpdaterPlugin {
   addListener(eventName: 'appReloaded', listenerFunc: () => void): Promise<PluginListenerHandle>;
 
   /**
-   * Listen for app ready event in the App, let you know when app is ready to use
+   * Listen for app ready event in the App, let you know when app is ready to use, this event is retain till consumed.
    *
    * @since 5.1.0
    */
@@ -574,8 +714,61 @@ export interface CapacitorUpdaterPlugin {
    * @since 6.8.0
    */
   getNextBundle(): Promise<BundleInfo | null>;
+
+  /**
+   * Get the most recent update that failed to install, if any. The stored value is cleared after it is retrieved once.
+   *
+   * @returns {Promise<UpdateFailedEvent | null>} The last failed update or null when no failure has been recorded. Value is cleared after it is returned once.
+   * @throws {Error}
+   * @since 7.22.0
+   */
+  getFailedUpdate(): Promise<UpdateFailedEvent | null>;
+
+  /**
+   * Enable or disable the shake menu for debugging/testing purposes
+   *
+   * @param options Contains enabled boolean to enable or disable shake menu
+   * @returns {Promise<void>}
+   * @throws {Error}
+   * @since 7.5.0
+   */
+  setShakeMenu(options: SetShakeMenuOptions): Promise<void>;
+
+  /**
+   * Get the current state of the shake menu
+   *
+   * @returns {Promise<ShakeMenuEnabled>} The current state of shake menu
+   * @throws {Error}
+   * @since 7.5.0
+   */
+  isShakeMenuEnabled(): Promise<ShakeMenuEnabled>;
+
+  /**
+   * Get the configured App ID
+   *
+   * @returns {Promise<GetAppIdRes>} The current App ID
+   * @throws {Error}
+   * @since 7.14.0
+   */
+  getAppId(): Promise<GetAppIdRes>;
+
+  /**
+   * Set the App ID for the app (requires allowModifyAppId to be true in config)
+   *
+   * @param options The new App ID to set
+   * @returns {Promise<void>}
+   * @throws {Error} If allowModifyAppId is false or if the operation fails
+   * @since 7.14.0
+   */
+  setAppId(options: SetAppIdOptions): Promise<void>;
 }
 
+/**
+ * pending: The bundle is pending to be **SET** as the next bundle.
+ * downloading: The bundle is being downloaded.
+ * success: The bundle has been downloaded and is ready to be **SET** as the next bundle.
+ * error: The bundle has failed to download.
+ */
 export type BundleStatus = 'success' | 'error' | 'pending' | 'downloading';
 
 export type DelayUntilNext = 'background' | 'kill' | 'nativeVersion' | 'date';
@@ -622,6 +815,42 @@ export interface GetChannelRes {
   allowSet?: boolean;
 }
 
+export interface ChannelInfo {
+  /**
+   * The channel ID
+   *
+   * @since 7.5.0
+   */
+  id: string;
+  /**
+   * The channel name
+   *
+   * @since 7.5.0
+   */
+  name: string;
+  /**
+   * Whether this is a public channel
+   *
+   * @since 7.5.0
+   */
+  public: boolean;
+  /**
+   * Whether devices can self-assign to this channel
+   *
+   * @since 7.5.0
+   */
+  allow_self_set: boolean;
+}
+
+export interface ListChannelsResult {
+  /**
+   * List of available channels
+   *
+   * @since 7.5.0
+   */
+  channels: ChannelInfo[];
+}
+
 export interface DownloadEvent {
   /**
    * Current status of download, between 0 and 100.
@@ -634,12 +863,20 @@ export interface DownloadEvent {
 
 export interface MajorAvailableEvent {
   /**
-   * Emit when a new major bundle is available.
+   * Emit when a breaking update is available.
    *
+   * @deprecated Deprecated alias for {@link BreakingAvailableEvent}. Receives the same payload.
    * @since  4.0.0
    */
   version: string;
 }
+
+/**
+ * Payload emitted by {@link CapacitorUpdaterPlugin.addListener} with `breakingAvailable`.
+ *
+ * @since 7.22.0
+ */
+export type BreakingAvailableEvent = MajorAvailableEvent;
 
 export interface DownloadFailedEvent {
   /**
@@ -695,6 +932,15 @@ export interface LatestVersion {
    * @since 6
    */
   checksum?: string;
+  /**
+   * Indicates whether the update was flagged as breaking by the backend.
+   *
+   * @since 7.22.0
+   */
+  breaking?: boolean;
+  /**
+   * @deprecated Use {@link LatestVersion.breaking} instead.
+   */
   major?: boolean;
   message?: string;
   sessionKey?: string;
@@ -725,6 +971,9 @@ export interface UnsetChannelOptions {
 }
 
 export interface SetCustomIdOptions {
+  /**
+   * Custom identifier to associate with the device. Use an empty string to clear any saved value.
+   */
   customId: string;
 }
 
@@ -763,27 +1012,37 @@ export interface ChannelUrl {
   url: string;
 }
 
+/**
+ * This URL and versions are used to download the bundle from the server, If you use backend all information will be gived by the method getLatest.
+ * If you don't use backend, you need to provide the URL and version of the bundle. Checksum and sessionKey are required if you encrypted the bundle with the CLI command encrypt, you should receive them as result of the command.
+ */
 export interface DownloadOptions {
   /**
    * The URL of the bundle zip file (e.g: dist.zip) to be downloaded. (This can be any URL. E.g: Amazon S3, a GitHub tag, any other place you've hosted your bundle.)
    */
-  url?: string;
+  url: string;
   /**
    * The version code/name of this bundle/version
    */
   version: string;
   /**
-   * The session key for the update
+   * The session key for the update, when the bundle is encrypted with a session key
    * @since 4.0.0
    * @default undefined
    */
   sessionKey?: string;
   /**
-   * The checksum for the update
+   * The checksum for the update, it should be in sha256 and encrypted with private key if the bundle is encrypted
    * @since 4.0.0
    * @default undefined
    */
   checksum?: string;
+  /**
+   * The manifest for multi-file downloads
+   * @since 6.1.0
+   * @default undefined
+   */
+  manifest?: ManifestEntry[];
 }
 
 export interface BundleId {
@@ -834,4 +1093,20 @@ export interface AutoUpdateEnabled {
 
 export interface AutoUpdateAvailable {
   available: boolean;
+}
+
+export interface SetShakeMenuOptions {
+  enabled: boolean;
+}
+
+export interface ShakeMenuEnabled {
+  enabled: boolean;
+}
+
+export interface GetAppIdRes {
+  appId: string;
+}
+
+export interface SetAppIdOptions {
+  appId: string;
 }
