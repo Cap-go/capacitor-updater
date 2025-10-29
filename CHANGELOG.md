@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [6.14.31](https://github.com/Cap-go/capacitor-updater/compare/6.14.30...6.14.31) (2025-10-29)
+
+
+### Bug Fixes
+
+* user agent issue ([a82486b](https://github.com/Cap-go/capacitor-updater/commit/a82486b2c7910ac0f621b61f76ce54d6980bdb7e))
+
 ## [6.14.30](https://github.com/Cap-go/capacitor-updater/compare/6.14.29...6.14.30) (2025-10-29)
 
 
