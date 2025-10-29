@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.23.13](https://github.com/Cap-go/capacitor-updater/compare/7.23.12...7.23.13) (2025-10-29)
+
+
+### Bug Fixes
+
+* update delay handling and improve rate limit statistic request ([a9b0e54](https://github.com/Cap-go/capacitor-updater/commit/a9b0e542dd83aea12b8482007aa4fbb11d145e89))
+
 ## [7.23.12](https://github.com/Cap-go/capacitor-updater/compare/7.23.11...7.23.12) (2025-10-29)
 
 
