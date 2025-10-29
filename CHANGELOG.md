@@ -2,6 +2,83 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [6.14.28](https://github.com/Cap-go/capacitor-updater/compare/7.23.9...6.14.28) (2025-10-29)
+
+
+### Bug Fixes
+
+* CI/CD config ([12f6b09](https://github.com/Cap-go/capacitor-updater/commit/12f6b09466ab353ff489d6682ebf20ead0c7b609))
+* deploy ([3af5cfd](https://github.com/Cap-go/capacitor-updater/commit/3af5cfdda51cb047291910aeabf68e661ef0cb93))
+* readme ([3eda064](https://github.com/Cap-go/capacitor-updater/commit/3eda064dafd66de0e1a2f0bdaabcbfef6c3d9743))
+* update github action ([f5519ac](https://github.com/Cap-go/capacitor-updater/commit/f5519ace7b3212325af6110c298fb43cc8b7769a))
+
+## [6.14.27](https://github.com/Cap-go/capacitor-updater/compare/6.14.26...6.14.27) (2025-10-24)
+
+
+### Bug Fixes
+
+* lint ([e45fb1c](https://github.com/Cap-go/capacitor-updater/commit/e45fb1ce746a1c69622d244958de544fe9829002))
+
+## [6.14.26](https://github.com/Cap-go/capacitor-updater/compare/7.23.3...6.14.26) (2025-10-24)
+
+
+### Bug Fixes
+
+* kill check at app load not at kill as it's not reliable ([777c7c0](https://github.com/Cap-go/capacitor-updater/commit/777c7c0c3ea49b825b428400b8cab561e913bbdb))
+
+## [6.14.25](https://github.com/Cap-go/capacitor-updater/compare/7.17.0...6.14.25) (2025-09-27)
+
+## [6.14.24](https://github.com/Cap-go/capacitor-updater/compare/7.15.3...6.14.24) (2025-09-27)
+
+
+### Bug Fixes
+
+* auto download ([897cde5](https://github.com/Cap-go/capacitor-updater/commit/897cde5b746455b738bdc85a7a77c7151f1e983c))
+
+## [6.14.23](https://github.com/Cap-go/capacitor-updater/compare/6.14.22...6.14.23) (2025-09-24)
+
+
+### Bug Fixes
+
+* remove SPM specific test ([bcf5625](https://github.com/Cap-go/capacitor-updater/commit/bcf56259ddf53f45e9ff29cf237e69c15b59b6d0))
+
+## [6.14.22](https://github.com/Cap-go/capacitor-updater/compare/6.14.21...6.14.22) (2025-09-22)
+
+
+### Bug Fixes
+
+* dependency issue in SPM  and build ([db04d55](https://github.com/Cap-go/capacitor-updater/commit/db04d55911139c5d967943d304bd01626db469a9))
+
+## [6.14.21](https://github.com/Cap-go/capacitor-updater/compare/6.14.20...6.14.21) (2025-09-22)
+
+
+### Bug Fixes
+
+* delete zip tmp ([01774a4](https://github.com/Cap-go/capacitor-updater/commit/01774a4c972b1ea8057687fb2c49fb83e555d218))
+
+## [6.14.20](https://github.com/Cap-go/capacitor-updater/compare/7.15.2...6.14.20) (2025-09-22)
+
+
+### Features
+
+* add conditional Android and iOS test steps to build workflow ([f257cda](https://github.com/Cap-go/capacitor-updater/commit/f257cda89af3100780c5b561c08a0332d0eeaf5e))
+
+## [6.14.19](https://github.com/Cap-go/capacitor-updater/compare/7.15.1...6.14.19) (2025-09-22)
+
+## [6.14.18](https://github.com/Cap-go/capacitor-updater/compare/7.15.0...6.14.18) (2025-09-22)
+
+
+### Bug Fixes
+
+* author ([3857a6d](https://github.com/Cap-go/capacitor-updater/commit/3857a6d33315b75090758ef482944fa6ea5fcae8))
+* backport brotli fix in v6 ([b79a762](https://github.com/Cap-go/capacitor-updater/commit/b79a76225eedd3137708651b901afbd609a87ba6))
+* cache issue android ([dc78ba4](https://github.com/Cap-go/capacitor-updater/commit/dc78ba40fe55cd6f42a8165fc6a3a0305f2f2952))
+* decrypt file missing in partial ([e678c66](https://github.com/Cap-go/capacitor-updater/commit/e678c66c7ac5646e5d8548842def824c03de6a0d))
+* deploy ([17675d0](https://github.com/Cap-go/capacitor-updater/commit/17675d0c381c52d30425991c492741aaed7f8ffe))
+* double decrypt android ([c608664](https://github.com/Cap-go/capacitor-updater/commit/c6086648a866e55833ae1f5aaf811971e9904e48))
+* enforce version properly ([42b486d](https://github.com/Cap-go/capacitor-updater/commit/42b486d100445d2facfa82bbd7d0b6850f775c25))
+* ios issue ([3f05828](https://github.com/Cap-go/capacitor-updater/commit/3f0582812744ecb9a7b263926eec0e4aa34e3311))
+
 ## [7.23.9](https://github.com/Cap-go/capacitor-updater/compare/7.23.8...7.23.9) (2025-10-27)
 
 
