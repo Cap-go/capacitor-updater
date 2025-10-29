@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [6.14.29](https://github.com/Cap-go/capacitor-updater/compare/6.14.28...6.14.29) (2025-10-29)
+
+
+### Bug Fixes
+
+* update AI model in changelog generation step ([b0ac942](https://github.com/Cap-go/capacitor-updater/commit/b0ac942eea67757df87eba2f666e4ed4a923158d))
+* update referral links in README for plugin updater v6 ([c04f591](https://github.com/Cap-go/capacitor-updater/commit/c04f591e7cc4f016b9e1ec763734485abd1e1e51))
+
 ## [6.14.28](https://github.com/Cap-go/capacitor-updater/compare/7.23.9...6.14.28) (2025-10-29)
 
 
