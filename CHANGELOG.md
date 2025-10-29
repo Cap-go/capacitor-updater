@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.23.12](https://github.com/Cap-go/capacitor-updater/compare/7.23.11...7.23.12) (2025-10-29)
+
+
+### Bug Fixes
+
+* add rate limit statistic tracking to prevent infinite loops ([d60e510](https://github.com/Cap-go/capacitor-updater/commit/d60e510c85cfb3f107acbc0f024c91b2b21a379d))
+
 ## [7.23.11](https://github.com/Cap-go/capacitor-updater/compare/7.23.10...7.23.11) (2025-10-29)
 
 
