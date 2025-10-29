@@ -84,6 +84,9 @@ public class CapgoUpdater {
     // Flag to track if we received a 429 response - stops requests until app restart
     private static volatile boolean rateLimitExceeded = false;
 
+    // Flag to track if we've already sent the rate limit statistic - prevents infinite loop
+    private static volatile boolean rateLimitStatisticSent = false;
+
     private final Map<String, CompletableFuture<BundleInfo>> downloadFutures = new ConcurrentHashMap<>();
     private final ExecutorService io = Executors.newSingleThreadExecutor();
 
@@ -784,11 +787,50 @@ public class CapgoUpdater {
      */
     private boolean checkAndHandleRateLimitResponse(Response response) {
         if (response.code() == 429) {
+            // Send a statistic about the rate limit BEFORE setting the flag
+            // Only send once to prevent infinite loop if the stat request itself gets rate limited
+            if (!rateLimitExceeded && !rateLimitStatisticSent) {
+                rateLimitStatisticSent = true;
+                sendRateLimitStatistic();
+            }
             rateLimitExceeded = true;
             logger.warn("Rate limit exceeded (429). Stopping all stats and channel requests until app restart.");
             return true;
         }
         return false;
+    }
+
+    /**
+     * Send a synchronous statistic about rate limiting
+     */
+    private void sendRateLimitStatistic() {
+        String statsUrl = this.statsUrl;
+        if (statsUrl == null || statsUrl.isEmpty()) {
+            return;
+        }
+
+        try {
+            BundleInfo current = this.getCurrentBundle();
+            JSONObject json = this.createInfoObject();
+            json.put("version_name", current.getVersionName());
+            json.put("old_version_name", "");
+            json.put("action", "rate_limit_reached");
+
+            MediaType JSON = MediaType.get("application/json; charset=utf-8");
+            RequestBody body = RequestBody.create(json.toString(), JSON);
+            Request request = new Request.Builder().url(statsUrl).header("User-Agent", getUserAgent()).post(body).build();
+
+            // Send synchronously to ensure it goes out before the flag is set
+            try (Response response = client.newCall(request).execute()) {
+                if (response.isSuccessful()) {
+                    logger.info("Rate limit statistic sent");
+                } else {
+                    logger.error("Error sending rate limit statistic: " + response.code());
+                }
+            }
+        } catch (final Exception e) {
+            logger.error("Failed to send rate limit statistic: " + e.getMessage());
+        }
     }
 
     private void makeJsonRequest(String url, JSONObject jsonBody, Callback callback) {

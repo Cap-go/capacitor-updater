@@ -45,6 +45,9 @@ import UIKit
     // Flag to track if we received a 429 response - stops requests until app restart
     private static var rateLimitExceeded = false
 
+    // Flag to track if we've already sent the rate limit statistic - prevents infinite loop
+    private static var rateLimitStatisticSent = false
+
     private var userAgent: String {
         let safePluginVersion = PLUGIN_VERSION.isEmpty ? "unknown" : PLUGIN_VERSION
         let safeAppId = appId.isEmpty ? "unknown" : appId
@@ -93,11 +96,51 @@ import UIKit
      */
     private func checkAndHandleRateLimitResponse(statusCode: Int?) -> Bool {
         if statusCode == 429 {
+            // Send a statistic about the rate limit BEFORE setting the flag
+            // Only send once to prevent infinite loop if the stat request itself gets rate limited
+            if !CapgoUpdater.rateLimitExceeded && !CapgoUpdater.rateLimitStatisticSent {
+                CapgoUpdater.rateLimitStatisticSent = true
+                self.sendRateLimitStatistic()
+            }
             CapgoUpdater.rateLimitExceeded = true
             logger.warn("Rate limit exceeded (429). Stopping all stats and channel requests until app restart.")
             return true
         }
         return false
+    }
+
+    /**
+     * Send a synchronous statistic about rate limiting
+     */
+    private func sendRateLimitStatistic() {
+        guard !statsUrl.isEmpty else {
+            return
+        }
+
+        let current = getCurrentBundle()
+        var parameters = createInfoObject()
+        parameters.action = "rate_limit_reached"
+        parameters.version_name = current.getVersionName()
+        parameters.old_version_name = ""
+
+        // Send synchronously to ensure it goes out before the flag is set
+        let semaphore = DispatchSemaphore(value: 0)
+        self.alamofireSession.request(
+            self.statsUrl,
+            method: .post,
+            parameters: parameters,
+            encoder: JSONParameterEncoder.default,
+            requestModifier: { $0.timeoutInterval = self.timeout }
+        ).responseData { response in
+            switch response.result {
+            case .success:
+                self.logger.info("Rate limit statistic sent")
+            case let .failure(error):
+                self.logger.error("Error sending rate limit statistic: \(error.localizedDescription)")
+            }
+            semaphore.signal()
+        }
+        semaphore.wait()
     }
 
     // MARK: Private
