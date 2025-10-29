@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [6.14.30](https://github.com/Cap-go/capacitor-updater/compare/6.14.29...6.14.30) (2025-10-29)
+
+
+### Features
+
+* implement rate limit statistics reporting and server URL checks in updater plugins ([31382b9](https://github.com/Cap-go/capacitor-updater/commit/31382b93c85529b7ba46a3970db541c8a47cac3d))
+
 ## [6.14.29](https://github.com/Cap-go/capacitor-updater/compare/6.14.28...6.14.29) (2025-10-29)
 
 
