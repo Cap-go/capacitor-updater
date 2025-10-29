@@ -104,6 +104,7 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          model: claude-sonnet-4-5-20250929
       - uses: js-devtools/npm-publish@v4
         if: ${{ startsWith(github.ref, 'refs/tags/6.') }}
         with:
