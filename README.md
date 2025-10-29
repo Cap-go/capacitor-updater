@@ -16,8 +16,8 @@
 [![Rewarded Bounties](https://img.shields.io/endpoint?url=https%3A%2F%2Fconsole.algora.io%2Fapi%2Fshields%2FCapgo%2Fbounties%3Fstatus%3Dcompleted)](https://console.algora.io/org/Capgo/bounties?status=completed)
 
 <div align="center">
-  <h2><a href="https://capgo.app/?ref=plugin"> ➡️ Get Instant updates for your App with Capgo</a></h2>
-  <h2><a href="https://capgo.app/consulting/?ref=plugin"> Missing a feature? We’ll build the plugin for you 💪</a></h2>
+  <h2><a href="https://capgo.app/?ref=plugin_updater_v6"> ➡️ Get Instant updates for your App with Capgo</a></h2>
+  <h2><a href="https://capgo.app/consulting/?ref=plugin_updater_v6"> Missing a feature? We’ll build the plugin for you 💪</a></h2>
 </div>
 
 Capacitor plugin to update your app remotely in real-time.
