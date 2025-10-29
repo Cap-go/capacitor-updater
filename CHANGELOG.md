@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.23.10](https://github.com/Cap-go/capacitor-updater/compare/7.23.9...7.23.10) (2025-10-29)
+
+
+### Bug Fixes
+
+* CI/CD config ([12f6b09](https://github.com/Cap-go/capacitor-updater/commit/12f6b09466ab353ff489d6682ebf20ead0c7b609))
+* **deps:** update capacitor monorepo to v7.4.4 ([f00ec00](https://github.com/Cap-go/capacitor-updater/commit/f00ec004b6e0d5714f87e490b6d7e16ee1d1a2a3))
+* update deployment model and README links for versioning ([742843c](https://github.com/Cap-go/capacitor-updater/commit/742843c196b450488d59edef0e7c5176550603b4))
+* update github action ([f5519ac](https://github.com/Cap-go/capacitor-updater/commit/f5519ace7b3212325af6110c298fb43cc8b7769a))
+
 ## [7.23.9](https://github.com/Cap-go/capacitor-updater/compare/7.23.8...7.23.9) (2025-10-27)
 
 
