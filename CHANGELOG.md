@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.23.11](https://github.com/Cap-go/capacitor-updater/compare/7.23.10...7.23.11) (2025-10-29)
+
+
+### Bug Fixes
+
+* send stats when auto update is blocked by server URL ([060e39b](https://github.com/Cap-go/capacitor-updater/commit/060e39b5513d5a0a9df0f6d6b8b9f2f6d3f48896))
+
 ## [7.23.10](https://github.com/Cap-go/capacitor-updater/compare/7.23.9...7.23.10) (2025-10-29)
 
 
