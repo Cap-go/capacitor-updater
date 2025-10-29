@@ -359,7 +359,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
         // Check for 'kill' delay condition on app launch
         // This handles cases where the app was killed by the system (onDestroy is not reliable)
-        this._checkCancelDelay(true);
+        this.delayUpdateUtils.checkCancelDelay(DelayUpdateUtils.CancelDelaySource.KILLED);
 
         this.checkForUpdateAfterDelay();
     }
