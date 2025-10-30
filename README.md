@@ -124,7 +124,7 @@ npx cap sync
 
 ## Auto-update setup
 
-Create your account in [capgo.app](https://capgo.app) and get your [API key](https://web.capgo.app/dashboard/apikeys)
+Create your account in [capgo.app](https://capgo.app) and get your [API key](https://console.capgo.app/dashboard/apikeys)
 - Login to CLI `npx @capgo/cli@latest init API_KEY`
 And follow the steps by step to setup your app.
 
