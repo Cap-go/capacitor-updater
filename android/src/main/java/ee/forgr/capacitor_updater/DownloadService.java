@@ -63,7 +63,7 @@ public class DownloadService extends Worker {
     public static final String PUBLIC_KEY = "publickey";
     public static final String IS_MANIFEST = "is_manifest";
     public static final String APP_ID = "app_id";
-    public static final String PLUGIN_VERSION = "plugin_version";
+    public static final String pluginVersion = "plugin_version";
     private static final String UPDATE_FILE = "update.dat";
 
     // Shared OkHttpClient to prevent resource leaks

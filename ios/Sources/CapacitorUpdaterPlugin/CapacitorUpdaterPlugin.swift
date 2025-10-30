@@ -54,7 +54,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "isShakeMenuEnabled", returnType: CAPPluginReturnPromise)
     ]
     public var implementation = CapgoUpdater()
-    private let PLUGIN_VERSION: String = "7.23.13"
+    private let pluginVersion: String = "7.23.13"
     static let updateUrlDefault = "https://plugin.capgo.app/updates"
     static let statsUrlDefault = "https://plugin.capgo.app/stats"
     static let channelUrlDefault = "https://plugin.capgo.app/channel_self"
@@ -183,7 +183,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         implementation.publicKey = getConfig().getString("publicKey", "")!
         implementation.notifyDownloadRaw = notifyDownload
-        implementation.PLUGIN_VERSION = self.PLUGIN_VERSION
+        implementation.pluginVersion = self.pluginVersion
 
         // Set logger for shared classes
         implementation.setLogger(logger)
@@ -436,7 +436,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func getPluginVersion(_ call: CAPPluginCall) {
-        call.resolve(["version": self.PLUGIN_VERSION])
+        call.resolve(["version": self.pluginVersion])
     }
 
     @objc func download(_ call: CAPPluginCall) {

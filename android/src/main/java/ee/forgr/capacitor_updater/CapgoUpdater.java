@@ -66,7 +66,7 @@ public class CapgoUpdater {
     public File documentsDir;
     public Boolean directUpdate = false;
     public Activity activity;
-    public String PLUGIN_VERSION = "";
+    public String pluginVersion = "";
     public String versionBuild = "";
     public String versionCode = "";
     public String versionOs = "";
@@ -353,7 +353,7 @@ public class CapgoUpdater {
             manifest != null,
             this.isEmulator(),
             this.appId,
-            this.PLUGIN_VERSION
+            this.pluginVersion
         );
 
         if (manifest != null) {
@@ -775,7 +775,7 @@ public class CapgoUpdater {
         json.put("version_code", this.versionCode);
         json.put("version_os", this.versionOs);
         json.put("version_name", this.getCurrentBundle().getVersionName());
-        json.put("plugin_version", this.PLUGIN_VERSION);
+        json.put("plugin_version", this.pluginVersion);
         json.put("is_emulator", this.isEmulator());
         json.put("is_prod", this.isProd());
         json.put("defaultChannel", this.defaultChannel);

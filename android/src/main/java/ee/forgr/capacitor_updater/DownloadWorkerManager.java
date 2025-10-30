@@ -80,7 +80,7 @@ public class DownloadWorkerManager {
             .putBoolean(DownloadService.IS_MANIFEST, isManifest)
             .putString(DownloadService.PUBLIC_KEY, publicKey)
             .putString(DownloadService.APP_ID, appId)
-            .putString(DownloadService.PLUGIN_VERSION, pluginVersion)
+            .putString(DownloadService.pluginVersion, pluginVersion)
             .build();
 
         // Create network constraints - be more lenient on emulators
