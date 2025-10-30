@@ -24,6 +24,19 @@ Capacitor plugin to update your app remotely in real-time.
 
 Open-source Alternative to Appflow, Codepush or Capawesome
 
+## Why Capacitor Updater?
+
+App store review processes can take days or weeks, blocking critical bug fixes and updates from reaching your users. Capacitor Updater solves this by:
+
+- **Instant updates** - Push JavaScript/HTML/CSS updates directly to users without app store review
+- **Delta updates** - Only download changed files, making updates ultra-fast
+- **Rollback protection** - Automatically revert broken updates to keep your app stable
+- **Open source** - Self-host or use Capgo Cloud, with full control over your update infrastructure
+- **Battle-tested** - Used by 3000+ production apps with proven reliability
+- **Most stared** - Capacitor updater is the most stared Capacitor plugin on GitHub
+
+Perfect for fixing bugs immediately, A/B testing features, and maintaining control over your release schedule.
+
 ## Features
 
 - ☁️ Cloud / Self hosted Support: Use our [Cloud](https://capgo.app/) to manage your app updates or yours.
