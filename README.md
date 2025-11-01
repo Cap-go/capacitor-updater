@@ -76,7 +76,7 @@ Join the [discord](https://discord.gg/VnYRvBfgA6) to get help.
 | Plugin version | Capacitor compatibility | Maintained        |
 | -------------- | ----------------------- | ----------------- |
 | v7.\*.\*       | v7.\*.\*                | ✅                 |
-| v6.\*.\*       | v6.\*.\*                | Critical bug only  |
+| v6.\*.\*       | v6.\*.\*                | ✅                 |
 | v5.\*.\*       | v5.\*.\*                | ⚠️ Deprecated |
 | v4.\*.\*       | v4.\*.\*                | ⚠️ Deprecated |
 | v3.\*.\*       | v3.\*.\*                | ⚠️ Deprecated     |
