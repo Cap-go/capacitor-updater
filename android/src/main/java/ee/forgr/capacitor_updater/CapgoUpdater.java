@@ -824,9 +824,9 @@ public class CapgoUpdater {
             json.put("action", "rate_limit_reached");
 
             Request request = new Request.Builder()
-                    .url(statsUrl)
-                    .post(RequestBody.create(json.toString(), MediaType.get("application/json")))
-                    .build();
+                .url(statsUrl)
+                .post(RequestBody.create(json.toString(), MediaType.get("application/json")))
+                .build();
 
             // Send synchronously to ensure it goes out before the flag is set
             // User-Agent header is automatically added by DownloadService.sharedClient interceptor
