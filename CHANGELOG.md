@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.24.0](https://github.com/Cap-go/capacitor-updater/compare/7.23.13...7.24.0) (2025-11-01)
+
+
+### Features
+
+* implement device ID persistence across reinstalls using secure storage ([7a8323f](https://github.com/Cap-go/capacitor-updater/commit/7a8323fdab4482e2e2e011d9cccabea7cc1583bc))
+
+
+### Bug Fixes
+
+* build script ([40c71dd](https://github.com/Cap-go/capacitor-updater/commit/40c71ddbd77ba0b77a67cff00ce4ed0c88f8c672))
+* lint ([522f0f0](https://github.com/Cap-go/capacitor-updater/commit/522f0f0e2b761dd4e351173c9c6927720c7f3629))
+* pluginVersion lint issue ([7532586](https://github.com/Cap-go/capacitor-updater/commit/7532586ed83f4dfced8eb62bd2bdcb3123e62a97))
+* readme ([d7f4992](https://github.com/Cap-go/capacitor-updater/commit/d7f49927ad495f0543922d9583f9cec967965e33))
+* script ([91628d5](https://github.com/Cap-go/capacitor-updater/commit/91628d5cb29a0d1d13e8675624dc06bb1a64a14b))
+* update API key link in auto-update setup instructions ([c69d4ed](https://github.com/Cap-go/capacitor-updater/commit/c69d4ed4c950cad772cb80a95982c643d8488ebc))
+* update docgen script to use correct command ([bc18393](https://github.com/Cap-go/capacitor-updater/commit/bc18393d84827aabef06ef096f03f5e9cdb7ba9f))
+
 ## [7.23.13](https://github.com/Cap-go/capacitor-updater/compare/7.23.12...7.23.13) (2025-10-29)
 
 
