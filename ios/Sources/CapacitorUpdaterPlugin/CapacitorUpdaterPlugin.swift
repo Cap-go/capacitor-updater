@@ -113,9 +113,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         #endif
 
         self.semaphoreUp()
-        self.implementation.deviceID = (UserDefaults.standard.string(forKey: "appUUID") ?? UUID().uuidString).lowercased()
-        UserDefaults.standard.set( self.implementation.deviceID, forKey: "appUUID")
-        UserDefaults.standard.synchronize()
+        // Use DeviceIdHelper to get or create device ID that persists across reinstalls
+        self.implementation.deviceID = DeviceIdHelper.getOrCreateDeviceId()
         persistCustomId = getConfig().getBoolean("persistCustomId", false)
         if persistCustomId {
             let storedCustomId = UserDefaults.standard.string(forKey: customIdDefaultsKey) ?? ""
