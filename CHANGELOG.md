@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [6.14.32](https://github.com/Cap-go/capacitor-updater/compare/6.14.31...6.14.32) (2025-11-01)
+
+
+### Features
+
+* implement DeviceIdHelper for persistent device ID across reinstalls on Android and iOS ([8bbba2f](https://github.com/Cap-go/capacitor-updater/commit/8bbba2f4f9e3aac2a5537311271deba224e466b7))
+
 ## [6.14.31](https://github.com/Cap-go/capacitor-updater/compare/6.14.30...6.14.31) (2025-10-29)
 
 
