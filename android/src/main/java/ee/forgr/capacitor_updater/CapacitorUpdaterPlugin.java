@@ -308,9 +308,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.implementation.prefs = this.prefs;
         this.implementation.editor = this.editor;
         this.implementation.versionOs = Build.VERSION.RELEASE;
-        this.implementation.deviceID = this.prefs.getString("appUUID", UUID.randomUUID().toString()).toLowerCase();
-        this.editor.putString("appUUID", this.implementation.deviceID);
-        this.editor.apply();
+        // Use DeviceIdHelper to get or create device ID that persists across reinstalls
+        this.implementation.deviceID = DeviceIdHelper.getOrCreateDeviceId(this.getContext(), this.prefs);
 
         // Update User-Agent for shared OkHttpClient with OS version
         DownloadService.updateUserAgent(this.implementation.appId, this.pluginVersion, this.implementation.versionOs);
