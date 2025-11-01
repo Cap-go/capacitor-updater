@@ -33,6 +33,7 @@ import javax.crypto.spec.GCMParameterSpec;
  * even after app uninstall/reinstall on Android 6.0+ (API 23+).
  */
 public class DeviceIdHelper {
+
     private static final String KEYSTORE_ALIAS = "capgo_device_id_key";
     private static final String ANDROID_KEYSTORE = "AndroidKeyStore";
     private static final String LEGACY_PREFS_KEY = "appUUID";
@@ -147,7 +148,8 @@ public class DeviceIdHelper {
 
         // Store encrypted device ID and IV in SharedPreferences
         SharedPreferences prefs = context.getSharedPreferences(DEVICE_ID_PREFS, Context.MODE_PRIVATE);
-        prefs.edit()
+        prefs
+            .edit()
             .putString(DEVICE_ID_KEY, android.util.Base64.encodeToString(encryptedBytes, android.util.Base64.DEFAULT))
             .putString(IV_KEY, android.util.Base64.encodeToString(iv, android.util.Base64.DEFAULT))
             .apply();
@@ -172,10 +174,7 @@ public class DeviceIdHelper {
             }
 
             // Create new key
-            KeyGenerator keyGenerator = KeyGenerator.getInstance(
-                KeyProperties.KEY_ALGORITHM_AES,
-                ANDROID_KEYSTORE
-            );
+            KeyGenerator keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE);
 
             KeyGenParameterSpec keySpec = new KeyGenParameterSpec.Builder(
                 KEYSTORE_ALIAS,
@@ -189,8 +188,14 @@ public class DeviceIdHelper {
 
             keyGenerator.init(keySpec);
             return keyGenerator.generateKey();
-        } catch (KeyStoreException | CertificateException | NoSuchAlgorithmException |
-                 IOException | NoSuchProviderException | UnrecoverableEntryException e) {
+        } catch (
+            KeyStoreException
+            | CertificateException
+            | NoSuchAlgorithmException
+            | IOException
+            | NoSuchProviderException
+            | UnrecoverableEntryException e
+        ) {
             return null;
         } catch (Exception e) {
             return null;
