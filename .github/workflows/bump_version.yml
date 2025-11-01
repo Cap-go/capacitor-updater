@@ -32,7 +32,7 @@ jobs:
       - name: Update Doc
         run: bun run docgen
       - name: Update Doc
-        run: bun run docgen:api
+        run: bun run docgen
       - name: Add doc to github
         run: |
           git add README.md
