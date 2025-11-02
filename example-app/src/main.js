@@ -5,6 +5,8 @@ import { CapacitorUpdater } from '@capgo/capacitor-updater';
 const plugin = CapacitorUpdater;
 const state = {};
 
+plugin.notifyAppReady();
+
 
 const actions = [
 {
