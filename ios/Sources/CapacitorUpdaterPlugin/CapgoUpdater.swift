@@ -33,7 +33,7 @@ import UIKit
     public let CAP_SERVER_PATH: String = "serverBasePath"
     public var versionBuild: String = ""
     public var customId: String = ""
-    public var PLUGIN_VERSION: String = ""
+    public var pluginVersion: String = ""
     public var timeout: Double = 20
     public var statsUrl: String = ""
     public var channelUrl: String = ""
@@ -51,7 +51,7 @@ import UIKit
     private static var rateLimitStatisticSent = false
 
     private var userAgent: String {
-        let safePluginVersion = PLUGIN_VERSION.isEmpty ? "unknown" : PLUGIN_VERSION
+        let safePluginVersion = pluginVersion.isEmpty ? "unknown" : pluginVersion
         let safeAppId = appId.isEmpty ? "unknown" : appId
         return "CapacitorUpdater/\(safePluginVersion) (\(safeAppId)) ios/\(versionOs)"
     }
@@ -315,7 +315,7 @@ import UIKit
             version_code: self.versionCode,
             version_os: self.versionOs,
             version_name: self.getCurrentBundle().getVersionName(),
-            plugin_version: self.PLUGIN_VERSION,
+            plugin_version: self.pluginVersion,
             is_emulator: self.isEmulator(),
             is_prod: self.isProd(),
             action: nil,

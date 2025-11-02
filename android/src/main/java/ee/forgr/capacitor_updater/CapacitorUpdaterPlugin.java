@@ -71,7 +71,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final String[] BREAKING_EVENT_NAMES = { "breakingAvailable", "majorAvailable" };
     private static final String LAST_FAILED_BUNDLE_PREF_KEY = "CapacitorUpdater.lastFailedBundle";
 
-    private final String PLUGIN_VERSION = "6.14.31";
+    private final String pluginVersion = "6.25.0";
     private static final String DELAY_CONDITION_PREFERENCES = "";
 
     private SharedPreferences.Editor editor;
@@ -220,7 +220,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.implementation.activity = this.getActivity();
             this.implementation.versionBuild = this.getConfig().getString("version", pInfo.versionName);
             this.implementation.CAP_SERVER_PATH = WebView.CAP_SERVER_PATH;
-            this.implementation.PLUGIN_VERSION = this.PLUGIN_VERSION;
+            this.implementation.pluginVersion = this.pluginVersion;
             this.implementation.versionCode = Integer.toString(pInfo.versionCode);
             // Removed unused OkHttpClient creation - using shared client in DownloadService instead
             // Handle directUpdate configuration - support string values and backward compatibility
@@ -334,7 +334,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.implementation.deviceID = DeviceIdHelper.getOrCreateDeviceId(this.getContext(), this.prefs);
 
         // Update User-Agent for shared OkHttpClient with OS version
-        DownloadService.updateUserAgent(this.implementation.appId, this.PLUGIN_VERSION, this.implementation.versionOs);
+        DownloadService.updateUserAgent(this.implementation.appId, this.pluginVersion, this.implementation.versionOs);
 
         if (Boolean.TRUE.equals(this.persistCustomId)) {
             final String storedCustomId = this.prefs.getString(CUSTOM_ID_PREF_KEY, "");
@@ -841,7 +841,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     public void getPluginVersion(final PluginCall call) {
         try {
             final JSObject ret = new JSObject();
-            ret.put("version", this.PLUGIN_VERSION);
+            ret.put("version", this.pluginVersion);
             call.resolve(ret);
         } catch (final Exception e) {
             logger.error("Could not get plugin version " + e.getMessage());
