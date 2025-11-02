@@ -76,6 +76,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var directUpdate = false
     private var directUpdateMode: String = "false"
     private var wasRecentlyInstalledOrUpdated = false
+    private var onLaunchDirectUpdateUsed = false
     private var autoSplashscreen = false
     private var autoSplashscreenLoader = false
     private var autoSplashscreenTimeout = 10000
@@ -147,7 +148,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         // Handle directUpdate configuration - support string values and backward compatibility
         if let directUpdateString = getConfig().getString("directUpdate") {
             directUpdateMode = directUpdateString
-            directUpdate = directUpdateString == "always" || directUpdateString == "atInstall"
+            directUpdate = directUpdateString == "always" || directUpdateString == "atInstall" || directUpdateString == "onLaunch"
+            // Validate directUpdate value
+            if directUpdateString != "false" && directUpdateString != "always" && directUpdateString != "atInstall" && directUpdateString != "onLaunch" {
+                logger.error("Invalid directUpdate value: \"\(directUpdateString)\". Supported values are: false, \"always\", \"atInstall\", \"onLaunch\". Defaulting to false.")
+                directUpdateMode = "false"
+                directUpdate = false
+            }
         } else {
             let directUpdateBool = getConfig().getBoolean("directUpdate", false)
             if directUpdateBool {
@@ -1195,7 +1202,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 return true
             }
             return false
+        case "onLaunch":
+            if !self.onLaunchDirectUpdateUsed {
+                return true
+            }
+            return false
         default:
+            logger.error("Invalid directUpdateMode: \"\(self.directUpdateMode)\". Supported values are: \"false\", \"always\", \"atInstall\", \"onLaunch\". Defaulting to false behavior.")
             return false
         }
     }
@@ -1286,6 +1299,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 let directUpdateAllowed = plannedDirectUpdate && !self.autoSplashscreenTimedOut
                 if directUpdateAllowed {
                     self.logger.info("Direct update to builtin version")
+                    if self.directUpdateMode == "onLaunch" {
+                        self.onLaunchDirectUpdateUsed = true
+                        self.directUpdate = false
+                    }
                     _ = self._reset(toLastSuccessful: false)
                     self.endBackGroundTaskWithNotif(msg: "Updated to builtin version", latestVersionName: res.version, current: self.implementation.getCurrentBundle(), error: false)
                 } else {
@@ -1359,6 +1376,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                             self.logger.info("Update delayed until delay conditions met")
                             self.endBackGroundTaskWithNotif(msg: "Update delayed until delay conditions met", latestVersionName: latestVersionName, current: next, error: false)
                             return
+                        }
+                        if self.directUpdateMode == "onLaunch" {
+                            self.onLaunchDirectUpdateUsed = true
+                            self.directUpdate = false
                         }
                         _ = self.implementation.set(bundle: next)
                         _ = self._reload()
@@ -1498,7 +1519,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
 
             if !self.shouldUseDirectUpdate() {
-                logger.warn("autoSplashscreen is enabled but directUpdate is not configured for immediate updates. Set directUpdate to 'always' or 'atInstall', or disable autoSplashscreen.")
+                if self.directUpdateMode == "false" {
+                    logger.warn("autoSplashscreen is enabled but directUpdate is not configured for immediate updates. Set directUpdate to 'always' or disable autoSplashscreen.")
+                } else if self.directUpdateMode == "atInstall" || self.directUpdateMode == "onLaunch" {
+                    logger.info("autoSplashscreen is enabled but directUpdate is set to \"\(self.directUpdateMode)\". This is normal. Skipping autoSplashscreen logic.")
+                }
                 canShowSplashscreen = false
             }
 

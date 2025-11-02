@@ -137,7 +137,8 @@ declare module '@capacitor/cli' {
        * Zip or apps more than 10MB will be relatively slow for users to update.
        * - false: Never do direct updates (default behavior)
        * - atInstall: Direct update only when app is installed/updated from store, otherwise use normal background update
-       * - always: Always do direct updates immediately when available
+       * - always: Always do direct updates immediately when available (including when returning from background)
+       * - onLaunch: Direct update only on app launch (first foreground after app starts), not when returning from background
        * - true: (deprecated) Same as "always" for backward compatibility
        *
        * Only available for Android and iOS.
@@ -145,12 +146,12 @@ declare module '@capacitor/cli' {
        * @default false
        * @since  5.1.0
        */
-      directUpdate?: boolean | 'atInstall' | 'always';
+      directUpdate?: boolean | 'atInstall' | 'always' | 'onLaunch';
 
       /**
        * Automatically handle splashscreen hiding when using directUpdate. When enabled, the plugin will automatically hide the splashscreen after updates are applied or when no update is needed.
        * This removes the need to manually listen for appReady events and call SplashScreen.hide().
-       * Only works when directUpdate is set to "atInstall", "always", or true.
+       * Only works when directUpdate is set to "atInstall", "always", "onLaunch", or true.
        * Requires the @capacitor/splash-screen plugin to be installed and configured with launchAutoHide: false.
        * Requires autoUpdate and directUpdate to be enabled.
        *
