@@ -97,6 +97,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private Boolean autoSplashscreenTimedOut = false;
     private String directUpdateMode = "false";
     private Boolean wasRecentlyInstalledOrUpdated = false;
+    private Boolean onLaunchDirectUpdateUsed = false;
     Boolean shakeMenuEnabled = false;
     private Boolean allowManualBundleError = false;
 
@@ -226,7 +227,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
             String directUpdateConfig = this.getConfig().getString("directUpdate", null);
             if (directUpdateConfig != null) {
                 this.directUpdateMode = directUpdateConfig;
-                this.implementation.directUpdate = directUpdateConfig.equals("always") || directUpdateConfig.equals("atInstall");
+                this.implementation.directUpdate = directUpdateConfig.equals("always") || directUpdateConfig.equals("atInstall") || directUpdateConfig.equals("onLaunch");
+                // Validate directUpdate value
+                if (!directUpdateConfig.equals("false") && !directUpdateConfig.equals("always") && !directUpdateConfig.equals("atInstall") && !directUpdateConfig.equals("onLaunch")) {
+                    logger.error("Invalid directUpdate value: \"" + directUpdateConfig + "\". Supported values are: false, \"always\", \"atInstall\", \"onLaunch\". Defaulting to false.");
+                    this.directUpdateMode = "false";
+                    this.implementation.directUpdate = false;
+                }
             } else {
                 Boolean directUpdateBool = this.getConfig().getBoolean("directUpdate", false);
                 if (directUpdateBool) {
@@ -625,7 +632,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     return true;
                 }
                 return false;
+            case "onLaunch":
+                if (!this.onLaunchDirectUpdateUsed) {
+                    return true;
+                }
+                return false;
             default:
+                logger.error("Invalid directUpdateMode: \"" + this.directUpdateMode + "\". Supported values are: \"false\", \"always\", \"atInstall\", \"onLaunch\". Defaulting to false behavior.");
                 return false;
         }
     }
@@ -635,6 +648,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void directUpdateFinish(final BundleInfo latest) {
+        if ("onLaunch".equals(this.directUpdateMode)) {
+            this.onLaunchDirectUpdateUsed = true;
+            this.implementation.directUpdate = false;
+        }
         CapacitorUpdaterPlugin.this.implementation.set(latest);
         CapacitorUpdaterPlugin.this._reload();
         sendReadyToJs(latest, "update installed", true);
@@ -1939,9 +1956,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
 
             if (!this.shouldUseDirectUpdate()) {
-                logger.warn(
-                    "autoSplashscreen is enabled but directUpdate is not configured for immediate updates. Set directUpdate to 'always' or 'atInstall', or disable autoSplashscreen."
-                );
+                if ("false".equals(this.directUpdateMode)) {
+                    logger.warn(
+                        "autoSplashscreen is enabled but directUpdate is not configured for immediate updates. Set directUpdate to 'always' or disable autoSplashscreen."
+                    );
+                } else if ("atInstall".equals(this.directUpdateMode) || "onLaunch".equals(this.directUpdateMode)) {
+                    logger.info(
+                        "autoSplashscreen is enabled but directUpdate is set to \"" + this.directUpdateMode + "\". This is normal. Skipping autoSplashscreen logic."
+                    );
+                }
                 canShowSplashscreen = false;
             }
 
