@@ -127,8 +127,8 @@ declare module '@capacitor/cli' {
        * Zip or apps more than 10MB will be relatively slow for users to update.
        * - false: Never do direct updates (default behavior)
        * - atInstall: Direct update only when app is installed/updated from store, otherwise use normal background update
-       * - always: Always do direct updates immediately when available (including when returning from background)
-       * - onLaunch: Direct update only on app launch (first foreground after app starts), not when returning from background
+       * - always: Check for updates and apply them when app installed, starts or resumes from background
+       * - onLaunch: Direct update only on app installed or starts (after app kill)
        * - true: (deprecated) Same as "always" for backward compatibility
        *
        * Only available for Android and iOS.
