@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.25.0](https://github.com/Cap-go/capacitor-updater/compare/7.24.0...7.25.0) (2025-11-02)
+
+
+### Features
+
+* add a onLaunch option for direct update ([2631fb9](https://github.com/Cap-go/capacitor-updater/commit/2631fb968747d8dc5871e87d37a35ee68b2bc982))
+
+
+### Bug Fixes
+
+* def ([b589341](https://github.com/Cap-go/capacitor-updater/commit/b589341c48192e56d1029446593800075a2c7e2f))
+* def ([abf4fd7](https://github.com/Cap-go/capacitor-updater/commit/abf4fd72ef923462b5d80f10ad02884427225b39))
+* definition ([a3b7092](https://github.com/Cap-go/capacitor-updater/commit/a3b709223f66cdbfe1a4387973d9951e3a1637c2))
+* doc ([593ca74](https://github.com/Cap-go/capacitor-updater/commit/593ca7454212ff1a67d872f7ec2277eb81025d02))
+* improve again definition ([652eeae](https://github.com/Cap-go/capacitor-updater/commit/652eeaee52f9b335e012b63c82af16d2930e84fb))
+
 ## [7.24.0](https://github.com/Cap-go/capacitor-updater/compare/7.23.13...7.24.0) (2025-11-01)
 
 
