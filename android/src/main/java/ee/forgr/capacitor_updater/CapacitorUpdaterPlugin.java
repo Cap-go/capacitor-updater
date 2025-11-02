@@ -227,10 +227,20 @@ public class CapacitorUpdaterPlugin extends Plugin {
             String directUpdateConfig = this.getConfig().getString("directUpdate", null);
             if (directUpdateConfig != null) {
                 this.directUpdateMode = directUpdateConfig;
-                this.implementation.directUpdate = directUpdateConfig.equals("always") || directUpdateConfig.equals("atInstall") || directUpdateConfig.equals("onLaunch");
+                this.implementation.directUpdate =
+                    directUpdateConfig.equals("always") || directUpdateConfig.equals("atInstall") || directUpdateConfig.equals("onLaunch");
                 // Validate directUpdate value
-                if (!directUpdateConfig.equals("false") && !directUpdateConfig.equals("always") && !directUpdateConfig.equals("atInstall") && !directUpdateConfig.equals("onLaunch")) {
-                    logger.error("Invalid directUpdate value: \"" + directUpdateConfig + "\". Supported values are: false, \"always\", \"atInstall\", \"onLaunch\". Defaulting to false.");
+                if (
+                    !directUpdateConfig.equals("false") &&
+                    !directUpdateConfig.equals("always") &&
+                    !directUpdateConfig.equals("atInstall") &&
+                    !directUpdateConfig.equals("onLaunch")
+                ) {
+                    logger.error(
+                        "Invalid directUpdate value: \"" +
+                            directUpdateConfig +
+                            "\". Supported values are: false, \"always\", \"atInstall\", \"onLaunch\". Defaulting to false."
+                    );
                     this.directUpdateMode = "false";
                     this.implementation.directUpdate = false;
                 }
@@ -639,7 +649,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 }
                 return false;
             default:
-                logger.error("Invalid directUpdateMode: \"" + this.directUpdateMode + "\". Supported values are: \"false\", \"always\", \"atInstall\", \"onLaunch\". Defaulting to false behavior.");
+                logger.error(
+                    "Invalid directUpdateMode: \"" +
+                        this.directUpdateMode +
+                        "\". Supported values are: \"false\", \"always\", \"atInstall\", \"onLaunch\". Defaulting to false behavior."
+                );
                 return false;
         }
     }
@@ -1963,7 +1977,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     );
                 } else if ("atInstall".equals(this.directUpdateMode) || "onLaunch".equals(this.directUpdateMode)) {
                     logger.info(
-                        "autoSplashscreen is enabled but directUpdate is set to \"" + this.directUpdateMode + "\". This is normal. Skipping autoSplashscreen logic."
+                        "autoSplashscreen is enabled but directUpdate is set to \"" +
+                            this.directUpdateMode +
+                            "\". This is normal. Skipping autoSplashscreen logic."
                     );
                 }
                 canShowSplashscreen = false;
