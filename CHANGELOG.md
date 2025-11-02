@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [6.25.1](https://github.com/Cap-go/capacitor-updater/compare/6.14.36...6.25.1) (2025-11-02)
+
+
+### Bug Fixes
+
+* version name, and bump to .25 to follow v7 ([481569e](https://github.com/Cap-go/capacitor-updater/commit/481569edc4406b76e0cce7dbc567f71c9cbc9850))
+
 ## [6.14.36](https://github.com/Cap-go/capacitor-updater/compare/6.14.35...6.14.36) (2025-11-02)
 
 
