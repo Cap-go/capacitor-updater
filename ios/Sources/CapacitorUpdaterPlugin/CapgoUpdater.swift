@@ -476,6 +476,7 @@ import UIKit
                         do {
                             let statusCode = response.response?.statusCode ?? 200
                             if statusCode < 200 || statusCode >= 300 {
+                                self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
                                 if let stringData = String(data: data, encoding: .utf8) {
                                     throw NSError(domain: "StatusCodeError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid. Data: \(stringData) for file \(fileName) at url \(downloadUrl)"])
                                 } else {
@@ -518,6 +519,7 @@ import UIKit
                             if isBrotli {
                                 // Decompress the Brotli data
                                 guard let decompressedData = self.decompressBrotli(data: finalData, fileName: fileName) else {
+                                    self.sendStats(action: "download_manifest_brotli_fail", versionName: "\(version):\(finalFileName)")
                                     throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data for file \(fileName) at url \(downloadUrl)"])
                                 }
                                 finalData = decompressedData
@@ -528,6 +530,7 @@ import UIKit
                                 // assume that calcChecksum != null
                                 let calculatedChecksum = CryptoCipherV2.calcChecksum(filePath: destFilePath)
                                 if calculatedChecksum != fileHash {
+                                    self.sendStats(action: "download_manifest_checksum_fail", versionName: "\(version):\(finalFileName)")
                                     throw NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash)) for file \(fileName) at url \(downloadUrl)"])
                                 }
                             }
@@ -543,6 +546,8 @@ import UIKit
                             self.logger.error("downloadManifest \(id) \(fileName) error: \(error.localizedDescription)")
                         }
                     case .failure(let error):
+                        downloadError = error
+                        self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
                         self.logger.error("downloadManifest \(id) \(fileName) download error: \(error.localizedDescription). Debug response: \(response.debugDescription).")
                     }
                 }

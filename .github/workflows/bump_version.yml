@@ -11,10 +11,17 @@ on:
       - '.github/**'
 
 jobs:
+  # Run all tests first before creating any tags
+  test:
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
+    uses: ./.github/workflows/test.yml
+
+  # Only bump version and create tag if all tests pass
   bump-version:
+    needs: [test]
     if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
     runs-on: ubuntu-latest
-    name: "Bump version and create changelog with standard version"
+    name: "Bump version and create tag"
     steps:
       - name: Check out
         uses: actions/checkout@v5
@@ -31,22 +38,20 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
       - name: Update Doc
         run: bun run docgen
-      - name: Update Doc
-        run: bun run docgen
       - name: Add doc to github
         run: |
           git add README.md
           git add api.md
           git commit --m "docs: update doc" || true
-      - name: Create bump and changelog main
+      - name: Create version bump main
         if: github.ref == 'refs/heads/main'
-        run: bunx capacitor-plugin-standard-version@latest
-      - name: Create bump and changelog v6
+        run: bunx capacitor-plugin-standard-version@latest --skip.changelog
+      - name: Create version bump v6
         if: github.ref == 'refs/heads/v6'
-        run: bunx capacitor-plugin-standard-version@latest --release-as patch
-      - name: Create bump and changelog development
+        run: bunx capacitor-plugin-standard-version@latest --release-as patch --skip.changelog
+      - name: Create version bump development
         if: github.ref == 'refs/heads/development'
-        run: bunx capacitor-plugin-standard-version@latest --prerelease alpha
+        run: bunx capacitor-plugin-standard-version@latest --prerelease alpha --skip.changelog
       - name: Push to origin
         run: |
           CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
@@ -65,15 +70,3 @@ jobs:
           destination-directory: src/content/docs/docs/plugin
           destination-branch: main
           commit-email: martindonadieu@gmail.com
-  create-cache:
-    if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
-    runs-on: ubuntu-latest
-    name: "Create global cache on main branch"
-    steps:
-      - uses: actions/checkout@v5
-      - uses: oven-sh/setup-bun@v2
-      - name: Install dependencies
-        id: install_code
-        run: bun i
-      - name: CLI capacitor-standard-version install
-        run: bunx capacitor-standard-version@latest --version
