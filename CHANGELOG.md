@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [6.25.2](https://github.com/Cap-go/capacitor-updater/compare/6.25.1...6.25.2) (2025-11-03)
+
+
+### Features
+
+* add new stats event to see if manifest or zip was used ([dfa32d9](https://github.com/Cap-go/capacitor-updater/commit/dfa32d935d5f605637adbadb87b49e2e29e6eaf7))
+
 ## [6.25.1](https://github.com/Cap-go/capacitor-updater/compare/6.14.36...6.25.1) (2025-11-02)
 
 
