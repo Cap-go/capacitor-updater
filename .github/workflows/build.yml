@@ -1,4 +1,4 @@
-name: Build source code and check lint
+name: Build and publish
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -10,76 +10,8 @@ on:
       - "*"
 
 jobs:
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out
-        uses: actions/checkout@v5
-      - uses: oven-sh/setup-bun@v2
-      - name: Install dependencies
-        id: install_code
-        run: bun i
-      - name: Lint
-        id: lint_code
-        run: bun run lint
-      - name: Build
-        id: build_code
-        run: bun run build
-      - name: Verify
-        id: verify_code
-        run: bun run verify:web
-  build_android:
-    needs: lint
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out
-        uses: actions/checkout@v5
-      - uses: oven-sh/setup-bun@v2
-      - name: Install dependencies
-        id: install_code
-        run: bun i
-      - name: Setup java
-        uses: actions/setup-java@v5
-        with:
-          distribution: 'zulu'
-          java-version: '21'
-          cache: 'gradle'
-          cache-dependency-path: | # optional
-            android/.gradle/*.gradle*
-            android/**/gradle-wrapper.properties
-      - name: Build
-        id: build_code
-        run: npm run verify:android
-      - name: Run Android Tests
-        id: test_android
-        if: ${{ !startsWith(github.ref, 'refs/tags/6.') }}
-        run: npm run test:android
-  build_ios:
-    needs: lint
-    runs-on: macOS-latest
-    steps:
-      - name: Check out
-        uses: actions/checkout@v5
-      - uses: oven-sh/setup-bun@v2
-      - uses: actions/cache@v4
-        id: cocoapods-cache
-        with:
-          path: ios/Pods
-          key: ${{ runner.os }}-pods-${{ hashFiles('ios/Podfile.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-pods-
-      - name: Install dependencies
-        id: install_code
-        run: bun i
-      - name: Build
-        id: build_code
-        run: bun run verify:ios
-      - name: Run iOS Tests
-        id: test_ios
-        if: ${{ !startsWith(github.ref, 'refs/tags/6.') }}
-        run: npm run test:ios
+  # Tests already passed before tag was created, so just build and deploy
   deploy:
-    needs: [build_android, build_ios]
     runs-on: ubuntu-latest
     name: "Build code and npm release"
     permissions:

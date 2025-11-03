@@ -10,6 +10,7 @@ on:
       - renovate/**
   pull_request:
     branches: [ main ]
+  workflow_call:  # Allow this workflow to be called by other workflows
 
 jobs:
   build_android:
