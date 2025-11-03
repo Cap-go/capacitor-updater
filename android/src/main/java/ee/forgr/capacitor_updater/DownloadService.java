@@ -185,6 +185,10 @@ public class DownloadService extends Worker {
     ) {
         try {
             logger.debug("handleManifestDownload");
+
+            // Send stats for manifest download start
+            sendStatsAsync("download_manifest_start", version);
+
             JSONArray manifest = new JSONArray(manifestString);
             File destFolder = new File(documentsDir, dest);
             File cacheFolder = new File(getApplicationContext().getCacheDir(), "capgo_downloads");
@@ -252,6 +256,7 @@ public class DownloadService extends Worker {
                         setProgress(percent);
                     } catch (Exception e) {
                         logger.error("Error processing file: " + fileName + " " + e.getMessage());
+                        sendStatsAsync("download_manifest_file_fail", version + ":" + fileName);
                         hasError.set(true);
                     }
                 });
@@ -282,6 +287,9 @@ public class DownloadService extends Worker {
                 logger.error("One or more files failed to download");
                 throw new IOException("One or more files failed to download");
             }
+
+            // Send stats for manifest download complete
+            sendStatsAsync("download_manifest_complete", version);
         } catch (Exception e) {
             logger.error("Error in handleManifestDownload " + e.getMessage());
             throw new RuntimeException(e.getLocalizedMessage());
@@ -297,6 +305,9 @@ public class DownloadService extends Worker {
         String sessionKey,
         String checksum
     ) {
+        // Send stats for zip download start
+        sendStatsAsync("download_zip_start", version);
+
         File target = new File(documentsDir, dest);
         File infoFile = new File(documentsDir, UPDATE_FILE);
         File tempFile = new File(documentsDir, "temp" + ".tmp");
@@ -404,6 +415,9 @@ public class DownloadService extends Worker {
                         throw new RuntimeException("Failed to rename temp file to final destination");
                     }
                     infoFile.delete();
+
+                    // Send stats for zip download complete
+                    sendStatsAsync("download_zip_complete", version);
                 } catch (OutOfMemoryError e) {
                     logger.error("Out of memory during download: " + e.getMessage());
                     // Try to free some memory
@@ -503,6 +517,7 @@ public class DownloadService extends Worker {
 
         try (Response response = sharedClient.newCall(request).execute()) {
             if (!response.isSuccessful()) {
+                sendStatsAsync("download_manifest_file_fail", getInputData().getString(VERSION) + ":" + finalTargetFile.getName());
                 throw new IOException("Unexpected response code: " + response.code());
             }
 
@@ -526,7 +541,16 @@ public class DownloadService extends Worker {
                 try (FileInputStream fis = new FileInputStream(compressedFile)) {
                     byte[] compressedData = new byte[(int) compressedFile.length()];
                     fis.read(compressedData);
-                    byte[] decompressedData = decompressBrotli(compressedData, targetFile.getName());
+                    byte[] decompressedData;
+                    try {
+                        decompressedData = decompressBrotli(compressedData, targetFile.getName());
+                    } catch (IOException e) {
+                        sendStatsAsync(
+                            "download_manifest_brotli_fail",
+                            getInputData().getString(VERSION) + ":" + finalTargetFile.getName()
+                        );
+                        throw e;
+                    }
 
                     // Write decompressed data atomically
                     try (java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(decompressedData)) {
@@ -552,6 +576,7 @@ public class DownloadService extends Worker {
                 }
             } else {
                 finalTargetFile.delete();
+                sendStatsAsync("download_manifest_checksum_fail", getInputData().getString(VERSION) + ":" + finalTargetFile.getName());
                 throw new IOException(
                     "Checksum verification failed for: " +
                         downloadUrl +

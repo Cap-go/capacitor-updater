@@ -409,6 +409,9 @@ import UIKit
         let bundleInfo = BundleInfo(id: id, version: version, status: BundleStatus.DOWNLOADING, downloaded: Date(), checksum: "")
         self.saveBundleInfo(id: id, bundle: bundleInfo)
 
+        // Send stats for manifest download start
+        self.sendStats(action: "download_manifest_start", versionName: version)
+
         // Notify the start of the download process
         self.notifyDownload(id: id, percent: 0, ignoreMultipleOfTen: true)
 
@@ -467,6 +470,7 @@ import UIKit
                         do {
                             let statusCode = response.response?.statusCode ?? 200
                             if statusCode < 200 || statusCode >= 300 {
+                                self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
                                 if let stringData = String(data: data, encoding: .utf8) {
                                     throw NSError(domain: "StatusCodeError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid. Data: \(stringData) for file \(fileName) at url \(downloadUrl)"])
                                 } else {
@@ -498,6 +502,7 @@ import UIKit
                             if isBrotli {
                                 // Decompress the Brotli data
                                 guard let decompressedData = self.decompressBrotli(data: finalData, fileName: fileName) else {
+                                    self.sendStats(action: "download_manifest_brotli_fail", versionName: "\(version):\(finalFileName)")
                                     throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data for file \(fileName) at url \(downloadUrl)"])
                                 }
                                 finalData = decompressedData
@@ -508,6 +513,7 @@ import UIKit
                                 // assume that calcChecksum != null
                                 let calculatedChecksum = CryptoCipher.calcChecksum(filePath: destFilePath)
                                 if calculatedChecksum != fileHash {
+                                    self.sendStats(action: "download_manifest_checksum_fail", versionName: "\(version):\(finalFileName)")
                                     throw NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash)) for file \(fileName) at url \(downloadUrl)"])
                                 }
                             }
@@ -523,6 +529,8 @@ import UIKit
                             self.logger.error("downloadManifest \(id) \(fileName) error: \(error.localizedDescription)")
                         }
                     case .failure(let error):
+                        downloadError = error
+                        self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
                         self.logger.error("downloadManifest \(id) \(fileName) download error: \(error.localizedDescription). Debug response: \(response.debugDescription).")
                     }
                 }
@@ -541,6 +549,9 @@ import UIKit
         // Update bundle status to PENDING after successful download
         let updatedBundle = bundleInfo.setStatus(status: BundleStatus.PENDING.localizedString)
         self.saveBundleInfo(id: id, bundle: updatedBundle)
+
+        // Send stats for manifest download complete
+        self.sendStats(action: "download_manifest_complete", versionName: version)
 
         logger.info("downloadManifest done \(id)")
         return updatedBundle
@@ -672,6 +683,10 @@ import UIKit
         var lastSentProgress = 0
         var totalReceivedBytes: Int64 = loadDownloadProgress() // Retrieving the amount of already downloaded data if exist, defined at 0 otherwise
         let requestHeaders: HTTPHeaders = ["Range": "bytes=\(totalReceivedBytes)-"]
+
+        // Send stats for zip download start
+        self.sendStats(action: "download_zip_start", versionName: version)
+
         // Opening connection for streaming the bytes
         if totalReceivedBytes == 0 {
             self.notifyDownload(id: id, percent: 0, ignoreMultipleOfTen: true)
@@ -780,6 +795,10 @@ import UIKit
         let info = BundleInfo(id: id, version: version, status: BundleStatus.PENDING, downloaded: Date(), checksum: checksum)
         self.saveBundleInfo(id: id, bundle: info)
         self.cleanDownloadData()
+
+        // Send stats for zip download complete
+        self.sendStats(action: "download_zip_complete", versionName: version)
+
         self.notifyDownload(id: id, percent: 100)
         logger.info("Downloading: 100% (complete)")
         return info
