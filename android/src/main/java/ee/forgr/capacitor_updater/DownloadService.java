@@ -185,6 +185,10 @@ public class DownloadService extends Worker {
     ) {
         try {
             logger.debug("handleManifestDownload");
+
+            // Send stats for manifest download start
+            sendStatsAsync("download_manifest_start", version);
+
             JSONArray manifest = new JSONArray(manifestString);
             File destFolder = new File(documentsDir, dest);
             File cacheFolder = new File(getApplicationContext().getCacheDir(), "capgo_downloads");
@@ -282,6 +286,9 @@ public class DownloadService extends Worker {
                 logger.error("One or more files failed to download");
                 throw new IOException("One or more files failed to download");
             }
+
+            // Send stats for manifest download complete
+            sendStatsAsync("download_manifest_complete", version);
         } catch (Exception e) {
             logger.error("Error in handleManifestDownload " + e.getMessage());
             throw new RuntimeException(e.getLocalizedMessage());
@@ -297,6 +304,9 @@ public class DownloadService extends Worker {
         String sessionKey,
         String checksum
     ) {
+        // Send stats for zip download start
+        sendStatsAsync("download_zip_start", version);
+
         File target = new File(documentsDir, dest);
         File infoFile = new File(documentsDir, UPDATE_FILE);
         File tempFile = new File(documentsDir, "temp" + ".tmp");
@@ -404,6 +414,9 @@ public class DownloadService extends Worker {
                         throw new RuntimeException("Failed to rename temp file to final destination");
                     }
                     infoFile.delete();
+
+                    // Send stats for zip download complete
+                    sendStatsAsync("download_zip_complete", version);
                 } catch (OutOfMemoryError e) {
                     logger.error("Out of memory during download: " + e.getMessage());
                     // Try to free some memory
