@@ -28,10 +28,14 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import okhttp3.Call;
+import okhttp3.Callback;
 import okhttp3.Interceptor;
+import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Protocol;
 import okhttp3.Request;
+import okhttp3.RequestBody;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
 import okio.Buffer;
@@ -64,6 +68,15 @@ public class DownloadService extends Worker {
     public static final String IS_MANIFEST = "is_manifest";
     public static final String APP_ID = "app_id";
     public static final String pluginVersion = "plugin_version";
+    public static final String STATS_URL = "stats_url";
+    public static final String DEVICE_ID = "device_id";
+    public static final String CUSTOM_ID = "custom_id";
+    public static final String VERSION_BUILD = "version_build";
+    public static final String VERSION_CODE = "version_code";
+    public static final String VERSION_OS = "version_os";
+    public static final String DEFAULT_CHANNEL = "default_channel";
+    public static final String IS_PROD = "is_prod";
+    public static final String IS_EMULATOR = "is_emulator";
     private static final String UPDATE_FILE = "update.dat";
 
     // Shared OkHttpClient to prevent resource leaks
@@ -130,6 +143,11 @@ public class DownloadService extends Worker {
         return Result.success(output);
     }
 
+    private String getInputString(String key, String fallback) {
+        String value = getInputData().getString(key);
+        return value != null ? value : fallback;
+    }
+
     @NonNull
     @Override
     public Result doWork() {
@@ -172,6 +190,62 @@ public class DownloadService extends Worker {
         percent = Math.max(10, percent);
         percent = Math.min(70, percent);
         return percent;
+    }
+
+    private void sendStatsAsync(String action, String version) {
+        try {
+            String statsUrl = getInputData().getString(STATS_URL);
+            if (statsUrl == null || statsUrl.isEmpty()) {
+                return;
+            }
+
+            JSONObject json = new JSONObject();
+            json.put("platform", "android");
+            json.put("app_id", getInputString(APP_ID, "unknown"));
+            json.put("plugin_version", getInputString(pluginVersion, "unknown"));
+            json.put("version_name", version != null ? version : "");
+            json.put("old_version_name", "");
+            json.put("action", action);
+            json.put("device_id", getInputString(DEVICE_ID, ""));
+            json.put("custom_id", getInputString(CUSTOM_ID, ""));
+            json.put("version_build", getInputString(VERSION_BUILD, ""));
+            json.put("version_code", getInputString(VERSION_CODE, ""));
+            json.put("version_os", getInputString(VERSION_OS, currentVersionOs));
+            json.put("defaultChannel", getInputString(DEFAULT_CHANNEL, ""));
+            json.put("is_prod", getInputData().getBoolean(IS_PROD, true));
+            json.put("is_emulator", getInputData().getBoolean(IS_EMULATOR, false));
+
+            Request request = new Request.Builder()
+                .url(statsUrl)
+                .post(RequestBody.create(json.toString(), MediaType.get("application/json")))
+                .build();
+
+            sharedClient
+                .newCall(request)
+                .enqueue(
+                    new Callback() {
+                        @Override
+                        public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                            if (logger != null) {
+                                logger.error("Failed to send stats: " + e.getMessage());
+                            }
+                        }
+
+                        @Override
+                        public void onResponse(@NonNull Call call, @NonNull Response response) {
+                            try (ResponseBody body = response.body()) {
+                                // nothing else to do, just closing body
+                            } catch (Exception ignored) {} finally {
+                                response.close();
+                            }
+                        }
+                    }
+                );
+        } catch (Exception e) {
+            if (logger != null) {
+                logger.error("sendStatsAsync error: " + e.getMessage());
+            }
+        }
     }
 
     private void handleManifestDownload(

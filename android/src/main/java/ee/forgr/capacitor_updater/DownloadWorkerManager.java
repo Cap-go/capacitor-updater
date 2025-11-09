@@ -61,7 +61,15 @@ public class DownloadWorkerManager {
         boolean isManifest,
         boolean isEmulator,
         String appId,
-        String pluginVersion
+        String pluginVersion,
+        boolean isProd,
+        String statsUrl,
+        String deviceId,
+        String versionBuild,
+        String versionCode,
+        String versionOs,
+        String customId,
+        String defaultChannel
     ) {
         initializeIfNeeded(context.getApplicationContext());
 
@@ -81,6 +89,15 @@ public class DownloadWorkerManager {
             .putString(DownloadService.PUBLIC_KEY, publicKey)
             .putString(DownloadService.APP_ID, appId)
             .putString(DownloadService.pluginVersion, pluginVersion)
+            .putString(DownloadService.STATS_URL, statsUrl)
+            .putString(DownloadService.DEVICE_ID, deviceId)
+            .putString(DownloadService.VERSION_BUILD, versionBuild)
+            .putString(DownloadService.VERSION_CODE, versionCode)
+            .putString(DownloadService.VERSION_OS, versionOs)
+            .putString(DownloadService.CUSTOM_ID, customId)
+            .putString(DownloadService.DEFAULT_CHANNEL, defaultChannel)
+            .putBoolean(DownloadService.IS_PROD, isProd)
+            .putBoolean(DownloadService.IS_EMULATOR, isEmulator)
             .build();
 
         // Create network constraints - be more lenient on emulators
