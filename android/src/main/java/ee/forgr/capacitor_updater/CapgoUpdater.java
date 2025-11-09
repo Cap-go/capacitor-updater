@@ -353,7 +353,15 @@ public class CapgoUpdater {
             manifest != null,
             this.isEmulator(),
             this.appId,
-            this.pluginVersion
+            this.pluginVersion,
+            this.isProd(),
+            this.statsUrl,
+            this.deviceID,
+            this.versionBuild,
+            this.versionCode,
+            this.versionOs,
+            this.customId,
+            this.defaultChannel
         );
 
         if (manifest != null) {
