@@ -895,8 +895,12 @@ public class CapgoUpdater {
                             // Check for server-side errors first
                             if (jsonResponse.has("error")) {
                                 Map<String, Object> retError = new HashMap<>();
-                                retError.put("message", jsonResponse.getString("error"));
-                                retError.put("error", "server_error");
+                                retError.put("error", jsonResponse.getString("error"));
+                                if (jsonResponse.has("message")) {
+                                    retError.put("message", jsonResponse.getString("message"));
+                                } else {
+                                    retError.put("message", "server did not provide a message");
+                                }
                                 callback.callback(retError);
                                 return;
                             }
@@ -1023,8 +1027,12 @@ public class CapgoUpdater {
                             // Check for server-side errors first
                             if (jsonResponse.has("error")) {
                                 Map<String, Object> retError = new HashMap<>();
-                                retError.put("message", jsonResponse.getString("error"));
-                                retError.put("error", "server_error");
+                                retError.put("error", jsonResponse.getString("error"));
+                                if (jsonResponse.has("message")) {
+                                    retError.put("message", jsonResponse.getString("message"));
+                                } else {
+                                    retError.put("message", "server did not provide a message");
+                                }
                                 callback.callback(retError);
                                 return;
                             }
@@ -1176,8 +1184,12 @@ public class CapgoUpdater {
                             // Check for server-side errors first
                             if (jsonResponse.has("error")) {
                                 Map<String, Object> retError = new HashMap<>();
-                                retError.put("message", jsonResponse.getString("error"));
-                                retError.put("error", "server_error");
+                                retError.put("error", jsonResponse.getString("error"));
+                                if (jsonResponse.has("message")) {
+                                    retError.put("message", jsonResponse.getString("message"));
+                                } else {
+                                    retError.put("message", "server did not provide a message");
+                                }
                                 callback.callback(retError);
                                 return;
                             }
@@ -1304,8 +1316,12 @@ public class CapgoUpdater {
                                         JSONObject json = new JSONObject(data);
                                         if (json.has("error")) {
                                             Map<String, Object> retError = new HashMap<>();
-                                            retError.put("message", json.getString("error"));
-                                            retError.put("error", "server_error");
+                                            retError.put("error", json.getString("error"));
+                                            if (json.has("message")) {
+                                                retError.put("message", json.getString("message"));
+                                            } else {
+                                                retError.put("message", "server did not provide a message");
+                                            }
                                             callback.callback(retError);
                                             return;
                                         }
