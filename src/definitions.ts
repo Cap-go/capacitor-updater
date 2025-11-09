@@ -571,7 +571,7 @@ export interface CapacitorUpdaterPlugin {
    *
    * This ID is privacy-friendly and follows Apple and Google best practices:
    * - Generated as a UUID and stored securely
-   * - Android: Uses EncryptedSharedPreferences with Auto Backup (persists across reinstalls)
+   * - Android: Uses Android Keystore (persists across reinstalls on API 23+)
    * - iOS: Uses Keychain with kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly (persists across reinstalls)
    * - Data stays on device (not synced to cloud on iOS)
    * - Can be cleared by user via system settings (Android) or keychain access (iOS)
