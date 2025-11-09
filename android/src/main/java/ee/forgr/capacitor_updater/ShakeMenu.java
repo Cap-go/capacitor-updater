@@ -158,7 +158,7 @@ public class ShakeMenu implements ShakeDetector.Listener {
                 );
 
                 AlertDialog dialog = builder.create();
-                dialog.setOnDismissListener((dialogInterface) -> isShowing = false);
+                dialog.setOnDismissListener(dialogInterface -> isShowing = false);
                 dialog.show();
             } catch (Exception e) {
                 logger.error("Error showing shake menu: " + e.getMessage());

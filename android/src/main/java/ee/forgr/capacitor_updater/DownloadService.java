@@ -89,7 +89,7 @@ public class DownloadService extends Worker {
     static {
         sharedClient = new OkHttpClient.Builder()
             .protocols(Arrays.asList(Protocol.HTTP_2, Protocol.HTTP_1_1))
-            .addInterceptor((chain) -> {
+            .addInterceptor(chain -> {
                 Request originalRequest = chain.request();
                 String userAgent =
                     "CapacitorUpdater/" +
@@ -653,13 +653,13 @@ public class DownloadService extends Worker {
                 sendStatsAsync("download_manifest_checksum_fail", getInputData().getString(VERSION) + ":" + finalTargetFile.getName());
                 throw new IOException(
                     "Checksum verification failed for: " +
-                        downloadUrl +
-                        " " +
-                        targetFile.getName() +
-                        " expected: " +
-                        expectedHash +
-                        " calculated: " +
-                        calculatedHash
+                    downloadUrl +
+                    " " +
+                    targetFile.getName() +
+                    " expected: " +
+                    expectedHash +
+                    " calculated: " +
+                    calculatedHash
                 );
             }
         } catch (Exception e) {

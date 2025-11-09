@@ -41,7 +41,7 @@ public class DownloadWorkerManager {
                 .getWorkInfosByTag(version)
                 .get()
                 .stream()
-                .anyMatch((workInfo) -> !workInfo.getState().isFinished());
+                .anyMatch(workInfo -> !workInfo.getState().isFinished());
         } catch (Exception e) {
             logger.error("Error checking download status: " + e.getMessage());
             return false;

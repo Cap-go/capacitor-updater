@@ -234,7 +234,7 @@ public class CapgoUpdater {
         activity.runOnUiThread(() -> {
             WorkManager.getInstance(context)
                 .getWorkInfosByTagLiveData(id)
-                .observe((LifecycleOwner) context, (workInfos) -> {
+                .observe((LifecycleOwner) context, workInfos -> {
                     if (workInfos == null || workInfos.isEmpty()) return;
 
                     WorkInfo workInfo = workInfos.get(0);
@@ -1419,11 +1419,11 @@ public class CapgoUpdater {
             } catch (JSONException e) {
                 logger.error(
                     "Failed to parse info for bundle [" +
-                        trueId +
-                        "] stored value: '" +
-                        this.prefs.getString(trueId + INFO_SUFFIX, "") +
-                        "' error: " +
-                        e.getMessage()
+                    trueId +
+                    "] stored value: '" +
+                    this.prefs.getString(trueId + INFO_SUFFIX, "") +
+                    "' error: " +
+                    e.getMessage()
                 );
                 // Clear corrupted data
                 this.editor.remove(trueId + INFO_SUFFIX);

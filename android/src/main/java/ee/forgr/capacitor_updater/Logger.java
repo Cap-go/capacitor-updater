@@ -78,8 +78,8 @@ public class Logger {
     private void init(String tag, @NonNull Options options) {
         this.level = options.level;
         this.labels.putAll(
-            Map.of(LogLevel.silent, "", LogLevel.error, "🔴", LogLevel.warn, "🟠", LogLevel.info, "🟢", LogLevel.debug, "\uD83D\uDD0E")
-        );
+                Map.of(LogLevel.silent, "", LogLevel.error, "🔴", LogLevel.warn, "🟠", LogLevel.info, "🟢", LogLevel.debug, "\uD83D\uDD0E")
+            );
 
         if (options.labels != null) {
             setLabels(options.labels);
