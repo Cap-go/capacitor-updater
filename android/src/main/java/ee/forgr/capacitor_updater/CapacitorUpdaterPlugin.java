@@ -1304,6 +1304,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
             CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.updateUrl, channel, (res) -> {
                 JSObject jsRes = mapToJSObject(res);
                 if (jsRes.has("error")) {
+                    String error = jsRes.getString("error");
+                    String errorMessage = jsRes.has("message") ? jsRes.getString("message") : "server did not provide a message";
+                    logger.error("getLatest failed with error: " + error + ", message: " + errorMessage);
                     call.reject(jsRes.getString("error"));
                     return;
                 } else if (jsRes.has("message")) {
@@ -1409,7 +1412,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.updateUrl, null, (res) -> {
                             JSObject jsRes = mapToJSObject(res);
                             if (jsRes.has("error")) {
-                                logger.error(Objects.requireNonNull(jsRes.getString("error")));
+                                String error = jsRes.getString("error");
+                                String errorMessage = jsRes.has("message")
+                                    ? jsRes.getString("message")
+                                    : "server did not provide a message";
+                                logger.error("getLatest failed with error: " + error + ", message: " + errorMessage);
                             } else if (jsRes.has("version")) {
                                 String newVersion = jsRes.getString("version");
                                 String currentVersion = String.valueOf(CapacitorUpdaterPlugin.this.implementation.getCurrentBundle());
@@ -1613,7 +1620,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     // Handle network errors and other failures first
                     if (jsRes.has("error")) {
                         String error = jsRes.getString("error");
-                        logger.error("getLatest failed with error: " + error);
+                        String errorMessage = jsRes.has("message") ? jsRes.getString("message") : "server did not provide a message";
+                        logger.error("getLatest failed with error: " + error + ", message: " + errorMessage);
                         String latestVersion = jsRes.has("version") ? jsRes.getString("version") : current.getVersionName();
                         if ("response_error".equals(error)) {
                             CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
