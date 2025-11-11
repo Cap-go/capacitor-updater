@@ -232,7 +232,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         // This is very much swift specific, android does not do that
         // In android we depend on the serverBasePath capacitor property
         // In IOS we do not. Instead during the plugin initialization we try to call setServerBasePath
-        // The idea is to prevent having to store the bundle in 2 locations for hot reload and persisten storage
+        // The idea is to prevent having to store the bundle in 2 locations for hot reload and persistent storage
         // According to martin it is not possible to use serverBasePath on ios in a way that allows us to store the bundle once
 
         if !self.initialLoad() {

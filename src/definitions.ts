@@ -466,7 +466,7 @@ export interface CapacitorUpdaterPlugin {
    * For the `background` kind, the value should be a number in milliseconds.
    * For the `nativeVersion` kind, the value should be the version number.
    * For the `kill` kind, the value is not used.
-   * The function has unconsistent behavior the option kill do trigger the update after the first kill and not after the next background like other options. This will be fixed in a future major release.
+   * The function has inconsistent behavior the option kill do trigger the update after the first kill and not after the next background like other options. This will be fixed in a future major release.
    *
    * @example
    * // Delay the update after the user kills the app or after a background of 300000 ms (5 minutes)
