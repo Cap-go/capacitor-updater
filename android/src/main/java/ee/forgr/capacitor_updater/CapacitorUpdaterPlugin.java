@@ -1623,46 +1623,17 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         String errorMessage = jsRes.has("message") ? jsRes.getString("message") : "server did not provide a message";
                         logger.error("getLatest failed with error: " + error + ", message: " + errorMessage);
                         String latestVersion = jsRes.has("version") ? jsRes.getString("version") : current.getVersionName();
-                        if ("response_error".equals(error)) {
-                            CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                                "Network error: " + error,
-                                latestVersion,
-                                current,
-                                true,
-                                plannedDirectUpdate
-                            );
-                        } else {
-                            CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                                error,
-                                latestVersion,
-                                current,
-                                true,
-                                plannedDirectUpdate,
-                                "backend_refusal",
-                                "backendRefused"
-                            );
-                        }
+                        CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                            errorMessage,
+                            latestVersion,
+                            current,
+                            true,
+                            plannedDirectUpdate
+                        );
                         return;
                     }
 
                     try {
-                        if (jsRes.has("message")) {
-                            logger.info("API message: " + jsRes.get("message"));
-                            if (jsRes.has("version") && (jsRes.has("breaking") || jsRes.has("major"))) {
-                                CapacitorUpdaterPlugin.this.notifyBreakingEvents(jsRes.getString("version"));
-                            }
-                            String latestVersion = jsRes.has("version") ? jsRes.getString("version") : current.getVersionName();
-                            CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                                jsRes.getString("message"),
-                                latestVersion,
-                                current,
-                                true,
-                                plannedDirectUpdate,
-                                "backend_refusal",
-                                "backendRefused"
-                            );
-                            return;
-                        }
 
                         final String latestVersionName = jsRes.getString("version");
 

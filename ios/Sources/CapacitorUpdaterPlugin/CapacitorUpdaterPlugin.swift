@@ -1253,38 +1253,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             // Handle network errors and other failures first
             if let backendError = res.error, !backendError.isEmpty {
                 self.logger.error("getLatest failed with error: \(backendError)")
-                if backendError == "response_error" {
-                    self.endBackGroundTaskWithNotif(
-                        msg: "Network error: \(backendError)",
-                        latestVersionName: res.version,
-                        current: current,
-                        error: true
-                    )
-                } else {
-                    self.endBackGroundTaskWithNotif(
-                        msg: backendError,
-                        latestVersionName: res.version,
-                        current: current,
-                        error: true,
-                        failureAction: "backend_refusal",
-                        failureEvent: "backendRefused"
-                    )
-                }
-                return
-            }
-
-            if let message = res.message, !message.isEmpty {
-                self.logger.info("API message: \(message)")
-                if res.breaking == true || res.major == true {
-                    self.notifyBreakingEvents(version: res.version)
-                }
                 self.endBackGroundTaskWithNotif(
-                    msg: message,
+                    msg: res.message ?? backendError,
                     latestVersionName: res.version,
                     current: current,
-                    error: true,
-                    failureAction: "backend_refusal",
-                    failureEvent: "backendRefused"
+                    error: true
                 )
                 return
             }
