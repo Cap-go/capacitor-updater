@@ -41,7 +41,7 @@ Perfect for fixing bugs immediately, A/B testing features, and maintaining contr
 
 - ☁️ Cloud / Self hosted Support: Use our [Cloud](https://capgo.app/) to manage your app updates or yours.
 - 📦 Bundle Management: Download, assign to channel, rollback.
-- 📺 Channel Support: Use channels to manage different environements.
+- 📺 Channel Support: Use channels to manage different environments.
 - 🎯 Set Channel to specific device to do QA or debug one user.
 - 🔄 Auto Update: Automatically download and set the latest bundle for the app.
 - 🛟 Rollback: Reset the app to last working bundle if an incompatible bundle has been set.
@@ -153,7 +153,7 @@ Download update distribution zipfiles from a custom URL. Manually control the en
   import { CapacitorUpdater } from '@capgo/capacitor-updater'
   CapacitorUpdater.notifyAppReady()
 ```
-This informs Capacitor Updater that the current update bundle has loaded succesfully. Failing to call this method will cause your application to be rolled back to the previously successful version (or built-in bundle).
+This informs Capacitor Updater that the current update bundle has loaded successfully. Failing to call this method will cause your application to be rolled back to the previously successful version (or built-in bundle).
 - Add this to your application.
 ```javascript
   const version = await CapacitorUpdater.download({
@@ -651,7 +651,7 @@ For the `date` kind, the value should be an iso8601 date string.
 For the `background` kind, the value should be a number in milliseconds.
 For the `nativeVersion` kind, the value should be the version number.
 For the `kill` kind, the value is not used.
-The function has unconsistent behavior the option kill do trigger the update after the first kill and not after the next background like other options. This will be fixed in a future major release.
+The function has inconsistent behavior the option kill do trigger the update after the first kill and not after the next background like other options. This will be fixed in a future major release.
 
 | Param         | Type                                                                  | Description                                                                                                |
 | ------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
@@ -1214,7 +1214,7 @@ Set the App ID for the app (requires allowModifyAppId to be true in config)
 
 ##### DownloadOptions
 
-This URL and versions are used to download the bundle from the server, If you use backend all information will be gived by the method getLatest.
+This URL and versions are used to download the bundle from the server, If you use backend all information will be given by the method getLatest.
 If you don't use backend, you need to provide the URL and version of the bundle. Checksum and sessionKey are required if you encrypted the bundle with the CLI command encrypt, you should receive them as result of the command.
 
 | Prop             | Type                         | Description                                                                                                                                                      | Default                | Since |

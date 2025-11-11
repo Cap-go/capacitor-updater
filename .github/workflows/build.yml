@@ -32,7 +32,7 @@ jobs:
         run: bun run build
       - name: Generate AI changelog
         id: changelog
-        uses: mistricky/ccc@v0.2.3
+        uses: mistricky/ccc@v0.2.5
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}

@@ -142,7 +142,7 @@ public class CryptoCipherV2 {
 
     public static void decryptFile(final File file, final String publicKey, final String ivSessionKey) throws IOException {
         if (publicKey.isEmpty() || ivSessionKey == null || ivSessionKey.isEmpty() || ivSessionKey.split(":").length != 2) {
-            logger.info("Encryption not set, no public key or seesion, ignored");
+            logger.info("Encryption not set, no public key or session, ignored");
             return;
         }
         if (!publicKey.startsWith("-----BEGIN RSA PUBLIC KEY-----")) {
