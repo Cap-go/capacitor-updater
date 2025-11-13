@@ -226,23 +226,31 @@ public class CapacitorUpdaterPlugin extends Plugin {
             // Handle directUpdate configuration - support string values and backward compatibility
             String directUpdateConfig = this.getConfig().getString("directUpdate", null);
             if (directUpdateConfig != null) {
-                this.directUpdateMode = directUpdateConfig;
-                this.implementation.directUpdate =
-                    directUpdateConfig.equals("always") || directUpdateConfig.equals("atInstall") || directUpdateConfig.equals("onLaunch");
-                // Validate directUpdate value
-                if (
-                    !directUpdateConfig.equals("false") &&
-                    !directUpdateConfig.equals("always") &&
-                    !directUpdateConfig.equals("atInstall") &&
-                    !directUpdateConfig.equals("onLaunch")
-                ) {
-                    logger.error(
-                        "Invalid directUpdate value: \"" +
-                            directUpdateConfig +
-                            "\". Supported values are: false, \"always\", \"atInstall\", \"onLaunch\". Defaulting to false."
-                    );
-                    this.directUpdateMode = "false";
-                    this.implementation.directUpdate = false;
+                // Handle backward compatibility for boolean true
+                if (directUpdateConfig.equals("true")) {
+                    this.directUpdateMode = "always";
+                    this.implementation.directUpdate = true;
+                } else {
+                    this.directUpdateMode = directUpdateConfig;
+                    this.implementation.directUpdate =
+                        directUpdateConfig.equals("always") ||
+                        directUpdateConfig.equals("atInstall") ||
+                        directUpdateConfig.equals("onLaunch");
+                    // Validate directUpdate value
+                    if (
+                        !directUpdateConfig.equals("false") &&
+                        !directUpdateConfig.equals("always") &&
+                        !directUpdateConfig.equals("atInstall") &&
+                        !directUpdateConfig.equals("onLaunch")
+                    ) {
+                        logger.error(
+                            "Invalid directUpdate value: \"" +
+                                directUpdateConfig +
+                                "\". Supported values are: \"false\", \"true\", \"always\", \"atInstall\", \"onLaunch\". Defaulting to \"false\"."
+                        );
+                        this.directUpdateMode = "false";
+                        this.implementation.directUpdate = false;
+                    }
                 }
             } else {
                 Boolean directUpdateBool = this.getConfig().getBoolean("directUpdate", false);
@@ -656,7 +664,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 logger.error(
                     "Invalid directUpdateMode: \"" +
                         this.directUpdateMode +
-                        "\". Supported values are: \"false\", \"always\", \"atInstall\", \"onLaunch\". Defaulting to false behavior."
+                        "\". Supported values are: \"false\", \"always\", \"atInstall\", \"onLaunch\". Defaulting to \"false\" behavior."
                 );
                 return false;
         }
@@ -1639,7 +1647,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     }
 
                     try {
-
                         final String latestVersionName = jsRes.getString("version");
 
                         if ("builtin".equals(latestVersionName)) {
@@ -1814,10 +1821,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
                             logger.info("No need to update, " + current.getId() + " is the latest bundle.");
                             CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif("No need to update", latestVersionName, current, false);
                         }
-                    } catch (final JSONException e) {
-                        logger.error("error parsing JSON " + e.getMessage());
+                    } catch (final Exception e) {
+                        logger.error("error in update check " + e.getMessage());
                         CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                            "Error parsing JSON",
+                            "Error in update check",
                             current.getVersionName(),
                             current,
                             true,

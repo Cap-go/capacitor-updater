@@ -147,13 +147,19 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         // Handle directUpdate configuration - support string values and backward compatibility
         if let directUpdateString = getConfig().getString("directUpdate") {
-            directUpdateMode = directUpdateString
-            directUpdate = directUpdateString == "always" || directUpdateString == "atInstall" || directUpdateString == "onLaunch"
-            // Validate directUpdate value
-            if directUpdateString != "false" && directUpdateString != "always" && directUpdateString != "atInstall" && directUpdateString != "onLaunch" {
-                logger.error("Invalid directUpdate value: \"\(directUpdateString)\". Supported values are: false, \"always\", \"atInstall\", \"onLaunch\". Defaulting to false.")
-                directUpdateMode = "false"
-                directUpdate = false
+            // Handle backward compatibility for boolean true
+            if directUpdateString == "true" {
+                directUpdateMode = "always"
+                directUpdate = true
+            } else {
+                directUpdateMode = directUpdateString
+                directUpdate = directUpdateString == "always" || directUpdateString == "atInstall" || directUpdateString == "onLaunch"
+                // Validate directUpdate value
+                if directUpdateString != "false" && directUpdateString != "always" && directUpdateString != "atInstall" && directUpdateString != "onLaunch" {
+                    logger.error("Invalid directUpdate value: \"\(directUpdateString)\". Supported values are: \"false\", \"true\", \"always\", \"atInstall\", \"onLaunch\". Defaulting to \"false\".")
+                    directUpdateMode = "false"
+                    directUpdate = false
+                }
             }
         } else {
             let directUpdateBool = getConfig().getBoolean("directUpdate", false)
@@ -1208,7 +1214,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             return false
         default:
-            logger.error("Invalid directUpdateMode: \"\(self.directUpdateMode)\". Supported values are: \"false\", \"always\", \"atInstall\", \"onLaunch\". Defaulting to false behavior.")
+            logger.error("Invalid directUpdateMode: \"\(self.directUpdateMode)\". Supported values are: \"false\", \"always\", \"atInstall\", \"onLaunch\". Defaulting to \"false\" behavior.")
             return false
         }
     }
