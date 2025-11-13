@@ -100,7 +100,11 @@ import UIKit
             // Only send once to prevent infinite loop if the stat request itself gets rate limited
             if !CapgoUpdater.rateLimitExceeded && !CapgoUpdater.rateLimitStatisticSent {
                 CapgoUpdater.rateLimitStatisticSent = true
-                self.sendRateLimitStatistic()
+
+                // Dispatch to background queue to avoid blocking the main thread
+                DispatchQueue.global(qos: .utility).async {
+                    self.sendRateLimitStatistic()
+                }
             }
             CapgoUpdater.rateLimitExceeded = true
             logger.warn("Rate limit exceeded (429). Stopping all stats and channel requests until app restart.")
@@ -111,6 +115,8 @@ import UIKit
 
     /**
      * Send a synchronous statistic about rate limiting
+     * Note: This method uses a semaphore to block until the request completes.
+     * It MUST be called from a background queue to avoid blocking the main thread.
      */
     private func sendRateLimitStatistic() {
         guard !statsUrl.isEmpty else {
@@ -123,7 +129,7 @@ import UIKit
         parameters.version_name = current.getVersionName()
         parameters.old_version_name = ""
 
-        // Send synchronously to ensure it goes out before the flag is set
+        // Send synchronously using semaphore (safe because we're on a background queue)
         let semaphore = DispatchSemaphore(value: 0)
         self.alamofireSession.request(
             self.statsUrl,
