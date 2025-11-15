@@ -439,11 +439,11 @@ public class CapgoUpdater {
                 this.flattenAssets(downloaded, idName);
                 downloaded.delete();
             }
-            this.notifyDownload(id, 100);
             // Remove old bundle info and set new one
             this.saveBundleInfo(id, null);
             BundleInfo next = new BundleInfo(id, version, BundleStatus.PENDING, new Date(System.currentTimeMillis()), checksum);
             this.saveBundleInfo(id, next);
+            this.notifyDownload(id, 100);
 
             final Map<String, Object> ret = new HashMap<>();
             ret.put("bundle", next.toJSONMap());
