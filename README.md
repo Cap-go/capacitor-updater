@@ -440,9 +440,32 @@ export default config;
 notifyAppReady() => Promise<AppReadyResult>
 ```
 
-Notify Capacitor Updater that the current bundle is working (a rollback will occur if this method is not called on every app launch)
-By default this method should be called in the first 10 sec after app launch, otherwise a rollback will occur.
-Change this behaviour with {@link appReadyTimeout}
+Notify the native layer that JavaScript initialized successfully.
+
+**CRITICAL: You must call this method on every app launch to prevent automatic rollback.**
+
+This is a simple notification to confirm that your bundle's JavaScript loaded and executed.
+The native web server successfully served the bundle files and your JS runtime started.
+That's all it checks - nothing more complex.
+
+**What triggers rollback:**
+- NOT calling this method within the timeout (default: 10 seconds)
+- Complete JavaScript failure (bundle won't load at all)
+
+**What does NOT trigger rollback:**
+- Runtime errors after initialization (API failures, crashes, etc.)
+- Network request failures
+- Application logic errors
+
+**IMPORTANT: Call this BEFORE any network requests.**
+Don't wait for APIs, data loading, or async operations. Call it as soon as your
+JavaScript bundle starts executing to confirm the bundle itself is valid.
+
+Best practices:
+- Call immediately in your app entry point (main.js, app component mount, etc.)
+- Don't put it after network calls or heavy initialization
+- Don't wrap it in try/catch with conditions
+- Adjust {@link PluginsConfig.CapacitorUpdater.appReadyTimeout} if you need more time
 
 **Returns:** <code>Promise&lt;<a href="#appreadyresult">AppReadyResult</a>&gt;</code>
 
@@ -455,11 +478,17 @@ Change this behaviour with {@link appReadyTimeout}
 setUpdateUrl(options: UpdateUrl) => Promise<void>
 ```
 
-Set the updateUrl for the app, this will be used to check for updates.
+Set the update URL for the app dynamically at runtime.
+
+This overrides the {@link PluginsConfig.CapacitorUpdater.updateUrl} config value.
+Requires {@link PluginsConfig.CapacitorUpdater.allowModifyUrl} to be set to `true`.
+
+Use {@link PluginsConfig.CapacitorUpdater.persistModifyUrl} to persist this value across app restarts.
+Otherwise, the URL will reset to the config value on next app launch.
 
 | Param         | Type                                            | Description                                       |
 | ------------- | ----------------------------------------------- | ------------------------------------------------- |
-| **`options`** | <code><a href="#updateurl">UpdateUrl</a></code> | contains the URL to use for checking for updates. |
+| **`options`** | <code><a href="#updateurl">UpdateUrl</a></code> | Contains the URL to use for checking for updates. |
 
 **Since:** 5.4.0
 
@@ -472,11 +501,17 @@ Set the updateUrl for the app, this will be used to check for updates.
 setStatsUrl(options: StatsUrl) => Promise<void>
 ```
 
-Set the statsUrl for the app, this will be used to send statistics. Passing an empty string will disable statistics gathering.
+Set the statistics URL for the app dynamically at runtime.
 
-| Param         | Type                                          | Description                                     |
-| ------------- | --------------------------------------------- | ----------------------------------------------- |
-| **`options`** | <code><a href="#statsurl">StatsUrl</a></code> | contains the URL to use for sending statistics. |
+This overrides the {@link PluginsConfig.CapacitorUpdater.statsUrl} config value.
+Requires {@link PluginsConfig.CapacitorUpdater.allowModifyUrl} to be set to `true`.
+
+Pass an empty string to disable statistics gathering entirely.
+Use {@link PluginsConfig.CapacitorUpdater.persistModifyUrl} to persist this value across app restarts.
+
+| Param         | Type                                          | Description                                                                    |
+| ------------- | --------------------------------------------- | ------------------------------------------------------------------------------ |
+| **`options`** | <code><a href="#statsurl">StatsUrl</a></code> | Contains the URL to use for sending statistics, or an empty string to disable. |
 
 **Since:** 5.4.0
 
@@ -489,11 +524,17 @@ Set the statsUrl for the app, this will be used to send statistics. Passing an e
 setChannelUrl(options: ChannelUrl) => Promise<void>
 ```
 
-Set the channelUrl for the app, this will be used to set the channel.
+Set the channel URL for the app dynamically at runtime.
 
-| Param         | Type                                              | Description                                      |
-| ------------- | ------------------------------------------------- | ------------------------------------------------ |
-| **`options`** | <code><a href="#channelurl">ChannelUrl</a></code> | contains the URL to use for setting the channel. |
+This overrides the {@link PluginsConfig.CapacitorUpdater.channelUrl} config value.
+Requires {@link PluginsConfig.CapacitorUpdater.allowModifyUrl} to be set to `true`.
+
+Use {@link PluginsConfig.CapacitorUpdater.persistModifyUrl} to persist this value across app restarts.
+Otherwise, the URL will reset to the config value on next app launch.
+
+| Param         | Type                                              | Description                                     |
+| ------------- | ------------------------------------------------- | ----------------------------------------------- |
+| **`options`** | <code><a href="#channelurl">ChannelUrl</a></code> | Contains the URL to use for channel operations. |
 
 **Since:** 5.4.0
 
@@ -506,7 +547,20 @@ Set the channelUrl for the app, this will be used to set the channel.
 download(options: DownloadOptions) => Promise<BundleInfo>
 ```
 
-Download a new bundle from the provided URL, it should be a zip file, with files inside or with a unique id inside with all your files
+Download a new bundle from the provided URL for later installation.
+
+The downloaded bundle is stored locally but not activated. To use it:
+- Call {@link next} to set it for installation on next app backgrounding/restart
+- Call {@link set} to activate it immediately (destroys current JavaScript context)
+
+The URL should point to a zip file containing either:
+- Your app files directly in the zip root, or
+- A single folder containing all your app files
+
+The bundle must include an `index.html` file at the root level.
+
+For encrypted bundles, provide the `sessionKey` and `checksum` parameters.
+For multi-file partial updates, provide the `manifest` array.
 
 | Param         | Type                                                        | Description                                                                                  |
 | ------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
@@ -523,11 +577,22 @@ Download a new bundle from the provided URL, it should be a zip file, with files
 next(options: BundleId) => Promise<BundleInfo>
 ```
 
-Set the next bundle to be used when the app is reloaded.
+Set the next bundle to be activated when the app backgrounds or restarts.
 
-| Param         | Type                                          | Description                                                                                                   |
-| ------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| **`options`** | <code><a href="#bundleid">BundleId</a></code> | Contains the ID of the next Bundle to set on next app launch. {@link <a href="#bundleinfo">BundleInfo.id</a>} |
+This is the recommended way to apply updates as it doesn't interrupt the user's current session.
+The bundle will be activated when:
+- The app is backgrounded (user switches away), or
+- The app is killed and relaunched, or
+- {@link reload} is called manually
+
+Unlike {@link set}, this method does NOT destroy the current JavaScript context immediately.
+Your app continues running normally until one of the above events occurs.
+
+Use {@link setMultiDelay} to add additional conditions before the update is applied.
+
+| Param         | Type                                          | Description                                                                                                                 |
+| ------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| **`options`** | <code><a href="#bundleid">BundleId</a></code> | Contains the ID of the bundle to set as next. Use {@link <a href="#bundleinfo">BundleInfo.id</a>} from a downloaded bundle. |
 
 **Returns:** <code>Promise&lt;<a href="#bundleinfo">BundleInfo</a>&gt;</code>
 
@@ -542,6 +607,22 @@ set(options: BundleId) => Promise<void>
 
 Set the current bundle and immediately reloads the app.
 
+**IMPORTANT: This is a terminal operation that destroys the current JavaScript context.**
+
+When you call this method:
+- The entire JavaScript context is immediately destroyed
+- The app reloads from a different folder with different files
+- NO code after this call will execute
+- NO promises will resolve
+- NO callbacks will fire
+- Event listeners registered after this call are unreliable and may never fire
+
+The reload happens automatically - you don't need to do anything else.
+If you need to preserve state like the current URL path, use the {@link PluginsConfig.CapacitorUpdater.keepUrlPathAfterReload} config option.
+For other state preservation needs, save your data before calling this method (e.g., to localStorage).
+
+**Do not** try to execute additional logic after calling `set()` - it won't work as expected.
+
 | Param         | Type                                          | Description                                                                                       |
 | ------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | **`options`** | <code><a href="#bundleid">BundleId</a></code> | A {@link <a href="#bundleid">BundleId</a>} object containing the new bundle id to set as current. |
@@ -555,11 +636,21 @@ Set the current bundle and immediately reloads the app.
 delete(options: BundleId) => Promise<void>
 ```
 
-Deletes the specified bundle from the native app storage. Use with {@link list} to get the stored Bundle IDs.
+Delete a bundle from local storage to free up disk space.
 
-| Param         | Type                                          | Description                                                                                                                                   |
-| ------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| **`options`** | <code><a href="#bundleid">BundleId</a></code> | A {@link <a href="#bundleid">BundleId</a>} object containing the ID of a bundle to delete (note, this is the bundle id, NOT the version name) |
+You cannot delete:
+- The currently active bundle
+- The `builtin` bundle (the version shipped with your app)
+- The bundle set as `next` (call {@link next} with a different bundle first)
+
+Use {@link list} to get all available bundle IDs.
+
+**Note:** The bundle ID is NOT the same as the version name.
+Use the `id` field from {@link <a href="#bundleinfo">BundleInfo</a>}, not the `version` field.
+
+| Param         | Type                                          | Description                                                                           |
+| ------------- | --------------------------------------------- | ------------------------------------------------------------------------------------- |
+| **`options`** | <code><a href="#bundleid">BundleId</a></code> | A {@link <a href="#bundleid">BundleId</a>} object containing the bundle ID to delete. |
 
 --------------------
 
@@ -570,11 +661,22 @@ Deletes the specified bundle from the native app storage. Use with {@link list} 
 setBundleError(options: BundleId) => Promise<BundleInfo>
 ```
 
-Mark an installed bundle as errored. Only available when {@link PluginsConfig.CapacitorUpdater.allowManualBundleError} is true.
+Manually mark a bundle as failed/errored in manual update mode.
+
+This is useful when you detect that a bundle has critical issues and want to prevent
+it from being used again. The bundle status will be changed to `error` and the plugin
+will avoid using this bundle in the future.
+
+**Requirements:**
+- {@link PluginsConfig.CapacitorUpdater.allowManualBundleError} must be set to `true`
+- Only works in manual update mode (when autoUpdate is disabled)
+
+Common use case: After downloading and testing a bundle, you discover it has critical
+bugs and want to mark it as failed so it won't be retried.
 
 | Param         | Type                                          | Description                                                                                    |
 | ------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| **`options`** | <code><a href="#bundleid">BundleId</a></code> | A {@link <a href="#bundleid">BundleId</a>} object containing the bundle id to mark as errored. |
+| **`options`** | <code><a href="#bundleid">BundleId</a></code> | A {@link <a href="#bundleid">BundleId</a>} object containing the bundle ID to mark as errored. |
 
 **Returns:** <code>Promise&lt;<a href="#bundleinfo">BundleInfo</a>&gt;</code>
 
@@ -589,11 +691,22 @@ Mark an installed bundle as errored. Only available when {@link PluginsConfig.Ca
 list(options?: ListOptions | undefined) => Promise<BundleListResult>
 ```
 
-Get all locally downloaded bundles in your app
+Get all locally downloaded bundles stored in your app.
 
-| Param         | Type                                                | Description                                                            |
-| ------------- | --------------------------------------------------- | ---------------------------------------------------------------------- |
-| **`options`** | <code><a href="#listoptions">ListOptions</a></code> | The {@link <a href="#listoptions">ListOptions</a>} for listing bundles |
+This returns all bundles that have been downloaded and are available locally, including:
+- The currently active bundle
+- The `builtin` bundle (shipped with your app)
+- Any downloaded bundles waiting to be activated
+- Failed bundles (with `error` status)
+
+Use this to:
+- Check available disk space by counting bundles
+- Delete old bundles with {@link delete}
+- Monitor bundle download status
+
+| Param         | Type                                                | Description                                                                                |
+| ------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| **`options`** | <code><a href="#listoptions">ListOptions</a></code> | The {@link <a href="#listoptions">ListOptions</a>} for customizing the bundle list output. |
 
 **Returns:** <code>Promise&lt;<a href="#bundlelistresult">BundleListResult</a>&gt;</code>
 
@@ -606,11 +719,23 @@ Get all locally downloaded bundles in your app
 reset(options?: ResetOptions | undefined) => Promise<void>
 ```
 
-Reset the app to the `builtin` bundle (the one sent to Apple App Store / Google Play Store ) or the last successfully loaded bundle.
+Reset the app to a known good bundle.
 
-| Param         | Type                                                  | Description                                                                                                                                                                      |
-| ------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **`options`** | <code><a href="#resetoptions">ResetOptions</a></code> | Containing {@link <a href="#resetoptions">ResetOptions.toLastSuccessful</a>}, `true` resets to the builtin bundle and `false` will reset to the last successfully loaded bundle. |
+This method helps recover from problematic updates by reverting to either:
+- The `builtin` bundle (the original version shipped with your app to App Store/Play Store)
+- The last successfully loaded bundle (most recent bundle that worked correctly)
+
+**IMPORTANT: This triggers an immediate app reload, destroying the current JavaScript context.**
+See {@link set} for details on the implications of this operation.
+
+Use cases:
+- Emergency recovery when an update causes critical issues
+- Testing rollback functionality
+- Providing users a "reset to factory" option
+
+| Param         | Type                                                  |
+| ------------- | ----------------------------------------------------- |
+| **`options`** | <code><a href="#resetoptions">ResetOptions</a></code> |
 
 --------------------
 
@@ -621,7 +746,20 @@ Reset the app to the `builtin` bundle (the one sent to Apple App Store / Google 
 current() => Promise<CurrentBundleResult>
 ```
 
-Get the current bundle, if none are set it returns `builtin`. currentNative is the original bundle installed on the device
+Get information about the currently active bundle.
+
+Returns:
+- `bundle`: The currently active bundle information
+- `native`: The version of the builtin bundle (the original app version from App/Play Store)
+
+If no updates have been applied, `bundle.id` will be `"builtin"`, indicating the app
+is running the original version shipped with the native app.
+
+Use this to:
+- Display the current version to users
+- Check if an update is currently active
+- Compare against available updates
+- Log the active bundle for debugging
 
 **Returns:** <code>Promise&lt;<a href="#currentbundleresult">CurrentBundleResult</a>&gt;</code>
 
@@ -634,7 +772,20 @@ Get the current bundle, if none are set it returns `builtin`. currentNative is t
 reload() => Promise<void>
 ```
 
-Reload the view
+Manually reload the app to apply a pending update.
+
+This triggers the same reload behavior that happens automatically when the app backgrounds.
+If you've called {@link next} to queue an update, calling `reload()` will apply it immediately.
+
+**IMPORTANT: This destroys the current JavaScript context immediately.**
+See {@link set} for details on the implications of this operation.
+
+Common use cases:
+- Applying an update immediately after download instead of waiting for backgrounding
+- Providing a "Restart now" button to users after an update is ready
+- Testing update flows during development
+
+If no update is pending (no call to {@link next}), this simply reloads the current bundle.
 
 --------------------
 
@@ -645,17 +796,26 @@ Reload the view
 setMultiDelay(options: MultiDelayConditions) => Promise<void>
 ```
 
-Sets a {@link <a href="#delaycondition">DelayCondition</a>} array containing conditions that the Plugin will use to delay the update.
-After all conditions are met, the update process will run start again as usual, so update will be installed after a backgrounding or killing the app.
-For the `date` kind, the value should be an iso8601 date string.
-For the `background` kind, the value should be a number in milliseconds.
-For the `nativeVersion` kind, the value should be the version number.
-For the `kill` kind, the value is not used.
-The function has inconsistent behavior the option kill do trigger the update after the first kill and not after the next background like other options. This will be fixed in a future major release.
+Configure conditions that must be met before a pending update is applied.
 
-| Param         | Type                                                                  | Description                                                                                                |
-| ------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| **`options`** | <code><a href="#multidelayconditions">MultiDelayConditions</a></code> | Containing the {@link <a href="#multidelayconditions">MultiDelayConditions</a>} array of conditions to set |
+After calling {@link next} to queue an update, use this method to control when it gets applied.
+The update will only be installed after ALL specified conditions are satisfied.
+
+Available condition types:
+- `background`: Wait for the app to be backgrounded. Optionally specify duration in milliseconds.
+- `kill`: Wait for the app to be killed and relaunched (**Note:** Current behavior triggers update immediately on kill, not on next background. This will be fixed in v8.)
+- `date`: Wait until a specific date/time (ISO 8601 format)
+- `nativeVersion`: Wait until the native app is updated to a specific version
+
+Condition value formats:
+- `background`: Number in milliseconds (e.g., `"300000"` for 5 minutes), or omit for immediate
+- `kill`: No value needed
+- `date`: ISO 8601 date string (e.g., `"2025-12-31T23:59:59Z"`)
+- `nativeVersion`: Version string (e.g., `"2.0.0"`)
+
+| Param         | Type                                                                  | Description                                                                                        |
+| ------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| **`options`** | <code><a href="#multidelayconditions">MultiDelayConditions</a></code> | Contains the {@link <a href="#multidelayconditions">MultiDelayConditions</a>} array of conditions. |
 
 **Since:** 4.3.0
 
@@ -668,7 +828,15 @@ The function has inconsistent behavior the option kill do trigger the update aft
 cancelDelay() => Promise<void>
 ```
 
-Cancels a {@link <a href="#delaycondition">DelayCondition</a>} to process an update immediately.
+Cancel all delay conditions and apply the pending update immediately.
+
+If you've set delay conditions with {@link setMultiDelay}, this method clears them
+and triggers the pending update to be applied on the next app background or restart.
+
+This is useful when:
+- User manually requests to update now (e.g., clicks "Update now" button)
+- Your app detects it's a good time to update (e.g., user finished critical task)
+- You want to override a time-based delay early
 
 **Since:** 4.0.0
 
@@ -681,11 +849,26 @@ Cancels a {@link <a href="#delaycondition">DelayCondition</a>} to process an upd
 getLatest(options?: GetLatestOptions | undefined) => Promise<LatestVersion>
 ```
 
-Get Latest bundle available from update Url
+Check the update server for the latest available bundle version.
 
-| Param         | Type                                                          |
-| ------------- | ------------------------------------------------------------- |
-| **`options`** | <code><a href="#getlatestoptions">GetLatestOptions</a></code> |
+This queries your configured update URL (or Capgo backend) to see if a newer bundle
+is available for download. It does NOT download the bundle automatically.
+
+The response includes:
+- `version`: The latest available version identifier
+- `url`: Download URL for the bundle (if available)
+- `breaking`: Whether this update is marked as incompatible (requires native app update)
+- `message`: Optional message from the server
+- `manifest`: File list for partial updates (if using multi-file downloads)
+
+After receiving the latest version info, you can:
+1. Compare it with your current version
+2. Download it using {@link download}
+3. Apply it using {@link next} or {@link set}
+
+| Param         | Type                                                          | Description                                                                                          |
+| ------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| **`options`** | <code><a href="#getlatestoptions">GetLatestOptions</a></code> | Optional {@link <a href="#getlatestoptions">GetLatestOptions</a>} to specify which channel to check. |
 
 **Returns:** <code>Promise&lt;<a href="#latestversion">LatestVersion</a>&gt;</code>
 
@@ -700,15 +883,29 @@ Get Latest bundle available from update Url
 setChannel(options: SetChannelOptions) => Promise<ChannelRes>
 ```
 
-Sets the channel for this device. The channel has to allow for self assignment for this to work.
-Do not use this method to set the channel at boot.
-This method is to set the channel after the app is ready, and user interacted.
-If you want to set the channel at boot, use the {@link PluginsConfig} to set the default channel.
-This methods send to Capgo backend a request to link the device ID to the channel. Capgo can accept or refuse depending of the setting of your channel.
+Assign this device to a specific update channel at runtime.
 
-| Param         | Type                                                            | Description                                                                      |
-| ------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| **`options`** | <code><a href="#setchanneloptions">SetChannelOptions</a></code> | Is the {@link <a href="#setchanneloptions">SetChannelOptions</a>} channel to set |
+Channels allow you to distribute different bundle versions to different groups of users
+(e.g., "production", "beta", "staging"). This method switches the device to a new channel.
+
+**Requirements:**
+- The target channel must allow self-assignment (configured in your Capgo dashboard or backend)
+- The backend may accept or reject the request based on channel settings
+
+**When to use:**
+- After the app is ready and the user has interacted (e.g., opted into beta program)
+- To implement in-app channel switching (beta toggle, tester access, etc.)
+- For user-driven channel changes
+
+**When NOT to use:**
+- At app boot/initialization - use {@link PluginsConfig.CapacitorUpdater.defaultChannel} config instead
+- Before user interaction
+
+This sends a request to the Capgo backend linking your device ID to the specified channel.
+
+| Param         | Type                                                            | Description                                                                                                                  |
+| ------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| **`options`** | <code><a href="#setchanneloptions">SetChannelOptions</a></code> | The {@link <a href="#setchanneloptions">SetChannelOptions</a>} containing the channel name and optional auto-update trigger. |
 
 **Returns:** <code>Promise&lt;<a href="#channelres">ChannelRes</a>&gt;</code>
 
@@ -723,7 +920,16 @@ This methods send to Capgo backend a request to link the device ID to the channe
 unsetChannel(options: UnsetChannelOptions) => Promise<void>
 ```
 
-Unset the channel for this device. The device will then return to the default channel
+Remove the device's channel assignment and return to the default channel.
+
+This unlinks the device from any specifically assigned channel, causing it to fall back to:
+- The {@link PluginsConfig.CapacitorUpdater.defaultChannel} if configured, or
+- Your backend's default channel for this app
+
+Use this when:
+- Users opt out of beta/testing programs
+- You want to reset a device to standard update distribution
+- Testing channel switching behavior
 
 | Param         | Type                                                                |
 | ------------- | ------------------------------------------------------------------- |
@@ -740,7 +946,18 @@ Unset the channel for this device. The device will then return to the default ch
 getChannel() => Promise<GetChannelRes>
 ```
 
-Get the channel for this device
+Get the current channel assigned to this device.
+
+Returns information about:
+- `channel`: The currently assigned channel name (if any)
+- `allowSet`: Whether the channel allows self-assignment
+- `status`: Operation status
+- `error`/`message`: Additional information (if applicable)
+
+Use this to:
+- Display current channel to users (e.g., "You're on the Beta channel")
+- Check if a device is on a specific channel before showing features
+- Verify channel assignment after calling {@link setChannel}
 
 **Returns:** <code>Promise&lt;<a href="#getchannelres">GetChannelRes</a>&gt;</code>
 
@@ -755,7 +972,21 @@ Get the channel for this device
 listChannels() => Promise<ListChannelsResult>
 ```
 
-List all channels available for this device that allow self-assignment
+Get a list of all channels available for this device to self-assign to.
+
+Only returns channels where `allow_self_set` is `true`. These are channels that
+users can switch to using {@link setChannel} without backend administrator intervention.
+
+Each channel includes:
+- `id`: Unique channel identifier
+- `name`: Human-readable channel name
+- `public`: Whether the channel is publicly visible
+- `allow_self_set`: Always `true` in results (filtered to only self-assignable channels)
+
+Use this to:
+- Build a channel selector UI for users (e.g., "Join Beta" button)
+- Show available testing/preview channels
+- Implement channel discovery features
 
 **Returns:** <code>Promise&lt;<a href="#listchannelsresult">ListChannelsResult</a>&gt;</code>
 
@@ -770,14 +1001,26 @@ List all channels available for this device that allow self-assignment
 setCustomId(options: SetCustomIdOptions) => Promise<void>
 ```
 
-Set a custom ID for this device
+Set a custom identifier for this device.
 
-When {@link PluginsConfig.CapacitorUpdater.persistCustomId} is true, the value will be stored natively and restored on the next app launch.
-Pass an empty string to remove any previously stored customId.
+This allows you to identify devices by your own custom ID (user ID, account ID, etc.)
+instead of or in addition to the device's unique hardware ID. The custom ID is sent
+to your update server and can be used for:
+- Targeting specific users for updates
+- Analytics and user tracking
+- Debugging and support (correlating devices with users)
+- A/B testing or feature flagging
 
-| Param         | Type                                                              | Description                                                                         |
-| ------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| **`options`** | <code><a href="#setcustomidoptions">SetCustomIdOptions</a></code> | is the {@link <a href="#setcustomidoptions">SetCustomIdOptions</a>} customId to set |
+**Persistence:**
+- When {@link PluginsConfig.CapacitorUpdater.persistCustomId} is `true`, the ID persists across app restarts
+- When `false`, the ID is only kept for the current session
+
+**Clearing the custom ID:**
+- Pass an empty string `""` to remove any stored custom ID
+
+| Param         | Type                                                              | Description                                                                                               |
+| ------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| **`options`** | <code><a href="#setcustomidoptions">SetCustomIdOptions</a></code> | The {@link <a href="#setcustomidoptions">SetCustomIdOptions</a>} containing the custom identifier string. |
 
 **Since:** 4.9.0
 
@@ -790,7 +1033,21 @@ Pass an empty string to remove any previously stored customId.
 getBuiltinVersion() => Promise<BuiltinVersion>
 ```
 
-Get the native app version or the builtin version if set in config
+Get the builtin bundle version (the original version shipped with your native app).
+
+This returns the version of the bundle that was included when the app was installed
+from the App Store or Play Store. This is NOT the currently active bundle version -
+use {@link current} for that.
+
+Returns:
+- The {@link PluginsConfig.CapacitorUpdater.version} config value if set, or
+- The native app version from platform configs (package.json, Info.plist, build.gradle)
+
+Use this to:
+- Display the "factory" version to users
+- Compare against downloaded bundle versions
+- Determine if any updates have been applied
+- Debugging version mismatches
 
 **Returns:** <code>Promise&lt;<a href="#builtinversion">BuiltinVersion</a>&gt;</code>
 
@@ -805,16 +1062,28 @@ Get the native app version or the builtin version if set in config
 getDeviceId() => Promise<DeviceId>
 ```
 
-Get unique ID used to identify device (sent to auto update server).
+Get the unique, privacy-friendly identifier for this device.
 
-This ID is privacy-friendly and follows Apple and Google best practices:
-- Generated as a UUID and stored securely
-- Android: Uses Android Keystore (persists across reinstalls on API 23+)
-- iOS: Uses Keychain with kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly (persists across reinstalls)
-- Data stays on device (not synced to cloud on iOS)
-- Can be cleared by user via system settings (Android) or keychain access (iOS)
+This ID is used to identify the device when communicating with update servers.
+It's automatically generated and stored securely by the plugin.
 
-The device ID now persists between app reinstalls to maintain consistent device identity.
+**Privacy & Security characteristics:**
+- Generated as a UUID (not based on hardware identifiers)
+- Stored securely in platform-specific secure storage
+- Android: Android Keystore (persists across app reinstalls on API 23+)
+- iOS: Keychain with `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`
+- Not synced to cloud (iOS)
+- Follows Apple and Google privacy best practices
+- Users can clear it via system settings (Android) or keychain access (iOS)
+
+**Persistence:**
+The device ID persists across app reinstalls to maintain consistent device identity
+for update tracking and analytics.
+
+Use this to:
+- Debug update delivery issues (check what ID the server sees)
+- Implement device-specific features
+- Correlate server logs with specific devices
 
 **Returns:** <code>Promise&lt;<a href="#deviceid">DeviceId</a>&gt;</code>
 
@@ -827,7 +1096,16 @@ The device ID now persists between app reinstalls to maintain consistent device 
 getPluginVersion() => Promise<PluginVersion>
 ```
 
-Get the native Capacitor Updater plugin version (sent to auto update server)
+Get the version of the Capacitor Updater plugin installed in your app.
+
+This returns the version of the native plugin code (Android/iOS), which is sent
+to the update server with each request. This is NOT your app version or bundle version.
+
+Use this to:
+- Debug plugin-specific issues (when reporting bugs)
+- Verify plugin installation and version
+- Check compatibility with backend features
+- Display in debug/about screens
 
 **Returns:** <code>Promise&lt;<a href="#pluginversion">PluginVersion</a>&gt;</code>
 
@@ -840,7 +1118,18 @@ Get the native Capacitor Updater plugin version (sent to auto update server)
 isAutoUpdateEnabled() => Promise<AutoUpdateEnabled>
 ```
 
-Get the state of auto update config.
+Check if automatic updates are currently enabled.
+
+Returns `true` if {@link PluginsConfig.CapacitorUpdater.autoUpdate} is enabled,
+meaning the plugin will automatically check for, download, and apply updates.
+
+Returns `false` if in manual mode, where you control the update flow using
+{@link getLatest}, {@link download}, {@link next}, and {@link set}.
+
+Use this to:
+- Determine which update flow your app is using
+- Show/hide manual update UI based on mode
+- Debug update behavior
 
 **Returns:** <code>Promise&lt;<a href="#autoupdateenabled">AutoUpdateEnabled</a>&gt;</code>
 
@@ -853,7 +1142,21 @@ Get the state of auto update config.
 removeAllListeners() => Promise<void>
 ```
 
-Remove all listeners for this plugin.
+Remove all event listeners registered for this plugin.
+
+This unregisters all listeners added via {@link addListener} for all event types:
+- `download`
+- `noNeedUpdate`
+- `updateAvailable`
+- `downloadComplete`
+- `downloadFailed`
+- `breakingAvailable` / `majorAvailable`
+- `updateFailed`
+- `appReloaded`
+- `appReady`
+
+Use this during cleanup (e.g., when unmounting components or closing screens)
+to prevent memory leaks from lingering event listeners.
 
 **Since:** 1.0.0
 
@@ -1068,7 +1371,16 @@ Listen for app ready event in the App, let you know when app is ready to use, th
 isAutoUpdateAvailable() => Promise<AutoUpdateAvailable>
 ```
 
-Get if auto update is available (not disabled by serverUrl).
+Check if the auto-update feature is available (not disabled by custom server configuration).
+
+Returns `false` when a custom `updateUrl` is configured, as this typically indicates
+you're using a self-hosted update server that may not support all auto-update features.
+
+Returns `true` when using the default Capgo backend or when the feature is available.
+
+This is different from {@link isAutoUpdateEnabled}:
+- `isAutoUpdateEnabled()`: Checks if auto-update MODE is turned on/off
+- `isAutoUpdateAvailable()`: Checks if auto-update is SUPPORTED with your current configuration
 
 **Returns:** <code>Promise&lt;<a href="#autoupdateavailable">AutoUpdateAvailable</a>&gt;</code>
 
@@ -1081,8 +1393,23 @@ Get if auto update is available (not disabled by serverUrl).
 getNextBundle() => Promise<BundleInfo | null>
 ```
 
-Get the next bundle that will be used when the app reloads.
-Returns null if no next bundle is set.
+Get information about the bundle queued to be activated on next reload.
+
+Returns:
+- {@link <a href="#bundleinfo">BundleInfo</a>} object if a bundle has been queued via {@link next}
+- `null` if no update is pending
+
+This is useful to:
+- Check if an update is waiting to be applied
+- Display "Update pending" status to users
+- Show version info of the queued update
+- Decide whether to show a "Restart to update" prompt
+
+The queued bundle will be activated when:
+- The app is backgrounded (default behavior)
+- The app is killed and restarted
+- {@link reload} is called manually
+- Delay conditions set by {@link setMultiDelay} are met
 
 **Returns:** <code>Promise&lt;<a href="#bundleinfo">BundleInfo</a> | null&gt;</code>
 
@@ -1097,7 +1424,25 @@ Returns null if no next bundle is set.
 getFailedUpdate() => Promise<UpdateFailedEvent | null>
 ```
 
-Get the most recent update that failed to install, if any. The stored value is cleared after it is retrieved once.
+Retrieve information about the most recent bundle that failed to load.
+
+When a bundle fails to load (e.g., JavaScript errors prevent initialization, missing files),
+the plugin automatically rolls back and stores information about the failure. This method
+retrieves that failure information.
+
+**IMPORTANT: The stored value is cleared after being retrieved once.**
+Calling this method multiple times will only return the failure info on the first call,
+then `null` on subsequent calls until another failure occurs.
+
+Returns:
+- {@link <a href="#updatefailedevent">UpdateFailedEvent</a>} with bundle info if a failure was recorded
+- `null` if no failure has occurred or if it was already retrieved
+
+Use this to:
+- Show users why an update failed
+- Log failure information for debugging
+- Implement custom error handling/reporting
+- Display rollback notifications
 
 **Returns:** <code>Promise&lt;<a href="#updatefailedevent">UpdateFailedEvent</a> | null&gt;</code>
 
@@ -1112,11 +1457,27 @@ Get the most recent update that failed to install, if any. The stored value is c
 setShakeMenu(options: SetShakeMenuOptions) => Promise<void>
 ```
 
-Enable or disable the shake menu for debugging/testing purposes
+Enable or disable the shake gesture menu for debugging and testing.
 
-| Param         | Type                                                                | Description                                              |
-| ------------- | ------------------------------------------------------------------- | -------------------------------------------------------- |
-| **`options`** | <code><a href="#setshakemenuoptions">SetShakeMenuOptions</a></code> | Contains enabled boolean to enable or disable shake menu |
+When enabled, users can shake their device to open a debug menu that shows:
+- Current bundle information
+- Available bundles
+- Options to switch bundles manually
+- Update status
+
+This is useful during development and testing to:
+- Quickly test different bundle versions
+- Debug update flows
+- Switch between production and test bundles
+- Verify bundle installations
+
+**Important:** Disable this in production builds or only enable for internal testers.
+
+Can also be configured via {@link PluginsConfig.CapacitorUpdater.shakeMenu}.
+
+| Param         | Type                                                                |
+| ------------- | ------------------------------------------------------------------- |
+| **`options`** | <code><a href="#setshakemenuoptions">SetShakeMenuOptions</a></code> |
 
 **Since:** 7.5.0
 
@@ -1129,7 +1490,15 @@ Enable or disable the shake menu for debugging/testing purposes
 isShakeMenuEnabled() => Promise<ShakeMenuEnabled>
 ```
 
-Get the current state of the shake menu
+Check if the shake gesture debug menu is currently enabled.
+
+Returns the current state of the shake menu feature that can be toggled via
+{@link setShakeMenu} or configured via {@link PluginsConfig.CapacitorUpdater.shakeMenu}.
+
+Use this to:
+- Check if debug features are enabled
+- Show/hide debug settings UI
+- Verify configuration during testing
 
 **Returns:** <code>Promise&lt;<a href="#shakemenuenabled">ShakeMenuEnabled</a>&gt;</code>
 
@@ -1144,7 +1513,18 @@ Get the current state of the shake menu
 getAppId() => Promise<GetAppIdRes>
 ```
 
-Get the configured App ID
+Get the currently configured App ID used for update server communication.
+
+Returns the App ID that identifies this app to the update server. This can be:
+- The value set via {@link setAppId}, or
+- The {@link PluginsConfig.CapacitorUpdater.appId} config value, or
+- The default app identifier from your native app configuration
+
+Use this to:
+- Verify which App ID is being used for updates
+- Debug update delivery issues
+- Display app configuration in debug screens
+- Confirm App ID after calling {@link setAppId}
 
 **Returns:** <code>Promise&lt;<a href="#getappidres">GetAppIdRes</a>&gt;</code>
 
@@ -1159,11 +1539,24 @@ Get the configured App ID
 setAppId(options: SetAppIdOptions) => Promise<void>
 ```
 
-Set the App ID for the app (requires allowModifyAppId to be true in config)
+Dynamically change the App ID used for update server communication.
 
-| Param         | Type                                                        | Description           |
-| ------------- | ----------------------------------------------------------- | --------------------- |
-| **`options`** | <code><a href="#setappidoptions">SetAppIdOptions</a></code> | The new App ID to set |
+This overrides the App ID used to identify your app to the update server, allowing you
+to switch between different app configurations at runtime (e.g., production vs staging
+app IDs, or multi-tenant configurations).
+
+**Requirements:**
+- {@link PluginsConfig.CapacitorUpdater.allowModifyAppId} must be set to `true`
+
+**Important considerations:**
+- Changing the App ID will affect which updates this device receives
+- The new App ID must exist on your update server
+- This is primarily for advanced use cases (multi-tenancy, environment switching)
+- Most apps should use the config-based {@link PluginsConfig.CapacitorUpdater.appId} instead
+
+| Param         | Type                                                        |
+| ------------- | ----------------------------------------------------------- |
+| **`options`** | <code><a href="#setappidoptions">SetAppIdOptions</a></code> |
 
 **Since:** 7.14.0
 
