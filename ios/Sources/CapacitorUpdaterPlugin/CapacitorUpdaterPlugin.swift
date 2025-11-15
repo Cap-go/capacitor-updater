@@ -525,7 +525,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 self.logger.error("Failed to download from: \(String(describing: url)) \(error.localizedDescription)")
                 self.notifyListeners("downloadFailed", data: ["version": version])
                 self.implementation.sendStats(action: "download_fail")
-                call.reject("Failed to download from: \(url!)", error.localizedDescription)
+                call.reject("Failed to download from: \(url!) - \(error.localizedDescription)")
             }
         }
     }
