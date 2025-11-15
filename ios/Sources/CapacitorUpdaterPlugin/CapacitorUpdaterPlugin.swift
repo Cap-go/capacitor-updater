@@ -377,14 +377,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         UserDefaults.standard.synchronize()
     }
 
-    @objc func notifyDownload(id: String, percent: Int, ignoreMultipleOfTen: Bool = false) {
-        let bundle = self.implementation.getBundleInfo(id: id)
-        self.notifyListeners("download", data: ["percent": percent, "bundle": bundle.toJSON()])
+    @objc func notifyDownload(id: String, percent: Int, ignoreMultipleOfTen: Bool = false, bundle: BundleInfo? = nil) {
+        let bundleInfo = bundle ?? self.implementation.getBundleInfo(id: id)
+        self.notifyListeners("download", data: ["percent": percent, "bundle": bundleInfo.toJSON()])
         if percent == 100 {
-            self.notifyListeners("downloadComplete", data: ["bundle": bundle.toJSON()])
-            self.implementation.sendStats(action: "download_complete", versionName: bundle.getVersionName())
+            self.notifyListeners("downloadComplete", data: ["bundle": bundleInfo.toJSON()])
+            self.implementation.sendStats(action: "download_complete", versionName: bundleInfo.getVersionName())
         } else if percent.isMultiple(of: 10) || ignoreMultipleOfTen {
-            self.implementation.sendStats(action: "download_\(percent)", versionName: bundle.getVersionName())
+            self.implementation.sendStats(action: "download_\(percent)", versionName: bundleInfo.getVersionName())
         }
     }
 

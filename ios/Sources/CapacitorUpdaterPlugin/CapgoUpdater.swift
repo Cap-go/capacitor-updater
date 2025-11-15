@@ -62,9 +62,9 @@ import UIKit
         return Session(configuration: configuration)
     }()
 
-    public var notifyDownloadRaw: (String, Int, Bool) -> Void = { _, _, _  in }
-    public func notifyDownload(id: String, percent: Int, ignoreMultipleOfTen: Bool = false) {
-        notifyDownloadRaw(id, percent, ignoreMultipleOfTen)
+    public var notifyDownloadRaw: (String, Int, Bool, BundleInfo?) -> Void = { _, _, _, _  in }
+    public func notifyDownload(id: String, percent: Int, ignoreMultipleOfTen: Bool = false, bundle: BundleInfo? = nil) {
+        notifyDownloadRaw(id, percent, ignoreMultipleOfTen, bundle)
     }
     public var notifyDownload: (String, Int) -> Void = { _, _  in }
 
@@ -576,6 +576,7 @@ import UIKit
         // Send stats for manifest download complete
         self.sendStats(action: "download_manifest_complete", versionName: version)
 
+        self.notifyDownload(id: id, percent: 100, bundle: updatedBundle)
         logger.info("downloadManifest done \(id)")
         return updatedBundle
     }
@@ -828,7 +829,7 @@ import UIKit
         // Send stats for zip download complete
         self.sendStats(action: "download_zip_complete", versionName: version)
 
-        self.notifyDownload(id: id, percent: 100)
+        self.notifyDownload(id: id, percent: 100, bundle: info)
         logger.info("Downloading: 100% (complete)")
         return info
     }
