@@ -38,7 +38,7 @@
       "enabled": false
     },
     {
-      "matchPackageNames": ["capacitor-swift-pm"],
+      "matchPackageNames": ["ionic-team/capacitor-swift-pm"],
       "matchManagers": ["swift-pm"],
       "enabled": false
     },
