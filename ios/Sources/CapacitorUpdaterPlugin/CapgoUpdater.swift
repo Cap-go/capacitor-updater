@@ -1278,20 +1278,28 @@ import UIKit
 
         let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
 
-        // Auto-detect values
-        let appId = self.appId
-        let platform = "ios"
-        let isEmulator = self.isEmulator()
-        let isProd = self.isProd()
+        // Create info object and convert to query parameters
+        let infoObject = self.createInfoObject()
 
-        // Create query parameters
+        // Create query parameters from InfoObject
         var urlComponents = URLComponents(string: self.channelUrl)
-        urlComponents?.queryItems = [
-            URLQueryItem(name: "app_id", value: appId),
-            URLQueryItem(name: "platform", value: platform),
-            URLQueryItem(name: "is_emulator", value: String(isEmulator)),
-            URLQueryItem(name: "is_prod", value: String(isProd))
-        ]
+        var queryItems: [URLQueryItem] = []
+
+        // Convert InfoObject to dictionary using Mirror
+        let mirror = Mirror(reflecting: infoObject)
+        for child in mirror.children {
+            if let key = child.label, let value = child.value as? CustomStringConvertible {
+                queryItems.append(URLQueryItem(name: key, value: String(describing: value)))
+            } else if let key = child.label {
+                // Handle optional values
+                let mirror = Mirror(reflecting: child.value)
+                if let value = mirror.children.first?.value {
+                    queryItems.append(URLQueryItem(name: key, value: String(describing: value)))
+                }
+            }
+        }
+
+        urlComponents?.queryItems = queryItems
 
         guard let url = urlComponents?.url else {
             logger.error("Invalid channel URL")

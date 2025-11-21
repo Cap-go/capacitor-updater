@@ -1235,18 +1235,32 @@ public class CapgoUpdater {
             return;
         }
 
-        // Auto-detect values
-        String appId = this.appId;
-        String platform = "android";
-        boolean isEmulator = this.isEmulator();
-        boolean isProd = this.isProd();
+        JSONObject json;
+        try {
+            json = this.createInfoObject();
+        } catch (JSONException e) {
+            logger.error("Error creating info object: " + e.getMessage());
+            final Map<String, Object> retError = new HashMap<>();
+            retError.put("message", "Cannot get info: " + e);
+            retError.put("error", "json_error");
+            callback.callback(retError);
+            return;
+        }
 
-        // Build URL with query parameters
+        // Build URL with query parameters from JSON
         HttpUrl.Builder urlBuilder = HttpUrl.parse(channelUrl).newBuilder();
-        urlBuilder.addQueryParameter("app_id", appId);
-        urlBuilder.addQueryParameter("platform", platform);
-        urlBuilder.addQueryParameter("is_emulator", String.valueOf(isEmulator));
-        urlBuilder.addQueryParameter("is_prod", String.valueOf(isProd));
+        try {
+            Iterator<String> keys = json.keys();
+            while (keys.hasNext()) {
+                String key = keys.next();
+                Object value = json.get(key);
+                if (value != null) {
+                    urlBuilder.addQueryParameter(key, value.toString());
+                }
+            }
+        } catch (JSONException e) {
+            logger.error("Error adding query parameters: " + e.getMessage());
+        }
 
         Request request = new Request.Builder().url(urlBuilder.build()).get().build();
 
