@@ -1234,10 +1234,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         current: BundleInfo,
         error: Bool = true,
         failureAction: String = "download_fail",
-        failureEvent: String = "downloadFailed"
+        failureEvent: String = "downloadFailed",
+        sendStats: Bool = true
     ) {
         if error {
-            self.implementation.sendStats(action: failureAction, versionName: current.getVersionName())
+            if sendStats {
+                self.implementation.sendStats(action: failureAction, versionName: current.getVersionName())
+            }
             self.notifyListeners(failureEvent, data: ["version": latestVersionName])
         }
         self.notifyListeners("noNeedUpdate", data: ["bundle": current.toJSON()])
@@ -1265,11 +1268,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             // Handle network errors and other failures first
             if let backendError = res.error, !backendError.isEmpty {
                 self.logger.error("getLatest failed with error: \(backendError)")
+                let statusCode = res.statusCode
+                let responseIsOk = statusCode >= 200 && statusCode < 300
                 self.endBackGroundTaskWithNotif(
                     msg: res.message ?? backendError,
                     latestVersionName: res.version,
                     current: current,
-                    error: true
+                    error: true,
+                    sendStats: !responseIsOk
                 )
                 return
             }

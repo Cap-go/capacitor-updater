@@ -343,6 +343,7 @@ import UIKit
         request.validate().responseDecodable(of: AppVersionDec.self) { response in
             switch response.result {
             case .success:
+                latest.statusCode = response.response?.statusCode ?? 0
                 if let url = response.value?.url {
                     latest.url = url
                 }
@@ -377,6 +378,7 @@ import UIKit
                 self.logger.error("Error getting Latest \(response.value.debugDescription) \(error)")
                 latest.message = "Error getting Latest \(String(describing: response.value))"
                 latest.error = "response_error"
+                latest.statusCode = response.response?.statusCode ?? 0
             }
             semaphore.signal()
         }

@@ -871,11 +871,13 @@ public class CapgoUpdater {
                     @Override
                     public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
                         try (ResponseBody responseBody = response.body()) {
+                            final int statusCode = response.code();
                             // Check for 429 rate limit
                             if (checkAndHandleRateLimitResponse(response)) {
                                 Map<String, Object> retError = new HashMap<>();
                                 retError.put("message", "Rate limit exceeded");
                                 retError.put("error", "rate_limit_exceeded");
+                                retError.put("statusCode", statusCode);
                                 callback.callback(retError);
                                 return;
                             }
@@ -884,6 +886,7 @@ public class CapgoUpdater {
                                 Map<String, Object> retError = new HashMap<>();
                                 retError.put("message", "Server error: " + response.code());
                                 retError.put("error", "response_error");
+                                retError.put("statusCode", statusCode);
                                 callback.callback(retError);
                                 return;
                             }
@@ -901,11 +904,13 @@ public class CapgoUpdater {
                                 } else {
                                     retError.put("message", "server did not provide a message");
                                 }
+                                retError.put("statusCode", statusCode);
                                 callback.callback(retError);
                                 return;
                             }
 
                             Map<String, Object> ret = new HashMap<>();
+                            ret.put("statusCode", statusCode);
 
                             Iterator<String> keys = jsonResponse.keys();
                             while (keys.hasNext()) {
