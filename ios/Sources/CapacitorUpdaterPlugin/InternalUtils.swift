@@ -160,6 +160,7 @@ struct AppVersionDec: Decodable {
     let breaking: Bool?
     let data: [String: String]?
     let manifest: [ManifestEntry]?
+    // The HTTP status code is captured separately in CapgoUpdater; this struct only mirrors JSON.
 }
 
 public class AppVersion: NSObject {
@@ -173,6 +174,7 @@ public class AppVersion: NSObject {
     var breaking: Bool?
     var data: [String: String]?
     var manifest: [ManifestEntry]?
+    var statusCode: Int = 0
 }
 
 extension AppVersion {

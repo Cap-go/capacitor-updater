@@ -1567,7 +1567,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void endBackGroundTaskWithNotif(String msg, String latestVersionName, BundleInfo current, Boolean error) {
-        endBackGroundTaskWithNotif(msg, latestVersionName, current, error, false, "download_fail", "downloadFailed");
+        endBackGroundTaskWithNotif(msg, latestVersionName, current, error, false, "download_fail", "downloadFailed", true);
     }
 
     private void endBackGroundTaskWithNotif(
@@ -1577,7 +1577,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         Boolean error,
         Boolean isDirectUpdate
     ) {
-        endBackGroundTaskWithNotif(msg, latestVersionName, current, error, isDirectUpdate, "download_fail", "downloadFailed");
+        endBackGroundTaskWithNotif(msg, latestVersionName, current, error, isDirectUpdate, "download_fail", "downloadFailed", true);
     }
 
     private void endBackGroundTaskWithNotif(
@@ -1589,6 +1589,19 @@ public class CapacitorUpdaterPlugin extends Plugin {
         String failureAction,
         String failureEvent
     ) {
+        endBackGroundTaskWithNotif(msg, latestVersionName, current, error, isDirectUpdate, failureAction, failureEvent, true);
+    }
+
+    private void endBackGroundTaskWithNotif(
+        String msg,
+        String latestVersionName,
+        BundleInfo current,
+        Boolean error,
+        Boolean isDirectUpdate,
+        String failureAction,
+        String failureEvent,
+        boolean shouldSendStats
+    ) {
         if (error) {
             logger.info(
                 "endBackGroundTaskWithNotif error: " +
@@ -1598,7 +1611,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     "latestVersionName: " +
                     latestVersionName
             );
-            this.implementation.sendStats(failureAction, current.getVersionName());
+            if (shouldSendStats) {
+                this.implementation.sendStats(failureAction, current.getVersionName());
+            }
             final JSObject ret = new JSObject();
             ret.put("version", latestVersionName);
             this.notifyListeners(failureEvent, ret);
@@ -1629,14 +1644,23 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     if (jsRes.has("error")) {
                         String error = jsRes.getString("error");
                         String errorMessage = jsRes.has("message") ? jsRes.getString("message") : "server did not provide a message";
-                        logger.error("getLatest failed with error: " + error + ", message: " + errorMessage);
+                        int statusCode = jsRes.has("statusCode") ? jsRes.optInt("statusCode", 0) : 0;
+                        boolean responseIsOk = statusCode >= 200 && statusCode < 300;
+
+                        logger.error(
+                            "getLatest failed with error: " + error + ", message: " + errorMessage + ", statusCode: " + statusCode
+                        );
                         String latestVersion = jsRes.has("version") ? jsRes.getString("version") : current.getVersionName();
+
                         CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
                             errorMessage,
                             latestVersion,
                             current,
                             true,
-                            plannedDirectUpdate
+                            plannedDirectUpdate,
+                            "download_fail",
+                            "downloadFailed",
+                            !responseIsOk
                         );
                         return;
                     }
