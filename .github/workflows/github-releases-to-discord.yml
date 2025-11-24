@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
       - name: GitHub Releases to Discord
         uses: SethCohen/github-releases-to-discord@v1
         with:
