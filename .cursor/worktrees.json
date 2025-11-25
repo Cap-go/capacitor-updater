@@ -1,0 +1,5 @@
+{
+  "setup-worktree": [
+    "npm install && cd example-app && npm install"
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "appId": "app.capgo.updater",
+  "appName": "Updater Example",
+  "webDir": "dist",
+  "plugins": {
+    "SplashScreen": {
+      "launchAutoHide": false
+    }
+  }
+}

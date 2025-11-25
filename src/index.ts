@@ -4,16 +4,14 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { registerPlugin } from "@capacitor/core";
+import { registerPlugin } from '@capacitor/core';
+import './history';
 
-import type { CapacitorUpdaterPlugin } from "./definitions";
+import type { CapacitorUpdaterPlugin } from './definitions';
 
-const CapacitorUpdater = registerPlugin<CapacitorUpdaterPlugin>(
-  "CapacitorUpdater",
-  {
-    web: () => import("./web").then((m) => new m.CapacitorUpdaterWeb()),
-  }
-);
+const CapacitorUpdater = registerPlugin<CapacitorUpdaterPlugin>('CapacitorUpdater', {
+  web: () => import('./web').then((m) => new m.CapacitorUpdaterWeb()),
+});
 
-export * from "./definitions";
+export * from './definitions';
 export { CapacitorUpdater };

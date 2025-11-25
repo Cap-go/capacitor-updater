@@ -1,4 +1,8 @@
-name: Build source code and check lint
+name: Build and publish
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 on:
   push:
@@ -6,98 +10,62 @@ on:
       - "*"
 
 jobs:
-  build_android:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out
-        uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v3
-        with:
-          version: 8
-      - name: Use Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'pnpm'
-      - name: Install dependencies
-        id: install_code
-        run: pnpm install --frozen-lockfile
-      - name: Setup java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'zulu'
-          java-version: '17'
-          cache: 'gradle'
-          cache-dependency-path: | # optional
-            android/.gradle/*.gradle*
-            android/**/gradle-wrapper.properties
-      - name: Build
-        id: build_code
-        run: npm run verify:android
-  build_ios:
-    runs-on: macOS-latest
-    steps:
-      - name: Check out
-        uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v3
-        with:
-          version: 8
-      - name: Use Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'pnpm'
-      - uses: actions/cache@v4
-        id: cocoapods-cache
-        with:
-          path: ios/Pods
-          key: ${{ runner.os }}-pods-${{ hashFiles('ios/Podfile.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-pods-
-      - name: Install dependencies
-        id: install_code
-        run: pnpm install --frozen-lockfile
-      - name: Build
-        id: build_code
-        run: pnpm verify:ios
+  # Tests already passed before tag was created, so just build and deploy
   deploy:
-    needs: [build_android, build_ios]
     runs-on: ubuntu-latest
     name: "Build code and npm release"
     permissions:
-      contents: read
+      contents: write
       id-token: write
     steps:
       - name: Check out
-        uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v3
+        uses: actions/checkout@v6
         with:
-          version: 8
-      - name: Use Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'pnpm'
+          fetch-depth: 0
+          fetch-tags: true
+      - uses: oven-sh/setup-bun@v2
       - name: Install dependencies
         id: install_code
-        run: pnpm install --frozen-lockfile
-      - name: Lint
-        id: lint_code
-        run: pnpm lint
+        run: bun i
       - name: Build
         id: build_code
-        run: pnpm build
-      - name: Verify
-        id: verify_code
-        run: pnpm verify:web
-      - uses: JS-DevTools/npm-publish@v3
-        if: ${{ !contains(github.ref, '-alpha.') }}
+        run: bun run build
+      - name: Generate AI changelog
+        id: changelog
+        uses: mistricky/ccc@v0.2.5
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          model: claude-sonnet-4-5-20250929 
+      - uses: js-devtools/npm-publish@v4
+        if: ${{ startsWith(github.ref, 'refs/tags/6.') }}
+        with:
+          token: ${{ secrets.NPM_TOKEN }}
+          tag: lts-v6
+          provenance: true
+      - uses: js-devtools/npm-publish@v4
+        if: ${{ !contains(github.ref, '-alpha.') && !startsWith(github.ref, 'refs/tags/6.') }}
         with:
           token: ${{ secrets.NPM_TOKEN }}
           provenance: true
-      - uses: JS-DevTools/npm-publish@v3
-        if: ${{ contains(github.ref, '-alpha.') }}
+      - uses: js-devtools/npm-publish@v4
+        if: ${{ contains(github.ref, '-alpha.') && !startsWith(github.ref, 'refs/tags/6.')  }}
         with:
           token: ${{ secrets.NPM_TOKEN }}
           tag: next
           provenance: true
+      - name: Create GitHub release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: |
+            ## 🆕 Changelog
+            
+            ${{ steps.changelog.outputs.result }}
+            
+            ---
+
+            🔗 **Full Changelog**: https://github.com/${{ github.repository }}/compare/${{ steps.changelog.outputs.from_tag }}...${{ steps.changelog.outputs.to_tag }}
+          make_latest: true
+          token: '${{ secrets.PERSONAL_ACCESS_TOKEN }}'
+          prerelease: ${{ contains(github.ref, '-alpha.') }}
