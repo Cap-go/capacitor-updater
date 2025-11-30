@@ -201,6 +201,7 @@ public class CryptoCipher {
                 // Hex encoded (new format from CLI for plugin versions >= 5.30.0, 6.30.0, 7.30.0)
                 checksumBytes = hexStringToByteArray(checksum);
             } else {
+                // TODO: remove backwards compatibility
                 // Base64 encoded (old format for backwards compatibility)
                 checksumBytes = Base64.decode(checksum, Base64.DEFAULT);
             }

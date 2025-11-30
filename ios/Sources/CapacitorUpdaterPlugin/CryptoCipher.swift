@@ -49,6 +49,7 @@ public struct CryptoCipher {
                 }
                 checksumBytes = hexData
             } else {
+                // TODO: remove backwards compatibility
                 // Base64 encoded (old format for backwards compatibility)
                 guard let base64Data = Data(base64Encoded: checksum) else {
                     logger.error("Cannot decode checksum as base64: \(checksum)")
