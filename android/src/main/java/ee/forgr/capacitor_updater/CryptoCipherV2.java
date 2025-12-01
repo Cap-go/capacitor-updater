@@ -181,18 +181,42 @@ public class CryptoCipherV2 {
         }
     }
 
+    private static byte[] hexStringToByteArray(String s) {
+        int len = s.length();
+        byte[] data = new byte[len / 2];
+        for (int i = 0; i < len; i += 2) {
+            data[i / 2] = (byte) ((Character.digit(s.charAt(i), 16) << 4) + Character.digit(s.charAt(i + 1), 16));
+        }
+        return data;
+    }
+
     public static String decryptChecksum(String checksum, String publicKey) throws IOException {
         if (publicKey.isEmpty()) {
             logger.error("No encryption set (public key) ignored");
             return checksum;
         }
         try {
-            byte[] checksumBytes = Base64.decode(checksum, Base64.DEFAULT);
-            PublicKey pKey = CryptoCipherV2.stringToPublicKey(publicKey);
-            byte[] decryptedChecksum = CryptoCipherV2.decryptRSA(checksumBytes, pKey);
-            // return Base64.encodeToString(decryptedChecksum, Base64.DEFAULT);
-            String result = Base64.encodeToString(decryptedChecksum, Base64.DEFAULT);
-            return result.replaceAll("\\s", ""); // Remove all whitespace, including newlines
+            // Determine if input is hex or base64 encoded
+            // Hex strings only contain 0-9 and a-f, while base64 contains other characters
+            byte[] checksumBytes;
+            if (checksum.matches("^[0-9a-fA-F]+$")) {
+                // Hex encoded (new format from CLI for plugin versions >= 5.30.0, 6.30.0, 7.30.0)
+                checksumBytes = hexStringToByteArray(checksum);
+            } else {
+                // TODO: remove backwards compatibility
+                // Base64 encoded (old format for backwards compatibility)
+                checksumBytes = Base64.decode(checksum, Base64.DEFAULT);
+            }
+            PublicKey pKey = CryptoCipher.stringToPublicKey(publicKey);
+            byte[] decryptedChecksum = CryptoCipher.decryptRSA(checksumBytes, pKey);
+            // Return as hex string to match calcChecksum output format
+            StringBuilder hexString = new StringBuilder();
+            for (byte b : decryptedChecksum) {
+                String hex = Integer.toHexString(0xff & b);
+                if (hex.length() == 1) hexString.append('0');
+                hexString.append(hex);
+            }
+            return hexString.toString();
         } catch (GeneralSecurityException e) {
             logger.error("decryptChecksum fail: " + e.getMessage());
             throw new IOException("Decryption failed: " + e.getMessage());

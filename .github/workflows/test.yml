@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
       - name: Install dependencies
         id: install_code
@@ -33,7 +33,7 @@ jobs:
     runs-on: macOS-latest
     steps:
       - name: Check out
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
       - name: Install dependencies
         id: install_code
@@ -49,7 +49,7 @@ jobs:
     name: 'Build code and test'
     steps:
       - name: Check out
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
       - name: Install dependencies
         id: install_code
