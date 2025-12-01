@@ -15,15 +15,47 @@ public struct CryptoCipher {
         self.logger = logger
     }
 
+    private static func hexStringToData(_ hex: String) -> Data? {
+        var data = Data()
+        var hexIterator = hex.makeIterator()
+        while let c1 = hexIterator.next(), let c2 = hexIterator.next() {
+            guard let byte = UInt8(String([c1, c2]), radix: 16) else {
+                return nil
+            }
+            data.append(byte)
+        }
+        return data
+    }
+
+    private static func isHexString(_ str: String) -> Bool {
+        let hexCharacterSet = CharacterSet(charactersIn: "0123456789abcdefABCDEF")
+        return str.unicodeScalars.allSatisfy { hexCharacterSet.contains($0) }
+    }
+
     public static func decryptChecksum(checksum: String, publicKey: String) throws -> String {
         if publicKey.isEmpty {
             logger.info("No encryption set (public key) ignored")
             return checksum
         }
         do {
-            guard let checksumBytes = Data(base64Encoded: checksum) else {
-                logger.error("Cannot decode checksum as base64: \(checksum)")
-                throw CustomError.cannotDecode
+            // Determine if input is hex or base64 encoded
+            // Hex strings only contain 0-9 and a-f, while base64 contains other characters
+            let checksumBytes: Data
+            if isHexString(checksum) {
+                // Hex encoded (new format from CLI for plugin versions >= 5.30.0, 6.30.0, 7.30.0)
+                guard let hexData = hexStringToData(checksum) else {
+                    logger.error("Cannot decode checksum as hex: \(checksum)")
+                    throw CustomError.cannotDecode
+                }
+                checksumBytes = hexData
+            } else {
+                // TODO: remove backwards compatibility
+                // Base64 encoded (old format for backwards compatibility)
+                guard let base64Data = Data(base64Encoded: checksum) else {
+                    logger.error("Cannot decode checksum as base64: \(checksum)")
+                    throw CustomError.cannotDecode
+                }
+                checksumBytes = base64Data
             }
 
             if checksumBytes.isEmpty {
@@ -41,7 +73,8 @@ public struct CryptoCipher {
                 throw NSError(domain: "Failed to decrypt session key data", code: 2, userInfo: nil)
             }
 
-            return decryptedChecksum.base64EncodedString()
+            // Return as hex string to match calcChecksum output format
+            return decryptedChecksum.map { String(format: "%02x", $0) }.joined()
         } catch {
             logger.error("decryptChecksum fail: \(error.localizedDescription)")
             throw CustomError.cannotDecode
