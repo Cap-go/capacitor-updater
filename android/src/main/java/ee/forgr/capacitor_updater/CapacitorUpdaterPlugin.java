@@ -708,6 +708,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         }
                     }
                     this.implementation.cleanupDownloadDirectories(allowedIds);
+                    this.implementation.cleanupDeltaCache();
                 }
                 this.editor.putString("LatestNativeBuildVersion", this.currentBuildVersion);
                 this.editor.apply();
