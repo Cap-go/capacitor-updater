@@ -71,7 +71,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final String[] BREAKING_EVENT_NAMES = { "breakingAvailable", "majorAvailable" };
     private static final String LAST_FAILED_BUNDLE_PREF_KEY = "CapacitorUpdater.lastFailedBundle";
 
-    private final String pluginVersion = "7.30.0";
+    private final String pluginVersion = "7.31.0";
     private static final String DELAY_CONDITION_PREFERENCES = "";
 
     private SharedPreferences.Editor editor;
