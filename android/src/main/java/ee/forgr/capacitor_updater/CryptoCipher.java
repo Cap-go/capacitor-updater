@@ -194,6 +194,7 @@ public class CryptoCipher {
             return checksum;
         }
         try {
+            // TODO: remove this in a month or two
             // Determine if input is hex or base64 encoded
             // Hex strings only contain 0-9 and a-f, while base64 contains other characters
             byte[] checksumBytes;

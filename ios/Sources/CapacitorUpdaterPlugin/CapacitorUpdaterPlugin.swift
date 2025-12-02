@@ -54,7 +54,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "isShakeMenuEnabled", returnType: CAPPluginReturnPromise)
     ]
     public var implementation = CapgoUpdater()
-    private let pluginVersion: String = "5.30.0"
+    private let pluginVersion: String = "5.31.0"
     static let updateUrlDefault = "https://plugin.capgo.app/updates"
     static let statsUrlDefault = "https://plugin.capgo.app/stats"
     static let channelUrlDefault = "https://plugin.capgo.app/channel_self"
@@ -366,6 +366,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 return id.isEmpty ? nil : id
             })
             implementation.cleanupDownloadDirectories(allowedIds: allowedIds)
+            implementation.cleanupDeltaCache()
         }
         UserDefaults.standard.set(self.currentBuildVersion, forKey: "LatestNativeBuildVersion")
         UserDefaults.standard.synchronize()
