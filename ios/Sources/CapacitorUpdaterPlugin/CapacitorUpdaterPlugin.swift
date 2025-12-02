@@ -366,6 +366,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 return id.isEmpty ? nil : id
             })
             implementation.cleanupDownloadDirectories(allowedIds: allowedIds)
+            implementation.cleanupDeltaCache()
         }
         UserDefaults.standard.set(self.currentBuildVersion, forKey: "LatestNativeBuildVersion")
         UserDefaults.standard.synchronize()

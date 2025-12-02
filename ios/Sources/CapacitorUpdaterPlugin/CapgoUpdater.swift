@@ -975,6 +975,19 @@ import UIKit
         return self.delete(id: id, removeInfo: true)
     }
 
+    public func cleanupDeltaCache() {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: cacheFolder.path) else {
+            return
+        }
+        do {
+            try fileManager.removeItem(at: cacheFolder)
+            logger.info("Cleaned up delta cache folder")
+        } catch {
+            logger.error("Failed to cleanup delta cache: \(error.localizedDescription)")
+        }
+    }
+
     public func cleanupDownloadDirectories(allowedIds: Set<String>) {
         let bundleRoot = libraryDir.appendingPathComponent(bundleDirectory)
         let fileManager = FileManager.default

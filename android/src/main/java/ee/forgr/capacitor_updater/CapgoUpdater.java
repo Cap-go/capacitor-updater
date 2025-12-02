@@ -491,6 +491,23 @@ public class CapgoUpdater {
         }
     }
 
+    public void cleanupDeltaCache() {
+        if (this.activity == null) {
+            logger.warn("Activity is null, skipping delta cache cleanup");
+            return;
+        }
+        final File cacheFolder = new File(this.activity.getCacheDir(), "capgo_downloads");
+        if (!cacheFolder.exists()) {
+            return;
+        }
+        try {
+            this.deleteDirectory(cacheFolder);
+            logger.info("Cleaned up delta cache folder");
+        } catch (IOException e) {
+            logger.error("Failed to cleanup delta cache: " + e.getMessage());
+        }
+    }
+
     public void cleanupDownloadDirectories(final Set<String> allowedIds) {
         if (this.documentsDir == null) {
             logger.warn("Documents directory is null, skipping download cleanup");
