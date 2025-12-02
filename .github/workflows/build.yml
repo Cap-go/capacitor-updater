@@ -22,7 +22,6 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          fetch-tags: true
       - uses: oven-sh/setup-bun@v2
       - name: Install dependencies
         id: install_code
