@@ -27,6 +27,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          filter: blob:none
           token: '${{ secrets.PERSONAL_ACCESS_TOKEN }}'
       - uses: oven-sh/setup-bun@v2
       - name: Install dependencies
