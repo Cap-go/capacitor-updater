@@ -502,6 +502,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
 
                 checksum = try CryptoCipher.decryptChecksum(checksum: checksum, publicKey: self.implementation.publicKey)
+                CryptoCipher.logChecksumInfo(label: "Bundle checksum", hexChecksum: next.getChecksum())
+                CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: checksum)
                 if (checksum != "" || self.implementation.publicKey != "") && next.getChecksum() != checksum {
                     self.logger.error("Error checksum \(next.getChecksum()) \(checksum)")
                     self.implementation.sendStats(action: "checksum_fail", versionName: next.getVersionName())
@@ -1333,6 +1335,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         return
                     }
                     res.checksum = try CryptoCipher.decryptChecksum(checksum: res.checksum, publicKey: self.implementation.publicKey)
+                    CryptoCipher.logChecksumInfo(label: "Bundle checksum", hexChecksum: next.getChecksum())
+                    CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: res.checksum)
                     if res.checksum != "" && next.getChecksum() != res.checksum && res.manifest == nil {
                         self.logger.error("Error checksum \(next.getChecksum()) \(res.checksum)")
                         self.implementation.sendStats(action: "checksum_fail", versionName: next.getVersionName())

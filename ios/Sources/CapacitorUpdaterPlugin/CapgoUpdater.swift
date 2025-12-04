@@ -520,6 +520,8 @@ import UIKit
                             if !self.publicKey.isEmpty && !sessionKey.isEmpty {
                                 // assume that calcChecksum != null
                                 let calculatedChecksum = CryptoCipher.calcChecksum(filePath: destFilePath)
+                                CryptoCipher.logChecksumInfo(label: "Calculated checksum", hexChecksum: calculatedChecksum)
+                                CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: fileHash)
                                 if calculatedChecksum != fileHash {
                                     self.sendStats(action: "download_manifest_checksum_fail", versionName: "\(version):\(finalFileName)")
                                     throw NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash)) for file \(fileName) at url \(downloadUrl)"])
@@ -781,6 +783,7 @@ import UIKit
 
         do {
             checksum = CryptoCipher.calcChecksum(filePath: finalPath)
+            CryptoCipher.logChecksumInfo(label: "Calculated bundle checksum", hexChecksum: checksum)
             logger.info("Downloading: 80% (unzipping)")
             try self.saveDownloaded(sourceZip: finalPath, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: true)
 

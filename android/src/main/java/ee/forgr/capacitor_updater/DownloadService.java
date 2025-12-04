@@ -641,6 +641,8 @@ public class DownloadService extends Worker {
             // Delete the compressed file
             compressedFile.delete();
             String calculatedHash = CryptoCipher.calcChecksum(finalTargetFile);
+            CryptoCipher.logChecksumInfo("Calculated checksum", calculatedHash);
+            CryptoCipher.logChecksumInfo("Expected checksum", expectedHash);
 
             // Verify checksum
             if (calculatedHash.equals(expectedHash)) {

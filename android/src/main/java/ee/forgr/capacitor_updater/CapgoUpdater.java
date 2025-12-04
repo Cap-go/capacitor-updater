@@ -403,6 +403,8 @@ public class CapgoUpdater {
                 } else {
                     checksum = CryptoCipher.calcChecksum(downloaded);
                 }
+                CryptoCipher.logChecksumInfo("Calculated checksum", checksum);
+                CryptoCipher.logChecksumInfo("Expected checksum", checksumDecrypted);
                 if ((!checksumDecrypted.isEmpty() || !this.publicKey.isEmpty()) && !checksumDecrypted.equals(checksum)) {
                     logger.error("Error checksum '" + checksumDecrypted + "' '" + checksum + "' '");
                     this.sendStats("checksum_fail");
