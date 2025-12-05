@@ -66,15 +66,17 @@ The most complete [documentation here](https://capgo.app/docs/).
 ## Community
 Join the [discord](https://discord.gg/VnYRvBfgA6) to get help.
 
-## Migration to v7
+## Migration to v8
 
-- `privateKey` is not available anymore, it was used for the old encryption method. to migrate follow this guide : [https://capgo.app/docs/plugin/cloud-mode/getting-started/](https://capgo.app/docs/cli/migrations/encryption/)
-- To capacitor v7 : [https://capacitorjs.com/docs/updating/7-0](https://capacitorjs.com/docs/updating/7-0)
+The min version of IOS is now 15.5 instead of 15 as Capacitor 8 requirement.
+This is due to bump of ZipArchive to latest, a key dependency of this project is the zlib library. zlib before version 1.2.12 allows memory corruption when deflating (i.e., when compressing) if the input has many distant matches according to [CVE-2018-25032](https://nvd.nist.gov/vuln/detail/cve-2018-25032).
+zlib is a native library so we need to bump the minimum iOS version to 15.5 as ZipArchive did the same in their latest versions.
 
 ## Compatibility
 
 | Plugin version | Capacitor compatibility | Maintained        |
 | -------------- | ----------------------- | ----------------- |
+| v8.\*.\*       | v8.\*.\*                | Beta                 |
 | v7.\*.\*       | v7.\*.\*                | ✅                 |
 | v6.\*.\*       | v6.\*.\*                | ✅                 |
 | v5.\*.\*       | v5.\*.\*                | ⚠️ Deprecated |

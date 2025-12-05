@@ -5,11 +5,11 @@
     "": {
       "name": "@capgo/capacitor-updater",
       "devDependencies": {
-        "@capacitor/android": "^7.4.3",
-        "@capacitor/cli": "^7.4.3",
-        "@capacitor/core": "^7.4.3",
+        "@capacitor/android": "^8.0.0-alpha.3",
+        "@capacitor/cli": "^8.0.0-alpha.3",
+        "@capacitor/core": "^8.0.0-alpha.3",
         "@capacitor/docgen": "^0.3.0",
-        "@capacitor/ios": "^7.4.3",
+        "@capacitor/ios": "^8.0.0-alpha.3",
         "@ionic/eslint-config": "^0.4.0",
         "@ionic/prettier-config": "^4.0.0",
         "@ionic/swiftlint-config": "^2.0.0",
@@ -34,15 +34,15 @@
 
     "@babel/helper-validator-identifier": ["@babel/helper-validator-identifier@7.27.1", "", {}, "sha512-D2hP9eA+Sqx1kBZgzxZh0y1trbuU+JoDkiEwqhQ36nodYqJwyEIhPSdMNd7lOm/4io72luTPWH20Yda0xOuUow=="],
 
-    "@capacitor/android": ["@capacitor/android@7.4.3", "", { "peerDependencies": { "@capacitor/core": "^7.4.0" } }, "sha512-VpjvnOcmYGPLgvXRhe3CGLs62Cg7sxOyp77NddCr+Y06qqgnoaj6OGeBVTc2DZlqZ6bSmh15JvFu82pkvmdgfQ=="],
+    "@capacitor/android": ["@capacitor/android@8.0.0-nightly-20251204T150751.0", "", { "peerDependencies": { "@capacitor/core": "^8.0.0-nightly-20251204T150751.0" } }, "sha512-tHsaCBpPVbcrdPPKXoyi3D64wk/oTyHf0poq9PfyOeFWzI44B3sbWdh+p2H2YOYXgIUe6jUe5iv5zGpki8FucQ=="],
 
-    "@capacitor/cli": ["@capacitor/cli@7.4.3", "", { "dependencies": { "@ionic/cli-framework-output": "^2.2.8", "@ionic/utils-subprocess": "^3.0.1", "@ionic/utils-terminal": "^2.3.5", "commander": "^12.1.0", "debug": "^4.4.0", "env-paths": "^2.2.0", "fs-extra": "^11.2.0", "kleur": "^4.1.5", "native-run": "^2.0.1", "open": "^8.4.0", "plist": "^3.1.0", "prompts": "^2.4.2", "rimraf": "^6.0.1", "semver": "^7.6.3", "tar": "^6.1.11", "tslib": "^2.8.1", "xml2js": "^0.6.2" }, "bin": { "cap": "bin/capacitor", "capacitor": "bin/capacitor" } }, "sha512-SWozpdDgrbQ/ry1nIapugDFvE9z+l22BmU/+fpgL2Zv5487hGdXvCX5+1SluuFBP3IPpx6b4LjsKnBigyJoUWg=="],
+    "@capacitor/cli": ["@capacitor/cli@8.0.0-nightly-20251204T150751.0", "", { "dependencies": { "@ionic/cli-framework-output": "^2.2.8", "@ionic/utils-subprocess": "^3.0.1", "@ionic/utils-terminal": "^2.3.5", "commander": "^12.1.0", "debug": "^4.4.0", "env-paths": "^2.2.0", "fs-extra": "^11.2.0", "kleur": "^4.1.5", "native-run": "^2.0.1", "open": "^8.4.0", "plist": "^3.1.0", "prompts": "^2.4.2", "rimraf": "^6.0.1", "semver": "^7.6.3", "tar": "^6.1.11", "tslib": "^2.8.1", "xml2js": "^0.6.2" }, "bin": { "capacitor": "bin/capacitor", "cap": "bin/capacitor" } }, "sha512-9kRFoFD/WCr4ogqKwM9+0hl/kUZ3mlqa42c9/YML+85y5g2m3n7WQ2twQr3/sUxlGwrnBsE2Z9PIXF90ExrEbQ=="],
 
-    "@capacitor/core": ["@capacitor/core@7.4.3", "", { "dependencies": { "tslib": "^2.1.0" } }, "sha512-wCWr8fQ9Wxn0466vPg7nMn0tivbNVjNy1yL4GvDSIZuZx7UpU2HeVGNe9QjN/quEd+YLRFeKEBLBw619VqUiNg=="],
+    "@capacitor/core": ["@capacitor/core@8.0.0-nightly-20251204T150751.0", "", { "dependencies": { "tslib": "^2.1.0" } }, "sha512-knzodJ44Bac94FQtVsD10COduz8xetwjo16fKWWKxb+6b/JdJDYNOS1HRb2EKcFHM9Sb+kmwoie7ofqZX5zkPw=="],
 
     "@capacitor/docgen": ["@capacitor/docgen@0.3.0", "", { "dependencies": { "@types/node": "^14.18.0", "colorette": "^2.0.20", "github-slugger": "^1.5.0", "minimist": "^1.2.8", "typescript": "~4.2.4" }, "bin": { "docgen": "bin/docgen" } }, "sha512-WPggobo5Ql70F+2xOIUwNSApJXaL9F/9+Al6B+sNuSAmcg484OAksyUPKgiynF4BVlxeY5a0sDkgdVkmmA3ElQ=="],
 
-    "@capacitor/ios": ["@capacitor/ios@7.4.3", "", { "peerDependencies": { "@capacitor/core": "^7.4.0" } }, "sha512-VNm7cHODgh3KK/4ZC2rXU9gBlvHii/mYFLI+XMXwq24nhB679QxHhz+pUuI7PatYoM2q4MAL0NR/dRgehKCaSA=="],
+    "@capacitor/ios": ["@capacitor/ios@8.0.0-nightly-20251204T150751.0", "", { "peerDependencies": { "@capacitor/core": "^8.0.0-nightly-20251204T150751.0" } }, "sha512-1/Rjh2bifLY7UhyFvAfJdRHUc018o5/ddJVFAInCY+gC7GzJvKpEF2fyagFV6wjajnEdUIpQBkou2lXqUpzcPg=="],
 
     "@chevrotain/cst-dts-gen": ["@chevrotain/cst-dts-gen@11.0.3", "", { "dependencies": { "@chevrotain/gast": "11.0.3", "@chevrotain/types": "11.0.3", "lodash-es": "4.17.21" } }, "sha512-BvIKpRLeS/8UbfxXxgC33xOumsacaeCKAjAeLyOn7Pcp95HiRbrpl14S+9vaZLolnbssPIUuiUd8IvgkRyt6NQ=="],
 

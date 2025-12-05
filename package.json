@@ -1,6 +1,6 @@
 {
   "name": "@capgo/capacitor-updater",
-  "version": "7.32.0",
+  "version": "8.0.0-alpha",
   "license": "MPL-2.0",
   "description": "Live update for capacitor apps",
   "main": "dist/plugin.cjs.js",
@@ -59,11 +59,11 @@
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
-    "@capacitor/android": "^7.4.3",
-    "@capacitor/cli": "^7.4.3",
-    "@capacitor/core": "^7.4.3",
+    "@capacitor/android": "^8.0.0-alpha.3",
+    "@capacitor/cli": "^8.0.0-alpha.3",
+    "@capacitor/core": "^8.0.0-alpha.3",
     "@capacitor/docgen": "^0.3.0",
-    "@capacitor/ios": "^7.4.3",
+    "@capacitor/ios": "^8.0.0-alpha.3",
     "@ionic/eslint-config": "^0.4.0",
     "@ionic/prettier-config": "^4.0.0",
     "@ionic/swiftlint-config": "^2.0.0",
