@@ -863,6 +863,34 @@ After receiving the latest version info, you can:
 2. Download it using {@link download}
 3. Apply it using {@link next} or {@link set}
 
+**Important: Error handling for "no new version available"**
+
+When the device's current version matches the latest version on the server (i.e., the device is already
+up-to-date), the server returns a 200 response with `error: "no_new_version_available"` and
+`message: "No new version available"`. **This causes `getLatest()` to throw an error**, even though
+this is a normal, expected condition.
+
+You should catch this specific error to handle it gracefully:
+
+```typescript
+try {
+  const latest = await CapacitorUpdater.getLatest();
+  // New version is available, proceed with download
+} catch (error) {
+  if (error.message === 'No new version available') {
+    // Device is already on the latest version - this is normal
+    console.log('Already up to date');
+  } else {
+    // Actual error occurred
+    console.error('Failed to check for updates:', error);
+  }
+}
+```
+
+In this scenario, the server:
+- Logs the request with a "No new version available" message
+- Sends a "noNew" stat action to track that the device checked for updates but was already current (done on the backend)
+
 | Param         | Type                                                          | Description                                                                                          |
 | ------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | **`options`** | <code><a href="#getlatestoptions">GetLatestOptions</a></code> | Optional {@link <a href="#getlatestoptions">GetLatestOptions</a>} to specify which channel to check. |
@@ -1678,18 +1706,18 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 
 ##### LatestVersion
 
-| Prop             | Type                         | Description                                                          | Since  |
-| ---------------- | ---------------------------- | -------------------------------------------------------------------- | ------ |
-| **`version`**    | <code>string</code>          | Result of getLatest method                                           | 4.0.0  |
-| **`checksum`**   | <code>string</code>          |                                                                      | 6      |
-| **`breaking`**   | <code>boolean</code>         | Indicates whether the update was flagged as breaking by the backend. | 7.22.0 |
-| **`major`**      | <code>boolean</code>         |                                                                      |        |
-| **`message`**    | <code>string</code>          |                                                                      |        |
-| **`sessionKey`** | <code>string</code>          |                                                                      |        |
-| **`error`**      | <code>string</code>          |                                                                      |        |
-| **`old`**        | <code>string</code>          |                                                                      |        |
-| **`url`**        | <code>string</code>          |                                                                      |        |
-| **`manifest`**   | <code>ManifestEntry[]</code> |                                                                      | 6.1    |
+| Prop             | Type                         | Description                                                                                                                                                                                                   | Since  |
+| ---------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| **`version`**    | <code>string</code>          | Result of getLatest method                                                                                                                                                                                    | 4.0.0  |
+| **`checksum`**   | <code>string</code>          |                                                                                                                                                                                                               | 6      |
+| **`breaking`**   | <code>boolean</code>         | Indicates whether the update was flagged as breaking by the backend.                                                                                                                                          | 7.22.0 |
+| **`major`**      | <code>boolean</code>         |                                                                                                                                                                                                               |        |
+| **`message`**    | <code>string</code>          | Optional message from the server. When no new version is available, this will be "No new version available".                                                                                                  |        |
+| **`sessionKey`** | <code>string</code>          |                                                                                                                                                                                                               |        |
+| **`error`**      | <code>string</code>          | Error code from the server, if any. Common values: - `"no_new_version_available"`: Device is already on the latest version (not a failure) - Other error codes indicate actual failures in the update process |        |
+| **`old`**        | <code>string</code>          | The previous/current version name (provided for reference).                                                                                                                                                   |        |
+| **`url`**        | <code>string</code>          | Download URL for the bundle (when a new version is available).                                                                                                                                                |        |
+| **`manifest`**   | <code>ManifestEntry[]</code> | File list for partial updates (when using multi-file downloads).                                                                                                                                              | 6.1    |
 
 
 ##### GetLatestOptions

@@ -691,6 +691,34 @@ After receiving the latest version info, you can:
 2. Download it using {@link download}
 3. Apply it using {@link next} or {@link set}
 
+**Important: Error handling for "no new version available"**
+
+When the device's current version matches the latest version on the server (i.e., the device is already
+up-to-date), the server returns a 200 response with `error: "no_new_version_available"` and
+`message: "No new version available"`. **This causes `getLatest()` to throw an error**, even though
+this is a normal, expected condition.
+
+You should catch this specific error to handle it gracefully:
+
+```typescript
+try {
+  const latest = await CapacitorUpdater.getLatest();
+  // New version is available, proceed with download
+} catch (error) {
+  if (error.message === 'No new version available') {
+    // Device is already on the latest version - this is normal
+    console.log('Already up to date');
+  } else {
+    // Actual error occurred
+    console.error('Failed to check for updates:', error);
+  }
+}
+```
+
+In this scenario, the server:
+- Logs the request with a "No new version available" message
+- Sends a "noNew" stat action to track that the device checked for updates but was already current (done on the backend)
+
 **Parameters**
 
 | Name | Type | Description |
@@ -703,7 +731,7 @@ After receiving the latest version info, you can:
 
 **Since:** 4.0.0
 
-**Throws:** {Error} If the request fails or the server returns an error.
+**Throws:** {Error} Always throws when no new version is available (`error: "no_new_version_available"`), or when the request fails.
 
 
 --------------------
