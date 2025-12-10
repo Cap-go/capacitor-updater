@@ -66,6 +66,14 @@ The most complete [documentation here](https://capgo.app/docs/).
 ## Community
 Join the [discord](https://discord.gg/VnYRvBfgA6) to get help.
 
+## Migration to v7.34
+
+- **Channel storage change**: `setChannel()` now stores channel assignments locally on the device instead of in the cloud. This provides better offline support and reduces backend load.
+  - Channel assignments persist between app restarts
+  - Use `unsetChannel()` to clear the local assignment and revert to `defaultChannel`
+  - Old devices (< v7.34.0) will continue using cloud-based storage
+- **New event**: Listen to the `channelPrivate` event to handle cases where a user tries to assign themselves to a private channel (one that doesn't allow self-assignment). See example in the `setChannel()` documentation above.
+
 ## Migration to v7
 
 - `privateKey` is not available anymore, it was used for the old encryption method. to migrate follow this guide : [https://capgo.app/docs/plugin/cloud-mode/getting-started/](https://capgo.app/docs/cli/migrations/encryption/)
@@ -271,6 +279,7 @@ CapacitorUpdater can be configured with these options:
 | **`allowManualBundleError`**  | <code>boolean</code>                                          | Allow marking bundles as errored from JavaScript while using manual update flows. When enabled, {@link CapacitorUpdaterPlugin.setBundleError} can change a bundle status to `error`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | <code>false</code>                                                            | 7.20.0  |
 | **`persistCustomId`**         | <code>boolean</code>                                          | Persist the customId set through {@link CapacitorUpdaterPlugin.setCustomId} across app restarts. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | <code>false (will be true by default in a future major release v8.x.x)</code> | 7.17.3  |
 | **`persistModifyUrl`**        | <code>boolean</code>                                          | Persist the updateUrl, statsUrl and channelUrl set through {@link CapacitorUpdaterPlugin.setUpdateUrl}, {@link CapacitorUpdaterPlugin.setStatsUrl} and {@link CapacitorUpdaterPlugin.setChannelUrl} across app restarts. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | <code>false</code>                                                            | 7.20.0  |
+| **`allowSetDefaultChannel`**  | <code>boolean</code>                                          | Allow or disallow the {@link CapacitorUpdaterPlugin.setChannel} method to modify the defaultChannel. When set to `false`, calling `setChannel()` will return an error with code `disabled_by_config`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | <code>true</code>                                                             | 7.34.0  |
 | **`defaultChannel`**          | <code>string</code>                                           | Set the default channel for the app in the config. Case sensitive. This will setting will override the default channel set in the cloud, but will still respect overrides made in the cloud. This requires the channel to allow devices to self dissociate/associate in the channel settings. https://capgo.app/docs/public-api/channels/#channel-configuration-options                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | <code>undefined</code>                                                        | 5.5.0   |
 | **`appId`**                   | <code>string</code>                                           | Configure the app id for the app in the config.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | <code>undefined</code>                                                        | 6.0.0   |
 | **`keepUrlPathAfterReload`**  | <code>boolean</code>                                          | Configure the plugin to keep the URL path after a reload. WARNING: When a reload is triggered, 'window.history' will be cleared.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | <code>false</code>                                                            | 6.8.0   |
@@ -313,6 +322,7 @@ In `capacitor.config.json`:
       "allowManualBundleError": undefined,
       "persistCustomId": undefined,
       "persistModifyUrl": undefined,
+      "allowSetDefaultChannel": undefined,
       "defaultChannel": undefined,
       "appId": undefined,
       "keepUrlPathAfterReload": undefined,
@@ -361,6 +371,7 @@ const config: CapacitorConfig = {
       allowManualBundleError: undefined,
       persistCustomId: undefined,
       persistModifyUrl: undefined,
+      allowSetDefaultChannel: undefined,
       defaultChannel: undefined,
       appId: undefined,
       keepUrlPathAfterReload: undefined,
@@ -416,6 +427,7 @@ export default config;
 * [`addListener('downloadFailed', ...)`](#addlistenerdownloadfailed-)
 * [`addListener('appReloaded', ...)`](#addlistenerappreloaded-)
 * [`addListener('appReady', ...)`](#addlistenerappready-)
+* [`addListener('channelPrivate', ...)`](#addlistenerchannelprivate-)
 * [`isAutoUpdateAvailable()`](#isautoupdateavailable)
 * [`getNextBundle()`](#getnextbundle)
 * [`getFailedUpdate()`](#getfailedupdate)
@@ -926,6 +938,19 @@ Channels allow you to distribute different bundle versions to different groups o
 - At app boot/initialization - use {@link PluginsConfig.CapacitorUpdater.defaultChannel} config instead
 - Before user interaction
 
+**Important: Listen for the `channelPrivate` event**
+
+When a user attempts to set a channel that doesn't allow device self-assignment, the method will
+throw an error AND fire a {@link addListener}('channelPrivate') event. You should listen to this event
+to provide appropriate feedback to users:
+
+```typescript
+CapacitorUpdater.addListener('channelPrivate', (data) =&gt; {
+  console.warn(`Cannot access channel "${data.channel}": ${data.message}`);
+  // Show user-friendly message
+});
+```
+
 This sends a request to the Capgo backend linking your device ID to the specified channel.
 
 | Param         | Type                                                            | Description                                                                                                                  |
@@ -1386,6 +1411,31 @@ Listen for app ready event in the App, let you know when app is ready to use, th
 **Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
 
 **Since:** 5.1.0
+
+--------------------
+
+
+#### addListener('channelPrivate', ...)
+
+```typescript
+addListener(eventName: 'channelPrivate', listenerFunc: (state: ChannelPrivateEvent) => void) => Promise<PluginListenerHandle>
+```
+
+Listen for channel private event, fired when attempting to set a channel that doesn't allow device self-assignment.
+
+This event is useful for:
+- Informing users they don't have permission to switch to a specific channel
+- Implementing custom error handling for channel restrictions
+- Logging unauthorized channel access attempts
+
+| Param              | Type                                                                                    |
+| ------------------ | --------------------------------------------------------------------------------------- |
+| **`eventName`**    | <code>'channelPrivate'</code>                                                           |
+| **`listenerFunc`** | <code>(state: <a href="#channelprivateevent">ChannelPrivateEvent</a>) =&gt; void</code> |
+
+**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
+
+**Since:** 7.34.0
 
 --------------------
 
@@ -1877,6 +1927,14 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 | ------------ | ------------------------------------------------- | ------------------------------------- | ----- |
 | **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emitted when the app is ready to use. | 5.2.0 |
 | **`status`** | <code>string</code>                               |                                       |       |
+
+
+##### ChannelPrivateEvent
+
+| Prop          | Type                | Description                                                                         | Since  |
+| ------------- | ------------------- | ----------------------------------------------------------------------------------- | ------ |
+| **`channel`** | <code>string</code> | Emitted when attempting to set a channel that doesn't allow device self-assignment. | 7.34.0 |
+| **`message`** | <code>string</code> |                                                                                     |        |
 
 
 ##### AutoUpdateAvailable

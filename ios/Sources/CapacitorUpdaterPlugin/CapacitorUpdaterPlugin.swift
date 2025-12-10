@@ -63,6 +63,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private let updateUrlDefaultsKey = "CapacitorUpdater.updateUrl"
     private let statsUrlDefaultsKey = "CapacitorUpdater.statsUrl"
     private let channelUrlDefaultsKey = "CapacitorUpdater.channelUrl"
+    private let defaultChannelDefaultsKey = "CapacitorUpdater.defaultChannel"
     private let lastFailedBundleDefaultsKey = "CapacitorUpdater.lastFailedBundle"
     // Note: DELAY_CONDITION_PREFERENCES is now defined in DelayUpdateUtils.DELAY_CONDITION_PREFERENCES
     private var updateUrl = ""
@@ -86,6 +87,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var autoSplashscreenTimedOut = false
     private var autoDeleteFailed = false
     private var autoDeletePrevious = false
+    private var allowSetDefaultChannel = true
     private var keepUrlPathAfterReload = false
     private var backgroundWork: DispatchWorkItem?
     private var taskRunning = false
@@ -117,6 +119,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         // Use DeviceIdHelper to get or create device ID that persists across reinstalls
         self.implementation.deviceID = DeviceIdHelper.getOrCreateDeviceId()
         persistCustomId = getConfig().getBoolean("persistCustomId", false)
+        allowSetDefaultChannel = getConfig().getBoolean("allowSetDefaultChannel", true)
         if persistCustomId {
             let storedCustomId = UserDefaults.standard.string(forKey: customIdDefaultsKey) ?? ""
             if !storedCustomId.isEmpty {
@@ -224,7 +227,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 logger.info("Loaded persisted channelUrl")
             }
         }
-        implementation.defaultChannel = getConfig().getString("defaultChannel", "")!
+
+        // Load defaultChannel: first try from persistent storage (set via setChannel), then fall back to config
+        if let storedDefaultChannel = UserDefaults.standard.object(forKey: defaultChannelDefaultsKey) as? String {
+            implementation.defaultChannel = storedDefaultChannel
+            logger.info("Loaded persisted defaultChannel from setChannel()")
+        } else {
+            implementation.defaultChannel = getConfig().getString("defaultChannel", "")!
+        }
         self.implementation.autoReset()
 
         // Check if app was recently installed/updated BEFORE cleanupObsoleteVersions updates LatestVersionNative
@@ -698,7 +708,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func unsetChannel(_ call: CAPPluginCall) {
         let triggerAutoUpdate = call.getBool("triggerAutoUpdate", false)
         DispatchQueue.global(qos: .background).async {
-            let res = self.implementation.unsetChannel()
+            let configDefaultChannel = self.getConfig().getString("defaultChannel", "")!
+            let res = self.implementation.unsetChannel(defaultChannelKey: self.defaultChannelDefaultsKey, configDefaultChannel: configDefaultChannel)
             if res.error != "" {
                 call.reject(res.error, "UNSETCHANNEL_FAILED", nil, [
                     "message": res.error,
@@ -725,11 +736,18 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         let triggerAutoUpdate = call.getBool("triggerAutoUpdate") ?? false
         DispatchQueue.global(qos: .background).async {
-            let res = self.implementation.setChannel(channel: channel)
+            let res = self.implementation.setChannel(channel: channel, defaultChannelKey: self.defaultChannelDefaultsKey, allowSetDefaultChannel: self.allowSetDefaultChannel)
             if res.error != "" {
+                // Fire channelPrivate event if channel doesn't allow self-assignment
+                if res.error.contains("cannot_update_via_private_channel") || res.error.contains("channel_self_set_not_allowed") {
+                    self.notifyListeners("channelPrivate", data: [
+                        "channel": channel,
+                        "message": res.error
+                    ])
+                }
                 call.reject(res.error, "SETCHANNEL_FAILED", nil, [
                     "message": res.error,
-                    "error": res.error.contains("Channel URL") ? "missing_config" : "request_failed"
+                    "error": res.error.contains("Channel URL") ? "missing_config" : (res.error.contains("cannot_update_via_private_channel") || res.error.contains("channel_self_set_not_allowed")) ? "channel_private" : "request_failed"
                 ])
             } else {
                 if self._isAutoUpdateEnabled() && triggerAutoUpdate {

@@ -1111,59 +1111,30 @@ import UIKit
         self.setBundleStatus(id: bundle.getId(), status: BundleStatus.ERROR)
     }
 
-    func unsetChannel() -> SetChannel {
+    func unsetChannel(defaultChannelKey: String, configDefaultChannel: String) -> SetChannel {
         let setChannel: SetChannel = SetChannel()
 
-        // Check if rate limit was exceeded
-        if CapgoUpdater.rateLimitExceeded {
-            logger.debug("Skipping unsetChannel due to rate limit (429). Requests will resume after app restart.")
-            setChannel.message = "Rate limit exceeded"
-            setChannel.error = "rate_limit_exceeded"
-            return setChannel
-        }
+        // Clear persisted defaultChannel and revert to config value
+        UserDefaults.standard.removeObject(forKey: defaultChannelKey)
+        UserDefaults.standard.synchronize()
+        self.defaultChannel = configDefaultChannel
+        self.logger.info("Persisted defaultChannel cleared, reverted to config value: \(configDefaultChannel)")
 
-        if (self.channelUrl ).isEmpty {
-            logger.error("Channel URL is not set")
-            setChannel.message = "Channel URL is not set"
-            setChannel.error = "missing_config"
-            return setChannel
-        }
-        let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
-        let parameters: InfoObject = self.createInfoObject()
-
-        let request = alamofireSession.request(self.channelUrl, method: .delete, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
-
-        request.validate().responseDecodable(of: SetChannelDec.self) { response in
-            // Check for 429 rate limit
-            if self.checkAndHandleRateLimitResponse(statusCode: response.response?.statusCode) {
-                setChannel.message = "Rate limit exceeded"
-                setChannel.error = "rate_limit_exceeded"
-                semaphore.signal()
-                return
-            }
-
-            switch response.result {
-            case .success:
-                if let responseValue = response.value {
-                    if let error = responseValue.error {
-                        setChannel.error = error
-                    } else {
-                        setChannel.status = responseValue.status ?? ""
-                        setChannel.message = responseValue.message ?? ""
-                    }
-                }
-            case let .failure(error):
-                self.logger.error("Error unset Channel \(error)")
-                setChannel.error = "Request failed: \(error.localizedDescription)"
-            }
-            semaphore.signal()
-        }
-        semaphore.wait()
+        setChannel.status = "ok"
+        setChannel.message = "Channel override removed"
         return setChannel
     }
 
-    func setChannel(channel: String) -> SetChannel {
+    func setChannel(channel: String, defaultChannelKey: String, allowSetDefaultChannel: Bool) -> SetChannel {
         let setChannel: SetChannel = SetChannel()
+
+        // Check if setting defaultChannel is allowed
+        if !allowSetDefaultChannel {
+            logger.error("setChannel is disabled by allowSetDefaultChannel config")
+            setChannel.message = "setChannel is disabled by configuration"
+            setChannel.error = "disabled_by_config"
+            return setChannel
+        }
 
         // Check if rate limit was exceeded
         if CapgoUpdater.rateLimitExceeded {
@@ -1200,6 +1171,12 @@ import UIKit
                     if let error = responseValue.error {
                         setChannel.error = error
                     } else {
+                        // Success - persist defaultChannel
+                        self.defaultChannel = channel
+                        UserDefaults.standard.set(channel, forKey: defaultChannelKey)
+                        UserDefaults.standard.synchronize()
+                        self.logger.info("defaultChannel persisted locally: \(channel)")
+
                         setChannel.status = responseValue.status ?? ""
                         setChannel.message = responseValue.message ?? ""
                     }

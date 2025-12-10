@@ -295,6 +295,15 @@ declare module '@capacitor/cli' {
       persistModifyUrl?: boolean;
 
       /**
+       * Allow or disallow the {@link CapacitorUpdaterPlugin.setChannel} method to modify the defaultChannel.
+       * When set to `false`, calling `setChannel()` will return an error with code `disabled_by_config`.
+       *
+       * @default true
+       * @since 7.34.0
+       */
+      allowSetDefaultChannel?: boolean;
+
+      /**
        * Set the default channel for the app in the config. Case sensitive.
        * This will setting will override the default channel set in the cloud, but will still respect overrides made in the cloud.
        * This requires the channel to allow devices to self dissociate/associate in the channel settings. https://capgo.app/docs/public-api/channels/#channel-configuration-options
@@ -752,6 +761,19 @@ export interface CapacitorUpdaterPlugin {
    * - At app boot/initialization - use {@link PluginsConfig.CapacitorUpdater.defaultChannel} config instead
    * - Before user interaction
    *
+   * **Important: Listen for the `channelPrivate` event**
+   *
+   * When a user attempts to set a channel that doesn't allow device self-assignment, the method will
+   * throw an error AND fire a {@link addListener}('channelPrivate') event. You should listen to this event
+   * to provide appropriate feedback to users:
+   *
+   * ```typescript
+   * CapacitorUpdater.addListener('channelPrivate', (data) => {
+   *   console.warn(`Cannot access channel "${data.channel}": ${data.message}`);
+   *   // Show user-friendly message
+   * });
+   * ```
+   *
    * This sends a request to the Capgo backend linking your device ID to the specified channel.
    *
    * @param options The {@link SetChannelOptions} containing the channel name and optional auto-update trigger.
@@ -1047,6 +1069,21 @@ export interface CapacitorUpdaterPlugin {
    * @since 5.1.0
    */
   addListener(eventName: 'appReady', listenerFunc: (state: AppReadyEvent) => void): Promise<PluginListenerHandle>;
+
+  /**
+   * Listen for channel private event, fired when attempting to set a channel that doesn't allow device self-assignment.
+   *
+   * This event is useful for:
+   * - Informing users they don't have permission to switch to a specific channel
+   * - Implementing custom error handling for channel restrictions
+   * - Logging unauthorized channel access attempts
+   *
+   * @since 7.34.0
+   */
+  addListener(
+    eventName: 'channelPrivate',
+    listenerFunc: (state: ChannelPrivateEvent) => void,
+  ): Promise<PluginListenerHandle>;
 
   /**
    * Check if the auto-update feature is available (not disabled by custom server configuration).
@@ -1354,6 +1391,16 @@ export interface AppReadyEvent {
    */
   bundle: BundleInfo;
   status: string;
+}
+
+export interface ChannelPrivateEvent {
+  /**
+   * Emitted when attempting to set a channel that doesn't allow device self-assignment.
+   *
+   * @since 7.34.0
+   */
+  channel: string;
+  message: string;
 }
 
 export interface ManifestEntry {
