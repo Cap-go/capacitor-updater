@@ -594,80 +594,80 @@ public class DownloadService extends Worker {
 
         try {
             try (Response response = sharedClient.newCall(request).execute()) {
-            if (!response.isSuccessful()) {
-                sendStatsAsync("download_manifest_file_fail", getInputData().getString(VERSION) + ":" + finalTargetFile.getName());
-                throw new IOException("Unexpected response code: " + response.code());
-            }
+                if (!response.isSuccessful()) {
+                    sendStatsAsync("download_manifest_file_fail", getInputData().getString(VERSION) + ":" + finalTargetFile.getName());
+                    throw new IOException("Unexpected response code: " + response.code());
+                }
 
-            // Download compressed file atomically
-            ResponseBody responseBody = response.body();
-            if (responseBody == null) {
-                throw new IOException("Response body is null");
-            }
+                // Download compressed file atomically
+                ResponseBody responseBody = response.body();
+                if (responseBody == null) {
+                    throw new IOException("Response body is null");
+                }
 
-            // Use OkIO for atomic write
-            writeFileAtomic(compressedFile, responseBody.byteStream(), null);
+                // Use OkIO for atomic write
+                writeFileAtomic(compressedFile, responseBody.byteStream(), null);
 
-            if (!publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
-                logger.debug("Decrypting file " + targetFile.getName());
-                CryptoCipher.decryptFile(compressedFile, publicKey, sessionKey);
-            }
+                if (!publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
+                    logger.debug("Decrypting file " + targetFile.getName());
+                    CryptoCipher.decryptFile(compressedFile, publicKey, sessionKey);
+                }
 
-            // Only decompress if file has .br extension
-            if (isBrotli) {
-                // Use new decompression method with atomic write
-                try (FileInputStream fis = new FileInputStream(compressedFile)) {
-                    byte[] compressedData = new byte[(int) compressedFile.length()];
-                    fis.read(compressedData);
-                    byte[] decompressedData;
-                    try {
-                        decompressedData = decompressBrotli(compressedData, targetFile.getName());
-                    } catch (IOException e) {
-                        sendStatsAsync(
-                            "download_manifest_brotli_fail",
-                            getInputData().getString(VERSION) + ":" + finalTargetFile.getName()
-                        );
-                        throw e;
+                // Only decompress if file has .br extension
+                if (isBrotli) {
+                    // Use new decompression method with atomic write
+                    try (FileInputStream fis = new FileInputStream(compressedFile)) {
+                        byte[] compressedData = new byte[(int) compressedFile.length()];
+                        fis.read(compressedData);
+                        byte[] decompressedData;
+                        try {
+                            decompressedData = decompressBrotli(compressedData, targetFile.getName());
+                        } catch (IOException e) {
+                            sendStatsAsync(
+                                "download_manifest_brotli_fail",
+                                getInputData().getString(VERSION) + ":" + finalTargetFile.getName()
+                            );
+                            throw e;
+                        }
+
+                        // Write decompressed data atomically
+                        try (java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(decompressedData)) {
+                            writeFileAtomic(finalTargetFile, bais, null);
+                        }
                     }
-
-                    // Write decompressed data atomically
-                    try (java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(decompressedData)) {
-                        writeFileAtomic(finalTargetFile, bais, null);
+                } else {
+                    // Just copy the file without decompression using atomic operation
+                    try (FileInputStream fis = new FileInputStream(compressedFile)) {
+                        writeFileAtomic(finalTargetFile, fis, null);
                     }
                 }
-            } else {
-                // Just copy the file without decompression using atomic operation
-                try (FileInputStream fis = new FileInputStream(compressedFile)) {
-                    writeFileAtomic(finalTargetFile, fis, null);
-                }
-            }
 
-            // Delete the compressed file
-            compressedFile.delete();
-            String calculatedHash = CryptoCipher.calcChecksum(finalTargetFile);
-            CryptoCipher.logChecksumInfo("Calculated checksum", calculatedHash);
-            CryptoCipher.logChecksumInfo("Expected checksum", expectedHash);
+                // Delete the compressed file
+                compressedFile.delete();
+                String calculatedHash = CryptoCipher.calcChecksum(finalTargetFile);
+                CryptoCipher.logChecksumInfo("Calculated checksum", calculatedHash);
+                CryptoCipher.logChecksumInfo("Expected checksum", expectedHash);
 
-            // Verify checksum
-            if (calculatedHash.equals(expectedHash)) {
-                // Only cache if checksum is correct - use atomic copy
-                try (FileInputStream fis = new FileInputStream(finalTargetFile)) {
-                    writeFileAtomic(cacheFile, fis, expectedHash);
+                // Verify checksum
+                if (calculatedHash.equals(expectedHash)) {
+                    // Only cache if checksum is correct - use atomic copy
+                    try (FileInputStream fis = new FileInputStream(finalTargetFile)) {
+                        writeFileAtomic(cacheFile, fis, expectedHash);
+                    }
+                } else {
+                    finalTargetFile.delete();
+                    sendStatsAsync("download_manifest_checksum_fail", getInputData().getString(VERSION) + ":" + finalTargetFile.getName());
+                    throw new IOException(
+                        "Checksum verification failed for: " +
+                            downloadUrl +
+                            " " +
+                            targetFile.getName() +
+                            " expected: " +
+                            expectedHash +
+                            " calculated: " +
+                            calculatedHash
+                    );
                 }
-            } else {
-                finalTargetFile.delete();
-                sendStatsAsync("download_manifest_checksum_fail", getInputData().getString(VERSION) + ":" + finalTargetFile.getName());
-                throw new IOException(
-                    "Checksum verification failed for: " +
-                        downloadUrl +
-                        " " +
-                        targetFile.getName() +
-                        " expected: " +
-                        expectedHash +
-                        " calculated: " +
-                        calculatedHash
-                );
-            }
             }
         } catch (Exception e) {
             throw new IOException("Error in downloadAndVerify: " + e.getMessage());
