@@ -619,6 +619,8 @@ public class DownloadService extends Worker {
                     try {
                         decompressedData = decompressBrotli(compressedData, targetFile.getName());
                     } catch (IOException e) {
+                        // Delete the compressed file before throwing error
+                        compressedFile.delete();
                         sendStatsAsync(
                             "download_manifest_brotli_fail",
                             getInputData().getString(VERSION) + ":" + finalTargetFile.getName()
@@ -641,6 +643,8 @@ public class DownloadService extends Worker {
             // Delete the compressed file
             compressedFile.delete();
             String calculatedHash = CryptoCipher.calcChecksum(finalTargetFile);
+            CryptoCipher.logChecksumInfo("Calculated checksum", calculatedHash);
+            CryptoCipher.logChecksumInfo("Expected checksum", expectedHash);
 
             // Verify checksum
             if (calculatedHash.equals(expectedHash)) {

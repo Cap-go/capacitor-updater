@@ -66,6 +66,14 @@ The most complete [documentation here](https://capgo.app/docs/).
 ## Community
 Join the [discord](https://discord.gg/VnYRvBfgA6) to get help.
 
+## Migration to v7.34
+
+- **Channel storage change**: `setChannel()` now stores channel assignments locally on the device instead of in the cloud. This provides better offline support and reduces backend load.
+  - Channel assignments persist between app restarts
+  - Use `unsetChannel()` to clear the local assignment and revert to `defaultChannel`
+  - Old devices (< v7.34.0) will continue using cloud-based storage
+- **New event**: Listen to the `channelPrivate` event to handle cases where a user tries to assign themselves to a private channel (one that doesn't allow self-assignment). See example in the `setChannel()` documentation above.
+
 ## Migration to v7
 
 - `privateKey` is not available anymore, it was used for the old encryption method. to migrate follow this guide : [https://capgo.app/docs/plugin/cloud-mode/getting-started/](https://capgo.app/docs/cli/migrations/encryption/)
@@ -271,6 +279,7 @@ CapacitorUpdater can be configured with these options:
 | **`allowManualBundleError`**  | <code>boolean</code>                                          | Allow marking bundles as errored from JavaScript while using manual update flows. When enabled, {@link CapacitorUpdaterPlugin.setBundleError} can change a bundle status to `error`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | <code>false</code>                                                            | 7.20.0  |
 | **`persistCustomId`**         | <code>boolean</code>                                          | Persist the customId set through {@link CapacitorUpdaterPlugin.setCustomId} across app restarts. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | <code>false (will be true by default in a future major release v8.x.x)</code> | 7.17.3  |
 | **`persistModifyUrl`**        | <code>boolean</code>                                          | Persist the updateUrl, statsUrl and channelUrl set through {@link CapacitorUpdaterPlugin.setUpdateUrl}, {@link CapacitorUpdaterPlugin.setStatsUrl} and {@link CapacitorUpdaterPlugin.setChannelUrl} across app restarts. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | <code>false</code>                                                            | 7.20.0  |
+| **`allowSetDefaultChannel`**  | <code>boolean</code>                                          | Allow or disallow the {@link CapacitorUpdaterPlugin.setChannel} method to modify the defaultChannel. When set to `false`, calling `setChannel()` will return an error with code `disabled_by_config`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | <code>true</code>                                                             | 7.34.0  |
 | **`defaultChannel`**          | <code>string</code>                                           | Set the default channel for the app in the config. Case sensitive. This will setting will override the default channel set in the cloud, but will still respect overrides made in the cloud. This requires the channel to allow devices to self dissociate/associate in the channel settings. https://capgo.app/docs/public-api/channels/#channel-configuration-options                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | <code>undefined</code>                                                        | 5.5.0   |
 | **`appId`**                   | <code>string</code>                                           | Configure the app id for the app in the config.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | <code>undefined</code>                                                        | 6.0.0   |
 | **`keepUrlPathAfterReload`**  | <code>boolean</code>                                          | Configure the plugin to keep the URL path after a reload. WARNING: When a reload is triggered, 'window.history' will be cleared.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | <code>false</code>                                                            | 6.8.0   |
@@ -313,6 +322,7 @@ In `capacitor.config.json`:
       "allowManualBundleError": undefined,
       "persistCustomId": undefined,
       "persistModifyUrl": undefined,
+      "allowSetDefaultChannel": undefined,
       "defaultChannel": undefined,
       "appId": undefined,
       "keepUrlPathAfterReload": undefined,
@@ -361,6 +371,7 @@ const config: CapacitorConfig = {
       allowManualBundleError: undefined,
       persistCustomId: undefined,
       persistModifyUrl: undefined,
+      allowSetDefaultChannel: undefined,
       defaultChannel: undefined,
       appId: undefined,
       keepUrlPathAfterReload: undefined,
@@ -416,6 +427,7 @@ export default config;
 * [`addListener('downloadFailed', ...)`](#addlistenerdownloadfailed-)
 * [`addListener('appReloaded', ...)`](#addlistenerappreloaded-)
 * [`addListener('appReady', ...)`](#addlistenerappready-)
+* [`addListener('channelPrivate', ...)`](#addlistenerchannelprivate-)
 * [`isAutoUpdateAvailable()`](#isautoupdateavailable)
 * [`getNextBundle()`](#getnextbundle)
 * [`getFailedUpdate()`](#getfailedupdate)
@@ -863,6 +875,34 @@ After receiving the latest version info, you can:
 2. Download it using {@link download}
 3. Apply it using {@link next} or {@link set}
 
+**Important: Error handling for "no new version available"**
+
+When the device's current version matches the latest version on the server (i.e., the device is already
+up-to-date), the server returns a 200 response with `error: "no_new_version_available"` and
+`message: "No new version available"`. **This causes `getLatest()` to throw an error**, even though
+this is a normal, expected condition.
+
+You should catch this specific error to handle it gracefully:
+
+```typescript
+try {
+  const latest = await CapacitorUpdater.getLatest();
+  // New version is available, proceed with download
+} catch (error) {
+  if (error.message === 'No new version available') {
+    // Device is already on the latest version - this is normal
+    console.log('Already up to date');
+  } else {
+    // Actual error occurred
+    console.error('Failed to check for updates:', error);
+  }
+}
+```
+
+In this scenario, the server:
+- Logs the request with a "No new version available" message
+- Sends a "noNew" stat action to track that the device checked for updates but was already current (done on the backend)
+
 | Param         | Type                                                          | Description                                                                                          |
 | ------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | **`options`** | <code><a href="#getlatestoptions">GetLatestOptions</a></code> | Optional {@link <a href="#getlatestoptions">GetLatestOptions</a>} to specify which channel to check. |
@@ -897,6 +937,19 @@ Channels allow you to distribute different bundle versions to different groups o
 **When NOT to use:**
 - At app boot/initialization - use {@link PluginsConfig.CapacitorUpdater.defaultChannel} config instead
 - Before user interaction
+
+**Important: Listen for the `channelPrivate` event**
+
+When a user attempts to set a channel that doesn't allow device self-assignment, the method will
+throw an error AND fire a {@link addListener}('channelPrivate') event. You should listen to this event
+to provide appropriate feedback to users:
+
+```typescript
+CapacitorUpdater.addListener('channelPrivate', (data) =&gt; {
+  console.warn(`Cannot access channel "${data.channel}": ${data.message}`);
+  // Show user-friendly message
+});
+```
 
 This sends a request to the Capgo backend linking your device ID to the specified channel.
 
@@ -1362,6 +1415,31 @@ Listen for app ready event in the App, let you know when app is ready to use, th
 --------------------
 
 
+#### addListener('channelPrivate', ...)
+
+```typescript
+addListener(eventName: 'channelPrivate', listenerFunc: (state: ChannelPrivateEvent) => void) => Promise<PluginListenerHandle>
+```
+
+Listen for channel private event, fired when attempting to set a channel that doesn't allow device self-assignment.
+
+This event is useful for:
+- Informing users they don't have permission to switch to a specific channel
+- Implementing custom error handling for channel restrictions
+- Logging unauthorized channel access attempts
+
+| Param              | Type                                                                                    |
+| ------------------ | --------------------------------------------------------------------------------------- |
+| **`eventName`**    | <code>'channelPrivate'</code>                                                           |
+| **`listenerFunc`** | <code>(state: <a href="#channelprivateevent">ChannelPrivateEvent</a>) =&gt; void</code> |
+
+**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
+
+**Since:** 7.34.0
+
+--------------------
+
+
 #### isAutoUpdateAvailable()
 
 ```typescript
@@ -1678,18 +1756,18 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 
 ##### LatestVersion
 
-| Prop             | Type                         | Description                                                          | Since  |
-| ---------------- | ---------------------------- | -------------------------------------------------------------------- | ------ |
-| **`version`**    | <code>string</code>          | Result of getLatest method                                           | 4.0.0  |
-| **`checksum`**   | <code>string</code>          |                                                                      | 6      |
-| **`breaking`**   | <code>boolean</code>         | Indicates whether the update was flagged as breaking by the backend. | 7.22.0 |
-| **`major`**      | <code>boolean</code>         |                                                                      |        |
-| **`message`**    | <code>string</code>          |                                                                      |        |
-| **`sessionKey`** | <code>string</code>          |                                                                      |        |
-| **`error`**      | <code>string</code>          |                                                                      |        |
-| **`old`**        | <code>string</code>          |                                                                      |        |
-| **`url`**        | <code>string</code>          |                                                                      |        |
-| **`manifest`**   | <code>ManifestEntry[]</code> |                                                                      | 6.1    |
+| Prop             | Type                         | Description                                                                                                                                                                                                   | Since  |
+| ---------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| **`version`**    | <code>string</code>          | Result of getLatest method                                                                                                                                                                                    | 4.0.0  |
+| **`checksum`**   | <code>string</code>          |                                                                                                                                                                                                               | 6      |
+| **`breaking`**   | <code>boolean</code>         | Indicates whether the update was flagged as breaking by the backend.                                                                                                                                          | 7.22.0 |
+| **`major`**      | <code>boolean</code>         |                                                                                                                                                                                                               |        |
+| **`message`**    | <code>string</code>          | Optional message from the server. When no new version is available, this will be "No new version available".                                                                                                  |        |
+| **`sessionKey`** | <code>string</code>          |                                                                                                                                                                                                               |        |
+| **`error`**      | <code>string</code>          | Error code from the server, if any. Common values: - `"no_new_version_available"`: Device is already on the latest version (not a failure) - Other error codes indicate actual failures in the update process |        |
+| **`old`**        | <code>string</code>          | The previous/current version name (provided for reference).                                                                                                                                                   |        |
+| **`url`**        | <code>string</code>          | Download URL for the bundle (when a new version is available).                                                                                                                                                |        |
+| **`manifest`**   | <code>ManifestEntry[]</code> | File list for partial updates (when using multi-file downloads).                                                                                                                                              | 6.1    |
 
 
 ##### GetLatestOptions
@@ -1849,6 +1927,14 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 | ------------ | ------------------------------------------------- | ------------------------------------- | ----- |
 | **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emitted when the app is ready to use. | 5.2.0 |
 | **`status`** | <code>string</code>                               |                                       |       |
+
+
+##### ChannelPrivateEvent
+
+| Prop          | Type                | Description                                                                         | Since  |
+| ------------- | ------------------- | ----------------------------------------------------------------------------------- | ------ |
+| **`channel`** | <code>string</code> | Emitted when attempting to set a channel that doesn't allow device self-assignment. | 7.34.0 |
+| **`message`** | <code>string</code> |                                                                                     |        |
 
 
 ##### AutoUpdateAvailable
