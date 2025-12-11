@@ -523,6 +523,8 @@ import UIKit
                                 CryptoCipher.logChecksumInfo(label: "Calculated checksum", hexChecksum: calculatedChecksum)
                                 CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: fileHash)
                                 if calculatedChecksum != fileHash {
+                                    // Delete the corrupt file before throwing error
+                                    try? FileManager.default.removeItem(at: destFilePath)
                                     self.sendStats(action: "download_manifest_checksum_fail", versionName: "\(version):\(finalFileName)")
                                     throw NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash)) for file \(fileName) at url \(downloadUrl)"])
                                 }
