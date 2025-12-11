@@ -410,6 +410,8 @@ public class CapgoUpdater {
                 } else {
                     checksum = CryptoCipherV2.calcChecksum(downloaded);
                 }
+                CryptoCipher.logChecksumInfo("Calculated checksum", checksum);
+                CryptoCipher.logChecksumInfo("Expected checksum", checksumDecrypted);
                 if ((!checksumDecrypted.isEmpty() || !this.publicKey.isEmpty()) && !checksumDecrypted.equals(checksum)) {
                     logger.error("Error checksum '" + checksumDecrypted + "' '" + checksum + "' '");
                     this.sendStats("checksum_fail");
@@ -973,115 +975,41 @@ public class CapgoUpdater {
         makeJsonRequest(updateUrl, json, callback);
     }
 
-    public void unsetChannel(final Callback callback) {
-        // Check if rate limit was exceeded
-        if (rateLimitExceeded) {
-            logger.debug("Skipping unsetChannel due to rate limit (429). Requests will resume after app restart.");
-            final Map<String, Object> retError = new HashMap<>();
-            retError.put("message", "Rate limit exceeded");
-            retError.put("error", "rate_limit_exceeded");
-            callback.callback(retError);
-            return;
-        }
+    public void unsetChannel(
+        final SharedPreferences.Editor editor,
+        final String defaultChannelKey,
+        final String configDefaultChannel,
+        final Callback callback
+    ) {
+        // Clear persisted defaultChannel and revert to config value
+        editor.remove(defaultChannelKey);
+        editor.apply();
+        this.defaultChannel = configDefaultChannel;
+        logger.info("Persisted defaultChannel cleared, reverted to config value: " + configDefaultChannel);
 
-        String channelUrl = this.channelUrl;
-        if (channelUrl == null || channelUrl.isEmpty()) {
-            logger.error("Channel URL is not set");
-            final Map<String, Object> retError = new HashMap<>();
-            retError.put("message", "channelUrl missing");
-            retError.put("error", "missing_config");
-            callback.callback(retError);
-            return;
-        }
-        JSONObject json;
-        try {
-            json = this.createInfoObject();
-        } catch (JSONException e) {
-            logger.error("Error unsetChannel JSONException " + e.getMessage());
-            final Map<String, Object> retError = new HashMap<>();
-            retError.put("message", "Cannot get info: " + e);
-            retError.put("error", "json_error");
-            callback.callback(retError);
-            return;
-        }
-
-        Request request = new Request.Builder()
-            .url(channelUrl)
-            .delete(RequestBody.create(json.toString(), MediaType.get("application/json")))
-            .build();
-
-        DownloadService.sharedClient
-            .newCall(request)
-            .enqueue(
-                new okhttp3.Callback() {
-                    @Override
-                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                        Map<String, Object> retError = new HashMap<>();
-                        retError.put("message", "Request failed: " + e.getMessage());
-                        retError.put("error", "network_error");
-                        callback.callback(retError);
-                    }
-
-                    @Override
-                    public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                        try (ResponseBody responseBody = response.body()) {
-                            // Check for 429 rate limit
-                            if (checkAndHandleRateLimitResponse(response)) {
-                                Map<String, Object> retError = new HashMap<>();
-                                retError.put("message", "Rate limit exceeded");
-                                retError.put("error", "rate_limit_exceeded");
-                                callback.callback(retError);
-                                return;
-                            }
-
-                            if (!response.isSuccessful()) {
-                                Map<String, Object> retError = new HashMap<>();
-                                retError.put("message", "Server error: " + response.code());
-                                retError.put("error", "response_error");
-                                callback.callback(retError);
-                                return;
-                            }
-
-                            assert responseBody != null;
-                            String responseData = responseBody.string();
-                            JSONObject jsonResponse = new JSONObject(responseData);
-
-                            // Check for server-side errors first
-                            if (jsonResponse.has("error")) {
-                                Map<String, Object> retError = new HashMap<>();
-                                retError.put("error", jsonResponse.getString("error"));
-                                if (jsonResponse.has("message")) {
-                                    retError.put("message", jsonResponse.getString("message"));
-                                } else {
-                                    retError.put("message", "server did not provide a message");
-                                }
-                                callback.callback(retError);
-                                return;
-                            }
-
-                            Map<String, Object> ret = new HashMap<>();
-
-                            Iterator<String> keys = jsonResponse.keys();
-                            while (keys.hasNext()) {
-                                String key = keys.next();
-                                if (jsonResponse.has(key)) {
-                                    ret.put(key, jsonResponse.get(key));
-                                }
-                            }
-                            logger.info("Channel unset");
-                            callback.callback(ret);
-                        } catch (JSONException e) {
-                            Map<String, Object> retError = new HashMap<>();
-                            retError.put("message", "JSON parse error: " + e.getMessage());
-                            retError.put("error", "parse_error");
-                            callback.callback(retError);
-                        }
-                    }
-                }
-            );
+        Map<String, Object> ret = new HashMap<>();
+        ret.put("status", "ok");
+        ret.put("message", "Channel override removed");
+        callback.callback(ret);
     }
 
-    public void setChannel(final String channel, final Callback callback) {
+    public void setChannel(
+        final String channel,
+        final SharedPreferences.Editor editor,
+        final String defaultChannelKey,
+        final boolean allowSetDefaultChannel,
+        final Callback callback
+    ) {
+        // Check if setting defaultChannel is allowed
+        if (!allowSetDefaultChannel) {
+            logger.error("setChannel is disabled by allowSetDefaultChannel config");
+            final Map<String, Object> retError = new HashMap<>();
+            retError.put("message", "setChannel is disabled by configuration");
+            retError.put("error", "disabled_by_config");
+            callback.callback(retError);
+            return;
+        }
+
         // Check if rate limit was exceeded
         if (rateLimitExceeded) {
             logger.debug("Skipping setChannel due to rate limit (429). Requests will resume after app restart.");
@@ -1114,7 +1042,18 @@ public class CapgoUpdater {
             return;
         }
 
-        makeJsonRequest(channelUrl, json, callback);
+        makeJsonRequest(channelUrl, json, (res) -> {
+            if (res.containsKey("error")) {
+                callback.callback(res);
+            } else {
+                // Success - persist defaultChannel
+                this.defaultChannel = channel;
+                editor.putString(defaultChannelKey, channel);
+                editor.apply();
+                logger.info("defaultChannel persisted locally: " + channel);
+                callback.callback(res);
+            }
+        });
     }
 
     public void getChannel(final Callback callback) {

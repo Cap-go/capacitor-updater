@@ -200,14 +200,26 @@ public class CryptoCipherV2 {
             // Determine if input is hex or base64 encoded
             // Hex strings only contain 0-9 and a-f, while base64 contains other characters
             byte[] checksumBytes;
+            String detectedFormat;
             if (checksum.matches("^[0-9a-fA-F]+$")) {
                 // Hex encoded (new format from CLI for plugin versions >= 5.30.0, 6.30.0, 7.30.0)
                 checksumBytes = hexStringToByteArray(checksum);
+                detectedFormat = "hex";
             } else {
                 // TODO: remove backwards compatibility
                 // Base64 encoded (old format for backwards compatibility)
                 checksumBytes = Base64.decode(checksum, Base64.DEFAULT);
+                detectedFormat = "base64";
             }
+            logger.debug(
+                "Received encrypted checksum format: " +
+                    detectedFormat +
+                    " (length: " +
+                    checksum.length() +
+                    " chars, " +
+                    checksumBytes.length +
+                    " bytes)"
+            );
             PublicKey pKey = CryptoCipher.stringToPublicKey(publicKey);
             byte[] decryptedChecksum = CryptoCipher.decryptRSA(checksumBytes, pKey);
             // Return as hex string to match calcChecksum output format
@@ -217,10 +229,72 @@ public class CryptoCipherV2 {
                 if (hex.length() == 1) hexString.append('0');
                 hexString.append(hex);
             }
-            return hexString.toString();
+            String result = hexString.toString();
+
+            // Detect checksum algorithm based on length
+            String detectedAlgorithm;
+            if (decryptedChecksum.length == 32) {
+                detectedAlgorithm = "SHA-256";
+            } else if (decryptedChecksum.length == 4) {
+                detectedAlgorithm = "CRC32 (deprecated)";
+                logger.error(
+                    "CRC32 checksum detected. This algorithm is deprecated and no longer supported. Please update your CLI to use SHA-256 checksums."
+                );
+            } else {
+                detectedAlgorithm = "unknown (" + decryptedChecksum.length + " bytes)";
+                logger.error(
+                    "Unknown checksum algorithm detected with " + decryptedChecksum.length + " bytes. Expected SHA-256 (32 bytes)."
+                );
+            }
+            logger.debug(
+                "Decrypted checksum: " +
+                    detectedAlgorithm +
+                    " hex format (length: " +
+                    result.length() +
+                    " chars, " +
+                    decryptedChecksum.length +
+                    " bytes)"
+            );
+            return result;
         } catch (GeneralSecurityException e) {
             logger.error("decryptChecksum fail: " + e.getMessage());
             throw new IOException("Decryption failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Detect checksum algorithm based on hex string length.
+     * SHA-256 = 64 hex chars (32 bytes)
+     * CRC32 = 8 hex chars (4 bytes)
+     */
+    public static String detectChecksumAlgorithm(String hexChecksum) {
+        if (hexChecksum == null || hexChecksum.isEmpty()) {
+            return "empty";
+        }
+        int len = hexChecksum.length();
+        if (len == 64) {
+            return "SHA-256";
+        } else if (len == 8) {
+            return "CRC32 (deprecated)";
+        } else {
+            return "unknown (" + len + " hex chars)";
+        }
+    }
+
+    /**
+     * Log checksum info and warn if deprecated algorithm detected.
+     */
+    public static void logChecksumInfo(String label, String hexChecksum) {
+        String algorithm = detectChecksumAlgorithm(hexChecksum);
+        logger.debug(label + ": " + algorithm + " hex format (length: " + hexChecksum.length() + " chars)");
+        if (algorithm.contains("CRC32")) {
+            logger.error(
+                "CRC32 checksum detected. This algorithm is deprecated and no longer supported. Please update your CLI to use SHA-256 checksums."
+            );
+        } else if (algorithm.contains("unknown")) {
+            logger.error(
+                "Unknown checksum algorithm detected. Expected SHA-256 (64 hex chars) but got " + hexChecksum.length() + " chars."
+            );
         }
     }
 

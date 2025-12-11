@@ -49,16 +49,16 @@ repositories {
 
 
 dependencies {
-    def work_version = "2.11.0"
+    def work_version = "2.10.5"
     implementation "androidx.work:work-runtime:$work_version"
     implementation "com.google.android.gms:play-services-tasks:18.4.0"
-    implementation "com.google.guava:guava:33.4.8-android"
+    implementation "com.google.guava:guava:33.5.0-android"
     implementation fileTree(dir: 'libs', include: ['*.jar'])
     implementation project(':capacitor-android')
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     implementation 'io.github.g00fy2:versioncompare:1.5.0'
     testImplementation "junit:junit:$junitVersion"
-    testImplementation 'org.mockito:mockito-core:5.14.2'
+    testImplementation 'org.mockito:mockito-core:5.20.0'
     testImplementation 'org.json:json:20250517'
     testImplementation 'org.robolectric:robolectric:4.13'
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"

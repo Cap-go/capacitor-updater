@@ -68,6 +68,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final String UPDATE_URL_PREF_KEY = "CapacitorUpdater.updateUrl";
     private static final String STATS_URL_PREF_KEY = "CapacitorUpdater.statsUrl";
     private static final String CHANNEL_URL_PREF_KEY = "CapacitorUpdater.channelUrl";
+    private static final String DEFAULT_CHANNEL_PREF_KEY = "CapacitorUpdater.defaultChannel";
     private static final String[] BREAKING_EVENT_NAMES = { "breakingAvailable", "majorAvailable" };
     private static final String LAST_FAILED_BUNDLE_PREF_KEY = "CapacitorUpdater.lastFailedBundle";
 
@@ -100,6 +101,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private Boolean onLaunchDirectUpdateUsed = false;
     Boolean shakeMenuEnabled = false;
     private Boolean allowManualBundleError = false;
+    private Boolean allowSetDefaultChannel = true;
 
     private Boolean isPreviousMainActivity = true;
 
@@ -302,6 +304,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
         this.persistCustomId = this.getConfig().getBoolean("persistCustomId", false);
         this.persistModifyUrl = this.getConfig().getBoolean("persistModifyUrl", false);
+        this.allowSetDefaultChannel = this.getConfig().getBoolean("allowSetDefaultChannel", true);
         this.implementation.publicKey = this.getConfig().getString("publicKey", "");
         this.implementation.privateKey = this.getConfig().getString("privateKey", "");
         if (this.implementation.privateKey != null && !this.implementation.privateKey.isEmpty()) {
@@ -325,8 +328,21 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 }
             }
         }
+
+        // Load defaultChannel: first try from persistent storage (set via setChannel), then fall back to config
+        if (this.prefs.contains(DEFAULT_CHANNEL_PREF_KEY)) {
+            final String storedDefaultChannel = this.prefs.getString(DEFAULT_CHANNEL_PREF_KEY, "");
+            if (storedDefaultChannel != null && !storedDefaultChannel.isEmpty()) {
+                this.implementation.defaultChannel = storedDefaultChannel;
+                logger.info("Loaded persisted defaultChannel from setChannel()");
+            } else {
+                this.implementation.defaultChannel = this.getConfig().getString("defaultChannel", "");
+            }
+        } else {
+            this.implementation.defaultChannel = this.getConfig().getString("defaultChannel", "");
+        }
+
         int userValue = this.getConfig().getInt("periodCheckDelay", 0);
-        this.implementation.defaultChannel = this.getConfig().getString("defaultChannel", "");
 
         if (userValue >= 0 && userValue <= 600) {
             this.periodCheckDelay = 600 * 1000;
@@ -868,27 +884,33 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
         try {
             logger.info("unsetChannel triggerAutoUpdate: " + triggerAutoUpdate);
-            startNewThread(() ->
-                CapacitorUpdaterPlugin.this.implementation.unsetChannel((res) -> {
-                    JSObject jsRes = mapToJSObject(res);
-                    if (jsRes.has("error")) {
-                        String errorMessage = jsRes.has("message") ? jsRes.getString("message") : jsRes.getString("error");
-                        String errorCode = jsRes.getString("error");
+            startNewThread(() -> {
+                String configDefaultChannel = CapacitorUpdaterPlugin.this.getConfig().getString("defaultChannel", "");
+                CapacitorUpdaterPlugin.this.implementation.unsetChannel(
+                    CapacitorUpdaterPlugin.this.editor,
+                    DEFAULT_CHANNEL_PREF_KEY,
+                    configDefaultChannel,
+                    (res) -> {
+                        JSObject jsRes = mapToJSObject(res);
+                        if (jsRes.has("error")) {
+                            String errorMessage = jsRes.has("message") ? jsRes.getString("message") : jsRes.getString("error");
+                            String errorCode = jsRes.getString("error");
 
-                        JSObject errorObj = new JSObject();
-                        errorObj.put("message", errorMessage);
-                        errorObj.put("error", errorCode);
+                            JSObject errorObj = new JSObject();
+                            errorObj.put("message", errorMessage);
+                            errorObj.put("error", errorCode);
 
-                        call.reject(errorMessage, "UNSETCHANNEL_FAILED", null, errorObj);
-                    } else {
-                        if (CapacitorUpdaterPlugin.this._isAutoUpdateEnabled() && Boolean.TRUE.equals(triggerAutoUpdate)) {
-                            logger.info("Calling autoupdater after channel change!");
-                            backgroundDownload();
+                            call.reject(errorMessage, "UNSETCHANNEL_FAILED", null, errorObj);
+                        } else {
+                            if (CapacitorUpdaterPlugin.this._isAutoUpdateEnabled() && Boolean.TRUE.equals(triggerAutoUpdate)) {
+                                logger.info("Calling autoupdater after channel change!");
+                                backgroundDownload();
+                            }
+                            call.resolve(jsRes);
                         }
-                        call.resolve(jsRes);
                     }
-                })
-            );
+                );
+            });
         } catch (final Exception e) {
             logger.error("Failed to unsetChannel: " + e.getMessage());
             call.reject("Failed to unsetChannel: ", e);
@@ -911,25 +933,42 @@ public class CapacitorUpdaterPlugin extends Plugin {
         try {
             logger.info("setChannel " + channel + " triggerAutoUpdate: " + triggerAutoUpdate);
             startNewThread(() ->
-                CapacitorUpdaterPlugin.this.implementation.setChannel(channel, (res) -> {
-                    JSObject jsRes = mapToJSObject(res);
-                    if (jsRes.has("error")) {
-                        String errorMessage = jsRes.has("message") ? jsRes.getString("message") : jsRes.getString("error");
-                        String errorCode = jsRes.getString("error");
+                CapacitorUpdaterPlugin.this.implementation.setChannel(
+                    channel,
+                    CapacitorUpdaterPlugin.this.editor,
+                    DEFAULT_CHANNEL_PREF_KEY,
+                    CapacitorUpdaterPlugin.this.allowSetDefaultChannel,
+                    (res) -> {
+                        JSObject jsRes = mapToJSObject(res);
+                        if (jsRes.has("error")) {
+                            String errorMessage = jsRes.has("message") ? jsRes.getString("message") : jsRes.getString("error");
+                            String errorCode = jsRes.getString("error");
 
-                        JSObject errorObj = new JSObject();
-                        errorObj.put("message", errorMessage);
-                        errorObj.put("error", errorCode);
+                            // Fire channelPrivate event if channel doesn't allow self-assignment
+                            if (
+                                errorCode.contains("cannot_update_via_private_channel") ||
+                                errorCode.contains("channel_self_set_not_allowed")
+                            ) {
+                                JSObject eventData = new JSObject();
+                                eventData.put("channel", channel);
+                                eventData.put("message", errorMessage);
+                                notifyListeners("channelPrivate", eventData);
+                            }
 
-                        call.reject(errorMessage, "SETCHANNEL_FAILED", null, errorObj);
-                    } else {
-                        if (CapacitorUpdaterPlugin.this._isAutoUpdateEnabled() && Boolean.TRUE.equals(triggerAutoUpdate)) {
-                            logger.info("Calling autoupdater after channel change!");
-                            backgroundDownload();
+                            JSObject errorObj = new JSObject();
+                            errorObj.put("message", errorMessage);
+                            errorObj.put("error", errorCode);
+
+                            call.reject(errorMessage, "SETCHANNEL_FAILED", null, errorObj);
+                        } else {
+                            if (CapacitorUpdaterPlugin.this._isAutoUpdateEnabled() && Boolean.TRUE.equals(triggerAutoUpdate)) {
+                                logger.info("Calling autoupdater after channel change!");
+                                backgroundDownload();
+                            }
+                            call.resolve(jsRes);
                         }
-                        call.resolve(jsRes);
                     }
-                })
+                )
             );
         } catch (final Exception e) {
             logger.error("Failed to setChannel: " + channel + " " + e.getMessage());

@@ -537,7 +537,11 @@ import UIKit
                             if !self.publicKey.isEmpty && !sessionKey.isEmpty {
                                 // assume that calcChecksum != null
                                 let calculatedChecksum = CryptoCipherV2.calcChecksum(filePath: destFilePath)
+                                CryptoCipher.logChecksumInfo(label: "Calculated checksum", hexChecksum: calculatedChecksum)
+                                CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: fileHash)
                                 if calculatedChecksum != fileHash {
+                                    // Delete the corrupt file before throwing error
+                                    try? FileManager.default.removeItem(at: destFilePath)
                                     self.sendStats(action: "download_manifest_checksum_fail", versionName: "\(version):\(finalFileName)")
                                     throw NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash)) for file \(fileName) at url \(downloadUrl)"])
                                 }
@@ -804,6 +808,7 @@ import UIKit
 
         do {
             checksum = CryptoCipherV2.calcChecksum(filePath: finalPath)
+            CryptoCipher.logChecksumInfo(label: "Calculated bundle checksum", hexChecksum: checksum)
             logger.info("Downloading: 80% (unzipping)")
             try self.saveDownloaded(sourceZip: finalPath, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: true)
 
@@ -1131,59 +1136,30 @@ import UIKit
         self.setBundleStatus(id: bundle.getId(), status: BundleStatus.ERROR)
     }
 
-    func unsetChannel() -> SetChannel {
+    func unsetChannel(defaultChannelKey: String, configDefaultChannel: String) -> SetChannel {
         let setChannel: SetChannel = SetChannel()
 
-        // Check if rate limit was exceeded
-        if CapgoUpdater.rateLimitExceeded {
-            logger.debug("Skipping unsetChannel due to rate limit (429). Requests will resume after app restart.")
-            setChannel.message = "Rate limit exceeded"
-            setChannel.error = "rate_limit_exceeded"
-            return setChannel
-        }
+        // Clear persisted defaultChannel and revert to config value
+        UserDefaults.standard.removeObject(forKey: defaultChannelKey)
+        UserDefaults.standard.synchronize()
+        self.defaultChannel = configDefaultChannel
+        self.logger.info("Persisted defaultChannel cleared, reverted to config value: \(configDefaultChannel)")
 
-        if (self.channelUrl ).isEmpty {
-            logger.error("Channel URL is not set")
-            setChannel.message = "Channel URL is not set"
-            setChannel.error = "missing_config"
-            return setChannel
-        }
-        let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
-        let parameters: InfoObject = self.createInfoObject()
-
-        let request = alamofireSession.request(self.channelUrl, method: .delete, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
-
-        request.validate().responseDecodable(of: SetChannelDec.self) { response in
-            // Check for 429 rate limit
-            if self.checkAndHandleRateLimitResponse(statusCode: response.response?.statusCode) {
-                setChannel.message = "Rate limit exceeded"
-                setChannel.error = "rate_limit_exceeded"
-                semaphore.signal()
-                return
-            }
-
-            switch response.result {
-            case .success:
-                if let responseValue = response.value {
-                    if let error = responseValue.error {
-                        setChannel.error = error
-                    } else {
-                        setChannel.status = responseValue.status ?? ""
-                        setChannel.message = responseValue.message ?? ""
-                    }
-                }
-            case let .failure(error):
-                self.logger.error("Error unset Channel \(error)")
-                setChannel.error = "Request failed: \(error.localizedDescription)"
-            }
-            semaphore.signal()
-        }
-        semaphore.wait()
+        setChannel.status = "ok"
+        setChannel.message = "Channel override removed"
         return setChannel
     }
 
-    func setChannel(channel: String) -> SetChannel {
+    func setChannel(channel: String, defaultChannelKey: String, allowSetDefaultChannel: Bool) -> SetChannel {
         let setChannel: SetChannel = SetChannel()
+
+        // Check if setting defaultChannel is allowed
+        if !allowSetDefaultChannel {
+            logger.error("setChannel is disabled by allowSetDefaultChannel config")
+            setChannel.message = "setChannel is disabled by configuration"
+            setChannel.error = "disabled_by_config"
+            return setChannel
+        }
 
         // Check if rate limit was exceeded
         if CapgoUpdater.rateLimitExceeded {
@@ -1220,6 +1196,12 @@ import UIKit
                     if let error = responseValue.error {
                         setChannel.error = error
                     } else {
+                        // Success - persist defaultChannel
+                        self.defaultChannel = channel
+                        UserDefaults.standard.set(channel, forKey: defaultChannelKey)
+                        UserDefaults.standard.synchronize()
+                        self.logger.info("defaultChannel persisted locally: \(channel)")
+
                         setChannel.status = responseValue.status ?? ""
                         setChannel.message = responseValue.message ?? ""
                     }

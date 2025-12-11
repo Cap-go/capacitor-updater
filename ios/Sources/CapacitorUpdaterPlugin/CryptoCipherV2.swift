@@ -42,6 +42,7 @@ public struct CryptoCipherV2 {
             // Determine if input is hex or base64 encoded
             // Hex strings only contain 0-9 and a-f, while base64 contains other characters
             let checksumBytes: Data
+            let detectedFormat: String
             if isHexString(checksum) {
                 // Hex encoded (new format from CLI for plugin versions >= 5.30.0, 6.30.0, 7.30.0)
                 guard let hexData = hexStringToData(checksum) else {
@@ -49,6 +50,7 @@ public struct CryptoCipherV2 {
                     throw CustomError.cannotDecode
                 }
                 checksumBytes = hexData
+                detectedFormat = "hex"
             } else {
                 // TODO: remove backwards compatibility
                 // Base64 encoded (old format for backwards compatibility)
@@ -57,7 +59,9 @@ public struct CryptoCipherV2 {
                     throw CustomError.cannotDecode
                 }
                 checksumBytes = base64Data
+                detectedFormat = "base64"
             }
+            logger.debug("Received encrypted checksum format: \(detectedFormat) (length: \(checksum.count) chars, \(checksumBytes.count) bytes)")
 
             if checksumBytes.isEmpty {
                 logger.error("Decoded checksum is empty")
@@ -75,12 +79,55 @@ public struct CryptoCipherV2 {
             }
 
             // Return as hex string to match calcChecksum output format
-            return decryptedChecksum.map { String(format: "%02x", $0) }.joined()
+            let result = decryptedChecksum.map { String(format: "%02x", $0) }.joined()
+
+            // Detect checksum algorithm based on length
+            let detectedAlgorithm: String
+            if decryptedChecksum.count == 32 {
+                detectedAlgorithm = "SHA-256"
+            } else if decryptedChecksum.count == 4 {
+                detectedAlgorithm = "CRC32 (deprecated)"
+                logger.error("CRC32 checksum detected. This algorithm is deprecated and no longer supported. Please update your CLI to use SHA-256 checksums.")
+            } else {
+                detectedAlgorithm = "unknown (\(decryptedChecksum.count) bytes)"
+                logger.error("Unknown checksum algorithm detected with \(decryptedChecksum.count) bytes. Expected SHA-256 (32 bytes).")
+            }
+            logger.debug("Decrypted checksum: \(detectedAlgorithm) hex format (length: \(result.count) chars, \(decryptedChecksum.count) bytes)")
+            return result
         } catch {
             logger.error("decryptChecksum fail: \(error.localizedDescription)")
             throw CustomError.cannotDecode
         }
     }
+
+    /// Detect checksum algorithm based on hex string length.
+    /// SHA-256 = 64 hex chars (32 bytes)
+    /// CRC32 = 8 hex chars (4 bytes)
+    public static func detectChecksumAlgorithm(_ hexChecksum: String) -> String {
+        if hexChecksum.isEmpty {
+            return "empty"
+        }
+        let len = hexChecksum.count
+        if len == 64 {
+            return "SHA-256"
+        } else if len == 8 {
+            return "CRC32 (deprecated)"
+        } else {
+            return "unknown (\(len) hex chars)"
+        }
+    }
+
+    /// Log checksum info and warn if deprecated algorithm detected.
+    public static func logChecksumInfo(label: String, hexChecksum: String) {
+        let algorithm = detectChecksumAlgorithm(hexChecksum)
+        logger.debug("\(label): \(algorithm) hex format (length: \(hexChecksum.count) chars)")
+        if algorithm.contains("CRC32") {
+            logger.error("CRC32 checksum detected. This algorithm is deprecated and no longer supported. Please update your CLI to use SHA-256 checksums.")
+        } else if algorithm.contains("unknown") {
+            logger.error("Unknown checksum algorithm detected. Expected SHA-256 (64 hex chars) but got \(hexChecksum.count) chars.")
+        }
+    }
+
     public static func calcChecksum(filePath: URL) -> String {
         let bufferSize = 1024 * 1024 * 5 // 5 MB
         var sha256 = SHA256()

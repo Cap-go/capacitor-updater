@@ -43,6 +43,7 @@ CapacitorUpdater can be configured with these options:
 | **`allowManualBundleError`** | `boolean` | Allow marking bundles as errored from JavaScript while using manual update flows. When enabled, {@link CapacitorUpdaterPlugin.setBundleError} can change a bundle status to `error`. | `false` | 7.20.0 |
 | **`persistCustomId`** | `boolean` | Persist the customId set through {@link CapacitorUpdaterPlugin.setCustomId} across app restarts. Only available for Android and iOS. | `false (will be true by default in a future major release v8.x.x)` | 7.17.3 |
 | **`persistModifyUrl`** | `boolean` | Persist the updateUrl, statsUrl and channelUrl set through {@link CapacitorUpdaterPlugin.setUpdateUrl}, {@link CapacitorUpdaterPlugin.setStatsUrl} and {@link CapacitorUpdaterPlugin.setChannelUrl} across app restarts. Only available for Android and iOS. | `false` | 7.20.0 |
+| **`allowSetDefaultChannel`** | `boolean` | Allow or disallow the {@link CapacitorUpdaterPlugin.setChannel} method to modify the defaultChannel. When set to `false`, calling `setChannel()` will return an error with code `disabled_by_config`. | `true` | 7.34.0 |
 | **`defaultChannel`** | `string` | Set the default channel for the app in the config. Case sensitive. This will setting will override the default channel set in the cloud, but will still respect overrides made in the cloud. This requires the channel to allow devices to self dissociate/associate in the channel settings. https://capgo.app/docs/public-api/channels/#channel-configuration-options | `undefined` | 5.5.0 |
 | **`appId`** | `string` | Configure the app id for the app in the config. | `undefined` | 6.0.0 |
 | **`keepUrlPathAfterReload`** | `boolean` | Configure the plugin to keep the URL path after a reload. WARNING: When a reload is triggered, 'window.history' will be cleared. | `false` | 6.8.0 |
@@ -93,6 +94,7 @@ CapacitorUpdater can be configured with these options:
 - [`addListener('downloadFailed')`](#addlistenerdownloadfailed-)
 - [`addListener('appReloaded')`](#addlistenerappreloaded-)
 - [`addListener('appReady')`](#addlistenerappready-)
+- [`addListener('channelPrivate')`](#addlistenerchannelprivate-)
 - [`isAutoUpdateAvailable`](#isautoupdateavailable)
 - [`getNextBundle`](#getnextbundle)
 - [`getFailedUpdate`](#getfailedupdate)
@@ -692,6 +694,34 @@ After receiving the latest version info, you can:
 2. Download it using {@link download}
 3. Apply it using {@link next} or {@link set}
 
+**Important: Error handling for "no new version available"**
+
+When the device's current version matches the latest version on the server (i.e., the device is already
+up-to-date), the server returns a 200 response with `error: "no_new_version_available"` and
+`message: "No new version available"`. **This causes `getLatest()` to throw an error**, even though
+this is a normal, expected condition.
+
+You should catch this specific error to handle it gracefully:
+
+```typescript
+try {
+  const latest = await CapacitorUpdater.getLatest();
+  // New version is available, proceed with download
+} catch (error) {
+  if (error.message === 'No new version available') {
+    // Device is already on the latest version - this is normal
+    console.log('Already up to date');
+  } else {
+    // Actual error occurred
+    console.error('Failed to check for updates:', error);
+  }
+}
+```
+
+In this scenario, the server:
+- Logs the request with a "No new version available" message
+- Sends a "noNew" stat action to track that the device checked for updates but was already current (done on the backend)
+
 **Parameters**
 
 | Name | Type | Description |
@@ -704,7 +734,7 @@ After receiving the latest version info, you can:
 
 **Since:** 4.0.0
 
-**Throws:** {Error} If the request fails or the server returns an error.
+**Throws:** {Error} Always throws when no new version is available (`error: "no_new_version_available"`), or when the request fails.
 
 
 --------------------
@@ -733,6 +763,19 @@ Channels allow you to distribute different bundle versions to different groups o
 **When NOT to use:**
 - At app boot/initialization - use {@link PluginsConfig.CapacitorUpdater.defaultChannel} config instead
 - Before user interaction
+
+**Important: Listen for the `channelPrivate` event**
+
+When a user attempts to set a channel that doesn't allow device self-assignment, the method will
+throw an error AND fire a {@link addListener}('channelPrivate') event. You should listen to this event
+to provide appropriate feedback to users:
+
+```typescript
+CapacitorUpdater.addListener('channelPrivate', (data) => {
+  console.warn(`Cannot access channel "${data.channel}": ${data.message}`);
+  // Show user-friendly message
+});
+```
 
 This sends a request to the Capgo backend linking your device ID to the specified channel.
 
@@ -1301,6 +1344,36 @@ Listen for app ready event in the App, let you know when app is ready to use, th
 `Promise<PluginListenerHandle>`
 
 **Since:** 5.1.0
+
+
+--------------------
+
+
+### addListener('channelPrivate')
+
+```typescript
+addListener(eventName: 'channelPrivate', listenerFunc: (state: ChannelPrivateEvent) => void) => Promise<PluginListenerHandle>
+```
+
+Listen for channel private event, fired when attempting to set a channel that doesn't allow device self-assignment.
+
+This event is useful for:
+- Informing users they don't have permission to switch to a specific channel
+- Implementing custom error handling for channel restrictions
+- Logging unauthorized channel access attempts
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `eventName` | `'channelPrivate'` |  |
+| `listenerFunc` | `(state: ChannelPrivateEvent) => void` |  |
+
+**Returns**
+
+`Promise<PluginListenerHandle>`
+
+**Since:** 7.34.0
 
 
 --------------------

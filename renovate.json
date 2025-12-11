@@ -95,6 +95,16 @@
         "gradle"
       ],
       "enabled": false
+    },
+    // Specific rule to disable androidx.work:work-runtime updates to prevent kotlin version conflicts
+    {
+      "matchPackageNames": [
+        "androidx.work:work-runtime"
+      ],
+      "matchManagers": [
+        "gradle"
+      ],
+      "enabled": false
     }
   ]
 }

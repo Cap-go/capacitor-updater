@@ -305,6 +305,15 @@ declare module '@capacitor/cli' {
       persistModifyUrl?: boolean;
 
       /**
+       * Allow or disallow the {@link CapacitorUpdaterPlugin.setChannel} method to modify the defaultChannel.
+       * When set to `false`, calling `setChannel()` will return an error with code `disabled_by_config`.
+       *
+       * @default true
+       * @since 7.34.0
+       */
+      allowSetDefaultChannel?: boolean;
+
+      /**
        * Set the default channel for the app in the config. Case sensitive.
        * This will setting will override the default channel set in the cloud, but will still respect overrides made in the cloud.
        * This requires the channel to allow devices to self dissociate/associate in the channel settings. https://capgo.app/docs/public-api/channels/#channel-configuration-options
@@ -708,9 +717,37 @@ export interface CapacitorUpdaterPlugin {
    * 2. Download it using {@link download}
    * 3. Apply it using {@link next} or {@link set}
    *
+   * **Important: Error handling for "no new version available"**
+   *
+   * When the device's current version matches the latest version on the server (i.e., the device is already
+   * up-to-date), the server returns a 200 response with `error: "no_new_version_available"` and
+   * `message: "No new version available"`. **This causes `getLatest()` to throw an error**, even though
+   * this is a normal, expected condition.
+   *
+   * You should catch this specific error to handle it gracefully:
+   *
+   * ```typescript
+   * try {
+   *   const latest = await CapacitorUpdater.getLatest();
+   *   // New version is available, proceed with download
+   * } catch (error) {
+   *   if (error.message === 'No new version available') {
+   *     // Device is already on the latest version - this is normal
+   *     console.log('Already up to date');
+   *   } else {
+   *     // Actual error occurred
+   *     console.error('Failed to check for updates:', error);
+   *   }
+   * }
+   * ```
+   *
+   * In this scenario, the server:
+   * - Logs the request with a "No new version available" message
+   * - Sends a "noNew" stat action to track that the device checked for updates but was already current (done on the backend)
+   *
    * @param options Optional {@link GetLatestOptions} to specify which channel to check.
    * @returns {Promise<LatestVersion>} Information about the latest available bundle version.
-   * @throws {Error} If the request fails or the server returns an error.
+   * @throws {Error} Always throws when no new version is available (`error: "no_new_version_available"`), or when the request fails.
    * @since 4.0.0
    */
   getLatest(options?: GetLatestOptions): Promise<LatestVersion>;
@@ -733,6 +770,19 @@ export interface CapacitorUpdaterPlugin {
    * **When NOT to use:**
    * - At app boot/initialization - use {@link PluginsConfig.CapacitorUpdater.defaultChannel} config instead
    * - Before user interaction
+   *
+   * **Important: Listen for the `channelPrivate` event**
+   *
+   * When a user attempts to set a channel that doesn't allow device self-assignment, the method will
+   * throw an error AND fire a {@link addListener}('channelPrivate') event. You should listen to this event
+   * to provide appropriate feedback to users:
+   *
+   * ```typescript
+   * CapacitorUpdater.addListener('channelPrivate', (data) => {
+   *   console.warn(`Cannot access channel "${data.channel}": ${data.message}`);
+   *   // Show user-friendly message
+   * });
+   * ```
    *
    * This sends a request to the Capgo backend linking your device ID to the specified channel.
    *
@@ -1029,6 +1079,21 @@ export interface CapacitorUpdaterPlugin {
    * @since 5.1.0
    */
   addListener(eventName: 'appReady', listenerFunc: (state: AppReadyEvent) => void): Promise<PluginListenerHandle>;
+
+  /**
+   * Listen for channel private event, fired when attempting to set a channel that doesn't allow device self-assignment.
+   *
+   * This event is useful for:
+   * - Informing users they don't have permission to switch to a specific channel
+   * - Implementing custom error handling for channel restrictions
+   * - Logging unauthorized channel access attempts
+   *
+   * @since 7.34.0
+   */
+  addListener(
+    eventName: 'channelPrivate',
+    listenerFunc: (state: ChannelPrivateEvent) => void,
+  ): Promise<PluginListenerHandle>;
 
   /**
    * Check if the auto-update feature is available (not disabled by custom server configuration).
@@ -1338,6 +1403,16 @@ export interface AppReadyEvent {
   status: string;
 }
 
+export interface ChannelPrivateEvent {
+  /**
+   * Emitted when attempting to set a channel that doesn't allow device self-assignment.
+   *
+   * @since 7.34.0
+   */
+  channel: string;
+  message: string;
+}
+
 export interface ManifestEntry {
   file_name: string | null;
   file_hash: string | null;
@@ -1365,12 +1440,29 @@ export interface LatestVersion {
    * @deprecated Use {@link LatestVersion.breaking} instead.
    */
   major?: boolean;
+  /**
+   * Optional message from the server.
+   * When no new version is available, this will be "No new version available".
+   */
   message?: string;
   sessionKey?: string;
+  /**
+   * Error code from the server, if any.
+   * Common values:
+   * - `"no_new_version_available"`: Device is already on the latest version (not a failure)
+   * - Other error codes indicate actual failures in the update process
+   */
   error?: string;
+  /**
+   * The previous/current version name (provided for reference).
+   */
   old?: string;
+  /**
+   * Download URL for the bundle (when a new version is available).
+   */
   url?: string;
   /**
+   * File list for partial updates (when using multi-file downloads).
    * @since 6.1
    */
   manifest?: ManifestEntry[];
