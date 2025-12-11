@@ -302,8 +302,11 @@ public class DownloadService extends Worker {
                 }
 
                 final String finalFileHash = fileHash;
+                // Remove .br extension for decompressed files
+                boolean isBrotli = fileName.endsWith(".br");
+                String finalFileName = isBrotli ? fileName.substring(0, fileName.length() - 3) : fileName;
                 File targetFile = new File(destFolder, fileName);
-                File cacheFile = new File(cacheFolder, finalFileHash + "_" + new File(fileName).getName());
+                File cacheFile = new File(cacheFolder, finalFileHash + "_" + new File(finalFileName).getName());
                 File builtinFile = new File(builtinFolder, fileName);
 
                 // Ensure parent directories of the target file exist
@@ -589,7 +592,8 @@ public class DownloadService extends Worker {
         // Create a temporary file for the compressed data
         File compressedFile = new File(getApplicationContext().getCacheDir(), "temp_" + targetFile.getName() + ".tmp");
 
-        try (Response response = sharedClient.newCall(request).execute()) {
+        try {
+            try (Response response = sharedClient.newCall(request).execute()) {
             if (!response.isSuccessful()) {
                 sendStatsAsync("download_manifest_file_fail", getInputData().getString(VERSION) + ":" + finalTargetFile.getName());
                 throw new IOException("Unexpected response code: " + response.code());
@@ -619,8 +623,6 @@ public class DownloadService extends Worker {
                     try {
                         decompressedData = decompressBrotli(compressedData, targetFile.getName());
                     } catch (IOException e) {
-                        // Delete the compressed file before throwing error
-                        compressedFile.delete();
                         sendStatsAsync(
                             "download_manifest_brotli_fail",
                             getInputData().getString(VERSION) + ":" + finalTargetFile.getName()
@@ -666,8 +668,14 @@ public class DownloadService extends Worker {
                         calculatedHash
                 );
             }
+            }
         } catch (Exception e) {
             throw new IOException("Error in downloadAndVerify: " + e.getMessage());
+        } finally {
+            // Always cleanup the compressed temp file if it still exists
+            if (compressedFile.exists()) {
+                compressedFile.delete();
+            }
         }
     }
 

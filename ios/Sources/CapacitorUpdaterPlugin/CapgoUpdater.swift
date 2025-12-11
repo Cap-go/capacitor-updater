@@ -445,10 +445,13 @@ import UIKit
                 }
             }
 
-            let fileNameWithoutPath = (fileName as NSString).lastPathComponent
+            // Check if file has .br extension for Brotli decompression
+            let isBrotli = fileName.hasSuffix(".br")
+            let finalFileName = isBrotli ? String(fileName.dropLast(3)) : fileName
+            let fileNameWithoutPath = (finalFileName as NSString).lastPathComponent
             let cacheFileName = "\(fileHash)_\(fileNameWithoutPath)"
             let cacheFilePath = cacheFolder.appendingPathComponent(cacheFileName)
-            let destFilePath = destFolder.appendingPathComponent(fileName)
+            let destFilePath = destFolder.appendingPathComponent(finalFileName)
             let builtinFilePath = builtinFolder.appendingPathComponent(fileName)
 
             // Create necessary subdirectories in the destination folder
@@ -501,11 +504,6 @@ import UIKit
                                 finalData = try Data(contentsOf: tempFile)
                                 try FileManager.default.removeItem(at: tempFile)
                             }
-
-                            // Check if file has .br extension for Brotli decompression
-                            let isBrotli = fileName.hasSuffix(".br")
-                            let finalFileName = isBrotli ? String(fileName.dropLast(3)) : fileName
-                            let destFilePath = destFolder.appendingPathComponent(finalFileName)
 
                             if isBrotli {
                                 // Decompress the Brotli data
