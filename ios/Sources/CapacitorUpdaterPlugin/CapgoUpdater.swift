@@ -446,9 +446,7 @@ import UIKit
             }
 
             // Check if file has .br extension for Brotli decompression
-            let isBrotli = fileName.hasSuffix(".br")
-            let finalFileName = isBrotli ? String(fileName.dropLast(3)) : fileName
-            let fileNameWithoutPath = (finalFileName as NSString).lastPathComponent
+            let fileNameWithoutPath = (fileName as NSString).lastPathComponent
             let cacheFileName = "\(fileHash)_\(fileNameWithoutPath)"
             let cacheFilePath = cacheFolder.appendingPathComponent(cacheFileName)
             
