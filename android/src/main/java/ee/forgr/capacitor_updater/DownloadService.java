@@ -302,11 +302,11 @@ public class DownloadService extends Worker {
                 }
 
                 final String finalFileHash = fileHash;
-                
+
                 // Check if file is a Brotli file and remove .br extension from target
                 boolean isBrotli = fileName.endsWith(".br");
                 String targetFileName = isBrotli ? fileName.substring(0, fileName.length() - 3) : fileName;
-                
+
                 File targetFile = new File(destFolder, targetFileName);
                 File cacheFile = new File(cacheFolder, finalFileHash + "_" + new File(fileName).getName());
                 File builtinFile = new File(builtinFolder, fileName);
