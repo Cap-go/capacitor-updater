@@ -206,9 +206,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         // Set logger for shared classes
         implementation.setLogger(logger)
-        CryptoCipherV2.setLogger(logger)
-        CryptoCipherV1.setLogger(logger)
-        CryptoCipherV2.setLogger(logger)
+        CryptoCipher.setLogger(logger)
 
         // Initialize DelayUpdateUtils
         self.delayUpdateUtils = DelayUpdateUtils(currentVersionNative: currentVersionNative, logger: logger)
@@ -517,7 +515,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     throw ObjectSavableError.checksum
                 }
 
-                checksum = try CryptoCipherV2.decryptChecksum(checksum: checksum, publicKey: self.implementation.publicKey)
+                checksum = try CryptoCipher.decryptChecksum(checksum: checksum, publicKey: self.implementation.publicKey)
                 CryptoCipher.logChecksumInfo(label: "Bundle checksum", hexChecksum: next.getChecksum())
                 CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: checksum)
                 if (checksum != "" || self.implementation.publicKey != "") && next.getChecksum() != checksum {
@@ -1358,7 +1356,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         self.endBackGroundTaskWithNotif(msg: "Latest version is in error state. Aborting update.", latestVersionName: latestVersionName, current: current)
                         return
                     }
-                    res.checksum = try CryptoCipherV2.decryptChecksum(checksum: res.checksum, publicKey: self.implementation.publicKey)
+                    res.checksum = try CryptoCipher.decryptChecksum(checksum: res.checksum, publicKey: self.implementation.publicKey)
                     CryptoCipher.logChecksumInfo(label: "Bundle checksum", hexChecksum: next.getChecksum())
                     CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: res.checksum)
                     if res.checksum != "" && next.getChecksum() != res.checksum && res.manifest == nil {

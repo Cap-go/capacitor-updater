@@ -400,15 +400,13 @@ public class CapgoUpdater {
 
                 if (!this.hasOldPrivateKeyPropertyInConfig && !sessionKey.isEmpty()) {
                     // V2 Encryption (publicKey)
-                    CryptoCipherV2.decryptFile(downloaded, publicKey, sessionKey);
-                    checksumDecrypted = CryptoCipherV2.decryptChecksum(checksumRes, publicKey);
-                    checksum = CryptoCipherV2.calcChecksum(downloaded);
+                    CryptoCipher.decryptFile(downloaded, publicKey, sessionKey);
+                    checksumDecrypted = CryptoCipher.decryptChecksum(checksumRes, publicKey);
+                    checksum = CryptoCipher.calcChecksum(downloaded);
                 } else if (this.hasOldPrivateKeyPropertyInConfig) {
-                    // V1 Encryption (privateKey) - deprecated but supported
-                    CryptoCipherV1.decryptFile(downloaded, privateKey, sessionKey, version);
-                    checksum = CryptoCipherV1.calcChecksum(downloaded);
-                } else {
-                    checksum = CryptoCipherV2.calcChecksum(downloaded);
+                    // V1 Encryption (privateKey) - deprecated not supported
+                    this.sendStats("checksum_fail");
+                    throw new IOException("V1 decryption is no longer supported for security reasons.");
                 }
                 CryptoCipher.logChecksumInfo("Calculated checksum", checksum);
                 CryptoCipher.logChecksumInfo("Expected checksum", checksumDecrypted);

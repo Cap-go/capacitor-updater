@@ -10,8 +10,6 @@ package ee.forgr.capacitor_updater;
  * Created by Awesometic
  * It's encrypt returns Base64 encoded, and also decrypt for Base64 encoded cipher
  * references: http://stackoverflow.com/questions/12471999/rsa-encryption-decryption-in-android
- *
- * V2 Encryption - uses publicKey (modern encryption from main branch)
  */
 import android.util.Base64;
 import java.io.BufferedInputStream;
@@ -37,7 +35,7 @@ import javax.crypto.SecretKey;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
-public class CryptoCipherV2 {
+public class CryptoCipher {
 
     private static Logger logger;
 
@@ -155,10 +153,10 @@ public class CryptoCipherV2 {
             String sessionKeyB64 = ivSessionKey.split(":")[1];
             byte[] iv = Base64.decode(ivB64.getBytes(), Base64.DEFAULT);
             byte[] sessionKey = Base64.decode(sessionKeyB64.getBytes(), Base64.DEFAULT);
-            PublicKey pKey = CryptoCipherV2.stringToPublicKey(publicKey);
-            byte[] decryptedSessionKey = CryptoCipherV2.decryptRSA(sessionKey, pKey);
+            PublicKey pKey = CryptoCipher.stringToPublicKey(publicKey);
+            byte[] decryptedSessionKey = CryptoCipher.decryptRSA(sessionKey, pKey);
 
-            SecretKey sKey = CryptoCipherV2.byteToSessionKey(decryptedSessionKey);
+            SecretKey sKey = CryptoCipher.byteToSessionKey(decryptedSessionKey);
             byte[] content = new byte[(int) file.length()];
 
             try (
@@ -168,7 +166,7 @@ public class CryptoCipherV2 {
             ) {
                 dis.readFully(content);
                 dis.close();
-                byte[] decrypted = CryptoCipherV2.decryptAES(content, sKey, iv);
+                byte[] decrypted = CryptoCipher.decryptAES(content, sKey, iv);
                 // write the decrypted string to the file
                 try (final FileOutputStream fos = new FileOutputStream(file.getAbsolutePath())) {
                     fos.write(decrypted);

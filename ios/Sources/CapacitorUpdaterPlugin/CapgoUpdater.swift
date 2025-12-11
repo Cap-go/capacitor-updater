@@ -402,7 +402,7 @@ import UIKit
     private var tempData = Data()
 
     private func verifyChecksum(file: URL, expectedHash: String) -> Bool {
-        let actualHash = CryptoCipherV2.calcChecksum(filePath: file)
+        let actualHash = CryptoCipher.calcChecksum(filePath: file)
         return actualHash == expectedHash
     }
 
@@ -441,10 +441,10 @@ import UIKit
             if !self.hasOldPrivateKeyPropertyInConfig && !self.publicKey.isEmpty && !sessionKey.isEmpty {
                 // V2 Encryption (publicKey)
                 do {
-                    fileHash = try CryptoCipherV2.decryptChecksum(checksum: fileHash, publicKey: self.publicKey)
+                    fileHash = try CryptoCipher.decryptChecksum(checksum: fileHash, publicKey: self.publicKey)
                 } catch {
                     downloadError = error
-                    logger.error("CryptoCipherV2.decryptChecksum error \(id) \(fileName) error: \(error)")
+                    logger.error("CryptoCipher.decryptChecksum error \(id) \(fileName) error: \(error)")
                 }
             } else if self.hasOldPrivateKeyPropertyInConfig {
                 // V1 Encryption (privateKey) - deprecated but supported
@@ -499,24 +499,15 @@ import UIKit
                                 let tempFile = self.cacheFolder.appendingPathComponent("temp_\(UUID().uuidString)")
                                 try finalData.write(to: tempFile)
                                 do {
-                                    try CryptoCipherV2.decryptFile(filePath: tempFile, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
+                                    try CryptoCipher.decryptFile(filePath: tempFile, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
                                 } catch {
                                     self.sendStats(action: "decrypt_fail", versionName: version)
                                     throw error
                                 }
                                 finalData = try Data(contentsOf: tempFile)
                             } else if self.hasOldPrivateKeyPropertyInConfig && !sessionKey.isEmpty {
-                                // V1 Encryption (privateKey) - deprecated but supported
-                                let tempFile = self.cacheFolder.appendingPathComponent("temp_\(UUID().uuidString)")
-                                try finalData.write(to: tempFile)
-                                do {
-                                    try CryptoCipherV1.decryptFile(filePath: tempFile, privateKey: self.privateKey, sessionKey: sessionKey, version: version)
-                                } catch {
-                                    self.sendStats(action: "decrypt_fail", versionName: version)
-                                    throw error
-                                }
-                                finalData = try Data(contentsOf: tempFile)
-                                try FileManager.default.removeItem(at: tempFile)
+                                // V1 Encryption (privateKey) - deprecated not supported
+                                throw NSError(domain: "DeprecatedEncryptionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "V1 Encryption with privateKey is deprecated and not supported in this download method for file \(fileName) at url \(downloadUrl)"])
                             }
 
                             // Check if file has .br extension for Brotli decompression
@@ -536,7 +527,7 @@ import UIKit
                             try finalData.write(to: destFilePath)
                             if !self.publicKey.isEmpty && !sessionKey.isEmpty {
                                 // assume that calcChecksum != null
-                                let calculatedChecksum = CryptoCipherV2.calcChecksum(filePath: destFilePath)
+                                let calculatedChecksum = CryptoCipher.calcChecksum(filePath: destFilePath)
                                 CryptoCipher.logChecksumInfo(label: "Calculated checksum", hexChecksum: calculatedChecksum)
                                 CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: fileHash)
                                 if calculatedChecksum != fileHash {
@@ -793,10 +784,10 @@ import UIKit
         do {
             if !self.hasOldPrivateKeyPropertyInConfig {
                 // V2 Encryption (publicKey)
-                try CryptoCipherV2.decryptFile(filePath: tempDataPath, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
+                try CryptoCipher.decryptFile(filePath: tempDataPath, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
             } else {
                 // V1 Encryption (privateKey) - deprecated but supported
-                try CryptoCipherV1.decryptFile(filePath: tempDataPath, privateKey: self.privateKey, sessionKey: sessionKey, version: version)
+                try CryptoCipher.decryptFile(filePath: tempDataPath, privateKey: self.privateKey, sessionKey: sessionKey, version: version)
             }
             try FileManager.default.moveItem(at: tempDataPath, to: finalPath)
         } catch {
@@ -807,7 +798,7 @@ import UIKit
         }
 
         do {
-            checksum = CryptoCipherV2.calcChecksum(filePath: finalPath)
+            checksum = CryptoCipher.calcChecksum(filePath: finalPath)
             CryptoCipher.logChecksumInfo(label: "Calculated bundle checksum", hexChecksum: checksum)
             logger.info("Downloading: 80% (unzipping)")
             try self.saveDownloaded(sourceZip: finalPath, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: true)

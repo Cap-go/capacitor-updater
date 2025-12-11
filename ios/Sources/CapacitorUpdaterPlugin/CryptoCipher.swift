@@ -8,8 +8,7 @@ import Foundation
 import CryptoKit
 import BigInt
 
-// V2 Encryption - uses publicKey (modern encryption from main branch)
-public struct CryptoCipherV2 {
+public struct CryptoCipher {
     private static var logger: Logger!
 
     public static func setLogger(_ logger: Logger) {

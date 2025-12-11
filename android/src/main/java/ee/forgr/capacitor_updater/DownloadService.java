@@ -293,7 +293,7 @@ public class DownloadService extends Worker {
 
                 if (!publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
                     try {
-                        fileHash = CryptoCipherV2.decryptChecksum(fileHash, publicKey);
+                        fileHash = CryptoCipher.decryptChecksum(fileHash, publicKey);
                     } catch (Exception e) {
                         logger.error("Error decrypting checksum for " + fileName + "fileHash: " + fileHash);
                         hasError.set(true);
@@ -606,7 +606,7 @@ public class DownloadService extends Worker {
 
             if (!publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
                 logger.debug("Decrypting file " + targetFile.getName());
-                CryptoCipherV2.decryptFile(compressedFile, publicKey, sessionKey);
+                CryptoCipher.decryptFile(compressedFile, publicKey, sessionKey);
             }
 
             // Only decompress if file has .br extension
@@ -773,7 +773,7 @@ public class DownloadService extends Worker {
 
             // Verify checksum if provided
             if (expectedChecksum != null && !expectedChecksum.isEmpty()) {
-                String actualChecksum = CryptoCipherV2.calcChecksum(tempFile);
+                String actualChecksum = CryptoCipher.calcChecksum(tempFile);
                 if (!expectedChecksum.equalsIgnoreCase(actualChecksum)) {
                     tempFile.delete();
                     throw new IOException("Checksum verification failed");
