@@ -358,7 +358,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func cleanupObsoleteVersions() {
-        let previous = UserDefaults.standard.string(forKey: "LatestNativeBuildVersion") ?? "0"
+        let previous = UserDefaults.standard.string(forKey: "LatestNativeBuildVersion") ?? UserDefaults.standard.string(forKey: "LatestVersionNative") ?? "0"
         if previous != "0" && self.currentBuildVersion != previous {
             _ = self._reset(toLastSuccessful: false)
             let res = implementation.list()
