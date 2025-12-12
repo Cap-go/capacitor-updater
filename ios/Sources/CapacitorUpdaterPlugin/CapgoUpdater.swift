@@ -372,6 +372,12 @@ import UIKit
                 if let manifest = response.value?.manifest {
                     latest.manifest = manifest
                 }
+                if let link = response.value?.link {
+                    latest.link = link
+                }
+                if let comment = response.value?.comment {
+                    latest.comment = comment
+                }
             case let .failure(error):
                 self.logger.error("Error getting Latest \(response.value.debugDescription) \(error)")
                 latest.message = "Error getting Latest \(String(describing: response.value))"
@@ -404,7 +410,7 @@ import UIKit
         return actualHash == expectedHash
     }
 
-    public func downloadManifest(manifest: [ManifestEntry], version: String, sessionKey: String) throws -> BundleInfo {
+    public func downloadManifest(manifest: [ManifestEntry], version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
         let id = self.randomString(length: 10)
         logger.info("downloadManifest start \(id)")
         let destFolder = self.getBundleDirectory(id: id)
@@ -414,7 +420,7 @@ import UIKit
         try FileManager.default.createDirectory(at: destFolder, withIntermediateDirectories: true, attributes: nil)
 
         // Create and save BundleInfo before starting the download process
-        let bundleInfo = BundleInfo(id: id, version: version, status: BundleStatus.DOWNLOADING, downloaded: Date(), checksum: "")
+        let bundleInfo = BundleInfo(id: id, version: version, status: BundleStatus.DOWNLOADING, downloaded: Date(), checksum: "", link: link, comment: comment)
         self.saveBundleInfo(id: id, bundle: bundleInfo)
 
         // Send stats for manifest download start
@@ -681,7 +687,7 @@ import UIKit
         return status == COMPRESSION_STATUS_END ? decompressedData : nil
     }
 
-    public func download(url: URL, version: String, sessionKey: String) throws -> BundleInfo {
+    public func download(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
         let id: String = self.randomString(length: 10)
         let semaphore = DispatchSemaphore(value: 0)
         if version != getLocalUpdateVersion() {
@@ -748,7 +754,7 @@ import UIKit
                 semaphore.signal()
             }
         }
-        self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.DOWNLOADING, downloaded: Date(), checksum: checksum))
+        self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.DOWNLOADING, downloaded: Date(), checksum: checksum, link: link, comment: comment))
         let reachabilityManager = NetworkReachabilityManager()
         reachabilityManager?.startListening { status in
             switch status {
@@ -766,7 +772,7 @@ import UIKit
 
         if mainError != nil {
             logger.error("Failed to download: \(String(describing: mainError))")
-            self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum))
+            self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum, link: link, comment: comment))
             throw mainError!
         }
 
@@ -776,7 +782,7 @@ import UIKit
             try FileManager.default.moveItem(at: tempDataPath, to: finalPath)
         } catch {
             logger.error("Failed decrypt file : \(error)")
-            self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum))
+            self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum, link: link, comment: comment))
             cleanDownloadData()
             throw error
         }
@@ -789,7 +795,7 @@ import UIKit
 
         } catch {
             logger.error("Failed to unzip file: \(error)")
-            self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum))
+            self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum, link: link, comment: comment))
             // Best-effort cleanup of the decrypted zip file when unzip fails
             do {
                 if FileManager.default.fileExists(atPath: finalPath.path) {
@@ -804,7 +810,7 @@ import UIKit
 
         self.notifyDownload(id: id, percent: 90)
         logger.info("Downloading: 90% (wrapping up)")
-        let info = BundleInfo(id: id, version: version, status: BundleStatus.PENDING, downloaded: Date(), checksum: checksum)
+        let info = BundleInfo(id: id, version: version, status: BundleStatus.PENDING, downloaded: Date(), checksum: checksum, link: link, comment: comment)
         self.saveBundleInfo(id: id, bundle: info)
         self.cleanDownloadData()
 
