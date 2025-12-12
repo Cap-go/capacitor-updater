@@ -44,7 +44,15 @@ public class BundleInfo {
         this(id, version, status, sdf.format(downloaded), checksum, null, null);
     }
 
-    public BundleInfo(final String id, final String version, final BundleStatus status, final Date downloaded, final String checksum, final String link, final String comment) {
+    public BundleInfo(
+        final String id,
+        final String version,
+        final BundleStatus status,
+        final Date downloaded,
+        final String checksum,
+        final String link,
+        final String comment
+    ) {
         this(id, version, status, sdf.format(downloaded), checksum, link, comment);
     }
 
@@ -52,7 +60,15 @@ public class BundleInfo {
         this(id, version, status, downloaded, checksum, null, null);
     }
 
-    public BundleInfo(final String id, final String version, final BundleStatus status, final String downloaded, final String checksum, final String link, final String comment) {
+    public BundleInfo(
+        final String id,
+        final String version,
+        final BundleStatus status,
+        final String downloaded,
+        final String checksum,
+        final String link,
+        final String comment
+    ) {
         this.downloaded = downloaded != null ? downloaded.trim() : "";
         this.id = id != null ? id : "";
         this.version = version;

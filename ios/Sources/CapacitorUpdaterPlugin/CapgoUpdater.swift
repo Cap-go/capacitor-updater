@@ -406,7 +406,7 @@ import UIKit
     private var tempData = Data()
 
     private func verifyChecksum(file: URL, expectedHash: String) -> Bool {
-        let actualHash = CryptoCipher.calcChecksum(filePath: file)
+        let actualHash =    CryptoCipher.calcChecksum(filePath: file)
         return actualHash == expectedHash
     }
 
@@ -452,12 +452,15 @@ import UIKit
             }
 
             // Check if file has .br extension for Brotli decompression
-            let isBrotli = fileName.hasSuffix(".br")
-            let finalFileName = isBrotli ? String(fileName.dropLast(3)) : fileName
-            let fileNameWithoutPath = (finalFileName as NSString).lastPathComponent
+            let fileNameWithoutPath = (fileName as NSString).lastPathComponent
             let cacheFileName = "\(fileHash)_\(fileNameWithoutPath)"
             let cacheFilePath = cacheFolder.appendingPathComponent(cacheFileName)
-            let destFilePath = destFolder.appendingPathComponent(finalFileName)
+
+            // Check if file is Brotli compressed and remove .br extension from destination
+            let isBrotli = fileName.hasSuffix(".br")
+            let destFileName = isBrotli ? String(fileName.dropLast(3)) : fileName
+
+            let destFilePath = destFolder.appendingPathComponent(destFileName)
             let builtinFilePath = builtinFolder.appendingPathComponent(fileName)
 
             // Create necessary subdirectories in the destination folder
@@ -511,10 +514,11 @@ import UIKit
                                 try FileManager.default.removeItem(at: tempFile)
                             }
 
+                            // Use the isBrotli and destFilePath already computed above
                             if isBrotli {
                                 // Decompress the Brotli data
                                 guard let decompressedData = self.decompressBrotli(data: finalData, fileName: fileName) else {
-                                    self.sendStats(action: "download_manifest_brotli_fail", versionName: "\(version):\(finalFileName)")
+                                    self.sendStats(action: "download_manifest_brotli_fail", versionName: "\(version):\(destFileName)")
                                     throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data for file \(fileName) at url \(downloadUrl)"])
                                 }
                                 finalData = decompressedData
@@ -529,7 +533,7 @@ import UIKit
                                 if calculatedChecksum != fileHash {
                                     // Delete the corrupt file before throwing error
                                     try? FileManager.default.removeItem(at: destFilePath)
-                                    self.sendStats(action: "download_manifest_checksum_fail", versionName: "\(version):\(finalFileName)")
+                                    self.sendStats(action: "download_manifest_checksum_fail", versionName: "\(version):\(destFileName)")
                                     throw NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash)) for file \(fileName) at url \(downloadUrl)"])
                                 }
                             }

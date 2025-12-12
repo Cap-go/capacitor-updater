@@ -302,11 +302,13 @@ public class DownloadService extends Worker {
                 }
 
                 final String finalFileHash = fileHash;
-                // Remove .br extension for decompressed files
+
+                // Check if file is a Brotli file and remove .br extension from target
                 boolean isBrotli = fileName.endsWith(".br");
-                String finalFileName = isBrotli ? fileName.substring(0, fileName.length() - 3) : fileName;
-                File targetFile = new File(destFolder, fileName);
-                File cacheFile = new File(cacheFolder, finalFileHash + "_" + new File(finalFileName).getName());
+                String targetFileName = isBrotli ? fileName.substring(0, fileName.length() - 3) : fileName;
+
+                File targetFile = new File(destFolder, targetFileName);
+                File cacheFile = new File(cacheFolder, finalFileHash + "_" + new File(fileName).getName());
                 File builtinFile = new File(builtinFolder, fileName);
 
                 // Ensure parent directories of the target file exist
@@ -316,6 +318,7 @@ public class DownloadService extends Worker {
                     continue;
                 }
 
+                final boolean finalIsBrotli = isBrotli;
                 Future<?> future = executor.submit(() -> {
                     try {
                         if (builtinFile.exists() && verifyChecksum(builtinFile, finalFileHash)) {
@@ -325,7 +328,7 @@ public class DownloadService extends Worker {
                             copyFile(cacheFile, targetFile);
                             logger.debug("already cached " + fileName);
                         } else {
-                            downloadAndVerify(downloadUrl, targetFile, cacheFile, finalFileHash, sessionKey, publicKey);
+                            downloadAndVerify(downloadUrl, targetFile, cacheFile, finalFileHash, sessionKey, publicKey, finalIsBrotli);
                         }
 
                         long completed = completedFiles.incrementAndGet();
@@ -575,19 +578,15 @@ public class DownloadService extends Worker {
         File cacheFile,
         String expectedHash,
         String sessionKey,
-        String publicKey
+        String publicKey,
+        boolean isBrotli
     ) throws Exception {
         logger.debug("downloadAndVerify " + downloadUrl);
 
         Request request = new Request.Builder().url(downloadUrl).build();
 
-        // Check if file is a Brotli file
-        boolean isBrotli = targetFile.getName().endsWith(".br");
-
-        // Create final target file with .br extension removed if it's a Brotli file
-        File finalTargetFile = isBrotli
-            ? new File(targetFile.getParentFile(), targetFile.getName().substring(0, targetFile.getName().length() - 3))
-            : targetFile;
+        // targetFile is already the final destination without .br extension
+        File finalTargetFile = targetFile;
 
         // Create a temporary file for the compressed data
         File compressedFile = new File(getApplicationContext().getCacheDir(), "temp_" + targetFile.getName() + ".tmp");
