@@ -9,6 +9,7 @@ on:
     paths-ignore:
       - 'example-app/**'
       - '.github/**'
+  workflow_dispatch:
 
 jobs:
   # Run all tests first before creating any tags
