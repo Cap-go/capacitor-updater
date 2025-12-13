@@ -305,8 +305,10 @@ public class DownloadService extends Worker {
                 // Remove .br extension for decompressed files
                 boolean isBrotli = fileName.endsWith(".br");
                 String finalFileName = isBrotli ? fileName.substring(0, fileName.length() - 3) : fileName;
-                File targetFile = new File(destFolder, fileName);
+                // Use finalFileName (without .br) for the target since we store decompressed files
+                File targetFile = new File(destFolder, finalFileName);
                 File cacheFile = new File(cacheFolder, finalFileHash + "_" + new File(finalFileName).getName());
+                // Builtin files may be stored with .br extension
                 File builtinFile = new File(builtinFolder, fileName);
 
                 // Ensure parent directories of the target file exist
@@ -322,10 +324,14 @@ public class DownloadService extends Worker {
                             copyFile(builtinFile, targetFile);
                             logger.debug("using builtin file " + fileName);
                         } else if (cacheFile.exists() && verifyChecksum(cacheFile, finalFileHash)) {
+                            // Cache stores decompressed files, copy to target (also without .br)
                             copyFile(cacheFile, targetFile);
-                            logger.debug("already cached " + fileName);
+                            logger.debug("already cached " + finalFileName);
                         } else {
-                            downloadAndVerify(downloadUrl, targetFile, cacheFile, finalFileHash, sessionKey, publicKey);
+                            // downloadAndVerify handles Brotli decompression internally
+                            // Pass the original fileName so it knows if decompression is needed
+                            File downloadTargetFile = new File(destFolder, fileName);
+                            downloadAndVerify(downloadUrl, downloadTargetFile, cacheFile, finalFileHash, sessionKey, publicKey);
                         }
 
                         long completed = completedFiles.incrementAndGet();
