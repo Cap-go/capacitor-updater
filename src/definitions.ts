@@ -64,7 +64,7 @@ declare module '@capacitor/cli' {
 
       /**
        * Automatically delete previous downloaded bundles when a newer native app bundle is installed to the device.
-       *
+       * Setting this to false can broke the auto update flow if the user download from the store a native app bundle that is older than the current downloaded bundle. Upload will be prevented by channel setting downgrade_under_native.
        * Only available for Android and iOS.
        *
        * @default true
