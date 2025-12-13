@@ -264,4 +264,23 @@ public struct CryptoCipher {
             throw CustomError.cannotDecode
         }
     }
+
+    /// Get first 4 characters of the public key for identification
+    /// Returns 4-character string or empty string if key is invalid/empty
+    public static func calcKeyId(publicKey: String) -> String {
+        if publicKey.isEmpty {
+            return ""
+        }
+
+        // Remove PEM headers and whitespace to get the raw key data
+        let cleanedKey = publicKey
+            .replacingOccurrences(of: "-----BEGIN RSA PUBLIC KEY-----", with: "")
+            .replacingOccurrences(of: "-----END RSA PUBLIC KEY-----", with: "")
+            .replacingOccurrences(of: "\n", with: "")
+            .replacingOccurrences(of: "\r", with: "")
+            .replacingOccurrences(of: " ", with: "")
+
+        // Return first 4 characters of the base64-encoded key
+        return String(cleanedKey.prefix(4))
+    }
 }

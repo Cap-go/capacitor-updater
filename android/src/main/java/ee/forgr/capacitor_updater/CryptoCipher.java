@@ -359,4 +359,23 @@ public class CryptoCipher {
 
         throw new IllegalArgumentException("size too large, only up to 64KiB length encoding supported: " + size);
     }
+
+    /**
+     * Get first 4 characters of the public key for identification.
+     * Returns 4-character string or empty string if key is invalid/empty.
+     */
+    public static String calcKeyId(String publicKey) {
+        if (publicKey == null || publicKey.isEmpty()) {
+            return "";
+        }
+
+        // Remove PEM headers and whitespace to get the raw key data
+        String cleanedKey = publicKey
+            .replaceAll("\\s+", "")
+            .replace("-----BEGINRSAPUBLICKEY-----", "")
+            .replace("-----ENDRSAPUBLICKEY-----", "");
+
+        // Return first 4 characters of the base64-encoded key
+        return cleanedKey.length() >= 4 ? cleanedKey.substring(0, 4) : cleanedKey;
+    }
 }

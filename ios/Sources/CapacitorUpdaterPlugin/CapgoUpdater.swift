@@ -42,6 +42,9 @@ import UIKit
     public var deviceID = ""
     public var publicKey: String = ""
 
+    // Cached key ID calculated once from publicKey
+    private var cachedKeyId: String?
+
     // Flag to track if we received a 429 response - stops requests until app restart
     private static var rateLimitExceeded = false
 
@@ -77,6 +80,15 @@ import UIKit
     private func randomString(length: Int) -> String {
         let letters: String = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
         return String((0..<length).map { _ in letters.randomElement()! })
+    }
+
+    public func setPublicKey(_ publicKey: String) {
+        self.publicKey = publicKey
+        if !publicKey.isEmpty {
+            self.cachedKeyId = CryptoCipher.calcKeyId(publicKey: publicKey)
+        } else {
+            self.cachedKeyId = nil
+        }
     }
 
     private var isDevEnvironment: Bool {
@@ -324,7 +336,8 @@ import UIKit
             is_prod: self.isProd(),
             action: nil,
             channel: nil,
-            defaultChannel: self.defaultChannel
+            defaultChannel: self.defaultChannel,
+            key_id: self.cachedKeyId
         )
     }
 

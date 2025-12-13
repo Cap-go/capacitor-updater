@@ -304,7 +304,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.persistCustomId = this.getConfig().getBoolean("persistCustomId", false);
         this.persistModifyUrl = this.getConfig().getBoolean("persistModifyUrl", false);
         this.allowSetDefaultChannel = this.getConfig().getBoolean("allowSetDefaultChannel", true);
-        this.implementation.publicKey = this.getConfig().getString("publicKey", "");
+        this.implementation.setPublicKey(this.getConfig().getString("publicKey", ""));
         this.implementation.statsUrl = this.getConfig().getString("statsUrl", statsUrlDefault);
         this.implementation.channelUrl = this.getConfig().getString("channelUrl", channelUrlDefault);
         if (Boolean.TRUE.equals(this.persistModifyUrl)) {

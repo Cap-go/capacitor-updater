@@ -81,6 +81,9 @@ public class CapgoUpdater {
     public String deviceID = "";
     public int timeout = 20000;
 
+    // Cached key ID calculated once from publicKey
+    private String cachedKeyId = "";
+
     // Flag to track if we received a 429 response - stops requests until app restart
     private static volatile boolean rateLimitExceeded = false;
 
@@ -143,6 +146,15 @@ public class CapgoUpdater {
         final StringBuilder sb = new StringBuilder(10);
         for (int i = 0; i < 10; i++) sb.append(AB.charAt(rnd.nextInt(AB.length())));
         return sb.toString();
+    }
+
+    public void setPublicKey(String publicKey) {
+        this.publicKey = publicKey;
+        if (!publicKey.isEmpty()) {
+            this.cachedKeyId = CryptoCipher.calcKeyId(publicKey);
+        } else {
+            this.cachedKeyId = "";
+        }
     }
 
     private File unzip(final String id, final File zipFile, final String dest) throws IOException {
@@ -806,6 +818,12 @@ public class CapgoUpdater {
         json.put("is_emulator", this.isEmulator());
         json.put("is_prod", this.isProd());
         json.put("defaultChannel", this.defaultChannel);
+
+        // Add encryption key ID if encryption is enabled (use cached value)
+        if (!this.cachedKeyId.isEmpty()) {
+            json.put("key_id", this.cachedKeyId);
+        }
+
         return json;
     }
 

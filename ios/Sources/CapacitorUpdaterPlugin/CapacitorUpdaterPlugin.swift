@@ -196,7 +196,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             periodCheckDelay = periodCheckDelayValue
         }
 
-        implementation.publicKey = getConfig().getString("publicKey", "")!
+        implementation.setPublicKey(getConfig().getString("publicKey", "")!)
         implementation.notifyDownloadRaw = notifyDownload
         implementation.pluginVersion = self.pluginVersion
 
