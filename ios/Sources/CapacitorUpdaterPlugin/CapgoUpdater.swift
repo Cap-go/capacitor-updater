@@ -469,16 +469,26 @@ import UIKit
             dispatchGroup.enter()
 
             if FileManager.default.fileExists(atPath: builtinFilePath.path) && verifyChecksum(file: builtinFilePath, expectedHash: fileHash) {
-                try FileManager.default.copyItem(at: builtinFilePath, to: destFilePath)
-                logger.info("downloadManifest \(fileName) using builtin file \(id)")
-                completedFiles += 1
-                self.notifyDownload(id: id, percent: self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70))
+                do {
+                    try FileManager.default.copyItem(at: builtinFilePath, to: destFilePath)
+                    logger.info("downloadManifest \(fileName) using builtin file \(id)")
+                    completedFiles += 1
+                    self.notifyDownload(id: id, percent: self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70))
+                } catch {
+                    downloadError = error
+                    logger.error("Failed to copy builtin file \(fileName): \(error.localizedDescription)")
+                }
                 dispatchGroup.leave()
             } else if FileManager.default.fileExists(atPath: cacheFilePath.path) && verifyChecksum(file: cacheFilePath, expectedHash: fileHash) {
-                try FileManager.default.copyItem(at: cacheFilePath, to: destFilePath)
-                logger.info("downloadManifest \(fileName) copy from cache \(id)")
-                completedFiles += 1
-                self.notifyDownload(id: id, percent: self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70))
+                do {
+                    try FileManager.default.copyItem(at: cacheFilePath, to: destFilePath)
+                    logger.info("downloadManifest \(fileName) copy from cache \(id)")
+                    completedFiles += 1
+                    self.notifyDownload(id: id, percent: self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70))
+                } catch {
+                    downloadError = error
+                    logger.error("Failed to copy cached file \(fileName): \(error.localizedDescription)")
+                }
                 dispatchGroup.leave()
             } else {
                 // File not in cache, download, decompress, and save to both cache and destination
