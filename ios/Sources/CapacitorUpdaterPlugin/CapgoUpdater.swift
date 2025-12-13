@@ -372,6 +372,12 @@ import UIKit
                 if let manifest = response.value?.manifest {
                     latest.manifest = manifest
                 }
+                if let link = response.value?.link {
+                    latest.link = link
+                }
+                if let comment = response.value?.comment {
+                    latest.comment = comment
+                }
             case let .failure(error):
                 self.logger.error("Error getting Latest \(response.value.debugDescription) \(error)")
                 latest.message = "Error getting Latest \(String(describing: response.value))"
@@ -400,11 +406,11 @@ import UIKit
     private var tempData = Data()
 
     private func verifyChecksum(file: URL, expectedHash: String) -> Bool {
-        let actualHash = CryptoCipher.calcChecksum(filePath: file)
+        let actualHash =    CryptoCipher.calcChecksum(filePath: file)
         return actualHash == expectedHash
     }
 
-    public func downloadManifest(manifest: [ManifestEntry], version: String, sessionKey: String) throws -> BundleInfo {
+    public func downloadManifest(manifest: [ManifestEntry], version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
         let id = self.randomString(length: 10)
         logger.info("downloadManifest start \(id)")
         let destFolder = self.getBundleDirectory(id: id)
@@ -414,7 +420,7 @@ import UIKit
         try FileManager.default.createDirectory(at: destFolder, withIntermediateDirectories: true, attributes: nil)
 
         // Create and save BundleInfo before starting the download process
-        let bundleInfo = BundleInfo(id: id, version: version, status: BundleStatus.DOWNLOADING, downloaded: Date(), checksum: "")
+        let bundleInfo = BundleInfo(id: id, version: version, status: BundleStatus.DOWNLOADING, downloaded: Date(), checksum: "", link: link, comment: comment)
         self.saveBundleInfo(id: id, bundle: bundleInfo)
 
         // Send stats for manifest download start
@@ -446,12 +452,15 @@ import UIKit
             }
 
             // Check if file has .br extension for Brotli decompression
-            let isBrotli = fileName.hasSuffix(".br")
-            let finalFileName = isBrotli ? String(fileName.dropLast(3)) : fileName
-            let fileNameWithoutPath = (finalFileName as NSString).lastPathComponent
+            let fileNameWithoutPath = (fileName as NSString).lastPathComponent
             let cacheFileName = "\(fileHash)_\(fileNameWithoutPath)"
             let cacheFilePath = cacheFolder.appendingPathComponent(cacheFileName)
-            let destFilePath = destFolder.appendingPathComponent(finalFileName)
+
+            // Check if file is Brotli compressed and remove .br extension from destination
+            let isBrotli = fileName.hasSuffix(".br")
+            let destFileName = isBrotli ? String(fileName.dropLast(3)) : fileName
+
+            let destFilePath = destFolder.appendingPathComponent(destFileName)
             let builtinFilePath = builtinFolder.appendingPathComponent(fileName)
 
             // Create necessary subdirectories in the destination folder
@@ -460,16 +469,26 @@ import UIKit
             dispatchGroup.enter()
 
             if FileManager.default.fileExists(atPath: builtinFilePath.path) && verifyChecksum(file: builtinFilePath, expectedHash: fileHash) {
-                try FileManager.default.copyItem(at: builtinFilePath, to: destFilePath)
-                logger.info("downloadManifest \(fileName) using builtin file \(id)")
-                completedFiles += 1
-                self.notifyDownload(id: id, percent: self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70))
+                do {
+                    try FileManager.default.copyItem(at: builtinFilePath, to: destFilePath)
+                    logger.info("downloadManifest \(fileName) using builtin file \(id)")
+                    completedFiles += 1
+                    self.notifyDownload(id: id, percent: self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70))
+                } catch {
+                    downloadError = error
+                    logger.error("Failed to copy builtin file \(fileName): \(error.localizedDescription)")
+                }
                 dispatchGroup.leave()
             } else if FileManager.default.fileExists(atPath: cacheFilePath.path) && verifyChecksum(file: cacheFilePath, expectedHash: fileHash) {
-                try FileManager.default.copyItem(at: cacheFilePath, to: destFilePath)
-                logger.info("downloadManifest \(fileName) copy from cache \(id)")
-                completedFiles += 1
-                self.notifyDownload(id: id, percent: self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70))
+                do {
+                    try FileManager.default.copyItem(at: cacheFilePath, to: destFilePath)
+                    logger.info("downloadManifest \(fileName) copy from cache \(id)")
+                    completedFiles += 1
+                    self.notifyDownload(id: id, percent: self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70))
+                } catch {
+                    downloadError = error
+                    logger.error("Failed to copy cached file \(fileName): \(error.localizedDescription)")
+                }
                 dispatchGroup.leave()
             } else {
                 // File not in cache, download, decompress, and save to both cache and destination
@@ -505,10 +524,11 @@ import UIKit
                                 try FileManager.default.removeItem(at: tempFile)
                             }
 
+                            // Use the isBrotli and destFilePath already computed above
                             if isBrotli {
                                 // Decompress the Brotli data
                                 guard let decompressedData = self.decompressBrotli(data: finalData, fileName: fileName) else {
-                                    self.sendStats(action: "download_manifest_brotli_fail", versionName: "\(version):\(finalFileName)")
+                                    self.sendStats(action: "download_manifest_brotli_fail", versionName: "\(version):\(destFileName)")
                                     throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data for file \(fileName) at url \(downloadUrl)"])
                                 }
                                 finalData = decompressedData
@@ -523,7 +543,7 @@ import UIKit
                                 if calculatedChecksum != fileHash {
                                     // Delete the corrupt file before throwing error
                                     try? FileManager.default.removeItem(at: destFilePath)
-                                    self.sendStats(action: "download_manifest_checksum_fail", versionName: "\(version):\(finalFileName)")
+                                    self.sendStats(action: "download_manifest_checksum_fail", versionName: "\(version):\(destFileName)")
                                     throw NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash)) for file \(fileName) at url \(downloadUrl)"])
                                 }
                             }
@@ -681,7 +701,7 @@ import UIKit
         return status == COMPRESSION_STATUS_END ? decompressedData : nil
     }
 
-    public func download(url: URL, version: String, sessionKey: String) throws -> BundleInfo {
+    public func download(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
         let id: String = self.randomString(length: 10)
         let semaphore = DispatchSemaphore(value: 0)
         if version != getLocalUpdateVersion() {
@@ -748,7 +768,7 @@ import UIKit
                 semaphore.signal()
             }
         }
-        self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.DOWNLOADING, downloaded: Date(), checksum: checksum))
+        self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.DOWNLOADING, downloaded: Date(), checksum: checksum, link: link, comment: comment))
         let reachabilityManager = NetworkReachabilityManager()
         reachabilityManager?.startListening { status in
             switch status {
@@ -766,7 +786,7 @@ import UIKit
 
         if mainError != nil {
             logger.error("Failed to download: \(String(describing: mainError))")
-            self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum))
+            self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum, link: link, comment: comment))
             throw mainError!
         }
 
@@ -776,7 +796,7 @@ import UIKit
             try FileManager.default.moveItem(at: tempDataPath, to: finalPath)
         } catch {
             logger.error("Failed decrypt file : \(error)")
-            self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum))
+            self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum, link: link, comment: comment))
             cleanDownloadData()
             throw error
         }
@@ -789,7 +809,7 @@ import UIKit
 
         } catch {
             logger.error("Failed to unzip file: \(error)")
-            self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum))
+            self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum, link: link, comment: comment))
             // Best-effort cleanup of the decrypted zip file when unzip fails
             do {
                 if FileManager.default.fileExists(atPath: finalPath.path) {
@@ -804,7 +824,7 @@ import UIKit
 
         self.notifyDownload(id: id, percent: 90)
         logger.info("Downloading: 90% (wrapping up)")
-        let info = BundleInfo(id: id, version: version, status: BundleStatus.PENDING, downloaded: Date(), checksum: checksum)
+        let info = BundleInfo(id: id, version: version, status: BundleStatus.PENDING, downloaded: Date(), checksum: checksum, link: link, comment: comment)
         self.saveBundleInfo(id: id, bundle: info)
         self.cleanDownloadData()
 
