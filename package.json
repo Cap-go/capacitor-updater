@@ -37,6 +37,7 @@
     "ionic",
     "appflow alternative",
     "capawesome alternative",
+    "@capawesome/capacitor-live-update",
     "native"
   ],
   "scripts": {

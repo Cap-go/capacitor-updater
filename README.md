@@ -1771,6 +1771,8 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 | **`old`**        | <code>string</code>          | The previous/current version name (provided for reference).                                                                                                                                                   |        |
 | **`url`**        | <code>string</code>          | Download URL for the bundle (when a new version is available).                                                                                                                                                |        |
 | **`manifest`**   | <code>ManifestEntry[]</code> | File list for partial updates (when using multi-file downloads).                                                                                                                                              | 6.1    |
+| **`link`**       | <code>string</code>          | Optional link associated with this bundle version (e.g., release notes URL, changelog, GitHub release).                                                                                                       | 7.35.0 |
+| **`comment`**    | <code>string</code>          | Optional comment or description for this bundle version.                                                                                                                                                      | 7.35.0 |
 
 
 ##### GetLatestOptions

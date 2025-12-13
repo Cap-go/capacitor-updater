@@ -9,6 +9,7 @@ on:
     paths-ignore:
       - 'example-app/**'
       - '.github/**'
+  workflow_dispatch:
 
 jobs:
   # Run all tests first before creating any tags
@@ -57,7 +58,7 @@ jobs:
         run: |
           CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
           remote_repo="https://${GITHUB_ACTOR}:${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git"
-          git pull $remote_repo $CURRENT_BRANCH
+          git pull --rebase $remote_repo $CURRENT_BRANCH
           git push $remote_repo HEAD:$CURRENT_BRANCH --follow-tags --tags
       - name: Push generated doc to doc repo
         if: github.ref == 'refs/heads/main'

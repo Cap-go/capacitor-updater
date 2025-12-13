@@ -1466,6 +1466,16 @@ export interface LatestVersion {
    * @since 6.1
    */
   manifest?: ManifestEntry[];
+  /**
+   * Optional link associated with this bundle version (e.g., release notes URL, changelog, GitHub release).
+   * @since 7.35.0
+   */
+  link?: string;
+  /**
+   * Optional comment or description for this bundle version.
+   * @since 7.35.0
+   */
+  comment?: string;
 }
 
 export interface BundleInfo {
