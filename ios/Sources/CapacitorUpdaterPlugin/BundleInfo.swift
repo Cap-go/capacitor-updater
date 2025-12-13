@@ -16,21 +16,25 @@ import Foundation
     private let version: String
     private let checksum: String
     private let status: BundleStatus
+    private let link: String?
+    private let comment: String?
 
-    convenience init(id: String, version: String, status: BundleStatus, downloaded: Date, checksum: String) {
-        self.init(id: id, version: version, status: status, downloaded: downloaded.iso8601withFractionalSeconds, checksum: checksum)
+    convenience init(id: String, version: String, status: BundleStatus, downloaded: Date, checksum: String, link: String? = nil, comment: String? = nil) {
+        self.init(id: id, version: version, status: status, downloaded: downloaded.iso8601withFractionalSeconds, checksum: checksum, link: link, comment: comment)
     }
 
-    init(id: String, version: String, status: BundleStatus, downloaded: String = BundleInfo.DOWNLOADED_BUILTIN, checksum: String) {
+    init(id: String, version: String, status: BundleStatus, downloaded: String = BundleInfo.DOWNLOADED_BUILTIN, checksum: String, link: String? = nil, comment: String? = nil) {
         self.downloaded = downloaded.trim()
         self.id = id
         self.version = version
         self.checksum = checksum
         self.status = status
+        self.link = link
+        self.comment = comment
     }
 
     enum CodingKeys: String, CodingKey {
-        case downloaded, id, version, status, checksum
+        case downloaded, id, version, status, checksum, link, comment
     }
 
     public func isBuiltin() -> Bool {
@@ -62,11 +66,11 @@ import Foundation
     }
 
     public func setChecksum(checksum: String) -> BundleInfo {
-        return BundleInfo(id: self.id, version: self.version, status: self.status, downloaded: self.downloaded, checksum: checksum)
+        return BundleInfo(id: self.id, version: self.version, status: self.status, downloaded: self.downloaded, checksum: checksum, link: self.link, comment: self.comment)
     }
 
     public func setDownloaded(downloaded: Date) -> BundleInfo {
-        return BundleInfo(id: self.id, version: self.version, status: self.status, downloaded: downloaded, checksum: self.checksum)
+        return BundleInfo(id: self.id, version: self.version, status: self.status, downloaded: downloaded, checksum: self.checksum, link: self.link, comment: self.comment)
     }
 
     public func getId() -> String {
@@ -74,7 +78,7 @@ import Foundation
     }
 
     public func setId(id: String) -> BundleInfo {
-        return BundleInfo(id: id, version: self.version, status: self.status, downloaded: self.downloaded, checksum: self.checksum)
+        return BundleInfo(id: id, version: self.version, status: self.status, downloaded: self.downloaded, checksum: self.checksum, link: self.link, comment: self.comment)
     }
 
     public func getVersionName() -> String {
@@ -82,7 +86,7 @@ import Foundation
     }
 
     public func setVersionName(version: String) -> BundleInfo {
-        return BundleInfo(id: self.id, version: version, status: self.status, downloaded: self.downloaded, checksum: self.checksum)
+        return BundleInfo(id: self.id, version: version, status: self.status, downloaded: self.downloaded, checksum: self.checksum, link: self.link, comment: self.comment)
     }
 
     public func getStatus() -> String {
@@ -90,17 +94,40 @@ import Foundation
     }
 
     public func setStatus(status: String) -> BundleInfo {
-        return BundleInfo(id: self.id, version: self.version, status: BundleStatus(localizedString: status)!, downloaded: self.downloaded, checksum: self.checksum)
+        return BundleInfo(id: self.id, version: self.version, status: BundleStatus(localizedString: status)!, downloaded: self.downloaded, checksum: self.checksum, link: self.link, comment: self.comment)
+    }
+
+    public func getLink() -> String? {
+        return self.link
+    }
+
+    public func setLink(link: String?) -> BundleInfo {
+        return BundleInfo(id: self.id, version: self.version, status: self.status, downloaded: self.downloaded, checksum: self.checksum, link: link, comment: self.comment)
+    }
+
+    public func getComment() -> String? {
+        return self.comment
+    }
+
+    public func setComment(comment: String?) -> BundleInfo {
+        return BundleInfo(id: self.id, version: self.version, status: self.status, downloaded: self.downloaded, checksum: self.checksum, link: self.link, comment: comment)
     }
 
     public func toJSON() -> [String: String] {
-        return [
+        var result: [String: String] = [
             "id": self.getId(),
             "version": self.getVersionName(),
             "downloaded": self.getDownloaded(),
             "checksum": self.getChecksum(),
             "status": self.getStatus()
         ]
+        if let link = self.link {
+            result["link"] = link
+        }
+        if let comment = self.comment {
+            result["comment"] = comment
+        }
+        return result
     }
 
     public static func == (lhs: BundleInfo, rhs: BundleInfo) -> Bool {

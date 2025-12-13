@@ -29,25 +29,53 @@ public class BundleInfo {
     private final String version;
     private final String checksum;
     private final BundleStatus status;
+    private final String link;
+    private final String comment;
 
     static {
         sdf.setTimeZone(TimeZone.getTimeZone("GMT"));
     }
 
     public BundleInfo(final BundleInfo source) {
-        this(source.id, source.version, source.status, source.downloaded, source.checksum);
+        this(source.id, source.version, source.status, source.downloaded, source.checksum, source.link, source.comment);
     }
 
     public BundleInfo(final String id, final String version, final BundleStatus status, final Date downloaded, final String checksum) {
-        this(id, version, status, sdf.format(downloaded), checksum);
+        this(id, version, status, sdf.format(downloaded), checksum, null, null);
+    }
+
+    public BundleInfo(
+        final String id,
+        final String version,
+        final BundleStatus status,
+        final Date downloaded,
+        final String checksum,
+        final String link,
+        final String comment
+    ) {
+        this(id, version, status, sdf.format(downloaded), checksum, link, comment);
     }
 
     public BundleInfo(final String id, final String version, final BundleStatus status, final String downloaded, final String checksum) {
+        this(id, version, status, downloaded, checksum, null, null);
+    }
+
+    public BundleInfo(
+        final String id,
+        final String version,
+        final BundleStatus status,
+        final String downloaded,
+        final String checksum,
+        final String link,
+        final String comment
+    ) {
         this.downloaded = downloaded != null ? downloaded.trim() : "";
         this.id = id != null ? id : "";
         this.version = version;
         this.checksum = checksum != null ? checksum : "";
         this.status = status != null ? status : BundleStatus.ERROR;
+        this.link = link;
+        this.comment = comment;
     }
 
     public Boolean isBuiltin() {
@@ -75,7 +103,7 @@ public class BundleInfo {
     }
 
     public BundleInfo setDownloaded(Date downloaded) {
-        return new BundleInfo(this.id, this.version, this.status, downloaded, this.checksum);
+        return new BundleInfo(this.id, this.version, this.status, downloaded, this.checksum, this.link, this.comment);
     }
 
     public String getChecksum() {
@@ -83,7 +111,7 @@ public class BundleInfo {
     }
 
     public BundleInfo setChecksum(String checksum) {
-        return new BundleInfo(this.id, this.version, this.status, this.downloaded, checksum);
+        return new BundleInfo(this.id, this.version, this.status, this.downloaded, checksum, this.link, this.comment);
     }
 
     public String getId() {
@@ -91,7 +119,7 @@ public class BundleInfo {
     }
 
     public BundleInfo setId(String id) {
-        return new BundleInfo(id, this.version, this.status, this.downloaded, this.checksum);
+        return new BundleInfo(id, this.version, this.status, this.downloaded, this.checksum, this.link, this.comment);
     }
 
     public String getVersionName() {
@@ -99,7 +127,7 @@ public class BundleInfo {
     }
 
     public BundleInfo setVersionName(String version) {
-        return new BundleInfo(this.id, version, this.status, this.downloaded, this.checksum);
+        return new BundleInfo(this.id, version, this.status, this.downloaded, this.checksum, this.link, this.comment);
     }
 
     public BundleStatus getStatus() {
@@ -110,7 +138,23 @@ public class BundleInfo {
     }
 
     public BundleInfo setStatus(BundleStatus status) {
-        return new BundleInfo(this.id, this.version, status, this.downloaded, this.checksum);
+        return new BundleInfo(this.id, this.version, status, this.downloaded, this.checksum, this.link, this.comment);
+    }
+
+    public String getLink() {
+        return this.link;
+    }
+
+    public BundleInfo setLink(String link) {
+        return new BundleInfo(this.id, this.version, this.status, this.downloaded, this.checksum, link, this.comment);
+    }
+
+    public String getComment() {
+        return this.comment;
+    }
+
+    public BundleInfo setComment(String comment) {
+        return new BundleInfo(this.id, this.version, this.status, this.downloaded, this.checksum, this.link, comment);
     }
 
     public static BundleInfo fromJSON(final String jsonString) throws JSONException {
@@ -120,7 +164,9 @@ public class BundleInfo {
             json.has("version") ? json.getString("version") : BundleInfo.VERSION_UNKNOWN,
             json.has("status") ? BundleStatus.fromString(json.getString("status")) : BundleStatus.PENDING,
             json.has("downloaded") ? json.getString("downloaded") : "",
-            json.has("checksum") ? json.getString("checksum") : ""
+            json.has("checksum") ? json.getString("checksum") : "",
+            json.has("link") ? json.getString("link") : null,
+            json.has("comment") ? json.getString("comment") : null
         );
     }
 
@@ -131,6 +177,12 @@ public class BundleInfo {
         result.put("downloaded", this.getDownloaded());
         result.put("checksum", this.getChecksum());
         result.put("status", this.getStatus().toString());
+        if (this.link != null && !this.link.isEmpty()) {
+            result.put("link", this.link);
+        }
+        if (this.comment != null && !this.comment.isEmpty()) {
+            result.put("comment", this.comment);
+        }
         return result;
     }
 
