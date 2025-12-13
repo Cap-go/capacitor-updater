@@ -196,13 +196,18 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             periodCheckDelay = periodCheckDelayValue
         }
 
-        implementation.setPublicKey(getConfig().getString("publicKey", "")!)
+        implementation.setPublicKey(getConfig().getString("publicKey") ?? "")
         implementation.notifyDownloadRaw = notifyDownload
         implementation.pluginVersion = self.pluginVersion
 
         // Set logger for shared classes
         implementation.setLogger(logger)
         CryptoCipher.setLogger(logger)
+
+        // Log public key prefix if encryption is enabled
+        if let keyId = implementation.getKeyId(), !keyId.isEmpty {
+            logger.info("Public key prefix: \(keyId)")
+        }
 
         // Initialize DelayUpdateUtils
         self.delayUpdateUtils = DelayUpdateUtils(currentVersionNative: currentVersionNative, logger: logger)

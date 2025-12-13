@@ -157,6 +157,10 @@ public class CapgoUpdater {
         }
     }
 
+    public String getKeyId() {
+        return this.cachedKeyId;
+    }
+
     private File unzip(final String id, final File zipFile, final String dest) throws IOException {
         final File targetDirectory = new File(this.documentsDir, dest);
         try (

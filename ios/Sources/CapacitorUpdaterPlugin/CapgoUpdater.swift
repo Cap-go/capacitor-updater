@@ -91,6 +91,10 @@ import UIKit
         }
     }
 
+    public func getKeyId() -> String? {
+        return self.cachedKeyId
+    }
+
     private var isDevEnvironment: Bool {
         #if DEBUG
         return true
