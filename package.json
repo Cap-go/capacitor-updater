@@ -60,11 +60,11 @@
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
-    "@capacitor/android": "^8.0.0-alpha.3",
-    "@capacitor/cli": "^8.0.0-alpha.3",
-    "@capacitor/core": "^8.0.0-alpha.3",
+    "@capacitor/android": "^8.0.0",
+    "@capacitor/cli": "^8.0.0",
+    "@capacitor/core": "^8.0.0",
     "@capacitor/docgen": "^0.3.0",
-    "@capacitor/ios": "^8.0.0-alpha.3",
+    "@capacitor/ios": "^8.0.0",
     "@ionic/eslint-config": "^0.4.0",
     "@ionic/prettier-config": "^4.0.0",
     "@ionic/swiftlint-config": "^2.0.0",
