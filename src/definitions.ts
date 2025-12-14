@@ -20,7 +20,7 @@ declare module '@capacitor/cli' {
        * Only available for Android and iOS.
        *
        * @default 10000 // (10 seconds)
-       * @example 1000 // (1 second)
+       * @example 1000 // (1 second, minimum 1000)
        */
       appReadyTimeout?: number;
       /**
@@ -64,7 +64,7 @@ declare module '@capacitor/cli' {
 
       /**
        * Automatically delete previous downloaded bundles when a newer native app bundle is installed to the device.
-       *
+       * Setting this to false can broke the auto update flow if the user download from the store a native app bundle that is older than the current downloaded bundle. Upload will be prevented by channel setting downgrade_under_native.
        * Only available for Android and iOS.
        *
        * @default true

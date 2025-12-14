@@ -128,6 +128,7 @@ struct InfoObject: Codable {
     var action: String?
     var channel: String?
     var defaultChannel: String?
+    var key_id: String?
 }
 
 public struct ManifestEntry: Codable {

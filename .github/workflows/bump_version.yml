@@ -5,7 +5,6 @@ on:
     branches:
       - main
       - development
-      - v6
     paths-ignore:
       - 'example-app/**'
       - '.github/**'
@@ -48,9 +47,6 @@ jobs:
       - name: Create version bump main
         if: github.ref == 'refs/heads/main'
         run: bunx capacitor-plugin-standard-version@latest --skip.changelog
-      - name: Create version bump v6
-        if: github.ref == 'refs/heads/v6'
-        run: bunx capacitor-plugin-standard-version@latest --release-as patch --skip.changelog
       - name: Create version bump development
         if: github.ref == 'refs/heads/development'
         run: bunx capacitor-plugin-standard-version@latest --prerelease alpha --skip.changelog
@@ -58,6 +54,8 @@ jobs:
         run: |
           CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
           remote_repo="https://${GITHUB_ACTOR}:${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git"
+          git add -A
+          git diff --staged --quiet || git commit -m "chore: commit any remaining changes" || true
           git pull --rebase $remote_repo $CURRENT_BRANCH
           git push $remote_repo HEAD:$CURRENT_BRANCH --follow-tags --tags
       - name: Push generated doc to doc repo
