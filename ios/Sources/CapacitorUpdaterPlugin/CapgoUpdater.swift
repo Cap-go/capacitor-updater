@@ -836,13 +836,8 @@ import UIKit
 
         let finalPath = tempDataPath.deletingLastPathComponent().appendingPathComponent("\(id)")
         do {
-            if !self.hasOldPrivateKeyPropertyInConfig {
-                // V2 Encryption (publicKey)
-                try CryptoCipher.decryptFile(filePath: tempDataPath, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
-            } else {
-                // V1 Encryption (privateKey) - deprecated but supported
-                try CryptoCipher.decryptFile(filePath: tempDataPath, privateKey: self.privateKey, sessionKey: sessionKey, version: version)
-            }
+            // Decrypt file using public key (V1 encryption with privateKey is deprecated)
+            try CryptoCipher.decryptFile(filePath: tempDataPath, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
             try FileManager.default.moveItem(at: tempDataPath, to: finalPath)
         } catch {
             logger.error("Failed decrypt file : \(error)")
