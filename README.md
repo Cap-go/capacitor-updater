@@ -66,6 +66,8 @@ The most complete [documentation here](https://capgo.app/docs/).
 ## Community
 Join the [discord](https://discord.gg/VnYRvBfgA6) to get help.
 
+## Migration to v8
+
 ## Migration to v7.34
 
 - **Channel storage change**: `setChannel()` now stores channel assignments locally on the device instead of in the cloud. This provides better offline support and reduces backend load.
@@ -76,13 +78,15 @@ Join the [discord](https://discord.gg/VnYRvBfgA6) to get help.
 
 ## Migration to v7
 
-- `privateKey` is not available anymore, it was used for the old encryption method. to migrate follow this guide : [https://capgo.app/docs/plugin/cloud-mode/getting-started/](https://capgo.app/docs/cli/migrations/encryption/)
-- To capacitor v7 : [https://capacitorjs.com/docs/updating/7-0](https://capacitorjs.com/docs/updating/7-0)
+The min version of IOS is now 15.5 instead of 15 as Capacitor 8 requirement.
+This is due to bump of ZipArchive to latest, a key dependency of this project is the zlib library. zlib before version 1.2.12 allows memory corruption when deflating (i.e., when compressing) if the input has many distant matches according to [CVE-2018-25032](https://nvd.nist.gov/vuln/detail/cve-2018-25032).
+zlib is a native library so we need to bump the minimum iOS version to 15.5 as ZipArchive did the same in their latest versions.
 
 ## Compatibility
 
 | Plugin version | Capacitor compatibility | Maintained        |
 | -------------- | ----------------------- | ----------------- |
+| v8.\*.\*       | v8.\*.\*                | Beta                 |
 | v7.\*.\*       | v7.\*.\*                | ✅                 |
 | v6.\*.\*       | v6.\*.\*                | ✅                 |
 | v5.\*.\*       | v5.\*.\*                | ⚠️ Deprecated |
@@ -256,7 +260,7 @@ CapacitorUpdater can be configured with these options:
 | **`autoDeleteFailed`**        | <code>boolean</code>                                          | Configure whether the plugin should use automatically delete failed bundles. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | <code>true</code>                                                             |         |
 | **`autoDeletePrevious`**      | <code>boolean</code>                                          | Configure whether the plugin should use automatically delete previous bundles after a successful update. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | <code>true</code>                                                             |         |
 | **`autoUpdate`**              | <code>boolean</code>                                          | Configure whether the plugin should use Auto Update via an update server. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | <code>true</code>                                                             |         |
-| **`resetWhenUpdate`**         | <code>boolean</code>                                          | Automatically delete previous downloaded bundles when a newer native app bundle is installed to the device. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | <code>true</code>                                                             |         |
+| **`resetWhenUpdate`**         | <code>boolean</code>                                          | Automatically delete previous downloaded bundles when a newer native app bundle is installed to the device. Setting this to false can broke the auto update flow if the user download from the store a native app bundle that is older than the current downloaded bundle. Upload will be prevented by channel setting downgrade_under_native. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                | <code>true</code>                                                             |         |
 | **`updateUrl`**               | <code>string</code>                                           | Configure the URL / endpoint to which update checks are sent. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | <code>https://plugin.capgo.app/updates</code>                                 |         |
 | **`channelUrl`**              | <code>string</code>                                           | Configure the URL / endpoint for channel operations. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | <code>https://plugin.capgo.app/channel_self</code>                            |         |
 | **`statsUrl`**                | <code>string</code>                                           | Configure the URL / endpoint to which update statistics are sent. Only available for Android and iOS. Set to "" to disable stats reporting.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | <code>https://plugin.capgo.app/stats</code>                                   |         |
@@ -295,7 +299,7 @@ In `capacitor.config.json`:
 {
   "plugins": {
     "CapacitorUpdater": {
-      "appReadyTimeout": 1000 // (1 second),
+      "appReadyTimeout": 1000 // (1 second, minimum 1000),
       "responseTimeout": 10 // (10 second),
       "autoDeleteFailed": false,
       "autoDeletePrevious": false,
@@ -345,7 +349,7 @@ import { CapacitorConfig } from '@capacitor/cli';
 const config: CapacitorConfig = {
   plugins: {
     CapacitorUpdater: {
-      appReadyTimeout: 1000 // (1 second),
+      appReadyTimeout: 1000 // (1 second, minimum 1000),
       responseTimeout: 10 // (10 second),
       autoDeleteFailed: false,
       autoDeletePrevious: false,

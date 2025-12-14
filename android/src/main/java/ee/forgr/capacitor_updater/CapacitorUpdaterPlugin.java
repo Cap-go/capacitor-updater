@@ -111,6 +111,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
     //  private static final CountDownLatch semaphoreReady = new CountDownLatch(1);
     private static final Phaser semaphoreReady = new Phaser(1);
 
+    // Lock to ensure cleanup completes before downloads start
+    private final Object cleanupLock = new Object();
+    private volatile boolean cleanupComplete = false;
+    private volatile Thread cleanupThread = null;
+
     private int lastNotifiedStatPercent = 0;
 
     private DelayUpdateUtils delayUpdateUtils;
@@ -304,10 +309,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.persistCustomId = this.getConfig().getBoolean("persistCustomId", false);
         this.persistModifyUrl = this.getConfig().getBoolean("persistModifyUrl", false);
         this.allowSetDefaultChannel = this.getConfig().getBoolean("allowSetDefaultChannel", true);
-        this.implementation.publicKey = this.getConfig().getString("publicKey", "");
-        this.implementation.privateKey = this.getConfig().getString("privateKey", "");
-        if (this.implementation.privateKey != null && !this.implementation.privateKey.isEmpty()) {
-            this.implementation.hasOldPrivateKeyPropertyInConfig = true;
+        this.implementation.setPublicKey(this.getConfig().getString("publicKey", ""));
+        // Log public key prefix if encryption is enabled
+        String keyId = this.implementation.getKeyId();
+        if (keyId != null && !keyId.isEmpty()) {
+            logger.info("Public key prefix: " + keyId);
         }
         this.implementation.statsUrl = this.getConfig().getString("statsUrl", statsUrlDefault);
         this.implementation.channelUrl = this.getConfig().getString("channelUrl", channelUrlDefault);
@@ -381,7 +387,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
         }
         this.autoUpdate = this.getConfig().getBoolean("autoUpdate", true);
-        this.appReadyTimeout = this.getConfig().getInt("appReadyTimeout", 10000);
+        this.appReadyTimeout = Math.max(1000, this.getConfig().getInt("appReadyTimeout", 10000)); // Minimum 1 second
         this.keepUrlPathAfterReload = this.getConfig().getBoolean("keepUrlPathAfterReload", false);
         this.syncKeepUrlPathFlag(this.keepUrlPathAfterReload);
         this.allowManualBundleError = this.getConfig().getBoolean("allowManualBundleError", false);
@@ -700,37 +706,80 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void cleanupObsoleteVersions() {
-        startNewThread(() -> {
-            try {
-                final String previous = this.prefs.getString("LatestNativeBuildVersion", "");
-                if (!"".equals(previous) && !Objects.equals(this.currentBuildVersion, previous)) {
-                    logger.info("New native build version detected: " + this.currentBuildVersion);
-                    this.implementation.reset(true);
-                    final List<BundleInfo> installed = this.implementation.list(false);
-                    for (final BundleInfo bundle : installed) {
-                        try {
-                            logger.info("Deleting obsolete bundle: " + bundle.getId());
-                            this.implementation.delete(bundle.getId());
-                        } catch (final Exception e) {
-                            logger.error("Failed to delete: " + bundle.getId() + " " + e.getMessage());
+        cleanupThread = startNewThread(() -> {
+            synchronized (cleanupLock) {
+                try {
+                    final String previous = this.prefs.getString("LatestNativeBuildVersion", "");
+                    if (!"".equals(previous) && !Objects.equals(this.currentBuildVersion, previous)) {
+                        logger.info("New native build version detected: " + this.currentBuildVersion);
+                        this.implementation.reset(true);
+                        final List<BundleInfo> installed = this.implementation.list(false);
+                        for (final BundleInfo bundle : installed) {
+                            // Check if thread was interrupted (cancelled)
+                            if (Thread.currentThread().isInterrupted()) {
+                                logger.warn("Cleanup was cancelled, stopping");
+                                return;
+                            }
+                            try {
+                                logger.info("Deleting obsolete bundle: " + bundle.getId());
+                                this.implementation.delete(bundle.getId());
+                            } catch (final Exception e) {
+                                logger.error("Failed to delete: " + bundle.getId() + " " + e.getMessage());
+                            }
                         }
-                    }
-                    final List<BundleInfo> storedBundles = this.implementation.list(true);
-                    final Set<String> allowedIds = new HashSet<>();
-                    for (final BundleInfo info : storedBundles) {
-                        if (info != null && info.getId() != null && !info.getId().isEmpty()) {
-                            allowedIds.add(info.getId());
+                        final List<BundleInfo> storedBundles = this.implementation.list(true);
+                        final Set<String> allowedIds = new HashSet<>();
+                        for (final BundleInfo info : storedBundles) {
+                            if (info != null && info.getId() != null && !info.getId().isEmpty()) {
+                                allowedIds.add(info.getId());
+                            }
                         }
+                        this.implementation.cleanupDownloadDirectories(allowedIds, Thread.currentThread());
+
+                        // Check again before the expensive delta cache cleanup
+                        if (Thread.currentThread().isInterrupted()) {
+                            logger.warn("Cleanup was cancelled before delta cache cleanup");
+                            return;
+                        }
+                        this.implementation.cleanupDeltaCache(Thread.currentThread());
                     }
-                    this.implementation.cleanupDownloadDirectories(allowedIds);
-                    this.implementation.cleanupDeltaCache();
+                    this.editor.putString("LatestNativeBuildVersion", this.currentBuildVersion);
+                    this.editor.apply();
+                } catch (Exception e) {
+                    logger.error("Error during cleanupObsoleteVersions: " + e.getMessage());
+                } finally {
+                    cleanupComplete = true;
+                    logger.info("Cleanup complete");
                 }
-                this.editor.putString("LatestNativeBuildVersion", this.currentBuildVersion);
-                this.editor.apply();
-            } catch (Exception e) {
-                logger.error("Error during cleanupObsoleteVersions: " + e.getMessage());
             }
         });
+
+        // Start a timeout watchdog thread to cancel cleanup if it takes too long
+        final long timeout = this.appReadyTimeout / 2;
+        startNewThread(() -> {
+            try {
+                Thread.sleep(timeout);
+                if (cleanupThread != null && cleanupThread.isAlive() && !cleanupComplete) {
+                    logger.warn("Cleanup timeout exceeded (" + timeout + "ms), interrupting cleanup thread");
+                    cleanupThread.interrupt();
+                }
+            } catch (InterruptedException e) {
+                // Watchdog thread was interrupted, that's fine
+            }
+        });
+    }
+
+    private void waitForCleanupIfNeeded() {
+        if (cleanupComplete) {
+            return; // Already done, no need to wait
+        }
+
+        logger.info("Waiting for cleanup to complete before starting download...");
+
+        // Wait for cleanup to complete - blocks until lock is released
+        synchronized (cleanupLock) {
+            logger.info("Cleanup finished, proceeding with download");
+        }
     }
 
     public void notifyDownload(final String id, final int percent) {
@@ -1678,6 +1727,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
             ? "Update will occur now."
             : "Update will occur next time app moves to background.";
         return startNewThread(() -> {
+            // Wait for cleanup to complete before starting download
+            waitForCleanupIfNeeded();
             logger.info("Check for update via: " + CapacitorUpdaterPlugin.this.updateUrl);
             try {
                 CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.updateUrl, null, (res) -> {
