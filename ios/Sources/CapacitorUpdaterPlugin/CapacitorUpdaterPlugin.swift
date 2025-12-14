@@ -92,6 +92,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var backgroundWork: DispatchWorkItem?
     private var taskRunning = false
     private var periodCheckDelay = 0
+
+    // Lock to ensure cleanup completes before downloads start
+    private let cleanupLock = NSLock()
+    private var cleanupComplete = false
+    private var cleanupThread: Thread?
     private var persistCustomId = false
     private var persistModifyUrl = false
     private var allowManualBundleError = false
@@ -185,7 +190,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             logger.info("Loaded persisted updateUrl")
         }
         autoUpdate = getConfig().getBoolean("autoUpdate", true)
-        appReadyTimeout = getConfig().getInt("appReadyTimeout", 10000)
+        appReadyTimeout = max(1000, getConfig().getInt("appReadyTimeout", 10000))  // Minimum 1 second
         implementation.timeout = Double(getConfig().getInt("responseTimeout", 20))
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
         shakeMenuEnabled = getConfig().getBoolean("shakeMenu", false)
@@ -363,28 +368,73 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func cleanupObsoleteVersions() {
-        let previous = UserDefaults.standard.string(forKey: "LatestNativeBuildVersion") ?? UserDefaults.standard.string(forKey: "LatestVersionNative") ?? "0"
-        if previous != "0" && self.currentBuildVersion != previous {
-            _ = self._reset(toLastSuccessful: false)
-            let res = implementation.list()
-            res.forEach { version in
-                logger.info("Deleting obsolete bundle: \(version.getId())")
-                let res = implementation.delete(id: version.getId())
-                if !res {
-                    logger.error("Delete failed, id \(version.getId()) doesn't exist")
-                }
+        cleanupThread = Thread {
+            self.cleanupLock.lock()
+            defer {
+                self.cleanupComplete = true
+                self.cleanupLock.unlock()
+                self.logger.info("Cleanup complete")
             }
 
-            let storedBundles = implementation.list(raw: true)
-            let allowedIds = Set(storedBundles.compactMap { info -> String? in
-                let id = info.getId()
-                return id.isEmpty ? nil : id
-            })
-            implementation.cleanupDownloadDirectories(allowedIds: allowedIds)
-            implementation.cleanupDeltaCache()
+            let previous = UserDefaults.standard.string(forKey: "LatestNativeBuildVersion") ?? UserDefaults.standard.string(forKey: "LatestVersionNative") ?? "0"
+            if previous != "0" && self.currentBuildVersion != previous {
+                _ = self._reset(toLastSuccessful: false)
+                let res = self.implementation.list()
+                for version in res {
+                    // Check if thread was cancelled
+                    if Thread.current.isCancelled {
+                        self.logger.warn("Cleanup was cancelled, stopping")
+                        return
+                    }
+                    self.logger.info("Deleting obsolete bundle: \(version.getId())")
+                    let res = self.implementation.delete(id: version.getId())
+                    if !res {
+                        self.logger.error("Delete failed, id \(version.getId()) doesn't exist")
+                    }
+                }
+
+                let storedBundles = self.implementation.list(raw: true)
+                let allowedIds = Set(storedBundles.compactMap { info -> String? in
+                    let id = info.getId()
+                    return id.isEmpty ? nil : id
+                })
+                self.implementation.cleanupDownloadDirectories(allowedIds: allowedIds, threadToCheck: Thread.current)
+
+                // Check again before the expensive delta cache cleanup
+                if Thread.current.isCancelled {
+                    self.logger.warn("Cleanup was cancelled before delta cache cleanup")
+                    return
+                }
+                self.implementation.cleanupDeltaCache(threadToCheck: Thread.current)
+            }
+            UserDefaults.standard.set(self.currentBuildVersion, forKey: "LatestNativeBuildVersion")
+            UserDefaults.standard.synchronize()
         }
-        UserDefaults.standard.set(self.currentBuildVersion, forKey: "LatestNativeBuildVersion")
-        UserDefaults.standard.synchronize()
+        cleanupThread?.start()
+
+        // Start a timeout watchdog thread to cancel cleanup if it takes too long
+        let timeout = Double(self.appReadyTimeout / 2) / 1000.0
+        Thread.detachNewThread {
+            Thread.sleep(forTimeInterval: timeout)
+            if let thread = self.cleanupThread, !thread.isFinished && !self.cleanupComplete {
+                self.logger.warn("Cleanup timeout exceeded (\(timeout)s), cancelling cleanup thread")
+                thread.cancel()
+            }
+        }
+    }
+
+    private func waitForCleanupIfNeeded() {
+        if cleanupComplete {
+            return  // Already done, no need to wait
+        }
+
+        logger.info("Waiting for cleanup to complete before starting download...")
+
+        // Wait for cleanup to complete - blocks until lock is released
+        cleanupLock.lock()
+        cleanupLock.unlock()
+
+        logger.info("Cleanup finished, proceeding with download")
     }
 
     @objc func notifyDownload(id: String, percent: Int, ignoreMultipleOfTen: Bool = false, bundle: BundleInfo? = nil) {
@@ -1277,6 +1327,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         DispatchQueue.global(qos: .background).async {
+            // Wait for cleanup to complete before starting download
+            self.waitForCleanupIfNeeded()
             self.backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "Finish Download Tasks") {
                 // End the task if time expires.
                 self.endBackGroundTask()

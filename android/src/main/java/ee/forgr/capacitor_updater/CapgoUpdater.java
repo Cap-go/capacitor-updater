@@ -496,11 +496,20 @@ public class CapgoUpdater {
     }
 
     private void deleteDirectory(final File file) throws IOException {
+        deleteDirectory(file, null);
+    }
+
+    private void deleteDirectory(final File file, final Thread threadToCheck) throws IOException {
+        // Check if thread was interrupted (cancelled)
+        if (threadToCheck != null && threadToCheck.isInterrupted()) {
+            throw new IOException("Operation cancelled");
+        }
+
         if (file.isDirectory()) {
             final File[] entries = file.listFiles();
             if (entries != null) {
                 for (final File entry : entries) {
-                    this.deleteDirectory(entry);
+                    this.deleteDirectory(entry, threadToCheck);
                 }
             }
         }
@@ -510,6 +519,10 @@ public class CapgoUpdater {
     }
 
     public void cleanupDeltaCache() {
+        cleanupDeltaCache(null);
+    }
+
+    public void cleanupDeltaCache(final Thread threadToCheck) {
         if (this.activity == null) {
             logger.warn("Activity is null, skipping delta cache cleanup");
             return;
@@ -519,7 +532,7 @@ public class CapgoUpdater {
             return;
         }
         try {
-            this.deleteDirectory(cacheFolder);
+            this.deleteDirectory(cacheFolder, threadToCheck);
             logger.info("Cleaned up delta cache folder");
         } catch (IOException e) {
             logger.error("Failed to cleanup delta cache: " + e.getMessage());
@@ -527,6 +540,10 @@ public class CapgoUpdater {
     }
 
     public void cleanupDownloadDirectories(final Set<String> allowedIds) {
+        cleanupDownloadDirectories(allowedIds, null);
+    }
+
+    public void cleanupDownloadDirectories(final Set<String> allowedIds, final Thread threadToCheck) {
         if (this.documentsDir == null) {
             logger.warn("Documents directory is null, skipping download cleanup");
             return;
@@ -540,6 +557,12 @@ public class CapgoUpdater {
         final File[] entries = bundleRoot.listFiles();
         if (entries != null) {
             for (final File entry : entries) {
+                // Check if thread was interrupted (cancelled)
+                if (threadToCheck != null && threadToCheck.isInterrupted()) {
+                    logger.warn("cleanupDownloadDirectories was cancelled");
+                    return;
+                }
+
                 if (!entry.isDirectory()) {
                     continue;
                 }
@@ -551,7 +574,7 @@ public class CapgoUpdater {
                 }
 
                 try {
-                    this.deleteDirectory(entry);
+                    this.deleteDirectory(entry, threadToCheck);
                     this.removeBundleInfo(id);
                     logger.info("Deleted orphan bundle directory: " + id);
                 } catch (IOException e) {

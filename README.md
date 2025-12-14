@@ -298,7 +298,7 @@ In `capacitor.config.json`:
 {
   "plugins": {
     "CapacitorUpdater": {
-      "appReadyTimeout": 1000 // (1 second),
+      "appReadyTimeout": 1000 // (1 second, minimum 1000),
       "responseTimeout": 10 // (10 second),
       "autoDeleteFailed": false,
       "autoDeletePrevious": false,
@@ -347,7 +347,7 @@ import { CapacitorConfig } from '@capacitor/cli';
 const config: CapacitorConfig = {
   plugins: {
     CapacitorUpdater: {
-      appReadyTimeout: 1000 // (1 second),
+      appReadyTimeout: 1000 // (1 second, minimum 1000),
       responseTimeout: 10 // (10 second),
       autoDeleteFailed: false,
       autoDeletePrevious: false,

@@ -20,7 +20,7 @@ declare module '@capacitor/cli' {
        * Only available for Android and iOS.
        *
        * @default 10000 // (10 seconds)
-       * @example 1000 // (1 second)
+       * @example 1000 // (1 second, minimum 1000)
        */
       appReadyTimeout?: number;
       /**

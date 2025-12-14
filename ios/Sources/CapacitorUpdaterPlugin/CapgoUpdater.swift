@@ -496,16 +496,11 @@ import UIKit
                     logger.error("Failed to copy builtin file \(fileName): \(error.localizedDescription)")
                 }
                 dispatchGroup.leave()
-            } else if FileManager.default.fileExists(atPath: cacheFilePath.path) && verifyChecksum(file: cacheFilePath, expectedHash: fileHash) {
-                do {
-                    try FileManager.default.copyItem(at: cacheFilePath, to: destFilePath)
-                    logger.info("downloadManifest \(fileName) copy from cache \(id)")
-                    completedFiles += 1
-                    self.notifyDownload(id: id, percent: self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70))
-                } catch {
-                    downloadError = error
-                    logger.error("Failed to copy cached file \(fileName): \(error.localizedDescription)")
-                }
+            } else if self.tryCopyFromCache(from: cacheFilePath, to: destFilePath, expectedHash: fileHash) {
+                // Successfully copied from cache
+                logger.info("downloadManifest \(fileName) copy from cache \(id)")
+                completedFiles += 1
+                self.notifyDownload(id: id, percent: self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70))
                 dispatchGroup.leave()
             } else {
                 // File not in cache, download, decompress, and save to both cache and destination
@@ -603,6 +598,30 @@ import UIKit
         self.notifyDownload(id: id, percent: 100, bundle: updatedBundle)
         logger.info("downloadManifest done \(id)")
         return updatedBundle
+    }
+
+    /// Atomically try to copy a file from cache - returns true if successful, false if file doesn't exist or copy failed
+    /// This handles the race condition where OS can delete cache files between exists() check and copy
+    private func tryCopyFromCache(from source: URL, to destination: URL, expectedHash: String) -> Bool {
+        // First quick check - if file doesn't exist, don't bother
+        guard FileManager.default.fileExists(atPath: source.path) else {
+            return false
+        }
+
+        // Verify checksum before copy
+        guard verifyChecksum(file: source, expectedHash: expectedHash) else {
+            return false
+        }
+
+        // Try to copy - if it fails (file deleted by OS between check and copy), return false
+        do {
+            try FileManager.default.copyItem(at: source, to: destination)
+            return true
+        } catch {
+            // File was deleted between check and copy, or other IO error - caller should download instead
+            logger.debug("Cache copy failed (likely OS eviction): \(error.localizedDescription)")
+            return false
+        }
     }
 
     private func decompressBrotli(data: Data, fileName: String) -> Data? {
@@ -1016,6 +1035,16 @@ import UIKit
     }
 
     public func cleanupDeltaCache() {
+        cleanupDeltaCache(threadToCheck: nil)
+    }
+
+    public func cleanupDeltaCache(threadToCheck: Thread?) {
+        // Check if thread was cancelled
+        if let thread = threadToCheck, thread.isCancelled {
+            logger.warn("cleanupDeltaCache was cancelled before starting")
+            return
+        }
+
         let fileManager = FileManager.default
         guard fileManager.fileExists(atPath: cacheFolder.path) else {
             return
@@ -1029,6 +1058,10 @@ import UIKit
     }
 
     public func cleanupDownloadDirectories(allowedIds: Set<String>) {
+        cleanupDownloadDirectories(allowedIds: allowedIds, threadToCheck: nil)
+    }
+
+    public func cleanupDownloadDirectories(allowedIds: Set<String>, threadToCheck: Thread?) {
         let bundleRoot = libraryDir.appendingPathComponent(bundleDirectory)
         let fileManager = FileManager.default
 
@@ -1040,6 +1073,12 @@ import UIKit
             let contents = try fileManager.contentsOfDirectory(at: bundleRoot, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])
 
             for url in contents {
+                // Check if thread was cancelled
+                if let thread = threadToCheck, thread.isCancelled {
+                    logger.warn("cleanupDownloadDirectories was cancelled")
+                    return
+                }
+
                 let resourceValues = try url.resourceValues(forKeys: [.isDirectoryKey])
                 if resourceValues.isDirectory != true {
                     continue

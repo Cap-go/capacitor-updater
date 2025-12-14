@@ -324,8 +324,7 @@ public class DownloadService extends Worker {
                         if (builtinFile.exists() && verifyChecksum(builtinFile, finalFileHash)) {
                             copyFile(builtinFile, targetFile);
                             logger.debug("using builtin file " + fileName);
-                        } else if (cacheFile.exists() && verifyChecksum(cacheFile, finalFileHash)) {
-                            copyFile(cacheFile, targetFile);
+                        } else if (tryCopyFromCache(cacheFile, targetFile, finalFileHash)) {
                             logger.debug("already cached " + fileName);
                         } else {
                             downloadAndVerify(downloadUrl, targetFile, cacheFile, finalFileHash, sessionKey, publicKey, finalIsBrotli);
@@ -560,6 +559,32 @@ public class DownloadService extends Worker {
     }
 
     // Helper methods
+
+    /**
+     * Atomically try to copy a file from cache - returns true if successful, false if file doesn't exist or copy failed.
+     * This handles the race condition where OS can delete cache files between exists() check and copy.
+     */
+    private boolean tryCopyFromCache(File source, File dest, String expectedHash) {
+        // First quick check - if file doesn't exist, don't bother
+        if (!source.exists()) {
+            return false;
+        }
+
+        // Verify checksum before copy
+        if (!verifyChecksum(source, expectedHash)) {
+            return false;
+        }
+
+        // Try to copy - if it fails (file deleted by OS between check and copy), return false
+        try {
+            copyFile(source, dest);
+            return true;
+        } catch (IOException e) {
+            // File was deleted between check and copy, or other IO error - caller should download instead
+            logger.debug("Cache copy failed (likely OS eviction): " + e.getMessage());
+            return false;
+        }
+    }
 
     private void copyFile(File source, File dest) throws IOException {
         try (
