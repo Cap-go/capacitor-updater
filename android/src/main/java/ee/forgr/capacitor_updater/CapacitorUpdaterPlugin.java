@@ -735,6 +735,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                             }
                         }
                         this.implementation.cleanupDownloadDirectories(allowedIds, Thread.currentThread());
+                        this.implementation.cleanupOrphanedTempFolders(Thread.currentThread());
 
                         // Check again before the expensive delta cache cleanup
                         if (Thread.currentThread().isInterrupted()) {
