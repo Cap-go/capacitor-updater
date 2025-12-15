@@ -26,6 +26,7 @@ import UIKit
     private let FALLBACK_VERSION: String = "pastVersion"
     private let NEXT_VERSION: String = "nextVersion"
     private var unzipPercent = 0
+    private let TEMP_UNZIP_PREFIX: String = "capgo_unzip_"
 
     // Add this line to declare cacheFolder
     private let cacheFolder: URL = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!.appendingPathComponent("capgo_downloads")
@@ -276,7 +277,7 @@ import UIKit
     private func saveDownloaded(sourceZip: URL, id: String, base: URL, notify: Bool) throws {
         try prepareFolder(source: base)
         let destPersist: URL = base.appendingPathComponent(id)
-        let destUnZip: URL = libraryDir.appendingPathComponent(randomString(length: 10))
+        let destUnZip: URL = libraryDir.appendingPathComponent(TEMP_UNZIP_PREFIX + randomString(length: 10))
 
         self.unzipPercent = 0
         self.notifyDownload(id: id, percent: 75)
@@ -1109,6 +1110,43 @@ import UIKit
             }
         } catch {
             logger.error("Failed to enumerate bundle directory for cleanup: \(error.localizedDescription)")
+        }
+    }
+
+    public func cleanupOrphanedTempFolders(threadToCheck: Thread?) {
+        let fileManager = FileManager.default
+
+        do {
+            let contents = try fileManager.contentsOfDirectory(at: libraryDir, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])
+
+            for url in contents {
+                // Check if thread was cancelled
+                if let thread = threadToCheck, thread.isCancelled {
+                    logger.warn("cleanupOrphanedTempFolders was cancelled")
+                    return
+                }
+
+                let resourceValues = try url.resourceValues(forKeys: [.isDirectoryKey])
+                if resourceValues.isDirectory != true {
+                    continue
+                }
+
+                let folderName = url.lastPathComponent
+
+                // Only delete folders with the temp unzip prefix
+                if !folderName.hasPrefix(TEMP_UNZIP_PREFIX) {
+                    continue
+                }
+
+                do {
+                    try fileManager.removeItem(at: url)
+                    logger.info("Deleted orphaned temp unzip folder: \(folderName)")
+                } catch {
+                    logger.error("Failed to delete orphaned temp folder: \(folderName) \(error.localizedDescription)")
+                }
+            }
+        } catch {
+            logger.error("Failed to enumerate library directory for temp folder cleanup: \(error.localizedDescription)")
         }
     }
 

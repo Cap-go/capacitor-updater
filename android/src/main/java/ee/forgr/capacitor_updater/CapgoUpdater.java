@@ -58,6 +58,7 @@ public class CapgoUpdater {
     private static final String FALLBACK_VERSION = "pastVersion";
     private static final String NEXT_VERSION = "nextVersion";
     private static final String bundleDirectory = "versions";
+    private static final String TEMP_UNZIP_PREFIX = "capgo_unzip_";
 
     public static final String TAG = "Capacitor-updater";
     public SharedPreferences.Editor editor;
@@ -452,7 +453,7 @@ public class CapgoUpdater {
 
         try {
             if (!isManifest) {
-                extractedDir = this.unzip(id, downloaded, this.randomString());
+                extractedDir = this.unzip(id, downloaded, TEMP_UNZIP_PREFIX + this.randomString());
                 this.notifyDownload(id, 91);
                 final String idName = bundleDirectory + "/" + id;
                 this.flattenAssets(extractedDir, idName);
@@ -585,6 +586,44 @@ public class CapgoUpdater {
                 } catch (IOException e) {
                     logger.error("Failed to delete orphan bundle directory: " + id + " " + e.getMessage());
                 }
+            }
+        }
+    }
+
+    public void cleanupOrphanedTempFolders(final Thread threadToCheck) {
+        if (this.documentsDir == null) {
+            logger.warn("Documents directory is null, skipping temp folder cleanup");
+            return;
+        }
+
+        final File[] entries = this.documentsDir.listFiles();
+        if (entries == null) {
+            return;
+        }
+
+        for (final File entry : entries) {
+            // Check if thread was interrupted (cancelled)
+            if (threadToCheck != null && threadToCheck.isInterrupted()) {
+                logger.warn("cleanupOrphanedTempFolders was cancelled");
+                return;
+            }
+
+            if (!entry.isDirectory()) {
+                continue;
+            }
+
+            final String folderName = entry.getName();
+
+            // Only delete folders with the temp unzip prefix
+            if (!folderName.startsWith(TEMP_UNZIP_PREFIX)) {
+                continue;
+            }
+
+            try {
+                this.deleteDirectory(entry, threadToCheck);
+                logger.info("Deleted orphaned temp unzip folder: " + folderName);
+            } catch (IOException e) {
+                logger.error("Failed to delete orphaned temp folder: " + folderName + " " + e.getMessage());
             }
         }
     }
