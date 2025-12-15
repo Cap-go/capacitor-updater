@@ -399,6 +399,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     return id.isEmpty ? nil : id
                 })
                 self.implementation.cleanupDownloadDirectories(allowedIds: allowedIds, threadToCheck: Thread.current)
+                self.implementation.cleanupOrphanedTempFolders(threadToCheck: Thread.current)
 
                 // Check again before the expensive delta cache cleanup
                 if Thread.current.isCancelled {
