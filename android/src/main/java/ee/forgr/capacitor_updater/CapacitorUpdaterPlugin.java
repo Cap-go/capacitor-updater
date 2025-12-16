@@ -55,6 +55,20 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+// Play Store In-App Updates
+import com.google.android.play.core.appupdate.AppUpdateInfo;
+import com.google.android.play.core.appupdate.AppUpdateManager;
+import com.google.android.play.core.appupdate.AppUpdateManagerFactory;
+import com.google.android.play.core.appupdate.AppUpdateOptions;
+import com.google.android.play.core.install.InstallState;
+import com.google.android.play.core.install.InstallStateUpdatedListener;
+import com.google.android.play.core.install.model.AppUpdateType;
+import com.google.android.play.core.install.model.InstallStatus;
+import com.google.android.play.core.install.model.UpdateAvailability;
+import com.google.android.gms.tasks.Task;
+import android.content.Intent;
+import android.net.Uri;
+
 @CapacitorPlugin(name = "CapacitorUpdater")
 public class CapacitorUpdaterPlugin extends Plugin {
 
@@ -72,7 +86,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final String[] BREAKING_EVENT_NAMES = { "breakingAvailable", "majorAvailable" };
     private static final String LAST_FAILED_BUNDLE_PREF_KEY = "CapacitorUpdater.lastFailedBundle";
 
-    private final String pluginVersion = "7.38.0";
+    private final String pluginVersion = "7.39.0";
     private static final String DELAY_CONDITION_PREFERENCES = "";
 
     private SharedPreferences.Editor editor;
@@ -124,6 +138,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private FrameLayout splashscreenLoaderOverlay;
     private Runnable splashscreenTimeoutRunnable;
+
+    // Play Store In-App Updates
+    private AppUpdateManager appUpdateManager;
+    private AppUpdateInfo cachedAppUpdateInfo;
+    private static final int APP_UPDATE_REQUEST_CODE = 9001;
+    private InstallStateUpdatedListener installStateUpdatedListener;
 
     private void notifyBreakingEvents(final String version) {
         if (version == null || version.isEmpty()) {
@@ -2191,27 +2211,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
-    @Override
-    public void handleOnDestroy() {
-        try {
-            logger.info("onActivityDestroyed " + getActivity().getClass().getName());
-            this.implementation.activity = getActivity();
-
-            // Clean up shake menu
-            if (shakeMenu != null) {
-                try {
-                    shakeMenu.stop();
-                    shakeMenu = null;
-                    logger.info("Shake menu cleaned up");
-                } catch (Exception e) {
-                    logger.error("Failed to clean up shake menu: " + e.getMessage());
-                }
-            }
-        } catch (Exception e) {
-            logger.error("Failed to run handleOnDestroy: " + e.getMessage());
-        }
-    }
-
     @PluginMethod
     public void setShakeMenu(final PluginCall call) {
         final Boolean enabled = call.getBoolean("enabled");
@@ -2284,5 +2283,331 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         this.implementation.appId = appId;
         call.resolve();
+    }
+
+    // ============================================================================
+    // Play Store In-App Update Methods
+    // ============================================================================
+
+    // AppUpdateAvailability enum values matching TypeScript definitions
+    private static final int UPDATE_AVAILABILITY_UNKNOWN = 0;
+    private static final int UPDATE_AVAILABILITY_NOT_AVAILABLE = 1;
+    private static final int UPDATE_AVAILABILITY_AVAILABLE = 2;
+    private static final int UPDATE_AVAILABILITY_IN_PROGRESS = 3;
+
+    // AppUpdateResultCode enum values matching TypeScript definitions
+    private static final int RESULT_OK = 0;
+    private static final int RESULT_CANCELED = 1;
+    private static final int RESULT_FAILED = 2;
+    private static final int RESULT_NOT_AVAILABLE = 3;
+    private static final int RESULT_NOT_ALLOWED = 4;
+    private static final int RESULT_INFO_MISSING = 5;
+
+    private AppUpdateManager getAppUpdateManager() {
+        if (appUpdateManager == null) {
+            appUpdateManager = AppUpdateManagerFactory.create(getContext());
+        }
+        return appUpdateManager;
+    }
+
+    private int mapUpdateAvailability(int playStoreAvailability) {
+        switch (playStoreAvailability) {
+            case UpdateAvailability.UPDATE_AVAILABLE:
+                return UPDATE_AVAILABILITY_AVAILABLE;
+            case UpdateAvailability.UPDATE_NOT_AVAILABLE:
+                return UPDATE_AVAILABILITY_NOT_AVAILABLE;
+            case UpdateAvailability.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS:
+                return UPDATE_AVAILABILITY_IN_PROGRESS;
+            default:
+                return UPDATE_AVAILABILITY_UNKNOWN;
+        }
+    }
+
+    @PluginMethod
+    public void getAppUpdateInfo(final PluginCall call) {
+        logger.info("Getting Play Store update info");
+
+        try {
+            AppUpdateManager manager = getAppUpdateManager();
+            Task<AppUpdateInfo> appUpdateInfoTask = manager.getAppUpdateInfo();
+
+            appUpdateInfoTask.addOnSuccessListener(appUpdateInfo -> {
+                cachedAppUpdateInfo = appUpdateInfo;
+
+                JSObject result = new JSObject();
+                try {
+                    PackageInfo pInfo = getContext().getPackageManager().getPackageInfo(getContext().getPackageName(), 0);
+                    result.put("currentVersionName", pInfo.versionName);
+                    result.put("currentVersionCode", String.valueOf(pInfo.versionCode));
+                } catch (PackageManager.NameNotFoundException e) {
+                    result.put("currentVersionName", "0.0.0");
+                    result.put("currentVersionCode", "0");
+                }
+
+                result.put("updateAvailability", mapUpdateAvailability(appUpdateInfo.updateAvailability()));
+
+                if (appUpdateInfo.updateAvailability() == UpdateAvailability.UPDATE_AVAILABLE) {
+                    result.put("availableVersionCode", String.valueOf(appUpdateInfo.availableVersionCode()));
+                    // Play Store doesn't provide version name, only version code
+                    result.put("availableVersionName", String.valueOf(appUpdateInfo.availableVersionCode()));
+                    result.put("updatePriority", appUpdateInfo.updatePriority());
+                    result.put("immediateUpdateAllowed", appUpdateInfo.isUpdateTypeAllowed(AppUpdateType.IMMEDIATE));
+                    result.put("flexibleUpdateAllowed", appUpdateInfo.isUpdateTypeAllowed(AppUpdateType.FLEXIBLE));
+
+                    Integer stalenessDays = appUpdateInfo.clientVersionStalenessDays();
+                    if (stalenessDays != null) {
+                        result.put("clientVersionStalenessDays", stalenessDays);
+                    }
+                } else {
+                    result.put("immediateUpdateAllowed", false);
+                    result.put("flexibleUpdateAllowed", false);
+                }
+
+                result.put("installStatus", appUpdateInfo.installStatus());
+
+                call.resolve(result);
+            }).addOnFailureListener(e -> {
+                logger.error("Failed to get app update info: " + e.getMessage());
+                call.reject("Failed to get app update info: " + e.getMessage());
+            });
+        } catch (Exception e) {
+            logger.error("Error getting app update info: " + e.getMessage());
+            call.reject("Error getting app update info: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void openAppStore(final PluginCall call) {
+        String packageName = call.getString("packageName");
+        if (packageName == null || packageName.isEmpty()) {
+            packageName = getContext().getPackageName();
+        }
+
+        try {
+            // Try to open Play Store app first
+            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=" + packageName));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+            call.resolve();
+        } catch (android.content.ActivityNotFoundException e) {
+            // Fall back to browser
+            try {
+                Intent intent = new Intent(Intent.ACTION_VIEW,
+                    Uri.parse("https://play.google.com/store/apps/details?id=" + packageName));
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                getContext().startActivity(intent);
+                call.resolve();
+            } catch (Exception ex) {
+                logger.error("Failed to open Play Store: " + ex.getMessage());
+                call.reject("Failed to open Play Store: " + ex.getMessage());
+            }
+        }
+    }
+
+    @PluginMethod
+    public void performImmediateUpdate(final PluginCall call) {
+        if (cachedAppUpdateInfo == null) {
+            logger.error("No update info available. Call getAppUpdateInfo first.");
+            JSObject result = new JSObject();
+            result.put("code", RESULT_INFO_MISSING);
+            call.resolve(result);
+            return;
+        }
+
+        if (cachedAppUpdateInfo.updateAvailability() != UpdateAvailability.UPDATE_AVAILABLE) {
+            logger.info("No update available");
+            JSObject result = new JSObject();
+            result.put("code", RESULT_NOT_AVAILABLE);
+            call.resolve(result);
+            return;
+        }
+
+        if (!cachedAppUpdateInfo.isUpdateTypeAllowed(AppUpdateType.IMMEDIATE)) {
+            logger.info("Immediate update not allowed");
+            JSObject result = new JSObject();
+            result.put("code", RESULT_NOT_ALLOWED);
+            call.resolve(result);
+            return;
+        }
+
+        try {
+            Activity activity = getActivity();
+            if (activity == null) {
+                call.reject("Activity not available");
+                return;
+            }
+
+            // Save the call for later resolution
+            bridge.saveCall(call);
+
+            AppUpdateManager manager = getAppUpdateManager();
+            manager.startUpdateFlowForResult(
+                cachedAppUpdateInfo,
+                activity,
+                AppUpdateOptions.newBuilder(AppUpdateType.IMMEDIATE).build(),
+                APP_UPDATE_REQUEST_CODE
+            );
+        } catch (Exception e) {
+            logger.error("Failed to start immediate update: " + e.getMessage());
+            JSObject result = new JSObject();
+            result.put("code", RESULT_FAILED);
+            call.resolve(result);
+        }
+    }
+
+    @PluginMethod
+    public void startFlexibleUpdate(final PluginCall call) {
+        if (cachedAppUpdateInfo == null) {
+            logger.error("No update info available. Call getAppUpdateInfo first.");
+            JSObject result = new JSObject();
+            result.put("code", RESULT_INFO_MISSING);
+            call.resolve(result);
+            return;
+        }
+
+        if (cachedAppUpdateInfo.updateAvailability() != UpdateAvailability.UPDATE_AVAILABLE) {
+            logger.info("No update available");
+            JSObject result = new JSObject();
+            result.put("code", RESULT_NOT_AVAILABLE);
+            call.resolve(result);
+            return;
+        }
+
+        if (!cachedAppUpdateInfo.isUpdateTypeAllowed(AppUpdateType.FLEXIBLE)) {
+            logger.info("Flexible update not allowed");
+            JSObject result = new JSObject();
+            result.put("code", RESULT_NOT_ALLOWED);
+            call.resolve(result);
+            return;
+        }
+
+        try {
+            Activity activity = getActivity();
+            if (activity == null) {
+                call.reject("Activity not available");
+                return;
+            }
+
+            // Register listener for flexible update state changes
+            AppUpdateManager manager = getAppUpdateManager();
+
+            // Remove any existing listener
+            if (installStateUpdatedListener != null) {
+                manager.unregisterListener(installStateUpdatedListener);
+            }
+
+            installStateUpdatedListener = state -> {
+                JSObject eventData = new JSObject();
+                eventData.put("installStatus", state.installStatus());
+
+                if (state.installStatus() == InstallStatus.DOWNLOADING) {
+                    eventData.put("bytesDownloaded", state.bytesDownloaded());
+                    eventData.put("totalBytesToDownload", state.totalBytesToDownload());
+                }
+
+                notifyListeners("onFlexibleUpdateStateChange", eventData);
+            };
+
+            manager.registerListener(installStateUpdatedListener);
+
+            // Save the call for later resolution
+            bridge.saveCall(call);
+
+            manager.startUpdateFlowForResult(
+                cachedAppUpdateInfo,
+                activity,
+                AppUpdateOptions.newBuilder(AppUpdateType.FLEXIBLE).build(),
+                APP_UPDATE_REQUEST_CODE
+            );
+        } catch (Exception e) {
+            logger.error("Failed to start flexible update: " + e.getMessage());
+            JSObject result = new JSObject();
+            result.put("code", RESULT_FAILED);
+            call.resolve(result);
+        }
+    }
+
+    @PluginMethod
+    public void completeFlexibleUpdate(final PluginCall call) {
+        try {
+            AppUpdateManager manager = getAppUpdateManager();
+            manager.completeUpdate()
+                .addOnSuccessListener(aVoid -> {
+                    // The app will restart, so this may not be called
+                    call.resolve();
+                })
+                .addOnFailureListener(e -> {
+                    logger.error("Failed to complete flexible update: " + e.getMessage());
+                    call.reject("Failed to complete flexible update: " + e.getMessage());
+                });
+        } catch (Exception e) {
+            logger.error("Error completing flexible update: " + e.getMessage());
+            call.reject("Error completing flexible update: " + e.getMessage());
+        }
+    }
+
+    @Override
+    protected void handleOnActivityResult(int requestCode, int resultCode, Intent data) {
+        super.handleOnActivityResult(requestCode, resultCode, data);
+
+        if (requestCode == APP_UPDATE_REQUEST_CODE) {
+            PluginCall savedCall = bridge.getSavedCall("com.getcapacitor.PluginCall");
+            if (savedCall == null) {
+                // Try to get any saved call (for backward compatibility)
+                return;
+            }
+
+            JSObject result = new JSObject();
+            if (resultCode == Activity.RESULT_OK) {
+                result.put("code", RESULT_OK);
+            } else if (resultCode == Activity.RESULT_CANCELED) {
+                result.put("code", RESULT_CANCELED);
+            } else {
+                result.put("code", RESULT_FAILED);
+            }
+            savedCall.resolve(result);
+            bridge.releaseCall(savedCall);
+        }
+    }
+
+    @Override
+    protected void handleOnDestroy() {
+        // Clean up the install state listener
+        if (installStateUpdatedListener != null && appUpdateManager != null) {
+            try {
+                appUpdateManager.unregisterListener(installStateUpdatedListener);
+                installStateUpdatedListener = null;
+            } catch (Exception e) {
+                logger.error("Failed to unregister install state listener: " + e.getMessage());
+            }
+        }
+
+        handleOnDestroyInternal();
+    }
+
+    private void handleOnDestroyInternal() {
+        // Original handleOnDestroy code
+        try {
+            logger.info("onActivityDestroyed " + getActivity().getClass().getName());
+            this.implementation.activity = getActivity();
+
+            // Check for 'kill' delay condition on activity destroy
+            // Note: onDestroy is not reliably called - also check on next app launch
+            this.delayUpdateUtils.checkCancelDelay(DelayUpdateUtils.CancelDelaySource.KILLED);
+            this.delayUpdateUtils.setBackgroundTimestamp(0);
+
+            // Clean up shake menu
+            if (shakeMenu != null) {
+                try {
+                    shakeMenu.stop();
+                    shakeMenu = null;
+                    logger.info("Shake menu cleaned up");
+                } catch (Exception e) {
+                    logger.error("Failed to clean up shake menu: " + e.getMessage());
+                }
+            }
+        } catch (Exception e) {
+            logger.error("Failed to run handleOnDestroy: " + e.getMessage());
+        }
     }
 }
