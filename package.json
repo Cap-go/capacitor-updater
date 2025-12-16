@@ -24,6 +24,7 @@
   "bugs": {
     "url": "https://github.com/Cap-go/capacitor-updater/issues"
   },
+  "homepage": "https://capgo.app/docs/plugins/updater/",
   "keywords": [
     "capacitor",
     "live updates",
