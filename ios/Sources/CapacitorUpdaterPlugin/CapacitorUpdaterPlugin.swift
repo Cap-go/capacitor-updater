@@ -51,10 +51,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getNextBundle", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getFailedUpdate", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setShakeMenu", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "isShakeMenuEnabled", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "isShakeMenuEnabled", returnType: CAPPluginReturnPromise),
+        // App Store update methods
+        CAPPluginMethod(name: "getAppUpdateInfo", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "openAppStore", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "performImmediateUpdate", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "startFlexibleUpdate", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "completeFlexibleUpdate", returnType: CAPPluginReturnPromise)
     ]
     public var implementation = CapgoUpdater()
-    private let pluginVersion: String = "5.38.0"
+    private let pluginVersion: String = "5.39.0"
     static let updateUrlDefault = "https://plugin.capgo.app/updates"
     static let statsUrlDefault = "https://plugin.capgo.app/stats"
     static let channelUrlDefault = "https://plugin.capgo.app/channel_self"
@@ -1659,5 +1665,209 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         implementation.appId = appId
         call.resolve()
+    }
+
+    // MARK: - App Store Update Methods
+
+    /// AppUpdateAvailability enum values matching TypeScript definitions
+    private enum AppUpdateAvailability: Int {
+        case unknown = 0
+        case updateNotAvailable = 1
+        case updateAvailable = 2
+        case updateInProgress = 3
+    }
+
+    @objc func getAppUpdateInfo(_ call: CAPPluginCall) {
+        let country = call.getString("country", "US")
+        let bundleId = implementation.appId
+
+        logger.info("Getting App Store update info for \(bundleId) in country \(country)")
+
+        DispatchQueue.global(qos: .background).async {
+            let urlString = "https://itunes.apple.com/lookup?bundleId=\(bundleId)&country=\(country)"
+            guard let url = URL(string: urlString) else {
+                call.reject("Invalid URL for App Store lookup")
+                return
+            }
+
+            let task = URLSession.shared.dataTask(with: url) { data, response, error in
+                if let error = error {
+                    self.logger.error("App Store lookup failed: \(error.localizedDescription)")
+                    call.reject("App Store lookup failed: \(error.localizedDescription)")
+                    return
+                }
+
+                guard let data = data else {
+                    call.reject("No data received from App Store")
+                    return
+                }
+
+                do {
+                    guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                          let resultCount = json["resultCount"] as? Int else {
+                        call.reject("Invalid response from App Store")
+                        return
+                    }
+
+                    let currentVersionName = Bundle.main.versionName ?? "0.0.0"
+                    let currentVersionCode = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
+
+                    var result: [String: Any] = [
+                        "currentVersionName": currentVersionName,
+                        "currentVersionCode": currentVersionCode,
+                        "updateAvailability": AppUpdateAvailability.unknown.rawValue
+                    ]
+
+                    if resultCount > 0,
+                       let results = json["results"] as? [[String: Any]],
+                       let appInfo = results.first {
+
+                        let availableVersion = appInfo["version"] as? String
+                        let releaseDate = appInfo["currentVersionReleaseDate"] as? String
+                        let minimumOsVersion = appInfo["minimumOsVersion"] as? String
+
+                        result["availableVersionName"] = availableVersion
+                        result["availableVersionCode"] = availableVersion // iOS doesn't have separate version code
+                        result["availableVersionReleaseDate"] = releaseDate
+                        result["minimumOsVersion"] = minimumOsVersion
+
+                        // Determine update availability by comparing versions
+                        if let availableVersion = availableVersion {
+                            do {
+                                let currentVer = try Version(currentVersionName)
+                                let availableVer = try Version(availableVersion)
+                                if availableVer > currentVer {
+                                    result["updateAvailability"] = AppUpdateAvailability.updateAvailable.rawValue
+                                } else {
+                                    result["updateAvailability"] = AppUpdateAvailability.updateNotAvailable.rawValue
+                                }
+                            } catch {
+                                // If version parsing fails, do string comparison
+                                if availableVersion != currentVersionName {
+                                    result["updateAvailability"] = AppUpdateAvailability.updateAvailable.rawValue
+                                } else {
+                                    result["updateAvailability"] = AppUpdateAvailability.updateNotAvailable.rawValue
+                                }
+                            }
+                        } else {
+                            result["updateAvailability"] = AppUpdateAvailability.updateNotAvailable.rawValue
+                        }
+
+                        // iOS doesn't support in-app updates like Android
+                        result["immediateUpdateAllowed"] = false
+                        result["flexibleUpdateAllowed"] = false
+                    } else {
+                        // App not found in App Store (maybe not published yet)
+                        result["updateAvailability"] = AppUpdateAvailability.updateNotAvailable.rawValue
+                        self.logger.info("App not found in App Store for bundleId: \(bundleId)")
+                    }
+
+                    call.resolve(result)
+                } catch {
+                    self.logger.error("Failed to parse App Store response: \(error.localizedDescription)")
+                    call.reject("Failed to parse App Store response: \(error.localizedDescription)")
+                }
+            }
+            task.resume()
+        }
+    }
+
+    @objc func openAppStore(_ call: CAPPluginCall) {
+        let appId = call.getString("appId")
+
+        if let appId = appId {
+            // Open App Store with provided app ID
+            let urlString = "https://apps.apple.com/app/id\(appId)"
+            guard let url = URL(string: urlString) else {
+                call.reject("Invalid App Store URL")
+                return
+            }
+            DispatchQueue.main.async {
+                UIApplication.shared.open(url) { success in
+                    if success {
+                        call.resolve()
+                    } else {
+                        call.reject("Failed to open App Store")
+                    }
+                }
+            }
+        } else {
+            // Look up app ID using bundle identifier
+            let bundleId = implementation.appId
+            let lookupUrl = "https://itunes.apple.com/lookup?bundleId=\(bundleId)"
+
+            DispatchQueue.global(qos: .background).async {
+                guard let url = URL(string: lookupUrl) else {
+                    call.reject("Invalid lookup URL")
+                    return
+                }
+
+                let task = URLSession.shared.dataTask(with: url) { data, _, error in
+                    if let error = error {
+                        call.reject("Failed to lookup app: \(error.localizedDescription)")
+                        return
+                    }
+
+                    guard let data = data,
+                          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                          let results = json["results"] as? [[String: Any]],
+                          let appInfo = results.first,
+                          let trackId = appInfo["trackId"] as? Int else {
+                        // If lookup fails, try opening the generic App Store app page using bundle ID
+                        let fallbackUrlString = "https://apps.apple.com/app/\(bundleId)"
+                        guard let fallbackUrl = URL(string: fallbackUrlString) else {
+                            call.reject("Failed to find app in App Store and fallback URL is invalid")
+                            return
+                        }
+                        DispatchQueue.main.async {
+                            UIApplication.shared.open(fallbackUrl) { success in
+                                if success {
+                                    call.resolve()
+                                } else {
+                                    call.reject("Failed to open App Store")
+                                }
+                            }
+                        }
+                        return
+                    }
+
+                    let appStoreUrl = "https://apps.apple.com/app/id\(trackId)"
+                    guard let url = URL(string: appStoreUrl) else {
+                        call.reject("Invalid App Store URL")
+                        return
+                    }
+
+                    DispatchQueue.main.async {
+                        UIApplication.shared.open(url) { success in
+                            if success {
+                                call.resolve()
+                            } else {
+                                call.reject("Failed to open App Store")
+                            }
+                        }
+                    }
+                }
+                task.resume()
+            }
+        }
+    }
+
+    @objc func performImmediateUpdate(_ call: CAPPluginCall) {
+        // iOS doesn't support in-app updates like Android's Play Store
+        // Redirect users to the App Store instead
+        logger.warn("performImmediateUpdate is not supported on iOS. Use openAppStore() instead.")
+        call.reject("In-app updates are not supported on iOS. Use openAppStore() to direct users to the App Store.", "NOT_SUPPORTED")
+    }
+
+    @objc func startFlexibleUpdate(_ call: CAPPluginCall) {
+        // iOS doesn't support flexible in-app updates
+        logger.warn("startFlexibleUpdate is not supported on iOS. Use openAppStore() instead.")
+        call.reject("Flexible updates are not supported on iOS. Use openAppStore() to direct users to the App Store.", "NOT_SUPPORTED")
+    }
+
+    @objc func completeFlexibleUpdate(_ call: CAPPluginCall) {
+        // iOS doesn't support flexible in-app updates
+        logger.warn("completeFlexibleUpdate is not supported on iOS.")
+        call.reject("Flexible updates are not supported on iOS.", "NOT_SUPPORTED")
     }
 }

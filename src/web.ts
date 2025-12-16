@@ -8,6 +8,8 @@ import { WebPlugin } from '@capacitor/core';
 
 import type {
   AppReadyResult,
+  AppUpdateInfo,
+  AppUpdateResult,
   AutoUpdateEnabled,
   BundleId,
   BundleInfo,
@@ -19,10 +21,12 @@ import type {
   DelayCondition,
   DeviceId,
   DownloadOptions,
+  GetAppUpdateInfoOptions,
   GetChannelRes,
   LatestVersion,
   ListChannelsResult,
   MultiDelayConditions,
+  OpenAppStoreOptions,
   PluginVersion,
   ResetOptions,
   SetChannelOptions,
@@ -36,6 +40,8 @@ import type {
   ShakeMenuEnabled,
   UpdateFailedEvent,
 } from './definitions';
+
+import { AppUpdateAvailability } from './definitions';
 
 const BUNDLE_BUILTIN: BundleInfo = {
   status: 'success',
@@ -220,5 +226,34 @@ export class CapacitorUpdaterWeb extends WebPlugin implements CapacitorUpdaterPl
   async setAppId(options: { appId: string }): Promise<void> {
     console.warn('Cannot setAppId in web', options);
     return;
+  }
+
+  // ============================================================================
+  // App Store / Play Store Update Methods (Web stubs)
+  // ============================================================================
+
+  async getAppUpdateInfo(_options?: GetAppUpdateInfoOptions): Promise<AppUpdateInfo> {
+    console.warn('getAppUpdateInfo is not available on web platform');
+    return {
+      currentVersionName: '0.0.0',
+      currentVersionCode: '0',
+      updateAvailability: AppUpdateAvailability.UNKNOWN,
+    };
+  }
+
+  async openAppStore(_options?: OpenAppStoreOptions): Promise<void> {
+    throw this.unimplemented('openAppStore is not available on web platform');
+  }
+
+  async performImmediateUpdate(): Promise<AppUpdateResult> {
+    throw this.unimplemented('performImmediateUpdate is only available on Android');
+  }
+
+  async startFlexibleUpdate(): Promise<AppUpdateResult> {
+    throw this.unimplemented('startFlexibleUpdate is only available on Android');
+  }
+
+  async completeFlexibleUpdate(): Promise<void> {
+    throw this.unimplemented('completeFlexibleUpdate is only available on Android');
   }
 }
