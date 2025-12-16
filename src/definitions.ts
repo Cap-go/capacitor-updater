@@ -1249,6 +1249,163 @@ export interface CapacitorUpdaterPlugin {
    * @since 7.14.0
    */
   setAppId(options: SetAppIdOptions): Promise<void>;
+
+  // ============================================================================
+  // App Store / Play Store Update Methods
+  // ============================================================================
+
+  /**
+   * Get information about the app's availability in the App Store or Play Store.
+   *
+   * This method checks the native app stores to see if a newer version of the app
+   * is available for download. This is different from Capgo's OTA updates - this
+   * checks for native app updates that require going through the app stores.
+   *
+   * **Platform differences:**
+   * - **Android**: Uses Play Store's In-App Updates API for accurate update information
+   * - **iOS**: Queries the App Store lookup API (requires country code for accurate results)
+   *
+   * **Returns information about:**
+   * - Current installed version
+   * - Available version in the store (if any)
+   * - Whether an update is available
+   * - Update priority (Android only)
+   * - Whether immediate/flexible updates are allowed (Android only)
+   *
+   * Use this to:
+   * - Check if users need to update from the app store
+   * - Show "Update Available" prompts for native updates
+   * - Implement version gating (require minimum native version)
+   * - Combine with Capgo OTA updates for a complete update strategy
+   *
+   * @param options Optional {@link GetAppUpdateInfoOptions} with country code for iOS.
+   * @returns {Promise<AppUpdateInfo>} Information about the current and available app versions.
+   * @throws {Error} If the operation fails or store information is unavailable.
+   * @since 8.0.0
+   */
+  getAppUpdateInfo(options?: GetAppUpdateInfoOptions): Promise<AppUpdateInfo>;
+
+  /**
+   * Open the app's page in the App Store or Play Store.
+   *
+   * This navigates the user to your app's store listing where they can manually
+   * update the app. Use this as a fallback when in-app updates are not available
+   * or when the user needs to update on iOS.
+   *
+   * **Platform behavior:**
+   * - **Android**: Opens Play Store to the app's page
+   * - **iOS**: Opens App Store to the app's page
+   *
+   * **Customization options:**
+   * - `appId`: Specify a custom App Store ID (iOS) - useful for opening a different app's page
+   * - `packageName`: Specify a custom package name (Android) - useful for opening a different app's page
+   *
+   * @param options Optional {@link OpenAppStoreOptions} to customize which app's store page to open.
+   * @returns {Promise<void>} Resolves when the store is opened.
+   * @throws {Error} If the store cannot be opened.
+   * @since 8.0.0
+   */
+  openAppStore(options?: OpenAppStoreOptions): Promise<void>;
+
+  /**
+   * Perform an immediate in-app update on Android.
+   *
+   * This triggers Google Play's immediate update flow, which:
+   * 1. Shows a full-screen update UI
+   * 2. Downloads and installs the update
+   * 3. Restarts the app automatically
+   *
+   * The user cannot continue using the app until the update is complete.
+   * This is ideal for critical updates that must be installed immediately.
+   *
+   * **Requirements:**
+   * - Android only (throws error on iOS)
+   * - An update must be available (check with {@link getAppUpdateInfo} first)
+   * - The update must allow immediate updates (`immediateUpdateAllowed: true`)
+   *
+   * **User experience:**
+   * - Full-screen blocking UI
+   * - Progress shown during download
+   * - App automatically restarts after installation
+   *
+   * @returns {Promise<AppUpdateResult>} Result indicating success, cancellation, or failure.
+   * @throws {Error} If not on Android, no update is available, or immediate updates not allowed.
+   * @since 8.0.0
+   */
+  performImmediateUpdate(): Promise<AppUpdateResult>;
+
+  /**
+   * Start a flexible in-app update on Android.
+   *
+   * This triggers Google Play's flexible update flow, which:
+   * 1. Downloads the update in the background
+   * 2. Allows the user to continue using the app
+   * 3. Notifies when download is complete
+   * 4. Requires calling {@link completeFlexibleUpdate} to install
+   *
+   * Monitor the download progress using the `onFlexibleUpdateStateChange` listener.
+   *
+   * **Requirements:**
+   * - Android only (throws error on iOS)
+   * - An update must be available (check with {@link getAppUpdateInfo} first)
+   * - The update must allow flexible updates (`flexibleUpdateAllowed: true`)
+   *
+   * **Typical flow:**
+   * 1. Call `startFlexibleUpdate()` to begin download
+   * 2. Listen to `onFlexibleUpdateStateChange` for progress
+   * 3. When status is `DOWNLOADED`, prompt user to restart
+   * 4. Call `completeFlexibleUpdate()` to install and restart
+   *
+   * @returns {Promise<AppUpdateResult>} Result indicating the update was started, cancelled, or failed.
+   * @throws {Error} If not on Android, no update is available, or flexible updates not allowed.
+   * @since 8.0.0
+   */
+  startFlexibleUpdate(): Promise<AppUpdateResult>;
+
+  /**
+   * Complete a flexible in-app update on Android.
+   *
+   * After a flexible update has been downloaded (status `DOWNLOADED` in
+   * `onFlexibleUpdateStateChange`), call this method to install the update
+   * and restart the app.
+   *
+   * **Important:** This will immediately restart the app. Make sure to:
+   * - Save any user data before calling
+   * - Prompt the user before restarting
+   * - Only call when the download status is `DOWNLOADED`
+   *
+   * @returns {Promise<void>} Resolves when the update installation begins (app will restart).
+   * @throws {Error} If not on Android or no downloaded update is pending.
+   * @since 8.0.0
+   */
+  completeFlexibleUpdate(): Promise<void>;
+
+  /**
+   * Listen for flexible update state changes on Android.
+   *
+   * This event fires during the flexible update download process, providing:
+   * - Download progress (bytes downloaded / total bytes)
+   * - Installation status changes
+   *
+   * **Install status values:**
+   * - `UNKNOWN` (0): Unknown status
+   * - `PENDING` (1): Download pending
+   * - `DOWNLOADING` (2): Download in progress
+   * - `INSTALLING` (3): Installing the update
+   * - `INSTALLED` (4): Update installed (app restart needed)
+   * - `FAILED` (5): Update failed
+   * - `CANCELED` (6): Update was canceled
+   * - `DOWNLOADED` (11): Download complete, ready to install
+   *
+   * When status is `DOWNLOADED`, you should prompt the user and call
+   * {@link completeFlexibleUpdate} to finish the installation.
+   *
+   * @since 8.0.0
+   */
+  addListener(
+    eventName: 'onFlexibleUpdateStateChange',
+    listenerFunc: (state: FlexibleUpdateState) => void,
+  ): Promise<PluginListenerHandle>;
 }
 
 /**
@@ -1634,4 +1791,327 @@ export interface GetAppIdRes {
 
 export interface SetAppIdOptions {
   appId: string;
+}
+
+// ============================================================================
+// App Store / Play Store Update Types
+// ============================================================================
+
+/**
+ * Options for {@link CapacitorUpdaterPlugin.getAppUpdateInfo}.
+ *
+ * @since 8.0.0
+ */
+export interface GetAppUpdateInfoOptions {
+  /**
+   * Two-letter country code (ISO 3166-1 alpha-2) for the App Store lookup.
+   *
+   * This is required on iOS to get accurate App Store information, as app
+   * availability and versions can vary by country.
+   *
+   * Examples: "US", "GB", "DE", "JP", "FR"
+   *
+   * On Android, this option is ignored as the Play Store handles region
+   * detection automatically.
+   *
+   * @since 8.0.0
+   */
+  country?: string;
+}
+
+/**
+ * Information about app updates available in the App Store or Play Store.
+ *
+ * @since 8.0.0
+ */
+export interface AppUpdateInfo {
+  /**
+   * The currently installed version name (e.g., "1.2.3").
+   *
+   * @since 8.0.0
+   */
+  currentVersionName: string;
+
+  /**
+   * The version name available in the store, if an update is available.
+   * May be undefined if no update information is available.
+   *
+   * @since 8.0.0
+   */
+  availableVersionName?: string;
+
+  /**
+   * The currently installed version code (Android) or build number (iOS).
+   *
+   * @since 8.0.0
+   */
+  currentVersionCode: string;
+
+  /**
+   * The version code available in the store (Android only).
+   * On iOS, this will be the same as `availableVersionName`.
+   *
+   * @since 8.0.0
+   */
+  availableVersionCode?: string;
+
+  /**
+   * The release date of the available version (iOS only).
+   * Format: ISO 8601 date string.
+   *
+   * @since 8.0.0
+   */
+  availableVersionReleaseDate?: string;
+
+  /**
+   * The current update availability status.
+   *
+   * @since 8.0.0
+   */
+  updateAvailability: AppUpdateAvailability;
+
+  /**
+   * The priority of the update as set by the developer in Play Console (Android only).
+   * Values range from 0 (default/lowest) to 5 (highest priority).
+   *
+   * Use this to decide whether to show an update prompt or force an update.
+   *
+   * @since 8.0.0
+   */
+  updatePriority?: number;
+
+  /**
+   * Whether an immediate update is allowed (Android only).
+   *
+   * If `true`, you can call {@link CapacitorUpdaterPlugin.performImmediateUpdate}.
+   *
+   * @since 8.0.0
+   */
+  immediateUpdateAllowed?: boolean;
+
+  /**
+   * Whether a flexible update is allowed (Android only).
+   *
+   * If `true`, you can call {@link CapacitorUpdaterPlugin.startFlexibleUpdate}.
+   *
+   * @since 8.0.0
+   */
+  flexibleUpdateAllowed?: boolean;
+
+  /**
+   * Number of days since the update became available (Android only).
+   *
+   * Use this to implement "update nagging" - remind users more frequently
+   * as the update ages.
+   *
+   * @since 8.0.0
+   */
+  clientVersionStalenessDays?: number;
+
+  /**
+   * The current install status of a flexible update (Android only).
+   *
+   * @since 8.0.0
+   */
+  installStatus?: FlexibleUpdateInstallStatus;
+
+  /**
+   * The minimum OS version required for the available update (iOS only).
+   *
+   * @since 8.0.0
+   */
+  minimumOsVersion?: string;
+}
+
+/**
+ * Options for {@link CapacitorUpdaterPlugin.openAppStore}.
+ *
+ * @since 8.0.0
+ */
+export interface OpenAppStoreOptions {
+  /**
+   * The Android package name to open in the Play Store.
+   *
+   * If not specified, uses the current app's package name.
+   * Use this to open a different app's store page.
+   *
+   * Only used on Android.
+   *
+   * @since 8.0.0
+   */
+  packageName?: string;
+
+  /**
+   * The iOS App Store ID to open.
+   *
+   * If not specified, uses the current app's bundle identifier to look up the app.
+   * Use this to open a different app's store page or when automatic lookup fails.
+   *
+   * Only used on iOS.
+   *
+   * @since 8.0.0
+   */
+  appId?: string;
+}
+
+/**
+ * State information for flexible update progress (Android only).
+ *
+ * @since 8.0.0
+ */
+export interface FlexibleUpdateState {
+  /**
+   * The current installation status.
+   *
+   * @since 8.0.0
+   */
+  installStatus: FlexibleUpdateInstallStatus;
+
+  /**
+   * Number of bytes downloaded so far.
+   * Only available during the `DOWNLOADING` status.
+   *
+   * @since 8.0.0
+   */
+  bytesDownloaded?: number;
+
+  /**
+   * Total number of bytes to download.
+   * Only available during the `DOWNLOADING` status.
+   *
+   * @since 8.0.0
+   */
+  totalBytesToDownload?: number;
+}
+
+/**
+ * Result of an app update operation.
+ *
+ * @since 8.0.0
+ */
+export interface AppUpdateResult {
+  /**
+   * The result code of the update operation.
+   *
+   * @since 8.0.0
+   */
+  code: AppUpdateResultCode;
+}
+
+/**
+ * Update availability status.
+ *
+ * @since 8.0.0
+ */
+export enum AppUpdateAvailability {
+  /**
+   * Update availability is unknown.
+   * This typically means the check hasn't completed or failed.
+   */
+  UNKNOWN = 0,
+
+  /**
+   * No update is available.
+   * The installed version is the latest.
+   */
+  UPDATE_NOT_AVAILABLE = 1,
+
+  /**
+   * An update is available for download.
+   */
+  UPDATE_AVAILABLE = 2,
+
+  /**
+   * An update is currently being downloaded or installed.
+   */
+  UPDATE_IN_PROGRESS = 3,
+}
+
+/**
+ * Installation status for flexible updates (Android only).
+ *
+ * @since 8.0.0
+ */
+export enum FlexibleUpdateInstallStatus {
+  /**
+   * Unknown install status.
+   */
+  UNKNOWN = 0,
+
+  /**
+   * Download is pending and will start soon.
+   */
+  PENDING = 1,
+
+  /**
+   * Download is in progress.
+   * Check `bytesDownloaded` and `totalBytesToDownload` for progress.
+   */
+  DOWNLOADING = 2,
+
+  /**
+   * The update is being installed.
+   */
+  INSTALLING = 3,
+
+  /**
+   * The update has been installed.
+   * The app needs to be restarted to use the new version.
+   */
+  INSTALLED = 4,
+
+  /**
+   * The update failed to download or install.
+   */
+  FAILED = 5,
+
+  /**
+   * The update was canceled by the user.
+   */
+  CANCELED = 6,
+
+  /**
+   * The update has been downloaded and is ready to install.
+   * Call {@link CapacitorUpdaterPlugin.completeFlexibleUpdate} to install.
+   */
+  DOWNLOADED = 11,
+}
+
+/**
+ * Result codes for app update operations.
+ *
+ * @since 8.0.0
+ */
+export enum AppUpdateResultCode {
+  /**
+   * The update completed successfully.
+   */
+  OK = 0,
+
+  /**
+   * The user canceled the update.
+   */
+  CANCELED = 1,
+
+  /**
+   * The update failed.
+   */
+  FAILED = 2,
+
+  /**
+   * No update is available.
+   */
+  NOT_AVAILABLE = 3,
+
+  /**
+   * The requested update type is not allowed.
+   * For example, trying to perform an immediate update when only flexible is allowed.
+   */
+  NOT_ALLOWED = 4,
+
+  /**
+   * Required information is missing.
+   * This can happen if {@link CapacitorUpdaterPlugin.getAppUpdateInfo} wasn't called first.
+   */
+  INFO_MISSING = 5,
 }

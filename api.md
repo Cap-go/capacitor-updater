@@ -102,6 +102,12 @@ CapacitorUpdater can be configured with these options:
 - [`isShakeMenuEnabled`](#isshakemenuenabled)
 - [`getAppId`](#getappid)
 - [`setAppId`](#setappid)
+- [`getAppUpdateInfo`](#getappupdateinfo)
+- [`openAppStore`](#openappstore)
+- [`performImmediateUpdate`](#performimmediateupdate)
+- [`startFlexibleUpdate`](#startflexibleupdate)
+- [`completeFlexibleUpdate`](#completeflexibleupdate)
+- [`addListener('onFlexibleUpdateStateChange')`](#addlisteneronflexibleupdatestatechange-)
 
 </docgen-index>
 
@@ -1615,6 +1621,239 @@ app IDs, or multi-tenant configurations).
 **Since:** 7.14.0
 
 **Throws:** {Error} If `allowModifyAppId` is false or the operation fails.
+
+
+--------------------
+
+
+### getAppUpdateInfo
+
+```typescript
+getAppUpdateInfo(options?: GetAppUpdateInfoOptions | undefined) => Promise<AppUpdateInfo>
+```
+
+Get information about the app's availability in the App Store or Play Store.
+
+This method checks the native app stores to see if a newer version of the app
+is available for download. This is different from Capgo's OTA updates - this
+checks for native app updates that require going through the app stores.
+
+**Platform differences:**
+- **Android**: Uses Play Store's In-App Updates API for accurate update information
+- **iOS**: Queries the App Store lookup API (requires country code for accurate results)
+
+**Returns information about:**
+- Current installed version
+- Available version in the store (if any)
+- Whether an update is available
+- Update priority (Android only)
+- Whether immediate/flexible updates are allowed (Android only)
+
+Use this to:
+- Check if users need to update from the app store
+- Show "Update Available" prompts for native updates
+- Implement version gating (require minimum native version)
+- Combine with Capgo OTA updates for a complete update strategy
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `options` | `GetAppUpdateInfoOptions | undefined` | Optional {@link GetAppUpdateInfoOptions} with country code for iOS. |
+
+**Returns**
+
+`Promise<AppUpdateInfo>` — Information about the current and available app versions.
+
+**Since:** 8.0.0
+
+**Throws:** {Error} If the operation fails or store information is unavailable.
+
+
+--------------------
+
+
+### openAppStore
+
+```typescript
+openAppStore(options?: OpenAppStoreOptions | undefined) => Promise<void>
+```
+
+Open the app's page in the App Store or Play Store.
+
+This navigates the user to your app's store listing where they can manually
+update the app. Use this as a fallback when in-app updates are not available
+or when the user needs to update on iOS.
+
+**Platform behavior:**
+- **Android**: Opens Play Store to the app's page
+- **iOS**: Opens App Store to the app's page
+
+**Customization options:**
+- `appId`: Specify a custom App Store ID (iOS) - useful for opening a different app's page
+- `packageName`: Specify a custom package name (Android) - useful for opening a different app's page
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `options` | `OpenAppStoreOptions | undefined` | Optional {@link OpenAppStoreOptions} to customize which app's store page to open. |
+
+**Returns**
+
+`Promise<void>` — Resolves when the store is opened.
+
+**Since:** 8.0.0
+
+**Throws:** {Error} If the store cannot be opened.
+
+
+--------------------
+
+
+### performImmediateUpdate
+
+```typescript
+performImmediateUpdate() => Promise<AppUpdateResult>
+```
+
+Perform an immediate in-app update on Android.
+
+This triggers Google Play's immediate update flow, which:
+1. Shows a full-screen update UI
+2. Downloads and installs the update
+3. Restarts the app automatically
+
+The user cannot continue using the app until the update is complete.
+This is ideal for critical updates that must be installed immediately.
+
+**Requirements:**
+- Android only (throws error on iOS)
+- An update must be available (check with {@link getAppUpdateInfo} first)
+- The update must allow immediate updates (`immediateUpdateAllowed: true`)
+
+**User experience:**
+- Full-screen blocking UI
+- Progress shown during download
+- App automatically restarts after installation
+
+**Returns**
+
+`Promise<AppUpdateResult>` — Result indicating success, cancellation, or failure.
+
+**Since:** 8.0.0
+
+**Throws:** {Error} If not on Android, no update is available, or immediate updates not allowed.
+
+
+--------------------
+
+
+### startFlexibleUpdate
+
+```typescript
+startFlexibleUpdate() => Promise<AppUpdateResult>
+```
+
+Start a flexible in-app update on Android.
+
+This triggers Google Play's flexible update flow, which:
+1. Downloads the update in the background
+2. Allows the user to continue using the app
+3. Notifies when download is complete
+4. Requires calling {@link completeFlexibleUpdate} to install
+
+Monitor the download progress using the `onFlexibleUpdateStateChange` listener.
+
+**Requirements:**
+- Android only (throws error on iOS)
+- An update must be available (check with {@link getAppUpdateInfo} first)
+- The update must allow flexible updates (`flexibleUpdateAllowed: true`)
+
+**Typical flow:**
+1. Call `startFlexibleUpdate()` to begin download
+2. Listen to `onFlexibleUpdateStateChange` for progress
+3. When status is `DOWNLOADED`, prompt user to restart
+4. Call `completeFlexibleUpdate()` to install and restart
+
+**Returns**
+
+`Promise<AppUpdateResult>` — Result indicating the update was started, cancelled, or failed.
+
+**Since:** 8.0.0
+
+**Throws:** {Error} If not on Android, no update is available, or flexible updates not allowed.
+
+
+--------------------
+
+
+### completeFlexibleUpdate
+
+```typescript
+completeFlexibleUpdate() => Promise<void>
+```
+
+Complete a flexible in-app update on Android.
+
+After a flexible update has been downloaded (status `DOWNLOADED` in
+`onFlexibleUpdateStateChange`), call this method to install the update
+and restart the app.
+
+**Important:** This will immediately restart the app. Make sure to:
+- Save any user data before calling
+- Prompt the user before restarting
+- Only call when the download status is `DOWNLOADED`
+
+**Returns**
+
+`Promise<void>` — Resolves when the update installation begins (app will restart).
+
+**Since:** 8.0.0
+
+**Throws:** {Error} If not on Android or no downloaded update is pending.
+
+
+--------------------
+
+
+### addListener('onFlexibleUpdateStateChange')
+
+```typescript
+addListener(eventName: 'onFlexibleUpdateStateChange', listenerFunc: (state: FlexibleUpdateState) => void) => Promise<PluginListenerHandle>
+```
+
+Listen for flexible update state changes on Android.
+
+This event fires during the flexible update download process, providing:
+- Download progress (bytes downloaded / total bytes)
+- Installation status changes
+
+**Install status values:**
+- `UNKNOWN` (0): Unknown status
+- `PENDING` (1): Download pending
+- `DOWNLOADING` (2): Download in progress
+- `INSTALLING` (3): Installing the update
+- `INSTALLED` (4): Update installed (app restart needed)
+- `FAILED` (5): Update failed
+- `CANCELED` (6): Update was canceled
+- `DOWNLOADED` (11): Download complete, ready to install
+
+When status is `DOWNLOADED`, you should prompt the user and call
+{@link completeFlexibleUpdate} to finish the installation.
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `eventName` | `'onFlexibleUpdateStateChange'` |  |
+| `listenerFunc` | `(state: FlexibleUpdateState) => void` |  |
+
+**Returns**
+
+`Promise<PluginListenerHandle>`
+
+**Since:** 8.0.0
 
 
 --------------------
