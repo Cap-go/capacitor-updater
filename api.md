@@ -94,6 +94,7 @@ CapacitorUpdater can be configured with these options:
 - [`addListener('appReloaded')`](#addlistenerappreloaded-)
 - [`addListener('appReady')`](#addlistenerappready-)
 - [`addListener('channelPrivate')`](#addlistenerchannelprivate-)
+- [`addListener('onFlexibleUpdateStateChange')`](#addlisteneronflexibleupdatestatechange-)
 - [`isAutoUpdateAvailable`](#isautoupdateavailable)
 - [`getNextBundle`](#getnextbundle)
 - [`getFailedUpdate`](#getfailedupdate)
@@ -106,7 +107,6 @@ CapacitorUpdater can be configured with these options:
 - [`performImmediateUpdate`](#performimmediateupdate)
 - [`startFlexibleUpdate`](#startflexibleupdate)
 - [`completeFlexibleUpdate`](#completeflexibleupdate)
-- [`addListener('onFlexibleUpdateStateChange')`](#addlisteneronflexibleupdatestatechange-)
 
 </docgen-index>
 
@@ -1384,6 +1384,48 @@ This event is useful for:
 --------------------
 
 
+### addListener('onFlexibleUpdateStateChange')
+
+```typescript
+addListener(eventName: 'onFlexibleUpdateStateChange', listenerFunc: (state: FlexibleUpdateState) => void) => Promise<PluginListenerHandle>
+```
+
+Listen for flexible update state changes on Android.
+
+This event fires during the flexible update download process, providing:
+- Download progress (bytes downloaded / total bytes)
+- Installation status changes
+
+**Install status values:**
+- `UNKNOWN` (0): Unknown status
+- `PENDING` (1): Download pending
+- `DOWNLOADING` (2): Download in progress
+- `INSTALLING` (3): Installing the update
+- `INSTALLED` (4): Update installed (app restart needed)
+- `FAILED` (5): Update failed
+- `CANCELED` (6): Update was canceled
+- `DOWNLOADED` (11): Download complete, ready to install
+
+When status is `DOWNLOADED`, you should prompt the user and call
+{@link completeFlexibleUpdate} to finish the installation.
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `eventName` | `'onFlexibleUpdateStateChange'` |  |
+| `listenerFunc` | `(state: FlexibleUpdateState) => void` |  |
+
+**Returns**
+
+`Promise<PluginListenerHandle>`
+
+**Since:** 8.0.0
+
+
+--------------------
+
+
 ### isAutoUpdateAvailable
 
 ```typescript
@@ -1811,48 +1853,6 @@ and restart the app.
 **Since:** 8.0.0
 
 **Throws:** {Error} If not on Android or no downloaded update is pending.
-
-
---------------------
-
-
-### addListener('onFlexibleUpdateStateChange')
-
-```typescript
-addListener(eventName: 'onFlexibleUpdateStateChange', listenerFunc: (state: FlexibleUpdateState) => void) => Promise<PluginListenerHandle>
-```
-
-Listen for flexible update state changes on Android.
-
-This event fires during the flexible update download process, providing:
-- Download progress (bytes downloaded / total bytes)
-- Installation status changes
-
-**Install status values:**
-- `UNKNOWN` (0): Unknown status
-- `PENDING` (1): Download pending
-- `DOWNLOADING` (2): Download in progress
-- `INSTALLING` (3): Installing the update
-- `INSTALLED` (4): Update installed (app restart needed)
-- `FAILED` (5): Update failed
-- `CANCELED` (6): Update was canceled
-- `DOWNLOADED` (11): Download complete, ready to install
-
-When status is `DOWNLOADED`, you should prompt the user and call
-{@link completeFlexibleUpdate} to finish the installation.
-
-**Parameters**
-
-| Name | Type | Description |
-| --- | --- | --- |
-| `eventName` | `'onFlexibleUpdateStateChange'` |  |
-| `listenerFunc` | `(state: FlexibleUpdateState) => void` |  |
-
-**Returns**
-
-`Promise<PluginListenerHandle>`
-
-**Since:** 8.0.0
 
 
 --------------------

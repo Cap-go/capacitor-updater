@@ -464,6 +464,7 @@ export default config;
 * [`addListener('appReloaded', ...)`](#addlistenerappreloaded-)
 * [`addListener('appReady', ...)`](#addlistenerappready-)
 * [`addListener('channelPrivate', ...)`](#addlistenerchannelprivate-)
+* [`addListener('onFlexibleUpdateStateChange', ...)`](#addlisteneronflexibleupdatestatechange-)
 * [`isAutoUpdateAvailable()`](#isautoupdateavailable)
 * [`getNextBundle()`](#getnextbundle)
 * [`getFailedUpdate()`](#getfailedupdate)
@@ -476,7 +477,6 @@ export default config;
 * [`performImmediateUpdate()`](#performimmediateupdate)
 * [`startFlexibleUpdate()`](#startflexibleupdate)
 * [`completeFlexibleUpdate()`](#completeflexibleupdate)
-* [`addListener('onFlexibleUpdateStateChange', ...)`](#addlisteneronflexibleupdatestatechange-)
 * [Interfaces](#interfaces)
 * [Type Aliases](#type-aliases)
 * [Enums](#enums)
@@ -1483,6 +1483,43 @@ This event is useful for:
 --------------------
 
 
+#### addListener('onFlexibleUpdateStateChange', ...)
+
+```typescript
+addListener(eventName: 'onFlexibleUpdateStateChange', listenerFunc: (state: FlexibleUpdateState) => void) => Promise<PluginListenerHandle>
+```
+
+Listen for flexible update state changes on Android.
+
+This event fires during the flexible update download process, providing:
+- Download progress (bytes downloaded / total bytes)
+- Installation status changes
+
+**Install status values:**
+- `UNKNOWN` (0): Unknown status
+- `PENDING` (1): Download pending
+- `DOWNLOADING` (2): Download in progress
+- `INSTALLING` (3): Installing the update
+- `INSTALLED` (4): Update installed (app restart needed)
+- `FAILED` (5): Update failed
+- `CANCELED` (6): Update was canceled
+- `DOWNLOADED` (11): Download complete, ready to install
+
+When status is `DOWNLOADED`, you should prompt the user and call
+{@link completeFlexibleUpdate} to finish the installation.
+
+| Param              | Type                                                                                    |
+| ------------------ | --------------------------------------------------------------------------------------- |
+| **`eventName`**    | <code>'onFlexibleUpdateStateChange'</code>                                              |
+| **`listenerFunc`** | <code>(state: <a href="#flexibleupdatestate">FlexibleUpdateState</a>) =&gt; void</code> |
+
+**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
+
+**Since:** 8.0.0
+
+--------------------
+
+
 #### isAutoUpdateAvailable()
 
 ```typescript
@@ -1839,43 +1876,6 @@ and restart the app.
 --------------------
 
 
-#### addListener('onFlexibleUpdateStateChange', ...)
-
-```typescript
-addListener(eventName: 'onFlexibleUpdateStateChange', listenerFunc: (state: FlexibleUpdateState) => void) => Promise<PluginListenerHandle>
-```
-
-Listen for flexible update state changes on Android.
-
-This event fires during the flexible update download process, providing:
-- Download progress (bytes downloaded / total bytes)
-- Installation status changes
-
-**Install status values:**
-- `UNKNOWN` (0): Unknown status
-- `PENDING` (1): Download pending
-- `DOWNLOADING` (2): Download in progress
-- `INSTALLING` (3): Installing the update
-- `INSTALLED` (4): Update installed (app restart needed)
-- `FAILED` (5): Update failed
-- `CANCELED` (6): Update was canceled
-- `DOWNLOADED` (11): Download complete, ready to install
-
-When status is `DOWNLOADED`, you should prompt the user and call
-{@link completeFlexibleUpdate} to finish the installation.
-
-| Param              | Type                                                                                    |
-| ------------------ | --------------------------------------------------------------------------------------- |
-| **`eventName`**    | <code>'onFlexibleUpdateStateChange'</code>                                              |
-| **`listenerFunc`** | <code>(state: <a href="#flexibleupdatestate">FlexibleUpdateState</a>) =&gt; void</code> |
-
-**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
-
-**Since:** 8.0.0
-
---------------------
-
-
 #### Interfaces
 
 
@@ -2177,6 +2177,17 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 | **`message`** | <code>string</code> |                                                                                     |        |
 
 
+##### FlexibleUpdateState
+
+State information for flexible update progress (Android only).
+
+| Prop                       | Type                                                                                | Description                                                                        | Since |
+| -------------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ----- |
+| **`installStatus`**        | <code><a href="#flexibleupdateinstallstatus">FlexibleUpdateInstallStatus</a></code> | The current installation status.                                                   | 8.0.0 |
+| **`bytesDownloaded`**      | <code>number</code>                                                                 | Number of bytes downloaded so far. Only available during the `DOWNLOADING` status. | 8.0.0 |
+| **`totalBytesToDownload`** | <code>number</code>                                                                 | Total number of bytes to download. Only available during the `DOWNLOADING` status. | 8.0.0 |
+
+
 ##### AutoUpdateAvailable
 
 | Prop            | Type                 |
@@ -2260,17 +2271,6 @@ Result of an app update operation.
 | **`code`** | <code><a href="#appupdateresultcode">AppUpdateResultCode</a></code> | The result code of the update operation. | 8.0.0 |
 
 
-##### FlexibleUpdateState
-
-State information for flexible update progress (Android only).
-
-| Prop                       | Type                                                                                | Description                                                                        | Since |
-| -------------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ----- |
-| **`installStatus`**        | <code><a href="#flexibleupdateinstallstatus">FlexibleUpdateInstallStatus</a></code> | The current installation status.                                                   | 8.0.0 |
-| **`bytesDownloaded`**      | <code>number</code>                                                                 | Number of bytes downloaded so far. Only available during the `DOWNLOADING` status. | 8.0.0 |
-| **`totalBytesToDownload`** | <code>number</code>                                                                 | Total number of bytes to download. Only available during the `DOWNLOADING` status. | 8.0.0 |
-
-
 #### Type Aliases
 
 
@@ -2299,16 +2299,6 @@ Payload emitted by {@link CapacitorUpdaterPlugin.addListener} with `breakingAvai
 #### Enums
 
 
-##### AppUpdateAvailability
-
-| Members                    | Value          | Description                                                                                |
-| -------------------------- | -------------- | ------------------------------------------------------------------------------------------ |
-| **`UNKNOWN`**              | <code>0</code> | Update availability is unknown. This typically means the check hasn't completed or failed. |
-| **`UPDATE_NOT_AVAILABLE`** | <code>1</code> | No update is available. The installed version is the latest.                               |
-| **`UPDATE_AVAILABLE`**     | <code>2</code> | An update is available for download.                                                       |
-| **`UPDATE_IN_PROGRESS`**   | <code>3</code> | An update is currently being downloaded or installed.                                      |
-
-
 ##### FlexibleUpdateInstallStatus
 
 | Members           | Value           | Description                                                                                                                    |
@@ -2321,6 +2311,16 @@ Payload emitted by {@link CapacitorUpdaterPlugin.addListener} with `breakingAvai
 | **`FAILED`**      | <code>5</code>  | The update failed to download or install.                                                                                      |
 | **`CANCELED`**    | <code>6</code>  | The update was canceled by the user.                                                                                           |
 | **`DOWNLOADED`**  | <code>11</code> | The update has been downloaded and is ready to install. Call {@link CapacitorUpdaterPlugin.completeFlexibleUpdate} to install. |
+
+
+##### AppUpdateAvailability
+
+| Members                    | Value          | Description                                                                                |
+| -------------------------- | -------------- | ------------------------------------------------------------------------------------------ |
+| **`UNKNOWN`**              | <code>0</code> | Update availability is unknown. This typically means the check hasn't completed or failed. |
+| **`UPDATE_NOT_AVAILABLE`** | <code>1</code> | No update is available. The installed version is the latest.                               |
+| **`UPDATE_AVAILABLE`**     | <code>2</code> | An update is available for download.                                                       |
+| **`UPDATE_IN_PROGRESS`**   | <code>3</code> | An update is currently being downloaded or installed.                                      |
 
 
 ##### AppUpdateResultCode
