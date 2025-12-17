@@ -1690,7 +1690,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
 
-            let task = URLSession.shared.dataTask(with: url) { data, response, error in
+            let task = URLSession.shared.dataTask(with: url) { data, _, error in
                 if let error = error {
                     self.logger.error("App Store lookup failed: \(error.localizedDescription)")
                     call.reject("App Store lookup failed: \(error.localizedDescription)")

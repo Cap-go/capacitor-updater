@@ -74,32 +74,6 @@ First follow the migration guide of Capacitor:
 
 [https://capacitorjs.com/docs/updating/8-0](https://capacitorjs.com/docs/updating/8-0/)
 
-### iOS Minimum Version Requirement
-
-The iOS minimum deployment target has been bumped to **15.5** to ensure that iOS devices with [CVE-2022-36943](https://nvd.nist.gov/vuln/detail/CVE-2022-36943) are excluded. This is the minimum version of the iOS zip library that has the security fix implemented.
-
-#### Swift Package Manager (SPM) Workaround
-
-Capacitor currently has a bug ([ionic-team/capacitor#7556](https://github.com/ionic-team/capacitor/issues/7556)) that does not allow setting the iOS deployment target to 15.5 when using SPM.
-
-If you need SPM support, you can temporarily use our fork:
-
-**GitHub:** [https://github.com/Cap-go/capacitor-plus](https://github.com/Cap-go/capacitor-plus)
-
-To use it, replace the CLI package `@capacitor/cli` with `@capacitor-plus/cli`:
-
-```bash
-npm uninstall @capacitor/cli
-npm install @capacitor-plus/cli
-```
-
-Then use the CLI as usual:
-
-```bash
-npx capacitor sync
-```
-
-
 ## Migration to v7.34
 
 - **Channel storage change**: `setChannel()` now stores channel assignments locally on the device instead of in the cloud. This provides better offline support and reduces backend load.
@@ -110,9 +84,9 @@ npx capacitor sync
 
 ## Migration to v7
 
-The min version of IOS is now 15.5 instead of 15 as Capacitor 8 requirement.
-This is due to bump of ZipArchive to latest, a key dependency of this project is the zlib library. zlib before version 1.2.12 allows memory corruption when deflating (i.e., when compressing) if the input has many distant matches according to [CVE-2018-25032](https://nvd.nist.gov/vuln/detail/cve-2018-25032).
-zlib is a native library so we need to bump the minimum iOS version to 15.5 as ZipArchive did the same in their latest versions.
+The minimum iOS version is now **15.0** to match Capacitor 7/8 requirements.
+
+Starting from v8, the plugin uses [ZIPFoundation](https://github.com/weichsel/ZIPFoundation) instead of SSZipArchive/ZipArchive for ZIP extraction. ZIPFoundation uses Apple's native `libcompression` framework, which removes the previous zlib dependency and its associated security constraints.
 
 ## Compatibility
 
