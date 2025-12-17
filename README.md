@@ -118,10 +118,10 @@ zlib is a native library so we need to bump the minimum iOS version to 15.5 as Z
 
 | Plugin version | Capacitor compatibility | Maintained        |
 | -------------- | ----------------------- | ----------------- |
-| v8.\*.\*       | v8.\*.\*                | Beta                 |
+| v8.\*.\*       | v8.\*.\*                | ✅                 |
 | v7.\*.\*       | v7.\*.\*                | ✅                 |
 | v6.\*.\*       | v6.\*.\*                | ✅                 |
-| v5.\*.\*       | v5.\*.\*                | ⚠️ Deprecated |
+| v5.\*.\*       | v5.\*.\*                | ✅ |
 | v4.\*.\*       | v4.\*.\*                | ⚠️ Deprecated |
 | v3.\*.\*       | v3.\*.\*                | ⚠️ Deprecated     |
 | > 7            | v4.\*.\*                | ⚠️ Deprecated, our CI got crazy and bumped too much version     |
