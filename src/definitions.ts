@@ -1086,6 +1086,33 @@ export interface CapacitorUpdaterPlugin {
   ): Promise<PluginListenerHandle>;
 
   /**
+   * Listen for flexible update state changes on Android.
+   *
+   * This event fires during the flexible update download process, providing:
+   * - Download progress (bytes downloaded / total bytes)
+   * - Installation status changes
+   *
+   * **Install status values:**
+   * - `UNKNOWN` (0): Unknown status
+   * - `PENDING` (1): Download pending
+   * - `DOWNLOADING` (2): Download in progress
+   * - `INSTALLING` (3): Installing the update
+   * - `INSTALLED` (4): Update installed (app restart needed)
+   * - `FAILED` (5): Update failed
+   * - `CANCELED` (6): Update was canceled
+   * - `DOWNLOADED` (11): Download complete, ready to install
+   *
+   * When status is `DOWNLOADED`, you should prompt the user and call
+   * {@link completeFlexibleUpdate} to finish the installation.
+   *
+   * @since 8.0.0
+   */
+  addListener(
+    eventName: 'onFlexibleUpdateStateChange',
+    listenerFunc: (state: FlexibleUpdateState) => void,
+  ): Promise<PluginListenerHandle>;
+
+  /**
    * Check if the auto-update feature is available (not disabled by custom server configuration).
    *
    * Returns `false` when a custom `updateUrl` is configured, as this typically indicates
@@ -1369,33 +1396,6 @@ export interface CapacitorUpdaterPlugin {
    * @since 8.0.0
    */
   completeFlexibleUpdate(): Promise<void>;
-
-  /**
-   * Listen for flexible update state changes on Android.
-   *
-   * This event fires during the flexible update download process, providing:
-   * - Download progress (bytes downloaded / total bytes)
-   * - Installation status changes
-   *
-   * **Install status values:**
-   * - `UNKNOWN` (0): Unknown status
-   * - `PENDING` (1): Download pending
-   * - `DOWNLOADING` (2): Download in progress
-   * - `INSTALLING` (3): Installing the update
-   * - `INSTALLED` (4): Update installed (app restart needed)
-   * - `FAILED` (5): Update failed
-   * - `CANCELED` (6): Update was canceled
-   * - `DOWNLOADED` (11): Download complete, ready to install
-   *
-   * When status is `DOWNLOADED`, you should prompt the user and call
-   * {@link completeFlexibleUpdate} to finish the installation.
-   *
-   * @since 8.0.0
-   */
-  addListener(
-    eventName: 'onFlexibleUpdateStateChange',
-    listenerFunc: (state: FlexibleUpdateState) => void,
-  ): Promise<PluginListenerHandle>;
 }
 
 /**
