@@ -68,7 +68,8 @@ Join the [discord](https://discord.gg/VnYRvBfgA6) to get help.
 
 ## Migration to v8
 
-Following the instruction of official Capacitor guide and bump ios version to 15.5 to ensure ios with [CVE-2022-36943](https://nvd.nist.gov/vuln/detail/CVE-2022-36943) are ignored. This is the min version of IOS zip lib that has the fix implemented.
+Following the instruction of official Capacitor [migration guide](https://capacitorjs.com/docs/updating/8-0).
+Bump ios version to 15.5, this will ensure ios with [CVE-2022-36943](https://nvd.nist.gov/vuln/detail/CVE-2022-36943) are ignored. This is the min version of IOS zip lib that has the fix implemented.
 On IOS SPM Capacitor has currently a bug https://github.com/ionic-team/capacitor/pull/7556 that does not allow to set 15.5, if you need SPM you can use temporarely our fork: https://github.com/Cap-go/capacitor-plus you only need to replace CLI package  @capacitor/cli by `@capacitor-plus/cli`
 
 
