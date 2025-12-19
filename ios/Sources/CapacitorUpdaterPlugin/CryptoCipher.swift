@@ -151,11 +151,7 @@ public struct CryptoCipher {
             while autoreleasepool(invoking: {
                 let fileData: Data
                 do {
-                    if #available(iOS 13.4, *) {
-                        fileData = try fileHandle.read(upToCount: bufferSize) ?? Data()
-                    } else {
-                        fileData = fileHandle.readData(ofLength: bufferSize)
-                    }
+                    fileData = try fileHandle.read(upToCount: bufferSize) ?? Data()
                 } catch {
                     logger.error("Error reading file: \(error)")
                     return false
