@@ -51,7 +51,7 @@
     "lint": "npm run eslint && npm run prettier -- --check && npm run swiftlint -- lint",
     "fmt": "npm run eslint -- --fix && npm run prettier -- --write && npm run swiftlint -- --fix --format",
     "eslint": "eslint . --ext .ts",
-    "prettier": "node ../prettier-pretty-check/index.js \"**/*.{css,html,ts,js,java}\" --plugin=prettier-plugin-java",
+    "prettier": "prettier-pretty-check \"**/*.{css,html,ts,js,java}\" --plugin=prettier-plugin-java",
     "swiftlint": "node-swiftlint",
     "docgen": "node scripts/generate-docs.js",
     "build": "npm run clean && npm run docgen && tsc && rollup -c rollup.config.mjs",
@@ -77,7 +77,8 @@
     "rimraf": "^6.0.1",
     "rollup": "^4.50.0",
     "swiftlint": "^2.0.0",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "prettier-pretty-check": "^0.2.0"
   },
   "peerDependencies": {
     "@capacitor/core": "^8.0.0"
