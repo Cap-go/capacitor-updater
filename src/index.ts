@@ -4,7 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-/// <reference path="./capacitor-cli.d.ts" />
+import 'capacitor-cli.d.ts'
 
 import { registerPlugin } from '@capacitor/core';
 import './history';
