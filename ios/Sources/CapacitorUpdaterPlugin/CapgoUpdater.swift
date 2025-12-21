@@ -290,7 +290,7 @@ import UIKit
                 }
 
                 // Extract the entry
-                _ = try archive.extract(entry, to: destPath)
+                _ = try archive.extract(entry, to: destPath, skipCRC32: true)
 
                 // Update progress
                 processedEntries += 1
