@@ -2130,9 +2130,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private boolean isMainActivity() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-            return false;
-        }
         try {
             Context mContext = this.getContext();
             ActivityManager activityManager = (ActivityManager) mContext.getSystemService(Context.ACTIVITY_SERVICE);
