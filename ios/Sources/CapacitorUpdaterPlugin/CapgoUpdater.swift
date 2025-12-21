@@ -261,7 +261,10 @@ import UIKit
         self.notifyDownload(id: id, percent: 75)
 
         // Open the archive
-        guard let archive = Archive(url: sourceZip, accessMode: .read) else {
+        let archive: Archive
+        do {
+            archive = try Archive(url: sourceZip, accessMode: .read)
+        } catch {
             self.sendStats(action: "unzip_fail")
             throw CustomError.cannotUnzip
         }
