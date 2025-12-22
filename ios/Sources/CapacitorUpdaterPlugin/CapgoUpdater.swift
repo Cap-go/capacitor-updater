@@ -5,11 +5,7 @@
  */
 
 import Foundation
-#if canImport(ZipArchive)
-import ZipArchive
-#else
-import SSZipArchive
-#endif
+import ZIPFoundation
 import Alamofire
 import Compression
 import UIKit
@@ -237,38 +233,22 @@ import UIKit
         }
     }
 
-    private func unzipProgressHandler(entry: String, zipInfo: unz_file_info, entryNumber: Int, total: Int, destUnZip: URL, id: String, unzipError: inout NSError?) {
-        if entry.contains("\\") {
-            logger.error("unzip: Windows path is not supported, please use unix path as required by zip RFC: \(entry)")
+    private func validateZipEntry(path: String, destUnZip: URL) throws {
+        // Check for Windows paths
+        if path.contains("\\") {
+            logger.error("unzip: Windows path is not supported, please use unix path as required by zip RFC: \(path)")
             self.sendStats(action: "windows_path_fail")
+            throw CustomError.cannotUnzip
         }
 
-        let fileURL = destUnZip.appendingPathComponent(entry)
-        let canonicalPath = fileURL.path
-        let canonicalDir = destUnZip.path
+        // Check for path traversal
+        let fileURL = destUnZip.appendingPathComponent(path)
+        let canonicalPath = fileURL.standardizedFileURL.path
+        let canonicalDir = destUnZip.standardizedFileURL.path
 
         if !canonicalPath.hasPrefix(canonicalDir) {
             self.sendStats(action: "canonical_path_fail")
-            unzipError = NSError(domain: "CanonicalPathError", code: 0, userInfo: nil)
-        }
-
-        let isDirectory = entry.hasSuffix("/")
-        if !isDirectory {
-            let folderURL = fileURL.deletingLastPathComponent()
-            if !FileManager.default.fileExists(atPath: folderURL.path) {
-                do {
-                    try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true, attributes: nil)
-                } catch {
-                    self.sendStats(action: "directory_path_fail")
-                    unzipError = error as NSError
-                }
-            }
-        }
-
-        let newPercent = self.calcTotalPercent(percent: Int(Double(entryNumber) / Double(total) * 100), min: 75, max: 81)
-        if newPercent != self.unzipPercent {
-            self.unzipPercent = newPercent
-            self.notifyDownload(id: id, percent: newPercent)
+            throw CustomError.cannotUnzip
         }
     }
 
@@ -280,36 +260,52 @@ import UIKit
         self.unzipPercent = 0
         self.notifyDownload(id: id, percent: 75)
 
-        let semaphore = DispatchSemaphore(value: 0)
-        var unzipError: NSError?
+        // Open the archive
+        let archive: Archive
+        do {
+            archive = try Archive(url: sourceZip, accessMode: .read)
+        } catch {
+            self.sendStats(action: "unzip_fail")
+            throw CustomError.cannotUnzip
+        }
 
-        let success = SSZipArchive.unzipFile(atPath: sourceZip.path,
-                                             toDestination: destUnZip.path,
-                                             preserveAttributes: true,
-                                             overwrite: true,
-                                             nestedZipLevel: 1,
-                                             password: nil,
-                                             error: &unzipError,
-                                             delegate: nil,
-                                             progressHandler: { [weak self] (entry, zipInfo, entryNumber, total) in
-                                                DispatchQueue.global(qos: .background).async {
-                                                    guard let self = self else { return }
-                                                    if !notify {
-                                                        return
-                                                    }
-                                                    self.unzipProgressHandler(entry: entry, zipInfo: zipInfo, entryNumber: entryNumber, total: total, destUnZip: destUnZip, id: id, unzipError: &unzipError)
-                                                }
-                                             },
-                                             completionHandler: { _, _, _  in
-                                                semaphore.signal()
-                                             })
+        // Create destination directory
+        try FileManager.default.createDirectory(at: destUnZip, withIntermediateDirectories: true, attributes: nil)
 
-        semaphore.wait()
+        // Count total entries for progress
+        let totalEntries = archive.reduce(0) { count, _ in count + 1 }
+        var processedEntries = 0
 
-        if !success || unzipError != nil {
+        do {
+            for entry in archive {
+                // Validate entry path for security
+                try validateZipEntry(path: entry.path, destUnZip: destUnZip)
+
+                let destPath = destUnZip.appendingPathComponent(entry.path)
+
+                // Create parent directories if needed
+                let parentDir = destPath.deletingLastPathComponent()
+                if !FileManager.default.fileExists(atPath: parentDir.path) {
+                    try FileManager.default.createDirectory(at: parentDir, withIntermediateDirectories: true, attributes: nil)
+                }
+
+                // Extract the entry
+                _ = try archive.extract(entry, to: destPath, skipCRC32: true)
+
+                // Update progress
+                processedEntries += 1
+                if notify && totalEntries > 0 {
+                    let newPercent = self.calcTotalPercent(percent: Int(Double(processedEntries) / Double(totalEntries) * 100), min: 75, max: 81)
+                    if newPercent != self.unzipPercent {
+                        self.unzipPercent = newPercent
+                        self.notifyDownload(id: id, percent: newPercent)
+                    }
+                }
+            }
+        } catch {
             self.sendStats(action: "unzip_fail")
             try? FileManager.default.removeItem(at: destUnZip)
-            throw unzipError ?? CustomError.cannotUnzip
+            throw error
         }
 
         if try unflatFolder(source: destUnZip, dest: destPersist) {

@@ -4,348 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-/// <reference types="@capacitor/cli" />
-
 import type { PluginListenerHandle } from '@capacitor/core';
-
-declare module '@capacitor/cli' {
-  export interface PluginsConfig {
-    /**
-     * CapacitorUpdater can be configured with these options:
-     */
-    CapacitorUpdater?: {
-      /**
-       * Configure the number of milliseconds the native plugin should wait before considering an update 'failed'.
-       *
-       * Only available for Android and iOS.
-       *
-       * @default 10000 // (10 seconds)
-       * @example 1000 // (1 second, minimum 1000)
-       */
-      appReadyTimeout?: number;
-      /**
-       * Configure the number of seconds the native plugin should wait before considering API timeout.
-       *
-       * Only available for Android and iOS.
-       *
-       * @default 20 // (20 second)
-       * @example 10 // (10 second)
-       */
-      responseTimeout?: number;
-      /**
-       * Configure whether the plugin should use automatically delete failed bundles.
-       *
-       * Only available for Android and iOS.
-       *
-       * @default true
-       * @example false
-       */
-      autoDeleteFailed?: boolean;
-
-      /**
-       * Configure whether the plugin should use automatically delete previous bundles after a successful update.
-       *
-       * Only available for Android and iOS.
-       *
-       * @default true
-       * @example false
-       */
-      autoDeletePrevious?: boolean;
-
-      /**
-       * Configure whether the plugin should use Auto Update via an update server.
-       *
-       * Only available for Android and iOS.
-       *
-       * @default true
-       * @example false
-       */
-      autoUpdate?: boolean;
-
-      /**
-       * Automatically delete previous downloaded bundles when a newer native app bundle is installed to the device.
-       * Setting this to false can broke the auto update flow if the user download from the store a native app bundle that is older than the current downloaded bundle. Upload will be prevented by channel setting downgrade_under_native.
-       * Only available for Android and iOS.
-       *
-       * @default true
-       * @example false
-       */
-      resetWhenUpdate?: boolean;
-
-      /**
-       * Configure the URL / endpoint to which update checks are sent.
-       *
-       * Only available for Android and iOS.
-       *
-       * @default https://plugin.capgo.app/updates
-       * @example https://example.com/api/auto_update
-       */
-      updateUrl?: string;
-
-      /**
-       * Configure the URL / endpoint for channel operations.
-       *
-       * Only available for Android and iOS.
-       *
-       * @default https://plugin.capgo.app/channel_self
-       * @example https://example.com/api/channel
-       */
-      channelUrl?: string;
-
-      /**
-       * Configure the URL / endpoint to which update statistics are sent.
-       *
-       * Only available for Android and iOS. Set to "" to disable stats reporting.
-       *
-       * @default https://plugin.capgo.app/stats
-       * @example https://example.com/api/stats
-       */
-      statsUrl?: string;
-      /**
-       * Configure the public key for end to end live update encryption Version 2
-       *
-       * Only available for Android and iOS.
-       *
-       * @default undefined
-       * @since 6.2.0
-       */
-      publicKey?: string;
-
-      /**
-       * Configure the current version of the app. This will be used for the first update request.
-       * If not set, the plugin will get the version from the native code.
-       *
-       * Only available for Android and iOS.
-       *
-       * @default undefined
-       * @since  4.17.48
-       */
-      version?: string;
-      /**
-       * Configure when the plugin should direct install updates. Only for autoUpdate mode.
-       * Works well for apps less than 10MB and with uploads done using --partial flag.
-       * Zip or apps more than 10MB will be relatively slow for users to update.
-       * - false: Never do direct updates (use default behavior: download at start, set when backgrounded)
-       * - atInstall: Direct update only when app is installed, updated from store, otherwise act as directUpdate = false
-       * - onLaunch: Direct update only on app installed, updated from store or after app kill, otherwise act as directUpdate = false
-       * - always: Direct update in all previous cases (app installed, updated from store, after app kill or app resume), never act as directUpdate = false
-       * - true: (deprecated) Same as "always" for backward compatibility
-       *
-       * Only available for Android and iOS.
-       *
-       * @default false
-       * @since  5.1.0
-       */
-      directUpdate?: boolean | 'atInstall' | 'always' | 'onLaunch';
-
-      /**
-       * Automatically handle splashscreen hiding when using directUpdate. When enabled, the plugin will automatically hide the splashscreen after updates are applied or when no update is needed.
-       * This removes the need to manually listen for appReady events and call SplashScreen.hide().
-       * Only works when directUpdate is set to "atInstall", "always", "onLaunch", or true.
-       * Requires the @capacitor/splash-screen plugin to be installed and configured with launchAutoHide: false.
-       * Requires autoUpdate and directUpdate to be enabled.
-       *
-       * Only available for Android and iOS.
-       *
-       * @default false
-       * @since  7.6.0
-       */
-      autoSplashscreen?: boolean;
-
-      /**
-       * Display a native loading indicator on top of the splashscreen while automatic direct updates are running.
-       * Only takes effect when {@link autoSplashscreen} is enabled.
-       * Requires the @capacitor/splash-screen plugin to be installed and configured with launchAutoHide: false.
-       *
-       * Only available for Android and iOS.
-       *
-       * @default false
-       * @since  7.19.0
-       */
-      autoSplashscreenLoader?: boolean;
-
-      /**
-       * Automatically hide the splashscreen after the specified number of milliseconds when using automatic direct updates.
-       * If the timeout elapses, the update continues to download in the background while the splashscreen is dismissed.
-       * Set to `0` (zero) to disable the timeout.
-       * When the timeout fires, the direct update flow is skipped and the downloaded bundle is installed on the next background/launch.
-       * Requires {@link autoSplashscreen} to be enabled.
-       *
-       * Only available for Android and iOS.
-       *
-       * @default 10000 // (10 seconds)
-       * @since  7.19.0
-       */
-      autoSplashscreenTimeout?: number;
-
-      /**
-       * Configure the delay period for period update check. the unit is in seconds.
-       *
-       * Only available for Android and iOS.
-       * Cannot be less than 600 seconds (10 minutes).
-       *
-       * @default 0 (disabled)
-       * @example 3600 (1 hour)
-       * @example 86400 (24 hours)
-       */
-      periodCheckDelay?: number;
-
-      /**
-       * Configure the CLI to use a local server for testing or self-hosted update server.
-       *
-       *
-       * @default undefined
-       * @since  4.17.48
-       */
-      localS3?: boolean;
-      /**
-       * Configure the CLI to use a local server for testing or self-hosted update server.
-       *
-       *
-       * @default undefined
-       * @since  4.17.48
-       */
-      localHost?: string;
-      /**
-       * Configure the CLI to use a local server for testing or self-hosted update server.
-       *
-       *
-       * @default undefined
-       * @since  4.17.48
-       */
-      localWebHost?: string;
-      /**
-       * Configure the CLI to use a local server for testing or self-hosted update server.
-       *
-       *
-       * @default undefined
-       * @since  4.17.48
-       */
-      localSupa?: string;
-      /**
-       * Configure the CLI to use a local server for testing.
-       *
-       *
-       * @default undefined
-       * @since  4.17.48
-       */
-      localSupaAnon?: string;
-      /**
-       * Configure the CLI to use a local api for testing.
-       *
-       *
-       * @default undefined
-       * @since  6.3.3
-       */
-      localApi?: string;
-      /**
-       * Configure the CLI to use a local file api for testing.
-       *
-       *
-       * @default undefined
-       * @since  6.3.3
-       */
-      localApiFiles?: string;
-      /**
-       * Allow the plugin to modify the updateUrl, statsUrl and channelUrl dynamically from the JavaScript side.
-       *
-       *
-       * @default false
-       * @since  5.4.0
-       */
-      allowModifyUrl?: boolean;
-
-      /**
-       * Allow the plugin to modify the appId dynamically from the JavaScript side.
-       *
-       *
-       * @default false
-       * @since  7.14.0
-       */
-      allowModifyAppId?: boolean;
-
-      /**
-       * Allow marking bundles as errored from JavaScript while using manual update flows.
-       * When enabled, {@link CapacitorUpdaterPlugin.setBundleError} can change a bundle status to `error`.
-       *
-       * @default false
-       * @since 7.20.0
-       */
-      allowManualBundleError?: boolean;
-
-      /**
-       * Persist the customId set through {@link CapacitorUpdaterPlugin.setCustomId} across app restarts.
-       *
-       * Only available for Android and iOS.
-       *
-       * @default false (will be true by default in a future major release v8.x.x)
-       * @since  7.17.3
-       */
-      persistCustomId?: boolean;
-
-      /**
-       * Persist the updateUrl, statsUrl and channelUrl set through {@link CapacitorUpdaterPlugin.setUpdateUrl},
-       * {@link CapacitorUpdaterPlugin.setStatsUrl} and {@link CapacitorUpdaterPlugin.setChannelUrl} across app restarts.
-       *
-       * Only available for Android and iOS.
-       *
-       * @default false
-       * @since  7.20.0
-       */
-      persistModifyUrl?: boolean;
-
-      /**
-       * Allow or disallow the {@link CapacitorUpdaterPlugin.setChannel} method to modify the defaultChannel.
-       * When set to `false`, calling `setChannel()` will return an error with code `disabled_by_config`.
-       *
-       * @default true
-       * @since 7.34.0
-       */
-      allowSetDefaultChannel?: boolean;
-
-      /**
-       * Set the default channel for the app in the config. Case sensitive.
-       * This will setting will override the default channel set in the cloud, but will still respect overrides made in the cloud.
-       * This requires the channel to allow devices to self dissociate/associate in the channel settings. https://capgo.app/docs/public-api/channels/#channel-configuration-options
-       *
-       *
-       * @default undefined
-       * @since  5.5.0
-       */
-      defaultChannel?: string;
-      /**
-       * Configure the app id for the app in the config.
-       *
-       * @default undefined
-       * @since  6.0.0
-       */
-      appId?: string;
-
-      /**
-       * Configure the plugin to keep the URL path after a reload.
-       * WARNING: When a reload is triggered, 'window.history' will be cleared.
-       *
-       * @default false
-       * @since  6.8.0
-       */
-      keepUrlPathAfterReload?: boolean;
-      /**
-       * Disable the JavaScript logging of the plugin. if true, the plugin will not log to the JavaScript console. only the native log will be done
-       *
-       * @default false
-       * @since  7.3.0
-       */
-      disableJSLogging?: boolean;
-      /**
-       * Enable shake gesture to show update menu for debugging/testing purposes
-       *
-       * @default false
-       * @since  7.5.0
-       */
-      shakeMenu?: boolean;
-    };
-  }
-}
 
 export interface CapacitorUpdaterPlugin {
   /**
@@ -1086,6 +745,33 @@ export interface CapacitorUpdaterPlugin {
   ): Promise<PluginListenerHandle>;
 
   /**
+   * Listen for flexible update state changes on Android.
+   *
+   * This event fires during the flexible update download process, providing:
+   * - Download progress (bytes downloaded / total bytes)
+   * - Installation status changes
+   *
+   * **Install status values:**
+   * - `UNKNOWN` (0): Unknown status
+   * - `PENDING` (1): Download pending
+   * - `DOWNLOADING` (2): Download in progress
+   * - `INSTALLING` (3): Installing the update
+   * - `INSTALLED` (4): Update installed (app restart needed)
+   * - `FAILED` (5): Update failed
+   * - `CANCELED` (6): Update was canceled
+   * - `DOWNLOADED` (11): Download complete, ready to install
+   *
+   * When status is `DOWNLOADED`, you should prompt the user and call
+   * {@link completeFlexibleUpdate} to finish the installation.
+   *
+   * @since 8.0.0
+   */
+  addListener(
+    eventName: 'onFlexibleUpdateStateChange',
+    listenerFunc: (state: FlexibleUpdateState) => void,
+  ): Promise<PluginListenerHandle>;
+
+  /**
    * Check if the auto-update feature is available (not disabled by custom server configuration).
    *
    * Returns `false` when a custom `updateUrl` is configured, as this typically indicates
@@ -1369,33 +1055,6 @@ export interface CapacitorUpdaterPlugin {
    * @since 8.0.0
    */
   completeFlexibleUpdate(): Promise<void>;
-
-  /**
-   * Listen for flexible update state changes on Android.
-   *
-   * This event fires during the flexible update download process, providing:
-   * - Download progress (bytes downloaded / total bytes)
-   * - Installation status changes
-   *
-   * **Install status values:**
-   * - `UNKNOWN` (0): Unknown status
-   * - `PENDING` (1): Download pending
-   * - `DOWNLOADING` (2): Download in progress
-   * - `INSTALLING` (3): Installing the update
-   * - `INSTALLED` (4): Update installed (app restart needed)
-   * - `FAILED` (5): Update failed
-   * - `CANCELED` (6): Update was canceled
-   * - `DOWNLOADED` (11): Download complete, ready to install
-   *
-   * When status is `DOWNLOADED`, you should prompt the user and call
-   * {@link completeFlexibleUpdate} to finish the installation.
-   *
-   * @since 8.0.0
-   */
-  addListener(
-    eventName: 'onFlexibleUpdateStateChange',
-    listenerFunc: (state: FlexibleUpdateState) => void,
-  ): Promise<PluginListenerHandle>;
 }
 
 /**

@@ -9,10 +9,12 @@ package ee.forgr.capacitor_updater;
 import android.app.Activity;
 import android.app.ActivityManager;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -30,6 +32,17 @@ import com.getcapacitor.PluginHandle;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.plugin.WebView;
+import com.google.android.gms.tasks.Task;
+// Play Store In-App Updates
+import com.google.android.play.core.appupdate.AppUpdateInfo;
+import com.google.android.play.core.appupdate.AppUpdateManager;
+import com.google.android.play.core.appupdate.AppUpdateManagerFactory;
+import com.google.android.play.core.appupdate.AppUpdateOptions;
+import com.google.android.play.core.install.InstallState;
+import com.google.android.play.core.install.InstallStateUpdatedListener;
+import com.google.android.play.core.install.model.AppUpdateType;
+import com.google.android.play.core.install.model.InstallStatus;
+import com.google.android.play.core.install.model.UpdateAvailability;
 import io.github.g00fy2.versioncompare.Version;
 import java.io.IOException;
 import java.net.MalformedURLException;
@@ -55,20 +68,6 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-// Play Store In-App Updates
-import com.google.android.play.core.appupdate.AppUpdateInfo;
-import com.google.android.play.core.appupdate.AppUpdateManager;
-import com.google.android.play.core.appupdate.AppUpdateManagerFactory;
-import com.google.android.play.core.appupdate.AppUpdateOptions;
-import com.google.android.play.core.install.InstallState;
-import com.google.android.play.core.install.InstallStateUpdatedListener;
-import com.google.android.play.core.install.model.AppUpdateType;
-import com.google.android.play.core.install.model.InstallStatus;
-import com.google.android.play.core.install.model.UpdateAvailability;
-import com.google.android.gms.tasks.Task;
-import android.content.Intent;
-import android.net.Uri;
-
 @CapacitorPlugin(name = "CapacitorUpdater")
 public class CapacitorUpdaterPlugin extends Plugin {
 
@@ -86,7 +85,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final String[] BREAKING_EVENT_NAMES = { "breakingAvailable", "majorAvailable" };
     private static final String LAST_FAILED_BUNDLE_PREF_KEY = "CapacitorUpdater.lastFailedBundle";
 
-    private final String pluginVersion = "5.39.0";
+    private final String pluginVersion = "5.40.0";
     private static final String DELAY_CONDITION_PREFERENCES = "";
 
     private SharedPreferences.Editor editor;
@@ -2131,9 +2130,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private boolean isMainActivity() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-            return false;
-        }
         try {
             Context mContext = this.getContext();
             ActivityManager activityManager = (ActivityManager) mContext.getSystemService(Context.ACTIVITY_SERVICE);
@@ -2331,45 +2327,47 @@ public class CapacitorUpdaterPlugin extends Plugin {
             AppUpdateManager manager = getAppUpdateManager();
             Task<AppUpdateInfo> appUpdateInfoTask = manager.getAppUpdateInfo();
 
-            appUpdateInfoTask.addOnSuccessListener(appUpdateInfo -> {
-                cachedAppUpdateInfo = appUpdateInfo;
+            appUpdateInfoTask
+                .addOnSuccessListener((appUpdateInfo) -> {
+                    cachedAppUpdateInfo = appUpdateInfo;
 
-                JSObject result = new JSObject();
-                try {
-                    PackageInfo pInfo = getContext().getPackageManager().getPackageInfo(getContext().getPackageName(), 0);
-                    result.put("currentVersionName", pInfo.versionName);
-                    result.put("currentVersionCode", String.valueOf(pInfo.versionCode));
-                } catch (PackageManager.NameNotFoundException e) {
-                    result.put("currentVersionName", "0.0.0");
-                    result.put("currentVersionCode", "0");
-                }
-
-                result.put("updateAvailability", mapUpdateAvailability(appUpdateInfo.updateAvailability()));
-
-                if (appUpdateInfo.updateAvailability() == UpdateAvailability.UPDATE_AVAILABLE) {
-                    result.put("availableVersionCode", String.valueOf(appUpdateInfo.availableVersionCode()));
-                    // Play Store doesn't provide version name, only version code
-                    result.put("availableVersionName", String.valueOf(appUpdateInfo.availableVersionCode()));
-                    result.put("updatePriority", appUpdateInfo.updatePriority());
-                    result.put("immediateUpdateAllowed", appUpdateInfo.isUpdateTypeAllowed(AppUpdateType.IMMEDIATE));
-                    result.put("flexibleUpdateAllowed", appUpdateInfo.isUpdateTypeAllowed(AppUpdateType.FLEXIBLE));
-
-                    Integer stalenessDays = appUpdateInfo.clientVersionStalenessDays();
-                    if (stalenessDays != null) {
-                        result.put("clientVersionStalenessDays", stalenessDays);
+                    JSObject result = new JSObject();
+                    try {
+                        PackageInfo pInfo = getContext().getPackageManager().getPackageInfo(getContext().getPackageName(), 0);
+                        result.put("currentVersionName", pInfo.versionName);
+                        result.put("currentVersionCode", String.valueOf(pInfo.versionCode));
+                    } catch (PackageManager.NameNotFoundException e) {
+                        result.put("currentVersionName", "0.0.0");
+                        result.put("currentVersionCode", "0");
                     }
-                } else {
-                    result.put("immediateUpdateAllowed", false);
-                    result.put("flexibleUpdateAllowed", false);
-                }
 
-                result.put("installStatus", appUpdateInfo.installStatus());
+                    result.put("updateAvailability", mapUpdateAvailability(appUpdateInfo.updateAvailability()));
 
-                call.resolve(result);
-            }).addOnFailureListener(e -> {
-                logger.error("Failed to get app update info: " + e.getMessage());
-                call.reject("Failed to get app update info: " + e.getMessage());
-            });
+                    if (appUpdateInfo.updateAvailability() == UpdateAvailability.UPDATE_AVAILABLE) {
+                        result.put("availableVersionCode", String.valueOf(appUpdateInfo.availableVersionCode()));
+                        // Play Store doesn't provide version name, only version code
+                        result.put("availableVersionName", String.valueOf(appUpdateInfo.availableVersionCode()));
+                        result.put("updatePriority", appUpdateInfo.updatePriority());
+                        result.put("immediateUpdateAllowed", appUpdateInfo.isUpdateTypeAllowed(AppUpdateType.IMMEDIATE));
+                        result.put("flexibleUpdateAllowed", appUpdateInfo.isUpdateTypeAllowed(AppUpdateType.FLEXIBLE));
+
+                        Integer stalenessDays = appUpdateInfo.clientVersionStalenessDays();
+                        if (stalenessDays != null) {
+                            result.put("clientVersionStalenessDays", stalenessDays);
+                        }
+                    } else {
+                        result.put("immediateUpdateAllowed", false);
+                        result.put("flexibleUpdateAllowed", false);
+                    }
+
+                    result.put("installStatus", appUpdateInfo.installStatus());
+
+                    call.resolve(result);
+                })
+                .addOnFailureListener((e) -> {
+                    logger.error("Failed to get app update info: " + e.getMessage());
+                    call.reject("Failed to get app update info: " + e.getMessage());
+                });
         } catch (Exception e) {
             logger.error("Error getting app update info: " + e.getMessage());
             call.reject("Error getting app update info: " + e.getMessage());
@@ -2392,8 +2390,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         } catch (android.content.ActivityNotFoundException e) {
             // Fall back to browser
             try {
-                Intent intent = new Intent(Intent.ACTION_VIEW,
-                    Uri.parse("https://play.google.com/store/apps/details?id=" + packageName));
+                Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=" + packageName));
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 getContext().startActivity(intent);
                 call.resolve();
@@ -2496,7 +2493,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 manager.unregisterListener(installStateUpdatedListener);
             }
 
-            installStateUpdatedListener = state -> {
+            installStateUpdatedListener = (state) -> {
                 JSObject eventData = new JSObject();
                 eventData.put("installStatus", state.installStatus());
 
@@ -2531,12 +2528,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
     public void completeFlexibleUpdate(final PluginCall call) {
         try {
             AppUpdateManager manager = getAppUpdateManager();
-            manager.completeUpdate()
-                .addOnSuccessListener(aVoid -> {
+            manager
+                .completeUpdate()
+                .addOnSuccessListener((aVoid) -> {
                     // The app will restart, so this may not be called
                     call.resolve();
                 })
-                .addOnFailureListener(e -> {
+                .addOnFailureListener((e) -> {
                     logger.error("Failed to complete flexible update: " + e.getMessage());
                     call.reject("Failed to complete flexible update: " + e.getMessage());
                 });

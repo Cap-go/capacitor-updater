@@ -1,0 +1,20 @@
+{
+  "name": "@capgo/capacitor-updater",
+  "version": "8.3.0",
+  "license": "MPL-2.0",
+  "exports": "./src/index.ts",
+  "publish": {
+    "include": [
+      "android/src/main/**",
+      "android/proguard-rules.pro",
+      "android/build.gradle",
+      "src/*.ts",
+      "ios/Sources/**",
+      "CapgoCapacitorUpdater.podspec",
+      "Package.swift"
+    ],
+    "exclude": [
+      "src/*.d.ts"
+    ]
+  }
+}

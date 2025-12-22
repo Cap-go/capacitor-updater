@@ -40,7 +40,6 @@ import type {
   ShakeMenuEnabled,
   UpdateFailedEvent,
 } from './definitions';
-
 import { AppUpdateAvailability } from './definitions';
 
 const BUNDLE_BUILTIN: BundleInfo = {
