@@ -8,7 +8,6 @@ package ee.forgr.capacitor_updater;
 
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.os.Build;
 import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
 import java.io.IOException;
@@ -56,11 +55,6 @@ public class DeviceIdHelper {
      * @return Device ID as a lowercase UUID string
      */
     public static String getOrCreateDeviceId(Context context, SharedPreferences legacyPrefs) {
-        // API 23+ required for Android Keystore
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-            return getFallbackDeviceId(legacyPrefs);
-        }
-
         try {
             // Try to get device ID from Keystore storage
             String deviceId = getDeviceIdFromKeystore(context);
