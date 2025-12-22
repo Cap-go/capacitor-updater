@@ -14,8 +14,8 @@
   },
   "dependencies": {
     "@capacitor/core": "latest",
-    "@capacitor/android": "7.4.4",
-    "@capacitor/ios": "7.4.4",
+    "@capacitor/android": "8.0.0",
+    "@capacitor/ios": "8.0.0",
     "@capgo/capacitor-updater": "file:.."
   },
   "devDependencies": {
