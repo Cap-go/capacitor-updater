@@ -235,13 +235,13 @@ if (isBrowser) {
       originalReplaceState = history.replaceState;
 
       history.pushState = function pushStatePatched(state: any, title: string, url?: string | URL | null) {
-        const result = originalPushState!.call(history, state, title, url as any);
+        const result = originalPushState?.call(history, state, title, url as any);
         record(url, false);
         return result;
       };
 
       history.replaceState = function replaceStatePatched(state: any, title: string, url?: string | URL | null) {
-        const result = originalReplaceState!.call(history, state, title, url as any);
+        const result = originalReplaceState?.call(history, state, title, url as any);
         record(url, true);
         return result;
       };
