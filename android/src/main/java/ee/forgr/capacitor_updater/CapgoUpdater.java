@@ -179,7 +179,8 @@ public class CapgoUpdater {
             ZipEntry entry;
             while ((entry = zis.getNextEntry()) != null) {
                 if (entry.getName().contains("\\")) {
-                    logger.error("unzip: Windows path is not supported, please use unix path as require by zip RFC: " + entry.getName());
+                    logger.error("Unzip failed: Windows path not supported");
+                    logger.debug("Invalid path: " + entry.getName());
                     this.sendStats("windows_path_fail");
                 }
                 final File file = new File(targetDirectory, entry.getName());
@@ -275,7 +276,8 @@ public class CapgoUpdater {
                                 boolean success = finishDownload(id, dest, version, sessionKey, checksum, true, isManifest);
                                 BundleInfo resultBundle;
                                 if (!success) {
-                                    logger.error("Finish download failed: " + version);
+                                    logger.error("Finish download failed");
+                                    logger.debug("Version: " + version);
                                     resultBundle = new BundleInfo(
                                         id,
                                         version,
@@ -307,7 +309,8 @@ public class CapgoUpdater {
                         case FAILED:
                             Data failedData = workInfo.getOutputData();
                             String error = failedData.getString(DownloadService.ERROR);
-                            logger.error("Download failed: " + error + " " + workInfo.getState());
+                            logger.error("Download failed");
+                            logger.debug("Error: " + error + ", State: " + workInfo.getState());
                             String failedVersion = failedData.getString(DownloadService.VERSION);
 
                             io.execute(() -> {
@@ -423,7 +426,8 @@ public class CapgoUpdater {
                 CryptoCipher.logChecksumInfo("Calculated checksum", checksum);
                 CryptoCipher.logChecksumInfo("Expected checksum", checksumDecrypted);
                 if ((!checksumDecrypted.isEmpty() || !this.publicKey.isEmpty()) && !checksumDecrypted.equals(checksum)) {
-                    logger.error("Error checksum '" + checksumDecrypted + "' '" + checksum + "' '");
+                    logger.error("Checksum mismatch");
+                    logger.debug("Expected: " + checksumDecrypted + ", Got: " + checksum);
                     this.sendStats("checksum_fail");
                     throw new IOException("Checksum failed: " + id);
                 }
@@ -435,7 +439,8 @@ public class CapgoUpdater {
             }
             final Boolean res = this.delete(id);
             if (!res) {
-                logger.info("Double error, cannot cleanup: " + version);
+                logger.info("Failed to cleanup after error");
+                logger.debug("Version: " + version);
             }
 
             final Map<String, Object> ret = new HashMap<>();
@@ -536,7 +541,8 @@ public class CapgoUpdater {
             this.deleteDirectory(cacheFolder, threadToCheck);
             logger.info("Cleaned up delta cache folder");
         } catch (IOException e) {
-            logger.error("Failed to cleanup delta cache: " + e.getMessage());
+            logger.error("Failed to cleanup delta cache");
+            logger.debug("Error: " + e.getMessage());
         }
     }
 
@@ -577,9 +583,11 @@ public class CapgoUpdater {
                 try {
                     this.deleteDirectory(entry, threadToCheck);
                     this.removeBundleInfo(id);
-                    logger.info("Deleted orphan bundle directory: " + id);
+                    logger.info("Deleted orphan bundle directory");
+                    logger.debug("Bundle ID: " + id);
                 } catch (IOException e) {
-                    logger.error("Failed to delete orphan bundle directory: " + id + " " + e.getMessage());
+                    logger.error("Failed to delete orphan bundle directory");
+                    logger.debug("Bundle ID: " + id + ", Error: " + e.getMessage());
                 }
             }
         }
@@ -616,9 +624,11 @@ public class CapgoUpdater {
 
             try {
                 this.deleteDirectory(entry, threadToCheck);
-                logger.info("Deleted orphaned temp unzip folder: " + folderName);
+                logger.info("Deleted orphaned temp unzip folder");
+                logger.debug("Folder: " + folderName);
             } catch (IOException e) {
-                logger.error("Failed to delete orphaned temp folder: " + folderName + " " + e.getMessage());
+                logger.error("Failed to delete orphaned temp folder");
+                logger.debug("Folder: " + folderName + ", Error: " + e.getMessage());
             }
         }
     }
@@ -705,7 +715,8 @@ public class CapgoUpdater {
         } catch (Exception e) {
             // Clean up on failure
             downloadFutures.remove(id);
-            logger.error("Error waiting for download: " + e.getMessage());
+            logger.error("Error waiting for download");
+            logger.debug("Error: " + e.getMessage());
             BundleInfo errorBundle = new BundleInfo(id, version, BundleStatus.ERROR, new Date(System.currentTimeMillis()), "");
             saveBundleInfo(id, errorBundle);
             if (e instanceof IOException) {
@@ -745,12 +756,14 @@ public class CapgoUpdater {
     public Boolean delete(final String id, final Boolean removeInfo) throws IOException {
         final BundleInfo deleted = this.getBundleInfo(id);
         if (deleted.isBuiltin() || this.getCurrentBundleId().equals(id)) {
-            logger.error("Cannot delete " + id);
+            logger.error("Cannot delete current or builtin bundle");
+            logger.debug("Bundle ID: " + id);
             return false;
         }
         final BundleInfo next = this.getNextBundle();
         if (next != null && !next.isDeleted() && !next.isErrorStatus() && next.getId().equals(id)) {
-            logger.error("Cannot delete the next bundle" + id);
+            logger.error("Cannot delete the next bundle");
+            logger.debug("Bundle ID: " + id);
             return false;
         }
         // Cancel download for this version if active
@@ -767,7 +780,8 @@ public class CapgoUpdater {
             }
             return true;
         }
-        logger.error("bundle removed: " + deleted.getVersionName());
+        logger.info("Bundle not found on disk");
+        logger.debug("Version: " + deleted.getVersionName());
         // perhaps we did not find the bundle in the files, but if the user requested a delete, we delete
         if (removeInfo) {
             this.removeBundleInfo(id);
@@ -938,11 +952,13 @@ public class CapgoUpdater {
                 if (response.isSuccessful()) {
                     logger.info("Rate limit statistic sent");
                 } else {
-                    logger.error("Error sending rate limit statistic: " + response.code());
+                    logger.error("Error sending rate limit statistic");
+                    logger.debug("Response code: " + response.code());
                 }
             }
         } catch (final Exception e) {
-            logger.error("Failed to send rate limit statistic: " + e.getMessage());
+            logger.error("Failed to send rate limit statistic");
+            logger.debug("Error: " + e.getMessage());
         }
     }
 
@@ -1039,7 +1055,8 @@ public class CapgoUpdater {
                 json.put("defaultChannel", channel);
             }
         } catch (JSONException e) {
-            logger.error("Error getLatest JSONException " + e.getMessage());
+            logger.error("Error getting latest version");
+            logger.debug("JSONException: " + e.getMessage());
             final Map<String, Object> retError = new HashMap<>();
             retError.put("message", "Cannot get info: " + e);
             retError.put("error", "json_error");
@@ -1111,7 +1128,8 @@ public class CapgoUpdater {
             json = this.createInfoObject();
             json.put("channel", channel);
         } catch (JSONException e) {
-            logger.error("Error setChannel JSONException " + e.getMessage());
+            logger.error("Error setting channel");
+            logger.debug("JSONException: " + e.getMessage());
             final Map<String, Object> retError = new HashMap<>();
             retError.put("message", "Cannot get info: " + e);
             retError.put("error", "json_error");
@@ -1157,7 +1175,8 @@ public class CapgoUpdater {
         try {
             json = this.createInfoObject();
         } catch (JSONException e) {
-            logger.error("Error getChannel JSONException " + e.getMessage());
+            logger.error("Error getting channel");
+            logger.debug("JSONException: " + e.getMessage());
             final Map<String, Object> retError = new HashMap<>();
             retError.put("message", "Cannot get info: " + e);
             retError.put("error", "json_error");
@@ -1279,7 +1298,8 @@ public class CapgoUpdater {
         try {
             json = this.createInfoObject();
         } catch (JSONException e) {
-            logger.error("Error creating info object: " + e.getMessage());
+            logger.error("Error creating info object");
+            logger.debug("JSONException: " + e.getMessage());
             final Map<String, Object> retError = new HashMap<>();
             retError.put("message", "Cannot get info: " + e);
             retError.put("error", "json_error");
@@ -1299,7 +1319,8 @@ public class CapgoUpdater {
                 }
             }
         } catch (JSONException e) {
-            logger.error("Error adding query parameters: " + e.getMessage());
+            logger.error("Error adding query parameters");
+            logger.debug("JSONException: " + e.getMessage());
         }
 
         Request request = new Request.Builder().url(urlBuilder.build()).get().build();
@@ -1420,7 +1441,8 @@ public class CapgoUpdater {
             json.put("old_version_name", oldVersionName);
             json.put("action", action);
         } catch (JSONException e) {
-            logger.error("Error sendStats JSONException " + e.getMessage());
+            logger.error("Error preparing stats");
+            logger.debug("JSONException: " + e.getMessage());
             return;
         }
 
@@ -1435,7 +1457,8 @@ public class CapgoUpdater {
                 new okhttp3.Callback() {
                     @Override
                     public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                        logger.error("Failed to send stats: " + e.getMessage());
+                        logger.error("Failed to send stats");
+                        logger.debug("Error: " + e.getMessage());
                     }
 
                     @Override
@@ -1447,9 +1470,11 @@ public class CapgoUpdater {
                             }
 
                             if (response.isSuccessful()) {
-                                logger.info("Stats send for \"" + action + "\", version " + versionName);
+                                logger.info("Stats sent successfully");
+                                logger.debug("Action: " + action + ", Version: " + versionName);
                             } else {
-                                logger.error("Error sending stats: " + response.code());
+                                logger.error("Error sending stats");
+                                logger.debug("Response code: " + response.code());
                             }
                         }
                     }
@@ -1476,14 +1501,8 @@ public class CapgoUpdater {
                     result = BundleInfo.fromJSON(stored);
                 }
             } catch (JSONException e) {
-                logger.error(
-                    "Failed to parse info for bundle [" +
-                        trueId +
-                        "] stored value: '" +
-                        this.prefs.getString(trueId + INFO_SUFFIX, "") +
-                        "' error: " +
-                        e.getMessage()
-                );
+                logger.error("Failed to parse bundle info");
+                logger.debug("Bundle ID: " + trueId + ", Error: " + e.getMessage());
                 // Clear corrupted data
                 this.editor.remove(trueId + INFO_SUFFIX);
                 this.editor.commit();
