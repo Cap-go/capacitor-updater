@@ -155,7 +155,8 @@ import UIKit
             case .success:
                 self.logger.info("Rate limit statistic sent")
             case let .failure(error):
-                self.logger.error("Error sending rate limit statistic: \(error.localizedDescription)")
+                self.logger.error("Error sending rate limit statistic")
+                self.logger.debug("Error: \(error.localizedDescription)")
             }
             semaphore.signal()
         }
@@ -201,7 +202,8 @@ import UIKit
             do {
                 try FileManager.default.createDirectory(atPath: source.path, withIntermediateDirectories: true, attributes: nil)
             } catch {
-                logger.error("Cannot createDirectory \(source.path)")
+                logger.error("Cannot create directory")
+                logger.debug("Directory path: \(source.path)")
                 throw CustomError.cannotCreateDirectory
             }
         }
@@ -211,7 +213,8 @@ import UIKit
         do {
             try FileManager.default.removeItem(atPath: source.path)
         } catch {
-            logger.error("File not removed. \(source.path)")
+            logger.error("File not removed")
+            logger.debug("Path: \(source.path)")
             throw CustomError.cannotDeleteDirectory
         }
     }
@@ -228,7 +231,8 @@ import UIKit
                 return false
             }
         } catch {
-            logger.error("File not moved. source: \(source.path) dest: \(dest.path)")
+            logger.error("File not moved")
+            logger.debug("Source: \(source.path), Dest: \(dest.path)")
             throw CustomError.cannotUnflat
         }
     }
@@ -236,7 +240,8 @@ import UIKit
     private func validateZipEntry(path: String, destUnZip: URL) throws {
         // Check for Windows paths
         if path.contains("\\") {
-            logger.error("unzip: Windows path is not supported, please use unix path as required by zip RFC: \(path)")
+            logger.error("Unzip failed: Windows path not supported")
+            logger.debug("Invalid path: \(path)")
             self.sendStats(action: "windows_path_fail")
             throw CustomError.cannotUnzip
         }
@@ -318,7 +323,8 @@ import UIKit
                 try FileManager.default.removeItem(at: sourceZip)
             }
         } catch {
-            logger.error("Could not delete source zip at \(sourceZip.path): \(error)")
+            logger.error("Could not delete source zip")
+            logger.debug("Path: \(sourceZip.path), Error: \(error)")
         }
     }
 
@@ -393,8 +399,9 @@ import UIKit
                     latest.comment = comment
                 }
             case let .failure(error):
-                self.logger.error("Error getting Latest \(response.value.debugDescription) \(error)")
-                latest.message = "Error getting Latest \(String(describing: response.value))"
+                self.logger.error("Error getting latest version")
+                self.logger.debug("Response: \(response.value.debugDescription), Error: \(error)")
+                latest.message = "Error getting Latest"
                 latest.error = "response_error"
                 latest.statusCode = response.response?.statusCode ?? 0
             }
@@ -461,7 +468,8 @@ import UIKit
                     fileHash = try CryptoCipher.decryptChecksum(checksum: fileHash, publicKey: self.publicKey)
                 } catch {
                     downloadError = error
-                    logger.error("CryptoCipher.decryptChecksum error \(id) \(fileName) error: \(error)")
+                    logger.error("Checksum decryption failed")
+                    logger.debug("Bundle: \(id), File: \(fileName), Error: \(error)")
                 }
             }
 
@@ -490,7 +498,8 @@ import UIKit
                     self.notifyDownload(id: id, percent: self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70))
                 } catch {
                     downloadError = error
-                    logger.error("Failed to copy builtin file \(fileName): \(error.localizedDescription)")
+                    logger.error("Failed to copy builtin file")
+                    logger.debug("File: \(fileName), Error: \(error.localizedDescription)")
                 }
                 dispatchGroup.leave()
             } else if self.tryCopyFromCache(from: cacheFilePath, to: destFilePath, expectedHash: fileHash) {
@@ -562,15 +571,18 @@ import UIKit
 
                             completedFiles += 1
                             self.notifyDownload(id: id, percent: self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70))
-                            self.logger.info("downloadManifest \(id) \(fileName) downloaded\(isBrotli ? ", decompressed" : "")\(!self.publicKey.isEmpty && !sessionKey.isEmpty ? ", decrypted" : ""), and cached")
+                            self.logger.info("Manifest file downloaded and cached")
+                            self.logger.debug("Bundle: \(id), File: \(fileName), Brotli: \(isBrotli), Encrypted: \(!self.publicKey.isEmpty && !sessionKey.isEmpty)")
                         } catch {
                             downloadError = error
-                            self.logger.error("downloadManifest \(id) \(fileName) error: \(error.localizedDescription)")
+                            self.logger.error("Manifest file download failed")
+                            self.logger.debug("Bundle: \(id), File: \(fileName), Error: \(error.localizedDescription)")
                         }
                     case .failure(let error):
                         downloadError = error
                         self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
-                        self.logger.error("downloadManifest \(id) \(fileName) download error: \(error.localizedDescription). Debug response: \(response.debugDescription).")
+                        self.logger.error("Manifest file download network error")
+                        self.logger.debug("Bundle: \(id), File: \(fileName), Error: \(error.localizedDescription), Response: \(response.debugDescription)")
                     }
                 }
             }
@@ -658,7 +670,8 @@ import UIKit
         var status = compression_stream_init(streamPointer, COMPRESSION_STREAM_DECODE, COMPRESSION_BROTLI)
 
         guard status != COMPRESSION_STATUS_ERROR else {
-            logger.error("Error: Failed to initialize Brotli stream for \(fileName). Status: \(status)")
+            logger.error("Failed to initialize Brotli stream")
+            logger.debug("File: \(fileName), Status: \(status)")
             return nil
         }
 
@@ -680,7 +693,8 @@ import UIKit
                     if let baseAddress = rawBufferPointer.baseAddress {
                         streamPointer.pointee.src_ptr = baseAddress.assumingMemoryBound(to: UInt8.self)
                     } else {
-                        logger.error("Error: Failed to get base address for \(fileName)")
+                        logger.error("Failed to get base address for Brotli decompression")
+                        logger.debug("File: \(fileName)")
                         status = COMPRESSION_STATUS_ERROR
                         return
                     }
@@ -690,7 +704,8 @@ import UIKit
             if status == COMPRESSION_STATUS_ERROR {
                 let maxBytes = min(32, data.count)
                 let hexDump = data.prefix(maxBytes).map { String(format: "%02x", $0) }.joined(separator: " ")
-                logger.error("Error: Brotli decompression failed for \(fileName). First \(maxBytes) bytes: \(hexDump)")
+                logger.error("Brotli decompression failed")
+                logger.debug("File: \(fileName), First \(maxBytes) bytes: \(hexDump)")
                 break
             }
 
@@ -704,18 +719,19 @@ import UIKit
             if status == COMPRESSION_STATUS_END {
                 break
             } else if status == COMPRESSION_STATUS_ERROR {
-                logger.error("Error: Brotli process failed for \(fileName). Status: \(status)")
+                logger.error("Brotli process failed")
+                logger.debug("File: \(fileName), Status: \(status)")
                 if let text = String(data: data, encoding: .utf8) {
                     let asciiCount = text.unicodeScalars.filter { $0.isASCII }.count
                     let totalCount = text.unicodeScalars.count
                     if totalCount > 0 && Double(asciiCount) / Double(totalCount) >= 0.8 {
-                        logger.error("Error: Input appears to be plain text: \(text)")
+                        logger.debug("Input appears to be plain text: \(text)")
                     }
                 }
 
                 let maxBytes = min(32, data.count)
                 let hexDump = data.prefix(maxBytes).map { String(format: "%02x", $0) }.joined(separator: " ")
-                logger.error("Error: Raw data (\(fileName)): \(hexDump)")
+                logger.debug("Raw data: \(hexDump)")
 
                 return nil
             }
@@ -726,7 +742,8 @@ import UIKit
             }
 
             if input.count == 0 {
-                logger.error("Error: Zero input size for \(fileName)")
+                logger.error("Zero input size for Brotli decompression")
+                logger.debug("File: \(fileName)")
                 break
             }
         }
@@ -818,7 +835,8 @@ import UIKit
         reachabilityManager?.stopListening()
 
         if mainError != nil {
-            logger.error("Failed to download: \(String(describing: mainError))")
+            logger.error("Failed to download bundle")
+            logger.debug("Error: \(String(describing: mainError))")
             self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum, link: link, comment: comment))
             throw mainError!
         }
@@ -828,7 +846,8 @@ import UIKit
             try CryptoCipher.decryptFile(filePath: tempDataPath, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
             try FileManager.default.moveItem(at: tempDataPath, to: finalPath)
         } catch {
-            logger.error("Failed decrypt file : \(error)")
+            logger.error("Failed to decrypt file")
+            logger.debug("Error: \(error)")
             self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum, link: link, comment: comment))
             cleanDownloadData()
             throw error
@@ -841,7 +860,8 @@ import UIKit
             try self.saveDownloaded(sourceZip: finalPath, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: true)
 
         } catch {
-            logger.error("Failed to unzip file: \(error)")
+            logger.error("Failed to unzip file")
+            logger.debug("Error: \(error)")
             self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum, link: link, comment: comment))
             // Best-effort cleanup of the decrypted zip file when unzip fails
             do {
@@ -849,7 +869,8 @@ import UIKit
                     try FileManager.default.removeItem(at: finalPath)
                 }
             } catch {
-                logger.error("Could not delete failed zip at \(finalPath.path): \(error)")
+                logger.error("Could not delete failed zip")
+                logger.debug("Path: \(finalPath.path), Error: \(error)")
             }
             cleanDownloadData()
             throw error
@@ -872,13 +893,15 @@ import UIKit
         let fileManager = FileManager.default
         if !fileManager.fileExists(atPath: tempDataPath.path) {
             if !fileManager.createFile(atPath: tempDataPath.path, contents: Data()) {
-                logger.error("Cannot ensure that a file at \(tempDataPath.path) exists")
+                logger.error("Cannot ensure temp data file exists")
+                logger.debug("Path: \(tempDataPath.path)")
             }
         }
 
         if !fileManager.fileExists(atPath: updateInfo.path) {
             if !fileManager.createFile(atPath: updateInfo.path, contents: Data()) {
-                logger.error("Cannot ensure that a file at \(updateInfo.path) exists")
+                logger.error("Cannot ensure update info file exists")
+                logger.debug("Path: \(updateInfo.path)")
             }
         }
     }
@@ -890,7 +913,8 @@ import UIKit
             do {
                 try fileManager.removeItem(at: tempDataPath)
             } catch {
-                logger.error("Could not delete file at \(tempDataPath): \(error)")
+                logger.error("Could not delete temp data file")
+                logger.debug("Path: \(tempDataPath), Error: \(error)")
             }
         }
         // Deleting update.dat
@@ -898,7 +922,8 @@ import UIKit
             do {
                 try fileManager.removeItem(at: updateInfo)
             } catch {
-                logger.error("Could not delete file at \(updateInfo): \(error)")
+                logger.error("Could not delete update info file")
+                logger.debug("Path: \(updateInfo), Error: \(error)")
             }
         }
     }
@@ -917,7 +942,8 @@ import UIKit
                 fileHandle.closeFile()
             }
         } catch {
-            logger.error("Failed to write data starting at byte \(byteOffset): \(error)")
+            logger.error("Failed to write partial data")
+            logger.debug("Byte offset: \(byteOffset), Error: \(error)")
         }
         self.tempData.removeAll() // Clearing tempData to avoid writing the same data multiple times
     }
@@ -926,7 +952,8 @@ import UIKit
         do {
             try "\(version)".write(to: updateInfo, atomically: true, encoding: .utf8)
         } catch {
-            logger.error("Failed to save progress: \(error)")
+            logger.error("Failed to save download progress")
+            logger.debug("Error: \(error)")
         }
     }
     private func getLocalUpdateVersion() -> String { // Return the version that was tried to be downloaded on last download attempt
@@ -948,7 +975,8 @@ import UIKit
                 return fileSize.int64Value
             }
         } catch {
-            logger.error("Could not retrieve already downloaded data size : \(error)")
+            logger.error("Could not retrieve download progress size")
+            logger.debug("Error: \(error)")
         }
         return 0
     }
@@ -992,7 +1020,8 @@ import UIKit
     public func delete(id: String, removeInfo: Bool) -> Bool {
         let deleted: BundleInfo = self.getBundleInfo(id: id)
         if deleted.isBuiltin() || self.getCurrentBundleId() == id {
-            logger.info("Cannot delete \(id)")
+            logger.info("Cannot delete current or builtin bundle")
+            logger.debug("Bundle ID: \(id)")
             return false
         }
 
@@ -1001,7 +1030,8 @@ import UIKit
            !next.isDeleted() &&
             !next.isErrorStatus() &&
             next.getId() == id {
-            logger.info("Cannot delete the next bundle \(id)")
+            logger.info("Cannot delete the next bundle")
+            logger.debug("Bundle ID: \(id)")
             return false
         }
 
@@ -1009,7 +1039,8 @@ import UIKit
         do {
             try FileManager.default.removeItem(atPath: destPersist.path)
         } catch {
-            logger.error("Folder \(destPersist.path), not removed.")
+            logger.error("Bundle folder not removed")
+            logger.debug("Path: \(destPersist.path)")
             // even if, we don;t care. Android doesn't care
             if removeInfo {
                 self.removeBundleInfo(id: id)
@@ -1022,7 +1053,8 @@ import UIKit
         } else {
             self.saveBundleInfo(id: id, bundle: deleted.setStatus(status: BundleStatus.DELETED.localizedString))
         }
-        logger.info("bundle delete \(deleted.getVersionName())")
+        logger.info("Bundle deleted successfully")
+        logger.debug("Version: \(deleted.getVersionName())")
         self.sendStats(action: "delete", versionName: deleted.getVersionName())
         return true
     }
@@ -1050,7 +1082,8 @@ import UIKit
             try fileManager.removeItem(at: cacheFolder)
             logger.info("Cleaned up delta cache folder")
         } catch {
-            logger.error("Failed to cleanup delta cache: \(error.localizedDescription)")
+            logger.error("Failed to cleanup delta cache")
+            logger.debug("Error: \(error.localizedDescription)")
         }
     }
 
@@ -1090,13 +1123,16 @@ import UIKit
                 do {
                     try fileManager.removeItem(at: url)
                     self.removeBundleInfo(id: id)
-                    logger.info("Deleted orphan bundle directory: \(id)")
+                    logger.info("Deleted orphan bundle directory")
+                    logger.debug("Bundle ID: \(id)")
                 } catch {
-                    logger.error("Failed to delete orphan bundle directory: \(id) \(error.localizedDescription)")
+                    logger.error("Failed to delete orphan bundle directory")
+                    logger.debug("Bundle ID: \(id), Error: \(error.localizedDescription)")
                 }
             }
         } catch {
-            logger.error("Failed to enumerate bundle directory for cleanup: \(error.localizedDescription)")
+            logger.error("Failed to enumerate bundle directory for cleanup")
+            logger.debug("Error: \(error.localizedDescription)")
         }
     }
 
@@ -1127,13 +1163,16 @@ import UIKit
 
                 do {
                     try fileManager.removeItem(at: url)
-                    logger.info("Deleted orphaned temp unzip folder: \(folderName)")
+                    logger.info("Deleted orphaned temp unzip folder")
+                    logger.debug("Folder: \(folderName)")
                 } catch {
-                    logger.error("Failed to delete orphaned temp folder: \(folderName) \(error.localizedDescription)")
+                    logger.error("Failed to delete orphaned temp folder")
+                    logger.debug("Folder: \(folderName), Error: \(error.localizedDescription)")
                 }
             }
         } catch {
-            logger.error("Failed to enumerate library directory for temp folder cleanup: \(error.localizedDescription)")
+            logger.error("Failed to enumerate library directory for temp folder cleanup")
+            logger.debug("Error: \(error.localizedDescription)")
         }
     }
 
@@ -1209,9 +1248,11 @@ import UIKit
         if autoDeletePrevious && !fallback.isBuiltin() && fallback.getId() != bundle.getId() {
             let res = self.delete(id: fallback.getId())
             if res {
-                logger.info("Deleted previous bundle: \(fallback.toString())")
+                logger.info("Deleted previous bundle")
+                logger.debug("Bundle: \(fallback.toString())")
             } else {
-                logger.error("Failed to delete previous bundle: \(fallback.toString())")
+                logger.error("Failed to delete previous bundle")
+                logger.debug("Bundle: \(fallback.toString())")
             }
         }
         self.setFallbackBundle(fallback: bundle)
@@ -1292,7 +1333,8 @@ import UIKit
                     }
                 }
             case let .failure(error):
-                self.logger.error("Error set Channel \(error)")
+                self.logger.error("Error setting channel")
+                self.logger.debug("Error: \(error)")
                 setChannel.error = "Request failed: \(error.localizedDescription)"
             }
             semaphore.signal()
@@ -1355,7 +1397,8 @@ import UIKit
                     }
                 }
 
-                self.logger.error("Error get Channel \(error)")
+                self.logger.error("Error getting channel")
+                self.logger.debug("Error: \(error)")
                 getChannel.error = "Request failed: \(error.localizedDescription)"
             }
         }
@@ -1445,7 +1488,8 @@ import UIKit
                     }
                 }
             case let .failure(error):
-                self.logger.error("Error list channels \(error)")
+                self.logger.error("Error listing channels")
+                self.logger.debug("Error: \(error)")
                 listChannels.error = "Request failed: \(error.localizedDescription)"
             }
         }
@@ -1491,9 +1535,11 @@ import UIKit
 
                 switch response.result {
                 case .success:
-                    self.logger.info("Stats sent for \(action), version \(versionName)")
+                    self.logger.info("Stats sent successfully")
+                    self.logger.debug("Action: \(action), Version: \(versionName)")
                 case let .failure(error):
-                    self.logger.error("Error sending stats: \(response.value?.debugDescription ?? "") \(error.localizedDescription)")
+                    self.logger.error("Error sending stats")
+                    self.logger.debug("Response: \(response.value?.debugDescription ?? "nil"), Error: \(error.localizedDescription)")
                 }
                 semaphore.signal()
             }
@@ -1517,7 +1563,8 @@ import UIKit
             do {
                 result = try UserDefaults.standard.getObj(forKey: "\(trueId)\(self.INFO_SUFFIX)", castTo: BundleInfo.self)
             } catch {
-                logger.error("Failed to parse info for bundle [\(trueId)] \(error.localizedDescription)")
+                logger.error("Failed to parse bundle info")
+                logger.debug("Bundle ID: \(trueId), Error: \(error.localizedDescription)")
                 result = BundleInfo(id: trueId, version: "", status: BundleStatus.PENDING, checksum: "")
             }
         }
@@ -1552,7 +1599,8 @@ import UIKit
             do {
                 try UserDefaults.standard.setObj(update, forKey: "\(id)\(self.INFO_SUFFIX)")
             } catch {
-                logger.error("Failed to save info for bundle [\(id)] \(error.localizedDescription)")
+                logger.error("Failed to save bundle info")
+                logger.debug("Bundle ID: \(id), Error: \(error.localizedDescription)")
             }
         }
         UserDefaults.standard.synchronize()
