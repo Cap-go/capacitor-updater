@@ -235,14 +235,11 @@ public class CryptoCipher {
                 detectedAlgorithm = "SHA-256";
             } else if (decryptedChecksum.length == 4) {
                 detectedAlgorithm = "CRC32 (deprecated)";
-                logger.error(
-                    "CRC32 checksum detected. This algorithm is deprecated and no longer supported. Please update your CLI to use SHA-256 checksums."
-                );
+                logger.error("CRC32 checksum detected - deprecated algorithm");
             } else {
                 detectedAlgorithm = "unknown (" + decryptedChecksum.length + " bytes)";
-                logger.error(
-                    "Unknown checksum algorithm detected with " + decryptedChecksum.length + " bytes. Expected SHA-256 (32 bytes)."
-                );
+                logger.error("Unknown checksum algorithm detected");
+                logger.debug("Byte count: " + decryptedChecksum.length + ", Expected: 32 (SHA-256)");
             }
             logger.debug(
                 "Decrypted checksum: " +
@@ -255,7 +252,8 @@ public class CryptoCipher {
             );
             return result;
         } catch (GeneralSecurityException e) {
-            logger.error("decryptChecksum fail: " + e.getMessage());
+            logger.error("Checksum decryption failed");
+            logger.debug("Error: " + e.getMessage());
             throw new IOException("Decryption failed: " + e.getMessage());
         }
     }
@@ -286,13 +284,10 @@ public class CryptoCipher {
         String algorithm = detectChecksumAlgorithm(hexChecksum);
         logger.debug(label + ": " + algorithm + " hex format (length: " + hexChecksum.length() + " chars)");
         if (algorithm.contains("CRC32")) {
-            logger.error(
-                "CRC32 checksum detected. This algorithm is deprecated and no longer supported. Please update your CLI to use SHA-256 checksums."
-            );
+            logger.error("CRC32 checksum detected - deprecated algorithm");
         } else if (algorithm.contains("unknown")) {
-            logger.error(
-                "Unknown checksum algorithm detected. Expected SHA-256 (64 hex chars) but got " + hexChecksum.length() + " chars."
-            );
+            logger.error("Unknown checksum algorithm detected");
+            logger.debug("Char count: " + hexChecksum.length() + ", Expected: 64 (SHA-256)");
         }
     }
 
@@ -321,7 +316,8 @@ public class CryptoCipher {
             }
             return hexString.toString();
         } catch (IOException e) {
-            logger.error("Cannot calc checksum v2: " + file.getPath() + " " + e.getMessage());
+            logger.error("Cannot calculate checksum");
+            logger.debug("Path: " + file.getPath() + ", Error: " + e.getMessage());
             return "";
         }
     }

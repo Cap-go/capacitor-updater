@@ -45,7 +45,8 @@ public struct CryptoCipher {
             if isHexString(checksum) {
                 // Hex encoded (new format from CLI for plugin versions >= 5.30.0, 6.30.0, 7.30.0)
                 guard let hexData = hexStringToData(checksum) else {
-                    logger.error("Cannot decode checksum as hex: \(checksum)")
+                    logger.error("Cannot decode checksum as hex")
+                    logger.debug("Checksum value: \(checksum)")
                     throw CustomError.cannotDecode
                 }
                 checksumBytes = hexData
@@ -54,7 +55,8 @@ public struct CryptoCipher {
                 // TODO: remove backwards compatibility
                 // Base64 encoded (old format for backwards compatibility)
                 guard let base64Data = Data(base64Encoded: checksum) else {
-                    logger.error("Cannot decode checksum as base64: \(checksum)")
+                    logger.error("Cannot decode checksum as base64")
+                    logger.debug("Checksum value: \(checksum)")
                     throw CustomError.cannotDecode
                 }
                 checksumBytes = base64Data
@@ -86,15 +88,17 @@ public struct CryptoCipher {
                 detectedAlgorithm = "SHA-256"
             } else if decryptedChecksum.count == 4 {
                 detectedAlgorithm = "CRC32 (deprecated)"
-                logger.error("CRC32 checksum detected. This algorithm is deprecated and no longer supported. Please update your CLI to use SHA-256 checksums.")
+                logger.error("CRC32 checksum detected - deprecated algorithm")
             } else {
                 detectedAlgorithm = "unknown (\(decryptedChecksum.count) bytes)"
-                logger.error("Unknown checksum algorithm detected with \(decryptedChecksum.count) bytes. Expected SHA-256 (32 bytes).")
+                logger.error("Unknown checksum algorithm detected")
+                logger.debug("Byte count: \(decryptedChecksum.count), Expected: 32 (SHA-256)")
             }
             logger.debug("Decrypted checksum: \(detectedAlgorithm) hex format (length: \(result.count) chars, \(decryptedChecksum.count) bytes)")
             return result
         } catch {
-            logger.error("decryptChecksum fail: \(error.localizedDescription)")
+            logger.error("Checksum decryption failed")
+            logger.debug("Error: \(error.localizedDescription)")
             throw CustomError.cannotDecode
         }
     }
@@ -121,9 +125,10 @@ public struct CryptoCipher {
         let algorithm = detectChecksumAlgorithm(hexChecksum)
         logger.debug("\(label): \(algorithm) hex format (length: \(hexChecksum.count) chars)")
         if algorithm.contains("CRC32") {
-            logger.error("CRC32 checksum detected. This algorithm is deprecated and no longer supported. Please update your CLI to use SHA-256 checksums.")
+            logger.error("CRC32 checksum detected - deprecated algorithm")
         } else if algorithm.contains("unknown") {
-            logger.error("Unknown checksum algorithm detected. Expected SHA-256 (64 hex chars) but got \(hexChecksum.count) chars.")
+            logger.error("Unknown checksum algorithm detected")
+            logger.debug("Char count: \(hexChecksum.count), Expected: 64 (SHA-256)")
         }
     }
 
@@ -136,7 +141,8 @@ public struct CryptoCipher {
             do {
                 fileHandle = try FileHandle(forReadingFrom: filePath)
             } catch {
-                logger.error("Cannot open file for checksum: \(filePath.path) \(error)")
+                logger.error("Cannot open file for checksum calculation")
+                logger.debug("Path: \(filePath.path), Error: \(error)")
                 return ""
             }
 
@@ -144,7 +150,8 @@ public struct CryptoCipher {
                 do {
                     try fileHandle.close()
                 } catch {
-                    logger.error("Error closing file: \(error)")
+                    logger.error("Error closing file during checksum")
+                    logger.debug("Error: \(error)")
                 }
             }
 
@@ -153,7 +160,8 @@ public struct CryptoCipher {
                 do {
                     fileData = try fileHandle.read(upToCount: bufferSize) ?? Data()
                 } catch {
-                    logger.error("Error reading file: \(error)")
+                    logger.error("Error reading file during checksum")
+                    logger.debug("Error: \(error)")
                     return false
                 }
 
@@ -168,7 +176,8 @@ public struct CryptoCipher {
             let digest = sha256.finalize()
             return digest.compactMap { String(format: "%02x", $0) }.joined()
         } catch {
-            logger.error("Cannot get checksum: \(filePath.path) \(error)")
+            logger.error("Cannot calculate checksum")
+            logger.debug("Path: \(filePath.path), Error: \(error)")
             return ""
         }
     }
@@ -195,17 +204,20 @@ public struct CryptoCipher {
             let encryptedKeyBase64 = sessionKeyComponents[1]
 
             guard let ivData = Data(base64Encoded: ivBase64) else {
-                logger.error("Cannot decode sessionKey IV \(ivBase64)")
+                logger.error("Cannot decode sessionKey IV")
+                logger.debug("IV value: \(ivBase64)")
                 throw CustomError.cannotDecode
             }
 
             if ivData.count != 16 {
-                logger.error("IV data has invalid length: \(ivData.count), expected 16")
+                logger.error("IV data has invalid length")
+                logger.debug("Length: \(ivData.count), Expected: 16")
                 throw CustomError.cannotDecode
             }
 
             guard let sessionKeyDataEncrypted = Data(base64Encoded: encryptedKeyBase64) else {
-                logger.error("Cannot decode sessionKey data \(encryptedKeyBase64)")
+                logger.error("Cannot decode sessionKey data")
+                logger.debug("Key value: \(encryptedKeyBase64)")
                 throw NSError(domain: "Invalid session key data", code: 1, userInfo: nil)
             }
 
@@ -215,7 +227,8 @@ public struct CryptoCipher {
             }
 
             if sessionKeyDataDecrypted.count != 16 {
-                logger.error("Decrypted session key has invalid length: \(sessionKeyDataDecrypted.count), expected 16")
+                logger.error("Decrypted session key has invalid length")
+                logger.debug("Length: \(sessionKeyDataDecrypted.count), Expected: 16")
                 throw NSError(domain: "Invalid decrypted session key", code: 5, userInfo: nil)
             }
 
@@ -225,7 +238,8 @@ public struct CryptoCipher {
             do {
                 encryptedData = try Data(contentsOf: filePath)
             } catch {
-                logger.error("Failed to read encrypted data: \(error)")
+                logger.error("Failed to read encrypted data")
+                logger.debug("Error: \(error)")
                 throw NSError(domain: "Failed to read encrypted data", code: 3, userInfo: nil)
             }
 
@@ -251,12 +265,13 @@ public struct CryptoCipher {
                     throw NSError(domain: "File write failed", code: 8, userInfo: nil)
                 }
             } catch {
-                logger.error("Error writing decrypted file: \(error)")
+                logger.error("Error writing decrypted file")
+                logger.debug("Error: \(error)")
                 throw error
             }
 
         } catch {
-            logger.error("decryptFile fail")
+            logger.error("File decryption failed")
             throw CustomError.cannotDecode
         }
     }
