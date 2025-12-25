@@ -3,7 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-import '@capacitor/cli'
+
+import '@capacitor/cli';
 import type { PluginListenerHandle } from '@capacitor/core';
 
 declare module '@capacitor/cli' {
@@ -21,6 +22,7 @@ declare module '@capacitor/cli' {
        * @example 1000 // (1 second, minimum 1000)
        */
       appReadyTimeout?: number;
+
       /**
        * Configure the number of seconds the native plugin should wait before considering API timeout.
        *
@@ -30,6 +32,7 @@ declare module '@capacitor/cli' {
        * @example 10 // (10 second)
        */
       responseTimeout?: number;
+
       /**
        * Configure whether the plugin should use automatically delete failed bundles.
        *
@@ -99,6 +102,7 @@ declare module '@capacitor/cli' {
        * @example https://example.com/api/stats
        */
       statsUrl?: string;
+
       /**
        * Configure the public key for end to end live update encryption Version 2
        *
@@ -119,6 +123,7 @@ declare module '@capacitor/cli' {
        * @since  4.17.48
        */
       version?: string;
+
       /**
        * Configure when the plugin should direct install updates. Only for autoUpdate mode.
        * Works well for apps less than 10MB and with uploads done using --partial flag.
@@ -196,6 +201,7 @@ declare module '@capacitor/cli' {
        * @since  4.17.48
        */
       localS3?: boolean;
+
       /**
        * Configure the CLI to use a local server for testing or self-hosted update server.
        *
@@ -204,6 +210,7 @@ declare module '@capacitor/cli' {
        * @since  4.17.48
        */
       localHost?: string;
+
       /**
        * Configure the CLI to use a local server for testing or self-hosted update server.
        *
@@ -212,6 +219,7 @@ declare module '@capacitor/cli' {
        * @since  4.17.48
        */
       localWebHost?: string;
+
       /**
        * Configure the CLI to use a local server for testing or self-hosted update server.
        *
@@ -220,6 +228,7 @@ declare module '@capacitor/cli' {
        * @since  4.17.48
        */
       localSupa?: string;
+
       /**
        * Configure the CLI to use a local server for testing.
        *
@@ -228,6 +237,7 @@ declare module '@capacitor/cli' {
        * @since  4.17.48
        */
       localSupaAnon?: string;
+
       /**
        * Configure the CLI to use a local api for testing.
        *
@@ -236,6 +246,7 @@ declare module '@capacitor/cli' {
        * @since  6.3.3
        */
       localApi?: string;
+
       /**
        * Configure the CLI to use a local file api for testing.
        *
@@ -327,6 +338,7 @@ declare module '@capacitor/cli' {
        * @since  6.8.0
        */
       keepUrlPathAfterReload?: boolean;
+
       /**
        * Disable the JavaScript logging of the plugin. if true, the plugin will not log to the JavaScript console. only the native log will be done
        *
@@ -334,6 +346,7 @@ declare module '@capacitor/cli' {
        * @since  7.3.0
        */
       disableJSLogging?: boolean;
+
       /**
        * Enable shake gesture to show update menu for debugging/testing purposes
        *
