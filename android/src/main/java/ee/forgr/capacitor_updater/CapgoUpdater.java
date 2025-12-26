@@ -105,7 +105,10 @@ public class CapgoUpdater {
 
     private boolean isProd() {
         try {
-            return !Objects.requireNonNull(getClass().getPackage()).getName().contains(".debug");
+            if (activity == null) {
+                return true; // Default to production if no activity context
+            }
+            return (activity.getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) == 0;
         } catch (Exception e) {
             return true; // Default to production if we can't determine
         }
