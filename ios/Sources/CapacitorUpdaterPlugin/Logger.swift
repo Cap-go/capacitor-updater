@@ -217,15 +217,15 @@ public class Logger {
         }
 
         // Fallback manual escaping (unlikely to be used)
-        var s = value
-        s = s.replacingOccurrences(of: "\\", with: "\\\\")
-        s = s.replacingOccurrences(of: "\"", with: "\\\"")
-        s = s.replacingOccurrences(of: "'", with: "\\'")
-        s = s.replacingOccurrences(of: "\n", with: "\\n")
-        s = s.replacingOccurrences(of: "\r", with: "\\r")
-        s = s.replacingOccurrences(of: "\u{2028}", with: "\\u2028")
-        s = s.replacingOccurrences(of: "\u{2029}", with: "\\u2029")
-        return "\"\(s)\""
+        var escaped = value
+        escaped = escaped.replacingOccurrences(of: "\\", with: "\\\\")
+        escaped = escaped.replacingOccurrences(of: "\"", with: "\\\"")
+        escaped = escaped.replacingOccurrences(of: "'", with: "\\'")
+        escaped = escaped.replacingOccurrences(of: "\n", with: "\\n")
+        escaped = escaped.replacingOccurrences(of: "\r", with: "\\r")
+        escaped = escaped.replacingOccurrences(of: "\u{2028}", with: "\\u2028")
+        escaped = escaped.replacingOccurrences(of: "\u{2029}", with: "\\u2029")
+        return "\"\(escaped)\""
     }
 
     public func log(atLevel level: LogLevel, label: String?, tag: String, message: String) {
