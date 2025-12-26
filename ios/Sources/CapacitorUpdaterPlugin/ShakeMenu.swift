@@ -8,6 +8,7 @@ import UIKit
 import Capacitor
 
 extension UIApplication {
+    // swiftlint:disable:next line_length
     public class func topViewController(_ base: UIViewController? = UIApplication.shared.windows.first?.rootViewController) -> UIViewController? {
         if let nav = base as? UINavigationController {
             return topViewController(nav.visibleViewController)
@@ -61,9 +62,9 @@ extension UIWindow {
             updater.reset()
             bridge.setServerBasePath("")
             DispatchQueue.main.async {
-                if let vc = (self.rootViewController as? CAPBridgeViewController) {
-                    vc.loadView()
-                    vc.viewDidLoad()
+                if let viewController = (self.rootViewController as? CAPBridgeViewController) {
+                    viewController.loadView()
+                    viewController.viewDidLoad()
                 }
                 _ = updater.delete(id: updater.getCurrentBundleId())
                 plugin.logger.info("Reset to builtin version")
@@ -71,8 +72,8 @@ extension UIWindow {
         }
 
         let bundleId = updater.getCurrentBundleId()
-        if let vc = (self.rootViewController as? CAPBridgeViewController) {
-            plugin.logger.info("getServerBasePath: \(vc.getServerBasePath())")
+        if let viewController = (self.rootViewController as? CAPBridgeViewController) {
+            plugin.logger.info("getServerBasePath: \(viewController.getServerBasePath())")
         }
         plugin.logger.info("bundleId: \(bundleId)")
 

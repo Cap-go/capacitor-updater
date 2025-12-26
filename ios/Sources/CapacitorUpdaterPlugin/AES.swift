@@ -19,15 +19,18 @@ private enum AESConstants {
 ///
 public struct AES128Key {
     /// Initialization vector
-    private let iv: Data
+    private let initVector: Data
     private let logger: Logger
     private let aes128Key: Data
     #if DEBUG
-    public var __debug_iv: Data { iv }
+    // swiftlint:disable:next identifier_name
+    public var __debug_iv: Data { initVector }
+    // swiftlint:disable:next identifier_name
     public var __debug_aes128Key: Data { aes128Key }
     #endif
+    // swiftlint:disable:next identifier_name
     init(iv: Data, aes128Key: Data, logger: Logger) {
-        self.iv = iv
+        self.initVector = iv
         self.aes128Key = aes128Key
         self.logger = logger
     }
@@ -39,20 +42,35 @@ public struct AES128Key {
     /// Returns the decrypted data.
     ///
     public func decrypt(data: Data) -> Data? {
-        let encryptedData: UnsafePointer<UInt8> = (data as NSData).bytes.bindMemory(to: UInt8.self, capacity: data.count)
+        let encryptedData: UnsafePointer<UInt8> = (data as NSData).bytes.bindMemory(
+            to: UInt8.self, capacity: data.count)
         let encryptedDataLength: Int = data.count
 
         if let result: NSMutableData = NSMutableData(length: encryptedDataLength) {
-            let keyData: UnsafePointer<UInt8> = (self.aes128Key as NSData).bytes.bindMemory(to: UInt8.self, capacity: self.aes128Key.count)
+            let keyData: UnsafePointer<UInt8> = (self.aes128Key as NSData).bytes.bindMemory(
+                to: UInt8.self, capacity: self.aes128Key.count)
             let keyLength: size_t = size_t(self.aes128Key.count)
-            let ivData: UnsafePointer<UInt8> = (iv as NSData).bytes.bindMemory(to: UInt8.self, capacity: self.iv.count)
+            let ivData: UnsafePointer<UInt8> = (initVector as NSData).bytes.bindMemory(
+                to: UInt8.self, capacity: self.initVector.count)
 
-            let decryptedData: UnsafeMutablePointer<UInt8> = UnsafeMutablePointer<UInt8>(result.mutableBytes.assumingMemoryBound(to: UInt8.self))
+            let decryptedData: UnsafeMutablePointer<UInt8> = UnsafeMutablePointer<UInt8>(
+                result.mutableBytes.assumingMemoryBound(to: UInt8.self))
             let decryptedDataLength: size_t = size_t(result.length)
 
             var decryptedLength: size_t = 0
 
-            let status: CCCryptorStatus = CCCrypt(CCOperation(kCCDecrypt), AESConstants.aesAlgorithm, AESConstants.aesOptions, keyData, keyLength, ivData, encryptedData, encryptedDataLength, decryptedData, decryptedDataLength, &decryptedLength)
+            let status: CCCryptorStatus = CCCrypt(
+                CCOperation(kCCDecrypt),
+                AESConstants.aesAlgorithm,
+                AESConstants.aesOptions,
+                keyData,
+                keyLength,
+                ivData,
+                encryptedData,
+                encryptedDataLength,
+                decryptedData,
+                decryptedDataLength,
+                &decryptedLength)
 
             if Int32(status) == Int32(kCCSuccess) {
                 result.length = Int(decryptedLength)

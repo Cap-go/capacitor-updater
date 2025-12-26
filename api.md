@@ -5,6 +5,53 @@ sidebar:
   order: 2
 ---
 
+# Updater Plugin Config
+
+<docgen-config>
+<!--Update the source file JSDoc comments and rerun docgen to update the docs below-->
+
+CapacitorUpdater can be configured with these options:
+
+| Prop | Type | Description | Default | Since |
+| --- | --- | --- | --- | --- |
+| **`appReadyTimeout`** | `number` | Configure the number of milliseconds the native plugin should wait before considering an update 'failed'. Only available for Android and iOS. | `10000 // (10 seconds)` |  |
+| **`responseTimeout`** | `number` | Configure the number of seconds the native plugin should wait before considering API timeout. Only available for Android and iOS. | `20 // (20 second)` |  |
+| **`autoDeleteFailed`** | `boolean` | Configure whether the plugin should use automatically delete failed bundles. Only available for Android and iOS. | `true` |  |
+| **`autoDeletePrevious`** | `boolean` | Configure whether the plugin should use automatically delete previous bundles after a successful update. Only available for Android and iOS. | `true` |  |
+| **`autoUpdate`** | `boolean` | Configure whether the plugin should use Auto Update via an update server. Only available for Android and iOS. | `true` |  |
+| **`resetWhenUpdate`** | `boolean` | Automatically delete previous downloaded bundles when a newer native app bundle is installed to the device. Setting this to false can broke the auto update flow if the user download from the store a native app bundle that is older than the current downloaded bundle. Upload will be prevented by channel setting downgrade_under_native. Only available for Android and iOS. | `true` |  |
+| **`updateUrl`** | `string` | Configure the URL / endpoint to which update checks are sent. Only available for Android and iOS. | `https://plugin.capgo.app/updates` |  |
+| **`channelUrl`** | `string` | Configure the URL / endpoint for channel operations. Only available for Android and iOS. | `https://plugin.capgo.app/channel_self` |  |
+| **`statsUrl`** | `string` | Configure the URL / endpoint to which update statistics are sent. Only available for Android and iOS. Set to "" to disable stats reporting. | `https://plugin.capgo.app/stats` |  |
+| **`publicKey`** | `string` | Configure the public key for end to end live update encryption Version 2 Only available for Android and iOS. | `undefined` | 6.2.0 |
+| **`version`** | `string` | Configure the current version of the app. This will be used for the first update request. If not set, the plugin will get the version from the native code. Only available for Android and iOS. | `undefined` | 4.17.48 |
+| **`directUpdate`** | `boolean | 'always' | 'atInstall' | 'onLaunch'` | Configure when the plugin should direct install updates. Only for autoUpdate mode. Works well for apps less than 10MB and with uploads done using --partial flag. Zip or apps more than 10MB will be relatively slow for users to update. - false: Never do direct updates (use default behavior: download at start, set when backgrounded) - atInstall: Direct update only when app is installed, updated from store, otherwise act as directUpdate = false - onLaunch: Direct update only on app installed, updated from store or after app kill, otherwise act as directUpdate = false - always: Direct update in all previous cases (app installed, updated from store, after app kill or app resume), never act as directUpdate = false - true: (deprecated) Same as "always" for backward compatibility Only available for Android and iOS. | `false` | 5.1.0 |
+| **`autoSplashscreen`** | `boolean` | Automatically handle splashscreen hiding when using directUpdate. When enabled, the plugin will automatically hide the splashscreen after updates are applied or when no update is needed. This removes the need to manually listen for appReady events and call SplashScreen.hide(). Only works when directUpdate is set to "atInstall", "always", "onLaunch", or true. Requires the @capacitor/splash-screen plugin to be installed and configured with launchAutoHide: false. Requires autoUpdate and directUpdate to be enabled. Only available for Android and iOS. | `false` | 7.6.0 |
+| **`autoSplashscreenLoader`** | `boolean` | Display a native loading indicator on top of the splashscreen while automatic direct updates are running. Only takes effect when {@link autoSplashscreen} is enabled. Requires the @capacitor/splash-screen plugin to be installed and configured with launchAutoHide: false. Only available for Android and iOS. | `false` | 7.19.0 |
+| **`autoSplashscreenTimeout`** | `number` | Automatically hide the splashscreen after the specified number of milliseconds when using automatic direct updates. If the timeout elapses, the update continues to download in the background while the splashscreen is dismissed. Set to `0` (zero) to disable the timeout. When the timeout fires, the direct update flow is skipped and the downloaded bundle is installed on the next background/launch. Requires {@link autoSplashscreen} to be enabled. Only available for Android and iOS. | `10000 // (10 seconds)` | 7.19.0 |
+| **`periodCheckDelay`** | `number` | Configure the delay period for period update check. the unit is in seconds. Only available for Android and iOS. Cannot be less than 600 seconds (10 minutes). | `0 (disabled)` |  |
+| **`localS3`** | `boolean` | Configure the CLI to use a local server for testing or self-hosted update server. | `undefined` | 4.17.48 |
+| **`localHost`** | `string` | Configure the CLI to use a local server for testing or self-hosted update server. | `undefined` | 4.17.48 |
+| **`localWebHost`** | `string` | Configure the CLI to use a local server for testing or self-hosted update server. | `undefined` | 4.17.48 |
+| **`localSupa`** | `string` | Configure the CLI to use a local server for testing or self-hosted update server. | `undefined` | 4.17.48 |
+| **`localSupaAnon`** | `string` | Configure the CLI to use a local server for testing. | `undefined` | 4.17.48 |
+| **`localApi`** | `string` | Configure the CLI to use a local api for testing. | `undefined` | 6.3.3 |
+| **`localApiFiles`** | `string` | Configure the CLI to use a local file api for testing. | `undefined` | 6.3.3 |
+| **`allowModifyUrl`** | `boolean` | Allow the plugin to modify the updateUrl, statsUrl and channelUrl dynamically from the JavaScript side. | `false` | 5.4.0 |
+| **`allowModifyAppId`** | `boolean` | Allow the plugin to modify the appId dynamically from the JavaScript side. | `false` | 7.14.0 |
+| **`allowManualBundleError`** | `boolean` | Allow marking bundles as errored from JavaScript while using manual update flows. When enabled, {@link CapacitorUpdaterPlugin.setBundleError} can change a bundle status to `error`. | `false` | 7.20.0 |
+| **`persistCustomId`** | `boolean` | Persist the customId set through {@link CapacitorUpdaterPlugin.setCustomId} across app restarts. Only available for Android and iOS. | `false (will be true by default in a future major release v8.x.x)` | 7.17.3 |
+| **`persistModifyUrl`** | `boolean` | Persist the updateUrl, statsUrl and channelUrl set through {@link CapacitorUpdaterPlugin.setUpdateUrl}, {@link CapacitorUpdaterPlugin.setStatsUrl} and {@link CapacitorUpdaterPlugin.setChannelUrl} across app restarts. Only available for Android and iOS. | `false` | 7.20.0 |
+| **`allowSetDefaultChannel`** | `boolean` | Allow or disallow the {@link CapacitorUpdaterPlugin.setChannel} method to modify the defaultChannel. When set to `false`, calling `setChannel()` will return an error with code `disabled_by_config`. | `true` | 7.34.0 |
+| **`defaultChannel`** | `string` | Set the default channel for the app in the config. Case sensitive. This will setting will override the default channel set in the cloud, but will still respect overrides made in the cloud. This requires the channel to allow devices to self dissociate/associate in the channel settings. https://capgo.app/docs/public-api/channels/#channel-configuration-options | `undefined` | 5.5.0 |
+| **`appId`** | `string` | Configure the app id for the app in the config. | `undefined` | 6.0.0 |
+| **`keepUrlPathAfterReload`** | `boolean` | Configure the plugin to keep the URL path after a reload. WARNING: When a reload is triggered, 'window.history' will be cleared. | `false` | 6.8.0 |
+| **`disableJSLogging`** | `boolean` | Disable the JavaScript logging of the plugin. if true, the plugin will not log to the JavaScript console. only the native log will be done | `false` | 7.3.0 |
+| **`shakeMenu`** | `boolean` | Enable shake gesture to show update menu for debugging/testing purposes | `false` | 7.5.0 |
+
+
+</docgen-config>
+
 ## API Reference
 
 <docgen-index>
