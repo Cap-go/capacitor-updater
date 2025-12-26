@@ -67,12 +67,14 @@ extension GetChannel {
         return dict
     }
 }
+// swiftlint:disable identifier_name
 struct ChannelInfo: Codable {
     let id: String?
     let name: String?
     let `public`: Bool?
     let allow_self_set: Bool?
 }
+// swiftlint:enable identifier_name
 struct ListChannelsDec: Decodable {
     let channels: [ChannelInfo]?
     let error: String?
@@ -112,6 +114,7 @@ extension ListChannels {
         return dict
     }
 }
+// swiftlint:disable identifier_name
 struct InfoObject: Codable {
     let platform: String?
     let device_id: String?
@@ -130,12 +133,15 @@ struct InfoObject: Codable {
     var defaultChannel: String?
     var key_id: String?
 }
+// swiftlint:enable identifier_name
 
+// swiftlint:disable identifier_name
 public struct ManifestEntry: Codable {
     let file_name: String?
     let file_hash: String?
     let download_url: String?
 }
+// swiftlint:enable identifier_name
 
 extension ManifestEntry {
     func toDict() -> [String: Any] {
@@ -150,6 +156,7 @@ extension ManifestEntry {
     }
 }
 
+// swiftlint:disable identifier_name
 struct AppVersionDec: Decodable {
     let version: String?
     let checksum: String?
@@ -165,6 +172,7 @@ struct AppVersionDec: Decodable {
     let comment: String?
     // The HTTP status code is captured separately in CapgoUpdater; this struct only mirrors JSON.
 }
+// swiftlint:enable identifier_name
 
 public class AppVersion: NSObject {
     var version: String = ""
@@ -220,7 +228,8 @@ extension ISO8601DateFormatter {
     }
 }
 extension Formatter {
-    static let iso8601withFractionalSeconds: ISO8601DateFormatter = ISO8601DateFormatter([.withInternetDateTime, .withFractionalSeconds])
+    static let iso8601withFractionalSeconds: ISO8601DateFormatter = ISO8601DateFormatter(
+        [.withInternetDateTime, .withFractionalSeconds])
 }
 extension Date {
     var iso8601withFractionalSeconds: String { return Formatter.iso8601withFractionalSeconds.string(from: self) }

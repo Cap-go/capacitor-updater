@@ -7,8 +7,8 @@ extension BigInt {
         var bytes = [UInt8](repeating: 0, count: byteCount)
 
         var value = self
-        for i in 0..<byteCount {
-            bytes[byteCount - i - 1] = UInt8(truncatingIfNeeded: value & 0xFF)
+        for index in 0..<byteCount {
+            bytes[byteCount - index - 1] = UInt8(truncatingIfNeeded: value & 0xFF)
             value >>= 8
         }
 
@@ -39,15 +39,15 @@ extension BigInt {
 
         // Square and multiply algorithm for modular exponentiation
         var result = BigUInt(1)
-        var x = base % mod
-        var e = exp
+        var currentBase = base % mod
+        var currentExp = exp
 
-        while e > 0 {
-            if e & 1 == 1 {
-                result = (result * x) % mod
+        while currentExp > 0 {
+            if currentExp & 1 == 1 {
+                result = (result * currentBase) % mod
             }
-            x = (x * x) % mod
-            e >>= 1
+            currentBase = (currentBase * currentBase) % mod
+            currentExp >>= 1
         }
 
         return BigInt(result)

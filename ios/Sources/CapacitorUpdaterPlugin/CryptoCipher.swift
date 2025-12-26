@@ -18,8 +18,8 @@ public struct CryptoCipher {
     private static func hexStringToData(_ hex: String) -> Data? {
         var data = Data()
         var hexIterator = hex.makeIterator()
-        while let c1 = hexIterator.next(), let c2 = hexIterator.next() {
-            guard let byte = UInt8(String([c1, c2]), radix: 16) else {
+        while let char1 = hexIterator.next(), let char2 = hexIterator.next() {
+            guard let byte = UInt8(String([char1, char2]), radix: 16) else {
                 return nil
             }
             data.append(byte)
@@ -62,6 +62,7 @@ public struct CryptoCipher {
                 checksumBytes = base64Data
                 detectedFormat = "base64"
             }
+            // swiftlint:disable:next line_length
             logger.debug("Received encrypted checksum format: \(detectedFormat) (length: \(checksum.count) chars, \(checksumBytes.count) bytes)")
 
             if checksumBytes.isEmpty {
@@ -94,6 +95,7 @@ public struct CryptoCipher {
                 logger.error("Unknown checksum algorithm detected")
                 logger.debug("Byte count: \(decryptedChecksum.count), Expected: 32 (SHA-256)")
             }
+            // swiftlint:disable:next line_length
             logger.debug("Decrypted checksum: \(detectedAlgorithm) hex format (length: \(result.count) chars, \(decryptedChecksum.count) bytes)")
             return result
         } catch {
