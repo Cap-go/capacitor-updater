@@ -8,27 +8,27 @@ import Foundation
 
 struct LocalizedString: ExpressibleByStringLiteral, Equatable {
 
-    let v: String
+    let value: String
 
     init(key: String) {
-        self.v = NSLocalizedString(key, comment: "")
+        self.value = NSLocalizedString(key, comment: "")
     }
     init(localized: String) {
-        self.v = localized
+        self.value = localized
     }
-    init(stringLiteral value: String) {
-        self.init(key: value)
+    init(stringLiteral val: String) {
+        self.init(key: val)
     }
-    init(extendedGraphemeClusterLiteral value: String) {
-        self.init(key: value)
+    init(extendedGraphemeClusterLiteral val: String) {
+        self.init(key: val)
     }
-    init(unicodeScalarLiteral value: String) {
-        self.init(key: value)
+    init(unicodeScalarLiteral val: String) {
+        self.init(key: val)
     }
 }
 
 func == (lhs: LocalizedString, rhs: LocalizedString) -> Bool {
-    return lhs.v == rhs.v
+    return lhs.value == rhs.value
 }
 
 enum BundleStatus: LocalizedString, Decodable, Encodable {
@@ -39,7 +39,7 @@ enum BundleStatus: LocalizedString, Decodable, Encodable {
     case DOWNLOADING  = "downloading"
 
     var localizedString: String {
-        return self.rawValue.v
+        return self.rawValue.value
     }
 
     init?(localizedString: String) {
