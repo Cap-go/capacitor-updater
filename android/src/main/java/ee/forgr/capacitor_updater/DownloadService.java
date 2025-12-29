@@ -830,8 +830,9 @@ public class DownloadService extends Worker {
     private void cleanupOldTempFiles(File directory) {
         if (directory == null || !directory.exists()) return;
 
-        File[] tempFiles = directory.listFiles((dir, name) ->
-            name.endsWith(".tmp") || (name.startsWith("update_") && name.endsWith(".dat")));
+        File[] tempFiles = directory.listFiles(
+            (dir, name) -> name.endsWith(".tmp") || (name.startsWith("update_") && name.endsWith(".dat"))
+        );
         if (tempFiles != null) {
             long oneHourAgo = System.currentTimeMillis() - 3600000;
             for (File tempFile : tempFiles) {
