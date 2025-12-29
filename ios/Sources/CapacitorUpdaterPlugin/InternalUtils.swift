@@ -263,6 +263,7 @@ enum CustomError: Error {
     case cannotDeleteDirectory
     case cannotDecryptSessionKey
     case invalidBase64
+    case insufficientDiskSpace
 
     // Throw in all other cases
     case unexpected(code: Int)
@@ -316,6 +317,53 @@ extension CustomError: LocalizedError {
                 "Decrypting the base64 failed",
                 comment: "Invalid checksum key"
             )
+        case .insufficientDiskSpace:
+            return NSLocalizedString(
+                "Insufficient disk space for download",
+                comment: "Not enough storage"
+            )
+        }
+    }
+}
+
+/// Thread-safe atomic counter for concurrent operations
+final class AtomicCounter {
+    private var value: Int = 0
+    private let lock = NSLock()
+
+    func increment() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        value += 1
+        return value
+    }
+
+    var current: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+}
+
+/// Thread-safe atomic boolean for concurrent operations
+final class AtomicBool {
+    private var _value: Bool
+    private let lock = NSLock()
+
+    init(initialValue: Bool = false) {
+        _value = initialValue
+    }
+
+    var value: Bool {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return _value
+        }
+        set {
+            lock.lock()
+            defer { lock.unlock() }
+            _value = newValue
         }
     }
 }
