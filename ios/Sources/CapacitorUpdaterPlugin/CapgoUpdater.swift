@@ -105,6 +105,38 @@ import UIKit
     }
 
     /**
+     * Checks if there is sufficient disk space for a download.
+     * Matches Android behavior: 2x safety margin, throws "insufficient_disk_space"
+     * - Parameter estimatedSize: The estimated size of the download in bytes. Defaults to 50MB.
+     */
+    private func checkDiskSpace(estimatedSize: Int64 = 50 * 1024 * 1024) throws {
+        let fileManager = FileManager.default
+        guard let documentDirectory = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            return
+        }
+
+        do {
+            let attributes = try fileManager.attributesOfFileSystem(forPath: documentDirectory.path)
+            guard let freeSpace = attributes[.systemFreeSize] as? Int64 else {
+                logger.warn("Could not determine free disk space, proceeding with download")
+                return
+            }
+
+            let requiredSpace = estimatedSize * 2 // 2x safety margin like Android
+
+            if freeSpace < requiredSpace {
+                logger.error("Insufficient disk space. Available: \(freeSpace), Required: \(requiredSpace)")
+                self.sendStats(action: "insufficient_disk_space")
+                throw CustomError.insufficientDiskSpace
+            }
+        } catch let error as CustomError {
+            throw error
+        } catch {
+            logger.warn("Error checking disk space: \(error.localizedDescription)")
+        }
+    }
+
+    /**
      * Check if a 429 (Too Many Requests) response was received and set the flag
      */
     private func checkAndHandleRateLimitResponse(statusCode: Int?) -> Bool {
@@ -439,6 +471,10 @@ import UIKit
         let destFolder = self.getBundleDirectory(id: id)
         let builtinFolder = Bundle.main.bundleURL.appendingPathComponent("public")
 
+        // Check disk space before starting manifest download (estimate 100KB per file, minimum 50MB)
+        let estimatedSize = Int64(max(manifest.count * 100 * 1024, 50 * 1024 * 1024))
+        try checkDiskSpace(estimatedSize: estimatedSize)
+
         try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true, attributes: nil)
         try FileManager.default.createDirectory(at: destFolder, withIntermediateDirectories: true, attributes: nil)
 
@@ -452,11 +488,19 @@ import UIKit
         // Notify the start of the download process
         self.notifyDownload(id: id, percent: 0, ignoreMultipleOfTen: true)
 
-        let dispatchGroup = DispatchGroup()
-        var downloadError: Error?
-
         let totalFiles = manifest.count
-        var completedFiles = 0
+
+        // Configure concurrent operation count similar to Android: min(64, max(32, totalFiles))
+        manifestDownloadQueue.maxConcurrentOperationCount = min(64, max(32, totalFiles))
+
+        // Thread-safe counters for concurrent operations
+        let completedFiles = AtomicCounter()
+        let hasError = AtomicBool(initialValue: false)
+        var downloadError: Error?
+        let errorLock = NSLock()
+
+        // Create operations for each file
+        var operations: [Operation] = []
 
         for entry in manifest {
             guard let fileName = entry.file_name,
@@ -465,134 +509,87 @@ import UIKit
                 continue
             }
 
+            // Decrypt checksum if needed (done before creating operation)
             if !self.publicKey.isEmpty && !sessionKey.isEmpty {
                 do {
                     fileHash = try CryptoCipher.decryptChecksum(checksum: fileHash, publicKey: self.publicKey)
                 } catch {
+                    errorLock.lock()
                     downloadError = error
+                    errorLock.unlock()
+                    hasError.value = true
                     logger.error("Checksum decryption failed")
                     logger.debug("Bundle: \(id), File: \(fileName), Error: \(error)")
+                    continue
                 }
             }
 
-            // Check if file has .br extension for Brotli decompression
+            let finalFileHash = fileHash
             let fileNameWithoutPath = (fileName as NSString).lastPathComponent
-            let cacheFileName = "\(fileHash)_\(fileNameWithoutPath)"
+            let cacheFileName = "\(finalFileHash)_\(fileNameWithoutPath)"
             let cacheFilePath = cacheFolder.appendingPathComponent(cacheFileName)
 
-            // Check if file is Brotli compressed and remove .br extension from destination
             let isBrotli = fileName.hasSuffix(".br")
             let destFileName = isBrotli ? String(fileName.dropLast(3)) : fileName
-
             let destFilePath = destFolder.appendingPathComponent(destFileName)
             let builtinFilePath = builtinFolder.appendingPathComponent(fileName)
 
-            // Create necessary subdirectories in the destination folder
-            try FileManager.default.createDirectory(at: destFilePath.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
+            // Create parent directories synchronously (before operations start)
+            try? FileManager.default.createDirectory(at: destFilePath.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
 
-            dispatchGroup.enter()
+            let operation = BlockOperation { [weak self] in
+                guard let self = self else { return }
+                guard !hasError.value else { return } // Skip if error already occurred
 
-            if FileManager.default.fileExists(atPath: builtinFilePath.path) && verifyChecksum(file: builtinFilePath, expectedHash: fileHash) {
                 do {
-                    try FileManager.default.copyItem(at: builtinFilePath, to: destFilePath)
-                    logger.info("downloadManifest \(fileName) using builtin file \(id)")
-                    completedFiles += 1
-                    self.notifyDownload(id: id, percent: self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70))
-                } catch {
-                    downloadError = error
-                    logger.error("Failed to copy builtin file")
-                    logger.debug("File: \(fileName), Error: \(error.localizedDescription)")
-                }
-                dispatchGroup.leave()
-            } else if self.tryCopyFromCache(from: cacheFilePath, to: destFilePath, expectedHash: fileHash) {
-                // Successfully copied from cache
-                logger.info("downloadManifest \(fileName) copy from cache \(id)")
-                completedFiles += 1
-                self.notifyDownload(id: id, percent: self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70))
-                dispatchGroup.leave()
-            } else {
-                // File not in cache, download, decompress, and save to both cache and destination
-                self.alamofireSession.download(downloadUrl).responseData { response in
-                    defer { dispatchGroup.leave() }
-
-                    switch response.result {
-                    case .success(let data):
-                        do {
-                            let statusCode = response.response?.statusCode ?? 200
-                            if statusCode < 200 || statusCode >= 300 {
-                                self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
-                                if let stringData = String(data: data, encoding: .utf8) {
-                                    throw NSError(domain: "StatusCodeError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid. Data: \(stringData) for file \(fileName) at url \(downloadUrl)"])
-                                } else {
-                                    throw NSError(domain: "StatusCodeError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid for file \(fileName) at url \(downloadUrl)"])
-                                }
-                            }
-
-                            // Add decryption step if public key is set and sessionKey is provided
-                            var finalData = data
-                            if !self.publicKey.isEmpty && !sessionKey.isEmpty {
-                                let tempFile = self.cacheFolder.appendingPathComponent("temp_\(UUID().uuidString)")
-                                try finalData.write(to: tempFile)
-                                do {
-                                    try CryptoCipher.decryptFile(filePath: tempFile, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
-                                } catch {
-                                    self.sendStats(action: "decrypt_fail", versionName: version)
-                                    throw error
-                                }
-                                // TODO: try and do             self.sendStats(action: "decrypt_fail", versionName: version) if fail
-                                finalData = try Data(contentsOf: tempFile)
-                                try FileManager.default.removeItem(at: tempFile)
-                            }
-
-                            // Use the isBrotli and destFilePath already computed above
-                            if isBrotli {
-                                // Decompress the Brotli data
-                                guard let decompressedData = self.decompressBrotli(data: finalData, fileName: fileName) else {
-                                    self.sendStats(action: "download_manifest_brotli_fail", versionName: "\(version):\(destFileName)")
-                                    throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data for file \(fileName) at url \(downloadUrl)"])
-                                }
-                                finalData = decompressedData
-                            }
-
-                            try finalData.write(to: destFilePath)
-                            if !self.publicKey.isEmpty && !sessionKey.isEmpty {
-                                // assume that calcChecksum != null
-                                let calculatedChecksum = CryptoCipher.calcChecksum(filePath: destFilePath)
-                                CryptoCipher.logChecksumInfo(label: "Calculated checksum", hexChecksum: calculatedChecksum)
-                                CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: fileHash)
-                                if calculatedChecksum != fileHash {
-                                    // Delete the corrupt file before throwing error
-                                    try? FileManager.default.removeItem(at: destFilePath)
-                                    self.sendStats(action: "download_manifest_checksum_fail", versionName: "\(version):\(destFileName)")
-                                    throw NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash)) for file \(fileName) at url \(downloadUrl)"])
-                                }
-                            }
-
-                            // Save decrypted data to cache and destination
-                            try finalData.write(to: cacheFilePath)
-
-                            completedFiles += 1
-                            self.notifyDownload(id: id, percent: self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70))
-                            self.logger.info("Manifest file downloaded and cached")
-                            self.logger.debug("Bundle: \(id), File: \(fileName), Brotli: \(isBrotli), Encrypted: \(!self.publicKey.isEmpty && !sessionKey.isEmpty)")
-                        } catch {
-                            downloadError = error
-                            self.logger.error("Manifest file download failed")
-                            self.logger.debug("Bundle: \(id), File: \(fileName), Error: \(error.localizedDescription)")
-                        }
-                    case .failure(let error):
-                        downloadError = error
-                        self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
-                        self.logger.error("Manifest file download network error")
-                        self.logger.debug("Bundle: \(id), File: \(fileName), Error: \(error.localizedDescription), Response: \(response.debugDescription)")
+                    // Try builtin first
+                    if FileManager.default.fileExists(atPath: builtinFilePath.path) && self.verifyChecksum(file: builtinFilePath, expectedHash: finalFileHash) {
+                        try FileManager.default.copyItem(at: builtinFilePath, to: destFilePath)
+                        self.logger.info("downloadManifest \(fileName) using builtin file \(id)")
                     }
+                    // Try cache
+                    else if self.tryCopyFromCache(from: cacheFilePath, to: destFilePath, expectedHash: finalFileHash) {
+                        self.logger.info("downloadManifest \(fileName) copy from cache \(id)")
+                    }
+                    // Download
+                    else {
+                        try self.downloadManifestFile(
+                            downloadUrl: downloadUrl,
+                            destFilePath: destFilePath,
+                            cacheFilePath: cacheFilePath,
+                            fileHash: finalFileHash,
+                            fileName: fileName,
+                            destFileName: destFileName,
+                            isBrotli: isBrotli,
+                            sessionKey: sessionKey,
+                            version: version,
+                            bundleId: id
+                        )
+                    }
+
+                    let completed = completedFiles.increment()
+                    let percent = self.calcTotalPercent(percent: Int((Double(completed) / Double(totalFiles)) * 100), min: 10, max: 70)
+                    self.notifyDownload(id: id, percent: percent)
+
+                } catch {
+                    errorLock.lock()
+                    if downloadError == nil {
+                        downloadError = error
+                    }
+                    errorLock.unlock()
+                    hasError.value = true
+                    self.logger.error("Manifest file download failed: \(fileName)")
+                    self.logger.debug("Bundle: \(id), File: \(fileName), Error: \(error.localizedDescription)")
                 }
             }
+
+            operations.append(operation)
         }
 
-        dispatchGroup.wait()
+        // Execute all operations concurrently and wait for completion
+        manifestDownloadQueue.addOperations(operations, waitUntilFinished: true)
 
-        if let error = downloadError {
+        if hasError.value, let error = downloadError {
             // Update bundle status to ERROR if download failed
             let errorBundle = bundleInfo.setStatus(status: BundleStatus.ERROR.localizedString)
             self.saveBundleInfo(id: id, bundle: errorBundle)
@@ -609,6 +606,105 @@ import UIKit
         self.notifyDownload(id: id, percent: 100, bundle: updatedBundle)
         logger.info("downloadManifest done \(id)")
         return updatedBundle
+    }
+
+    /// Downloads a single manifest file synchronously
+    /// Used by downloadManifest for concurrent file downloads
+    private func downloadManifestFile(
+        downloadUrl: String,
+        destFilePath: URL,
+        cacheFilePath: URL,
+        fileHash: String,
+        fileName: String,
+        destFileName: String,
+        isBrotli: Bool,
+        sessionKey: String,
+        version: String,
+        bundleId: String
+    ) throws {
+        let semaphore = DispatchSemaphore(value: 0)
+        var downloadError: Error?
+
+        self.alamofireSession.download(downloadUrl).responseData { response in
+            defer { semaphore.signal() }
+
+            switch response.result {
+            case .success(let data):
+                do {
+                    let statusCode = response.response?.statusCode ?? 200
+                    if statusCode < 200 || statusCode >= 300 {
+                        self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
+                        if let stringData = String(data: data, encoding: .utf8) {
+                            throw NSError(domain: "StatusCodeError", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid. Data: \(stringData) for file \(fileName) at url \(downloadUrl)"])
+                        } else {
+                            throw NSError(domain: "StatusCodeError", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid for file \(fileName) at url \(downloadUrl)"])
+                        }
+                    }
+
+                    // Add decryption step if public key is set and sessionKey is provided
+                    var finalData = data
+                    if !self.publicKey.isEmpty && !sessionKey.isEmpty {
+                        let tempFile = self.cacheFolder.appendingPathComponent("temp_\(UUID().uuidString)")
+                        try finalData.write(to: tempFile)
+                        do {
+                            try CryptoCipher.decryptFile(filePath: tempFile, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
+                        } catch {
+                            self.sendStats(action: "decrypt_fail", versionName: version)
+                            throw error
+                        }
+                        finalData = try Data(contentsOf: tempFile)
+                        try FileManager.default.removeItem(at: tempFile)
+                    }
+
+                    // Decompress Brotli if needed
+                    if isBrotli {
+                        guard let decompressedData = self.decompressBrotli(data: finalData, fileName: fileName) else {
+                            self.sendStats(action: "download_manifest_brotli_fail", versionName: "\(version):\(destFileName)")
+                            throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data for file \(fileName) at url \(downloadUrl)"])
+                        }
+                        finalData = decompressedData
+                    }
+
+                    // Write to destination
+                    try finalData.write(to: destFilePath)
+
+                    // Verify checksum if encryption is enabled
+                    if !self.publicKey.isEmpty && !sessionKey.isEmpty {
+                        let calculatedChecksum = CryptoCipher.calcChecksum(filePath: destFilePath)
+                        CryptoCipher.logChecksumInfo(label: "Calculated checksum", hexChecksum: calculatedChecksum)
+                        CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: fileHash)
+                        if calculatedChecksum != fileHash {
+                            try? FileManager.default.removeItem(at: destFilePath)
+                            self.sendStats(action: "download_manifest_checksum_fail", versionName: "\(version):\(destFileName)")
+                            throw NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash)) for file \(fileName) at url \(downloadUrl)"])
+                        }
+                    }
+
+                    // Save to cache
+                    try finalData.write(to: cacheFilePath)
+
+                    self.logger.info("Manifest file downloaded and cached")
+                    self.logger.debug("Bundle: \(bundleId), File: \(fileName), Brotli: \(isBrotli), Encrypted: \(!self.publicKey.isEmpty && !sessionKey.isEmpty)")
+
+                } catch {
+                    downloadError = error
+                    self.logger.error("Manifest file download failed")
+                    self.logger.debug("Bundle: \(bundleId), File: \(fileName), Error: \(error.localizedDescription)")
+                }
+
+            case .failure(let error):
+                downloadError = error
+                self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
+                self.logger.error("Manifest file download network error")
+                self.logger.debug("Bundle: \(bundleId), File: \(fileName), Error: \(error.localizedDescription), Response: \(response.debugDescription)")
+            }
+        }
+
+        semaphore.wait()
+
+        if let error = downloadError {
+            throw error
+        }
     }
 
     /// Atomically try to copy a file from cache - returns true if successful, false if file doesn't exist or copy failed
@@ -762,6 +858,10 @@ import UIKit
         }
         ensureResumableFilesExist(for: id)
         saveDownloadInfo(version, for: id)
+
+        // Check disk space before starting download (matches Android behavior)
+        try checkDiskSpace()
+
         var checksum = ""
         var targetSize = -1
         var lastSentProgress = 0
@@ -1549,6 +1649,13 @@ import UIKit
     }
 
     private let operationQueue = OperationQueue()
+
+    private let manifestDownloadQueue: OperationQueue = {
+        let queue = OperationQueue()
+        queue.name = "com.capgo.manifestDownload"
+        queue.qualityOfService = .userInitiated
+        return queue
+    }()
 
     func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {
         // Check if rate limit was exceeded
