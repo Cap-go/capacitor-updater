@@ -449,13 +449,15 @@ import UIKit
         logger.info("Current bundle set to: \((bundle ).isEmpty ? BundleInfo.ID_BUILTIN : bundle)")
     }
 
-    private var tempDataPath: URL {
-        return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent("package.tmp")
+    // Per-download temp file paths to prevent collisions when multiple downloads run concurrently
+    private func tempDataPath(for id: String) -> URL {
+        return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent("package_\(id).tmp")
     }
 
-    private var updateInfo: URL {
-        return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent("update.dat")
+    private func updateInfoPath(for id: String) -> URL {
+        return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent("update_\(id).dat")
     }
+
     private var tempData = Data()
 
     private func verifyChecksum(file: URL, expectedHash: String) -> Bool {
@@ -850,11 +852,12 @@ import UIKit
     public func download(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
         let id: String = self.randomString(length: 10)
         let semaphore = DispatchSemaphore(value: 0)
-        if version != getLocalUpdateVersion() {
-            cleanDownloadData()
+        // Each download uses its own temp files keyed by bundle ID to prevent collisions
+        if version != getLocalUpdateVersion(for: id) {
+            cleanDownloadData(for: id)
         }
-        ensureResumableFilesExist()
-        saveDownloadInfo(version)
+        ensureResumableFilesExist(for: id)
+        saveDownloadInfo(version, for: id)
 
         // Check disk space before starting download (matches Android behavior)
         try checkDiskSpace()
@@ -862,7 +865,7 @@ import UIKit
         var checksum = ""
         var targetSize = -1
         var lastSentProgress = 0
-        var totalReceivedBytes: Int64 = loadDownloadProgress() // Retrieving the amount of already downloaded data if exist, defined at 0 otherwise
+        var totalReceivedBytes: Int64 = loadDownloadProgress(for: id) // Retrieving the amount of already downloaded data if exist, defined at 0 otherwise
         let requestHeaders: HTTPHeaders = ["Range": "bytes=\(totalReceivedBytes)-"]
 
         // Send stats for zip download start
@@ -895,7 +898,7 @@ import UIKit
                 if case .success(let data) = result {
                     self.tempData.append(data)
 
-                    self.savePartialData(startingAt: UInt64(totalReceivedBytes)) // Saving the received data in the package.tmp file
+                    self.savePartialData(startingAt: UInt64(totalReceivedBytes), for: id) // Saving the received data in the package_<id>.tmp file
                     totalReceivedBytes += Int64(data.count)
 
                     let percent = max(10, Int((Double(totalReceivedBytes) / Double(targetSize)) * 70.0))
@@ -941,15 +944,16 @@ import UIKit
             throw mainError!
         }
 
-        let finalPath = tempDataPath.deletingLastPathComponent().appendingPathComponent("\(id)")
+        let tempPath = tempDataPath(for: id)
+        let finalPath = tempPath.deletingLastPathComponent().appendingPathComponent("\(id)")
         do {
-            try CryptoCipher.decryptFile(filePath: tempDataPath, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
-            try FileManager.default.moveItem(at: tempDataPath, to: finalPath)
+            try CryptoCipher.decryptFile(filePath: tempPath, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
+            try FileManager.default.moveItem(at: tempPath, to: finalPath)
         } catch {
             logger.error("Failed to decrypt file")
             logger.debug("Error: \(error)")
             self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum, link: link, comment: comment))
-            cleanDownloadData()
+            cleanDownloadData(for: id)
             throw error
         }
 
@@ -972,7 +976,7 @@ import UIKit
                 logger.error("Could not delete failed zip")
                 logger.debug("Path: \(finalPath.path), Error: \(error)")
             }
-            cleanDownloadData()
+            cleanDownloadData(for: id)
             throw error
         }
 
@@ -980,7 +984,7 @@ import UIKit
         logger.info("Downloading: 90% (wrapping up)")
         let info = BundleInfo(id: id, version: version, status: BundleStatus.PENDING, downloaded: Date(), checksum: checksum, link: link, comment: comment)
         self.saveBundleInfo(id: id, bundle: info)
-        self.cleanDownloadData()
+        self.cleanDownloadData(for: id)
 
         // Send stats for zip download complete
         self.sendStats(action: "download_zip_complete", versionName: version)
@@ -989,54 +993,59 @@ import UIKit
         logger.info("Downloading: 100% (complete)")
         return info
     }
-    private func ensureResumableFilesExist() {
+    private func ensureResumableFilesExist(for id: String) {
         let fileManager = FileManager.default
-        if !fileManager.fileExists(atPath: tempDataPath.path) {
-            if !fileManager.createFile(atPath: tempDataPath.path, contents: Data()) {
+        let tempPath = tempDataPath(for: id)
+        let infoPath = updateInfoPath(for: id)
+        if !fileManager.fileExists(atPath: tempPath.path) {
+            if !fileManager.createFile(atPath: tempPath.path, contents: Data()) {
                 logger.error("Cannot ensure temp data file exists")
-                logger.debug("Path: \(tempDataPath.path)")
+                logger.debug("Path: \(tempPath.path)")
             }
         }
 
-        if !fileManager.fileExists(atPath: updateInfo.path) {
-            if !fileManager.createFile(atPath: updateInfo.path, contents: Data()) {
+        if !fileManager.fileExists(atPath: infoPath.path) {
+            if !fileManager.createFile(atPath: infoPath.path, contents: Data()) {
                 logger.error("Cannot ensure update info file exists")
-                logger.debug("Path: \(updateInfo.path)")
+                logger.debug("Path: \(infoPath.path)")
             }
         }
     }
 
-    private func cleanDownloadData() {
-        // Deleting package.tmp
+    private func cleanDownloadData(for id: String) {
         let fileManager = FileManager.default
-        if fileManager.fileExists(atPath: tempDataPath.path) {
+        let tempPath = tempDataPath(for: id)
+        let infoPath = updateInfoPath(for: id)
+        // Deleting package_<id>.tmp
+        if fileManager.fileExists(atPath: tempPath.path) {
             do {
-                try fileManager.removeItem(at: tempDataPath)
+                try fileManager.removeItem(at: tempPath)
             } catch {
                 logger.error("Could not delete temp data file")
-                logger.debug("Path: \(tempDataPath), Error: \(error)")
+                logger.debug("Path: \(tempPath), Error: \(error)")
             }
         }
-        // Deleting update.dat
-        if fileManager.fileExists(atPath: updateInfo.path) {
+        // Deleting update_<id>.dat
+        if fileManager.fileExists(atPath: infoPath.path) {
             do {
-                try fileManager.removeItem(at: updateInfo)
+                try fileManager.removeItem(at: infoPath)
             } catch {
                 logger.error("Could not delete update info file")
-                logger.debug("Path: \(updateInfo), Error: \(error)")
+                logger.debug("Path: \(infoPath), Error: \(error)")
             }
         }
     }
 
-    private func savePartialData(startingAt byteOffset: UInt64) {
+    private func savePartialData(startingAt byteOffset: UInt64, for id: String) {
         let fileManager = FileManager.default
+        let tempPath = tempDataPath(for: id)
         do {
-            // Check if package.tmp exist
-            if !fileManager.fileExists(atPath: tempDataPath.path) {
-                try self.tempData.write(to: tempDataPath, options: .atomicWrite)
+            // Check if package_<id>.tmp exist
+            if !fileManager.fileExists(atPath: tempPath.path) {
+                try self.tempData.write(to: tempPath, options: .atomicWrite)
             } else {
                 // If yes, it start writing on it
-                let fileHandle = try FileHandle(forWritingTo: tempDataPath)
+                let fileHandle = try FileHandle(forWritingTo: tempPath)
                 fileHandle.seek(toFileOffset: byteOffset) // Moving at the specified position to start writing
                 fileHandle.write(self.tempData)
                 fileHandle.closeFile()
@@ -1048,29 +1057,33 @@ import UIKit
         self.tempData.removeAll() // Clearing tempData to avoid writing the same data multiple times
     }
 
-    private func saveDownloadInfo(_ version: String) {
+    private func saveDownloadInfo(_ version: String, for id: String) {
+        let infoPath = updateInfoPath(for: id)
         do {
-            try "\(version)".write(to: updateInfo, atomically: true, encoding: .utf8)
+            try "\(version)".write(to: infoPath, atomically: true, encoding: .utf8)
         } catch {
             logger.error("Failed to save download progress")
             logger.debug("Error: \(error)")
         }
     }
-    private func getLocalUpdateVersion() -> String { // Return the version that was tried to be downloaded on last download attempt
-        if !FileManager.default.fileExists(atPath: updateInfo.path) {
+
+    private func getLocalUpdateVersion(for id: String) -> String { // Return the version that was tried to be downloaded on last download attempt
+        let infoPath = updateInfoPath(for: id)
+        if !FileManager.default.fileExists(atPath: infoPath.path) {
             return "nil"
         }
-        guard let versionString = try? String(contentsOf: updateInfo),
+        guard let versionString = try? String(contentsOf: infoPath),
               let version = Optional(versionString) else {
             return "nil"
         }
         return version
     }
-    private func loadDownloadProgress() -> Int64 {
 
+    private func loadDownloadProgress(for id: String) -> Int64 {
         let fileManager = FileManager.default
+        let tempPath = tempDataPath(for: id)
         do {
-            let attributes = try fileManager.attributesOfItem(atPath: tempDataPath.path)
+            let attributes = try fileManager.attributesOfItem(atPath: tempPath.path)
             if let fileSize = attributes[.size] as? NSNumber {
                 return fileSize.int64Value
             }
@@ -1273,6 +1286,44 @@ import UIKit
         } catch {
             logger.error("Failed to enumerate library directory for temp folder cleanup")
             logger.debug("Error: \(error.localizedDescription)")
+        }
+
+        // Also cleanup old download temp files (package_*.tmp and update_*.dat)
+        cleanupOldDownloadTempFiles()
+    }
+
+    private func cleanupOldDownloadTempFiles() {
+        let fileManager = FileManager.default
+        guard let documentsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            return
+        }
+
+        do {
+            let contents = try fileManager.contentsOfDirectory(at: documentsDir, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles])
+            let oneHourAgo = Date().addingTimeInterval(-3600)
+
+            for url in contents {
+                let fileName = url.lastPathComponent
+                // Only cleanup package_*.tmp and update_*.dat files
+                let isDownloadTemp = (fileName.hasPrefix("package_") && fileName.hasSuffix(".tmp")) ||
+                                     (fileName.hasPrefix("update_") && fileName.hasSuffix(".dat"))
+                if !isDownloadTemp {
+                    continue
+                }
+
+                // Only delete files older than 1 hour
+                if let modDate = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
+                   modDate < oneHourAgo {
+                    do {
+                        try fileManager.removeItem(at: url)
+                        logger.debug("Deleted old download temp file: \(fileName)")
+                    } catch {
+                        logger.debug("Failed to delete old download temp file: \(fileName), Error: \(error.localizedDescription)")
+                    }
+                }
+            }
+        } catch {
+            logger.debug("Failed to enumerate documents directory for temp file cleanup: \(error.localizedDescription)")
         }
     }
 
