@@ -278,8 +278,10 @@ public struct CryptoCipher {
         }
     }
 
-    /// Get first 4 characters of the public key for identification
-    /// Returns 4-character string or empty string if key is invalid/empty
+    /// Get first 20 characters of the public key for identification
+    /// Returns 20-character string or empty string if key is invalid/empty
+    /// The first 12 chars are always "MIIBCgKCAQEA" for RSA 2048-bit keys,
+    /// so the unique part starts at character 13
     public static func calcKeyId(publicKey: String) -> String {
         if publicKey.isEmpty {
             return ""
@@ -293,7 +295,7 @@ public struct CryptoCipher {
             .replacingOccurrences(of: "\r", with: "")
             .replacingOccurrences(of: " ", with: "")
 
-        // Return first 4 characters of the base64-encoded key
-        return String(cleanedKey.prefix(4))
+        // Return first 20 characters of the base64-encoded key
+        return String(cleanedKey.prefix(20))
     }
 }
