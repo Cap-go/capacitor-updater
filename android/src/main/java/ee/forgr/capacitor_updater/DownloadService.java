@@ -388,8 +388,9 @@ public class DownloadService extends Worker {
         sendStatsAsync("download_zip_start", version);
 
         File target = new File(documentsDir, dest);
-        File infoFile = new File(documentsDir, UPDATE_FILE);
-        File tempFile = new File(documentsDir, "temp" + ".tmp");
+        // Use bundle ID in temp file names to prevent collisions when multiple downloads run concurrently
+        File infoFile = new File(documentsDir, "update_" + id + ".dat");
+        File tempFile = new File(documentsDir, "temp_" + id + ".tmp");
 
         // Check available disk space before starting
         long availableSpace = target.getParentFile().getUsableSpace();
@@ -420,7 +421,7 @@ public class DownloadService extends Worker {
                     reader = new BufferedReader(new FileReader(infoFile));
                     String updateVersion = reader.readLine();
                     if (updateVersion != null && !updateVersion.equals(version)) {
-                        clearDownloadData(documentsDir);
+                        clearDownloadData(documentsDir, id);
                     } else {
                         downloadedBytes = tempFile.length();
                     }
@@ -432,7 +433,7 @@ public class DownloadService extends Worker {
                     }
                 }
             } else {
-                clearDownloadData(documentsDir);
+                clearDownloadData(documentsDir, id);
             }
 
             if (downloadedBytes > 0) {
@@ -544,9 +545,9 @@ public class DownloadService extends Worker {
         }
     }
 
-    private void clearDownloadData(String docDir) {
-        File tempFile = new File(docDir, "temp" + ".tmp");
-        File infoFile = new File(docDir, UPDATE_FILE);
+    private void clearDownloadData(String docDir, String id) {
+        File tempFile = new File(docDir, "temp_" + id + ".tmp");
+        File infoFile = new File(docDir, "update_" + id + ".dat");
         try {
             tempFile.delete();
             infoFile.delete();
@@ -824,12 +825,14 @@ public class DownloadService extends Worker {
     }
 
     /**
-     * Clean up old temporary files
+     * Clean up old temporary files (both .tmp and update_*.dat files)
      */
     private void cleanupOldTempFiles(File directory) {
         if (directory == null || !directory.exists()) return;
 
-        File[] tempFiles = directory.listFiles((dir, name) -> name.endsWith(".tmp"));
+        File[] tempFiles = directory.listFiles(
+            (dir, name) -> name.endsWith(".tmp") || (name.startsWith("update_") && name.endsWith(".dat"))
+        );
         if (tempFiles != null) {
             long oneHourAgo = System.currentTimeMillis() - 3600000;
             for (File tempFile : tempFiles) {

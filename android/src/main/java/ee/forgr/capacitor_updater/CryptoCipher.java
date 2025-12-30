@@ -357,8 +357,10 @@ public class CryptoCipher {
     }
 
     /**
-     * Get first 4 characters of the public key for identification.
-     * Returns 4-character string or empty string if key is invalid/empty.
+     * Get first 20 characters of the public key for identification.
+     * Returns 20-character string or empty string if key is invalid/empty.
+     * The first 12 chars are always "MIIBCgKCAQEA" for RSA 2048-bit keys,
+     * so the unique part starts at character 13.
      */
     public static String calcKeyId(String publicKey) {
         if (publicKey == null || publicKey.isEmpty()) {
@@ -371,7 +373,7 @@ public class CryptoCipher {
             .replace("-----BEGINRSAPUBLICKEY-----", "")
             .replace("-----ENDRSAPUBLICKEY-----", "");
 
-        // Return first 4 characters of the base64-encoded key
-        return cleanedKey.length() >= 4 ? cleanedKey.substring(0, 4) : cleanedKey;
+        // Return first 20 characters of the base64-encoded key
+        return cleanedKey.length() >= 20 ? cleanedKey.substring(0, 20) : cleanedKey;
     }
 }
