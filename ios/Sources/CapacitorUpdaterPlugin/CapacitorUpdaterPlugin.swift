@@ -53,6 +53,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
         CAPPluginMethod(name: "getChannel", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "listChannels", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setMiniApp", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "writeAppState", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "readAppState", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "clearAppState", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setCustomId", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getDeviceId", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getPluginVersion", returnType: CAPPluginReturnPromise),
@@ -1161,6 +1164,63 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
         }
 
         miniAppsManager.register(name: name, bundleId: bundleId, isMain: isMain)
+        call.resolve()
+    }
+
+    @objc func writeAppState(_ call: CAPPluginCall) {
+        guard miniAppsEnabled else {
+            logger.error("writeAppState called but miniAppsEnabled is false")
+            call.reject("Mini-apps support is disabled. Set miniAppsEnabled: true in your Capacitor config.", "MINIAPPS_DISABLED")
+            return
+        }
+
+        guard let miniApp = call.getString("miniApp") else {
+            logger.error("writeAppState called without miniApp")
+            call.reject("writeAppState called without miniApp", "INVALID_PARAMS")
+            return
+        }
+
+        // Get state - can be null to clear
+        let stateValue = call.getObject("state")
+        miniAppsManager.writeState(miniApp: miniApp, state: stateValue)
+        call.resolve()
+    }
+
+    @objc func readAppState(_ call: CAPPluginCall) {
+        guard miniAppsEnabled else {
+            logger.error("readAppState called but miniAppsEnabled is false")
+            call.reject("Mini-apps support is disabled. Set miniAppsEnabled: true in your Capacitor config.", "MINIAPPS_DISABLED")
+            return
+        }
+
+        guard let miniApp = call.getString("miniApp") else {
+            logger.error("readAppState called without miniApp")
+            call.reject("readAppState called without miniApp", "INVALID_PARAMS")
+            return
+        }
+
+        let state = miniAppsManager.readState(miniApp: miniApp)
+        if let state = state {
+            call.resolve(["state": state])
+        } else {
+            call.resolve(["state": NSNull()])
+        }
+    }
+
+    @objc func clearAppState(_ call: CAPPluginCall) {
+        guard miniAppsEnabled else {
+            logger.error("clearAppState called but miniAppsEnabled is false")
+            call.reject("Mini-apps support is disabled. Set miniAppsEnabled: true in your Capacitor config.", "MINIAPPS_DISABLED")
+            return
+        }
+
+        guard let miniApp = call.getString("miniApp") else {
+            logger.error("clearAppState called without miniApp")
+            call.reject("clearAppState called without miniApp", "INVALID_PARAMS")
+            return
+        }
+
+        miniAppsManager.clearState(miniApp: miniApp)
         call.resolve()
     }
 

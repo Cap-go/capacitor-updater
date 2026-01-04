@@ -273,4 +273,62 @@ public class MiniAppsManager {
             return false;
         }
     }
+
+    // MARK: - App State (Inter-app Communication)
+
+    private String stateKey(String miniApp) {
+        return "CapacitorUpdater.miniAppState." + miniApp;
+    }
+
+    /**
+     * Write state data for a mini-app
+     * @param miniApp The mini-app name
+     * @param state The state object to save (must be JSON-serializable), or null to clear
+     */
+    public void writeState(String miniApp, JSONObject state) {
+        String key = stateKey(miniApp);
+
+        if (state != null) {
+            editor.putString(key, state.toString());
+            editor.apply();
+            logger.info("Wrote state for mini-app '" + miniApp + "'");
+        } else {
+            // Clear state
+            editor.remove(key);
+            editor.apply();
+            logger.info("Cleared state for mini-app '" + miniApp + "'");
+        }
+    }
+
+    /**
+     * Read state data for a mini-app
+     * @param miniApp The mini-app name
+     * @return The saved state, or null if no state exists
+     */
+    public JSONObject readState(String miniApp) {
+        String key = stateKey(miniApp);
+        String data = prefs.getString(key, null);
+
+        if (data == null || data.isEmpty()) {
+            return null;
+        }
+
+        try {
+            return new JSONObject(data);
+        } catch (JSONException e) {
+            logger.error("Failed to parse state for mini-app '" + miniApp + "': " + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Clear state data for a mini-app
+     * @param miniApp The mini-app name
+     */
+    public void clearState(String miniApp) {
+        String key = stateKey(miniApp);
+        editor.remove(key);
+        editor.apply();
+        logger.info("Cleared state for mini-app '" + miniApp + "'");
+    }
 }
