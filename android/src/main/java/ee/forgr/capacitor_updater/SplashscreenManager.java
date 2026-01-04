@@ -164,13 +164,17 @@ public class SplashscreenManager {
             return true;
         } catch (NoSuchFieldException e) {
             // Capacitor internals have changed - msgHandler field no longer exists
-            logger.error("autoSplashscreen: Capacitor version incompatibility - 'msgHandler' field not found. " +
-                "This plugin may need to be updated for your Capacitor version.");
+            logger.error(
+                "autoSplashscreen: Capacitor version incompatibility - 'msgHandler' field not found. " +
+                    "This plugin may need to be updated for your Capacitor version."
+            );
             return false;
         } catch (ClassCastException e) {
             // Capacitor internals have changed - msgHandler type has changed
-            logger.error("autoSplashscreen: Capacitor version incompatibility - MessageHandler type mismatch. " +
-                "This plugin may need to be updated for your Capacitor version.");
+            logger.error(
+                "autoSplashscreen: Capacitor version incompatibility - MessageHandler type mismatch. " +
+                    "This plugin may need to be updated for your Capacitor version."
+            );
             return false;
         } catch (Exception e) {
             logger.error("autoSplashscreen: Failed to invoke SplashScreen." + methodName + ": " + e.getMessage());
