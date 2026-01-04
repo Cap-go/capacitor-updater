@@ -15,7 +15,7 @@ import Version
  * here: https://capacitorjs.com/docs/plugins/ios
  */
 @objc(CapacitorUpdaterPlugin)
-public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
+public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenManagerDelegate {
     lazy var logger: Logger = {
         // Default to true for OS logging. In test environments without a bridge,
         // this will default to true. In production, it reads from config.
@@ -97,12 +97,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var wasRecentlyInstalledOrUpdated = false
     private var onLaunchDirectUpdateUsed = false
     private var autoSplashscreen = false
-    private var autoSplashscreenLoader = false
-    private var autoSplashscreenTimeout = 10000
-    private var autoSplashscreenTimeoutWorkItem: DispatchWorkItem?
-    private var splashscreenLoaderView: UIActivityIndicatorView?
-    private var splashscreenLoaderContainer: UIView?
-    private var autoSplashscreenTimedOut = false
+    private var splashscreenManager: SplashscreenManager?
     private var autoDeleteFailed = false
     private var autoDeletePrevious = false
     private var allowSetDefaultChannel = true
@@ -125,6 +120,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     // Mini-apps support
     private var miniAppsEnabled = false
     private lazy var miniAppsManager = MiniAppsManager(logger: logger)
+
+    // App Store update helper
+    private var appStoreUpdateHelper: AppStoreUpdateHelper!
 
     private var delayUpdateUtils: DelayUpdateUtils!
 
@@ -203,9 +201,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         autoSplashscreen = getConfig().getBoolean("autoSplashscreen", false)
-        autoSplashscreenLoader = getConfig().getBoolean("autoSplashscreenLoader", false)
-        let splashscreenTimeoutValue = getConfig().getInt("autoSplashscreenTimeout", 10000)
-        autoSplashscreenTimeout = max(0, splashscreenTimeoutValue)
+        if autoSplashscreen {
+            let loaderEnabled = getConfig().getBoolean("autoSplashscreenLoader", false)
+            let timeout = max(0, getConfig().getInt("autoSplashscreenTimeout", 10000))
+            splashscreenManager = SplashscreenManager(
+                logger: logger,
+                timeout: timeout,
+                loaderEnabled: loaderEnabled,
+                delegate: self
+            )
+        }
         updateUrl = getConfig().getString("updateUrl", CapacitorUpdaterPlugin.updateUrlDefault)!
         if persistModifyUrl, let storedUpdateUrl = UserDefaults.standard.object(forKey: updateUrlDefaultsKey) as? String {
             updateUrl = storedUpdateUrl
@@ -251,6 +256,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             fatalError("appId is missing in capacitor.config.json or plugin config, and cannot be retrieved from the native app, please add it globally or in the plugin config")
         }
         logger.info("appId \(implementation.appId)")
+        self.appStoreUpdateHelper = AppStoreUpdateHelper(logger: logger, appId: implementation.appId)
         implementation.statsUrl = getConfig().getString("statsUrl", CapacitorUpdaterPlugin.statsUrlDefault)!
         implementation.channelUrl = getConfig().getString("channelUrl", CapacitorUpdaterPlugin.channelUrlDefault)!
         if persistModifyUrl {
@@ -1363,212 +1369,20 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             // Auto hide splashscreen if enabled
             // We show it on background when conditions are met, so we should hide it on foreground regardless of update outcome
             if self.autoSplashscreen {
-                self.hideSplashscreen()
+                self.splashscreenManager?.hide()
             }
         }
     }
 
-    private func hideSplashscreen() {
-        if Thread.isMainThread {
-            self.performHideSplashscreen()
-        } else {
-            DispatchQueue.main.async {
-                self.performHideSplashscreen()
-            }
-        }
+    // MARK: - SplashscreenManagerDelegate
+
+    public func getSplashscreenBridge() -> CAPBridgeProtocol? {
+        return self.bridge
     }
 
-    private func performHideSplashscreen() {
-        self.cancelSplashscreenTimeout()
-        self.removeSplashscreenLoader()
-
-        guard let bridge = self.bridge else {
-            self.logger.warn("Bridge not available for hiding splashscreen with autoSplashscreen")
-            return
-        }
-
-        // Create a plugin call for the hide method
-        let call = CAPPluginCall(callbackId: "autoHideSplashscreen", options: [:], success: { (_, _) in
-            self.logger.info("Splashscreen hidden automatically")
-        }, error: { (_) in
-            self.logger.error("Failed to auto-hide splashscreen")
-        })
-
-        // Try to call the SplashScreen hide method directly through the bridge
-        if let splashScreenPlugin = bridge.plugin(withName: "SplashScreen") {
-            // Use runtime method invocation to call hide method
-            let selector = NSSelectorFromString("hide:")
-            if splashScreenPlugin.responds(to: selector) {
-                _ = splashScreenPlugin.perform(selector, with: call)
-                self.logger.info("Called SplashScreen hide method")
-            } else {
-                self.logger.warn("autoSplashscreen: SplashScreen plugin does not respond to hide: method. Make sure @capacitor/splash-screen plugin is properly installed.")
-            }
-        } else {
-            self.logger.warn("autoSplashscreen: SplashScreen plugin not found. Install @capacitor/splash-screen plugin.")
-        }
-    }
-
-    private func showSplashscreen() {
-        if Thread.isMainThread {
-            self.performShowSplashscreen()
-        } else {
-            DispatchQueue.main.async {
-                self.performShowSplashscreen()
-            }
-        }
-    }
-
-    private func performShowSplashscreen() {
-        self.cancelSplashscreenTimeout()
-        self.autoSplashscreenTimedOut = false
-
-        guard let bridge = self.bridge else {
-            self.logger.warn("Bridge not available for showing splashscreen with autoSplashscreen")
-            return
-        }
-
-        // Create a plugin call for the show method
-        let call = CAPPluginCall(callbackId: "autoShowSplashscreen", options: [:], success: { (_, _) in
-            self.logger.info("Splashscreen shown automatically")
-        }, error: { (_) in
-            self.logger.error("Failed to auto-show splashscreen")
-        })
-
-        // Try to call the SplashScreen show method directly through the bridge
-        if let splashScreenPlugin = bridge.plugin(withName: "SplashScreen") {
-            // Use runtime method invocation to call show method
-            let selector = NSSelectorFromString("show:")
-            if splashScreenPlugin.responds(to: selector) {
-                _ = splashScreenPlugin.perform(selector, with: call)
-                self.logger.info("Called SplashScreen show method")
-            } else {
-                self.logger.warn("autoSplashscreen: SplashScreen plugin does not respond to show: method. Make sure @capacitor/splash-screen plugin is properly installed.")
-            }
-        } else {
-            self.logger.warn("autoSplashscreen: SplashScreen plugin not found. Install @capacitor/splash-screen plugin.")
-        }
-
-        self.addSplashscreenLoaderIfNeeded()
-        self.scheduleSplashscreenTimeout()
-    }
-
-    private func addSplashscreenLoaderIfNeeded() {
-        guard self.autoSplashscreenLoader else {
-            return
-        }
-
-        let addLoader = {
-            guard self.splashscreenLoaderContainer == nil else {
-                return
-            }
-            guard let rootView = self.bridge?.viewController?.view else {
-                self.logger.warn("autoSplashscreen: Unable to access root view for loader overlay")
-                return
-            }
-
-            let container = UIView()
-            container.translatesAutoresizingMaskIntoConstraints = false
-            container.backgroundColor = UIColor.clear
-            container.isUserInteractionEnabled = false
-
-            let indicatorStyle: UIActivityIndicatorView.Style
-            if #available(iOS 13.0, *) {
-                indicatorStyle = .large
-            } else {
-                indicatorStyle = .whiteLarge
-            }
-
-            let indicator = UIActivityIndicatorView(style: indicatorStyle)
-            indicator.translatesAutoresizingMaskIntoConstraints = false
-            indicator.hidesWhenStopped = false
-            if #available(iOS 13.0, *) {
-                indicator.color = UIColor.label
-            }
-            indicator.startAnimating()
-
-            container.addSubview(indicator)
-            rootView.addSubview(container)
-
-            NSLayoutConstraint.activate([
-                container.leadingAnchor.constraint(equalTo: rootView.leadingAnchor),
-                container.trailingAnchor.constraint(equalTo: rootView.trailingAnchor),
-                container.topAnchor.constraint(equalTo: rootView.topAnchor),
-                container.bottomAnchor.constraint(equalTo: rootView.bottomAnchor),
-                indicator.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-                indicator.centerYAnchor.constraint(equalTo: container.centerYAnchor)
-            ])
-
-            self.splashscreenLoaderContainer = container
-            self.splashscreenLoaderView = indicator
-        }
-
-        if Thread.isMainThread {
-            addLoader()
-        } else {
-            DispatchQueue.main.async {
-                addLoader()
-            }
-        }
-    }
-
-    private func removeSplashscreenLoader() {
-        let removeLoader = {
-            self.splashscreenLoaderView?.stopAnimating()
-            self.splashscreenLoaderContainer?.removeFromSuperview()
-            self.splashscreenLoaderView = nil
-            self.splashscreenLoaderContainer = nil
-        }
-
-        if Thread.isMainThread {
-            removeLoader()
-        } else {
-            DispatchQueue.main.async {
-                removeLoader()
-            }
-        }
-    }
-
-    private func scheduleSplashscreenTimeout() {
-        guard self.autoSplashscreenTimeout > 0 else {
-            return
-        }
-
-        let scheduleTimeout = {
-            self.autoSplashscreenTimeoutWorkItem?.cancel()
-
-            let workItem = DispatchWorkItem { [weak self] in
-                guard let self = self else { return }
-                self.autoSplashscreenTimedOut = true
-                self.logger.info("autoSplashscreen timeout reached, hiding splashscreen")
-                self.hideSplashscreen()
-            }
-            self.autoSplashscreenTimeoutWorkItem = workItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(self.autoSplashscreenTimeout), execute: workItem)
-        }
-
-        if Thread.isMainThread {
-            scheduleTimeout()
-        } else {
-            DispatchQueue.main.async {
-                scheduleTimeout()
-            }
-        }
-    }
-
-    private func cancelSplashscreenTimeout() {
-        let cancelTimeout = {
-            self.autoSplashscreenTimeoutWorkItem?.cancel()
-            self.autoSplashscreenTimeoutWorkItem = nil
-        }
-
-        if Thread.isMainThread {
-            cancelTimeout()
-        } else {
-            DispatchQueue.main.async {
-                cancelTimeout()
-            }
-        }
+    public func onSplashscreenTimeout() {
+        // Disable direct update when splashscreen times out
+        self.directUpdate = false
     }
 
     private func checkIfRecentlyInstalledOrUpdated() -> Bool {
@@ -1588,7 +1402,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func shouldUseDirectUpdate() -> Bool {
-        if self.autoSplashscreenTimedOut {
+        if self.splashscreenManager?.hasTimedOut == true {
             return false
         }
         switch directUpdateMode {
@@ -1678,7 +1492,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             if res.version == "builtin" {
                 self.logger.info("Latest version is builtin")
-                let directUpdateAllowed = plannedDirectUpdate && !self.autoSplashscreenTimedOut
+                let directUpdateAllowed = plannedDirectUpdate && !(self.splashscreenManager?.hasTimedOut == true)
                 if directUpdateAllowed {
                     self.logger.info("Direct update to builtin version")
                     if self.directUpdateMode == "onLaunch" {
@@ -1748,7 +1562,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         self.endBackGroundTaskWithNotif(msg: "Error checksum", latestVersionName: latestVersionName, current: current)
                         return
                     }
-                    let directUpdateAllowed = plannedDirectUpdate && !self.autoSplashscreenTimedOut
+                    let directUpdateAllowed = plannedDirectUpdate && !(self.splashscreenManager?.hasTimedOut == true)
                     if directUpdateAllowed {
                         let delayUpdatePreferences = UserDefaults.standard.string(forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES) ?? "[]"
                         let delayConditionList: [DelayCondition] = self.fromJsonArr(json: delayUpdatePreferences).map { obj -> DelayCondition in
@@ -1915,7 +1729,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
 
             if canShowSplashscreen {
-                self.showSplashscreen()
+                self.splashscreenManager?.show()
             }
         }
 
@@ -1990,204 +1804,43 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     // MARK: - App Store Update Methods
 
-    /// AppUpdateAvailability enum values matching TypeScript definitions
-    private enum AppUpdateAvailability: Int {
-        case unknown = 0
-        case updateNotAvailable = 1
-        case updateAvailable = 2
-        case updateInProgress = 3
-    }
-
     @objc func getAppUpdateInfo(_ call: CAPPluginCall) {
         let country = call.getString("country", "US")
-        let bundleId = implementation.appId
 
-        logger.info("Getting App Store update info for \(bundleId) in country \(country)")
-
-        DispatchQueue.global(qos: .background).async {
-            let urlString = "https://itunes.apple.com/lookup?bundleId=\(bundleId)&country=\(country)"
-            guard let url = URL(string: urlString) else {
-                call.reject("Invalid URL for App Store lookup")
-                return
+        appStoreUpdateHelper.getAppUpdateInfo(country: country) { result in
+            switch result {
+            case .success(let info):
+                call.resolve(info)
+            case .failure(let error):
+                call.reject(error.localizedDescription)
             }
-
-            let task = URLSession.shared.dataTask(with: url) { data, _, error in
-                if let error = error {
-                    self.logger.error("App Store lookup failed: \(error.localizedDescription)")
-                    call.reject("App Store lookup failed: \(error.localizedDescription)")
-                    return
-                }
-
-                guard let data = data else {
-                    call.reject("No data received from App Store")
-                    return
-                }
-
-                do {
-                    guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                          let resultCount = json["resultCount"] as? Int else {
-                        call.reject("Invalid response from App Store")
-                        return
-                    }
-
-                    let currentVersionName = Bundle.main.versionName ?? "0.0.0"
-                    let currentVersionCode = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
-
-                    var result: [String: Any] = [
-                        "currentVersionName": currentVersionName,
-                        "currentVersionCode": currentVersionCode,
-                        "updateAvailability": AppUpdateAvailability.unknown.rawValue
-                    ]
-
-                    if resultCount > 0,
-                       let results = json["results"] as? [[String: Any]],
-                       let appInfo = results.first {
-
-                        let availableVersion = appInfo["version"] as? String
-                        let releaseDate = appInfo["currentVersionReleaseDate"] as? String
-                        let minimumOsVersion = appInfo["minimumOsVersion"] as? String
-
-                        result["availableVersionName"] = availableVersion
-                        result["availableVersionCode"] = availableVersion // iOS doesn't have separate version code
-                        result["availableVersionReleaseDate"] = releaseDate
-                        result["minimumOsVersion"] = minimumOsVersion
-
-                        // Determine update availability by comparing versions
-                        if let availableVersion = availableVersion {
-                            do {
-                                let currentVer = try Version(currentVersionName)
-                                let availableVer = try Version(availableVersion)
-                                if availableVer > currentVer {
-                                    result["updateAvailability"] = AppUpdateAvailability.updateAvailable.rawValue
-                                } else {
-                                    result["updateAvailability"] = AppUpdateAvailability.updateNotAvailable.rawValue
-                                }
-                            } catch {
-                                // If version parsing fails, do string comparison
-                                if availableVersion != currentVersionName {
-                                    result["updateAvailability"] = AppUpdateAvailability.updateAvailable.rawValue
-                                } else {
-                                    result["updateAvailability"] = AppUpdateAvailability.updateNotAvailable.rawValue
-                                }
-                            }
-                        } else {
-                            result["updateAvailability"] = AppUpdateAvailability.updateNotAvailable.rawValue
-                        }
-
-                        // iOS doesn't support in-app updates like Android
-                        result["immediateUpdateAllowed"] = false
-                        result["flexibleUpdateAllowed"] = false
-                    } else {
-                        // App not found in App Store (maybe not published yet)
-                        result["updateAvailability"] = AppUpdateAvailability.updateNotAvailable.rawValue
-                        self.logger.info("App not found in App Store for bundleId: \(bundleId)")
-                    }
-
-                    call.resolve(result)
-                } catch {
-                    self.logger.error("Failed to parse App Store response: \(error.localizedDescription)")
-                    call.reject("Failed to parse App Store response: \(error.localizedDescription)")
-                }
-            }
-            task.resume()
         }
     }
 
     @objc func openAppStore(_ call: CAPPluginCall) {
         let appId = call.getString("appId")
 
-        if let appId = appId {
-            // Open App Store with provided app ID
-            let urlString = "https://apps.apple.com/app/id\(appId)"
-            guard let url = URL(string: urlString) else {
-                call.reject("Invalid App Store URL")
-                return
-            }
-            DispatchQueue.main.async {
-                UIApplication.shared.open(url) { success in
-                    if success {
-                        call.resolve()
-                    } else {
-                        call.reject("Failed to open App Store")
-                    }
-                }
-            }
-        } else {
-            // Look up app ID using bundle identifier
-            let bundleId = implementation.appId
-            let lookupUrl = "https://itunes.apple.com/lookup?bundleId=\(bundleId)"
-
-            DispatchQueue.global(qos: .background).async {
-                guard let url = URL(string: lookupUrl) else {
-                    call.reject("Invalid lookup URL")
-                    return
-                }
-
-                let task = URLSession.shared.dataTask(with: url) { data, _, error in
-                    if let error = error {
-                        call.reject("Failed to lookup app: \(error.localizedDescription)")
-                        return
-                    }
-
-                    guard let data = data,
-                          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                          let results = json["results"] as? [[String: Any]],
-                          let appInfo = results.first,
-                          let trackId = appInfo["trackId"] as? Int else {
-                        // If lookup fails, try opening the generic App Store app page using bundle ID
-                        let fallbackUrlString = "https://apps.apple.com/app/\(bundleId)"
-                        guard let fallbackUrl = URL(string: fallbackUrlString) else {
-                            call.reject("Failed to find app in App Store and fallback URL is invalid")
-                            return
-                        }
-                        DispatchQueue.main.async {
-                            UIApplication.shared.open(fallbackUrl) { success in
-                                if success {
-                                    call.resolve()
-                                } else {
-                                    call.reject("Failed to open App Store")
-                                }
-                            }
-                        }
-                        return
-                    }
-
-                    let appStoreUrl = "https://apps.apple.com/app/id\(trackId)"
-                    guard let url = URL(string: appStoreUrl) else {
-                        call.reject("Invalid App Store URL")
-                        return
-                    }
-
-                    DispatchQueue.main.async {
-                        UIApplication.shared.open(url) { success in
-                            if success {
-                                call.resolve()
-                            } else {
-                                call.reject("Failed to open App Store")
-                            }
-                        }
-                    }
-                }
-                task.resume()
+        appStoreUpdateHelper.openAppStore(specificAppId: appId) { result in
+            switch result {
+            case .success:
+                call.resolve()
+            case .failure(let error):
+                call.reject(error.localizedDescription)
             }
         }
     }
 
     @objc func performImmediateUpdate(_ call: CAPPluginCall) {
-        // iOS doesn't support in-app updates like Android's Play Store
-        // Redirect users to the App Store instead
         logger.warn("performImmediateUpdate is not supported on iOS. Use openAppStore() instead.")
         call.reject("In-app updates are not supported on iOS. Use openAppStore() to direct users to the App Store.", "NOT_SUPPORTED")
     }
 
     @objc func startFlexibleUpdate(_ call: CAPPluginCall) {
-        // iOS doesn't support flexible in-app updates
         logger.warn("startFlexibleUpdate is not supported on iOS. Use openAppStore() instead.")
         call.reject("Flexible updates are not supported on iOS. Use openAppStore() to direct users to the App Store.", "NOT_SUPPORTED")
     }
 
     @objc func completeFlexibleUpdate(_ call: CAPPluginCall) {
-        // iOS doesn't support flexible in-app updates
         logger.warn("completeFlexibleUpdate is not supported on iOS.")
         call.reject("Flexible updates are not supported on iOS.", "NOT_SUPPORTED")
     }
