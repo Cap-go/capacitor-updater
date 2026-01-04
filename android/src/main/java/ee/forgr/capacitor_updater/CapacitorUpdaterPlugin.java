@@ -115,6 +115,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private Boolean allowManualBundleError = false;
     private Boolean allowSetDefaultChannel = true;
 
+    // Mini-apps support
+    private Boolean miniAppsEnabled = false;
+    private static final String MINI_APPS_REGISTRY_KEY = "CapacitorUpdater.miniApps";
+
     // Used for activity-based foreground/background detection on Android < 14
     private Boolean isPreviousMainActivity = true;
 
@@ -426,6 +430,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.autoSplashscreenTimeout = Math.max(0, splashscreenTimeoutValue);
         this.implementation.timeout = this.getConfig().getInt("responseTimeout", 20) * 1000;
         this.shakeMenuEnabled = this.getConfig().getBoolean("shakeMenu", false);
+        this.miniAppsEnabled = this.getConfig().getBoolean("miniAppsEnabled", false);
+        if (Boolean.TRUE.equals(this.miniAppsEnabled)) {
+            logger.info("Mini-apps support enabled");
+        }
         boolean resetWhenUpdate = this.getConfig().getBoolean("resetWhenUpdate", true);
 
         // Check if app was recently installed/updated BEFORE cleanupObsoleteVersions updates LatestVersionNative
@@ -788,6 +796,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                 allowedIds.add(info.getId());
                             }
                         }
+                        // Add protected mini-app bundle IDs to prevent cleanup
+                        if (Boolean.TRUE.equals(this.miniAppsEnabled)) {
+                            Set<String> protectedIds = getProtectedBundleIds();
+                            allowedIds.addAll(protectedIds);
+                            if (!protectedIds.isEmpty()) {
+                                logger.info("Protected " + protectedIds.size() + " mini-app bundle(s) from cleanup");
+                            }
+                        }
                         this.implementation.cleanupDownloadDirectories(allowedIds, Thread.currentThread());
                         this.implementation.cleanupOrphanedTempFolders(Thread.currentThread());
 
@@ -1133,6 +1149,121 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
+    // MARK: - Mini-Apps Registry Helpers
+
+    private JSONObject getMiniAppsRegistry() {
+        String data = this.prefs.getString(MINI_APPS_REGISTRY_KEY, "{}");
+        try {
+            return new JSONObject(data);
+        } catch (JSONException e) {
+            return new JSONObject();
+        }
+    }
+
+    private void saveMiniAppsRegistry(JSONObject registry) {
+        this.editor.putString(MINI_APPS_REGISTRY_KEY, registry.toString());
+        this.editor.apply();
+    }
+
+    private Set<String> getProtectedBundleIds() {
+        Set<String> ids = new HashSet<>();
+        JSONObject registry = getMiniAppsRegistry();
+        java.util.Iterator<String> keys = registry.keys();
+        while (keys.hasNext()) {
+            String name = keys.next();
+            try {
+                JSONObject entry = registry.getJSONObject(name);
+                String bundleId = entry.optString("id", "");
+                if (!bundleId.isEmpty()) {
+                    ids.add(bundleId);
+                }
+            } catch (JSONException e) {
+                // Skip invalid entries
+            }
+        }
+        return ids;
+    }
+
+    private String[] getMiniAppForBundleId(String bundleId) {
+        JSONObject registry = getMiniAppsRegistry();
+        java.util.Iterator<String> keys = registry.keys();
+        while (keys.hasNext()) {
+            String name = keys.next();
+            try {
+                JSONObject entry = registry.getJSONObject(name);
+                String id = entry.optString("id", "");
+                if (id.equals(bundleId)) {
+                    boolean isMain = entry.optBoolean("isMain", false);
+                    return new String[] { name, String.valueOf(isMain) };
+                }
+            } catch (JSONException e) {
+                // Skip invalid entries
+            }
+        }
+        return null;
+    }
+
+    @PluginMethod
+    public void setMiniApp(final PluginCall call) {
+        if (!Boolean.TRUE.equals(this.miniAppsEnabled)) {
+            logger.error("setMiniApp called but miniAppsEnabled is false");
+            call.reject("Mini-apps support is disabled. Set miniAppsEnabled: true in your Capacitor config.", "MINIAPPS_DISABLED");
+            return;
+        }
+
+        final String name = call.getString("name");
+        if (name == null || name.isEmpty()) {
+            logger.error("setMiniApp called without name");
+            call.reject("setMiniApp called without name", "INVALID_PARAMS");
+            return;
+        }
+
+        // Get bundle ID - use provided ID or current bundle
+        String bundleId = call.getString("id");
+        if (bundleId == null || bundleId.isEmpty()) {
+            bundleId = this.implementation.getCurrentBundle().getId();
+        }
+        final Boolean isMain = call.getBoolean("isMain", false);
+
+        // Verify the bundle exists
+        final BundleInfo bundleInfo = this.implementation.getBundleInfo(bundleId);
+        if (bundleInfo.isUnknown() && !bundleInfo.isBuiltin()) {
+            logger.error("setMiniApp: bundle " + bundleId + " not found");
+            call.reject("Bundle '" + bundleId + "' not found", "BUNDLE_NOT_FOUND");
+            return;
+        }
+
+        try {
+            JSONObject registry = getMiniAppsRegistry();
+
+            // If isMain is true, clear isMain from all other entries
+            if (Boolean.TRUE.equals(isMain)) {
+                java.util.Iterator<String> keys = registry.keys();
+                while (keys.hasNext()) {
+                    String existingName = keys.next();
+                    JSONObject entry = registry.getJSONObject(existingName);
+                    if (entry.optBoolean("isMain", false)) {
+                        entry.put("isMain", false);
+                        registry.put(existingName, entry);
+                    }
+                }
+            }
+
+            // Add or update the mini-app entry
+            JSONObject newEntry = new JSONObject();
+            newEntry.put("id", bundleId);
+            newEntry.put("isMain", isMain);
+            registry.put(name, newEntry);
+
+            saveMiniAppsRegistry(registry);
+            logger.info("Registered mini-app '" + name + "' with bundle " + bundleId + ", isMain: " + isMain);
+            call.resolve();
+        } catch (JSONException e) {
+            logger.error("Failed to save mini-app registry: " + e.getMessage());
+            call.reject("Failed to save mini-app registry", e);
+        }
+    }
+
     @PluginMethod
     public void download(final PluginCall call) {
         final String url = call.getString("url");
@@ -1354,47 +1485,118 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     @PluginMethod
     public void set(final PluginCall call) {
-        final String id = call.getString("id");
-        if (id == null) {
-            logger.error("Set called without id");
-            call.reject("Set called without id");
+        String bundleId = call.getString("id");
+        final String miniAppName = call.getString("miniApp");
+
+        // If miniApp is provided, look up the bundle ID from registry
+        if (miniAppName != null && !miniAppName.isEmpty()) {
+            if (!Boolean.TRUE.equals(this.miniAppsEnabled)) {
+                logger.error("set called with miniApp but miniAppsEnabled is false");
+                call.reject("Mini-apps support is disabled. Set miniAppsEnabled: true in your Capacitor config.", "MINIAPPS_DISABLED");
+                return;
+            }
+            try {
+                JSONObject registry = getMiniAppsRegistry();
+                if (!registry.has(miniAppName)) {
+                    logger.error("set: mini-app '" + miniAppName + "' not found in registry");
+                    call.reject("Mini-app '" + miniAppName + "' not found", "MINIAPP_NOT_FOUND");
+                    return;
+                }
+                JSONObject entry = registry.getJSONObject(miniAppName);
+                bundleId = entry.optString("id", "");
+                if (bundleId.isEmpty()) {
+                    logger.error("set: mini-app '" + miniAppName + "' has no bundle ID");
+                    call.reject("Mini-app '" + miniAppName + "' has no bundle ID", "INVALID_MINIAPP");
+                    return;
+                }
+                logger.info("set: resolved mini-app '" + miniAppName + "' to bundle " + bundleId);
+            } catch (JSONException e) {
+                logger.error("set: error reading mini-app registry: " + e.getMessage());
+                call.reject("Error reading mini-app registry", e);
+                return;
+            }
+        }
+
+        if (bundleId == null) {
+            logger.error("Set called without id or miniApp");
+            call.reject("Set called without id or miniApp");
             return;
         }
+
         try {
-            logger.info("Setting active bundle " + id);
-            if (!this.implementation.set(id)) {
-                logger.info("No such bundle " + id);
-                call.reject("Update failed, id " + id + " does not exist.");
+            logger.info("Setting active bundle " + bundleId);
+            if (!this.implementation.set(bundleId)) {
+                logger.info("No such bundle " + bundleId);
+                call.reject("Update failed, id " + bundleId + " does not exist.");
             } else {
-                logger.info("Bundle successfully set to " + id);
+                logger.info("Bundle successfully set to " + bundleId);
                 this.reload(call);
             }
         } catch (final Exception e) {
-            logger.error("Could not set id " + id + " " + e.getMessage());
-            call.reject("Could not set id " + id, e);
+            logger.error("Could not set id " + bundleId + " " + e.getMessage());
+            call.reject("Could not set id " + bundleId, e);
         }
     }
 
     @PluginMethod
     public void delete(final PluginCall call) {
-        final String id = call.getString("id");
-        if (id == null) {
-            logger.error("missing id");
-            call.reject("missing id");
+        String bundleId = call.getString("id");
+        final String miniAppName = call.getString("miniApp");
+
+        // If miniApp is provided, look up the bundle ID and unregister from registry
+        if (miniAppName != null && !miniAppName.isEmpty()) {
+            if (!Boolean.TRUE.equals(this.miniAppsEnabled)) {
+                logger.error("delete called with miniApp but miniAppsEnabled is false");
+                call.reject("Mini-apps support is disabled. Set miniAppsEnabled: true in your Capacitor config.", "MINIAPPS_DISABLED");
+                return;
+            }
+            try {
+                JSONObject registry = getMiniAppsRegistry();
+                if (!registry.has(miniAppName)) {
+                    logger.error("delete: mini-app '" + miniAppName + "' not found in registry");
+                    call.reject("Mini-app '" + miniAppName + "' not found", "MINIAPP_NOT_FOUND");
+                    return;
+                }
+                JSONObject entry = registry.getJSONObject(miniAppName);
+                bundleId = entry.optString("id", "");
+
+                // Check if this mini-app is the current bundle
+                BundleInfo currentBundle = this.implementation.getCurrentBundle();
+                if (bundleId.equals(currentBundle.getId())) {
+                    logger.error("delete: cannot delete current mini-app '" + miniAppName + "'");
+                    call.reject("Cannot delete the currently active mini-app", "CURRENT_MINIAPP");
+                    return;
+                }
+
+                // Unregister from mini-apps registry
+                registry.remove(miniAppName);
+                saveMiniAppsRegistry(registry);
+                logger.info("delete: unregistered mini-app '" + miniAppName + "', will delete bundle " + bundleId);
+            } catch (JSONException e) {
+                logger.error("delete: error reading mini-app registry: " + e.getMessage());
+                call.reject("Error reading mini-app registry", e);
+                return;
+            }
+        }
+
+        if (bundleId == null || bundleId.isEmpty()) {
+            logger.error("missing id or miniApp");
+            call.reject("missing id or miniApp");
             return;
         }
-        logger.info("Deleting id " + id);
+
+        logger.info("Deleting id " + bundleId);
         try {
-            final Boolean res = this.implementation.delete(id);
+            final Boolean res = this.implementation.delete(bundleId);
             if (res) {
                 call.resolve();
             } else {
-                logger.error("Delete failed, id " + id + " does not exist");
-                call.reject("Delete failed, id " + id + " does not exist or it cannot be deleted (perhaps it is the 'next' bundle)");
+                logger.error("Delete failed, id " + bundleId + " does not exist");
+                call.reject("Delete failed, id " + bundleId + " does not exist or it cannot be deleted (perhaps it is the 'next' bundle)");
             }
         } catch (final Exception e) {
-            logger.error("Could not delete id " + id + " " + e.getMessage());
-            call.reject("Could not delete id " + id, e);
+            logger.error("Could not delete id " + bundleId + " " + e.getMessage());
+            call.reject("Could not delete id " + bundleId, e);
         }
     }
 
@@ -1446,6 +1648,32 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 values.put(mapToJSObject(bundle.toJSONMap()));
             }
             ret.put("bundles", values);
+
+            // Add mini-apps array if enabled
+            if (Boolean.TRUE.equals(this.miniAppsEnabled)) {
+                JSArray miniAppsArray = new JSArray();
+                JSONObject registry = getMiniAppsRegistry();
+                java.util.Iterator<String> keys = registry.keys();
+                while (keys.hasNext()) {
+                    String name = keys.next();
+                    try {
+                        JSONObject entry = registry.getJSONObject(name);
+                        String bundleId = entry.optString("id", "");
+                        boolean isMain = entry.optBoolean("isMain", false);
+
+                        BundleInfo bundleInfo = this.implementation.getBundleInfo(bundleId);
+                        JSObject miniAppObj = new JSObject();
+                        miniAppObj.put("name", name);
+                        miniAppObj.put("bundle", mapToJSObject(bundleInfo.toJSONMap()));
+                        miniAppObj.put("isMain", isMain);
+                        miniAppsArray.put(miniAppObj);
+                    } catch (JSONException e) {
+                        logger.warn("list: error reading mini-app entry '" + name + "': " + e.getMessage());
+                    }
+                }
+                ret.put("miniApps", miniAppsArray);
+            }
+
             call.resolve(ret);
         } catch (final Exception e) {
             logger.error("Could not list bundles " + e.getMessage());
@@ -1456,6 +1684,19 @@ public class CapacitorUpdaterPlugin extends Plugin {
     @PluginMethod
     public void getLatest(final PluginCall call) {
         final String channel = call.getString("channel");
+        final String updateMiniApp = call.getString("updateMiniApp");
+
+        // Handle updateMiniApp flow
+        if (updateMiniApp != null && !updateMiniApp.isEmpty()) {
+            if (!Boolean.TRUE.equals(this.miniAppsEnabled)) {
+                logger.error("getLatest called with updateMiniApp but miniAppsEnabled is false");
+                call.reject("Mini-apps support is disabled. Set miniAppsEnabled: true in your Capacitor config.", "MINIAPPS_DISABLED");
+                return;
+            }
+            performMiniAppUpdate(call, updateMiniApp);
+            return;
+        }
+
         startNewThread(() ->
             CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.updateUrl, channel, (res) -> {
                 JSObject jsRes = mapToJSObject(res);
@@ -1473,6 +1714,132 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 }
             })
         );
+    }
+
+    private void performMiniAppUpdate(final PluginCall call, final String miniAppName) {
+        startNewThread(() -> {
+            try {
+                // Get the mini-app entry from registry
+                JSONObject registry = getMiniAppsRegistry();
+                if (!registry.has(miniAppName)) {
+                    logger.error("performMiniAppUpdate: mini-app '" + miniAppName + "' not found");
+                    call.reject("Mini-app '" + miniAppName + "' not found", "MINIAPP_NOT_FOUND");
+                    return;
+                }
+
+                JSONObject entry = registry.getJSONObject(miniAppName);
+                String oldBundleId = entry.optString("id", "");
+
+                // Check if mini-app is the current bundle
+                BundleInfo currentBundle = this.implementation.getCurrentBundle();
+                if (oldBundleId.equals(currentBundle.getId())) {
+                    logger.error("performMiniAppUpdate: cannot update current mini-app '" + miniAppName + "'");
+                    call.reject("Cannot update the currently active mini-app. Switch to another app first.", "CURRENT_MINIAPP");
+                    return;
+                }
+
+                // Use mini-app name as channel to check for updates
+                final String channelName = miniAppName;
+                final JSObject[] latestResult = new JSObject[1];
+                final boolean[] gotResult = {false};
+
+                this.implementation.getLatest(this.updateUrl, channelName, (res) -> {
+                    latestResult[0] = mapToJSObject(res);
+                    gotResult[0] = true;
+                    synchronized (gotResult) {
+                        gotResult.notifyAll();
+                    }
+                });
+
+                // Wait for getLatest result
+                synchronized (gotResult) {
+                    while (!gotResult[0]) {
+                        try {
+                            gotResult.wait(30000);
+                            break;
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            call.reject("Update interrupted", e);
+                            return;
+                        }
+                    }
+                }
+
+                JSObject jsRes = latestResult[0];
+                if (jsRes == null) {
+                    call.reject("Failed to check for updates");
+                    return;
+                }
+
+                if (jsRes.has("error")) {
+                    String error = jsRes.getString("error");
+                    logger.error("performMiniAppUpdate: getLatest error: " + error);
+                    call.reject(error);
+                    return;
+                }
+
+                // Check if update is available
+                String url = jsRes.getString("url");
+                String version = jsRes.getString("version");
+
+                if (url == null || url.isEmpty()) {
+                    // No update available
+                    jsRes.put("miniAppUpdated", false);
+                    call.resolve(jsRes);
+                    return;
+                }
+
+                // Download the new bundle
+                logger.info("performMiniAppUpdate: downloading update for mini-app '" + miniAppName + "'");
+                String sessionKey = jsRes.has("sessionKey") ? jsRes.getString("sessionKey") : "";
+                String checksum = jsRes.has("checksum") ? jsRes.getString("checksum") : "";
+
+                BundleInfo downloaded = this.implementation.download(url, version, sessionKey, checksum);
+                if (downloaded.isErrorStatus()) {
+                    logger.error("performMiniAppUpdate: download failed");
+                    call.reject("Download failed: " + downloaded.getStatus());
+                    return;
+                }
+
+                // Delete old bundle for this mini-app (if exists and not builtin)
+                if (!oldBundleId.isEmpty()) {
+                    BundleInfo oldBundle = this.implementation.getBundleInfo(oldBundleId);
+                    if (!oldBundle.isBuiltin() && !oldBundle.isUnknown()) {
+                        logger.info("performMiniAppUpdate: deleting old bundle " + oldBundleId);
+                        this.implementation.delete(oldBundleId);
+                    }
+                }
+
+                // Update registry with new bundle ID
+                boolean isMain = entry.optBoolean("isMain", false);
+                JSONObject newEntry = new JSONObject();
+                newEntry.put("id", downloaded.getId());
+                newEntry.put("isMain", isMain);
+                registry.put(miniAppName, newEntry);
+                saveMiniAppsRegistry(registry);
+
+                // Set the new bundle
+                logger.info("performMiniAppUpdate: switching to new bundle " + downloaded.getId());
+                if (!this.implementation.set(downloaded.getId())) {
+                    call.reject("Failed to set new bundle");
+                    return;
+                }
+
+                // Reload the app
+                if (!this._reload()) {
+                    call.reject("Failed to reload app after update");
+                    return;
+                }
+
+                // Return success with miniAppUpdated flag
+                jsRes.put("miniAppUpdated", true);
+                call.resolve(jsRes);
+
+            } catch (Exception e) {
+                logger.error("performMiniAppUpdate: error: " + e.getMessage());
+                call.reject("Mini-app update failed: " + e.getMessage(), e);
+            }
+        });
     }
 
     private boolean _reset(final Boolean toLastSuccessful) {
@@ -1512,6 +1879,18 @@ public class CapacitorUpdaterPlugin extends Plugin {
             final BundleInfo bundle = this.implementation.getCurrentBundle();
             ret.put("bundle", mapToJSObject(bundle.toJSONMap()));
             ret.put("native", this.currentVersionNative);
+
+            // Add mini-app info if the current bundle is a registered mini-app
+            if (Boolean.TRUE.equals(this.miniAppsEnabled)) {
+                String[] miniAppInfo = getMiniAppForBundleId(bundle.getId());
+                if (miniAppInfo != null) {
+                    JSObject miniApp = new JSObject();
+                    miniApp.put("name", miniAppInfo[0]);
+                    miniApp.put("isMain", Boolean.parseBoolean(miniAppInfo[1]));
+                    ret.put("miniApp", miniApp);
+                }
+            }
+
             call.resolve(ret);
         } catch (final Exception e) {
             logger.error("Could not get current bundle " + e.getMessage());

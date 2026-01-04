@@ -370,6 +370,17 @@ declare module '@capacitor/cli' {
        * @since  7.5.0
        */
       shakeMenu?: boolean;
+
+      /**
+       * Enable mini-apps support. When enabled, you can register multiple bundles as mini-apps
+       * and switch between them. The main app is treated as a mini-app with `isMain: true`.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default false
+       * @since 8.42.0
+       */
+      miniAppsEnabled?: boolean;
     };
   }
 }
@@ -871,6 +882,38 @@ export interface CapacitorUpdaterPlugin {
    * @since 7.5.0
    */
   listChannels(): Promise<ListChannelsResult>;
+
+  /**
+   * Register or update a mini-app in the mini-apps registry.
+   *
+   * Mini-apps are bundles that can be switched between at runtime. Each mini-app
+   * corresponds to a Capgo channel (mini-app name = channel name).
+   *
+   * The main app is a mini-app with `isMain: true` - this is the one that receives
+   * auto-updates from Capgo.
+   *
+   * Requires {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} to be `true`.
+   *
+   * **Note:** This method only registers the bundle as a mini-app. To switch to it,
+   * use {@link set} with the `miniApp` option.
+   *
+   * @example
+   * // Register current bundle as main app
+   * await CapacitorUpdater.setMiniApp({ name: 'main', isMain: true });
+   *
+   * // Download and register a mini-app
+   * const bundle = await CapacitorUpdater.download({ url, version });
+   * await CapacitorUpdater.setMiniApp({ name: 'games', id: bundle.id });
+   *
+   * // Switch to the mini-app
+   * await CapacitorUpdater.set({ miniApp: 'games' });
+   *
+   * @param options The {@link SetMiniAppOptions} containing the mini-app name and optional bundle ID.
+   * @returns {Promise<void>} Resolves when the mini-app is registered.
+   * @throws {Error} If mini-apps are disabled or the bundle doesn't exist.
+   * @since 8.42.0
+   */
+  setMiniApp(options: SetMiniAppOptions): Promise<void>;
 
   /**
    * Set a custom identifier for this device.
@@ -1650,6 +1693,14 @@ export interface LatestVersion {
    * @since 7.35.0
    */
   comment?: string;
+
+  /**
+   * Whether a mini-app was updated as part of this getLatest call.
+   * Only present when {@link GetLatestOptions.updateMiniApp} was provided.
+   *
+   * @since 8.42.0
+   */
+  miniAppUpdated?: boolean;
 }
 
 export interface BundleInfo {
@@ -1693,6 +1744,69 @@ export interface GetLatestOptions {
    * @default undefined
    */
   channel?: string;
+
+  /**
+   * Mini-app name to update. When set, performs a full update flow:
+   * 1. Checks the channel (channel name = mini-app name) for a new version
+   * 2. If new version available: downloads, deletes old bundle, updates registry, auto-switches
+   *
+   * Requires {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} to be `true`.
+   *
+   * **Important:** Cannot update the currently active mini-app. The mini-app must not be the current bundle.
+   *
+   * @since 8.42.0
+   * @default undefined
+   */
+  updateMiniApp?: string;
+}
+
+/**
+ * Options for {@link CapacitorUpdaterPlugin.setMiniApp}.
+ *
+ * @since 8.42.0
+ */
+export interface SetMiniAppOptions {
+  /**
+   * The name of the mini-app. This should match the Capgo channel name.
+   */
+  name: string;
+
+  /**
+   * The bundle ID to register as this mini-app.
+   * If not provided, uses the current bundle.
+   */
+  id?: string;
+
+  /**
+   * If true, this mini-app becomes THE main app for auto-updates.
+   * Only one mini-app can have `isMain: true` at a time.
+   * Setting this clears the `isMain` flag from any previous main app.
+   *
+   * @default false
+   */
+  isMain?: boolean;
+}
+
+/**
+ * Information about a registered mini-app.
+ *
+ * @since 8.42.0
+ */
+export interface MiniAppInfo {
+  /**
+   * The name of the mini-app (matches the Capgo channel name).
+   */
+  name: string;
+
+  /**
+   * The bundle info for this mini-app.
+   */
+  bundle: BundleInfo;
+
+  /**
+   * Whether this is the main app that receives auto-updates.
+   */
+  isMain: boolean;
 }
 
 export interface AppReadyResult {
@@ -1745,11 +1859,29 @@ export interface DownloadOptions {
 }
 
 export interface BundleId {
-  id: string;
+  /**
+   * The bundle ID to operate on.
+   */
+  id?: string;
+
+  /**
+   * The mini-app name to operate on. When provided, looks up the bundle ID from the mini-apps registry.
+   * Requires {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} to be `true`.
+   *
+   * @since 8.42.0
+   */
+  miniApp?: string;
 }
 
 export interface BundleListResult {
   bundles: BundleInfo[];
+
+  /**
+   * All registered mini-apps. Only present when {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} is `true`.
+   *
+   * @since 8.42.0
+   */
+  miniApps?: MiniAppInfo[];
 }
 
 export interface ResetOptions {
@@ -1768,6 +1900,24 @@ export interface ListOptions {
 export interface CurrentBundleResult {
   bundle: BundleInfo;
   native: string;
+
+  /**
+   * If the current bundle is a registered mini-app, contains its info.
+   * Only present when {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} is `true`.
+   *
+   * @since 8.42.0
+   */
+  miniApp?: {
+    /**
+     * The name of the current mini-app.
+     */
+    name: string;
+
+    /**
+     * Whether this is the main app that receives auto-updates.
+     */
+    isMain: boolean;
+  };
 }
 
 export interface MultiDelayConditions {
