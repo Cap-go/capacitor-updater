@@ -418,13 +418,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements SplashscreenManage
         if (Boolean.TRUE.equals(this.autoSplashscreen)) {
             boolean loaderEnabled = this.getConfig().getBoolean("autoSplashscreenLoader", false);
             int timeout = Math.max(0, this.getConfig().getInt("autoSplashscreenTimeout", 10000));
-            this.splashscreenManager = new SplashscreenManager(
-                this.logger,
-                timeout,
-                loaderEnabled,
-                this,
-                this.mainHandler
-            );
+            this.splashscreenManager = new SplashscreenManager(this.logger, timeout, loaderEnabled, this, this.mainHandler);
         }
         this.implementation.timeout = this.getConfig().getInt("responseTimeout", 20) * 1000;
         this.shakeMenuEnabled = this.getConfig().getBoolean("shakeMenu", false);
@@ -1572,7 +1566,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements SplashscreenManage
                 // Use mini-app name as channel to check for updates
                 final String channelName = miniAppName;
                 final JSObject[] latestResult = new JSObject[1];
-                final boolean[] gotResult = {false};
+                final boolean[] gotResult = { false };
 
                 this.implementation.getLatest(this.updateUrl, channelName, (res) -> {
                     latestResult[0] = mapToJSObject(res);
@@ -1665,7 +1659,6 @@ public class CapacitorUpdaterPlugin extends Plugin implements SplashscreenManage
                 // Return success with miniAppUpdated flag
                 jsRes.put("miniAppUpdated", true);
                 call.resolve(jsRes);
-
             } catch (Exception e) {
                 logger.error("performMiniAppUpdate: error: " + e.getMessage());
                 call.reject("Mini-app update failed: " + e.getMessage(), e);
