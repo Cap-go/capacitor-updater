@@ -1006,9 +1006,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
             }
 
             // Verify checksum if provided
-            if let checksum = res.checksum, !checksum.isEmpty {
+            if !res.checksum.isEmpty {
                 let decryptedChecksum = try CryptoCipher.decryptChecksum(
-                    checksum: checksum,
+                    checksum: res.checksum,
                     publicKey: self.implementation.publicKey
                 )
                 if !decryptedChecksum.isEmpty && newBundle.getChecksum() != decryptedChecksum {

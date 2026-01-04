@@ -40,7 +40,7 @@ interface SplashscreenManagerDelegate {
  */
 public class SplashscreenManager {
 
-    private final CapgoLogger logger;
+    private final Logger logger;
     private final int timeout;
     private final boolean loaderEnabled;
     private final SplashscreenManagerDelegate delegate;
@@ -58,7 +58,7 @@ public class SplashscreenManager {
     }
 
     public SplashscreenManager(
-        CapgoLogger logger,
+        Logger logger,
         int timeout,
         boolean loaderEnabled,
         SplashscreenManagerDelegate delegate,
