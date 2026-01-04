@@ -52,6 +52,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "unsetChannel", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getChannel", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "listChannels", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setMiniApp", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setCustomId", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getDeviceId", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getPluginVersion", returnType: CAPPluginReturnPromise),
@@ -120,6 +121,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var keepUrlPathFlagLastValue: Bool?
     public var shakeMenuEnabled = false
     let semaphoreReady = DispatchSemaphore(value: 0)
+
+    // Mini-apps support
+    private var miniAppsEnabled = false
+    private let miniAppsRegistryKey = "CapacitorUpdater.miniApps"
 
     private var delayUpdateUtils: DelayUpdateUtils!
 
@@ -211,6 +216,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         implementation.timeout = Double(getConfig().getInt("responseTimeout", 20))
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
         shakeMenuEnabled = getConfig().getBoolean("shakeMenu", false)
+        miniAppsEnabled = getConfig().getBoolean("miniAppsEnabled", false)
+        if miniAppsEnabled {
+            logger.info("Mini-apps support enabled")
+        }
         let periodCheckDelayValue = getConfig().getInt("periodCheckDelay", 0)
         if periodCheckDelayValue >= 0 && periodCheckDelayValue > 600 {
             periodCheckDelay = 600
@@ -437,10 +446,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
 
                 let storedBundles = self.implementation.list(raw: true)
-                let allowedIds = Set(storedBundles.compactMap { info -> String? in
+                var allowedIds = Set(storedBundles.compactMap { info -> String? in
                     let id = info.getId()
                     return id.isEmpty ? nil : id
                 })
+
+                // Add protected mini-app bundle IDs if mini-apps are enabled
+                if self.miniAppsEnabled {
+                    allowedIds.formUnion(self.getProtectedBundleIds())
+                }
+
                 self.implementation.cleanupDownloadDirectories(allowedIds: allowedIds, threadToCheck: Thread.current)
                 self.implementation.cleanupOrphanedTempFolders(threadToCheck: Thread.current)
 
@@ -718,11 +733,38 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func set(_ call: CAPPluginCall) {
-        guard let id = call.getString("id") else {
-            logger.error("Set called without id")
-            call.reject("Set called without id")
+        var bundleId: String?
+
+        // Check if miniApp parameter is provided
+        if let miniAppName = call.getString("miniApp") {
+            guard miniAppsEnabled else {
+                logger.error("set called with miniApp but miniAppsEnabled is false")
+                call.reject("Mini-apps support is disabled. Set miniAppsEnabled: true in your Capacitor config.", "MINIAPPS_DISABLED")
+                return
+            }
+
+            let registry = getMiniAppsRegistry()
+            guard let entry = registry[miniAppName], let id = entry["id"] as? String else {
+                logger.error("set called with unknown miniApp: \(miniAppName)")
+                call.reject("Mini-app '\(miniAppName)' not found", "MINIAPP_NOT_FOUND")
+                return
+            }
+            bundleId = id
+            logger.info("Set via miniApp name: \(miniAppName) -> bundle \(id)")
+        } else if let id = call.getString("id") {
+            bundleId = id
+        } else {
+            logger.error("Set called without id or miniApp")
+            call.reject("Set called without id or miniApp")
             return
         }
+
+        guard let id = bundleId else {
+            logger.error("Set called without valid bundle id")
+            call.reject("Set called without valid bundle id")
+            return
+        }
+
         let res = implementation.set(id: id)
         logger.info("Set active bundle: \(id)")
         if !res {
@@ -734,13 +776,49 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func delete(_ call: CAPPluginCall) {
-        guard let id = call.getString("id") else {
-            logger.error("Delete called without version")
-            call.reject("Delete called without id")
+        var bundleId: String?
+        var miniAppName: String?
+
+        // Check if miniApp parameter is provided
+        if let name = call.getString("miniApp") {
+            guard miniAppsEnabled else {
+                logger.error("delete called with miniApp but miniAppsEnabled is false")
+                call.reject("Mini-apps support is disabled. Set miniAppsEnabled: true in your Capacitor config.", "MINIAPPS_DISABLED")
+                return
+            }
+
+            miniAppName = name
+            let registry = getMiniAppsRegistry()
+            guard let entry = registry[name], let id = entry["id"] as? String else {
+                logger.error("delete called with unknown miniApp: \(name)")
+                call.reject("Mini-app '\(name)' not found", "MINIAPP_NOT_FOUND")
+                return
+            }
+            bundleId = id
+            logger.info("Delete via miniApp name: \(name) -> bundle \(id)")
+        } else if let id = call.getString("id") {
+            bundleId = id
+        } else {
+            logger.error("Delete called without id or miniApp")
+            call.reject("Delete called without id or miniApp")
             return
         }
+
+        guard let id = bundleId else {
+            logger.error("Delete called without valid bundle id")
+            call.reject("Delete called without valid bundle id")
+            return
+        }
+
         let res = implementation.delete(id: id)
         if res {
+            // If deleting via miniApp, also remove from registry
+            if let name = miniAppName {
+                var registry = getMiniAppsRegistry()
+                registry.removeValue(forKey: name)
+                saveMiniAppsRegistry(registry)
+                logger.info("Removed mini-app '\(name)' from registry")
+            }
             call.resolve()
         } else {
             logger.error("Delete failed, id \(id) doesn't exist or it cannot be deleted (perhaps it is the 'next' bundle)")
@@ -785,13 +863,66 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         for v in res {
             resArr.append(v.toJSON())
         }
-        call.resolve([
+
+        var result: [String: Any] = [
             "bundles": resArr
-        ])
+        ]
+
+        // Add mini-apps list if enabled
+        if miniAppsEnabled {
+            let registry = getMiniAppsRegistry()
+            var miniAppsArr: [[String: Any]] = []
+
+            for (name, entry) in registry {
+                if let bundleId = entry["id"] as? String {
+                    let isMain = entry["isMain"] as? Bool ?? false
+                    let bundleInfo = implementation.getBundleInfo(id: bundleId)
+                    miniAppsArr.append([
+                        "name": name,
+                        "bundle": bundleInfo.toJSON(),
+                        "isMain": isMain
+                    ])
+                }
+            }
+
+            result["miniApps"] = miniAppsArr
+        }
+
+        call.resolve(result)
     }
 
     @objc func getLatest(_ call: CAPPluginCall) {
         let channel = call.getString("channel")
+        let updateMiniApp = call.getString("updateMiniApp")
+
+        // Handle updateMiniApp flow
+        if let miniAppName = updateMiniApp {
+            guard miniAppsEnabled else {
+                logger.error("getLatest called with updateMiniApp but miniAppsEnabled is false")
+                call.reject("Mini-apps support is disabled. Set miniAppsEnabled: true in your Capacitor config.", "MINIAPPS_DISABLED")
+                return
+            }
+
+            // Check if this mini-app is current
+            let currentBundleId = implementation.getCurrentBundleId()
+            let registry = getMiniAppsRegistry()
+
+            if let entry = registry[miniAppName], let bundleId = entry["id"] as? String {
+                if bundleId == currentBundleId {
+                    logger.error("Cannot update mini-app '\(miniAppName)' because it is currently active")
+                    call.reject("Cannot update mini-app that is currently in use", "MINIAPP_IS_CURRENT")
+                    return
+                }
+            }
+
+            // Use mini-app name as channel
+            DispatchQueue.global(qos: .background).async {
+                self.performMiniAppUpdate(miniAppName: miniAppName, call: call)
+            }
+            return
+        }
+
+        // Regular getLatest flow
         DispatchQueue.global(qos: .background).async {
             let res = self.implementation.getLatest(url: URL(string: self.updateUrl)!, channel: channel)
             if res.error != nil {
@@ -801,6 +932,116 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             } else {
                 call.resolve(res.toDict())
             }
+        }
+    }
+
+    private func performMiniAppUpdate(miniAppName: String, call: CAPPluginCall) {
+        // Check for updates on this channel (channel name = mini-app name)
+        let res = self.implementation.getLatest(url: URL(string: self.updateUrl)!, channel: miniAppName)
+
+        if res.error != nil || res.message != nil {
+            // No update available or error - return with miniAppUpdated: false
+            var result = res.toDict()
+            result["miniAppUpdated"] = false
+            call.resolve(result)
+            return
+        }
+
+        // Get current mini-app version (if exists)
+        let registry = getMiniAppsRegistry()
+        var currentVersion = ""
+        var oldBundleId: String?
+
+        if let entry = registry[miniAppName], let bundleId = entry["id"] as? String {
+            oldBundleId = bundleId
+            let bundle = self.implementation.getBundleInfo(id: bundleId)
+            currentVersion = bundle.getVersionName()
+        }
+
+        // Check if update needed
+        if res.version == currentVersion {
+            var result = res.toDict()
+            result["miniAppUpdated"] = false
+            call.resolve(result)
+            return
+        }
+
+        logger.info("Mini-app '\(miniAppName)' has update: \(currentVersion) -> \(res.version)")
+
+        // Download new version
+        do {
+            let sessionKey = res.sessionKey ?? ""
+            guard let downloadUrl = URL(string: res.url ?? "") else {
+                call.reject("Invalid download URL", "INVALID_URL")
+                return
+            }
+
+            var newBundle: BundleInfo
+
+            if let manifest = res.manifest, !manifest.isEmpty {
+                newBundle = try self.implementation.downloadManifest(
+                    manifest: manifest,
+                    version: res.version,
+                    sessionKey: sessionKey,
+                    link: res.link,
+                    comment: res.comment
+                )
+            } else {
+                newBundle = try self.implementation.download(
+                    url: downloadUrl,
+                    version: res.version,
+                    sessionKey: sessionKey,
+                    link: res.link,
+                    comment: res.comment
+                )
+            }
+
+            // Verify checksum if provided
+            if let checksum = res.checksum, !checksum.isEmpty {
+                let decryptedChecksum = try CryptoCipher.decryptChecksum(
+                    checksum: checksum,
+                    publicKey: self.implementation.publicKey
+                )
+                if !decryptedChecksum.isEmpty && newBundle.getChecksum() != decryptedChecksum {
+                    _ = self.implementation.delete(id: newBundle.getId())
+                    call.reject("Checksum mismatch", "CHECKSUM_MISMATCH")
+                    return
+                }
+            }
+
+            // Update registry: delete old bundle if exists, register new one
+            var updatedRegistry = self.getMiniAppsRegistry()
+            let isMain = updatedRegistry[miniAppName]?["isMain"] as? Bool ?? false
+
+            if let oldId = oldBundleId {
+                _ = self.implementation.delete(id: oldId)
+                logger.info("Deleted old bundle \(oldId) for mini-app '\(miniAppName)'")
+            }
+
+            updatedRegistry[miniAppName] = [
+                "id": newBundle.getId(),
+                "isMain": isMain
+            ]
+            self.saveMiniAppsRegistry(updatedRegistry)
+
+            // Auto-switch: set the new bundle active
+            let setSuccess = self.implementation.set(id: newBundle.getId())
+            if setSuccess {
+                logger.info("Mini-app '\(miniAppName)' updated and switched to bundle \(newBundle.getId())")
+
+                // Reload the app
+                DispatchQueue.main.async {
+                    _ = self._reload()
+                }
+            }
+
+            var result = res.toDict()
+            result["miniAppUpdated"] = true
+            call.resolve(result)
+
+        } catch {
+            logger.error("Failed to download mini-app update: \(error.localizedDescription)")
+            call.reject("Failed to download update: \(error.localizedDescription)", "DOWNLOAD_FAILED")
         }
     }
 
@@ -886,6 +1127,95 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    // MARK: - Mini-Apps Registry Helpers
+
+    private func getMiniAppsRegistry() -> [String: [String: Any]] {
+        guard let data = UserDefaults.standard.string(forKey: miniAppsRegistryKey),
+              let jsonData = data.data(using: .utf8),
+              let dict = try? JSONSerialization.jsonObject(with: jsonData) as? [String: [String: Any]] else {
+            return [:]
+        }
+        return dict
+    }
+
+    private func saveMiniAppsRegistry(_ registry: [String: [String: Any]]) {
+        if let data = try? JSONSerialization.data(withJSONObject: registry),
+           let str = String(data: data, encoding: .utf8) {
+            UserDefaults.standard.set(str, forKey: miniAppsRegistryKey)
+            UserDefaults.standard.synchronize()
+        }
+    }
+
+    private func getProtectedBundleIds() -> Set<String> {
+        var ids = Set<String>()
+        let registry = getMiniAppsRegistry()
+        for (_, entry) in registry {
+            if let bundleId = entry["id"] as? String, !bundleId.isEmpty {
+                ids.insert(bundleId)
+            }
+        }
+        return ids
+    }
+
+    private func getMiniAppForBundleId(_ bundleId: String) -> (name: String, isMain: Bool)? {
+        let registry = getMiniAppsRegistry()
+        for (name, entry) in registry {
+            if let id = entry["id"] as? String, id == bundleId {
+                let isMain = entry["isMain"] as? Bool ?? false
+                return (name, isMain)
+            }
+        }
+        return nil
+    }
+
+    @objc func setMiniApp(_ call: CAPPluginCall) {
+        guard miniAppsEnabled else {
+            logger.error("setMiniApp called but miniAppsEnabled is false")
+            call.reject("Mini-apps support is disabled. Set miniAppsEnabled: true in your Capacitor config.", "MINIAPPS_DISABLED")
+            return
+        }
+
+        guard let name = call.getString("name") else {
+            logger.error("setMiniApp called without name")
+            call.reject("setMiniApp called without name", "INVALID_PARAMS")
+            return
+        }
+
+        // Get bundle ID - use provided ID or current bundle
+        let bundleId = call.getString("id") ?? implementation.getCurrentBundleId()
+        let isMain = call.getBool("isMain") ?? false
+
+        // Verify the bundle exists
+        let bundleInfo = implementation.getBundleInfo(id: bundleId)
+        if bundleInfo.isUnknown() && !bundleInfo.isBuiltin() {
+            logger.error("setMiniApp: bundle \(bundleId) not found")
+            call.reject("Bundle '\(bundleId)' not found", "BUNDLE_NOT_FOUND")
+            return
+        }
+
+        var registry = getMiniAppsRegistry()
+
+        // If isMain is true, clear isMain from all other entries
+        if isMain {
+            for (existingName, var entry) in registry {
+                if entry["isMain"] as? Bool == true {
+                    entry["isMain"] = false
+                    registry[existingName] = entry
+                }
+            }
+        }
+
+        // Add or update the mini-app entry
+        registry[name] = [
+            "id": bundleId,
+            "isMain": isMain
+        ]
+
+        saveMiniAppsRegistry(registry)
+        logger.info("Registered mini-app '\(name)' with bundle \(bundleId), isMain: \(isMain)")
+        call.resolve()
+    }
+
     @objc func setCustomId(_ call: CAPPluginCall) {
         guard let customId = call.getString("customId") else {
             logger.error("setCustomId called without customId")
@@ -939,10 +1269,22 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func current(_ call: CAPPluginCall) {
         let bundle: BundleInfo = self.implementation.getCurrentBundle()
-        call.resolve([
+        var result: [String: Any] = [
             "bundle": bundle.toJSON(),
             "native": self.currentVersionNative.description
-        ])
+        ]
+
+        // Add mini-app info if enabled and current bundle is a registered mini-app
+        if miniAppsEnabled {
+            if let miniAppInfo = getMiniAppForBundleId(bundle.getId()) {
+                result["miniApp"] = [
+                    "name": miniAppInfo.name,
+                    "isMain": miniAppInfo.isMain
+                ]
+            }
+        }
+
+        call.resolve(result)
     }
 
     @objc func notifyAppReady(_ call: CAPPluginCall) {
