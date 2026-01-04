@@ -252,6 +252,10 @@ Capacitor Updater works by unzipping a compiled app bundle to the native device 
 - Do not password encrypt the bundle zip file, or it will fail to unpack.
 - Make sure the bundle does not contain any extra hidden files or folders, or it may fail to unpack.
 
+### Downgrading to a previous version of the updater plugin
+
+Downgrading to a previous version of the updater plugin is not supported.
+
 ## Updater Plugin Config
 
 <docgen-config>
