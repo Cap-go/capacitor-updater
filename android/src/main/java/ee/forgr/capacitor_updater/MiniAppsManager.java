@@ -34,13 +34,13 @@ public class MiniAppsManager {
     private final String registryKey;
     private final SharedPreferences prefs;
     private final SharedPreferences.Editor editor;
-    private final CapgoLogger logger;
+    private final Logger logger;
 
-    public MiniAppsManager(SharedPreferences prefs, SharedPreferences.Editor editor, CapgoLogger logger) {
+    public MiniAppsManager(SharedPreferences prefs, SharedPreferences.Editor editor, Logger logger) {
         this(prefs, editor, logger, DEFAULT_REGISTRY_KEY);
     }
 
-    public MiniAppsManager(SharedPreferences prefs, SharedPreferences.Editor editor, CapgoLogger logger, String registryKey) {
+    public MiniAppsManager(SharedPreferences prefs, SharedPreferences.Editor editor, Logger logger, String registryKey) {
         this.prefs = prefs;
         this.editor = editor;
         this.logger = logger;
