@@ -63,10 +63,18 @@ public struct CryptoCipher {
                 detectedFormat = "base64"
             }
             // swiftlint:disable:next line_length
-            logger.debug("Received encrypted checksum format: \(detectedFormat) (length: \(checksum.count) chars, \(checksumBytes.count) bytes)")
+            logger.debug("Received checksum format: \(detectedFormat) (length: \(checksum.count) chars, \(checksumBytes.count) bytes)")
 
             if checksumBytes.isEmpty {
                 logger.error("Decoded checksum is empty")
+                throw CustomError.cannotDecode
+            }
+
+            // RSA-2048 encrypted data must be exactly 256 bytes
+            // If the checksum is not 256 bytes, the bundle was not encrypted properly
+            if checksumBytes.count != 256 {
+                // swiftlint:disable:next line_length
+                logger.error("Checksum is not RSA encrypted (size: \(checksumBytes.count) bytes, expected 256 for RSA-2048). Bundle must be uploaded with encryption when public key is configured.")
                 throw CustomError.cannotDecode
             }
 
