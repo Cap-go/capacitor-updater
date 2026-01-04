@@ -1359,10 +1359,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements SplashscreenManage
                     return;
                 }
 
-                // Unregister from mini-apps registry
-                registry.remove(miniAppName);
-                miniAppsManager.saveRegistry(registry);
-                logger.info("delete: unregistered mini-app '" + miniAppName + "', will delete bundle " + bundleId);
+                logger.info("delete: will delete mini-app '" + miniAppName + "' bundle " + bundleId);
             } catch (JSONException e) {
                 logger.error("delete: error reading mini-app registry: " + e.getMessage());
                 call.reject("Error reading mini-app registry", e);
@@ -1380,6 +1377,17 @@ public class CapacitorUpdaterPlugin extends Plugin implements SplashscreenManage
         try {
             final Boolean res = this.implementation.delete(bundleId);
             if (res) {
+                // Unregister from mini-apps registry AFTER successful deletion
+                if (miniAppName != null && !miniAppName.isEmpty()) {
+                    try {
+                        JSONObject registry = miniAppsManager.getRegistry();
+                        registry.remove(miniAppName);
+                        miniAppsManager.saveRegistry(registry);
+                        logger.info("delete: unregistered mini-app '" + miniAppName + "'");
+                    } catch (Exception e) {
+                        logger.warn("delete: failed to unregister mini-app from registry: " + e.getMessage());
+                    }
+                }
                 call.resolve();
             } else {
                 logger.error("Delete failed, id " + bundleId + " does not exist");
@@ -1592,15 +1600,6 @@ public class CapacitorUpdaterPlugin extends Plugin implements SplashscreenManage
                     return;
                 }
 
-                // Delete old bundle for this mini-app (if exists and not builtin)
-                if (!oldBundleId.isEmpty()) {
-                    BundleInfo oldBundle = this.implementation.getBundleInfo(oldBundleId);
-                    if (!oldBundle.isBuiltin() && !oldBundle.isUnknown()) {
-                        logger.info("performMiniAppUpdate: deleting old bundle " + oldBundleId);
-                        this.implementation.delete(oldBundleId);
-                    }
-                }
-
                 // Update registry with new bundle ID
                 boolean isMain = entry.optBoolean("isMain", false);
                 JSONObject newEntry = new JSONObject();
@@ -1620,6 +1619,20 @@ public class CapacitorUpdaterPlugin extends Plugin implements SplashscreenManage
                 if (!this._reload()) {
                     call.reject("Failed to reload app after update");
                     return;
+                }
+
+                // Delete old bundle AFTER successful activation (non-fatal if fails)
+                if (!oldBundleId.isEmpty()) {
+                    BundleInfo oldBundle = this.implementation.getBundleInfo(oldBundleId);
+                    if (!oldBundle.isBuiltin() && !oldBundle.isUnknown()) {
+                        try {
+                            logger.info("performMiniAppUpdate: deleting old bundle " + oldBundleId);
+                            this.implementation.delete(oldBundleId);
+                        } catch (Exception e) {
+                            logger.warn("performMiniAppUpdate: failed to delete old bundle: " + e.getMessage());
+                            // Non-fatal - new bundle is already active
+                        }
+                    }
                 }
 
                 // Return success with miniAppUpdated flag

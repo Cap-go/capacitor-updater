@@ -10,8 +10,22 @@ public protocol SplashscreenManagerDelegate: AnyObject {
     func onSplashscreenTimeout()
 }
 
-/// Manages auto splashscreen functionality
-/// Handles showing/hiding splashscreen and loader overlay
+/// Manages auto splashscreen functionality.
+/// Handles showing/hiding splashscreen and loader overlay.
+///
+/// **IMPORTANT: Capacitor Version Dependency**
+///
+/// This class uses dynamic method invocation (`NSSelectorFromString`) to call
+/// the SplashScreen plugin's show/hide methods directly from native code.
+/// This is necessary because Capacitor does not expose a public API for
+/// invoking plugin methods from native code without JavaScript involvement.
+///
+/// **Tested with:** Capacitor 6.x, 7.x
+///
+/// If Capacitor changes the SplashScreen plugin's method signatures in future
+/// versions, the dynamic invocation may fail. In such cases, the splashscreen
+/// operations will fail gracefully with a warning logged, and the app will
+/// continue to function (just without automatic splashscreen management).
 public class SplashscreenManager {
     private let logger: Logger
     private let timeout: Int

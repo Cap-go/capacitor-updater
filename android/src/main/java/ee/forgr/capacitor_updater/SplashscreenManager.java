@@ -35,8 +35,28 @@ interface SplashscreenManagerDelegate {
 }
 
 /**
- * Manages auto splashscreen functionality
- * Handles showing/hiding splashscreen and loader overlay
+ * Manages auto splashscreen functionality.
+ * Handles showing/hiding splashscreen and loader overlay.
+ *
+ * <p><b>IMPORTANT: Capacitor Version Dependency</b></p>
+ * <p>This class uses reflection to access the private {@code msgHandler} field from
+ * Capacitor's Bridge class in order to invoke SplashScreen plugin methods directly
+ * from native code. This is necessary because Capacitor does not expose a public API
+ * for invoking plugin methods from native code without JavaScript involvement.</p>
+ *
+ * <p><b>Tested with:</b> Capacitor 6.x, 7.x</p>
+ *
+ * <p>If Capacitor changes its internal implementation in future versions, the
+ * reflection-based approach may fail. In such cases, the splashscreen operations
+ * will fail gracefully with a warning logged, and the app will continue to function
+ * (just without automatic splashscreen management).</p>
+ *
+ * <p>Alternative approaches considered but not implemented:</p>
+ * <ul>
+ *   <li>Using Bridge.triggerJSEvent() - requires JavaScript to be loaded first</li>
+ *   <li>Direct plugin instance access - PluginHandle doesn't expose plugin methods</li>
+ *   <li>Bridge.saveCall/getSavedCall - designed for async callbacks, not synchronous invocation</li>
+ * </ul>
  */
 public class SplashscreenManager {
 
@@ -104,50 +124,72 @@ public class SplashscreenManager {
 
     // MARK: - Private Methods
 
+    /**
+     * Invokes a SplashScreen plugin method via reflection.
+     *
+     * <p>This method uses reflection to access Capacitor's private {@code msgHandler}
+     * field to create a PluginCall. This is fragile and may break with future
+     * Capacitor versions, but it's the only way to invoke plugin methods
+     * synchronously from native code.</p>
+     *
+     * @param bridge The Capacitor bridge
+     * @param methodName The plugin method to invoke ("show" or "hide")
+     * @return true if the method was invoked successfully, false otherwise
+     */
+    private boolean invokeSplashScreenMethod(Bridge bridge, String methodName) {
+        PluginHandle splashScreenPlugin = bridge.getPlugin("SplashScreen");
+        if (splashScreenPlugin == null) {
+            logger.warn("autoSplashscreen: SplashScreen plugin not found. Install @capacitor/splash-screen plugin.");
+            return false;
+        }
+
+        try {
+            // FRAGILE: Uses reflection to access private msgHandler field.
+            // Tested with Capacitor 6.x and 7.x. If this fails in future versions,
+            // the app will continue to work but without automatic splashscreen management.
+            JSObject options = new JSObject();
+            java.lang.reflect.Field msgHandlerField = bridge.getClass().getDeclaredField("msgHandler");
+            msgHandlerField.setAccessible(true);
+            Object msgHandler = msgHandlerField.get(bridge);
+
+            PluginCall call = new PluginCall(
+                (com.getcapacitor.MessageHandler) msgHandler,
+                "SplashScreen",
+                "FAKE_CALLBACK_ID_" + methodName.toUpperCase(),
+                methodName,
+                options
+            );
+
+            splashScreenPlugin.invoke(methodName, call);
+            return true;
+        } catch (NoSuchFieldException e) {
+            // Capacitor internals have changed - msgHandler field no longer exists
+            logger.error("autoSplashscreen: Capacitor version incompatibility - 'msgHandler' field not found. " +
+                "This plugin may need to be updated for your Capacitor version.");
+            return false;
+        } catch (ClassCastException e) {
+            // Capacitor internals have changed - msgHandler type has changed
+            logger.error("autoSplashscreen: Capacitor version incompatibility - MessageHandler type mismatch. " +
+                "This plugin may need to be updated for your Capacitor version.");
+            return false;
+        } catch (Exception e) {
+            logger.error("autoSplashscreen: Failed to invoke SplashScreen." + methodName + ": " + e.getMessage());
+            return false;
+        }
+    }
+
     private void hideInternal() {
         cancelTimeout();
         removeLoader();
 
-        try {
-            Bridge bridge = delegate.getSplashscreenBridge();
-            if (bridge == null) {
-                logger.warn("Bridge not ready for hiding splashscreen with autoSplashscreen");
-                return;
-            }
+        Bridge bridge = delegate.getSplashscreenBridge();
+        if (bridge == null) {
+            logger.warn("Bridge not ready for hiding splashscreen with autoSplashscreen");
+            return;
+        }
 
-            // Try to call the SplashScreen plugin directly through the bridge
-            PluginHandle splashScreenPlugin = bridge.getPlugin("SplashScreen");
-            if (splashScreenPlugin != null) {
-                try {
-                    // Create a plugin call for the hide method using reflection to access private msgHandler
-                    JSObject options = new JSObject();
-                    java.lang.reflect.Field msgHandlerField = bridge.getClass().getDeclaredField("msgHandler");
-                    msgHandlerField.setAccessible(true);
-                    Object msgHandler = msgHandlerField.get(bridge);
-
-                    PluginCall call = new PluginCall(
-                        (com.getcapacitor.MessageHandler) msgHandler,
-                        "SplashScreen",
-                        "FAKE_CALLBACK_ID_HIDE",
-                        "hide",
-                        options
-                    );
-
-                    // Call the hide method directly
-                    splashScreenPlugin.invoke("hide", call);
-                    logger.info("Splashscreen hidden automatically via direct plugin call");
-                } catch (Exception e) {
-                    logger.error("Failed to call SplashScreen hide method: " + e.getMessage());
-                }
-            } else {
-                logger.warn("autoSplashscreen: SplashScreen plugin not found. Install @capacitor/splash-screen plugin.");
-            }
-        } catch (Exception e) {
-            logger.error(
-                "Error hiding splashscreen with autoSplashscreen: " +
-                    e.getMessage() +
-                    ". Make sure @capacitor/splash-screen plugin is installed and configured."
-            );
+        if (invokeSplashScreenMethod(bridge, "hide")) {
+            logger.info("Splashscreen hidden automatically");
         }
     }
 
@@ -155,34 +197,13 @@ public class SplashscreenManager {
         cancelTimeout();
         timedOut = false;
 
-        try {
-            Bridge bridge = delegate.getSplashscreenBridge();
-            if (bridge == null) {
-                logger.warn("Bridge not ready for showing splashscreen with autoSplashscreen");
-            } else {
-                PluginHandle splashScreenPlugin = bridge.getPlugin("SplashScreen");
-                if (splashScreenPlugin != null) {
-                    JSObject options = new JSObject();
-                    java.lang.reflect.Field msgHandlerField = bridge.getClass().getDeclaredField("msgHandler");
-                    msgHandlerField.setAccessible(true);
-                    Object msgHandler = msgHandlerField.get(bridge);
-
-                    PluginCall call = new PluginCall(
-                        (com.getcapacitor.MessageHandler) msgHandler,
-                        "SplashScreen",
-                        "FAKE_CALLBACK_ID_SHOW",
-                        "show",
-                        options
-                    );
-
-                    splashScreenPlugin.invoke("show", call);
-                    logger.info("Splashscreen shown synchronously to prevent flash");
-                } else {
-                    logger.warn("autoSplashscreen: SplashScreen plugin not found");
-                }
+        Bridge bridge = delegate.getSplashscreenBridge();
+        if (bridge != null) {
+            if (invokeSplashScreenMethod(bridge, "show")) {
+                logger.info("Splashscreen shown synchronously to prevent flash");
             }
-        } catch (Exception e) {
-            logger.error("Failed to show splashscreen synchronously: " + e.getMessage());
+        } else {
+            logger.warn("Bridge not ready for showing splashscreen with autoSplashscreen");
         }
 
         addLoaderIfNeeded();
