@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import Version
 
 /// AppUpdateAvailability enum values matching TypeScript definitions
 public enum AppUpdateAvailability: Int {
