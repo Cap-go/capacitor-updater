@@ -207,4 +207,57 @@ public class MiniAppsManager {
         let registry = getRegistry()
         return registry[name]?["isMain"] as? Bool ?? false
     }
+
+    // MARK: - App State (Inter-app Communication)
+
+    private func stateKey(for miniApp: String) -> String {
+        return "CapacitorUpdater.miniAppState.\(miniApp)"
+    }
+
+    /// Write state data for a mini-app
+    /// - Parameters:
+    ///   - miniApp: The mini-app name
+    ///   - state: The state object to save (must be JSON-serializable), or nil to clear
+    public func writeState(miniApp: String, state: [String: Any]?) {
+        let key = stateKey(for: miniApp)
+
+        if let state = state {
+            if let data = try? JSONSerialization.data(withJSONObject: state),
+               let str = String(data: data, encoding: .utf8) {
+                UserDefaults.standard.set(str, forKey: key)
+                UserDefaults.standard.synchronize()
+                logger.info("Wrote state for mini-app '\(miniApp)'")
+            } else {
+                logger.error("Failed to serialize state for mini-app '\(miniApp)'")
+            }
+        } else {
+            // Clear state
+            UserDefaults.standard.removeObject(forKey: key)
+            UserDefaults.standard.synchronize()
+            logger.info("Cleared state for mini-app '\(miniApp)'")
+        }
+    }
+
+    /// Read state data for a mini-app
+    /// - Parameter miniApp: The mini-app name
+    /// - Returns: The saved state, or nil if no state exists
+    public func readState(miniApp: String) -> [String: Any]? {
+        let key = stateKey(for: miniApp)
+
+        guard let data = UserDefaults.standard.string(forKey: key),
+              let jsonData = data.data(using: .utf8),
+              let state = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
+            return nil
+        }
+        return state
+    }
+
+    /// Clear state data for a mini-app
+    /// - Parameter miniApp: The mini-app name
+    public func clearState(miniApp: String) {
+        let key = stateKey(for: miniApp)
+        UserDefaults.standard.removeObject(forKey: key)
+        UserDefaults.standard.synchronize()
+        logger.info("Cleared state for mini-app '\(miniApp)'")
+    }
 }

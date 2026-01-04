@@ -916,6 +916,94 @@ export interface CapacitorUpdaterPlugin {
   setMiniApp(options: SetMiniAppOptions): Promise<void>;
 
   /**
+   * Write state data for a mini-app.
+   *
+   * This enables communication between mini-apps by allowing any app to write
+   * state data that can be read by other apps. The state is persisted to storage
+   * and survives app restarts.
+   *
+   * **Common use cases:**
+   * - Pass navigation parameters when switching to a mini-app
+   * - Share user session/authentication data across mini-apps
+   * - Save mini-app state before switching away (to restore later)
+   * - Enable mini-app to mini-app communication
+   *
+   * Requires {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} to be `true`.
+   *
+   * @example
+   * // Main app sets state before launching games mini-app
+   * await CapacitorUpdater.writeAppState({
+   *   miniApp: 'games',
+   *   state: { userId: '123', startScreen: 'leaderboard' }
+   * });
+   * await CapacitorUpdater.set({ miniApp: 'games' });
+   *
+   * @example
+   * // Mini-app saves its state before user leaves
+   * await CapacitorUpdater.writeAppState({
+   *   miniApp: 'games',
+   *   state: { currentLevel: 5, score: 1000, scrollPosition: 250 }
+   * });
+   *
+   * @param options The {@link WriteAppStateOptions} containing mini-app name and state object.
+   * @returns {Promise<void>} Resolves when the state is saved.
+   * @throws {Error} If mini-apps are disabled.
+   * @since 8.42.0
+   */
+  writeAppState(options: WriteAppStateOptions): Promise<void>;
+
+  /**
+   * Read state data for a mini-app.
+   *
+   * Retrieves the state previously saved with {@link writeAppState}. Use this to:
+   * - Get navigation parameters when a mini-app is launched
+   * - Restore mini-app state after being switched back to
+   * - Read shared data from other mini-apps
+   *
+   * Requires {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} to be `true`.
+   *
+   * @example
+   * // Mini-app reads its state on startup
+   * const { state } = await CapacitorUpdater.readAppState({ miniApp: 'games' });
+   * if (state?.startScreen) {
+   *   navigateTo(state.startScreen);
+   * }
+   *
+   * @example
+   * // Main app reads mini-app state to show preview
+   * const { state } = await CapacitorUpdater.readAppState({ miniApp: 'games' });
+   * console.log(`Last played level: ${state?.currentLevel}`);
+   *
+   * @param options The {@link ReadAppStateOptions} containing the mini-app name.
+   * @returns {Promise<ReadAppStateResult>} The saved state, or null if no state exists.
+   * @throws {Error} If mini-apps are disabled.
+   * @since 8.42.0
+   */
+  readAppState(options: ReadAppStateOptions): Promise<ReadAppStateResult>;
+
+  /**
+   * Clear state data for a mini-app.
+   *
+   * Removes all saved state for a mini-app. Use this when:
+   * - User logs out (clear all mini-app states)
+   * - Mini-app is uninstalled/deleted
+   * - State needs to be reset for any reason
+   *
+   * Requires {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} to be `true`.
+   *
+   * @example
+   * // Clear state when deleting a mini-app
+   * await CapacitorUpdater.clearAppState({ miniApp: 'games' });
+   * await CapacitorUpdater.delete({ miniApp: 'games' });
+   *
+   * @param options The {@link ClearAppStateOptions} containing the mini-app name.
+   * @returns {Promise<void>} Resolves when the state is cleared.
+   * @throws {Error} If mini-apps are disabled.
+   * @since 8.42.0
+   */
+  clearAppState(options: ClearAppStateOptions): Promise<void>;
+
+  /**
    * Set a custom identifier for this device.
    *
    * This allows you to identify devices by your own custom ID (user ID, account ID, etc.)
@@ -1807,6 +1895,60 @@ export interface MiniAppInfo {
    * Whether this is the main app that receives auto-updates.
    */
   isMain: boolean;
+}
+
+/**
+ * Options for {@link CapacitorUpdaterPlugin.writeAppState}.
+ *
+ * @since 8.42.0
+ */
+export interface WriteAppStateOptions {
+  /**
+   * The name of the mini-app to write state for.
+   */
+  miniApp: string;
+
+  /**
+   * The state object to save. Must be JSON-serializable.
+   * Pass `null` to clear the state.
+   */
+  state: Record<string, unknown> | null;
+}
+
+/**
+ * Options for {@link CapacitorUpdaterPlugin.readAppState}.
+ *
+ * @since 8.42.0
+ */
+export interface ReadAppStateOptions {
+  /**
+   * The name of the mini-app to read state for.
+   */
+  miniApp: string;
+}
+
+/**
+ * Result of {@link CapacitorUpdaterPlugin.readAppState}.
+ *
+ * @since 8.42.0
+ */
+export interface ReadAppStateResult {
+  /**
+   * The saved state for the mini-app, or `null` if no state exists.
+   */
+  state: Record<string, unknown> | null;
+}
+
+/**
+ * Options for {@link CapacitorUpdaterPlugin.clearAppState}.
+ *
+ * @since 8.42.0
+ */
+export interface ClearAppStateOptions {
+  /**
+   * The name of the mini-app to clear state for.
+   */
+  miniApp: string;
 }
 
 export interface AppReadyResult {

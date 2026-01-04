@@ -1017,6 +1017,85 @@ public class CapacitorUpdaterPlugin extends Plugin implements SplashscreenManage
     }
 
     @PluginMethod
+    public void writeAppState(final PluginCall call) {
+        if (!Boolean.TRUE.equals(this.miniAppsEnabled)) {
+            logger.error("writeAppState called but miniAppsEnabled is false");
+            call.reject("Mini-apps support is disabled. Set miniAppsEnabled: true in your Capacitor config.", "MINIAPPS_DISABLED");
+            return;
+        }
+
+        final String miniApp = call.getString("miniApp");
+        if (miniApp == null || miniApp.isEmpty()) {
+            logger.error("writeAppState called without miniApp");
+            call.reject("writeAppState called without miniApp", "INVALID_PARAMS");
+            return;
+        }
+
+        // Get state - can be null to clear
+        JSObject stateObj = call.getObject("state");
+        JSONObject state = null;
+        if (stateObj != null) {
+            try {
+                state = new JSONObject(stateObj.toString());
+            } catch (JSONException e) {
+                logger.error("writeAppState: failed to parse state: " + e.getMessage());
+                call.reject("Invalid state object", "INVALID_STATE");
+                return;
+            }
+        }
+        miniAppsManager.writeState(miniApp, state);
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void readAppState(final PluginCall call) {
+        if (!Boolean.TRUE.equals(this.miniAppsEnabled)) {
+            logger.error("readAppState called but miniAppsEnabled is false");
+            call.reject("Mini-apps support is disabled. Set miniAppsEnabled: true in your Capacitor config.", "MINIAPPS_DISABLED");
+            return;
+        }
+
+        final String miniApp = call.getString("miniApp");
+        if (miniApp == null || miniApp.isEmpty()) {
+            logger.error("readAppState called without miniApp");
+            call.reject("readAppState called without miniApp", "INVALID_PARAMS");
+            return;
+        }
+
+        JSONObject state = miniAppsManager.readState(miniApp);
+        JSObject result = new JSObject();
+        if (state != null) {
+            try {
+                result.put("state", JSObject.fromJSONObject(state));
+            } catch (JSONException e) {
+                result.put("state", JSObject.NULL);
+            }
+        } else {
+            result.put("state", JSObject.NULL);
+        }
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void clearAppState(final PluginCall call) {
+        if (!Boolean.TRUE.equals(this.miniAppsEnabled)) {
+            logger.error("clearAppState called but miniAppsEnabled is false");
+            call.reject("Mini-apps support is disabled. Set miniAppsEnabled: true in your Capacitor config.", "MINIAPPS_DISABLED");
+            return;
+        }
+
+        final String miniApp = call.getString("miniApp");
+        if (miniApp == null || miniApp.isEmpty()) {
+            logger.error("clearAppState called without miniApp");
+            call.reject("clearAppState called without miniApp", "INVALID_PARAMS");
+            return;
+        }
+
+        miniAppsManager.clearState(miniApp);
+        call.resolve();
+    }
+
+    @PluginMethod
     public void download(final PluginCall call) {
         final String url = call.getString("url");
         final String version = call.getString("version");
