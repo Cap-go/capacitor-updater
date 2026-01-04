@@ -1018,14 +1018,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
                 }
             }
 
-            // Update registry: delete old bundle if exists, register new one
+            // Update registry with new bundle ID
             var updatedRegistry = self.miniAppsManager.getRegistry()
             let isMain = updatedRegistry[miniAppName]?["isMain"] as? Bool ?? false
-
-            if let oldId = oldBundleId {
-                _ = self.implementation.delete(id: oldId)
-                logger.info("Deleted old bundle \(oldId) for mini-app '\(miniAppName)'")
-            }
 
             updatedRegistry[miniAppName] = [
                 "id": newBundle.getId(),
@@ -1035,12 +1030,28 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
 
             // Auto-switch: set the new bundle active
             let setSuccess = self.implementation.set(id: newBundle.getId())
-            if setSuccess {
-                logger.info("Mini-app '\(miniAppName)' updated and switched to bundle \(newBundle.getId())")
+            guard setSuccess else {
+                call.reject("Failed to set new bundle", "SET_FAILED")
+                return
+            }
 
-                // Reload the app
-                DispatchQueue.main.async {
-                    _ = self._reload()
+            logger.info("Mini-app '\(miniAppName)' updated and switched to bundle \(newBundle.getId())")
+
+            // Reload the app
+            DispatchQueue.main.async {
+                _ = self._reload()
+            }
+
+            // Delete old bundle AFTER successful activation (non-fatal if fails)
+            if let oldId = oldBundleId {
+                let oldBundle = self.implementation.getBundleInfo(id: oldId)
+                if !oldBundle.isBuiltin() && !oldBundle.isUnknown() {
+                    let deleted = self.implementation.delete(id: oldId)
+                    if deleted {
+                        logger.info("Deleted old bundle \(oldId) for mini-app '\(miniAppName)'")
+                    } else {
+                        logger.warn("Failed to delete old bundle \(oldId) - non-fatal, new bundle is active")
+                    }
                 }
             }
 
