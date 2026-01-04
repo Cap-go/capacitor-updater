@@ -9,7 +9,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.ProgressBar;
-
 import com.getcapacitor.Bridge;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
@@ -40,6 +39,7 @@ interface SplashscreenManagerDelegate {
  * Handles showing/hiding splashscreen and loader overlay
  */
 public class SplashscreenManager {
+
     private final CapgoLogger logger;
     private final int timeout;
     private final boolean loaderEnabled;
@@ -58,11 +58,11 @@ public class SplashscreenManager {
     }
 
     public SplashscreenManager(
-            CapgoLogger logger,
-            int timeout,
-            boolean loaderEnabled,
-            SplashscreenManagerDelegate delegate,
-            Handler mainHandler
+        CapgoLogger logger,
+        int timeout,
+        boolean loaderEnabled,
+        SplashscreenManagerDelegate delegate,
+        Handler mainHandler
     ) {
         this.logger = logger;
         this.timeout = timeout;
@@ -126,11 +126,11 @@ public class SplashscreenManager {
                     Object msgHandler = msgHandlerField.get(bridge);
 
                     PluginCall call = new PluginCall(
-                            (com.getcapacitor.MessageHandler) msgHandler,
-                            "SplashScreen",
-                            "FAKE_CALLBACK_ID_HIDE",
-                            "hide",
-                            options
+                        (com.getcapacitor.MessageHandler) msgHandler,
+                        "SplashScreen",
+                        "FAKE_CALLBACK_ID_HIDE",
+                        "hide",
+                        options
                     );
 
                     // Call the hide method directly
@@ -144,9 +144,9 @@ public class SplashscreenManager {
             }
         } catch (Exception e) {
             logger.error(
-                    "Error hiding splashscreen with autoSplashscreen: " +
-                            e.getMessage() +
-                            ". Make sure @capacitor/splash-screen plugin is installed and configured."
+                "Error hiding splashscreen with autoSplashscreen: " +
+                    e.getMessage() +
+                    ". Make sure @capacitor/splash-screen plugin is installed and configured."
             );
         }
     }
@@ -168,11 +168,11 @@ public class SplashscreenManager {
                     Object msgHandler = msgHandlerField.get(bridge);
 
                     PluginCall call = new PluginCall(
-                            (com.getcapacitor.MessageHandler) msgHandler,
-                            "SplashScreen",
-                            "FAKE_CALLBACK_ID_SHOW",
-                            "show",
-                            options
+                        (com.getcapacitor.MessageHandler) msgHandler,
+                        "SplashScreen",
+                        "FAKE_CALLBACK_ID_SHOW",
+                        "show",
+                        options
                     );
 
                     splashScreenPlugin.invoke("show", call);
@@ -218,8 +218,8 @@ public class SplashscreenManager {
             overlay.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
 
             FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
             );
             params.gravity = Gravity.CENTER;
             overlay.addView(progressBar, params);

@@ -1,16 +1,17 @@
 package ee.forgr.capacitor_updater;
 
 import android.content.SharedPreferences;
-import org.json.JSONException;
-import org.json.JSONObject;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 /**
  * Represents a mini-app entry in the registry
  */
 class MiniAppEntry {
+
     public final String name;
     public final String bundleId;
     public final boolean isMain;
@@ -27,6 +28,7 @@ class MiniAppEntry {
  * Handles storage, lookup, and lifecycle of mini-apps in a "super-app" architecture.
  */
 public class MiniAppsManager {
+
     private static final String DEFAULT_REGISTRY_KEY = "CapacitorUpdater.miniApps";
 
     private final String registryKey;

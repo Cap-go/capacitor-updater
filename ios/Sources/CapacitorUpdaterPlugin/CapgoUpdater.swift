@@ -1306,7 +1306,7 @@ import UIKit
                 let fileName = url.lastPathComponent
                 // Only cleanup package_*.tmp and update_*.dat files
                 let isDownloadTemp = (fileName.hasPrefix("package_") && fileName.hasSuffix(".tmp")) ||
-                                     (fileName.hasPrefix("update_") && fileName.hasSuffix(".dat"))
+                    (fileName.hasPrefix("update_") && fileName.hasSuffix(".dat"))
                 if !isDownloadTemp {
                     continue
                 }
