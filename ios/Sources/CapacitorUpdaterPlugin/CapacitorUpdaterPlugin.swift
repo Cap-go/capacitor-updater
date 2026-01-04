@@ -382,6 +382,32 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 self.logger.info("Cleanup complete")
             }
 
+            // Michael (WcaleNieWolny) at 04.01.2026
+            // The following line of code contains a bug. After having evaluated it, I have decided not to fix it.
+            // The initial report: https://discord.com/channels/912707985829163099/1456985639345061969
+            // The bug happens in a very specific scenario. Here is the reproduction steps, followed by the lackof busniess impact
+            // Reproduction steps:
+            // 1. Install iOS app via app store. Version: 10.13.0. Version v10 of the app uses Capacitor 6 (6.3.13) - a version where the key was still "LatestVersionNative" 
+            // 2. The plugin writes "10.13.0" to the key "LatestVersionNative"
+            // 3. Update the app to version 10.17.0 via Capgo.
+            // 4. Update the app via testflight to version 11.0.0. This version uses Capacitor 8 (8.41.3) - a version where the key was changed to "LatestNativeBuildVersion"
+            // 5. During the initial load of then new native version, the plugin will read "LatestNativeBuildVersion", not find it, read "LatestVersionNative", find it and revert to builtin version sucessfully.
+            // 6. The plugin writes "11.0.0" to the key "LatestNativeBuildVersion"
+            // 7. The app is now in a state where it is using the builtin version, but the key "LatestNativeBuildVersion" is still set to "11.0.0" and "LatestVersionNative" is still set to "10.13.0". 
+            // 8. The user downgrades using app store back to version 10.13.0.
+            // 9. The old plugin reads "LatestVersionNative", finds "10.13.0," so it doesn't revert to builtin version. // <--- THIS IS THE FIRST PART OF THE BUG
+            // 10. "LatestVersionNative" is written to "10.13.0" but "LatestNativeBuildVersion" is not touched, and stays at "11.0.0"
+            // 11. A capgo update happesn to version 10.17.0.
+            // 12. The user updates again to version 11.0.0 via Testflight.
+            // 13. The plugin reads "LatestNativeBuildVersion", finds "11.0.0", so it doesn't revert to builtin version. It is unaware of the native update that happended.
+            // 14. Capgo loads the 10.13.0 version, while it should have loaded the builtin 11.0.0 version. // <--- THIS IS THE SECOND PART OF THE BUG
+            // The business impact:
+            // None - no one will ever be affected by this bug as reverting via app store should in practice never happen. You are not SUPPOSE to go from Capacitor v8 to v6.
+            // Downgrading isn't supported.
+            // Possible fixes:
+            // 1. Write "LatestVersionNative" - this fixes the part 1 of this bug
+            // 2. Compare both keys. If any is not equal to "currentBuildVersion", then revert to builtin version. This fixes the part 2 of this bug
+
             let previous = UserDefaults.standard.string(forKey: "LatestNativeBuildVersion") ?? UserDefaults.standard.string(forKey: "LatestVersionNative") ?? "0"
             if previous != "0" && self.currentBuildVersion != previous {
                 _ = self._reset(toLastSuccessful: false)
