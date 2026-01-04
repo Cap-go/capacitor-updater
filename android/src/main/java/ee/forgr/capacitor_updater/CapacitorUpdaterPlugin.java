@@ -440,17 +440,20 @@ public class CapacitorUpdaterPlugin extends Plugin {
         // for reliable app-level foreground/background detection on these versions.
         // On older versions, we use the traditional activity lifecycle callbacks in handleOnStart/handleOnStop.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            this.appLifecycleObserver = new AppLifecycleObserver(new AppLifecycleObserver.AppLifecycleListener() {
-                @Override
-                public void onAppMovedToForeground() {
-                    CapacitorUpdaterPlugin.this.appMovedToForeground();
-                }
+            this.appLifecycleObserver = new AppLifecycleObserver(
+                new AppLifecycleObserver.AppLifecycleListener() {
+                    @Override
+                    public void onAppMovedToForeground() {
+                        CapacitorUpdaterPlugin.this.appMovedToForeground();
+                    }
 
-                @Override
-                public void onAppMovedToBackground() {
-                    CapacitorUpdaterPlugin.this.appMovedToBackground();
-                }
-            }, logger);
+                    @Override
+                    public void onAppMovedToBackground() {
+                        CapacitorUpdaterPlugin.this.appMovedToBackground();
+                    }
+                },
+                logger
+            );
             this.appLifecycleObserver.register();
             logger.info("Using ProcessLifecycleOwner for foreground/background detection (Android 14+)");
         } else {
