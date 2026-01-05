@@ -363,7 +363,7 @@ declare module '@capacitor/cli' {
        * 
        * This is useful for debugging production apps (App Store/TestFlight builds on iOS, or production APKs on Android).
        *
-       * @default true on Android, false on iOS (for backward compatibility)
+       * @default Platform-dependent: true (Android), false (iOS)
        * @since  8.42.0
        */
       osLogging?: boolean;
