@@ -351,11 +351,19 @@ declare module '@capacitor/cli' {
        * Enable OS-level logging. When enabled, logs are written to the system log which can be inspected in production builds.
        * 
        * - **iOS**: Uses os_log instead of Swift.print, logs accessible via Console.app or Instruments
-       * - **Android**: Already logs to system by default (Logcat), this flag has no effect
+       * - **Android**: Logs to Logcat (android.util.Log)
+       * 
+       * When set to false, system logging is disabled on both platforms (only JavaScript console logging will occur if enabled).
+       * 
+       * For backward compatibility, the default behavior differs by platform:
+       * - **iOS**: Defaults to false (maintains existing behavior)
+       * - **Android**: Defaults to true (maintains existing behavior)
+       * 
+       * Set explicitly to true or false to ensure consistent behavior across platforms.
        * 
        * This is useful for debugging production apps (App Store/TestFlight builds on iOS, or production APKs on Android).
        *
-       * @default false
+       * @default true on Android, false on iOS (for backward compatibility)
        * @since  8.42.0
        */
       osLogging?: boolean;
