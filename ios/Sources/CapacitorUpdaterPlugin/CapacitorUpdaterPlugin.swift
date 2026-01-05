@@ -17,8 +17,8 @@ import Version
 @objc(CapacitorUpdaterPlugin)
 public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     lazy var logger: Logger = {
-        let iosOsLogging = getConfig().getBoolean("iosOsLogging", false)
-        let options = Logger.Options(useSyslog: iosOsLogging)
+        let osLogging = getConfig().getBoolean("osLogging", false)
+        let options = Logger.Options(useSyslog: osLogging)
         return Logger(withTag: "✨  CapgoUpdater", options: options)
     }()
 
