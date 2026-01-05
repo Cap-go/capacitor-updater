@@ -348,6 +348,18 @@ declare module '@capacitor/cli' {
       disableJSLogging?: boolean;
 
       /**
+       * Enable OS-level logging for iOS. When enabled, logs will be written to the system log using os_log,
+       * which can be inspected in production builds via Console.app or Instruments.
+       * This is useful for debugging App Store builds or TestFlight builds where standard console logs are not accessible.
+       *
+       * Only available for iOS.
+       *
+       * @default false
+       * @since  8.42.0
+       */
+      iosOsLogging?: boolean;
+
+      /**
        * Enable shake gesture to show update menu for debugging/testing purposes
        *
        * @default false
