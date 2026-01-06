@@ -355,15 +355,9 @@ declare module '@capacitor/cli' {
        * 
        * When set to false, system logging is disabled on both platforms (only JavaScript console logging will occur if enabled).
        * 
-       * For backward compatibility, the default behavior differs by platform:
-       * - **iOS**: Defaults to false (maintains existing behavior)
-       * - **Android**: Defaults to true (maintains existing behavior)
-       * 
-       * Set explicitly to true or false to ensure consistent behavior across platforms.
-       * 
        * This is useful for debugging production apps (App Store/TestFlight builds on iOS, or production APKs on Android).
        *
-       * @default Platform-dependent: true (Android), false (iOS)
+       * @default true
        * @since  8.42.0
        */
       osLogging?: boolean;

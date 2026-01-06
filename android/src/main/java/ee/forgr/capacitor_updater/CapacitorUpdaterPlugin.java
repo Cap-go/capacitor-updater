@@ -221,8 +221,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         super.load();
         
         // Initialize logger with osLogging config
-        // Default to true for Android to maintain backward compatibility (Android always logged to system before)
-        // iOS defaults to false to maintain backward compatibility (iOS didn't use os_log before)
+        // Default to true for both platforms to enable system logging by default
         boolean osLogging = this.getConfig().getBoolean("osLogging", true);
         Logger.Options loggerOptions = new Logger.Options(osLogging);
         this.logger = new Logger("CapgoUpdater", loggerOptions);
