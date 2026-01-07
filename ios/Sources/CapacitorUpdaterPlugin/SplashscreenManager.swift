@@ -25,9 +25,17 @@ class SplashscreenManager {
     private var splashscreenLoaderContainer: UIView?
     private(set) var hasTimedOut = false
 
+    // Callback for timeout events
+    var onTimeout: (() -> Void)?
+
     init(bridge: CAPBridgeProtocol?, logger: Logger) {
         self.bridge = bridge
         self.logger = logger
+    }
+
+    /// Update the bridge reference (needed if bridge changes)
+    func setBridge(_ bridge: CAPBridgeProtocol?) {
+        self.bridge = bridge
     }
 
     /// Configure the splashscreen manager with the given settings
