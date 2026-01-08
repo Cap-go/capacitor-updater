@@ -80,12 +80,20 @@ import UIKit
     }
 
     public func setPublicKey(_ publicKey: String) {
-        self.publicKey = publicKey
-        if !publicKey.isEmpty {
-            self.cachedKeyId = CryptoCipher.calcKeyId(publicKey: publicKey)
-        } else {
+        // Empty string means no encryption - proceed normally
+        if publicKey.isEmpty {
+            self.publicKey = ""
             self.cachedKeyId = nil
+            return
         }
+
+        // Non-empty: must be a valid RSA key or crash
+        guard RSAPublicKey.load(rsaPublicKey: publicKey) != nil else {
+            fatalError("Invalid public key in capacitor.config.json: failed to parse RSA key. Remove the key or provide a valid PEM-formatted RSA public key.")
+        }
+
+        self.publicKey = publicKey
+        self.cachedKeyId = CryptoCipher.calcKeyId(publicKey: publicKey)
     }
 
     public func getKeyId() -> String? {
@@ -1306,7 +1314,7 @@ import UIKit
                 let fileName = url.lastPathComponent
                 // Only cleanup package_*.tmp and update_*.dat files
                 let isDownloadTemp = (fileName.hasPrefix("package_") && fileName.hasSuffix(".tmp")) ||
-                                     (fileName.hasPrefix("update_") && fileName.hasSuffix(".dat"))
+                    (fileName.hasPrefix("update_") && fileName.hasSuffix(".dat"))
                 if !isDownloadTemp {
                     continue
                 }

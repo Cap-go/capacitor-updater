@@ -235,7 +235,8 @@ public class DownloadService extends Worker {
                         public void onResponse(@NonNull Call call, @NonNull Response response) {
                             try (ResponseBody body = response.body()) {
                                 // nothing else to do, just closing body
-                            } catch (Exception ignored) {} finally {
+                            } catch (Exception ignored) {
+                            } finally {
                                 response.close();
                             }
                         }
@@ -291,7 +292,7 @@ public class DownloadService extends Worker {
                 String fileHash = entry.getString("file_hash");
                 String downloadUrl = entry.getString("download_url");
 
-                if (!publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
+                if (publicKey != null && !publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
                     try {
                         fileHash = CryptoCipher.decryptChecksum(fileHash, publicKey);
                     } catch (Exception e) {
@@ -633,7 +634,7 @@ public class DownloadService extends Worker {
                 // Use OkIO for atomic write
                 writeFileAtomic(compressedFile, responseBody.byteStream(), null);
 
-                if (!publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
+                if (publicKey != null && !publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
                     logger.debug("Decrypting file " + targetFile.getName());
                     CryptoCipher.decryptFile(compressedFile, publicKey, sessionKey);
                 }
