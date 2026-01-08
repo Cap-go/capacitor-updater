@@ -1597,6 +1597,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func appMovedToBackground() {
+        // Reset timeout flag at start of each background cycle
+        self.autoSplashscreenTimedOut = false
+
         let current: BundleInfo = self.implementation.getCurrentBundle()
         self.implementation.sendStats(action: "app_moved_to_background", versionName: current.getVersionName())
         logger.info("Check for pending update")
