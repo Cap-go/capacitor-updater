@@ -153,12 +153,25 @@ public class CapgoUpdater {
     }
 
     public void setPublicKey(String publicKey) {
-        this.publicKey = publicKey;
-        if (!publicKey.isEmpty()) {
-            this.cachedKeyId = CryptoCipher.calcKeyId(publicKey);
-        } else {
+        // Empty string means no encryption - proceed normally
+        if (publicKey == null || publicKey.isEmpty()) {
+            this.publicKey = "";
             this.cachedKeyId = "";
+            return;
         }
+
+        // Non-empty: must be a valid RSA key or crash
+        try {
+            CryptoCipher.stringToPublicKey(publicKey);
+        } catch (Exception e) {
+            throw new RuntimeException(
+                "Invalid public key in capacitor.config.json: failed to parse RSA key. Remove the key or provide a valid PEM-formatted RSA public key.",
+                e
+            );
+        }
+
+        this.publicKey = publicKey;
+        this.cachedKeyId = CryptoCipher.calcKeyId(publicKey);
     }
 
     public String getKeyId() {
