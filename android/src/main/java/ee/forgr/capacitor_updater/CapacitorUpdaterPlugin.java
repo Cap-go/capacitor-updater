@@ -1000,7 +1000,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         } else {
                             if (CapacitorUpdaterPlugin.this._isAutoUpdateEnabled() && Boolean.TRUE.equals(triggerAutoUpdate)) {
                                 logger.info("Calling autoupdater after channel change!");
-                                backgroundDownload();
+                                this.backgroundDownloadTask = backgroundDownload();
                             }
                             call.resolve(jsRes);
                         }
@@ -1059,7 +1059,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         } else {
                             if (CapacitorUpdaterPlugin.this._isAutoUpdateEnabled() && Boolean.TRUE.equals(triggerAutoUpdate)) {
                                 logger.info("Calling autoupdater after channel change!");
-                                backgroundDownload();
+                                this.backgroundDownloadTask = backgroundDownload();
                             }
                             call.resolve(jsRes);
                         }
@@ -1571,7 +1571,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                 String currentVersion = String.valueOf(CapacitorUpdaterPlugin.this.implementation.getCurrentBundle());
                                 if (!Objects.equals(newVersion, currentVersion)) {
                                     logger.info("New version found: " + newVersion);
-                                    CapacitorUpdaterPlugin.this.backgroundDownload();
+                                    CapacitorUpdaterPlugin.this.backgroundDownloadTask = CapacitorUpdaterPlugin.this.backgroundDownload();
                                 }
                             }
                         });
@@ -1768,6 +1768,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private Thread backgroundDownload() {
+        // Check if a download is already in progress
+        if (this.backgroundDownloadTask != null && this.backgroundDownloadTask.isAlive()) {
+            logger.info("Download already in progress, skipping duplicate download request");
+            return this.backgroundDownloadTask;
+        }
+        
         final boolean plannedDirectUpdate = this.shouldUseDirectUpdate();
         final boolean initialDirectUpdateAllowed = this.isDirectUpdateCurrentlyAllowed(plannedDirectUpdate);
         this.implementation.directUpdate = initialDirectUpdateAllowed;
