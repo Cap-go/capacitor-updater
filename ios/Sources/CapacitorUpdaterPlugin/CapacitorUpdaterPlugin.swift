@@ -109,6 +109,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var backgroundWork: DispatchWorkItem?
     private var taskRunning = false
     private var periodCheckDelay = 0
+    private let downloadLock = NSLock()
     private var downloadInProgress = false
 
     // Lock to ensure cleanup completes before downloads start
@@ -1352,8 +1353,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         failureEvent: String = "downloadFailed",
         sendStats: Bool = true
     ) {
-        // Clear download in progress flag
+        // Clear download in progress flag (handles both success and error completion)
+        downloadLock.lock()
         downloadInProgress = false
+        downloadLock.unlock()
         
         if error {
             if sendStats {
@@ -1368,21 +1371,27 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     func backgroundDownload() {
-        // Check if a download is already in progress
+        // Check if a download is already in progress (thread-safe)
+        downloadLock.lock()
         if downloadInProgress {
+            downloadLock.unlock()
             logger.info("Download already in progress, skipping duplicate download request")
             return
         }
+        // Mark download as in progress
+        downloadInProgress = true
+        downloadLock.unlock()
         
         let plannedDirectUpdate = self.shouldUseDirectUpdate()
         let messageUpdate = plannedDirectUpdate ? "Update will occur now." : "Update will occur next time app moves to background."
         guard let url = URL(string: self.updateUrl) else {
             logger.error("Error no url or wrong format")
+            // Clear the flag if we return early
+            downloadLock.lock()
+            downloadInProgress = false
+            downloadLock.unlock()
             return
         }
-        
-        // Mark download as in progress
-        downloadInProgress = true
         
         DispatchQueue.global(qos: .background).async {
             // Wait for cleanup to complete before starting download
@@ -1577,7 +1586,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             logger.info("Background Timer Task canceled, Activity resumed before timer completes")
         }
         if self._isAutoUpdateEnabled() {
-            if !downloadInProgress {
+            // Check if download is already in progress (thread-safe)
+            downloadLock.lock()
+            let isDownloading = downloadInProgress
+            downloadLock.unlock()
+            
+            if !isDownloading {
                 self.backgroundDownload()
             } else {
                 logger.info("Download already in progress, skipping duplicate download request")
