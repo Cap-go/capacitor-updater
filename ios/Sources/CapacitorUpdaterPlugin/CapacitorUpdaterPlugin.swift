@@ -1344,8 +1344,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     ) {
         // Clear download in progress flag (handles both success and error completion)
         downloadLock.lock()
+        defer { downloadLock.unlock() }
         downloadInProgress = false
-        downloadLock.unlock()
         
         if error {
             if sendStats {
@@ -1362,14 +1362,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     func backgroundDownload() {
         // Check if a download is already in progress (thread-safe)
         downloadLock.lock()
-        if downloadInProgress {
-            downloadLock.unlock()
+        let isInProgress = downloadInProgress
+        if !isInProgress {
+            downloadInProgress = true
+        }
+        downloadLock.unlock()
+        
+        if isInProgress {
             logger.info("Download already in progress, skipping duplicate download request")
             return
         }
-        // Mark download as in progress
-        downloadInProgress = true
-        downloadLock.unlock()
         
         let plannedDirectUpdate = self.shouldUseDirectUpdate()
         let messageUpdate = plannedDirectUpdate ? "Update will occur now." : "Update will occur next time app moves to background."
@@ -1377,8 +1379,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             logger.error("Error no url or wrong format")
             // Clear the flag if we return early
             downloadLock.lock()
+            defer { downloadLock.unlock() }
             downloadInProgress = false
-            downloadLock.unlock()
             return
         }
         
