@@ -109,6 +109,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var backgroundWork: DispatchWorkItem?
     private var taskRunning = false
     private var periodCheckDelay = 0
+    private var downloadInProgress = false
 
     // Lock to ensure cleanup completes before downloads start
     private let cleanupLock = NSLock()
@@ -1351,6 +1352,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         failureEvent: String = "downloadFailed",
         sendStats: Bool = true
     ) {
+        // Clear download in progress flag
+        downloadInProgress = false
+        
         if error {
             if sendStats {
                 self.implementation.sendStats(action: failureAction, versionName: current.getVersionName())
@@ -1364,12 +1368,22 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     func backgroundDownload() {
+        // Check if a download is already in progress
+        if downloadInProgress {
+            logger.info("Download already in progress, skipping duplicate download request")
+            return
+        }
+        
         let plannedDirectUpdate = self.shouldUseDirectUpdate()
         let messageUpdate = plannedDirectUpdate ? "Update will occur now." : "Update will occur next time app moves to background."
         guard let url = URL(string: self.updateUrl) else {
             logger.error("Error no url or wrong format")
             return
         }
+        
+        // Mark download as in progress
+        downloadInProgress = true
+        
         DispatchQueue.global(qos: .background).async {
             // Wait for cleanup to complete before starting download
             self.waitForCleanupIfNeeded()
@@ -1563,7 +1577,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             logger.info("Background Timer Task canceled, Activity resumed before timer completes")
         }
         if self._isAutoUpdateEnabled() {
-            self.backgroundDownload()
+            if !downloadInProgress {
+                self.backgroundDownload()
+            } else {
+                logger.info("Download already in progress, skipping duplicate download request")
+            }
         } else {
             let instanceDescriptor = (self.bridge?.viewController as? CAPBridgeViewController)?.instanceDescriptor()
             if instanceDescriptor?.serverURL != nil {
