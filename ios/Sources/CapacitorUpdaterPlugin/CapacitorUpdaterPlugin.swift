@@ -1353,7 +1353,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         failureEvent: String = "downloadFailed",
         sendStats: Bool = true
     ) {
-        // Clear download in progress flag (handles both success and error completion)
+        // Clear download in progress flag - this is called at the end of every download attempt
+        // whether it succeeds, fails, or is skipped (e.g., already up to date)
         downloadLock.lock()
         defer { downloadLock.unlock() }
         downloadInProgress = false
