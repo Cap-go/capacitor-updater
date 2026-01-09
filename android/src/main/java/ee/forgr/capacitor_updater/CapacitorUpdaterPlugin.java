@@ -12,16 +12,11 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
-import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
-import android.view.Gravity;
 import android.view.View;
-import android.view.ViewGroup;
-import android.widget.FrameLayout;
-import android.widget.ProgressBar;
 import com.getcapacitor.CapConfig;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -104,10 +99,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private Thread backgroundTask;
     private Boolean taskRunning = false;
     private Boolean keepUrlPathAfterReload = false;
-    private Boolean autoSplashscreen = false;
-    private Boolean autoSplashscreenLoader = false;
-    private Integer autoSplashscreenTimeout = 10000;
-    private Boolean autoSplashscreenTimedOut = false;
+    private SplashscreenManager splashscreenManager;
     private String directUpdateMode = "false";
     private Boolean wasRecentlyInstalledOrUpdated = false;
     private Boolean onLaunchDirectUpdateUsed = false;
@@ -135,8 +127,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private ShakeMenu shakeMenu;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
-    private FrameLayout splashscreenLoaderOverlay;
-    private Runnable splashscreenTimeoutRunnable;
 
     // App lifecycle observer using ProcessLifecycleOwner for reliable foreground/background detection
     private AppLifecycleObserver appLifecycleObserver;
@@ -413,10 +403,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.keepUrlPathAfterReload = this.getConfig().getBoolean("keepUrlPathAfterReload", false);
         this.syncKeepUrlPathFlag(this.keepUrlPathAfterReload);
         this.allowManualBundleError = this.getConfig().getBoolean("allowManualBundleError", false);
-        this.autoSplashscreen = this.getConfig().getBoolean("autoSplashscreen", false);
-        this.autoSplashscreenLoader = this.getConfig().getBoolean("autoSplashscreenLoader", false);
+
+        // Initialize SplashscreenManager
+        boolean autoSplashscreen = this.getConfig().getBoolean("autoSplashscreen", false);
+        boolean autoSplashscreenLoader = this.getConfig().getBoolean("autoSplashscreenLoader", false);
         int splashscreenTimeoutValue = this.getConfig().getInt("autoSplashscreenTimeout", 10000);
-        this.autoSplashscreenTimeout = Math.max(0, splashscreenTimeoutValue);
+        this.splashscreenManager = new SplashscreenManager(this.logger, this.getActivity(), this::getBridge);
+        this.splashscreenManager.configure(autoSplashscreen, autoSplashscreenLoader, Math.max(0, splashscreenTimeoutValue));
+
         this.implementation.timeout = this.getConfig().getInt("responseTimeout", 20) * 1000;
         this.shakeMenuEnabled = this.getConfig().getBoolean("shakeMenu", false);
         boolean resetWhenUpdate = this.getConfig().getBoolean("resetWhenUpdate", true);
@@ -500,195 +494,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
         // Auto hide splashscreen if enabled
         // We show it on background when conditions are met, so we should hide it on foreground regardless of update outcome
-        if (this.autoSplashscreen) {
-            this.hideSplashscreen();
-        }
-    }
-
-    private void hideSplashscreen() {
-        if (Looper.myLooper() == Looper.getMainLooper()) {
-            hideSplashscreenInternal();
-        } else {
-            this.mainHandler.post(this::hideSplashscreenInternal);
-        }
-    }
-
-    private void hideSplashscreenInternal() {
-        cancelSplashscreenTimeout();
-        removeSplashscreenLoader();
-
-        try {
-            if (getBridge() == null) {
-                logger.warn("Bridge not ready for hiding splashscreen with autoSplashscreen");
-                return;
-            }
-
-            // Try to call the SplashScreen plugin directly through the bridge
-            PluginHandle splashScreenPlugin = getBridge().getPlugin("SplashScreen");
-            if (splashScreenPlugin != null) {
-                try {
-                    // Create a plugin call for the hide method using reflection to access private msgHandler
-                    JSObject options = new JSObject();
-                    java.lang.reflect.Field msgHandlerField = getBridge().getClass().getDeclaredField("msgHandler");
-                    msgHandlerField.setAccessible(true);
-                    Object msgHandler = msgHandlerField.get(getBridge());
-
-                    PluginCall call = new PluginCall(
-                        (com.getcapacitor.MessageHandler) msgHandler,
-                        "SplashScreen",
-                        "FAKE_CALLBACK_ID_HIDE",
-                        "hide",
-                        options
-                    );
-
-                    // Call the hide method directly
-                    splashScreenPlugin.invoke("hide", call);
-                    logger.info("Splashscreen hidden automatically via direct plugin call");
-                } catch (Exception e) {
-                    logger.error("Failed to call SplashScreen hide method: " + e.getMessage());
-                }
-            } else {
-                logger.warn("autoSplashscreen: SplashScreen plugin not found. Install @capacitor/splash-screen plugin.");
-            }
-        } catch (Exception e) {
-            logger.error(
-                "Error hiding splashscreen with autoSplashscreen: " +
-                    e.getMessage() +
-                    ". Make sure @capacitor/splash-screen plugin is installed and configured."
-            );
-        }
-    }
-
-    private void showSplashscreen() {
-        if (Looper.myLooper() == Looper.getMainLooper()) {
-            showSplashscreenNow();
-        } else {
-            this.mainHandler.post(this::showSplashscreenNow);
-        }
-    }
-
-    private void showSplashscreenNow() {
-        cancelSplashscreenTimeout();
-        this.autoSplashscreenTimedOut = false;
-
-        try {
-            if (getBridge() == null) {
-                logger.warn("Bridge not ready for showing splashscreen with autoSplashscreen");
-            } else {
-                PluginHandle splashScreenPlugin = getBridge().getPlugin("SplashScreen");
-                if (splashScreenPlugin != null) {
-                    JSObject options = new JSObject();
-                    java.lang.reflect.Field msgHandlerField = getBridge().getClass().getDeclaredField("msgHandler");
-                    msgHandlerField.setAccessible(true);
-                    Object msgHandler = msgHandlerField.get(getBridge());
-
-                    PluginCall call = new PluginCall(
-                        (com.getcapacitor.MessageHandler) msgHandler,
-                        "SplashScreen",
-                        "FAKE_CALLBACK_ID_SHOW",
-                        "show",
-                        options
-                    );
-
-                    splashScreenPlugin.invoke("show", call);
-                    logger.info("Splashscreen shown synchronously to prevent flash");
-                } else {
-                    logger.warn("autoSplashscreen: SplashScreen plugin not found");
-                }
-            }
-        } catch (Exception e) {
-            logger.error("Failed to show splashscreen synchronously: " + e.getMessage());
-        }
-
-        addSplashscreenLoaderIfNeeded();
-        scheduleSplashscreenTimeout();
-    }
-
-    private void addSplashscreenLoaderIfNeeded() {
-        if (!Boolean.TRUE.equals(this.autoSplashscreenLoader)) {
-            return;
-        }
-
-        Runnable addLoader = () -> {
-            if (this.splashscreenLoaderOverlay != null) {
-                return;
-            }
-
-            Activity activity = getActivity();
-            if (activity == null) {
-                logger.warn("autoSplashscreen: Activity not available for loader overlay");
-                return;
-            }
-
-            ProgressBar progressBar = new ProgressBar(activity);
-            progressBar.setIndeterminate(true);
-
-            FrameLayout overlay = new FrameLayout(activity);
-            overlay.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-            overlay.setClickable(false);
-            overlay.setFocusable(false);
-            overlay.setBackgroundColor(Color.TRANSPARENT);
-            overlay.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
-
-            FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            );
-            params.gravity = Gravity.CENTER;
-            overlay.addView(progressBar, params);
-
-            ViewGroup decorView = (ViewGroup) activity.getWindow().getDecorView();
-            decorView.addView(overlay);
-
-            this.splashscreenLoaderOverlay = overlay;
-        };
-
-        if (Looper.myLooper() == Looper.getMainLooper()) {
-            addLoader.run();
-        } else {
-            this.mainHandler.post(addLoader);
-        }
-    }
-
-    private void removeSplashscreenLoader() {
-        Runnable removeLoader = () -> {
-            if (this.splashscreenLoaderOverlay != null) {
-                ViewGroup parent = (ViewGroup) this.splashscreenLoaderOverlay.getParent();
-                if (parent != null) {
-                    parent.removeView(this.splashscreenLoaderOverlay);
-                }
-                this.splashscreenLoaderOverlay = null;
-            }
-        };
-
-        if (Looper.myLooper() == Looper.getMainLooper()) {
-            removeLoader.run();
-        } else {
-            this.mainHandler.post(removeLoader);
-        }
-    }
-
-    private void scheduleSplashscreenTimeout() {
-        if (this.autoSplashscreenTimeout == null || this.autoSplashscreenTimeout <= 0) {
-            return;
-        }
-
-        cancelSplashscreenTimeout();
-
-        this.splashscreenTimeoutRunnable = () -> {
-            logger.info("autoSplashscreen timeout reached, hiding splashscreen");
-            this.autoSplashscreenTimedOut = true;
-            this.implementation.directUpdate = false;
-            hideSplashscreen();
-        };
-
-        this.mainHandler.postDelayed(this.splashscreenTimeoutRunnable, this.autoSplashscreenTimeout);
-    }
-
-    private void cancelSplashscreenTimeout() {
-        if (this.splashscreenTimeoutRunnable != null) {
-            this.mainHandler.removeCallbacks(this.splashscreenTimeoutRunnable);
-            this.splashscreenTimeoutRunnable = null;
+        if (this.splashscreenManager.isEnabled()) {
+            this.splashscreenManager.hide();
         }
     }
 
@@ -708,7 +515,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private boolean shouldUseDirectUpdate() {
-        if (Boolean.TRUE.equals(this.autoSplashscreenTimedOut)) {
+        if (this.splashscreenManager.hasTimedOut()) {
             return false;
         }
         switch (this.directUpdateMode) {
@@ -739,7 +546,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private boolean isDirectUpdateCurrentlyAllowed(final boolean plannedDirectUpdate) {
-        return plannedDirectUpdate && !Boolean.TRUE.equals(this.autoSplashscreenTimedOut);
+        return plannedDirectUpdate && !this.splashscreenManager.hasTimedOut();
     }
 
     private void directUpdateFinish(final BundleInfo latest) {
@@ -2115,7 +1922,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
 
         // Show splashscreen FIRST, before any other background work to ensure launcher shows it
-        if (this.autoSplashscreen) {
+        if (this.splashscreenManager.isEnabled()) {
+            // Reset timeout state when entering background (allows showing splashscreen again)
+            this.splashscreenManager.resetTimeoutState();
+
             boolean canShowSplashscreen = true;
 
             if (!this._isAutoUpdateEnabled()) {
@@ -2142,7 +1952,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
             if (canShowSplashscreen) {
                 logger.info("Showing splashscreen for launcher/task switcher");
-                this.showSplashscreen();
+                this.splashscreenManager.show();
             }
         }
 
