@@ -1577,7 +1577,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     if (!CapacitorUpdaterPlugin.this.isDownloadStuckOrTimedOut()) {
                                         CapacitorUpdaterPlugin.this.backgroundDownload();
                                     } else {
-                                        logger.info("Download already in progress, skipping duplicate download request");
+                                        logger.info(
+                                            "Download already in progress, skipping duplicate download request"
+                                        );
                                     }
                                 }
                             }
