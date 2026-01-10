@@ -1584,9 +1584,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     if (!CapacitorUpdaterPlugin.this.isDownloadStuckOrTimedOut()) {
                                         CapacitorUpdaterPlugin.this.backgroundDownload();
                                     } else {
-                                        logger.info(
-                                            "Download already in progress, skipping duplicate download request"
-                                        );
+                                        logger.info("Download already in progress, skipping duplicate download request");
                                     }
                                 }
                             }
@@ -1788,7 +1786,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         if (this.backgroundDownloadTask == null || !this.backgroundDownloadTask.isAlive()) {
             return false;
         }
-        
+
         // Check if download has timed out
         if (this.downloadStartTimeMs > 0) {
             long elapsed = System.currentTimeMillis() - this.downloadStartTimeMs;
@@ -1805,7 +1803,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 return false; // Now it's not stuck anymore, caller can proceed
             }
         }
-        
+
         return true;
     }
 
