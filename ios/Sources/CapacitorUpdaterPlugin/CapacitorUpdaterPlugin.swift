@@ -1372,18 +1372,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     func backgroundDownload() {
-        // Check if a download is already in progress (thread-safe)
+        // Set download in progress flag (thread-safe)
         downloadLock.lock()
-        let isInProgress = downloadInProgress
-        if !isInProgress {
-            downloadInProgress = true
-        }
+        downloadInProgress = true
         downloadLock.unlock()
-        
-        if isInProgress {
-            logger.info("Download already in progress, skipping duplicate download request")
-            return
-        }
         
         let plannedDirectUpdate = self.shouldUseDirectUpdate()
         let messageUpdate = plannedDirectUpdate ? "Update will occur now." : "Update will occur next time app moves to background."
@@ -1635,7 +1627,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
                 if res.version != current.getVersionName() {
                     self.logger.info("New version found: \(res.version)")
-                    self.backgroundDownload()
+                    // Check if download is already in progress before starting new one (auto-update only)
+                    self.downloadLock.lock()
+                    let isDownloading = self.downloadInProgress
+                    self.downloadLock.unlock()
+                    
+                    if !isDownloading {
+                        self.backgroundDownload()
+                    } else {
+                        self.logger.info("Download already in progress, skipping duplicate download request")
+                    }
                 }
             }
         }
