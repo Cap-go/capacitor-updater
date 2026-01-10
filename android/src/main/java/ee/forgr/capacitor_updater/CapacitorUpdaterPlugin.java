@@ -1000,7 +1000,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         } else {
                             if (CapacitorUpdaterPlugin.this._isAutoUpdateEnabled() && Boolean.TRUE.equals(triggerAutoUpdate)) {
                                 logger.info("Calling autoupdater after channel change!");
-                                this.backgroundDownloadTask = backgroundDownload();
+                                backgroundDownload();
                             }
                             call.resolve(jsRes);
                         }
@@ -1059,7 +1059,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         } else {
                             if (CapacitorUpdaterPlugin.this._isAutoUpdateEnabled() && Boolean.TRUE.equals(triggerAutoUpdate)) {
                                 logger.info("Calling autoupdater after channel change!");
-                                this.backgroundDownloadTask = backgroundDownload();
+                                backgroundDownload();
                             }
                             call.resolve(jsRes);
                         }
@@ -1571,7 +1571,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                 String currentVersion = String.valueOf(CapacitorUpdaterPlugin.this.implementation.getCurrentBundle());
                                 if (!Objects.equals(newVersion, currentVersion)) {
                                     logger.info("New version found: " + newVersion);
-                                    CapacitorUpdaterPlugin.this.backgroundDownloadTask = CapacitorUpdaterPlugin.this.backgroundDownload();
+                                    // Check if download is already in progress before starting new one (auto-update only)
+                                    if (CapacitorUpdaterPlugin.this.backgroundDownloadTask == null || !CapacitorUpdaterPlugin.this.backgroundDownloadTask.isAlive()) {
+                                        CapacitorUpdaterPlugin.this.backgroundDownload();
+                                    } else {
+                                        logger.info("Download already in progress, skipping duplicate download request");
+                                    }
                                 }
                             }
                         });
@@ -1768,19 +1773,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private Thread backgroundDownload() {
-        // Check if a download is already in progress
-        if (this.backgroundDownloadTask != null && this.backgroundDownloadTask.isAlive()) {
-            logger.info("Download already in progress, skipping duplicate download request");
-            return this.backgroundDownloadTask;
-        }
-        
         final boolean plannedDirectUpdate = this.shouldUseDirectUpdate();
         final boolean initialDirectUpdateAllowed = this.isDirectUpdateCurrentlyAllowed(plannedDirectUpdate);
         this.implementation.directUpdate = initialDirectUpdateAllowed;
         final String messageUpdate = initialDirectUpdateAllowed
             ? "Update will occur now."
             : "Update will occur next time app moves to background.";
-        return startNewThread(() -> {
+        Thread newTask = startNewThread(() -> {
             // Wait for cleanup to complete before starting download
             waitForCleanupIfNeeded();
             logger.info("Check for update via: " + CapacitorUpdaterPlugin.this.updateUrl);
@@ -2012,6 +2011,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 );
             }
         });
+        this.backgroundDownloadTask = newTask;
+        return newTask;
     }
 
     private void installNext() {
@@ -2101,7 +2102,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             CapacitorUpdaterPlugin.this._isAutoUpdateEnabled() &&
             (this.backgroundDownloadTask == null || !this.backgroundDownloadTask.isAlive())
         ) {
-            this.backgroundDownloadTask = this.backgroundDownload();
+            this.backgroundDownload();
         } else {
             final CapConfig config = CapConfig.loadDefault(this.getActivity());
             String serverUrl = config.getServerUrl();
