@@ -35,8 +35,11 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -90,6 +93,12 @@ public class CapgoUpdater {
 
     // Flag to track if we've already sent the rate limit statistic - prevents infinite loop
     private static volatile boolean rateLimitStatisticSent = false;
+
+    // Stats batching - queue events and send max once per second
+    private final List<JSONObject> statsQueue = new CopyOnWriteArrayList<>();
+    private final ScheduledExecutorService statsScheduler = Executors.newSingleThreadScheduledExecutor();
+    private ScheduledFuture<?> statsFlushTask = null;
+    private static final long STATS_FLUSH_INTERVAL_MS = 1000;
 
     private final Map<String, CompletableFuture<BundleInfo>> downloadFutures = new ConcurrentHashMap<>();
     private final ExecutorService io = Executors.newSingleThreadExecutor();
@@ -1450,30 +1459,72 @@ public class CapgoUpdater {
         if (statsUrl == null || statsUrl.isEmpty()) {
             return;
         }
+
         JSONObject json;
         try {
             json = this.createInfoObject();
             json.put("version_name", versionName);
             json.put("old_version_name", oldVersionName);
             json.put("action", action);
+            json.put("timestamp", System.currentTimeMillis());
         } catch (JSONException e) {
             logger.error("Error preparing stats");
             logger.debug("JSONException: " + e.getMessage());
             return;
         }
 
+        statsQueue.add(json);
+        ensureStatsTimerStarted();
+    }
+
+    private synchronized void ensureStatsTimerStarted() {
+        if (statsFlushTask == null || statsFlushTask.isCancelled() || statsFlushTask.isDone()) {
+            statsFlushTask = statsScheduler.scheduleAtFixedRate(
+                this::flushStatsQueue,
+                STATS_FLUSH_INTERVAL_MS,
+                STATS_FLUSH_INTERVAL_MS,
+                TimeUnit.MILLISECONDS
+            );
+        }
+    }
+
+    private void flushStatsQueue() {
+        if (statsQueue.isEmpty()) {
+            return;
+        }
+
+        String statsUrl = this.statsUrl;
+        if (statsUrl == null || statsUrl.isEmpty()) {
+            statsQueue.clear();
+            return;
+        }
+
+        // Copy and clear the queue atomically
+        List<JSONObject> eventsToSend = new ArrayList<>(statsQueue);
+        statsQueue.clear();
+
+        if (eventsToSend.isEmpty()) {
+            return;
+        }
+
+        JSONArray jsonArray = new JSONArray();
+        for (JSONObject event : eventsToSend) {
+            jsonArray.put(event);
+        }
+
         Request request = new Request.Builder()
             .url(statsUrl)
-            .post(RequestBody.create(json.toString(), MediaType.get("application/json")))
+            .post(RequestBody.create(jsonArray.toString(), MediaType.get("application/json")))
             .build();
 
+        final int eventCount = eventsToSend.size();
         DownloadService.sharedClient
             .newCall(request)
             .enqueue(
                 new okhttp3.Callback() {
                     @Override
                     public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                        logger.error("Failed to send stats");
+                        logger.error("Failed to send stats batch");
                         logger.debug("Error: " + e.getMessage());
                     }
 
@@ -1486,10 +1537,10 @@ public class CapgoUpdater {
                             }
 
                             if (response.isSuccessful()) {
-                                logger.info("Stats sent successfully");
-                                logger.debug("Action: " + action + ", Version: " + versionName);
+                                logger.info("Stats batch sent successfully");
+                                logger.debug("Sent " + eventCount + " events");
                             } else {
-                                logger.error("Error sending stats");
+                                logger.error("Error sending stats batch");
                                 logger.debug("Response code: " + response.code());
                             }
                         }
