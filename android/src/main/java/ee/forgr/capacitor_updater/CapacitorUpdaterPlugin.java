@@ -1002,7 +1002,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         } else {
                             if (CapacitorUpdaterPlugin.this._isAutoUpdateEnabled() && Boolean.TRUE.equals(triggerAutoUpdate)) {
                                 logger.info("Calling autoupdater after channel change!");
-                                backgroundDownload();
+                                // Check if download is already in progress (with timeout protection)
+                                if (!this.isDownloadStuckOrTimedOut()) {
+                                    backgroundDownload();
+                                } else {
+                                    logger.info("Download already in progress, skipping duplicate download request");
+                                }
                             }
                             call.resolve(jsRes);
                         }
@@ -1061,7 +1066,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         } else {
                             if (CapacitorUpdaterPlugin.this._isAutoUpdateEnabled() && Boolean.TRUE.equals(triggerAutoUpdate)) {
                                 logger.info("Calling autoupdater after channel change!");
-                                backgroundDownload();
+                                // Check if download is already in progress (with timeout protection)
+                                if (!this.isDownloadStuckOrTimedOut()) {
+                                    backgroundDownload();
+                                } else {
+                                    logger.info("Download already in progress, skipping duplicate download request");
+                                }
                             }
                             call.resolve(jsRes);
                         }
