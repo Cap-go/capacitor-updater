@@ -100,6 +100,7 @@ public class CapacitorUpdaterPlugin extends Plugin implements SplashscreenManage
     private Boolean taskRunning = false;
     private Boolean keepUrlPathAfterReload = false;
     private Boolean autoSplashscreen = false;
+    private Boolean autoSplashscreenTimedOut = false;
     private SplashscreenManager splashscreenManager;
     private String directUpdateMode = "false";
     private Boolean wasRecentlyInstalledOrUpdated = false;

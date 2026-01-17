@@ -100,6 +100,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
     private var wasRecentlyInstalledOrUpdated = false
     private var onLaunchDirectUpdateUsed = false
     private var autoSplashscreen = false
+    private var autoSplashscreenTimedOut = false
     private var splashscreenManager: SplashscreenManager?
     private var autoDeleteFailed = false
     private var autoDeletePrevious = false
