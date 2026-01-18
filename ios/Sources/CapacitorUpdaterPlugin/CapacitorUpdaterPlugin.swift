@@ -825,7 +825,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     if !isDownloadStuckOrTimedOut() {
                         self.backgroundDownload()
                     } else {
-                        self.logger.info("Download already in progress, skipping duplicate download request")
+                        logger.info("Download already in progress, skipping duplicate download request")
                     }
                 }
                 call.resolve(res.toDict())
@@ -864,7 +864,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     if !isDownloadStuckOrTimedOut() {
                         self.backgroundDownload()
                     } else {
-                        self.logger.info("Download already in progress, skipping duplicate download request")
+                        logger.info("Download already in progress, skipping duplicate download request")
                     }
                 }
                 call.resolve(res.toDict())
@@ -1396,7 +1396,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if let startTime = downloadStartTime {
             let elapsed = Date().timeIntervalSince(startTime)
             if elapsed > downloadTimeout {
-                logger.warn("Download has been in progress for \(elapsed) seconds, exceeding timeout of \(downloadTimeout) seconds. Clearing stuck state.")
+                self.logger.warn("Download has been in progress for \(elapsed) seconds, exceeding timeout of \(downloadTimeout) seconds. Clearing stuck state.")
                 downloadInProgress = false
                 downloadStartTime = nil
                 return false // Now it's not stuck anymore, caller can proceed
