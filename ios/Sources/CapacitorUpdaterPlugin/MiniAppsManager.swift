@@ -44,10 +44,23 @@ public struct MiniAppUpdateResult {
 public class MiniAppsManager {
     private let registryKey: String
     private let logger: Logger
+    private let registryLock = NSLock()
 
     public init(registryKey: String = "CapacitorUpdater.miniApps", logger: Logger) {
         self.registryKey = registryKey
         self.logger = logger
+    }
+
+    // MARK: - Validation
+
+    /// Validates that a mini-app name contains only safe characters
+    /// Names must contain only alphanumeric characters, hyphens, and underscores
+    /// - Parameter name: The mini-app name to validate
+    /// - Returns: true if the name is valid, false otherwise
+    public func isValidMiniAppName(_ name: String) -> Bool {
+        guard !name.isEmpty else { return false }
+        let allowedCharacterSet = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
+        return name.unicodeScalars.allSatisfy { allowedCharacterSet.contains($0) }
     }
 
     // MARK: - Registry Operations
@@ -131,6 +144,12 @@ public class MiniAppsManager {
     ///   - isMain: Whether this is the main app (receives auto-updates)
     /// - Returns: true if registration succeeded
     public func register(name: String, bundleId: String, isMain: Bool) {
+        // Validate mini-app name
+        guard isValidMiniAppName(name) else {
+            logger.error("Invalid mini-app name '\(name)'. Names must contain only alphanumeric characters, hyphens, and underscores.")
+            return
+        }
+
         var registry = getRegistry()
 
         // If isMain is true, clear isMain from all other entries
@@ -153,6 +172,39 @@ public class MiniAppsManager {
         logger.info("Registered mini-app '\(name)' with bundle \(bundleId), isMain: \(isMain)")
     }
 
+    /// Atomically update the bundle ID for an existing mini-app.
+    /// Thread-safe: uses locking to prevent race conditions.
+    /// - Parameters:
+    ///   - name: Mini-app name to update
+    ///   - newBundleId: New bundle ID to set
+    /// - Returns: true if the update succeeded, false if the mini-app was not found
+    public func updateBundleId(name: String, newBundleId: String) -> Bool {
+        guard isValidMiniAppName(name) else {
+            logger.error("Invalid mini-app name '\(name)' in updateBundleId")
+            return false
+        }
+
+        registryLock.lock()
+        defer { registryLock.unlock() }
+
+        var registry = getRegistry()
+        guard let entry = registry[name] else {
+            logger.error("updateBundleId: mini-app '\(name)' not found")
+            return false
+        }
+
+        let isMain = entry["isMain"] as? Bool ?? false
+
+        registry[name] = [
+            "id": newBundleId,
+            "isMain": isMain
+        ]
+
+        saveRegistry(registry)
+        logger.info("Updated bundle ID for mini-app '\(name)' to \(newBundleId)")
+        return true
+    }
+
     /// Unregister a mini-app from the registry
     /// - Parameter name: Mini-app name to unregister
     /// - Returns: The bundle ID that was unregistered, or nil if not found
@@ -167,25 +219,6 @@ public class MiniAppsManager {
         saveRegistry(registry)
         logger.info("Unregistered mini-app '\(name)', bundle: \(bundleId)")
         return bundleId
-    }
-
-    /// Update the bundle ID for an existing mini-app
-    /// - Parameters:
-    ///   - name: Mini-app name
-    ///   - newBundleId: New bundle ID
-    /// - Returns: true if update succeeded
-    public func updateBundleId(name: String, newBundleId: String) -> Bool {
-        var registry = getRegistry()
-        guard var entry = registry[name] else {
-            return false
-        }
-
-        let oldBundleId = entry["id"] as? String ?? ""
-        entry["id"] = newBundleId
-        registry[name] = entry
-        saveRegistry(registry)
-        logger.info("Updated mini-app '\(name)' bundle: \(oldBundleId) -> \(newBundleId)")
-        return true
     }
 
     // MARK: - Main App
@@ -219,6 +252,11 @@ public class MiniAppsManager {
     ///   - miniApp: The mini-app name
     ///   - state: The state object to save (must be JSON-serializable), or nil to clear
     public func writeState(miniApp: String, state: [String: Any]?) {
+        guard isValidMiniAppName(miniApp) else {
+            logger.error("Invalid mini-app name '\(miniApp)' in writeState")
+            return
+        }
+
         let key = stateKey(for: miniApp)
 
         if let state = state {
@@ -242,6 +280,11 @@ public class MiniAppsManager {
     /// - Parameter miniApp: The mini-app name
     /// - Returns: The saved state, or nil if no state exists
     public func readState(miniApp: String) -> [String: Any]? {
+        guard isValidMiniAppName(miniApp) else {
+            logger.error("Invalid mini-app name '\(miniApp)' in readState")
+            return nil
+        }
+
         let key = stateKey(for: miniApp)
 
         guard let data = UserDefaults.standard.string(forKey: key),
@@ -255,6 +298,11 @@ public class MiniAppsManager {
     /// Clear state data for a mini-app
     /// - Parameter miniApp: The mini-app name
     public func clearState(miniApp: String) {
+        guard isValidMiniAppName(miniApp) else {
+            logger.error("Invalid mini-app name '\(miniApp)' in clearState")
+            return
+        }
+
         let key = stateKey(for: miniApp)
         UserDefaults.standard.removeObject(forKey: key)
         UserDefaults.standard.synchronize()

@@ -2056,12 +2056,23 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 | **`download_url`** | <code>string \| null</code> |
 
 
-##### BundleId
+##### BundleIdById
 
-| Prop          | Type                | Description                                                                                                                                                                       | Since  |
-| ------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| **`id`**      | <code>string</code> | The bundle ID to operate on.                                                                                                                                                      |        |
-| **`miniApp`** | <code>string</code> | The mini-app name to operate on. When provided, looks up the bundle ID from the mini-apps registry. Requires {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} to be `true`. | 8.42.0 |
+Identifies a bundle by its ID.
+
+| Prop     | Type                | Description                  |
+| -------- | ------------------- | ---------------------------- |
+| **`id`** | <code>string</code> | The bundle ID to operate on. |
+
+
+##### BundleIdByMiniApp
+
+Identifies a bundle by its mini-app name.
+Requires {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} to be `true`.
+
+| Prop          | Type                | Description                                                                          |
+| ------------- | ------------------- | ------------------------------------------------------------------------------------ |
+| **`miniApp`** | <code>string</code> | The mini-app name to operate on. Looks up the bundle ID from the mini-apps registry. |
 
 
 ##### BundleListResult
@@ -2461,6 +2472,14 @@ success: The bundle has been downloaded and is ready to be **SET** as the next b
 error: The bundle has failed to download.
 
 <code>'success' | 'error' | 'pending' | 'downloading'</code>
+
+
+##### BundleId
+
+Identifies a bundle either by its ID or by a mini-app name.
+At least one of `id` or `miniApp` must be provided.
+
+<code><a href="#bundleidbyid">BundleIdById</a> | <a href="#bundleidbyminiapp">BundleIdByMiniApp</a></code>
 
 
 ##### DelayUntilNext
