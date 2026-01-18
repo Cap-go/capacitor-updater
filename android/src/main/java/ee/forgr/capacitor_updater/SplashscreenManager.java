@@ -68,7 +68,7 @@ public class SplashscreenManager {
 
     private FrameLayout loaderOverlay;
     private Runnable timeoutRunnable;
-    private boolean timedOut = false;
+    private volatile boolean timedOut = false;
 
     /**
      * Whether the splashscreen has timed out

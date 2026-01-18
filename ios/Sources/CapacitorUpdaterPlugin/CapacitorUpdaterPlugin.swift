@@ -100,7 +100,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
     private var wasRecentlyInstalledOrUpdated = false
     private var onLaunchDirectUpdateUsed = false
     private var autoSplashscreen = false
-    private var autoSplashscreenTimedOut = false
     private var splashscreenManager: SplashscreenManager?
     private var autoDeleteFailed = false
     private var autoDeletePrevious = false
@@ -1019,15 +1018,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
                 }
             }
 
-            // Update registry with new bundle ID
-            var updatedRegistry = self.miniAppsManager.getRegistry()
-            let isMain = updatedRegistry[miniAppName]?["isMain"] as? Bool ?? false
-
-            updatedRegistry[miniAppName] = [
-                "id": newBundle.getId(),
-                "isMain": isMain
-            ]
-            self.miniAppsManager.saveRegistry(updatedRegistry)
+            // Atomically update registry with new bundle ID
+            guard self.miniAppsManager.updateBundleId(name: miniAppName, newBundleId: newBundle.getId()) else {
+                call.reject("Failed to update mini-app registry", "REGISTRY_UPDATE_FAILED")
+                return
+            }
 
             // Auto-switch: set the new bundle active
             let setSuccess = self.implementation.set(id: newBundle.getId())
@@ -1775,9 +1770,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
     }
 
     @objc func appMovedToBackground() {
-        // Reset timeout flag at start of each background cycle
-        self.autoSplashscreenTimedOut = false
-
         let current: BundleInfo = self.implementation.getCurrentBundle()
         self.implementation.sendStats(action: "app_moved_to_background", versionName: current.getVersionName())
         logger.info("Check for pending update")

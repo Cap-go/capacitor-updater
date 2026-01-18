@@ -47,6 +47,21 @@ public class MiniAppsManager {
         this.registryKey = registryKey;
     }
 
+    // MARK: - Validation
+
+    /**
+     * Validates that a mini-app name contains only safe characters.
+     * Names must contain only alphanumeric characters, hyphens, and underscores.
+     * @param name The mini-app name to validate
+     * @return true if the name is valid, false otherwise
+     */
+    public boolean isValidMiniAppName(String name) {
+        if (name == null || name.isEmpty()) {
+            return false;
+        }
+        return name.matches("^[a-zA-Z0-9_-]+$");
+    }
+
     // MARK: - Registry Operations
 
     /**
@@ -160,6 +175,12 @@ public class MiniAppsManager {
      * @param isMain Whether this is the main app (receives auto-updates)
      */
     public void register(String name, String bundleId, boolean isMain) {
+        // Validate mini-app name
+        if (!isValidMiniAppName(name)) {
+            logger.error("Invalid mini-app name '" + name + "'. Names must contain only alphanumeric characters, hyphens, and underscores.");
+            return;
+        }
+
         try {
             JSONObject registry = getRegistry();
 
@@ -190,6 +211,43 @@ public class MiniAppsManager {
     }
 
     /**
+     * Atomically update the bundle ID for an existing mini-app.
+     * Thread-safe: uses synchronization to prevent race conditions.
+     * @param name Mini-app name to update
+     * @param newBundleId New bundle ID to set
+     * @return true if the update succeeded, false if the mini-app was not found
+     */
+    public synchronized boolean updateBundleId(String name, String newBundleId) {
+        if (!isValidMiniAppName(name)) {
+            logger.error("Invalid mini-app name '" + name + "' in updateBundleId");
+            return false;
+        }
+
+        try {
+            JSONObject registry = getRegistry();
+            if (!registry.has(name)) {
+                logger.error("updateBundleId: mini-app '" + name + "' not found");
+                return false;
+            }
+
+            JSONObject entry = registry.getJSONObject(name);
+            boolean isMain = entry.optBoolean("isMain", false);
+
+            JSONObject newEntry = new JSONObject();
+            newEntry.put("id", newBundleId);
+            newEntry.put("isMain", isMain);
+            registry.put(name, newEntry);
+
+            saveRegistry(registry);
+            logger.info("Updated bundle ID for mini-app '" + name + "' to " + newBundleId);
+            return true;
+        } catch (JSONException e) {
+            logger.error("Failed to update bundle ID: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
      * Unregister a mini-app from the registry
      * @param name Mini-app name to unregister
      * @return The bundle ID that was unregistered, or null if not found
@@ -208,30 +266,6 @@ public class MiniAppsManager {
             return bundleId.isEmpty() ? null : bundleId;
         } catch (JSONException e) {
             return null;
-        }
-    }
-
-    /**
-     * Update the bundle ID for an existing mini-app
-     * @param name Mini-app name
-     * @param newBundleId New bundle ID
-     * @return true if update succeeded
-     */
-    public boolean updateBundleId(String name, String newBundleId) {
-        JSONObject registry = getRegistry();
-        try {
-            if (!registry.has(name)) {
-                return false;
-            }
-            JSONObject entry = registry.getJSONObject(name);
-            String oldBundleId = entry.optString("id", "");
-            entry.put("id", newBundleId);
-            registry.put(name, entry);
-            saveRegistry(registry);
-            logger.info("Updated mini-app '" + name + "' bundle: " + oldBundleId + " -> " + newBundleId);
-            return true;
-        } catch (JSONException e) {
-            return false;
         }
     }
 
@@ -288,6 +322,11 @@ public class MiniAppsManager {
      * @param state The state object to save (must be JSON-serializable), or null to clear
      */
     public void writeState(String miniApp, JSONObject state) {
+        if (!isValidMiniAppName(miniApp)) {
+            logger.error("Invalid mini-app name '" + miniApp + "' in writeState");
+            return;
+        }
+
         String key = stateKey(miniApp);
 
         if (state != null) {
@@ -308,6 +347,11 @@ public class MiniAppsManager {
      * @return The saved state, or null if no state exists
      */
     public JSONObject readState(String miniApp) {
+        if (!isValidMiniAppName(miniApp)) {
+            logger.error("Invalid mini-app name '" + miniApp + "' in readState");
+            return null;
+        }
+
         String key = stateKey(miniApp);
         String data = prefs.getString(key, null);
 
@@ -328,6 +372,11 @@ public class MiniAppsManager {
      * @param miniApp The mini-app name
      */
     public void clearState(String miniApp) {
+        if (!isValidMiniAppName(miniApp)) {
+            logger.error("Invalid mini-app name '" + miniApp + "' in clearState");
+            return;
+        }
+
         String key = stateKey(miniApp);
         editor.remove(key);
         editor.apply();

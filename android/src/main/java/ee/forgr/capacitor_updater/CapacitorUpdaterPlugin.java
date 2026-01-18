@@ -100,7 +100,6 @@ public class CapacitorUpdaterPlugin extends Plugin implements SplashscreenManage
     private Boolean taskRunning = false;
     private Boolean keepUrlPathAfterReload = false;
     private Boolean autoSplashscreen = false;
-    private Boolean autoSplashscreenTimedOut = false;
     private SplashscreenManager splashscreenManager;
     private String directUpdateMode = "false";
     private Boolean wasRecentlyInstalledOrUpdated = false;
@@ -510,7 +509,8 @@ public class CapacitorUpdaterPlugin extends Plugin implements SplashscreenManage
 
         // Auto hide splashscreen if enabled
         // We show it on background when conditions are met, so we should hide it on foreground regardless of update outcome
-        if (this.autoSplashscreen && this.splashscreenManager != null) {
+        // Note: splashscreenManager is always initialized when autoSplashscreen is true (see load())
+        if (this.autoSplashscreen) {
             this.splashscreenManager.hide();
         }
     }
@@ -1636,13 +1636,11 @@ public class CapacitorUpdaterPlugin extends Plugin implements SplashscreenManage
                     return;
                 }
 
-                // Update registry with new bundle ID
-                boolean isMain = entry.optBoolean("isMain", false);
-                JSONObject newEntry = new JSONObject();
-                newEntry.put("id", downloaded.getId());
-                newEntry.put("isMain", isMain);
-                registry.put(miniAppName, newEntry);
-                miniAppsManager.saveRegistry(registry);
+                // Atomically update registry with new bundle ID
+                if (!miniAppsManager.updateBundleId(miniAppName, downloaded.getId())) {
+                    call.reject("Failed to update mini-app registry");
+                    return;
+                }
 
                 // Set the new bundle
                 logger.info("performMiniAppUpdate: switching to new bundle " + downloaded.getId());
@@ -2334,9 +2332,6 @@ public class CapacitorUpdaterPlugin extends Plugin implements SplashscreenManage
     }
 
     public void appMovedToBackground() {
-        // Reset timeout flag at start of each background cycle
-        this.autoSplashscreenTimedOut = false;
-
         final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
 
         // Show splashscreen FIRST, before any other background work to ensure launcher shows it

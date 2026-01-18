@@ -2000,19 +2000,33 @@ export interface DownloadOptions {
   manifest?: ManifestEntry[];
 }
 
-export interface BundleId {
+/**
+ * Identifies a bundle either by its ID or by a mini-app name.
+ * At least one of `id` or `miniApp` must be provided.
+ */
+export type BundleId = BundleIdById | BundleIdByMiniApp;
+
+/**
+ * Identifies a bundle by its ID.
+ */
+export interface BundleIdById {
   /**
    * The bundle ID to operate on.
    */
-  id?: string;
+  id: string;
+}
 
+/**
+ * Identifies a bundle by its mini-app name.
+ * Requires {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} to be `true`.
+ *
+ * @since 8.42.0
+ */
+export interface BundleIdByMiniApp {
   /**
-   * The mini-app name to operate on. When provided, looks up the bundle ID from the mini-apps registry.
-   * Requires {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} to be `true`.
-   *
-   * @since 8.42.0
+   * The mini-app name to operate on. Looks up the bundle ID from the mini-apps registry.
    */
-  miniApp?: string;
+  miniApp: string;
 }
 
 export interface BundleListResult {
