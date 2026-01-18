@@ -76,6 +76,15 @@ import UIKit
         self.logger = logger
     }
 
+    deinit {
+        // Invalidate the stats timer to prevent memory leaks
+        statsFlushTimer?.invalidate()
+        statsFlushTimer = nil
+
+        // Flush any remaining stats before deallocation
+        flushStatsQueue()
+    }
+
     private func calcTotalPercent(percent: Int, min: Int, max: Int) -> Int {
         return (percent * (max - min)) / 100 + min
     }
@@ -1716,18 +1725,18 @@ import UIKit
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             if self.statsFlushTimer == nil || !self.statsFlushTimer!.isValid {
+                // Use closure-based timer to avoid strong reference cycle
                 self.statsFlushTimer = Timer.scheduledTimer(
-                    timeInterval: CapgoUpdater.statsFlushInterval,
-                    target: self,
-                    selector: #selector(self.flushStatsQueue),
-                    userInfo: nil,
+                    withTimeInterval: CapgoUpdater.statsFlushInterval,
                     repeats: true
-                )
+                ) { [weak self] _ in
+                    self?.flushStatsQueue()
+                }
             }
         }
     }
 
-    @objc private func flushStatsQueue() {
+    private func flushStatsQueue() {
         statsQueueLock.lock()
         guard !statsQueue.isEmpty else {
             statsQueueLock.unlock()

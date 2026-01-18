@@ -1499,12 +1499,14 @@ public class CapgoUpdater {
             return;
         }
 
-        // Copy and clear the queue atomically
-        List<JSONObject> eventsToSend = new ArrayList<>(statsQueue);
-        statsQueue.clear();
-
-        if (eventsToSend.isEmpty()) {
-            return;
+        // Copy and clear the queue atomically using synchronized block
+        List<JSONObject> eventsToSend;
+        synchronized (statsQueue) {
+            if (statsQueue.isEmpty()) {
+                return;
+            }
+            eventsToSend = new ArrayList<>(statsQueue);
+            statsQueue.clear();
         }
 
         JSONArray jsonArray = new JSONArray();
@@ -1673,5 +1675,31 @@ public class CapgoUpdater {
         }
         this.editor.commit();
         return true;
+    }
+
+    /**
+     * Shuts down the stats scheduler and flushes any pending stats.
+     * Should be called when the plugin is destroyed to prevent resource leaks.
+     */
+    public void shutdown() {
+        // Cancel the scheduled task
+        if (statsFlushTask != null) {
+            statsFlushTask.cancel(false);
+            statsFlushTask = null;
+        }
+
+        // Flush any remaining stats before shutdown
+        flushStatsQueue();
+
+        // Shutdown the scheduler
+        statsScheduler.shutdown();
+        try {
+            if (!statsScheduler.awaitTermination(2, TimeUnit.SECONDS)) {
+                statsScheduler.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            statsScheduler.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 }
