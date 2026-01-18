@@ -33,7 +33,12 @@ class AppStoreUpdateManager {
         logger.info("Getting App Store update info for \(bundleId) in country \(country)")
 
         DispatchQueue.global(qos: .background).async {
-            let urlString = "https://itunes.apple.com/lookup?bundleId=\(bundleId)&country=\(country)"
+            guard let encodedBundleId = bundleId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+                  let encodedCountry = country.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+                completion(.failure(NSError(domain: "AppStoreUpdateManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to encode URL parameters"])))
+                return
+            }
+            let urlString = "https://itunes.apple.com/lookup?bundleId=\(encodedBundleId)&country=\(encodedCountry)"
             guard let url = URL(string: urlString) else {
                 completion(.failure(NSError(domain: "AppStoreUpdateManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid URL for App Store lookup"])))
                 return
@@ -142,7 +147,11 @@ class AppStoreUpdateManager {
         } else {
             // Look up app ID using bundle identifier
             let bundleId = self.appId()
-            let lookupUrl = "https://itunes.apple.com/lookup?bundleId=\(bundleId)"
+            guard let encodedBundleId = bundleId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+                completion(.failure(NSError(domain: "AppStoreUpdateManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to encode bundle ID"])))
+                return
+            }
+            let lookupUrl = "https://itunes.apple.com/lookup?bundleId=\(encodedBundleId)"
 
             DispatchQueue.global(qos: .background).async {
                 guard let url = URL(string: lookupUrl) else {
@@ -162,7 +171,11 @@ class AppStoreUpdateManager {
                           let appInfo = results.first,
                           let trackId = appInfo["trackId"] as? Int else {
                         // If lookup fails, try opening the generic App Store app page using bundle ID
-                        let fallbackUrlString = "https://apps.apple.com/app/\(bundleId)"
+                        guard let encodedBundleIdPath = bundleId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+                            completion(.failure(NSError(domain: "AppStoreUpdateManager", code: -3, userInfo: [NSLocalizedDescriptionKey: "Failed to encode bundle ID for fallback URL"])))
+                            return
+                        }
+                        let fallbackUrlString = "https://apps.apple.com/app/\(encodedBundleIdPath)"
                         guard let fallbackUrl = URL(string: fallbackUrlString) else {
                             completion(.failure(NSError(domain: "AppStoreUpdateManager", code: -3, userInfo: [NSLocalizedDescriptionKey: "Failed to find app in App Store and fallback URL is invalid"])))
                             return

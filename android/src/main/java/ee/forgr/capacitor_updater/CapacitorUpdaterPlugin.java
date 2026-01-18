@@ -410,6 +410,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
         int splashscreenTimeoutValue = this.getConfig().getInt("autoSplashscreenTimeout", 10000);
         this.splashscreenManager = new SplashscreenManager(this.logger, this.getActivity(), this::getBridge);
         this.splashscreenManager.configure(autoSplashscreen, autoSplashscreenLoader, Math.max(0, splashscreenTimeoutValue));
+        this.splashscreenManager.setTimeoutCallback(() -> {
+            // Disable directUpdate when splashscreen times out
+            this.implementation.directUpdate = false;
+        });
 
         this.implementation.timeout = this.getConfig().getInt("responseTimeout", 20) * 1000;
         this.shakeMenuEnabled = this.getConfig().getBoolean("shakeMenu", false);

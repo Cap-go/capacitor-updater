@@ -187,7 +187,14 @@ public class ChannelManager {
                                 return;
                             }
 
-                            assert responseBody != null;
+                            if (responseBody == null) {
+                                Map<String, Object> retError = new HashMap<>();
+                                retError.put("message", "Empty response body");
+                                retError.put("error", "empty_response");
+                                retError.put("statusCode", statusCode);
+                                callback.callback(retError);
+                                return;
+                            }
                             String responseData = responseBody.string();
                             JSONObject jsonResponse = new JSONObject(responseData);
 
@@ -298,14 +305,23 @@ public class ChannelManager {
                                 return;
                             }
 
+                            if (responseBody == null) {
+                                Map<String, Object> retError = new HashMap<>();
+                                retError.put("message", "Empty response body");
+                                retError.put("error", "empty_response");
+                                callback.callback(retError);
+                                return;
+                            }
+
+                            // Read body once to avoid double consumption
+                            String responseData = responseBody.string();
+
                             if (response.code() == 400) {
-                                assert responseBody != null;
-                                String data = responseBody.string();
-                                if (data.contains("channel_not_found") && !defaultChannel.isEmpty()) {
+                                if (responseData.contains("channel_not_found") && !defaultChannel.isEmpty()) {
                                     Map<String, Object> ret = new HashMap<>();
                                     ret.put("channel", defaultChannel);
                                     ret.put("status", "default");
-                                    logger.info("Channel get to \"" + ret);
+                                    logger.info("Channel get: " + ret);
                                     callback.callback(ret);
                                     return;
                                 }
@@ -319,8 +335,6 @@ public class ChannelManager {
                                 return;
                             }
 
-                            assert responseBody != null;
-                            String responseData = responseBody.string();
                             JSONObject jsonResponse = new JSONObject(responseData);
 
                             // Check for server-side errors
@@ -344,7 +358,7 @@ public class ChannelManager {
                                     ret.put(key, jsonResponse.get(key));
                                 }
                             }
-                            logger.info("Channel get to \"" + ret);
+                            logger.info("Channel get: " + ret);
                             callback.callback(ret);
                         } catch (JSONException e) {
                             Map<String, Object> retError = new HashMap<>();
@@ -394,7 +408,16 @@ public class ChannelManager {
         }
 
         // Build URL with query parameters from JSON
-        HttpUrl.Builder urlBuilder = HttpUrl.parse(channelUrl).newBuilder();
+        HttpUrl parsedUrl = HttpUrl.parse(channelUrl);
+        if (parsedUrl == null) {
+            logger.error("Invalid channel URL: " + channelUrl);
+            Map<String, Object> retError = new HashMap<>();
+            retError.put("message", "Invalid channel URL");
+            retError.put("error", "invalid_url");
+            callback.callback(retError);
+            return;
+        }
+        HttpUrl.Builder urlBuilder = parsedUrl.newBuilder();
         try {
             Iterator<String> keys = json.keys();
             while (keys.hasNext()) {
@@ -443,7 +466,13 @@ public class ChannelManager {
                                 return;
                             }
 
-                            assert responseBody != null;
+                            if (responseBody == null) {
+                                Map<String, Object> retError = new HashMap<>();
+                                retError.put("message", "Empty response body");
+                                retError.put("error", "empty_response");
+                                callback.callback(retError);
+                                return;
+                            }
                             String data = responseBody.string();
 
                             try {

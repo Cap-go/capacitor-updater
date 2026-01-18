@@ -23,10 +23,22 @@ class SplashscreenManager {
     private var autoSplashscreenTimeoutWorkItem: DispatchWorkItem?
     private var splashscreenLoaderView: UIActivityIndicatorView?
     private var splashscreenLoaderContainer: UIView?
-    private(set) var hasTimedOut = false
 
-    // Callback for timeout events
-    var onTimeout: (() -> Void)?
+    // Thread-safe hasTimedOut property
+    private let hasTimedOutLock = NSLock()
+    private var _hasTimedOut = false
+    private(set) var hasTimedOut: Bool {
+        get {
+            hasTimedOutLock.lock()
+            defer { hasTimedOutLock.unlock() }
+            return _hasTimedOut
+        }
+        set {
+            hasTimedOutLock.lock()
+            defer { hasTimedOutLock.unlock() }
+            _hasTimedOut = newValue
+        }
+    }
 
     init(bridge: CAPBridgeProtocol?, logger: Logger) {
         self.bridge = bridge

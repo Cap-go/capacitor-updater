@@ -17,8 +17,36 @@ class StatsManager {
     var timeout: Double = 20
 
     // Rate limiting - static to persist across instances until app restart
-    private static var rateLimitExceeded = false
-    private static var rateLimitStatisticSent = false
+    // Thread-safe access via lock
+    private static let rateLimitLock = NSLock()
+    private static var _rateLimitExceeded = false
+    private static var _rateLimitStatisticSent = false
+
+    private static var rateLimitExceeded: Bool {
+        get {
+            rateLimitLock.lock()
+            defer { rateLimitLock.unlock() }
+            return _rateLimitExceeded
+        }
+        set {
+            rateLimitLock.lock()
+            defer { rateLimitLock.unlock() }
+            _rateLimitExceeded = newValue
+        }
+    }
+
+    private static var rateLimitStatisticSent: Bool {
+        get {
+            rateLimitLock.lock()
+            defer { rateLimitLock.unlock() }
+            return _rateLimitStatisticSent
+        }
+        set {
+            rateLimitLock.lock()
+            defer { rateLimitLock.unlock() }
+            _rateLimitStatisticSent = newValue
+        }
+    }
 
     // Dependency injection for creating info objects
     private let createInfoObject: () -> InfoObject
@@ -73,11 +101,11 @@ class StatsManager {
             return
         }
 
-        let versionName = versionName ?? getCurrentVersionName()
+        let effectiveVersionName = versionName ?? getCurrentVersionName()
 
         var parameters = createInfoObject()
         parameters.action = action
-        parameters.version_name = versionName
+        parameters.version_name = effectiveVersionName
         parameters.old_version_name = oldVersionName ?? ""
 
         let operation = BlockOperation { [weak self] in
@@ -99,7 +127,7 @@ class StatsManager {
                 switch response.result {
                 case .success:
                     self.logger.info("Stats sent successfully")
-                    self.logger.debug("Action: \(action), Version: \(versionName)")
+                    self.logger.debug("Action: \(action), Version: \(effectiveVersionName)")
                 case let .failure(error):
                     self.logger.error("Error sending stats")
                     self.logger.debug("Response: \(response.value?.debugDescription ?? "nil"), Error: \(error.localizedDescription)")
