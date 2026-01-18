@@ -825,7 +825,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     if !isDownloadStuckOrTimedOut() {
                         self.backgroundDownload()
                     } else {
-                        logger.info("Download already in progress, skipping duplicate download request")
+                        self.logger.info("Download already in progress, skipping duplicate download request")
                     }
                 }
                 call.resolve(res.toDict())
@@ -864,7 +864,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     if !isDownloadStuckOrTimedOut() {
                         self.backgroundDownload()
                     } else {
-                        logger.info("Download already in progress, skipping duplicate download request")
+                        self.logger.info("Download already in progress, skipping duplicate download request")
                     }
                 }
                 call.resolve(res.toDict())
