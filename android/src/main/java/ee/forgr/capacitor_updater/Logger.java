@@ -28,30 +28,48 @@ public class Logger {
 
         LogLevel level;
         Map<String, String> labels;
+        boolean useSystemLog;
 
         Options() {
             level = LogLevel.info;
             labels = null;
+            useSystemLog = true; // Default to true for backward compatibility
         }
 
         Options(@NonNull Options other) {
             level = other.level;
             labels = other.labels;
+            useSystemLog = other.useSystemLog;
         }
 
         Options(LogLevel level) {
             this.level = level;
             this.labels = null;
+            useSystemLog = true;
         }
 
         Options(Map<String, String> labels) {
             this.level = LogLevel.info;
             this.labels = labels;
+            useSystemLog = true;
         }
 
         Options(LogLevel level, Map<String, String> labels) {
             this.level = level;
             this.labels = labels;
+            useSystemLog = true;
+        }
+
+        Options(LogLevel level, Map<String, String> labels, boolean useSystemLog) {
+            this.level = level;
+            this.labels = labels;
+            this.useSystemLog = useSystemLog;
+        }
+
+        Options(boolean useSystemLog) {
+            this.level = LogLevel.info;
+            this.labels = null;
+            this.useSystemLog = useSystemLog;
         }
     }
 
@@ -60,6 +78,7 @@ public class Logger {
     private String tag;
     private final ArrayMap<String, Long> timers = new ArrayMap<>();
     private final String kDefaultTimerLabel = "default";
+    private boolean useSystemLog;
 
     public void setBridge(Bridge bridge) {
         this.bridge = bridge;
@@ -77,6 +96,7 @@ public class Logger {
 
     private void init(String tag, @NonNull Options options) {
         this.level = options.level;
+        this.useSystemLog = options.useSystemLog;
         this.labels.putAll(
             Map.of(LogLevel.silent, "", LogLevel.error, "🔴", LogLevel.warn, "🟠", LogLevel.info, "🟢", LogLevel.debug, "\uD83D\uDD0E")
         );
@@ -210,20 +230,22 @@ public class Logger {
             tag = this.tag;
         }
 
-        // Always log to Android system log
-        switch (level) {
-            case error:
-                Log.e(tag, formattedMessage);
-                break;
-            case warn:
-                Log.w(tag, formattedMessage);
-                break;
-            case info:
-                Log.i(tag, formattedMessage);
-                break;
-            case debug:
-                Log.d(tag, formattedMessage);
-                break;
+        // Log to Android system log if enabled
+        if (useSystemLog) {
+            switch (level) {
+                case error:
+                    Log.e(tag, formattedMessage);
+                    break;
+                case warn:
+                    Log.w(tag, formattedMessage);
+                    break;
+                case info:
+                    Log.i(tag, formattedMessage);
+                    break;
+                case debug:
+                    Log.d(tag, formattedMessage);
+                    break;
+            }
         }
 
         // Send to JavaScript if webView is available
