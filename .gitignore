@@ -68,4 +68,5 @@ captures
 
 # External native build folder generated in Android Studio 2.2 and later
 .externalNativeBuild
+node_modules/
 package-lock.json

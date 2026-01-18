@@ -70,7 +70,7 @@ import org.json.JSONObject;
 @CapacitorPlugin(name = "CapacitorUpdater")
 public class CapacitorUpdaterPlugin extends Plugin {
 
-    private final Logger logger = new Logger("CapgoUpdater");
+    private Logger logger;
 
     private static final String updateUrlDefault = "https://plugin.capgo.app/updates";
     private static final String statsUrlDefault = "https://plugin.capgo.app/stats";
@@ -219,6 +219,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
     @Override
     public void load() {
         super.load();
+
+        // Initialize logger with osLogging config
+        // Default to true for both platforms to enable system logging by default
+        boolean osLogging = this.getConfig().getBoolean("osLogging", true);
+        Logger.Options loggerOptions = new Logger.Options(osLogging);
+        this.logger = new Logger("CapgoUpdater", loggerOptions);
+
         this.prefs = this.getContext().getSharedPreferences(WebView.WEBVIEW_PREFS_NAME, Activity.MODE_PRIVATE);
         this.editor = this.prefs.edit();
 
