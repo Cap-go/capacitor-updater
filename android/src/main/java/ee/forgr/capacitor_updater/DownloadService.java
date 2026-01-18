@@ -235,8 +235,7 @@ public class DownloadService extends Worker {
                         public void onResponse(@NonNull Call call, @NonNull Response response) {
                             try (ResponseBody body = response.body()) {
                                 // nothing else to do, just closing body
-                            } catch (Exception ignored) {
-                            } finally {
+                            } catch (Exception ignored) {} finally {
                                 response.close();
                             }
                         }

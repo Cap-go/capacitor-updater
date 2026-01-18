@@ -100,6 +100,8 @@ Starting from v8, the plugin uses [ZIPFoundation](https://github.com/weichsel/ZI
 | v3.\*.\*       | v3.\*.\*                | ⚠️ Deprecated     |
 | > 7            | v4.\*.\*                | ⚠️ Deprecated, our CI got crazy and bumped too much version     |
 
+> **Note:** Versions 5, 6, 7, and 8 all share the same features. The major version simply follows your Capacitor version. You can safely use any of these versions that matches your Capacitor installation.
+
 ### iOS
 
 #### Privacy manifest
@@ -138,6 +140,24 @@ Or
 ```bash
 npm install @capgo/capacitor-updater
 npx cap sync
+```
+
+### Install a specific version
+
+Use npm tags to install the version matching your Capacitor version:
+
+```bash
+# For Capacitor 8 (latest)
+npm install @capgo/capacitor-updater@latest
+
+# For Capacitor 7
+npm install @capgo/capacitor-updater@lts-v7
+
+# For Capacitor 6
+npm install @capgo/capacitor-updater@lts-v6
+
+# For Capacitor 5
+npm install @capgo/capacitor-updater@lts-v5
 ```
 
 ## Auto-update setup

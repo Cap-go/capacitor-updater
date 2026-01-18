@@ -50,7 +50,7 @@ repositories {
 
 dependencies {
     def work_version = "2.10.5"
-    def lifecycle_version = "2.8.7"
+    def lifecycle_version = "2.10.0"
     implementation "androidx.work:work-runtime:$work_version"
     implementation "androidx.lifecycle:lifecycle-process:$lifecycle_version"
     implementation "com.google.android.gms:play-services-tasks:18.4.0"
@@ -63,7 +63,7 @@ dependencies {
     implementation 'com.google.android.play:app-update:2.1.0'
     implementation 'com.google.android.play:app-update-ktx:2.1.0'
     testImplementation "junit:junit:$junitVersion"
-    testImplementation 'org.mockito:mockito-core:5.20.0'
+    testImplementation 'org.mockito:mockito-core:5.21.0'
     testImplementation 'org.json:json:20250517'
     testImplementation 'org.robolectric:robolectric:4.16'
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
