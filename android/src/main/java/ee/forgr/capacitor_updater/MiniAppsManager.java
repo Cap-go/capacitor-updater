@@ -177,7 +177,9 @@ public class MiniAppsManager {
     public void register(String name, String bundleId, boolean isMain) {
         // Validate mini-app name
         if (!isValidMiniAppName(name)) {
-            logger.error("Invalid mini-app name '" + name + "'. Names must contain only alphanumeric characters, hyphens, and underscores.");
+            logger.error(
+                "Invalid mini-app name '" + name + "'. Names must contain only alphanumeric characters, hyphens, and underscores."
+            );
             return;
         }
 
