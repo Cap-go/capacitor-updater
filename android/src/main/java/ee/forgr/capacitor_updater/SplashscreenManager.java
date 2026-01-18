@@ -26,6 +26,7 @@ import java.lang.ref.WeakReference;
  * Handles showing, hiding, timeout, and loader overlay for the splashscreen.
  */
 public class SplashscreenManager {
+
     private final Logger logger;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final WeakReference<Activity> activityRef;

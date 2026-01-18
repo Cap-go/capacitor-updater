@@ -16,6 +16,7 @@ import org.json.JSONObject;
  * Manages statistics sending and rate limiting for the CapacitorUpdater plugin.
  */
 public class StatsManager {
+
     private final Logger logger;
 
     // Configuration
@@ -130,31 +131,33 @@ public class StatsManager {
 
         DownloadService.sharedClient
             .newCall(request)
-            .enqueue(new okhttp3.Callback() {
-                @Override
-                public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                    logger.error("Failed to send stats");
-                    logger.debug("Error: " + e.getMessage());
-                }
+            .enqueue(
+                new okhttp3.Callback() {
+                    @Override
+                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                        logger.error("Failed to send stats");
+                        logger.debug("Error: " + e.getMessage());
+                    }
 
-                @Override
-                public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                    try (ResponseBody responseBody = response.body()) {
-                        // Check for 429 rate limit
-                        if (checkAndHandleRateLimitResponse(response)) {
-                            return;
-                        }
+                    @Override
+                    public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                        try (ResponseBody responseBody = response.body()) {
+                            // Check for 429 rate limit
+                            if (checkAndHandleRateLimitResponse(response)) {
+                                return;
+                            }
 
-                        if (response.isSuccessful()) {
-                            logger.info("Stats sent successfully");
-                            logger.debug("Action: " + action + ", Version: " + versionName);
-                        } else {
-                            logger.error("Error sending stats");
-                            logger.debug("Response code: " + response.code());
+                            if (response.isSuccessful()) {
+                                logger.info("Stats sent successfully");
+                                logger.debug("Action: " + action + ", Version: " + versionName);
+                            } else {
+                                logger.error("Error sending stats");
+                                logger.debug("Response code: " + response.code());
+                            }
                         }
                     }
                 }
-            });
+            );
     }
 
     /**

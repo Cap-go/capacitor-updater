@@ -1916,9 +1916,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     public void appMovedToBackground() {
-        // Reset timeout flag at start of each background cycle
-        this.autoSplashscreenTimedOut = false;
-
         final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
 
         // Show splashscreen FIRST, before any other background work to ensure launcher shows it

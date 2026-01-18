@@ -28,6 +28,7 @@ import java.util.Map;
  * Handles immediate and flexible updates using Google Play Core library.
  */
 public class PlayStoreUpdateManager {
+
     private final Logger logger;
     private final WeakReference<Context> contextRef;
     private final WeakReference<Activity> activityRef;
@@ -137,7 +138,8 @@ public class PlayStoreUpdateManager {
                 return;
             }
 
-            manager.getAppUpdateInfo()
+            manager
+                .getAppUpdateInfo()
                 .addOnSuccessListener((appUpdateInfo) -> {
                     cachedAppUpdateInfo = appUpdateInfo;
 
@@ -346,7 +348,8 @@ public class PlayStoreUpdateManager {
                 return;
             }
 
-            manager.completeUpdate()
+            manager
+                .completeUpdate()
                 .addOnSuccessListener((aVoid) -> {
                     // The app will restart, so this may not be called
                     callback.onResult(RESULT_OK);
