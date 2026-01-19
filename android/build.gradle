@@ -53,7 +53,7 @@ dependencies {
     def lifecycle_version = "2.10.0"
     implementation "androidx.work:work-runtime:$work_version"
     implementation "androidx.lifecycle:lifecycle-process:$lifecycle_version"
-    implementation "com.google.android.gms:play-services-tasks:18.4.0"
+    implementation "com.google.android.gms:play-services-tasks:18.4.1"
     implementation "com.google.guava:guava:33.5.0-android"
     implementation fileTree(dir: 'libs', include: ['*.jar'])
     implementation project(':capacitor-android')
