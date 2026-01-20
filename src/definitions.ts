@@ -348,6 +348,21 @@ declare module '@capacitor/cli' {
       disableJSLogging?: boolean;
 
       /**
+       * Enable OS-level logging. When enabled, logs are written to the system log which can be inspected in production builds.
+       *
+       * - **iOS**: Uses os_log instead of Swift.print, logs accessible via Console.app or Instruments
+       * - **Android**: Logs to Logcat (android.util.Log)
+       *
+       * When set to false, system logging is disabled on both platforms (only JavaScript console logging will occur if enabled).
+       *
+       * This is useful for debugging production apps (App Store/TestFlight builds on iOS, or production APKs on Android).
+       *
+       * @default true
+       * @since  8.42.0
+       */
+      osLogging?: boolean;
+
+      /**
        * Enable shake gesture to show update menu for debugging/testing purposes
        *
        * @default false

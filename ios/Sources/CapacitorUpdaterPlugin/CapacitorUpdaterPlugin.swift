@@ -16,7 +16,18 @@ import Version
  */
 @objc(CapacitorUpdaterPlugin)
 public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
-    let logger = Logger(withTag: "✨  CapgoUpdater")
+    lazy var logger: Logger = {
+        // Default to true for OS logging. In test environments without a bridge,
+        // this will default to true. In production, it reads from config.
+        let osLogging: Bool
+        if self.bridge != nil {
+            osLogging = getConfig().getBoolean("osLogging", true)
+        } else {
+            osLogging = true
+        }
+        let options = Logger.Options(useSyslog: osLogging)
+        return Logger(withTag: "✨  CapgoUpdater", options: options)
+    }()
 
     public let identifier = "CapacitorUpdaterPlugin"
     public let jsName = "CapacitorUpdater"
@@ -60,7 +71,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "completeFlexibleUpdate", returnType: CAPPluginReturnPromise)
     ]
     public var implementation = CapgoUpdater()
-    private let pluginVersion: String = "8.41.12"
+    private let pluginVersion: String = "8.42.2"
     static let updateUrlDefault = "https://plugin.capgo.app/updates"
     static let statsUrlDefault = "https://plugin.capgo.app/stats"
     static let channelUrlDefault = "https://plugin.capgo.app/channel_self"

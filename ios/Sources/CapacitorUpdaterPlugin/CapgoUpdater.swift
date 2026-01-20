@@ -48,6 +48,12 @@ import UIKit
     // Flag to track if we've already sent the rate limit statistic - prevents infinite loop
     private static var rateLimitStatisticSent = false
 
+    // Stats batching - queue events and send max once per second
+    private var statsQueue: [StatsEvent] = []
+    private let statsQueueLock = NSLock()
+    private var statsFlushTimer: Timer?
+    private static let statsFlushInterval: TimeInterval = 1.0
+
     private var userAgent: String {
         let safePluginVersion = pluginVersion.isEmpty ? "unknown" : pluginVersion
         let safeAppId = appId.isEmpty ? "unknown" : appId
@@ -68,6 +74,15 @@ import UIKit
 
     public func setLogger(_ logger: Logger) {
         self.logger = logger
+    }
+
+    deinit {
+        // Invalidate the stats timer to prevent memory leaks
+        statsFlushTimer?.invalidate()
+        statsFlushTimer = nil
+
+        // Flush any remaining stats before deallocation
+        flushStatsQueue()
     }
 
     private func calcTotalPercent(percent: Int, min: Int, max: Int) -> Int {
@@ -1675,21 +1690,70 @@ import UIKit
         guard !statsUrl.isEmpty else {
             return
         }
+
+        let resolvedVersionName = versionName ?? getCurrentBundle().getVersionName()
+        let info = createInfoObject()
+
+        let event = StatsEvent(
+            platform: info.platform,
+            device_id: info.device_id,
+            app_id: info.app_id,
+            custom_id: info.custom_id,
+            version_build: info.version_build,
+            version_code: info.version_code,
+            version_os: info.version_os,
+            version_name: resolvedVersionName,
+            old_version_name: oldVersionName ?? "",
+            plugin_version: info.plugin_version,
+            is_emulator: info.is_emulator,
+            is_prod: info.is_prod,
+            action: action,
+            channel: info.channel,
+            defaultChannel: info.defaultChannel,
+            key_id: info.key_id,
+            timestamp: Int64(Date().timeIntervalSince1970 * 1000)
+        )
+
+        statsQueueLock.lock()
+        statsQueue.append(event)
+        statsQueueLock.unlock()
+
+        ensureStatsTimerStarted()
+    }
+
+    private func ensureStatsTimerStarted() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            if self.statsFlushTimer == nil || !self.statsFlushTimer!.isValid {
+                // Use closure-based timer to avoid strong reference cycle
+                self.statsFlushTimer = Timer.scheduledTimer(
+                    withTimeInterval: CapgoUpdater.statsFlushInterval,
+                    repeats: true
+                ) { [weak self] _ in
+                    self?.flushStatsQueue()
+                }
+            }
+        }
+    }
+
+    private func flushStatsQueue() {
+        statsQueueLock.lock()
+        guard !statsQueue.isEmpty else {
+            statsQueueLock.unlock()
+            return
+        }
+        let eventsToSend = statsQueue
+        statsQueue.removeAll()
+        statsQueueLock.unlock()
+
         operationQueue.maxConcurrentOperationCount = 1
-
-        let versionName = versionName ?? getCurrentBundle().getVersionName()
-
-        var parameters = createInfoObject()
-        parameters.action = action
-        parameters.version_name = versionName
-        parameters.old_version_name = oldVersionName ?? ""
 
         let operation = BlockOperation {
             let semaphore = DispatchSemaphore(value: 0)
             self.alamofireSession.request(
                 self.statsUrl,
                 method: .post,
-                parameters: parameters,
+                parameters: eventsToSend,
                 encoder: JSONParameterEncoder.default,
                 requestModifier: { $0.timeoutInterval = self.timeout }
             ).responseData { response in
@@ -1701,10 +1765,10 @@ import UIKit
 
                 switch response.result {
                 case .success:
-                    self.logger.info("Stats sent successfully")
-                    self.logger.debug("Action: \(action), Version: \(versionName)")
+                    self.logger.info("Stats batch sent successfully")
+                    self.logger.debug("Sent \(eventsToSend.count) events")
                 case let .failure(error):
-                    self.logger.error("Error sending stats")
+                    self.logger.error("Error sending stats batch")
                     self.logger.debug("Response: \(response.value?.debugDescription ?? "nil"), Error: \(error.localizedDescription)")
                 }
                 semaphore.signal()
@@ -1712,7 +1776,6 @@ import UIKit
             semaphore.wait()
         }
         operationQueue.addOperation(operation)
-
     }
 
     public func getBundleInfo(id: String?) -> BundleInfo {
