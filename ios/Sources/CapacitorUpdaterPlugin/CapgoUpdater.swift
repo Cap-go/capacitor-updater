@@ -600,9 +600,9 @@ import UIKit
             let finalFileHash = fileHash
             let fileNameWithoutPath = (fileName as NSString).lastPathComponent
             let isBrotli = fileName.hasSuffix(".br")
-            let cacheFileName = "\(finalFileHash)_\(fileNameWithoutPath)"
-            let cacheFilePath = cacheFolder.appendingPathComponent(cacheFileName)
-            let altCacheFilePath: URL? = isBrotli ? cacheFolder.appendingPathComponent("\(finalFileHash)_\(String(fileNameWithoutPath.dropLast(3)))") : nil
+            let cacheBaseName = isBrotli ? String(fileNameWithoutPath.dropLast(3)) : fileNameWithoutPath
+            let cacheFilePath = cacheFolder.appendingPathComponent("\(finalFileHash)_\(cacheBaseName)")
+            let legacyCacheFilePath: URL? = isBrotli ? cacheFolder.appendingPathComponent("\(finalFileHash)_\(fileNameWithoutPath)") : nil
 
             let destFileName = isBrotli ? String(fileName.dropLast(3)) : fileName
             let destFilePath = destFolder.appendingPathComponent(destFileName)
@@ -624,7 +624,7 @@ import UIKit
                     // Try cache
                     else if
                         self.tryCopyFromCache(from: cacheFilePath, to: destFilePath, expectedHash: finalFileHash) ||
-                            (altCacheFilePath != nil && self.tryCopyFromCache(from: altCacheFilePath!, to: destFilePath, expectedHash: finalFileHash)) {
+                            (legacyCacheFilePath != nil && self.tryCopyFromCache(from: legacyCacheFilePath!, to: destFilePath, expectedHash: finalFileHash)) {
                         self.logger.info("downloadManifest \(fileName) copy from cache \(id)")
                     }
                     // Download

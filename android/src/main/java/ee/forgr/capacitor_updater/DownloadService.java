@@ -308,10 +308,11 @@ public class DownloadService extends Worker {
                 String targetFileName = isBrotli ? fileName.substring(0, fileName.length() - 3) : fileName;
 
                 File targetFile = new File(destFolder, targetFileName);
-                File cacheFile = new File(cacheFolder, finalFileHash + "_" + new File(fileName).getName());
-                File altCacheFile = null;
+                String cacheBaseName = new File(isBrotli ? targetFileName : fileName).getName();
+                File cacheFile = new File(cacheFolder, finalFileHash + "_" + cacheBaseName);
+                File legacyCacheFile = null;
                 if (isBrotli) {
-                    altCacheFile = new File(cacheFolder, finalFileHash + "_" + new File(targetFileName).getName());
+                    legacyCacheFile = new File(cacheFolder, finalFileHash + "_" + new File(fileName).getName());
                 }
                 File builtinFile = new File(builtinFolder, fileName);
 
@@ -330,7 +331,7 @@ public class DownloadService extends Worker {
                             logger.debug("using builtin file " + fileName);
                         } else if (
                             tryCopyFromCache(cacheFile, targetFile, finalFileHash) ||
-                            (altCacheFile != null && tryCopyFromCache(altCacheFile, targetFile, finalFileHash))
+                            (legacyCacheFile != null && tryCopyFromCache(legacyCacheFile, targetFile, finalFileHash))
                         ) {
                             logger.debug("already cached " + fileName);
                         } else {
