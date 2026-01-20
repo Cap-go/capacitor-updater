@@ -310,10 +310,9 @@ public class DownloadService extends Worker {
                 File targetFile = new File(destFolder, targetFileName);
                 String cacheBaseName = new File(isBrotli ? targetFileName : fileName).getName();
                 File cacheFile = new File(cacheFolder, finalFileHash + "_" + cacheBaseName);
-                File legacyCacheFile = null;
-                if (isBrotli) {
-                    legacyCacheFile = new File(cacheFolder, finalFileHash + "_" + new File(fileName).getName());
-                }
+                final File legacyCacheFile = isBrotli
+                    ? new File(cacheFolder, finalFileHash + "_" + new File(fileName).getName())
+                    : null;
                 File builtinFile = new File(builtinFolder, fileName);
 
                 // Ensure parent directories of the target file exist

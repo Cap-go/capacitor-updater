@@ -261,9 +261,17 @@ public class CapgoUpdater {
         }
         if (entries.length == 1 && !"index.html".equals(entries[0])) {
             final File child = new File(sourceFile, entries[0]);
-            child.renameTo(destinationFile);
+            if (!child.renameTo(destinationFile)) {
+                throw new IOException(
+                    "Failed to move bundle contents: " + child.getPath() + " -> " + destinationFile.getPath()
+                );
+            }
         } else {
-            sourceFile.renameTo(destinationFile);
+            if (!sourceFile.renameTo(destinationFile)) {
+                throw new IOException(
+                    "Failed to move bundle contents: " + sourceFile.getPath() + " -> " + destinationFile.getPath()
+                );
+            }
         }
         sourceFile.delete();
     }
@@ -316,6 +324,9 @@ public class CapgoUpdater {
             return;
         }
         for (File entry : entries) {
+            if (!this.filter.accept(dir, entry.getName())) {
+                continue;
+            }
             if (entry.isDirectory()) {
                 collectFiles(entry, files);
             } else if (entry.isFile()) {
