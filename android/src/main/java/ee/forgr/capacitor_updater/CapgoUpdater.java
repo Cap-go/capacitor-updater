@@ -263,9 +263,75 @@ public class CapgoUpdater {
             final File child = new File(sourceFile, entries[0]);
             child.renameTo(destinationFile);
         } else {
-            sourceFile.renameTo(destinationFile);
+        sourceFile.renameTo(destinationFile);
         }
         sourceFile.delete();
+    }
+
+    private void cacheBundleFilesAsync(final String id) {
+        io.execute(() -> cacheBundleFiles(id));
+    }
+
+    private void cacheBundleFiles(final String id) {
+        if (this.activity == null) {
+            logger.debug("Skip delta cache population: activity is null");
+            return;
+        }
+
+        final File bundleDir = this.getBundleDirectory(id);
+        if (!bundleDir.exists()) {
+            logger.debug("Skip delta cache population: bundle dir missing");
+            return;
+        }
+
+        final File cacheDir = new File(this.activity.getCacheDir(), "capgo_downloads");
+        if (!cacheDir.exists() && !cacheDir.mkdirs()) {
+            logger.debug("Skip delta cache population: failed to create cache dir");
+            return;
+        }
+
+        final List<File> files = new ArrayList<>();
+        collectFiles(bundleDir, files);
+        for (File file : files) {
+            final String checksum = CryptoCipher.calcChecksum(file);
+            if (checksum.isEmpty()) {
+                continue;
+            }
+            final String cacheName = checksum + "_" + file.getName();
+            final File cacheFile = new File(cacheDir, cacheName);
+            if (cacheFile.exists()) {
+                continue;
+            }
+            try {
+                copyFile(file, cacheFile);
+            } catch (IOException e) {
+                logger.debug("Delta cache copy failed: " + file.getPath());
+            }
+        }
+    }
+
+    private void collectFiles(final File dir, final List<File> files) {
+        final File[] entries = dir.listFiles();
+        if (entries == null) {
+            return;
+        }
+        for (File entry : entries) {
+            if (entry.isDirectory()) {
+                collectFiles(entry, files);
+            } else if (entry.isFile()) {
+                files.add(entry);
+            }
+        }
+    }
+
+    private void copyFile(final File source, final File dest) throws IOException {
+        try (final FileInputStream input = new FileInputStream(source); final FileOutputStream output = new FileOutputStream(dest)) {
+            final byte[] buffer = new byte[1024 * 1024];
+            int length;
+            while ((length = input.read(buffer)) != -1) {
+                output.write(buffer, 0, length);
+            }
+        }
     }
 
     private void observeWorkProgress(Context context, String id) {
@@ -482,6 +548,7 @@ public class CapgoUpdater {
                 this.notifyDownload(id, 91);
                 final String idName = bundleDirectory + "/" + id;
                 this.flattenAssets(extractedDir, idName);
+                this.cacheBundleFilesAsync(id);
             } else {
                 this.notifyDownload(id, 91);
                 final String idName = bundleDirectory + "/" + id;

@@ -309,6 +309,10 @@ public class DownloadService extends Worker {
 
                 File targetFile = new File(destFolder, targetFileName);
                 File cacheFile = new File(cacheFolder, finalFileHash + "_" + new File(fileName).getName());
+                File altCacheFile = null;
+                if (isBrotli) {
+                    altCacheFile = new File(cacheFolder, finalFileHash + "_" + new File(targetFileName).getName());
+                }
                 File builtinFile = new File(builtinFolder, fileName);
 
                 // Ensure parent directories of the target file exist
@@ -324,7 +328,10 @@ public class DownloadService extends Worker {
                         if (builtinFile.exists() && verifyChecksum(builtinFile, finalFileHash)) {
                             copyFile(builtinFile, targetFile);
                             logger.debug("using builtin file " + fileName);
-                        } else if (tryCopyFromCache(cacheFile, targetFile, finalFileHash)) {
+                        } else if (
+                            tryCopyFromCache(cacheFile, targetFile, finalFileHash) ||
+                            (altCacheFile != null && tryCopyFromCache(altCacheFile, targetFile, finalFileHash))
+                        ) {
                             logger.debug("already cached " + fileName);
                         } else {
                             downloadAndVerify(downloadUrl, targetFile, cacheFile, finalFileHash, sessionKey, publicKey, finalIsBrotli);

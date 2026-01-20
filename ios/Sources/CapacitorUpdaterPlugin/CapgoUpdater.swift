@@ -383,6 +383,56 @@ import UIKit
         }
     }
 
+    private func populateDeltaCacheAsync(for id: String) {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            self?.populateDeltaCache(for: id)
+        }
+    }
+
+    private func populateDeltaCache(for id: String) {
+        let bundleDir = self.getBundleDirectory(id: id)
+        let fileManager = FileManager.default
+
+        guard fileManager.fileExists(atPath: bundleDir.path) else {
+            logger.debug("Skip delta cache population: bundle dir missing")
+            return
+        }
+
+        do {
+            try fileManager.createDirectory(at: cacheFolder, withIntermediateDirectories: true, attributes: nil)
+        } catch {
+            logger.debug("Skip delta cache population: failed to create cache dir")
+            return
+        }
+
+        guard let enumerator = fileManager.enumerator(at: bundleDir, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else {
+            return
+        }
+
+        for case let fileURL as URL in enumerator {
+            let resourceValues = try? fileURL.resourceValues(forKeys: [.isDirectoryKey])
+            if resourceValues?.isDirectory == true {
+                continue
+            }
+
+            let checksum = CryptoCipher.calcChecksum(filePath: fileURL)
+            if checksum.isEmpty {
+                continue
+            }
+
+            let cacheFile = cacheFolder.appendingPathComponent("\(checksum)_\(fileURL.lastPathComponent)")
+            if fileManager.fileExists(atPath: cacheFile.path) {
+                continue
+            }
+
+            do {
+                try fileManager.copyItem(at: fileURL, to: cacheFile)
+            } catch {
+                logger.debug("Delta cache copy failed: \(fileURL.path)")
+            }
+        }
+    }
+
     private func createInfoObject() -> InfoObject {
         return InfoObject(
             platform: "ios",
@@ -549,10 +599,11 @@ import UIKit
 
             let finalFileHash = fileHash
             let fileNameWithoutPath = (fileName as NSString).lastPathComponent
+            let isBrotli = fileName.hasSuffix(".br")
             let cacheFileName = "\(finalFileHash)_\(fileNameWithoutPath)"
             let cacheFilePath = cacheFolder.appendingPathComponent(cacheFileName)
+            let altCacheFilePath: URL? = isBrotli ? cacheFolder.appendingPathComponent("\(finalFileHash)_\(String(fileNameWithoutPath.dropLast(3)))") : nil
 
-            let isBrotli = fileName.hasSuffix(".br")
             let destFileName = isBrotli ? String(fileName.dropLast(3)) : fileName
             let destFilePath = destFolder.appendingPathComponent(destFileName)
             let builtinFilePath = builtinFolder.appendingPathComponent(fileName)
@@ -571,7 +622,9 @@ import UIKit
                         self.logger.info("downloadManifest \(fileName) using builtin file \(id)")
                     }
                     // Try cache
-                    else if self.tryCopyFromCache(from: cacheFilePath, to: destFilePath, expectedHash: finalFileHash) {
+                    else if
+                        self.tryCopyFromCache(from: cacheFilePath, to: destFilePath, expectedHash: finalFileHash) ||
+                            (altCacheFilePath != nil && self.tryCopyFromCache(from: altCacheFilePath!, to: destFilePath, expectedHash: finalFileHash)) {
                         self.logger.info("downloadManifest \(fileName) copy from cache \(id)")
                     }
                     // Download
@@ -985,6 +1038,7 @@ import UIKit
             CryptoCipher.logChecksumInfo(label: "Calculated bundle checksum", hexChecksum: checksum)
             logger.info("Downloading: 80% (unzipping)")
             try self.saveDownloaded(sourceZip: finalPath, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: true)
+            self.populateDeltaCacheAsync(for: id)
 
         } catch {
             logger.error("Failed to unzip file")
