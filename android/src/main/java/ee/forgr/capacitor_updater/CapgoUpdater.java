@@ -263,7 +263,7 @@ public class CapgoUpdater {
             final File child = new File(sourceFile, entries[0]);
             child.renameTo(destinationFile);
         } else {
-        sourceFile.renameTo(destinationFile);
+            sourceFile.renameTo(destinationFile);
         }
         sourceFile.delete();
     }
