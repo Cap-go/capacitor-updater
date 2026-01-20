@@ -100,6 +100,8 @@ Starting from v8, the plugin uses [ZIPFoundation](https://github.com/weichsel/ZI
 | v3.\*.\*       | v3.\*.\*                | ⚠️ Deprecated     |
 | > 7            | v4.\*.\*                | ⚠️ Deprecated, our CI got crazy and bumped too much version     |
 
+> **Note:** Versions 5, 6, 7, and 8 all share the same features. The major version simply follows your Capacitor version. You can safely use any of these versions that matches your Capacitor installation.
+
 ### iOS
 
 #### Privacy manifest
@@ -138,6 +140,24 @@ Or
 ```bash
 npm install @capgo/capacitor-updater
 npx cap sync
+```
+
+### Install a specific version
+
+Use npm tags to install the version matching your Capacitor version:
+
+```bash
+# For Capacitor 8 (latest)
+npm install @capgo/capacitor-updater@latest
+
+# For Capacitor 7
+npm install @capgo/capacitor-updater@lts-v7
+
+# For Capacitor 6
+npm install @capgo/capacitor-updater@lts-v6
+
+# For Capacitor 5
+npm install @capgo/capacitor-updater@lts-v5
 ```
 
 ## Auto-update setup
@@ -252,6 +272,10 @@ Capacitor Updater works by unzipping a compiled app bundle to the native device 
 - Do not password encrypt the bundle zip file, or it will fail to unpack.
 - Make sure the bundle does not contain any extra hidden files or folders, or it may fail to unpack.
 
+### Downgrading to a previous version of the updater plugin
+
+Downgrading to a previous version of the updater plugin is not supported.
+
 ## Updater Plugin Config
 
 <docgen-config>
@@ -294,6 +318,7 @@ CapacitorUpdater can be configured with these options:
 | **`appId`**                   | <code>string</code>                                           | Configure the app id for the app in the config.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | <code>undefined</code>                                                        | 6.0.0   |
 | **`keepUrlPathAfterReload`**  | <code>boolean</code>                                          | Configure the plugin to keep the URL path after a reload. WARNING: When a reload is triggered, 'window.history' will be cleared.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | <code>false</code>                                                            | 6.8.0   |
 | **`disableJSLogging`**        | <code>boolean</code>                                          | Disable the JavaScript logging of the plugin. if true, the plugin will not log to the JavaScript console. only the native log will be done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | <code>false</code>                                                            | 7.3.0   |
+| **`osLogging`**               | <code>boolean</code>                                          | Enable OS-level logging. When enabled, logs are written to the system log which can be inspected in production builds. - **iOS**: Uses os_log instead of Swift.print, logs accessible via Console.app or Instruments - **Android**: Logs to Logcat (android.util.Log) When set to false, system logging is disabled on both platforms (only JavaScript console logging will occur if enabled). This is useful for debugging production apps (App Store/TestFlight builds on iOS, or production APKs on Android).                                                                                                                                                                                                                                                                                                                                  | <code>true</code>                                                             | 8.42.0  |
 | **`shakeMenu`**               | <code>boolean</code>                                          | Enable shake gesture to show update menu for debugging/testing purposes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | <code>false</code>                                                            | 7.5.0   |
 
 ### Examples
@@ -337,6 +362,7 @@ In `capacitor.config.json`:
       "appId": undefined,
       "keepUrlPathAfterReload": undefined,
       "disableJSLogging": undefined,
+      "osLogging": undefined,
       "shakeMenu": undefined
     }
   }
@@ -386,6 +412,7 @@ const config: CapacitorConfig = {
       appId: undefined,
       keepUrlPathAfterReload: undefined,
       disableJSLogging: undefined,
+      osLogging: undefined,
       shakeMenu: undefined,
     },
   },

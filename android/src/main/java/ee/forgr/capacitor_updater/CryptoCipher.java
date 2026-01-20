@@ -210,7 +210,7 @@ public class CryptoCipher {
                 detectedFormat = "base64";
             }
             logger.debug(
-                "Received encrypted checksum format: " +
+                "Received checksum format: " +
                     detectedFormat +
                     " (length: " +
                     checksum.length() +
@@ -218,6 +218,18 @@ public class CryptoCipher {
                     checksumBytes.length +
                     " bytes)"
             );
+
+            // RSA-2048 encrypted data must be exactly 256 bytes
+            // If the checksum is not 256 bytes, the bundle was not encrypted properly
+            if (checksumBytes.length != 256) {
+                logger.error(
+                    "Checksum is not RSA encrypted (size: " +
+                        checksumBytes.length +
+                        " bytes, expected 256 for RSA-2048). Bundle must be uploaded with encryption when public key is configured."
+                );
+                throw new IOException("Bundle checksum is not encrypted. Upload bundle with --key flag when encryption is configured.");
+            }
+
             PublicKey pKey = CryptoCipher.stringToPublicKey(publicKey);
             byte[] decryptedChecksum = CryptoCipher.decryptRSA(checksumBytes, pKey);
             // Return as hex string to match calcChecksum output format

@@ -35,8 +35,11 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -90,6 +93,12 @@ public class CapgoUpdater {
 
     // Flag to track if we've already sent the rate limit statistic - prevents infinite loop
     private static volatile boolean rateLimitStatisticSent = false;
+
+    // Stats batching - queue events and send max once per second
+    private final List<JSONObject> statsQueue = new CopyOnWriteArrayList<>();
+    private final ScheduledExecutorService statsScheduler = Executors.newSingleThreadScheduledExecutor();
+    private ScheduledFuture<?> statsFlushTask = null;
+    private static final long STATS_FLUSH_INTERVAL_MS = 1000;
 
     private final Map<String, CompletableFuture<BundleInfo>> downloadFutures = new ConcurrentHashMap<>();
     private final ExecutorService io = Executors.newSingleThreadExecutor();
@@ -153,12 +162,25 @@ public class CapgoUpdater {
     }
 
     public void setPublicKey(String publicKey) {
-        this.publicKey = publicKey;
-        if (!publicKey.isEmpty()) {
-            this.cachedKeyId = CryptoCipher.calcKeyId(publicKey);
-        } else {
+        // Empty string means no encryption - proceed normally
+        if (publicKey == null || publicKey.isEmpty()) {
+            this.publicKey = "";
             this.cachedKeyId = "";
+            return;
         }
+
+        // Non-empty: must be a valid RSA key or crash
+        try {
+            CryptoCipher.stringToPublicKey(publicKey);
+        } catch (Exception e) {
+            throw new RuntimeException(
+                "Invalid public key in capacitor.config.json: failed to parse RSA key. Remove the key or provide a valid PEM-formatted RSA public key.",
+                e
+            );
+        }
+
+        this.publicKey = publicKey;
+        this.cachedKeyId = CryptoCipher.calcKeyId(publicKey);
     }
 
     public String getKeyId() {
@@ -239,11 +261,88 @@ public class CapgoUpdater {
         }
         if (entries.length == 1 && !"index.html".equals(entries[0])) {
             final File child = new File(sourceFile, entries[0]);
-            child.renameTo(destinationFile);
+            if (!child.renameTo(destinationFile)) {
+                throw new IOException("Failed to move bundle contents: " + child.getPath() + " -> " + destinationFile.getPath());
+            }
         } else {
-            sourceFile.renameTo(destinationFile);
+            if (!sourceFile.renameTo(destinationFile)) {
+                throw new IOException("Failed to move bundle contents: " + sourceFile.getPath() + " -> " + destinationFile.getPath());
+            }
         }
         sourceFile.delete();
+    }
+
+    private void cacheBundleFilesAsync(final String id) {
+        io.execute(() -> cacheBundleFiles(id));
+    }
+
+    private void cacheBundleFiles(final String id) {
+        if (this.activity == null) {
+            logger.debug("Skip delta cache population: activity is null");
+            return;
+        }
+
+        final File bundleDir = this.getBundleDirectory(id);
+        if (!bundleDir.exists()) {
+            logger.debug("Skip delta cache population: bundle dir missing");
+            return;
+        }
+
+        final File cacheDir = new File(this.activity.getCacheDir(), "capgo_downloads");
+        if (cacheDir.exists() && !cacheDir.isDirectory()) {
+            logger.debug("Skip delta cache population: cache dir is not a directory");
+            return;
+        }
+        if (!cacheDir.exists() && !cacheDir.mkdirs()) {
+            logger.debug("Skip delta cache population: failed to create cache dir");
+            return;
+        }
+
+        final List<File> files = new ArrayList<>();
+        collectFiles(bundleDir, files);
+        for (File file : files) {
+            final String checksum = CryptoCipher.calcChecksum(file);
+            if (checksum.isEmpty()) {
+                continue;
+            }
+            final String cacheName = checksum + "_" + file.getName();
+            final File cacheFile = new File(cacheDir, cacheName);
+            if (cacheFile.exists()) {
+                continue;
+            }
+            try {
+                copyFile(file, cacheFile);
+            } catch (IOException e) {
+                logger.debug("Delta cache copy failed: " + file.getPath());
+            }
+        }
+    }
+
+    private void collectFiles(final File dir, final List<File> files) {
+        final File[] entries = dir.listFiles();
+        if (entries == null) {
+            return;
+        }
+        for (File entry : entries) {
+            if (!this.filter.accept(dir, entry.getName())) {
+                continue;
+            }
+            if (entry.isDirectory()) {
+                collectFiles(entry, files);
+            } else if (entry.isFile()) {
+                files.add(entry);
+            }
+        }
+    }
+
+    private void copyFile(final File source, final File dest) throws IOException {
+        try (final FileInputStream input = new FileInputStream(source); final FileOutputStream output = new FileOutputStream(dest)) {
+            final byte[] buffer = new byte[1024 * 1024];
+            int length;
+            while ((length = input.read(buffer)) != -1) {
+                output.write(buffer, 0, length);
+            }
+        }
     }
 
     private void observeWorkProgress(Context context, String id) {
@@ -460,6 +559,7 @@ public class CapgoUpdater {
                 this.notifyDownload(id, 91);
                 final String idName = bundleDirectory + "/" + id;
                 this.flattenAssets(extractedDir, idName);
+                this.cacheBundleFilesAsync(id);
             } else {
                 this.notifyDownload(id, 91);
                 final String idName = bundleDirectory + "/" + id;
@@ -1437,30 +1537,74 @@ public class CapgoUpdater {
         if (statsUrl == null || statsUrl.isEmpty()) {
             return;
         }
+
         JSONObject json;
         try {
             json = this.createInfoObject();
             json.put("version_name", versionName);
             json.put("old_version_name", oldVersionName);
             json.put("action", action);
+            json.put("timestamp", System.currentTimeMillis());
         } catch (JSONException e) {
             logger.error("Error preparing stats");
             logger.debug("JSONException: " + e.getMessage());
             return;
         }
 
+        statsQueue.add(json);
+        ensureStatsTimerStarted();
+    }
+
+    private synchronized void ensureStatsTimerStarted() {
+        if (statsFlushTask == null || statsFlushTask.isCancelled() || statsFlushTask.isDone()) {
+            statsFlushTask = statsScheduler.scheduleAtFixedRate(
+                this::flushStatsQueue,
+                STATS_FLUSH_INTERVAL_MS,
+                STATS_FLUSH_INTERVAL_MS,
+                TimeUnit.MILLISECONDS
+            );
+        }
+    }
+
+    private void flushStatsQueue() {
+        if (statsQueue.isEmpty()) {
+            return;
+        }
+
+        String statsUrl = this.statsUrl;
+        if (statsUrl == null || statsUrl.isEmpty()) {
+            statsQueue.clear();
+            return;
+        }
+
+        // Copy and clear the queue atomically using synchronized block
+        List<JSONObject> eventsToSend;
+        synchronized (statsQueue) {
+            if (statsQueue.isEmpty()) {
+                return;
+            }
+            eventsToSend = new ArrayList<>(statsQueue);
+            statsQueue.clear();
+        }
+
+        JSONArray jsonArray = new JSONArray();
+        for (JSONObject event : eventsToSend) {
+            jsonArray.put(event);
+        }
+
         Request request = new Request.Builder()
             .url(statsUrl)
-            .post(RequestBody.create(json.toString(), MediaType.get("application/json")))
+            .post(RequestBody.create(jsonArray.toString(), MediaType.get("application/json")))
             .build();
 
+        final int eventCount = eventsToSend.size();
         DownloadService.sharedClient
             .newCall(request)
             .enqueue(
                 new okhttp3.Callback() {
                     @Override
                     public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                        logger.error("Failed to send stats");
+                        logger.error("Failed to send stats batch");
                         logger.debug("Error: " + e.getMessage());
                     }
 
@@ -1473,10 +1617,10 @@ public class CapgoUpdater {
                             }
 
                             if (response.isSuccessful()) {
-                                logger.info("Stats sent successfully");
-                                logger.debug("Action: " + action + ", Version: " + versionName);
+                                logger.info("Stats batch sent successfully");
+                                logger.debug("Sent " + eventCount + " events");
                             } else {
-                                logger.error("Error sending stats");
+                                logger.error("Error sending stats batch");
                                 logger.debug("Response code: " + response.code());
                             }
                         }
@@ -1609,5 +1753,31 @@ public class CapgoUpdater {
         }
         this.editor.commit();
         return true;
+    }
+
+    /**
+     * Shuts down the stats scheduler and flushes any pending stats.
+     * Should be called when the plugin is destroyed to prevent resource leaks.
+     */
+    public void shutdown() {
+        // Cancel the scheduled task
+        if (statsFlushTask != null) {
+            statsFlushTask.cancel(false);
+            statsFlushTask = null;
+        }
+
+        // Flush any remaining stats before shutdown
+        flushStatsQueue();
+
+        // Shutdown the scheduler
+        statsScheduler.shutdown();
+        try {
+            if (!statsScheduler.awaitTermination(2, TimeUnit.SECONDS)) {
+                statsScheduler.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            statsScheduler.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 }

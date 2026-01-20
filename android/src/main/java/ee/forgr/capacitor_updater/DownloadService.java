@@ -291,7 +291,7 @@ public class DownloadService extends Worker {
                 String fileHash = entry.getString("file_hash");
                 String downloadUrl = entry.getString("download_url");
 
-                if (!publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
+                if (publicKey != null && !publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
                     try {
                         fileHash = CryptoCipher.decryptChecksum(fileHash, publicKey);
                     } catch (Exception e) {
@@ -308,7 +308,9 @@ public class DownloadService extends Worker {
                 String targetFileName = isBrotli ? fileName.substring(0, fileName.length() - 3) : fileName;
 
                 File targetFile = new File(destFolder, targetFileName);
-                File cacheFile = new File(cacheFolder, finalFileHash + "_" + new File(fileName).getName());
+                String cacheBaseName = new File(isBrotli ? targetFileName : fileName).getName();
+                File cacheFile = new File(cacheFolder, finalFileHash + "_" + cacheBaseName);
+                final File legacyCacheFile = isBrotli ? new File(cacheFolder, finalFileHash + "_" + new File(fileName).getName()) : null;
                 File builtinFile = new File(builtinFolder, fileName);
 
                 // Ensure parent directories of the target file exist
@@ -324,7 +326,10 @@ public class DownloadService extends Worker {
                         if (builtinFile.exists() && verifyChecksum(builtinFile, finalFileHash)) {
                             copyFile(builtinFile, targetFile);
                             logger.debug("using builtin file " + fileName);
-                        } else if (tryCopyFromCache(cacheFile, targetFile, finalFileHash)) {
+                        } else if (
+                            tryCopyFromCache(cacheFile, targetFile, finalFileHash) ||
+                            (legacyCacheFile != null && tryCopyFromCache(legacyCacheFile, targetFile, finalFileHash))
+                        ) {
                             logger.debug("already cached " + fileName);
                         } else {
                             downloadAndVerify(downloadUrl, targetFile, cacheFile, finalFileHash, sessionKey, publicKey, finalIsBrotli);
@@ -633,7 +638,7 @@ public class DownloadService extends Worker {
                 // Use OkIO for atomic write
                 writeFileAtomic(compressedFile, responseBody.byteStream(), null);
 
-                if (!publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
+                if (publicKey != null && !publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
                     logger.debug("Decrypting file " + targetFile.getName());
                     CryptoCipher.decryptFile(compressedFile, publicKey, sessionKey);
                 }
