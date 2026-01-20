@@ -47,6 +47,7 @@ CapacitorUpdater can be configured with these options:
 | **`appId`** | `string` | Configure the app id for the app in the config. | `undefined` | 6.0.0 |
 | **`keepUrlPathAfterReload`** | `boolean` | Configure the plugin to keep the URL path after a reload. WARNING: When a reload is triggered, 'window.history' will be cleared. | `false` | 6.8.0 |
 | **`disableJSLogging`** | `boolean` | Disable the JavaScript logging of the plugin. if true, the plugin will not log to the JavaScript console. only the native log will be done | `false` | 7.3.0 |
+| **`osLogging`** | `boolean` | Enable OS-level logging. When enabled, logs are written to the system log which can be inspected in production builds. - **iOS**: Uses os_log instead of Swift.print, logs accessible via Console.app or Instruments - **Android**: Logs to Logcat (android.util.Log) When set to false, system logging is disabled on both platforms (only JavaScript console logging will occur if enabled). This is useful for debugging production apps (App Store/TestFlight builds on iOS, or production APKs on Android). | `true` | 8.42.0 |
 | **`shakeMenu`** | `boolean` | Enable shake gesture to show update menu for debugging/testing purposes | `false` | 7.5.0 |
 
 

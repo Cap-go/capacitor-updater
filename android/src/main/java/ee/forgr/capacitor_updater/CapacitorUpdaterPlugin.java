@@ -7,7 +7,6 @@
 package ee.forgr.capacitor_updater;
 
 import android.app.Activity;
-import android.app.ActivityManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -71,7 +70,7 @@ import org.json.JSONObject;
 @CapacitorPlugin(name = "CapacitorUpdater")
 public class CapacitorUpdaterPlugin extends Plugin {
 
-    private final Logger logger = new Logger("CapgoUpdater");
+    private Logger logger;
 
     private static final String updateUrlDefault = "https://plugin.capgo.app/updates";
     private static final String statsUrlDefault = "https://plugin.capgo.app/stats";
@@ -85,7 +84,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final String[] BREAKING_EVENT_NAMES = { "breakingAvailable", "majorAvailable" };
     private static final String LAST_FAILED_BUNDLE_PREF_KEY = "CapacitorUpdater.lastFailedBundle";
 
-    private final String pluginVersion = "6.41.1";
+    private final String pluginVersion = "6.42.3";
     private static final String DELAY_CONDITION_PREFERENCES = "";
 
     private SharedPreferences.Editor editor;
@@ -116,6 +115,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private Boolean allowManualBundleError = false;
     private Boolean allowSetDefaultChannel = true;
 
+    // Used for activity-based foreground/background detection on Android < 14
     private Boolean isPreviousMainActivity = true;
 
     private volatile Thread backgroundDownloadTask;
@@ -137,6 +137,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private FrameLayout splashscreenLoaderOverlay;
     private Runnable splashscreenTimeoutRunnable;
+
+    // App lifecycle observer using ProcessLifecycleOwner for reliable foreground/background detection
+    private AppLifecycleObserver appLifecycleObserver;
 
     // Play Store In-App Updates
     private AppUpdateManager appUpdateManager;
@@ -216,6 +219,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
     @Override
     public void load() {
         super.load();
+
+        // Initialize logger with osLogging config
+        // Default to true for both platforms to enable system logging by default
+        boolean osLogging = this.getConfig().getBoolean("osLogging", true);
+        Logger.Options loggerOptions = new Logger.Options(osLogging);
+        this.logger = new Logger("CapgoUpdater", loggerOptions);
+
         this.prefs = this.getContext().getSharedPreferences(WebView.WEBVIEW_PREFS_NAME, Activity.MODE_PRIVATE);
         this.editor = this.prefs.edit();
 
@@ -431,6 +441,31 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.delayUpdateUtils.checkCancelDelay(DelayUpdateUtils.CancelDelaySource.KILLED);
 
         this.checkForUpdateAfterDelay();
+
+        // On Android 14+ (API 34+), topActivity in RecentTaskInfo returns null due to
+        // security restrictions (StrandHogg task hijacking mitigations). Use ProcessLifecycleOwner
+        // for reliable app-level foreground/background detection on these versions.
+        // On older versions, we use the traditional activity lifecycle callbacks in handleOnStart/handleOnStop.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            this.appLifecycleObserver = new AppLifecycleObserver(
+                new AppLifecycleObserver.AppLifecycleListener() {
+                    @Override
+                    public void onAppMovedToForeground() {
+                        CapacitorUpdaterPlugin.this.appMovedToForeground();
+                    }
+
+                    @Override
+                    public void onAppMovedToBackground() {
+                        CapacitorUpdaterPlugin.this.appMovedToBackground();
+                    }
+                },
+                logger
+            );
+            this.appLifecycleObserver.register();
+            logger.info("Using ProcessLifecycleOwner for foreground/background detection (Android 14+)");
+        } else {
+            logger.info("Using activity lifecycle callbacks for foreground/background detection (Android <14)");
+        }
     }
 
     private void semaphoreWait(Number waitTime) {
@@ -2081,6 +2116,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     public void appMovedToBackground() {
+        // Reset timeout flag at start of each background cycle
+        this.autoSplashscreenTimedOut = false;
+
         final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
 
         // Show splashscreen FIRST, before any other background work to ensure launcher shows it
@@ -2129,16 +2167,22 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
+    /**
+     * Check if the current activity is the main activity.
+     * Used for activity-based foreground/background detection on Android < 14.
+     * On Android 14+, topActivity returns null due to security restrictions, so we use
+     * ProcessLifecycleOwner instead.
+     */
     private boolean isMainActivity() {
         try {
             Context mContext = this.getContext();
-            ActivityManager activityManager = (ActivityManager) mContext.getSystemService(Context.ACTIVITY_SERVICE);
-            List<ActivityManager.AppTask> runningTasks = activityManager.getAppTasks();
+            android.app.ActivityManager activityManager = (android.app.ActivityManager) mContext.getSystemService(Context.ACTIVITY_SERVICE);
+            java.util.List<android.app.ActivityManager.AppTask> runningTasks = activityManager.getAppTasks();
             if (runningTasks.isEmpty()) {
                 return false;
             }
-            ActivityManager.RecentTaskInfo runningTask = runningTasks.get(0).getTaskInfo();
-            String className = Objects.requireNonNull(runningTask.baseIntent.getComponent()).getClassName();
+            android.app.ActivityManager.RecentTaskInfo runningTask = runningTasks.get(0).getTaskInfo();
+            String className = java.util.Objects.requireNonNull(runningTask.baseIntent.getComponent()).getClassName();
             if (runningTask.topActivity == null) {
                 return false;
             }
@@ -2152,12 +2196,17 @@ public class CapacitorUpdaterPlugin extends Plugin {
     @Override
     public void handleOnStart() {
         try {
-            if (isPreviousMainActivity) {
-                logger.info("handleOnStart: appMovedToForeground");
-                this.appMovedToForeground();
-            }
             logger.info("handleOnStart: onActivityStarted " + getActivity().getClass().getName());
-            isPreviousMainActivity = true;
+
+            // On Android < 14, use activity lifecycle for foreground detection
+            // On Android 14+, ProcessLifecycleOwner handles this via AppLifecycleObserver
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                if (isPreviousMainActivity) {
+                    logger.info("handleOnStart: appMovedToForeground (Android <14 path)");
+                    this.appMovedToForeground();
+                }
+                isPreviousMainActivity = true;
+            }
 
             // Initialize shake menu if enabled and activity is BridgeActivity
             if (shakeMenuEnabled && getActivity() instanceof com.getcapacitor.BridgeActivity && shakeMenu == null) {
@@ -2176,10 +2225,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
     @Override
     public void handleOnStop() {
         try {
-            isPreviousMainActivity = isMainActivity();
-            if (isPreviousMainActivity) {
-                logger.info("handleOnStop: appMovedToBackground");
-                this.appMovedToBackground();
+            logger.info("handleOnStop: onActivityStopped");
+
+            // On Android < 14, use activity lifecycle for background detection
+            // On Android 14+, ProcessLifecycleOwner handles this via AppLifecycleObserver
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                isPreviousMainActivity = isMainActivity();
+                if (isPreviousMainActivity) {
+                    logger.info("handleOnStop: appMovedToBackground (Android <14 path)");
+                    this.appMovedToBackground();
+                }
             }
         } catch (Exception e) {
             logger.error("Failed to run handleOnStop: " + e.getMessage());
@@ -2602,6 +2657,17 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     logger.info("Shake menu cleaned up");
                 } catch (Exception e) {
                     logger.error("Failed to clean up shake menu: " + e.getMessage());
+                }
+            }
+
+            // Clean up app lifecycle observer
+            if (appLifecycleObserver != null) {
+                try {
+                    appLifecycleObserver.unregister();
+                    appLifecycleObserver = null;
+                    logger.info("AppLifecycleObserver cleaned up");
+                } catch (Exception e) {
+                    logger.error("Failed to clean up AppLifecycleObserver: " + e.getMessage());
                 }
             }
         } catch (Exception e) {

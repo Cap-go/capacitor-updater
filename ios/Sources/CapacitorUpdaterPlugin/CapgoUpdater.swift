@@ -50,6 +50,12 @@ import UIKit
     // Flag to track if we've already sent the rate limit statistic - prevents infinite loop
     private static var rateLimitStatisticSent = false
 
+    // Stats batching - queue events and send max once per second
+    private var statsQueue: [StatsEvent] = []
+    private let statsQueueLock = NSLock()
+    private var statsFlushTimer: Timer?
+    private static let statsFlushInterval: TimeInterval = 1.0
+
     private var userAgent: String {
         let safePluginVersion = pluginVersion.isEmpty ? "unknown" : pluginVersion
         let safeAppId = appId.isEmpty ? "unknown" : appId
@@ -72,6 +78,15 @@ import UIKit
         self.logger = logger
     }
 
+    deinit {
+        // Invalidate the stats timer to prevent memory leaks
+        statsFlushTimer?.invalidate()
+        statsFlushTimer = nil
+
+        // Flush any remaining stats before deallocation
+        flushStatsQueue()
+    }
+
     private func calcTotalPercent(percent: Int, min: Int, max: Int) -> Int {
         return (percent * (max - min)) / 100 + min
     }
@@ -82,12 +97,20 @@ import UIKit
     }
 
     public func setPublicKey(_ publicKey: String) {
-        self.publicKey = publicKey
-        if !publicKey.isEmpty {
-            self.cachedKeyId = CryptoCipher.calcKeyId(publicKey: publicKey)
-        } else {
+        // Empty string means no encryption - proceed normally
+        if publicKey.isEmpty {
+            self.publicKey = ""
             self.cachedKeyId = nil
+            return
         }
+
+        // Non-empty: must be a valid RSA key or crash
+        guard RSAPublicKey.load(rsaPublicKey: publicKey) != nil else {
+            fatalError("Invalid public key in capacitor.config.json: failed to parse RSA key. Remove the key or provide a valid PEM-formatted RSA public key.")
+        }
+
+        self.publicKey = publicKey
+        self.cachedKeyId = CryptoCipher.calcKeyId(publicKey: publicKey)
     }
 
     public func getKeyId() -> String? {
@@ -362,6 +385,56 @@ import UIKit
         }
     }
 
+    private func populateDeltaCacheAsync(for id: String) {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            self?.populateDeltaCache(for: id)
+        }
+    }
+
+    private func populateDeltaCache(for id: String) {
+        let bundleDir = self.getBundleDirectory(id: id)
+        let fileManager = FileManager.default
+
+        guard fileManager.fileExists(atPath: bundleDir.path) else {
+            logger.debug("Skip delta cache population: bundle dir missing")
+            return
+        }
+
+        do {
+            try fileManager.createDirectory(at: cacheFolder, withIntermediateDirectories: true, attributes: nil)
+        } catch {
+            logger.debug("Skip delta cache population: failed to create cache dir")
+            return
+        }
+
+        guard let enumerator = fileManager.enumerator(at: bundleDir, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else {
+            return
+        }
+
+        for case let fileURL as URL in enumerator {
+            let resourceValues = try? fileURL.resourceValues(forKeys: [.isDirectoryKey])
+            if resourceValues?.isDirectory == true {
+                continue
+            }
+
+            let checksum = CryptoCipher.calcChecksum(filePath: fileURL)
+            if checksum.isEmpty {
+                continue
+            }
+
+            let cacheFile = cacheFolder.appendingPathComponent("\(checksum)_\(fileURL.lastPathComponent)")
+            if fileManager.fileExists(atPath: cacheFile.path) {
+                continue
+            }
+
+            do {
+                try fileManager.copyItem(at: fileURL, to: cacheFile)
+            } catch {
+                logger.debug("Delta cache copy failed: \(fileURL.path)")
+            }
+        }
+    }
+
     private func createInfoObject() -> InfoObject {
         return InfoObject(
             platform: "ios",
@@ -531,10 +604,11 @@ import UIKit
 
             let finalFileHash = fileHash
             let fileNameWithoutPath = (fileName as NSString).lastPathComponent
-            let cacheFileName = "\(finalFileHash)_\(fileNameWithoutPath)"
-            let cacheFilePath = cacheFolder.appendingPathComponent(cacheFileName)
-
             let isBrotli = fileName.hasSuffix(".br")
+            let cacheBaseName = isBrotli ? String(fileNameWithoutPath.dropLast(3)) : fileNameWithoutPath
+            let cacheFilePath = cacheFolder.appendingPathComponent("\(finalFileHash)_\(cacheBaseName)")
+            let legacyCacheFilePath: URL? = isBrotli ? cacheFolder.appendingPathComponent("\(finalFileHash)_\(fileNameWithoutPath)") : nil
+
             let destFileName = isBrotli ? String(fileName.dropLast(3)) : fileName
             let destFilePath = destFolder.appendingPathComponent(destFileName)
             let builtinFilePath = builtinFolder.appendingPathComponent(fileName)
@@ -553,7 +627,9 @@ import UIKit
                         self.logger.info("downloadManifest \(fileName) using builtin file \(id)")
                     }
                     // Try cache
-                    else if self.tryCopyFromCache(from: cacheFilePath, to: destFilePath, expectedHash: finalFileHash) {
+                    else if
+                        self.tryCopyFromCache(from: cacheFilePath, to: destFilePath, expectedHash: finalFileHash) ||
+                            (legacyCacheFilePath != nil && self.tryCopyFromCache(from: legacyCacheFilePath!, to: destFilePath, expectedHash: finalFileHash)) {
                         self.logger.info("downloadManifest \(fileName) copy from cache \(id)")
                     }
                     // Download
@@ -967,6 +1043,7 @@ import UIKit
             CryptoCipher.logChecksumInfo(label: "Calculated bundle checksum", hexChecksum: checksum)
             logger.info("Downloading: 80% (unzipping)")
             try self.saveDownloaded(sourceZip: finalPath, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: true)
+            self.populateDeltaCacheAsync(for: id)
 
         } catch {
             logger.error("Failed to unzip file")
@@ -1311,7 +1388,7 @@ import UIKit
                 let fileName = url.lastPathComponent
                 // Only cleanup package_*.tmp and update_*.dat files
                 let isDownloadTemp = (fileName.hasPrefix("package_") && fileName.hasSuffix(".tmp")) ||
-                                     (fileName.hasPrefix("update_") && fileName.hasSuffix(".dat"))
+                    (fileName.hasPrefix("update_") && fileName.hasSuffix(".dat"))
                 if !isDownloadTemp {
                     continue
                 }
@@ -1672,21 +1749,70 @@ import UIKit
         guard !statsUrl.isEmpty else {
             return
         }
+
+        let resolvedVersionName = versionName ?? getCurrentBundle().getVersionName()
+        let info = createInfoObject()
+
+        let event = StatsEvent(
+            platform: info.platform,
+            device_id: info.device_id,
+            app_id: info.app_id,
+            custom_id: info.custom_id,
+            version_build: info.version_build,
+            version_code: info.version_code,
+            version_os: info.version_os,
+            version_name: resolvedVersionName,
+            old_version_name: oldVersionName ?? "",
+            plugin_version: info.plugin_version,
+            is_emulator: info.is_emulator,
+            is_prod: info.is_prod,
+            action: action,
+            channel: info.channel,
+            defaultChannel: info.defaultChannel,
+            key_id: info.key_id,
+            timestamp: Int64(Date().timeIntervalSince1970 * 1000)
+        )
+
+        statsQueueLock.lock()
+        statsQueue.append(event)
+        statsQueueLock.unlock()
+
+        ensureStatsTimerStarted()
+    }
+
+    private func ensureStatsTimerStarted() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            if self.statsFlushTimer == nil || !self.statsFlushTimer!.isValid {
+                // Use closure-based timer to avoid strong reference cycle
+                self.statsFlushTimer = Timer.scheduledTimer(
+                    withTimeInterval: CapgoUpdater.statsFlushInterval,
+                    repeats: true
+                ) { [weak self] _ in
+                    self?.flushStatsQueue()
+                }
+            }
+        }
+    }
+
+    private func flushStatsQueue() {
+        statsQueueLock.lock()
+        guard !statsQueue.isEmpty else {
+            statsQueueLock.unlock()
+            return
+        }
+        let eventsToSend = statsQueue
+        statsQueue.removeAll()
+        statsQueueLock.unlock()
+
         operationQueue.maxConcurrentOperationCount = 1
-
-        let versionName = versionName ?? getCurrentBundle().getVersionName()
-
-        var parameters = createInfoObject()
-        parameters.action = action
-        parameters.version_name = versionName
-        parameters.old_version_name = oldVersionName ?? ""
 
         let operation = BlockOperation {
             let semaphore = DispatchSemaphore(value: 0)
             self.alamofireSession.request(
                 self.statsUrl,
                 method: .post,
-                parameters: parameters,
+                parameters: eventsToSend,
                 encoder: JSONParameterEncoder.default,
                 requestModifier: { $0.timeoutInterval = self.timeout }
             ).responseData { response in
@@ -1698,10 +1824,10 @@ import UIKit
 
                 switch response.result {
                 case .success:
-                    self.logger.info("Stats sent successfully")
-                    self.logger.debug("Action: \(action), Version: \(versionName)")
+                    self.logger.info("Stats batch sent successfully")
+                    self.logger.debug("Sent \(eventsToSend.count) events")
                 case let .failure(error):
-                    self.logger.error("Error sending stats")
+                    self.logger.error("Error sending stats batch")
                     self.logger.debug("Response: \(response.value?.debugDescription ?? "nil"), Error: \(error.localizedDescription)")
                 }
                 semaphore.signal()
@@ -1709,7 +1835,6 @@ import UIKit
             semaphore.wait()
         }
         operationQueue.addOperation(operation)
-
     }
 
     public func getBundleInfo(id: String?) -> BundleInfo {
