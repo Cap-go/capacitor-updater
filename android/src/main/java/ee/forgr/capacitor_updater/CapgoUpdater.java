@@ -262,15 +262,11 @@ public class CapgoUpdater {
         if (entries.length == 1 && !"index.html".equals(entries[0])) {
             final File child = new File(sourceFile, entries[0]);
             if (!child.renameTo(destinationFile)) {
-                throw new IOException(
-                    "Failed to move bundle contents: " + child.getPath() + " -> " + destinationFile.getPath()
-                );
+                throw new IOException("Failed to move bundle contents: " + child.getPath() + " -> " + destinationFile.getPath());
             }
         } else {
             if (!sourceFile.renameTo(destinationFile)) {
-                throw new IOException(
-                    "Failed to move bundle contents: " + sourceFile.getPath() + " -> " + destinationFile.getPath()
-                );
+                throw new IOException("Failed to move bundle contents: " + sourceFile.getPath() + " -> " + destinationFile.getPath());
             }
         }
         sourceFile.delete();
@@ -293,6 +289,10 @@ public class CapgoUpdater {
         }
 
         final File cacheDir = new File(this.activity.getCacheDir(), "capgo_downloads");
+        if (cacheDir.exists() && !cacheDir.isDirectory()) {
+            logger.debug("Skip delta cache population: cache dir is not a directory");
+            return;
+        }
         if (!cacheDir.exists() && !cacheDir.mkdirs()) {
             logger.debug("Skip delta cache population: failed to create cache dir");
             return;
