@@ -217,6 +217,14 @@ export class CapacitorUpdaterWeb extends WebPlugin implements CapacitorUpdaterPl
     return Promise.resolve({ enabled: false });
   }
 
+  async setShakeChannelSelector(_options: { enabled: boolean }): Promise<void> {
+    throw this.unimplemented('Shake channel selector not available on web platform');
+  }
+
+  async isShakeChannelSelectorEnabled(): Promise<{ enabled: boolean }> {
+    return Promise.resolve({ enabled: false });
+  }
+
   async getAppId(): Promise<{ appId: string }> {
     console.warn('Cannot getAppId in web');
     return { appId: 'default' };
