@@ -202,7 +202,10 @@ public class ShakeMenu implements ShakeDetector.Listener {
                 progressBar.setPadding(padding, padding, padding, padding);
                 loadingBuilder.setView(progressBar);
 
+                final boolean[] didCancel = {false};
+
                 loadingBuilder.setNegativeButton("Cancel", (dialog, which) -> {
+                    didCancel[0] = true;
                     dialog.dismiss();
                     isShowing = false;
                 });
@@ -221,6 +224,10 @@ public class ShakeMenu implements ShakeDetector.Listener {
 
                     activity.runOnUiThread(() -> {
                         loadingDialog.dismiss();
+
+                        if (didCancel[0]) {
+                            return;
+                        }
 
                         if (!result.error.isEmpty()) {
                             showError("Failed to load channels: " + result.error);
@@ -360,8 +367,8 @@ public class ShakeMenu implements ShakeDetector.Listener {
                     final CapgoUpdater updater = plugin.implementation;
                     final Bridge bridge = activity.getBridge();
 
-                    // Set the channel
-                    SetChannel setResult = updater.setChannel(channelName, "CapacitorUpdater.defaultChannel", true);
+                    // Set the channel - respect plugin's allowSetDefaultChannel config
+                    SetChannel setResult = updater.setChannel(channelName, "CapacitorUpdater.defaultChannel", plugin.allowSetDefaultChannel);
 
                     if (!setResult.error.isEmpty()) {
                         activity.runOnUiThread(() -> {
@@ -403,7 +410,7 @@ public class ShakeMenu implements ShakeDetector.Listener {
                     if (latest.error != null && !latest.error.isEmpty() && !"no_new_version_available".equals(latest.error)) {
                         activity.runOnUiThread(() -> {
                             progressDialog.dismiss();
-                            showSuccess("Channel set to " + channelName + ". Update check failed: " + latest.error);
+                            showError("Channel set to " + channelName + ". Update check failed: " + latest.error);
                         });
                         return;
                     }
@@ -426,7 +433,7 @@ public class ShakeMenu implements ShakeDetector.Listener {
                                 latest.url,
                                 latest.version,
                                 latest.sessionKey != null ? latest.sessionKey : "",
-                                ""
+                                latest.checksum != null ? latest.checksum : ""
                             );
                         }
 
