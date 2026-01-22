@@ -128,6 +128,7 @@ extension UIWindow {
 
         // Show loading indicator
         let loadingAlert = UIAlertController(title: "Loading Channels...", message: nil, preferredStyle: .alert)
+        var didCancel = false
         let loadingIndicator = UIActivityIndicatorView(style: .medium)
         loadingIndicator.translatesAutoresizingMaskIntoConstraints = false
         loadingIndicator.startAnimating()
@@ -139,7 +140,9 @@ extension UIWindow {
         ])
 
         // Add cancel button to loading alert
-        loadingAlert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        loadingAlert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
+            didCancel = true
+        })
 
         DispatchQueue.main.async {
             if let topVC = UIApplication.topViewController() {
@@ -150,6 +153,7 @@ extension UIWindow {
 
                         DispatchQueue.main.async {
                             loadingAlert.dismiss(animated: true) {
+                                guard !didCancel else { return }
                                 if !result.error.isEmpty {
                                     self.showError(message: "Failed to load channels: \(result.error)", plugin: plugin)
                                 } else if result.channels.isEmpty {
@@ -267,11 +271,11 @@ extension UIWindow {
             if let topVC = UIApplication.topViewController() {
                 topVC.present(progressAlert, animated: true) {
                     DispatchQueue.global(qos: .userInitiated).async {
-                        // Set the channel
+                        // Set the channel - respect plugin's allowSetDefaultChannel config
                         let setResult = updater.setChannel(
                             channel: name,
                             defaultChannelKey: "CapacitorUpdater.defaultChannel",
-                            allowSetDefaultChannel: true
+                            allowSetDefaultChannel: plugin.allowSetDefaultChannel
                         )
 
                         if !setResult.error.isEmpty {
@@ -289,8 +293,8 @@ extension UIWindow {
                         }
 
                         // Check for updates with the new channel
-                        guard let updateUrlStr = updater.updateUrl.isEmpty ? nil : updater.updateUrl,
-                              let updateUrl = URL(string: updateUrlStr.isEmpty ? CapacitorUpdaterPlugin.updateUrlDefault : updateUrlStr) else {
+                        let updateUrlStr = updater.updateUrl.isEmpty ? CapacitorUpdaterPlugin.updateUrlDefault : updater.updateUrl
+                        guard let updateUrl = URL(string: updateUrlStr) else {
                             DispatchQueue.main.async {
                                 progressAlert.dismiss(animated: true) {
                                     self.showSuccess(message: "Channel set to \(name). Could not check for updates.", plugin: plugin)
@@ -314,7 +318,7 @@ extension UIWindow {
                         if let error = latest.error, !error.isEmpty && error != "no_new_version_available" {
                             DispatchQueue.main.async {
                                 progressAlert.dismiss(animated: true) {
-                                    self.showSuccess(message: "Channel set to \(name). Update check failed: \(error)", plugin: plugin)
+                                    self.showError(message: "Channel set to \(name). Update check failed: \(error)", plugin: plugin)
                                 }
                             }
                             return
@@ -335,8 +339,17 @@ extension UIWindow {
                                     sessionKey: latest.sessionKey ?? ""
                                 )
                             } else {
+                                // Safe unwrap URL
+                                guard let downloadUrl = URL(string: latest.url) else {
+                                    DispatchQueue.main.async {
+                                        progressAlert.dismiss(animated: true) {
+                                            self.showError(message: "Failed to download update: invalid update URL.", plugin: plugin)
+                                        }
+                                    }
+                                    return
+                                }
                                 bundle = try updater.download(
-                                    url: URL(string: latest.url)!,
+                                    url: downloadUrl,
                                     version: latest.version,
                                     sessionKey: latest.sessionKey ?? ""
                                 )
