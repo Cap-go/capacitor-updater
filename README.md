@@ -365,7 +365,7 @@ In `capacitor.config.json`:
       "disableJSLogging": undefined,
       "osLogging": undefined,
       "shakeMenu": undefined,
-      "miniAppsEnabled": undefined
+      "miniAppsEnabled": false
     }
   }
 }
@@ -416,7 +416,7 @@ const config: CapacitorConfig = {
       disableJSLogging: undefined,
       osLogging: undefined,
       shakeMenu: undefined,
-      miniAppsEnabled: undefined,
+      miniAppsEnabled: false,
     },
   },
 };
