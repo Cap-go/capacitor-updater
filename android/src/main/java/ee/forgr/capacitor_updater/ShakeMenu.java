@@ -398,19 +398,20 @@ public class ShakeMenu implements ShakeDetector.Listener {
                         return;
                     }
 
+                    // Handle update errors first (before "no new version" check)
+                    if (latest.error != null && !latest.error.isEmpty() && !"no_new_version_available".equals(latest.error)) {
+                        activity.runOnUiThread(() -> {
+                            progressDialog.dismiss();
+                            showError("Channel set to " + channelName + ". Update check failed: " + latest.error);
+                        });
+                        return;
+                    }
+
                     // Check if there's an actual update available
                     if ("no_new_version_available".equals(latest.error) || latest.url == null || latest.url.isEmpty()) {
                         activity.runOnUiThread(() -> {
                             progressDialog.dismiss();
                             showSuccess("Channel set to " + channelName + ". Already on latest version.");
-                        });
-                        return;
-                    }
-
-                    if (latest.error != null && !latest.error.isEmpty() && !"no_new_version_available".equals(latest.error)) {
-                        activity.runOnUiThread(() -> {
-                            progressDialog.dismiss();
-                            showError("Channel set to " + channelName + ". Update check failed: " + latest.error);
                         });
                         return;
                     }
