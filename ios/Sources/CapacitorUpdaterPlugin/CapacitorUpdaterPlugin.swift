@@ -1033,12 +1033,28 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
 
             logger.info("Mini-app '\(miniAppName)' updated and switched to bundle \(newBundle.getId())")
 
-            // Reload the app
-            DispatchQueue.main.async {
-                _ = self._reload()
+            // Reload the app synchronously and verify success before cleanup
+            let reloadSuccess: Bool
+            if Thread.isMainThread {
+                reloadSuccess = self._reload()
+            } else {
+                var success = false
+                DispatchQueue.main.sync {
+                    success = self._reload()
+                }
+                reloadSuccess = success
             }
 
-            // Delete old bundle AFTER successful activation (non-fatal if fails)
+            guard reloadSuccess else {
+                // Rollback registry to old bundle if reload failed
+                if let oldId = oldBundleId {
+                    _ = self.miniAppsManager.updateBundleId(name: miniAppName, newBundleId: oldId)
+                }
+                call.reject("Failed to reload app after update", "RELOAD_FAILED")
+                return
+            }
+
+            // Delete old bundle AFTER successful reload (non-fatal if fails)
             if let oldId = oldBundleId {
                 let oldBundle = self.implementation.getBundleInfo(id: oldId)
                 if !oldBundle.isBuiltin() && !oldBundle.isUnknown() {

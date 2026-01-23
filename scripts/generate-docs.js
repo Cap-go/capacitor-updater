@@ -241,6 +241,10 @@ function tweakReadmeHeadings() {
     }
     return lines.join('\n');
   });
+  // Fix miniAppsEnabled in config examples - undefined is not valid JSON
+  // Replace only in the config example blocks within <docgen-config>
+  md = md.replace(/"miniAppsEnabled": undefined/g, '"miniAppsEnabled": false');
+  md = md.replace(/miniAppsEnabled: undefined,/g, 'miniAppsEnabled: false,');
   writeFileSync(README, md);
   log('ok', 'README polished (headings + index)');
 }
