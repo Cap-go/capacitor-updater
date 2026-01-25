@@ -114,7 +114,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     Boolean shakeMenuEnabled = false;
     Boolean shakeChannelSelectorEnabled = false;
     private Boolean allowManualBundleError = false;
-    private Boolean allowSetDefaultChannel = true;
+    Boolean allowSetDefaultChannel = true;
 
     // Used for activity-based foreground/background detection on Android < 14
     private Boolean isPreviousMainActivity = true;
