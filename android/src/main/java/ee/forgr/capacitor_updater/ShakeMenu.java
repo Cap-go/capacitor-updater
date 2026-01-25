@@ -12,8 +12,6 @@ import android.content.DialogInterface;
 import android.hardware.SensorManager;
 import android.text.Editable;
 import android.text.TextWatcher;
-import android.view.View;
-import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -23,7 +21,8 @@ import android.widget.ProgressBar;
 import com.getcapacitor.Bridge;
 import com.getcapacitor.BridgeActivity;
 
-import java.net.URL;
+import org.json.JSONArray;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -211,35 +210,62 @@ public class ShakeMenu implements ShakeDetector.Listener {
                 });
 
                 AlertDialog loadingDialog = loadingBuilder.create();
+                loadingDialog.setOnCancelListener((d) -> {
+                    didCancel[0] = true;
+                    isShowing = false;
+                });
                 loadingDialog.setOnDismissListener((d) -> {
-                    // Only reset isShowing if we're still showing the loading dialog
-                    // (not if we dismissed it to show the channel picker)
+                    if (didCancel[0]) {
+                        isShowing = false;
+                    }
                 });
                 loadingDialog.show();
 
                 // Fetch channels in background
                 new Thread(() -> {
                     final CapgoUpdater updater = plugin.implementation;
-                    final ListChannels result = updater.listChannels();
+                    updater.listChannels((res) -> {
+                        activity.runOnUiThread(() -> {
+                            loadingDialog.dismiss();
 
-                    activity.runOnUiThread(() -> {
-                        loadingDialog.dismiss();
+                            if (didCancel[0]) {
+                                return;
+                            }
 
-                        if (didCancel[0]) {
-                            return;
-                        }
+                            if (res == null) {
+                                showError("Failed to load channels: unknown error");
+                                return;
+                            }
 
-                        if (!result.error.isEmpty()) {
-                            showError("Failed to load channels: " + result.error);
-                            return;
-                        }
+                            Object errorObj = res.get("error");
+                            if (errorObj != null) {
+                                Object messageObj = res.get("message");
+                                String message = messageObj != null ? messageObj.toString() : errorObj.toString();
+                                showError("Failed to load channels: " + message);
+                                return;
+                            }
 
-                        if (result.channels == null || result.channels.isEmpty()) {
-                            showError("No channels available for self-assignment");
-                            return;
-                        }
+                            Object channelsObj = res.get("channels");
+                            if (!(channelsObj instanceof List)) {
+                                showError("No channels available for self-assignment");
+                                return;
+                            }
 
-                        presentChannelPicker(result.channels);
+                            List<?> channelsRaw = (List<?>) channelsObj;
+                            List<Map<String, Object>> channels = new ArrayList<>();
+                            for (Object item : channelsRaw) {
+                                if (item instanceof Map) {
+                                    channels.add((Map<String, Object>) item);
+                                }
+                            }
+
+                            if (channels.isEmpty()) {
+                                showError("No channels available for self-assignment");
+                                return;
+                            }
+
+                            presentChannelPicker(channels);
+                        });
                     });
                 }).start();
             } catch (Exception e) {
@@ -368,89 +394,145 @@ public class ShakeMenu implements ShakeDetector.Listener {
                     final Bridge bridge = activity.getBridge();
 
                     // Set the channel - respect plugin's allowSetDefaultChannel config
-                    SetChannel setResult = updater.setChannel(channelName, "CapacitorUpdater.defaultChannel", plugin.allowSetDefaultChannel);
+                    updater.setChannel(
+                        channelName,
+                        updater.editor,
+                        "CapacitorUpdater.defaultChannel",
+                        plugin.allowSetDefaultChannel,
+                        (setRes) -> {
+                            if (setRes == null) {
+                                activity.runOnUiThread(() -> {
+                                    progressDialog.dismiss();
+                                    showError("Failed to set channel: unknown error");
+                                });
+                                return;
+                            }
 
-                    if (!setResult.error.isEmpty()) {
-                        activity.runOnUiThread(() -> {
-                            progressDialog.dismiss();
-                            showError("Failed to set channel: " + setResult.error);
-                        });
-                        return;
-                    }
+                            Object errorObj = setRes.get("error");
+                            if (errorObj != null) {
+                                Object messageObj = setRes.get("message");
+                                String message = messageObj != null ? messageObj.toString() : errorObj.toString();
+                                activity.runOnUiThread(() -> {
+                                    progressDialog.dismiss();
+                                    showError("Failed to set channel: " + message);
+                                });
+                                return;
+                            }
 
-                    // Update progress message
-                    activity.runOnUiThread(() -> progressDialog.setMessage("Checking for updates..."));
+                            // Update progress message
+                            activity.runOnUiThread(() -> progressDialog.setMessage("Checking for updates..."));
 
-                    // Check for updates
-                    String updateUrlStr = updater.updateUrl;
-                    if (updateUrlStr == null || updateUrlStr.isEmpty()) {
-                        updateUrlStr = "https://plugin.capgo.app/updates";
-                    }
+                            // Check for updates
+                            String updateUrlStr = updater.updateUrl;
+                            if (updateUrlStr == null || updateUrlStr.isEmpty()) {
+                                updateUrlStr = "https://plugin.capgo.app/updates";
+                            }
 
-                    LatestVersion latest;
-                    try {
-                        latest = updater.getLatest(new URL(updateUrlStr), channelName);
-                    } catch (Exception e) {
-                        activity.runOnUiThread(() -> {
-                            progressDialog.dismiss();
-                            showSuccess("Channel set to " + channelName + ". Could not check for updates.");
-                        });
-                        return;
-                    }
+                            final String finalUpdateUrlStr = updateUrlStr;
+                            updater.getLatest(finalUpdateUrlStr, channelName, (latestRes) -> {
+                                if (latestRes == null) {
+                                    activity.runOnUiThread(() -> {
+                                        progressDialog.dismiss();
+                                        showSuccess("Channel set to " + channelName + ". Could not check for updates.");
+                                    });
+                                    return;
+                                }
 
-                    // Handle update errors first (before "no new version" check)
-                    if (latest.error != null && !latest.error.isEmpty() && !"no_new_version_available".equals(latest.error)) {
-                        activity.runOnUiThread(() -> {
-                            progressDialog.dismiss();
-                            showError("Channel set to " + channelName + ". Update check failed: " + latest.error);
-                        });
-                        return;
-                    }
+                                String latestError = getString(latestRes, "error");
 
-                    // Check if there's an actual update available
-                    if ("no_new_version_available".equals(latest.error) || latest.url == null || latest.url.isEmpty()) {
-                        activity.runOnUiThread(() -> {
-                            progressDialog.dismiss();
-                            showSuccess("Channel set to " + channelName + ". Already on latest version.");
-                        });
-                        return;
-                    }
+                                // Handle update errors first (before "no new version" check)
+                                if (
+                                    latestError != null &&
+                                    !latestError.isEmpty() &&
+                                    !"no_new_version_available".equals(latestError)
+                                ) {
+                                    activity.runOnUiThread(() -> {
+                                        progressDialog.dismiss();
+                                        showError(
+                                            "Channel set to " + channelName + ". Update check failed: " + latestError
+                                        );
+                                    });
+                                    return;
+                                }
 
-                    // Update message
-                    final String version = latest.version;
-                    activity.runOnUiThread(() -> progressDialog.setMessage("Downloading update " + version + "..."));
+                                String latestUrl = getString(latestRes, "url");
 
-                    // Download the update
-                    try {
-                        BundleInfo bundle;
-                        if (latest.manifest != null && !latest.manifest.isEmpty()) {
-                            bundle = updater.downloadManifest(
-                                latest.manifest,
-                                latest.version,
-                                latest.sessionKey != null ? latest.sessionKey : ""
-                            );
-                        } else {
-                            bundle = updater.download(
-                                latest.url,
-                                latest.version,
-                                latest.sessionKey != null ? latest.sessionKey : "",
-                                latest.checksum != null ? latest.checksum : ""
-                            );
+                                // Check if there's an actual update available
+                                if ("no_new_version_available".equals(latestError) || latestUrl == null || latestUrl.isEmpty()) {
+                                    activity.runOnUiThread(() -> {
+                                        progressDialog.dismiss();
+                                        showSuccess("Channel set to " + channelName + ". Already on latest version.");
+                                    });
+                                    return;
+                                }
+
+                                String version = getString(latestRes, "version");
+                                if (version == null || version.isEmpty()) {
+                                    activity.runOnUiThread(() -> {
+                                        progressDialog.dismiss();
+                                        showError("Channel set to " + channelName + ". Update check failed: missing version.");
+                                    });
+                                    return;
+                                }
+
+                                // Update message
+                                final String versionForUi = version;
+                                activity.runOnUiThread(() -> progressDialog.setMessage("Downloading update " + versionForUi + "..."));
+
+                                String sessionKey = getString(latestRes, "sessionKey");
+                                String checksum = getString(latestRes, "checksum");
+                                Object manifestObj = latestRes.get("manifest");
+
+                                // Download the update
+                                try {
+                                    BundleInfo bundle;
+                                    if (manifestObj != null) {
+                                        JSONArray manifestArray = null;
+                                        if (manifestObj instanceof JSONArray) {
+                                            manifestArray = (JSONArray) manifestObj;
+                                        } else if (manifestObj instanceof List) {
+                                            manifestArray = new JSONArray((List<?>) manifestObj);
+                                        }
+
+                                        if (manifestArray == null) {
+                                            throw new IllegalArgumentException("Invalid manifest format");
+                                        }
+
+                                        bundle = updater.downloadManifest(
+                                            latestUrl,
+                                            versionForUi,
+                                            sessionKey != null ? sessionKey : "",
+                                            checksum != null ? checksum : "",
+                                            manifestArray
+                                        );
+                                    } else {
+                                        bundle = updater.download(
+                                            latestUrl,
+                                            versionForUi,
+                                            sessionKey != null ? sessionKey : "",
+                                            checksum != null ? checksum : ""
+                                        );
+                                    }
+
+                                    // Set as next bundle
+                                    updater.setNextBundle(bundle.getId());
+
+                                    activity.runOnUiThread(() -> {
+                                        progressDialog.dismiss();
+                                        showSuccessWithReload(
+                                            "Update downloaded! Reload to apply version " + versionForUi + "?",
+                                            bridge
+                                        );
+                                    });
+                                } catch (Exception e) {
+                                    activity.runOnUiThread(() -> {
+                                        progressDialog.dismiss();
+                                        showError("Failed to download update: " + e.getMessage());
+                                    });
+                                }
+                            });
                         }
-
-                        // Set as next bundle
-                        updater.setNextBundle(bundle.getId());
-
-                        activity.runOnUiThread(() -> {
-                            progressDialog.dismiss();
-                            showSuccessWithReload("Update downloaded! Reload to apply version " + version + "?", bridge);
-                        });
-                    } catch (Exception e) {
-                        activity.runOnUiThread(() -> {
-                            progressDialog.dismiss();
-                            showError("Failed to download update: " + e.getMessage());
-                        });
-                    }
+                    );
                 }).start();
             } catch (Exception e) {
                 logger.error("Error selecting channel: " + e.getMessage());
@@ -505,6 +587,11 @@ public class ShakeMenu implements ShakeDetector.Listener {
             })
             .setOnDismissListener((d) -> isShowing = false)
             .show();
+    }
+
+    private String getString(Map<String, Object> map, String key) {
+        Object value = map.get(key);
+        return value != null ? value.toString() : null;
     }
 
     private int dpToPx(int dp) {
