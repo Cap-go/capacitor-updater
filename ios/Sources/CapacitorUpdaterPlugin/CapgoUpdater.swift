@@ -1549,6 +1549,15 @@ import UIKit
                 if let responseValue = response.value {
                     if let error = responseValue.error {
                         setChannel.error = error
+                    } else if responseValue.unset == true {
+                        // Server requested to unset channel (public channel was requested)
+                        // Clear persisted defaultChannel and revert to config value
+                        UserDefaults.standard.removeObject(forKey: defaultChannelKey)
+                        UserDefaults.standard.synchronize()
+                        self.logger.info("Public channel requested, channel override removed")
+
+                        setChannel.status = responseValue.status ?? "ok"
+                        setChannel.message = responseValue.message ?? "Public channel requested, channel override removed. Device will use public channel automatically."
                     } else {
                         // Success - persist defaultChannel
                         self.defaultChannel = channel
