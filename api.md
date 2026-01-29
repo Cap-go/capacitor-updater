@@ -49,6 +49,7 @@ CapacitorUpdater can be configured with these options:
 | **`disableJSLogging`** | `boolean` | Disable the JavaScript logging of the plugin. if true, the plugin will not log to the JavaScript console. only the native log will be done | `false` | 7.3.0 |
 | **`osLogging`** | `boolean` | Enable OS-level logging. When enabled, logs are written to the system log which can be inspected in production builds. - **iOS**: Uses os_log instead of Swift.print, logs accessible via Console.app or Instruments - **Android**: Logs to Logcat (android.util.Log) When set to false, system logging is disabled on both platforms (only JavaScript console logging will occur if enabled). This is useful for debugging production apps (App Store/TestFlight builds on iOS, or production APKs on Android). | `true` | 8.42.0 |
 | **`shakeMenu`** | `boolean` | Enable shake gesture to show update menu for debugging/testing purposes | `false` | 7.5.0 |
+| **`allowShakeChannelSelector`** | `boolean` | Enable the shake gesture to show a channel selector menu for switching between update channels. When enabled AND `shakeMenu` is true, the shake gesture shows a channel selector instead of the default debug menu (Go Home/Reload/Close). After selecting a channel, the app automatically checks for updates and downloads if available. Only works if channels have `allow_self_set` enabled on the backend. Only available for Android and iOS. | `false` | 8.43.0 |
 
 
 </docgen-config>
@@ -101,6 +102,8 @@ CapacitorUpdater can be configured with these options:
 - [`getFailedUpdate`](#getfailedupdate)
 - [`setShakeMenu`](#setshakemenu)
 - [`isShakeMenuEnabled`](#isshakemenuenabled)
+- [`setShakeChannelSelector`](#setshakechannelselector)
+- [`isShakeChannelSelectorEnabled`](#isshakechannelselectorenabled)
 - [`getAppId`](#getappid)
 - [`setAppId`](#setappid)
 - [`getAppUpdateInfo`](#getappupdateinfo)
@@ -1591,6 +1594,64 @@ Use this to:
 `Promise<ShakeMenuEnabled>` — Object with `enabled: true` or `enabled: false`.
 
 **Since:** 7.5.0
+
+**Throws:** {Error} If the operation fails.
+
+
+--------------------
+
+
+### setShakeChannelSelector
+
+```typescript
+setShakeChannelSelector(options: SetShakeChannelSelectorOptions) => Promise<void>
+```
+
+Enable or disable the shake channel selector at runtime.
+
+When enabled AND shakeMenu is true, shaking the device shows a channel
+selector instead of the debug menu. This allows users to switch between
+update channels by shaking their device.
+
+After selecting a channel, the app automatically checks for updates
+and downloads if available.
+
+Can also be configured via {@link PluginsConfig.CapacitorUpdater.allowShakeChannelSelector}.
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `options` | `SetShakeChannelSelectorOptions` |  |
+
+**Returns**
+
+`Promise<void>` — Resolves when the setting is applied.
+
+**Since:** 8.43.0
+
+**Throws:** {Error} If the operation fails.
+
+
+--------------------
+
+
+### isShakeChannelSelectorEnabled
+
+```typescript
+isShakeChannelSelectorEnabled() => Promise<ShakeChannelSelectorEnabled>
+```
+
+Check if the shake channel selector is currently enabled.
+
+Returns the current state of the shake channel selector feature that can be toggled via
+{@link setShakeChannelSelector} or configured via {@link PluginsConfig.CapacitorUpdater.allowShakeChannelSelector}.
+
+**Returns**
+
+`Promise<ShakeChannelSelectorEnabled>` — Object with `enabled: true` or `enabled: false`.
+
+**Since:** 8.43.0
 
 **Throws:** {Error} If the operation fails.
 

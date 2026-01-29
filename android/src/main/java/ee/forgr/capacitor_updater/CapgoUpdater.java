@@ -829,6 +829,58 @@ public class CapgoUpdater {
         }
     }
 
+    public BundleInfo downloadManifest(
+        final String url,
+        final String version,
+        final String sessionKey,
+        final String checksum,
+        final JSONArray manifest
+    ) throws IOException {
+        if (manifest == null) {
+            return download(url, version, sessionKey, checksum);
+        }
+
+        // Check for existing bundle with same version and clean up if in error state
+        BundleInfo existingBundle = this.getBundleInfoByName(version);
+        if (existingBundle != null && (existingBundle.isErrorStatus() || existingBundle.isDeleted())) {
+            logger.info("Found existing failed bundle for version " + version + ", deleting before retry");
+            this.delete(existingBundle.getId(), true);
+        }
+
+        final String id = this.randomString();
+        saveBundleInfo(id, new BundleInfo(id, version, BundleStatus.DOWNLOADING, new Date(System.currentTimeMillis()), ""));
+        this.notifyDownload(id, 0);
+        this.notifyDownload(id, 5);
+        final String dest = this.randomString();
+
+        // Create a CompletableFuture to track download completion
+        CompletableFuture<BundleInfo> downloadFuture = new CompletableFuture<>();
+        downloadFutures.put(id, downloadFuture);
+
+        // Start the download
+        this.download(id, url, dest, version, sessionKey, checksum, manifest);
+
+        // Wait for completion without timeout
+        try {
+            BundleInfo result = downloadFuture.get();
+            if (result.isErrorStatus()) {
+                throw new IOException("Download failed with status: " + result.getStatus());
+            }
+            return result;
+        } catch (Exception e) {
+            // Clean up on failure
+            downloadFutures.remove(id);
+            logger.error("Error waiting for download");
+            logger.debug("Error: " + e.getMessage());
+            BundleInfo errorBundle = new BundleInfo(id, version, BundleStatus.ERROR, new Date(System.currentTimeMillis()), "");
+            saveBundleInfo(id, errorBundle);
+            if (e instanceof IOException) {
+                throw (IOException) e;
+            }
+            throw new IOException("Error waiting for download: " + e.getMessage(), e);
+        }
+    }
+
     public List<BundleInfo> list(boolean rawList) {
         if (!rawList) {
             final List<BundleInfo> res = new ArrayList<>();
