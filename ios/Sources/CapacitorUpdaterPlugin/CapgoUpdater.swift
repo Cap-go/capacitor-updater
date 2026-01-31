@@ -577,10 +577,15 @@ import UIKit
 
         for entry in manifest {
             guard let fileName = entry.file_name,
-                  var fileHash = entry.file_hash,
                   let downloadUrl = entry.download_url else {
                 continue
             }
+            guard let entryFileHash = entry.file_hash, !entryFileHash.isEmpty else {
+                logger.error("Missing file_hash for manifest entry: \(entry.file_name ?? "unknown")")
+                hasError.value = true
+                continue
+            }
+            var fileHash = entryFileHash
 
             // Decrypt checksum if needed (done before creating operation)
             if !self.publicKey.isEmpty && !sessionKey.isEmpty {
@@ -744,16 +749,14 @@ import UIKit
                     // Write to destination
                     try finalData.write(to: destFilePath)
 
-                    // Verify checksum if encryption is enabled
-                    if !self.publicKey.isEmpty && !sessionKey.isEmpty {
-                        let calculatedChecksum = CryptoCipher.calcChecksum(filePath: destFilePath)
-                        CryptoCipher.logChecksumInfo(label: "Calculated checksum", hexChecksum: calculatedChecksum)
-                        CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: fileHash)
-                        if calculatedChecksum != fileHash {
-                            try? FileManager.default.removeItem(at: destFilePath)
-                            self.sendStats(action: "download_manifest_checksum_fail", versionName: "\(version):\(destFileName)")
-                            throw NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash)) for file \(fileName) at url \(downloadUrl)"])
-                        }
+                    // Always verify checksum when file_hash is present
+                    let calculatedChecksum = CryptoCipher.calcChecksum(filePath: destFilePath)
+                    CryptoCipher.logChecksumInfo(label: "Calculated checksum", hexChecksum: calculatedChecksum)
+                    CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: fileHash)
+                    if calculatedChecksum != fileHash {
+                        try? FileManager.default.removeItem(at: destFilePath)
+                        self.sendStats(action: "download_manifest_checksum_fail", versionName: "\(version):\(destFileName)")
+                        throw NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash)) for file \(fileName) at url \(downloadUrl)"])
                     }
 
                     // Save to cache
