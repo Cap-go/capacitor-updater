@@ -43,7 +43,7 @@ public class DelayUpdateUtils {
             DelayUntilNext kind = condition.getKind();
             String value = condition.getValue();
             switch (kind) {
-                case DelayUntilNext.background:
+                case background:
                     if (source == CancelDelaySource.FOREGROUND) {
                         long backgroundedAt = getBackgroundTimestamp();
                         long now = System.currentTimeMillis();
@@ -86,7 +86,7 @@ public class DelayUpdateUtils {
                         );
                     }
                     break;
-                case DelayUntilNext.kill:
+                case kill:
                     if (source == CancelDelaySource.KILLED) {
                         logger.info("Kill delay (value: " + value + ") condition removed at index " + index + " after app kill");
                     } else {
@@ -96,7 +96,7 @@ public class DelayUpdateUtils {
                         );
                     }
                     break;
-                case DelayUntilNext.date:
+                case date:
                     if (!"".equals(value)) {
                         try {
                             final SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS");
@@ -122,7 +122,7 @@ public class DelayUpdateUtils {
                         logger.debug("Date delay (value: " + value + ") condition removed due to empty value at index " + index);
                     }
                     break;
-                case DelayUntilNext.nativeVersion:
+                case nativeVersion:
                     if (!"".equals(value)) {
                         try {
                             final Version versionLimit = new Version(value);
