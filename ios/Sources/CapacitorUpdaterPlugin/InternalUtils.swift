@@ -23,6 +23,7 @@ struct SetChannelDec: Decodable {
     let status: String?
     let error: String?
     let message: String?
+    let unset: Bool?
 }
 public class SetChannel: NSObject {
     var status: String = ""
