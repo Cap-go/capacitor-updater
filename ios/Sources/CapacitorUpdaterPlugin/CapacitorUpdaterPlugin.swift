@@ -1371,7 +1371,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         defer { downloadLock.unlock() }
         downloadInProgress = false
         downloadStartTime = nil
-        
+
         if error {
             if sendStats {
                 self.implementation.sendStats(action: failureAction, versionName: current.getVersionName())
@@ -1387,11 +1387,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private func isDownloadStuckOrTimedOut() -> Bool {
         downloadLock.lock()
         defer { downloadLock.unlock() }
-        
+
         guard downloadInProgress else {
             return false
         }
-        
+
         // Check if download has timed out
         if let startTime = downloadStartTime {
             let elapsed = Date().timeIntervalSince(startTime)
@@ -1402,7 +1402,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 return false // Now it's not stuck anymore, caller can proceed
             }
         }
-        
+
         return true
     }
 
@@ -1412,7 +1412,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         downloadInProgress = true
         downloadStartTime = Date()
         downloadLock.unlock()
-        
+
         let plannedDirectUpdate = self.shouldUseDirectUpdate()
         let messageUpdate = plannedDirectUpdate ? "Update will occur now." : "Update will occur next time app moves to background."
         guard let url = URL(string: self.updateUrl) else {
@@ -1424,7 +1424,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             downloadStartTime = nil
             return
         }
-        
+
         DispatchQueue.global(qos: .background).async {
             // Wait for cleanup to complete before starting download
             self.waitForCleanupIfNeeded()
