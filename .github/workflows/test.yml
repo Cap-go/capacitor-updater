@@ -9,6 +9,18 @@ on:
   workflow_call:  # Allow this workflow to be called by other workflows
 
 jobs:
+  guard_swiftpm_version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v6
+      - name: Enforce capacitor-swift-pm version
+        run: |
+          set -euo pipefail
+          if ! grep -Eq 'https://github.com/ionic-team/capacitor-swift-pm\.git"[[:space:]]*,[[:space:]]*from:[[:space:]]*"8\.0\.0"' Package.swift; then
+            echo "Expected capacitor-swift-pm to be pinned to 8.0.0 in Package.swift"
+            exit 1
+          fi
   build_android:
     runs-on: ubuntu-latest
     steps:

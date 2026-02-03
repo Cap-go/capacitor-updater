@@ -1248,6 +1248,13 @@ public class CapgoUpdater {
         makeJsonRequest(channelUrl, json, (res) -> {
             if (res.containsKey("error")) {
                 callback.callback(res);
+            } else if (Boolean.TRUE.equals(res.get("unset"))) {
+                // Server requested to unset channel (public channel was requested)
+                // Clear persisted defaultChannel and revert to config value
+                editor.remove(defaultChannelKey);
+                editor.apply();
+                logger.info("Public channel requested, channel override removed");
+                callback.callback(res);
             } else {
                 // Success - persist defaultChannel
                 this.defaultChannel = channel;
