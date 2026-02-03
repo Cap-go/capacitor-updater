@@ -822,10 +822,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 if self._isAutoUpdateEnabled() && triggerAutoUpdate {
                     self.logger.info("Calling autoupdater after channel change!")
                     // Check if download is already in progress (with timeout protection)
-                    if !isDownloadStuckOrTimedOut() {
+                    if !self.isDownloadStuckOrTimedOut() {
                         self.backgroundDownload()
                     } else {
-                        logger.info("Download already in progress, skipping duplicate download request")
+                        self.logger.info("Download already in progress, skipping duplicate download request")
                     }
                 }
                 call.resolve(res.toDict())
@@ -861,10 +861,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 if self._isAutoUpdateEnabled() && triggerAutoUpdate {
                     self.logger.info("Calling autoupdater after channel change!")
                     // Check if download is already in progress (with timeout protection)
-                    if !isDownloadStuckOrTimedOut() {
+                    if !self.isDownloadStuckOrTimedOut() {
                         self.backgroundDownload()
                     } else {
-                        logger.info("Download already in progress, skipping duplicate download request")
+                        self.logger.info("Download already in progress, skipping duplicate download request")
                     }
                 }
                 call.resolve(res.toDict())
