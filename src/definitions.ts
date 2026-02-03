@@ -126,7 +126,7 @@ declare module '@capacitor/cli' {
 
       /**
        * Configure when the plugin should direct install updates. Only for autoUpdate mode.
-       * Works well for apps less than 10MB and with uploads done using --partial flag.
+       * Works well for apps less than 10MB and with uploads done using --delta flag.
        * Zip or apps more than 10MB will be relatively slow for users to update.
        * - false: Never do direct updates (use default behavior: download at start, set when backgrounded)
        * - atInstall: Direct update only when app is installed, updated from store, otherwise act as directUpdate = false
@@ -134,6 +134,7 @@ declare module '@capacitor/cli' {
        * - always: Direct update in all previous cases (app installed, updated from store, after app kill or app resume), never act as directUpdate = false
        * - true: (deprecated) Same as "always" for backward compatibility
        *
+       * Activate this flag will automatically make the CLI upload delta in CICD envs and will ask for confirmation in local uploads.
        * Only available for Android and iOS.
        *
        * @default false
@@ -468,7 +469,7 @@ export interface CapacitorUpdaterPlugin {
    * The bundle must include an `index.html` file at the root level.
    *
    * For encrypted bundles, provide the `sessionKey` and `checksum` parameters.
-   * For multi-file partial updates, provide the `manifest` array.
+   * For multi-file delta updates, provide the `manifest` array.
    *
    * @example
    * const bundle = await CapacitorUpdater.download({
@@ -726,7 +727,7 @@ export interface CapacitorUpdaterPlugin {
    * - `url`: Download URL for the bundle (if available)
    * - `breaking`: Whether this update is marked as incompatible (requires native app update)
    * - `message`: Optional message from the server
-   * - `manifest`: File list for partial updates (if using multi-file downloads)
+   * - `manifest`: File list for delta updates (if using multi-file downloads)
    *
    * After receiving the latest version info, you can:
    * 1. Compare it with your current version
@@ -1635,7 +1636,7 @@ export interface LatestVersion {
    */
   url?: string;
   /**
-   * File list for partial updates (when using multi-file downloads).
+   * File list for delta updates (when using multi-file downloads).
    * @since 6.1
    */
   manifest?: ManifestEntry[];
