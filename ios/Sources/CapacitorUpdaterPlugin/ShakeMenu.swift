@@ -8,7 +8,6 @@ import UIKit
 import Capacitor
 
 extension UIApplication {
-    // swiftlint:disable:next line_length
     public class func topViewController(_ base: UIViewController? = UIApplication.shared.windows.first?.rootViewController) -> UIViewController? {
         if let nav = base as? UINavigationController {
             return topViewController(nav.visibleViewController)

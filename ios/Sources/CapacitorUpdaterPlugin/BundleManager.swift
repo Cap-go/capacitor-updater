@@ -13,14 +13,14 @@ class BundleManager {
     // Directory paths
     private let libraryDir: URL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
     private let bundleDirectory: String = "NoCloud/ionic_built_snapshots"
-    private let DEFAULT_FOLDER: String = ""
+    private let defaultFolder: String = ""
 
     // UserDefaults keys
-    let CAP_SERVER_PATH: String = "serverBasePath"
-    private let INFO_SUFFIX: String = "_info"
-    private let FALLBACK_VERSION: String = "pastVersion"
-    private let NEXT_VERSION: String = "nextVersion"
-    private let TEMP_UNZIP_PREFIX: String = "capgo_unzip_"
+    let capServerPath: String = "serverBasePath"
+    private let infoSuffix: String = "_info"
+    private let fallbackVersionKey: String = "pastVersion"
+    private let nextVersionKey: String = "nextVersion"
+    private let tempUnzipPrefix: String = "capgo_unzip_"
 
     // Dependencies
     private let sendStats: (String, String?, String?) -> Void
@@ -220,7 +220,7 @@ class BundleManager {
             result = BundleInfo(id: trueId, version: "", status: BundleStatus.ERROR, checksum: "")
         } else {
             do {
-                result = try UserDefaults.standard.getObj(forKey: "\(trueId)\(INFO_SUFFIX)", castTo: BundleInfo.self)
+                result = try UserDefaults.standard.getObj(forKey: "\(trueId)\(infoSuffix)", castTo: BundleInfo.self)
             } catch {
                 logger.error("Failed to parse bundle info")
                 logger.debug("Bundle ID: \(trueId), Error: \(error.localizedDescription)")
@@ -249,12 +249,12 @@ class BundleManager {
         }
         if bundle == nil {
             logger.info("Removing info for bundle [\(id)]")
-            UserDefaults.standard.removeObject(forKey: "\(id)\(INFO_SUFFIX)")
+            UserDefaults.standard.removeObject(forKey: "\(id)\(infoSuffix)")
         } else {
             let update = bundle!.setId(id: id)
             logger.info("Storing info for bundle [\(id)] \(update.toString())")
             do {
-                try UserDefaults.standard.setObj(update, forKey: "\(id)\(INFO_SUFFIX)")
+                try UserDefaults.standard.setObj(update, forKey: "\(id)\(infoSuffix)")
             } catch {
                 logger.error("Failed to save bundle info")
                 logger.debug("Bundle ID: \(id), Error: \(error.localizedDescription)")
@@ -282,7 +282,7 @@ class BundleManager {
 
     /// Get the current bundle ID
     func getCurrentBundleId() -> String {
-        guard let bundlePath = UserDefaults.standard.string(forKey: CAP_SERVER_PATH) else {
+        guard let bundlePath = UserDefaults.standard.string(forKey: capServerPath) else {
             return BundleInfo.ID_BUILTIN
         }
         if bundlePath.isEmpty {
@@ -294,12 +294,12 @@ class BundleManager {
 
     /// Check if using builtin
     func isUsingBuiltin() -> Bool {
-        return (UserDefaults.standard.string(forKey: CAP_SERVER_PATH) ?? "") == DEFAULT_FOLDER
+        return (UserDefaults.standard.string(forKey: capServerPath) ?? "") == defaultFolder
     }
 
     /// Set the current bundle path
     func setCurrentBundle(bundle: String) {
-        UserDefaults.standard.set(bundle, forKey: CAP_SERVER_PATH)
+        UserDefaults.standard.set(bundle, forKey: capServerPath)
         UserDefaults.standard.synchronize()
         logger.info("Current bundle set to: \(bundle.isEmpty ? BundleInfo.ID_BUILTIN : bundle)")
     }
@@ -308,13 +308,13 @@ class BundleManager {
 
     /// Get the fallback bundle
     func getFallbackBundle() -> BundleInfo {
-        let id = UserDefaults.standard.string(forKey: FALLBACK_VERSION) ?? BundleInfo.ID_BUILTIN
+        let id = UserDefaults.standard.string(forKey: fallbackVersionKey) ?? BundleInfo.ID_BUILTIN
         return getBundleInfo(id: id)
     }
 
     /// Set the fallback bundle
     func setFallbackBundle(fallback: BundleInfo?) {
-        UserDefaults.standard.set(fallback == nil ? BundleInfo.ID_BUILTIN : fallback!.getId(), forKey: FALLBACK_VERSION)
+        UserDefaults.standard.set(fallback == nil ? BundleInfo.ID_BUILTIN : fallback!.getId(), forKey: fallbackVersionKey)
         UserDefaults.standard.synchronize()
     }
 
@@ -322,14 +322,14 @@ class BundleManager {
 
     /// Get the next bundle to be installed
     func getNextBundle() -> BundleInfo? {
-        let id = UserDefaults.standard.string(forKey: NEXT_VERSION)
+        let id = UserDefaults.standard.string(forKey: nextVersionKey)
         return getBundleInfo(id: id)
     }
 
     /// Set the next bundle to be installed
     func setNextBundle(next: String?) -> Bool {
         guard let nextId = next else {
-            UserDefaults.standard.removeObject(forKey: NEXT_VERSION)
+            UserDefaults.standard.removeObject(forKey: nextVersionKey)
             UserDefaults.standard.synchronize()
             return false
         }
@@ -337,14 +337,15 @@ class BundleManager {
         if !newBundle.isBuiltin() && !bundleExists(id: nextId) {
             return false
         }
-        UserDefaults.standard.set(nextId, forKey: NEXT_VERSION)
+        UserDefaults.standard.set(nextId, forKey: nextVersionKey)
         UserDefaults.standard.synchronize()
         setBundleStatus(id: nextId, status: BundleStatus.PENDING)
         return true
     }
+}
 
-    // MARK: - Cleanup Operations
-
+// MARK: - Cleanup Operations
+extension BundleManager {
     /// Cleanup delta cache folder
     func cleanupDeltaCache(threadToCheck: Thread? = nil) {
         // Check if thread was cancelled
@@ -353,7 +354,8 @@ class BundleManager {
             return
         }
 
-        let cacheFolder = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!.appendingPathComponent("capgo_downloads")
+        let cachesDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        let cacheFolder = cachesDir.appendingPathComponent("capgo_downloads")
         let fileManager = FileManager.default
         guard fileManager.fileExists(atPath: cacheFolder.path) else {
             return
@@ -377,7 +379,11 @@ class BundleManager {
         }
 
         do {
-            let contents = try fileManager.contentsOfDirectory(at: bundleRoot, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])
+            let contents = try fileManager.contentsOfDirectory(
+                at: bundleRoot,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            )
 
             for url in contents {
                 // Check if thread was cancelled
@@ -418,7 +424,11 @@ class BundleManager {
         let fileManager = FileManager.default
 
         do {
-            let contents = try fileManager.contentsOfDirectory(at: libraryDir, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])
+            let contents = try fileManager.contentsOfDirectory(
+                at: libraryDir,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            )
 
             for url in contents {
                 // Check if thread was cancelled
@@ -435,7 +445,7 @@ class BundleManager {
                 let folderName = url.lastPathComponent
 
                 // Only delete folders with the temp unzip prefix
-                if !folderName.hasPrefix(TEMP_UNZIP_PREFIX) {
+                if !folderName.hasPrefix(tempUnzipPrefix) {
                     continue
                 }
 
@@ -459,36 +469,47 @@ class BundleManager {
 
     private func cleanupOldDownloadTempFiles() {
         let fileManager = FileManager.default
-        guard let documentsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
+        guard let documentsDir = fileManager.urls(
+            for: .documentDirectory,
+            in: .userDomainMask
+        ).first else {
             return
         }
 
         do {
-            let contents = try fileManager.contentsOfDirectory(at: documentsDir, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles])
+            let contents = try fileManager.contentsOfDirectory(
+                at: documentsDir,
+                includingPropertiesForKeys: [.contentModificationDateKey],
+                options: [.skipsHiddenFiles]
+            )
             let oneHourAgo = Date().addingTimeInterval(-3600)
 
             for url in contents {
                 let fileName = url.lastPathComponent
                 // Only cleanup package_*.tmp and update_*.dat files
-                let isDownloadTemp = (fileName.hasPrefix("package_") && fileName.hasSuffix(".tmp")) ||
-                                     (fileName.hasPrefix("update_") && fileName.hasSuffix(".dat"))
+                let isPackageTemp = fileName.hasPrefix("package_") && fileName.hasSuffix(".tmp")
+                let isUpdateTemp = fileName.hasPrefix("update_") && fileName.hasSuffix(".dat")
+                let isDownloadTemp = isPackageTemp || isUpdateTemp
                 if !isDownloadTemp {
                     continue
                 }
 
                 // Only delete files older than 1 hour
-                if let modDate = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
+                let resourceKeys: Set<URLResourceKey> = [.contentModificationDateKey]
+                if let modDate = try? url.resourceValues(forKeys: resourceKeys).contentModificationDate,
                    modDate < oneHourAgo {
                     do {
                         try fileManager.removeItem(at: url)
                         logger.debug("Deleted old download temp file: \(fileName)")
                     } catch {
-                        logger.debug("Failed to delete old download temp file: \(fileName), Error: \(error.localizedDescription)")
+                        let errMsg = error.localizedDescription
+                        logger.debug("Failed to delete old download temp file: \(fileName), Error: \(errMsg)")
                     }
                 }
             }
         } catch {
-            logger.debug("Failed to enumerate documents directory for temp file cleanup: \(error.localizedDescription)")
+            let errMsg = error.localizedDescription
+            logger.debug("Failed to enumerate documents directory for temp file cleanup: \(errMsg)")
         }
     }
 }
