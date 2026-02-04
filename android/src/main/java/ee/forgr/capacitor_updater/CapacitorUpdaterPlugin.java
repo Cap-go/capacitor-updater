@@ -235,23 +235,35 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.implementation = new CapgoUpdater(logger) {
                 @Override
                 public void notifyDownload(final String id, final int percent) {
-                    activity.runOnUiThread(() -> {
-                        CapacitorUpdaterPlugin.this.notifyDownload(id, percent);
-                    });
+                    if (activity != null) {
+                        activity.runOnUiThread(() -> {
+                            CapacitorUpdaterPlugin.this.notifyDownload(id, percent);
+                        });
+                    } else {
+                        logger.warn("notifyDownload: Activity is null, skipping notification");
+                    }
                 }
 
                 @Override
                 public void directUpdateFinish(final BundleInfo latest) {
-                    activity.runOnUiThread(() -> {
-                        CapacitorUpdaterPlugin.this.directUpdateFinish(latest);
-                    });
+                    if (activity != null) {
+                        activity.runOnUiThread(() -> {
+                            CapacitorUpdaterPlugin.this.directUpdateFinish(latest);
+                        });
+                    } else {
+                        logger.warn("directUpdateFinish: Activity is null, skipping notification");
+                    }
                 }
 
                 @Override
                 public void notifyListeners(final String id, final Map<String, Object> res) {
-                    activity.runOnUiThread(() -> {
-                        CapacitorUpdaterPlugin.this.notifyListeners(id, CapacitorUpdaterPlugin.this.mapToJSObject(res));
-                    });
+                    if (activity != null) {
+                        activity.runOnUiThread(() -> {
+                            CapacitorUpdaterPlugin.this.notifyListeners(id, CapacitorUpdaterPlugin.this.mapToJSObject(res));
+                        });
+                    } else {
+                        logger.warn("notifyListeners: Activity is null, skipping notification for event: " + id);
+                    }
                 }
             };
             final PackageInfo pInfo = this.getContext().getPackageManager().getPackageInfo(this.getContext().getPackageName(), 0);
@@ -2139,6 +2151,19 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     public void appMovedToForeground() {
+        // Ensure activity reference is up-to-date before proceeding
+        // This is critical for callbacks that may be invoked during background operations
+        try {
+            Activity currentActivity = this.getActivity();
+            if (currentActivity != null) {
+                CapacitorUpdaterPlugin.this.implementation.activity = currentActivity;
+            } else {
+                logger.warn("appMovedToForeground: Activity is null, operations may be limited");
+            }
+        } catch (Exception e) {
+            logger.error("appMovedToForeground: Failed to update activity reference: " + e.getMessage());
+        }
+
         final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
         CapacitorUpdaterPlugin.this.implementation.sendStats("app_moved_to_foreground", current.getVersionName());
         this.delayUpdateUtils.checkCancelDelay(DelayUpdateUtils.CancelDelaySource.FOREGROUND);
@@ -2161,6 +2186,18 @@ public class CapacitorUpdaterPlugin extends Plugin {
     public void appMovedToBackground() {
         // Reset timeout flag at start of each background cycle
         this.autoSplashscreenTimedOut = false;
+
+        // Ensure activity reference is up-to-date before proceeding
+        try {
+            Activity currentActivity = this.getActivity();
+            if (currentActivity != null) {
+                CapacitorUpdaterPlugin.this.implementation.activity = currentActivity;
+            } else {
+                logger.warn("appMovedToBackground: Activity is null, operations may be limited");
+            }
+        } catch (Exception e) {
+            logger.error("appMovedToBackground: Failed to update activity reference: " + e.getMessage());
+        }
 
         final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
 
