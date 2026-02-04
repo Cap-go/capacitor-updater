@@ -56,12 +56,15 @@
       "enabled": false
     },
     {
-      "matchPackageNames": [
-        "ionic-team/capacitor-swift-pm"
-      ],
       "matchManagers": [
         "swift-pm"
       ],
+      "matchPackagePatterns": [
+        "^https://github.com/ionic-team/capacitor-swift-pm\\.git$",
+        "^ionic-team/capacitor-swift-pm$",
+        "^capacitor-swift-pm$"
+      ],
+      "allowedVersions": "8.0.0",
       "enabled": false
     },
     {

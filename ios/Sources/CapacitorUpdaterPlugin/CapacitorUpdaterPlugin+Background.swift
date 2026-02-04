@@ -95,6 +95,11 @@ extension CapacitorUpdaterPlugin {
         failureEvent: String = "downloadFailed",
         sendStats: Bool = true
     ) {
+        downloadLock.lock()
+        downloadInProgress = false
+        downloadStartTime = nil
+        downloadLock.unlock()
+
         if error {
             if sendStats {
                 self.implementation.sendStats(action: failureAction, versionName: current.getVersionName())
@@ -108,9 +113,18 @@ extension CapacitorUpdaterPlugin {
     }
 
     func backgroundDownload() {
+        downloadLock.lock()
+        downloadInProgress = true
+        downloadStartTime = Date()
+        downloadLock.unlock()
+
         let plannedDirectUpdate = self.shouldUseDirectUpdate()
         guard let url = URL(string: self.updateUrl) else {
             logger.error("Error no url or wrong format")
+            downloadLock.lock()
+            downloadInProgress = false
+            downloadStartTime = nil
+            downloadLock.unlock()
             return
         }
         DispatchQueue.global(qos: .background).async {

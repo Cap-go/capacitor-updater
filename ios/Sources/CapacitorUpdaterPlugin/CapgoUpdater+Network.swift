@@ -101,7 +101,7 @@ extension CapgoUpdater {
     /**
      * Check if a 429 (Too Many Requests) response was received and set the flag
      */
-    func handleRateLimitResponse(statusCode: Int?) -> Bool {
+    func checkAndHandleRateLimitResponse(statusCode: Int?) -> Bool {
         if statusCode == 429 {
             // Send a statistic about the rate limit BEFORE setting the flag
             // Only send once to prevent infinite loop if the stat request itself gets rate limited

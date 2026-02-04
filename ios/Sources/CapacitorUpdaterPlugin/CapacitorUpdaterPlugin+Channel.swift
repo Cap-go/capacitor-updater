@@ -36,7 +36,11 @@ extension CapacitorUpdaterPlugin {
             } else {
                 if self.checkAutoUpdateEnabled() && triggerAutoUpdate {
                     self.logger.info("Calling autoupdater after channel change!")
-                    self.backgroundDownload()
+                    if !self.isDownloadStuckOrTimedOut() {
+                        self.backgroundDownload()
+                    } else {
+                        self.logger.info("Download already in progress, skipping duplicate download request")
+                    }
                 }
                 call.resolve(res.toDict())
             }
@@ -70,7 +74,11 @@ extension CapacitorUpdaterPlugin {
             } else {
                 if self.checkAutoUpdateEnabled() && triggerAutoUpdate {
                     self.logger.info("Calling autoupdater after channel change!")
-                    self.backgroundDownload()
+                    if !self.isDownloadStuckOrTimedOut() {
+                        self.backgroundDownload()
+                    } else {
+                        self.logger.info("Download already in progress, skipping duplicate download request")
+                    }
                 }
                 call.resolve(res.toDict())
             }

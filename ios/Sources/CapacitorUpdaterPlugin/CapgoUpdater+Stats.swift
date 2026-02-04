@@ -19,43 +19,34 @@ extension CapgoUpdater {
         guard !statsUrl.isEmpty else {
             return
         }
-        operationQueue.maxConcurrentOperationCount = 1
 
-        let versionName = versionName ?? getCurrentBundle().getVersionName()
+        let resolvedVersionName = versionName ?? getCurrentBundle().getVersionName()
+        let info = createInfoObject()
 
-        var parameters = createInfoObject()
-        parameters.action = action
-        parameters.version_name = versionName
-        parameters.old_version_name = oldVersionName ?? ""
+        let event = StatsEvent(
+            platform: info.platform,
+            device_id: info.device_id,
+            app_id: info.app_id,
+            custom_id: info.custom_id,
+            version_build: info.version_build,
+            version_code: info.version_code,
+            version_os: info.version_os,
+            version_name: resolvedVersionName,
+            old_version_name: oldVersionName ?? "",
+            plugin_version: info.plugin_version,
+            is_emulator: info.is_emulator,
+            is_prod: info.is_prod,
+            action: action,
+            channel: info.channel,
+            defaultChannel: info.defaultChannel,
+            key_id: info.key_id,
+            timestamp: Int64(Date().timeIntervalSince1970 * 1000)
+        )
 
-        let operation = BlockOperation {
-            let semaphore = DispatchSemaphore(value: 0)
-            self.alamofireSession.request(
-                self.statsUrl,
-                method: .post,
-                parameters: parameters,
-                encoder: JSONParameterEncoder.default,
-                requestModifier: { $0.timeoutInterval = self.timeout }
-            ).responseData { response in
-                // Check for 429 rate limit
-                if self.checkAndHandleRateLimitResponse(statusCode: response.response?.statusCode) {
-                    semaphore.signal()
-                    return
-                }
+        statsQueueLock.lock()
+        statsQueue.append(event)
+        statsQueueLock.unlock()
 
-                switch response.result {
-                case .success:
-                    self.logger.info("Stats sent successfully")
-                    self.logger.debug("Action: \(action), Version: \(versionName)")
-                case let .failure(error):
-                    self.logger.error("Error sending stats")
-                    let responseDebug = response.value?.debugDescription ?? "nil"
-                    self.logger.debug("Response: \(responseDebug), Error: \(error.localizedDescription)")
-                }
-                semaphore.signal()
-            }
-            semaphore.wait()
-        }
-        operationQueue.addOperation(operation)
+        ensureStatsTimerStarted()
     }
 }

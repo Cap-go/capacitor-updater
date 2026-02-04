@@ -288,8 +288,14 @@ public class DownloadService extends Worker {
             for (int i = 0; i < totalFiles; i++) {
                 JSONObject entry = manifest.getJSONObject(i);
                 String fileName = entry.getString("file_name");
-                String fileHash = entry.getString("file_hash");
+                String fileHash = entry.optString("file_hash", "");
                 String downloadUrl = entry.getString("download_url");
+
+                if (fileHash.isEmpty()) {
+                    logger.error("Missing file_hash for manifest entry: " + fileName);
+                    hasError.set(true);
+                    continue;
+                }
 
                 if (publicKey != null && !publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
                     try {
@@ -308,7 +314,9 @@ public class DownloadService extends Worker {
                 String targetFileName = isBrotli ? fileName.substring(0, fileName.length() - 3) : fileName;
 
                 File targetFile = new File(destFolder, targetFileName);
-                File cacheFile = new File(cacheFolder, finalFileHash + "_" + new File(fileName).getName());
+                String cacheBaseName = new File(isBrotli ? targetFileName : fileName).getName();
+                File cacheFile = new File(cacheFolder, finalFileHash + "_" + cacheBaseName);
+                final File legacyCacheFile = isBrotli ? new File(cacheFolder, finalFileHash + "_" + new File(fileName).getName()) : null;
                 File builtinFile = new File(builtinFolder, fileName);
 
                 // Ensure parent directories of the target file exist
@@ -324,7 +332,10 @@ public class DownloadService extends Worker {
                         if (builtinFile.exists() && verifyChecksum(builtinFile, finalFileHash)) {
                             copyFile(builtinFile, targetFile);
                             logger.debug("using builtin file " + fileName);
-                        } else if (tryCopyFromCache(cacheFile, targetFile, finalFileHash)) {
+                        } else if (
+                            tryCopyFromCache(cacheFile, targetFile, finalFileHash) ||
+                            (legacyCacheFile != null && tryCopyFromCache(legacyCacheFile, targetFile, finalFileHash))
+                        ) {
                             logger.debug("already cached " + fileName);
                         } else {
                             downloadAndVerify(downloadUrl, targetFile, cacheFile, finalFileHash, sessionKey, publicKey, finalIsBrotli);
@@ -614,8 +625,12 @@ public class DownloadService extends Worker {
         // targetFile is already the final destination without .br extension
         File finalTargetFile = targetFile;
 
-        // Create a temporary file for the compressed data
-        File compressedFile = new File(getApplicationContext().getCacheDir(), "temp_" + targetFile.getName() + ".tmp");
+        // Create a temporary file for the compressed data with a unique name to avoid race conditions
+        // between threads processing files with the same basename in different directories
+        File compressedFile = new File(
+            getApplicationContext().getCacheDir(),
+            "temp_" + java.util.UUID.randomUUID().toString() + "_" + targetFile.getName() + ".tmp"
+        );
 
         try {
             try (Response response = sharedClient.newCall(request).execute()) {
@@ -643,7 +658,14 @@ public class DownloadService extends Worker {
                     // Use new decompression method with atomic write
                     try (FileInputStream fis = new FileInputStream(compressedFile)) {
                         byte[] compressedData = new byte[(int) compressedFile.length()];
-                        fis.read(compressedData);
+                        int offset = 0;
+                        int bytesRead;
+                        while (
+                            offset < compressedData.length &&
+                            (bytesRead = fis.read(compressedData, offset, compressedData.length - offset)) != -1
+                        ) {
+                            offset += bytesRead;
+                        }
                         byte[] decompressedData;
                         try {
                             decompressedData = decompressBrotli(compressedData, targetFile.getName());
@@ -674,7 +696,7 @@ public class DownloadService extends Worker {
                 CryptoCipher.logChecksumInfo("Expected checksum", expectedHash);
 
                 // Verify checksum
-                if (calculatedHash.equals(expectedHash)) {
+                if (calculatedHash.equalsIgnoreCase(expectedHash)) {
                     // Only cache if checksum is correct - use atomic copy
                     try (FileInputStream fis = new FileInputStream(finalTargetFile)) {
                         writeFileAtomic(cacheFile, fis, expectedHash);
@@ -707,7 +729,7 @@ public class DownloadService extends Worker {
     private boolean verifyChecksum(File file, String expectedHash) {
         try {
             String actualHash = calculateFileHash(file);
-            return actualHash.equals(expectedHash);
+            return actualHash.equalsIgnoreCase(expectedHash);
         } catch (Exception e) {
             e.printStackTrace();
             return false;

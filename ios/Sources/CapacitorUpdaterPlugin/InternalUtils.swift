@@ -23,6 +23,7 @@ struct SetChannelDec: Decodable {
     let status: String?
     let error: String?
     let message: String?
+    let unset: Bool?
 }
 public class SetChannel: NSObject {
     var status: String = ""
@@ -132,6 +133,28 @@ struct InfoObject: Codable {
     var channel: String?
     var defaultChannel: String?
     var key_id: String?
+}
+// swiftlint:enable identifier_name
+
+// swiftlint:disable identifier_name
+struct StatsEvent: Codable {
+    let platform: String?
+    let device_id: String?
+    let app_id: String?
+    let custom_id: String?
+    let version_build: String?
+    let version_code: String?
+    let version_os: String?
+    let version_name: String?
+    let old_version_name: String?
+    let plugin_version: String?
+    let is_emulator: Bool?
+    let is_prod: Bool?
+    let action: String?
+    let channel: String?
+    let defaultChannel: String?
+    let key_id: String?
+    let timestamp: Int64
 }
 // swiftlint:enable identifier_name
 

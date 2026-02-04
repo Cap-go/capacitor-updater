@@ -13,8 +13,8 @@ import UIKit
 @objc public class CapgoUpdater: NSObject {
     var logger: Logger!
 
-    private let versionCode: String = Bundle.main.versionCode ?? ""
-    private let versionOs = UIDevice.current.systemVersion
+    let versionCode: String = Bundle.main.versionCode ?? ""
+    let versionOs = UIDevice.current.systemVersion
     let libraryDir: URL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
     let defaultFolder: String = ""
     let bundleDirectory: String = "NoCloud/ionic_built_snapshots"
@@ -40,13 +40,19 @@ import UIKit
     public var publicKey: String = ""
 
     // Cached key ID calculated once from publicKey
-    private var cachedKeyId: String?
+    var cachedKeyId: String?
 
     // Flag to track if we received a 429 response - stops requests until app restart
-    private static var rateLimitExceeded = false
+    static var rateLimitExceeded = false
 
     // Flag to track if we've already sent the rate limit statistic - prevents infinite loop
-    private static var rateLimitStatisticSent = false
+    static var rateLimitStatisticSent = false
+
+    // Stats batching - queue events and send max once per second
+    var statsQueue: [StatsEvent] = []
+    let statsQueueLock = NSLock()
+    var statsFlushTimer: Timer?
+    static let statsFlushInterval: TimeInterval = 1.0
 
     var userAgent: String {
         let safePluginVersion = pluginVersion.isEmpty ? "unknown" : pluginVersion
@@ -68,6 +74,15 @@ import UIKit
 
     public func setLogger(_ logger: Logger) {
         self.logger = logger
+    }
+
+    deinit {
+        // Invalidate the stats timer to prevent memory leaks
+        statsFlushTimer?.invalidate()
+        statsFlushTimer = nil
+
+        // Flush any remaining stats before deallocation
+        flushStatsQueue()
     }
 
     public func setPublicKey(_ publicKey: String) {
@@ -142,10 +157,15 @@ import UIKit
 
         for entry in manifest {
             guard let fileName = entry.file_name,
-                  var fileHash = entry.file_hash,
                   let downloadUrl = entry.download_url else {
                 continue
             }
+            guard let entryFileHash = entry.file_hash, !entryFileHash.isEmpty else {
+                logger.error("Missing file_hash for manifest entry: \(entry.file_name ?? "unknown")")
+                hasError.value = true
+                continue
+            }
+            var fileHash = entryFileHash
 
             // Decrypt checksum if needed (done before creating operation)
             if !self.publicKey.isEmpty && !sessionKey.isEmpty {
@@ -164,10 +184,11 @@ import UIKit
 
             let finalFileHash = fileHash
             let fileNameWithoutPath = (fileName as NSString).lastPathComponent
-            let cacheFileName = "\(finalFileHash)_\(fileNameWithoutPath)"
-            let cacheFilePath = cacheFolder.appendingPathComponent(cacheFileName)
-
             let isBrotli = fileName.hasSuffix(".br")
+            let cacheBaseName = isBrotli ? String(fileNameWithoutPath.dropLast(3)) : fileNameWithoutPath
+            let cacheFilePath = cacheFolder.appendingPathComponent("\(finalFileHash)_\(cacheBaseName)")
+            let legacyCacheFilePath: URL? = isBrotli ? cacheFolder.appendingPathComponent("\(finalFileHash)_\(fileNameWithoutPath)") : nil
+
             let destFileName = isBrotli ? String(fileName.dropLast(3)) : fileName
             let destFilePath = destFolder.appendingPathComponent(destFileName)
             let builtinFilePath = builtinFolder.appendingPathComponent(fileName)
@@ -186,7 +207,9 @@ import UIKit
                         self.logger.info("downloadManifest \(fileName) using builtin file \(id)")
                     }
                     // Try cache
-                    else if self.tryCopyFromCache(from: cacheFilePath, to: destFilePath, expectedHash: finalFileHash) {
+                    else if
+                        self.tryCopyFromCache(from: cacheFilePath, to: destFilePath, expectedHash: finalFileHash) ||
+                            (legacyCacheFilePath != nil && self.tryCopyFromCache(from: legacyCacheFilePath!, to: destFilePath, expectedHash: finalFileHash)) {
                         self.logger.info("downloadManifest \(fileName) copy from cache \(id)")
                     }
                     // Download
@@ -362,6 +385,7 @@ import UIKit
             CryptoCipher.logChecksumInfo(label: "Calculated bundle checksum", hexChecksum: checksum)
             logger.info("Downloading: 80% (unzipping)")
             try self.saveDownloaded(sourceZip: finalPath, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: true)
+            self.populateDeltaCacheAsync(for: id)
 
         } catch {
             logger.error("Failed to unzip file")
@@ -403,4 +427,121 @@ import UIKit
         queue.qualityOfService = .userInitiated
         return queue
     }()
+
+    // MARK: - Delta Cache
+
+    func populateDeltaCacheAsync(for id: String) {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            self?.populateDeltaCache(for: id)
+        }
+    }
+
+    func populateDeltaCache(for id: String) {
+        let bundleDir = self.getBundleDirectory(id: id)
+        let fileManager = FileManager.default
+
+        guard fileManager.fileExists(atPath: bundleDir.path) else {
+            logger.debug("Skip delta cache population: bundle dir missing")
+            return
+        }
+
+        do {
+            try fileManager.createDirectory(at: cacheFolder, withIntermediateDirectories: true, attributes: nil)
+        } catch {
+            logger.debug("Skip delta cache population: failed to create cache dir")
+            return
+        }
+
+        guard let enumerator = fileManager.enumerator(at: bundleDir, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else {
+            return
+        }
+
+        for case let fileURL as URL in enumerator {
+            let resourceValues = try? fileURL.resourceValues(forKeys: [.isDirectoryKey])
+            if resourceValues?.isDirectory == true {
+                continue
+            }
+
+            let checksum = CryptoCipher.calcChecksum(filePath: fileURL)
+            if checksum.isEmpty {
+                continue
+            }
+
+            let cacheFile = cacheFolder.appendingPathComponent("\(checksum)_\(fileURL.lastPathComponent)")
+            if fileManager.fileExists(atPath: cacheFile.path) {
+                continue
+            }
+
+            do {
+                try fileManager.copyItem(at: fileURL, to: cacheFile)
+            } catch {
+                logger.debug("Delta cache copy failed: \(fileURL.path)")
+            }
+        }
+    }
+
+    // MARK: - Bundle Info Helpers
+
+    func removeBundleInfo(id: String) {
+        self.saveBundleInfo(id: id, bundle: nil)
+    }
+
+    // MARK: - Stats Batching
+
+    func ensureStatsTimerStarted() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            if self.statsFlushTimer == nil || !self.statsFlushTimer!.isValid {
+                // Use closure-based timer to avoid strong reference cycle
+                self.statsFlushTimer = Timer.scheduledTimer(
+                    withTimeInterval: CapgoUpdater.statsFlushInterval,
+                    repeats: true
+                ) { [weak self] _ in
+                    self?.flushStatsQueue()
+                }
+            }
+        }
+    }
+
+    func flushStatsQueue() {
+        statsQueueLock.lock()
+        guard !statsQueue.isEmpty else {
+            statsQueueLock.unlock()
+            return
+        }
+        let eventsToSend = statsQueue
+        statsQueue.removeAll()
+        statsQueueLock.unlock()
+
+        operationQueue.maxConcurrentOperationCount = 1
+
+        let operation = BlockOperation {
+            let semaphore = DispatchSemaphore(value: 0)
+            self.alamofireSession.request(
+                self.statsUrl,
+                method: .post,
+                parameters: eventsToSend,
+                encoder: JSONParameterEncoder.default,
+                requestModifier: { $0.timeoutInterval = self.timeout }
+            ).responseData { response in
+                // Check for 429 rate limit
+                if self.checkAndHandleRateLimitResponse(statusCode: response.response?.statusCode) {
+                    semaphore.signal()
+                    return
+                }
+
+                switch response.result {
+                case .success:
+                    self.logger.info("Stats batch sent successfully")
+                    self.logger.debug("Sent \(eventsToSend.count) events")
+                case let .failure(error):
+                    self.logger.error("Error sending stats batch")
+                    self.logger.debug("Response: \(response.value?.debugDescription ?? "nil"), Error: \(error.localizedDescription)")
+                }
+                semaphore.signal()
+            }
+            semaphore.wait()
+        }
+        operationQueue.addOperation(operation)
+    }
 }

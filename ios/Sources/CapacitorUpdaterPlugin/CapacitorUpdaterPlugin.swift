@@ -16,7 +16,18 @@ import Version
  */
 @objc(CapacitorUpdaterPlugin)
 public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
-    let logger = Logger(withTag: "✨  CapgoUpdater")
+    lazy var logger: Logger = {
+        // Default to true for OS logging. In test environments without a bridge,
+        // this will default to true. In production, it reads from config.
+        let osLogging: Bool
+        if self.bridge != nil {
+            osLogging = getConfig().getBoolean("osLogging", true)
+        } else {
+            osLogging = true
+        }
+        let options = Logger.Options(useSyslog: osLogging)
+        return Logger(withTag: "✨  CapgoUpdater", options: options)
+    }()
 
     public let identifier = "CapacitorUpdaterPlugin"
     public let jsName = "CapacitorUpdater"
@@ -60,7 +71,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "completeFlexibleUpdate", returnType: CAPPluginReturnPromise)
     ]
     public var implementation = CapgoUpdater()
-    let pluginVersion: String = "8.41.12"
+    let pluginVersion: String = "8.42.10"
     static let updateUrlDefault = "https://plugin.capgo.app/updates"
     static let statsUrlDefault = "https://plugin.capgo.app/stats"
     static let channelUrlDefault = "https://plugin.capgo.app/channel_self"
@@ -93,6 +104,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     var backgroundWork: DispatchWorkItem?
     var taskRunning = false
     var periodCheckDelay = 0
+    let downloadLock = NSLock()
+    var downloadInProgress = false
+    var downloadStartTime: Date?
+    let downloadTimeout: TimeInterval = 3600 // 1 hour timeout
 
     // Lock to ensure cleanup completes before downloads start
     let cleanupLock = NSLock()
@@ -380,5 +395,25 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 thread.cancel()
             }
         }
+    }
+    func isDownloadStuckOrTimedOut() -> Bool {
+        downloadLock.lock()
+        defer { downloadLock.unlock() }
+
+        guard downloadInProgress else {
+            return false
+        }
+
+        if let startTime = downloadStartTime {
+            let elapsed = Date().timeIntervalSince(startTime)
+            if elapsed > downloadTimeout {
+                self.logger.warn("Download has been in progress for \(elapsed)s, exceeding timeout of \(downloadTimeout)s. Clearing stuck state.")
+                downloadInProgress = false
+                downloadStartTime = nil
+                return false
+            }
+        }
+
+        return true
     }
 }
