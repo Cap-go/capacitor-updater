@@ -2162,6 +2162,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
         } catch (Exception e) {
             logger.error("appMovedToForeground: Failed to update activity reference: " + e.getMessage());
+            e.printStackTrace();
         }
 
         final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
@@ -2197,6 +2198,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
         } catch (Exception e) {
             logger.error("appMovedToBackground: Failed to update activity reference: " + e.getMessage());
+            e.printStackTrace();
         }
 
         final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
