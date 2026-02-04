@@ -368,7 +368,11 @@ extension UIWindow {
                                     self.showSuccessWithReload(
                                         message: "Update downloaded! Reload to apply version \(latest.version)?",
                                         plugin: plugin,
-                                        bridge: bridge
+                                        bridge: bridge,
+                                        onReload: { [weak plugin] in
+                                            _ = updater.set(bundle: bundle)
+                                            _ = plugin?._reload()
+                                        }
                                     )
                                 }
                             }
@@ -409,13 +413,22 @@ extension UIWindow {
         }
     }
 
-    private func showSuccessWithReload(message: String, plugin: CapacitorUpdaterPlugin, bridge: CAPBridgeProtocol) {
+    private func showSuccessWithReload(
+        message: String,
+        plugin: CapacitorUpdaterPlugin,
+        bridge: CAPBridgeProtocol,
+        onReload: (() -> Void)? = nil
+    ) {
         plugin.logger.info(message)
         let alert = UIAlertController(title: "Update Ready", message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "Later", style: .cancel))
         alert.addAction(UIAlertAction(title: "Reload Now", style: .default) { _ in
-            DispatchQueue.main.async {
-                bridge.webView?.reload()
+            if let onReload = onReload {
+                onReload()
+            } else {
+                DispatchQueue.main.async {
+                    bridge.webView?.reload()
+                }
             }
         })
 

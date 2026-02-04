@@ -293,9 +293,9 @@ public class ShakeMenu implements ShakeDetector.Listener {
             // Create list of channel names
             List<String> allChannelNames = new ArrayList<>();
             for (Map<String, Object> channel : channels) {
-                String name = (String) channel.get("name");
-                if (name != null) {
-                    allChannelNames.add(name);
+                Object nameObj = channel.get("name");
+                if (nameObj instanceof String) {
+                    allChannelNames.add((String) nameObj);
                 }
             }
 
