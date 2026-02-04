@@ -109,6 +109,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var backgroundWork: DispatchWorkItem?
     private var taskRunning = false
     private var periodCheckDelay = 0
+    private let downloadLock = NSLock()
+    private var downloadInProgress = false
+    private var downloadStartTime: Date?
+    private let downloadTimeout: TimeInterval = 3600 // 1 hour timeout
 
     // Lock to ensure cleanup completes before downloads start
     private let cleanupLock = NSLock()
@@ -817,7 +821,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             } else {
                 if self._isAutoUpdateEnabled() && triggerAutoUpdate {
                     self.logger.info("Calling autoupdater after channel change!")
-                    self.backgroundDownload()
+                    // Check if download is already in progress (with timeout protection)
+                    if !self.isDownloadStuckOrTimedOut() {
+                        self.backgroundDownload()
+                    } else {
+                        self.logger.info("Download already in progress, skipping duplicate download request")
+                    }
                 }
                 call.resolve(res.toDict())
             }
@@ -851,7 +860,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             } else {
                 if self._isAutoUpdateEnabled() && triggerAutoUpdate {
                     self.logger.info("Calling autoupdater after channel change!")
-                    self.backgroundDownload()
+                    // Check if download is already in progress (with timeout protection)
+                    if !self.isDownloadStuckOrTimedOut() {
+                        self.backgroundDownload()
+                    } else {
+                        self.logger.info("Download already in progress, skipping duplicate download request")
+                    }
                 }
                 call.resolve(res.toDict())
             }
@@ -1351,6 +1365,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         failureEvent: String = "downloadFailed",
         sendStats: Bool = true
     ) {
+        // Clear download in progress flag - this is called at the end of every download attempt
+        // whether it succeeds, fails, or is skipped (e.g., already up to date)
+        downloadLock.lock()
+        defer { downloadLock.unlock() }
+        downloadInProgress = false
+        downloadStartTime = nil
+
         if error {
             if sendStats {
                 self.implementation.sendStats(action: failureAction, versionName: current.getVersionName())
@@ -1363,13 +1384,47 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.endBackGroundTask()
     }
 
+    private func isDownloadStuckOrTimedOut() -> Bool {
+        downloadLock.lock()
+        defer { downloadLock.unlock() }
+
+        guard downloadInProgress else {
+            return false
+        }
+
+        // Check if download has timed out
+        if let startTime = downloadStartTime {
+            let elapsed = Date().timeIntervalSince(startTime)
+            if elapsed > downloadTimeout {
+                self.logger.warn("Download has been in progress for \(elapsed) seconds, exceeding timeout of \(downloadTimeout) seconds. Clearing stuck state.")
+                downloadInProgress = false
+                downloadStartTime = nil
+                return false // Now it's not stuck anymore, caller can proceed
+            }
+        }
+
+        return true
+    }
+
     func backgroundDownload() {
+        // Set download in progress flag (thread-safe)
+        downloadLock.lock()
+        downloadInProgress = true
+        downloadStartTime = Date()
+        downloadLock.unlock()
+
         let plannedDirectUpdate = self.shouldUseDirectUpdate()
         let messageUpdate = plannedDirectUpdate ? "Update will occur now." : "Update will occur next time app moves to background."
         guard let url = URL(string: self.updateUrl) else {
             logger.error("Error no url or wrong format")
+            // Clear the flag if we return early
+            downloadLock.lock()
+            defer { downloadLock.unlock() }
+            downloadInProgress = false
+            downloadStartTime = nil
             return
         }
+
         DispatchQueue.global(qos: .background).async {
             // Wait for cleanup to complete before starting download
             self.waitForCleanupIfNeeded()
@@ -1563,7 +1618,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             logger.info("Background Timer Task canceled, Activity resumed before timer completes")
         }
         if self._isAutoUpdateEnabled() {
-            self.backgroundDownload()
+            // Check if download is already in progress (with timeout protection)
+            if !isDownloadStuckOrTimedOut() {
+                self.backgroundDownload()
+            } else {
+                logger.info("Download already in progress, skipping duplicate download request")
+            }
         } else {
             let instanceDescriptor = (self.bridge?.viewController as? CAPBridgeViewController)?.instanceDescriptor()
             if instanceDescriptor?.serverURL != nil {
@@ -1600,7 +1660,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
                 if res.version != current.getVersionName() {
                     self.logger.info("New version found: \(res.version)")
-                    self.backgroundDownload()
+                    // Check if download is already in progress (with timeout protection)
+                    if !self.isDownloadStuckOrTimedOut() {
+                        self.backgroundDownload()
+                    } else {
+                        self.logger.info("Download already in progress, skipping duplicate download request")
+                    }
                 }
             }
         }
