@@ -293,11 +293,15 @@ extension UIWindow {
                         }
 
                         // Check for updates with the new channel
-                        let updateUrlStr = updater.updateUrl.isEmpty ? CapacitorUpdaterPlugin.updateUrlDefault : updater.updateUrl
+                        let pluginUpdateUrl = plugin.getUpdateUrl()
+                        let updateUrlStr = pluginUpdateUrl.isEmpty ? CapacitorUpdaterPlugin.updateUrlDefault : pluginUpdateUrl
                         guard let updateUrl = URL(string: updateUrlStr) else {
                             DispatchQueue.main.async {
                                 progressAlert.dismiss(animated: true) {
-                                    self.showSuccess(message: "Channel set to \(name). Could not check for updates.", plugin: plugin)
+                                    self.showError(
+                                        message: "Channel set to \(name). Invalid update URL, could not check for updates.",
+                                        plugin: plugin
+                                    )
                                 }
                             }
                             return

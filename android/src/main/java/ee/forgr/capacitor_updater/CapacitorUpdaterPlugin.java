@@ -116,6 +116,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private Boolean allowManualBundleError = false;
     Boolean allowSetDefaultChannel = true;
 
+    String getUpdateUrl() {
+        return this.updateUrl;
+    }
+
     // Used for activity-based foreground/background detection on Android < 14
     private Boolean isPreviousMainActivity = true;
 

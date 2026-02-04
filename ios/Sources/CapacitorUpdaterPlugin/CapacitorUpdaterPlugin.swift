@@ -106,7 +106,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var autoSplashscreenTimedOut = false
     private var autoDeleteFailed = false
     private var autoDeletePrevious = false
-    private var allowSetDefaultChannel = true
+    var allowSetDefaultChannel = true
     private var keepUrlPathAfterReload = false
     private var backgroundWork: DispatchWorkItem?
     private var taskRunning = false
@@ -517,6 +517,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             UserDefaults.standard.synchronize()
         }
         call.resolve()
+    }
+
+    func getUpdateUrl() -> String {
+        return updateUrl
     }
 
     @objc func setStatsUrl(_ call: CAPPluginCall) {

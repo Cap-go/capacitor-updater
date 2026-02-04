@@ -17,15 +17,12 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.ProgressBar;
-
 import com.getcapacitor.Bridge;
 import com.getcapacitor.BridgeActivity;
-
-import org.json.JSONArray;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import org.json.JSONArray;
 
 public class ShakeMenu implements ShakeDetector.Listener {
 
@@ -201,7 +198,7 @@ public class ShakeMenu implements ShakeDetector.Listener {
                 progressBar.setPadding(padding, padding, padding, padding);
                 loadingBuilder.setView(progressBar);
 
-                final boolean[] didCancel = {false};
+                final boolean[] didCancel = { false };
 
                 loadingBuilder.setNegativeButton("Cancel", (dialog, which) -> {
                     didCancel[0] = true;
@@ -267,7 +264,8 @@ public class ShakeMenu implements ShakeDetector.Listener {
                             presentChannelPicker(channels);
                         });
                     });
-                }).start();
+                })
+                    .start();
             } catch (Exception e) {
                 logger.error("Error showing channel selector: " + e.getMessage());
                 isShowing = false;
@@ -305,20 +303,13 @@ public class ShakeMenu implements ShakeDetector.Listener {
             final List<String> displayedChannels = new ArrayList<>();
             displayedChannels.addAll(allChannelNames.subList(0, Math.min(5, allChannelNames.size())));
 
-            final ArrayAdapter<String> adapter = new ArrayAdapter<>(
-                activity,
-                android.R.layout.simple_list_item_1,
-                displayedChannels
-            );
+            final ArrayAdapter<String> adapter = new ArrayAdapter<>(activity, android.R.layout.simple_list_item_1, displayedChannels);
 
             ListView listView = new ListView(activity);
             listView.setAdapter(adapter);
 
             // Set fixed height for list (about 5 items)
-            LinearLayout.LayoutParams listParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dpToPx(250)
-            );
+            LinearLayout.LayoutParams listParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(250));
             listView.setLayoutParams(listParams);
             layout.addView(listView);
 
@@ -332,30 +323,32 @@ public class ShakeMenu implements ShakeDetector.Listener {
             dialog.setOnDismissListener((d) -> isShowing = false);
 
             // Search filter
-            searchField.addTextChangedListener(new TextWatcher() {
-                @Override
-                public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            searchField.addTextChangedListener(
+                new TextWatcher() {
+                    @Override
+                    public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
 
-                @Override
-                public void onTextChanged(CharSequence s, int start, int before, int count) {}
+                    @Override
+                    public void onTextChanged(CharSequence s, int start, int before, int count) {}
 
-                @Override
-                public void afterTextChanged(Editable s) {
-                    String query = s.toString().toLowerCase();
-                    displayedChannels.clear();
+                    @Override
+                    public void afterTextChanged(Editable s) {
+                        String query = s.toString().toLowerCase();
+                        displayedChannels.clear();
 
-                    int count = 0;
-                    for (String name : allChannelNames) {
-                        if (name.toLowerCase().contains(query)) {
-                            displayedChannels.add(name);
-                            count++;
-                            if (count >= 5) break;
+                        int count = 0;
+                        for (String name : allChannelNames) {
+                            if (name.toLowerCase().contains(query)) {
+                                displayedChannels.add(name);
+                                count++;
+                                if (count >= 5) break;
+                            }
                         }
-                    }
 
-                    adapter.notifyDataSetChanged();
+                        adapter.notifyDataSetChanged();
+                    }
                 }
-            });
+            );
 
             // Channel selection
             listView.setOnItemClickListener((parent, view, position, id) -> {
@@ -423,7 +416,7 @@ public class ShakeMenu implements ShakeDetector.Listener {
                             activity.runOnUiThread(() -> progressDialog.setMessage("Checking for updates..."));
 
                             // Check for updates
-                            String updateUrlStr = updater.updateUrl;
+                            String updateUrlStr = plugin.getUpdateUrl();
                             if (updateUrlStr == null || updateUrlStr.isEmpty()) {
                                 updateUrlStr = "https://plugin.capgo.app/updates";
                             }
@@ -441,16 +434,10 @@ public class ShakeMenu implements ShakeDetector.Listener {
                                 String latestError = getString(latestRes, "error");
 
                                 // Handle update errors first (before "no new version" check)
-                                if (
-                                    latestError != null &&
-                                    !latestError.isEmpty() &&
-                                    !"no_new_version_available".equals(latestError)
-                                ) {
+                                if (latestError != null && !latestError.isEmpty() && !"no_new_version_available".equals(latestError)) {
                                     activity.runOnUiThread(() -> {
                                         progressDialog.dismiss();
-                                        showError(
-                                            "Channel set to " + channelName + ". Update check failed: " + latestError
-                                        );
+                                        showError("Channel set to " + channelName + ". Update check failed: " + latestError);
                                     });
                                     return;
                                 }
@@ -519,10 +506,26 @@ public class ShakeMenu implements ShakeDetector.Listener {
 
                                     activity.runOnUiThread(() -> {
                                         progressDialog.dismiss();
-                                        showSuccessWithReload(
-                                            "Update downloaded! Reload to apply version " + versionForUi + "?",
-                                            bridge
-                                        );
+                                        showSuccessWithReload("Update downloaded! Reload to apply version " + versionForUi + "?", () -> {
+                                            try {
+                                                if (bridge == null) {
+                                                    logger.warn("Bridge is null, cannot reload app");
+                                                    return;
+                                                }
+                                                updater.set(bundle);
+                                                String path = updater.getCurrentBundlePath();
+                                                if (updater.isUsingBuiltin()) {
+                                                    bridge.setServerAssetPath(path);
+                                                } else {
+                                                    bridge.setServerBasePath(path);
+                                                }
+                                                if (bridge.getWebView() != null) {
+                                                    bridge.getWebView().reload();
+                                                }
+                                            } catch (Exception e) {
+                                                logger.error("Error applying bundle before reload: " + e.getMessage());
+                                            }
+                                        });
                                     });
                                 } catch (Exception e) {
                                     activity.runOnUiThread(() -> {
@@ -533,7 +536,8 @@ public class ShakeMenu implements ShakeDetector.Listener {
                             });
                         }
                     );
-                }).start();
+                })
+                    .start();
             } catch (Exception e) {
                 logger.error("Error selecting channel: " + e.getMessage());
                 isShowing = false;
@@ -567,7 +571,7 @@ public class ShakeMenu implements ShakeDetector.Listener {
             .show();
     }
 
-    private void showSuccessWithReload(String message, Bridge bridge) {
+    private void showSuccessWithReload(String message, Runnable onReload) {
         logger.info(message);
         new AlertDialog.Builder(activity)
             .setTitle("Update Ready")
@@ -575,11 +579,9 @@ public class ShakeMenu implements ShakeDetector.Listener {
             .setPositiveButton("Reload Now", (d, w) -> {
                 d.dismiss();
                 isShowing = false;
-                activity.runOnUiThread(() -> {
-                    if (bridge != null && bridge.getWebView() != null) {
-                        bridge.getWebView().reload();
-                    }
-                });
+                if (onReload != null) {
+                    onReload.run();
+                }
             })
             .setNegativeButton("Later", (d, w) -> {
                 d.dismiss();
