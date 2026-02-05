@@ -370,6 +370,21 @@ declare module '@capacitor/cli' {
        * @since  7.5.0
        */
       shakeMenu?: boolean;
+
+      /**
+       * Enable the shake gesture to show a channel selector menu for switching between update channels.
+       * When enabled AND `shakeMenu` is true, the shake gesture shows a channel selector
+       * instead of the default debug menu (Go Home/Reload/Close).
+       *
+       * After selecting a channel, the app automatically checks for updates and downloads if available.
+       * Only works if channels have `allow_self_set` enabled on the backend.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default false
+       * @since 8.43.0
+       */
+      allowShakeChannelSelector?: boolean;
     };
   }
 }
@@ -1252,6 +1267,37 @@ export interface CapacitorUpdaterPlugin {
   isShakeMenuEnabled(): Promise<ShakeMenuEnabled>;
 
   /**
+   * Enable or disable the shake channel selector at runtime.
+   *
+   * When enabled AND shakeMenu is true, shaking the device shows a channel
+   * selector instead of the debug menu. This allows users to switch between
+   * update channels by shaking their device.
+   *
+   * After selecting a channel, the app automatically checks for updates
+   * and downloads if available.
+   *
+   * Can also be configured via {@link PluginsConfig.CapacitorUpdater.allowShakeChannelSelector}.
+   *
+   * @param options {@link SetShakeChannelSelectorOptions} with `enabled: true` to enable or `enabled: false` to disable.
+   * @returns {Promise<void>} Resolves when the setting is applied.
+   * @throws {Error} If the operation fails.
+   * @since 8.43.0
+   */
+  setShakeChannelSelector(options: SetShakeChannelSelectorOptions): Promise<void>;
+
+  /**
+   * Check if the shake channel selector is currently enabled.
+   *
+   * Returns the current state of the shake channel selector feature that can be toggled via
+   * {@link setShakeChannelSelector} or configured via {@link PluginsConfig.CapacitorUpdater.allowShakeChannelSelector}.
+   *
+   * @returns {Promise<ShakeChannelSelectorEnabled>} Object with `enabled: true` or `enabled: false`.
+   * @throws {Error} If the operation fails.
+   * @since 8.43.0
+   */
+  isShakeChannelSelectorEnabled(): Promise<ShakeChannelSelectorEnabled>;
+
+  /**
    * Get the currently configured App ID used for update server communication.
    *
    * Returns the App ID that identifies this app to the update server. This can be:
@@ -1799,6 +1845,14 @@ export interface SetShakeMenuOptions {
 }
 
 export interface ShakeMenuEnabled {
+  enabled: boolean;
+}
+
+export interface SetShakeChannelSelectorOptions {
+  enabled: boolean;
+}
+
+export interface ShakeChannelSelectorEnabled {
   enabled: boolean;
 }
 

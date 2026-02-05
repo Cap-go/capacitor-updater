@@ -112,8 +112,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private Boolean wasRecentlyInstalledOrUpdated = false;
     private Boolean onLaunchDirectUpdateUsed = false;
     Boolean shakeMenuEnabled = false;
+    Boolean shakeChannelSelectorEnabled = false;
     private Boolean allowManualBundleError = false;
-    private Boolean allowSetDefaultChannel = true;
+    Boolean allowSetDefaultChannel = true;
+
+    String getUpdateUrl() {
+        return this.updateUrl;
+    }
 
     // Used for activity-based foreground/background detection on Android < 14
     private Boolean isPreviousMainActivity = true;
@@ -440,6 +445,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.autoSplashscreenTimeout = Math.max(0, splashscreenTimeoutValue);
         this.implementation.timeout = this.getConfig().getInt("responseTimeout", 20) * 1000;
         this.shakeMenuEnabled = this.getConfig().getBoolean("shakeMenu", false);
+        this.shakeChannelSelectorEnabled = this.getConfig().getBoolean("allowShakeChannelSelector", false);
         boolean resetWhenUpdate = this.getConfig().getBoolean("resetWhenUpdate", true);
 
         // Check if app was recently installed/updated BEFORE cleanupObsoleteVersions updates LatestVersionNative
@@ -2384,6 +2390,32 @@ public class CapacitorUpdaterPlugin extends Plugin {
         } catch (final Exception e) {
             logger.error("Could not get shake menu status " + e.getMessage());
             call.reject("Could not get shake menu status", e);
+        }
+    }
+
+    @PluginMethod
+    public void setShakeChannelSelector(final PluginCall call) {
+        final Boolean enabled = call.getBoolean("enabled");
+        if (enabled == null) {
+            logger.error("setShakeChannelSelector called without enabled parameter");
+            call.reject("setShakeChannelSelector called without enabled parameter");
+            return;
+        }
+
+        this.shakeChannelSelectorEnabled = enabled;
+        logger.info("Shake channel selector " + (enabled ? "enabled" : "disabled"));
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void isShakeChannelSelectorEnabled(final PluginCall call) {
+        try {
+            final JSObject ret = new JSObject();
+            ret.put("enabled", this.shakeChannelSelectorEnabled);
+            call.resolve(ret);
+        } catch (final Exception e) {
+            logger.error("Could not get shake channel selector status " + e.getMessage());
+            call.reject("Could not get shake channel selector status", e);
         }
     }
 
