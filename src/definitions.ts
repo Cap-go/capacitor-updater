@@ -889,8 +889,10 @@ export interface CapacitorUpdaterPlugin {
    * Mini-apps are bundles that can be switched between at runtime. Each mini-app
    * corresponds to a Capgo channel (mini-app name = channel name).
    *
-   * The main app is a mini-app with `isMain: true` - this is the one that receives
-   * auto-updates from Capgo.
+   * When mini-apps are enabled and the currently active bundle is a registered mini-app,
+   * auto-update checks run against that mini-app's channel.
+   *
+   * The main app is a mini-app with `isMain: true` (only one can be main at a time).
    *
    * Requires {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} to be `true`.
    *
@@ -1866,7 +1868,7 @@ export interface SetMiniAppOptions {
   id?: string;
 
   /**
-   * If true, this mini-app becomes THE main app for auto-updates.
+   * If true, this mini-app becomes THE main app.
    * Only one mini-app can have `isMain: true` at a time.
    * Setting this clears the `isMain` flag from any previous main app.
    *
@@ -1892,7 +1894,7 @@ export interface MiniAppInfo {
   bundle: BundleInfo;
 
   /**
-   * Whether this is the main app that receives auto-updates.
+   * Whether this is the main app.
    */
   isMain: boolean;
 }
@@ -2070,7 +2072,7 @@ export interface CurrentBundleResult {
     name: string;
 
     /**
-     * Whether this is the main app that receives auto-updates.
+     * Whether this is the main app.
      */
     isMain: boolean;
   };

@@ -1107,8 +1107,10 @@ Register or update a mini-app in the mini-apps registry.
 Mini-apps are bundles that can be switched between at runtime. Each mini-app
 corresponds to a Capgo channel (mini-app name = channel name).
 
-The main app is a mini-app with `isMain: true` - this is the one that receives
-auto-updates from Capgo.
+When mini-apps are enabled and the currently active bundle is a registered mini-app,
+auto-update checks run against that mini-app's channel.
+
+The main app is a mini-app with `isMain: true` (only one can be main at a time).
 
 Requires {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} to be `true`.
 
@@ -2091,7 +2093,7 @@ Information about a registered mini-app.
 | ------------ | ------------------------------------------------- | ---------------------------------------------------------- |
 | **`name`**   | <code>string</code>                               | The name of the mini-app (matches the Capgo channel name). |
 | **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | The bundle info for this mini-app.                         |
-| **`isMain`** | <code>boolean</code>                              | Whether this is the main app that receives auto-updates.   |
+| **`isMain`** | <code>boolean</code>                              | Whether this is the main app.                              |
 
 
 ##### ListOptions
@@ -2215,11 +2217,11 @@ Information about a registered mini-app.
 
 Options for {@link CapacitorUpdaterPlugin.setMiniApp}.
 
-| Prop         | Type                 | Description                                                                                                                                                                          | Default            |
-| ------------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------ |
-| **`name`**   | <code>string</code>  | The name of the mini-app. This should match the Capgo channel name.                                                                                                                  |                    |
-| **`id`**     | <code>string</code>  | The bundle ID to register as this mini-app. If not provided, uses the current bundle.                                                                                                |                    |
-| **`isMain`** | <code>boolean</code> | If true, this mini-app becomes THE main app for auto-updates. Only one mini-app can have `isMain: true` at a time. Setting this clears the `isMain` flag from any previous main app. | <code>false</code> |
+| Prop         | Type                 | Description                                                                                                                                                         | Default            |
+| ------------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| **`name`**   | <code>string</code>  | The name of the mini-app. This should match the Capgo channel name.                                                                                                 |                    |
+| **`id`**     | <code>string</code>  | The bundle ID to register as this mini-app. If not provided, uses the current bundle.                                                                               |                    |
+| **`isMain`** | <code>boolean</code> | If true, this mini-app becomes THE main app. Only one mini-app can have `isMain: true` at a time. Setting this clears the `isMain` flag from any previous main app. | <code>false</code> |
 
 
 ##### WriteAppStateOptions

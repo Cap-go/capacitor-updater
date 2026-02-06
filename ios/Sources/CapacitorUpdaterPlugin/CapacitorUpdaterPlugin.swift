@@ -124,6 +124,57 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
     private var miniAppsEnabled = false
     private lazy var miniAppsManager = MiniAppsManager(logger: logger)
 
+    /// Resolve the current mini-app name (channel name) for the active bundle.
+    ///
+    /// When mini-apps are enabled, the currently active bundle may be part of the mini-app registry.
+    /// In that case, the mini-app name should be used as the update channel.
+    private func getCurrentMiniAppName() -> String? {
+        guard miniAppsEnabled else { return nil }
+        let currentBundleId = implementation.getCurrentBundleId()
+        guard !currentBundleId.isEmpty else { return nil }
+        return miniAppsManager.getMiniAppForBundleId(currentBundleId)?.name
+    }
+
+    /// Best-effort: checks whether the main mini-app has an update available while a non-main mini-app is active.
+    ///
+    /// This method does NOT download or switch bundles. It only performs the update check and logs the result.
+    private func checkMainMiniAppUpdateInBackground() {
+        guard miniAppsEnabled else { return }
+        guard let mainApp = miniAppsManager.getMainApp() else { return }
+
+        let currentMiniAppName = getCurrentMiniAppName()
+        if currentMiniAppName == mainApp.name {
+            return
+        }
+
+        let mainBundle = implementation.getBundleInfo(id: mainApp.bundleId)
+        let mainVersionName = mainBundle.getVersionName()
+        guard !mainVersionName.isEmpty else { return }
+        guard let url = URL(string: updateUrl) else { return }
+
+        DispatchQueue.global(qos: .background).async {
+            let res = self.implementation.getLatest(
+                url: url,
+                channel: mainApp.name,
+                versionNameOverride: mainVersionName
+            )
+            if res.error != nil || res.message != nil {
+                // Non-fatal: ignore and keep current main mini-app bundle.
+                return
+            }
+            // No update available when url is missing/empty (common backend behavior).
+            if res.url.isEmpty {
+                return
+            }
+            if res.version.isEmpty || res.version == mainVersionName {
+                return
+            }
+            self.logger.info(
+                "Main mini-app update available (checked in parallel): \(mainApp.name) \(mainVersionName) -> \(res.version)"
+            )
+        }
+    }
+
     // App Store update helper
     private var appStoreUpdateHelper: AppStoreUpdateHelper!
 
@@ -803,6 +854,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
                 call.reject("Mini-app '\(name)' not found", "MINIAPP_NOT_FOUND")
                 return
             }
+            if id == implementation.getCurrentBundleId() {
+                logger.error("delete: cannot delete current mini-app '\(name)'")
+                call.reject("Cannot delete the currently active mini-app", "CURRENT_MINIAPP")
+                return
+            }
             bundleId = id
             logger.info("Delete via miniApp name: \(name) -> bundle \(id)")
         } else if let id = call.getString("id") {
@@ -911,6 +967,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
                 call.reject("Mini-apps support is disabled. Set miniAppsEnabled: true in your Capacitor config.", "MINIAPPS_DISABLED")
                 return
             }
+            guard miniAppsManager.isValidMiniAppName(miniAppName) else {
+                logger.error("getLatest called with invalid updateMiniApp: \(miniAppName)")
+                call.reject(
+                    "Invalid mini-app name '\(miniAppName)'. Names must contain only alphanumeric characters, hyphens, and underscores.",
+                    "INVALID_MINIAPP_NAME"
+                )
+                return
+            }
 
             // Check if this mini-app is current
             let currentBundleId = implementation.getCurrentBundleId()
@@ -931,9 +995,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
             return
         }
 
+        let effectiveChannel: String?
+        if let channel = channel, !channel.isEmpty {
+            effectiveChannel = channel
+        } else {
+            effectiveChannel = getCurrentMiniAppName()
+        }
+
         // Regular getLatest flow
         DispatchQueue.global(qos: .background).async {
-            let res = self.implementation.getLatest(url: URL(string: self.updateUrl)!, channel: channel)
+            let res = self.implementation.getLatest(url: URL(string: self.updateUrl)!, channel: effectiveChannel)
             if res.error != nil {
                 call.reject( res.error!)
             } else if res.message != nil {
@@ -945,8 +1016,25 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
     }
 
     private func performMiniAppUpdate(miniAppName: String, call: CAPPluginCall) {
-        // Check for updates on this channel (channel name = mini-app name)
-        let res = self.implementation.getLatest(url: URL(string: self.updateUrl)!, channel: miniAppName)
+        // Resolve current mini-app bundle/version (this mini-app must exist in the registry).
+        let registry = miniAppsManager.getRegistry()
+        guard let entry = registry[miniAppName],
+              let oldBundleId = entry["id"] as? String,
+              !oldBundleId.isEmpty else {
+            logger.error("performMiniAppUpdate: mini-app '\(miniAppName)' not found")
+            call.reject("Mini-app '\(miniAppName)' not found", "MINIAPP_NOT_FOUND")
+            return
+        }
+        let oldBundle = self.implementation.getBundleInfo(id: oldBundleId)
+        let currentVersion = oldBundle.getVersionName()
+
+        // Check for updates on this channel (channel name = mini-app name).
+        // Override version_name with the mini-app's registered bundle version (not the currently active bundle).
+        let res = self.implementation.getLatest(
+            url: URL(string: self.updateUrl)!,
+            channel: miniAppName,
+            versionNameOverride: currentVersion
+        )
 
         if res.error != nil || res.message != nil {
             // No update available or error - return with miniAppUpdated: false
@@ -954,17 +1042,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
             result["miniAppUpdated"] = false
             call.resolve(result)
             return
-        }
-
-        // Get current mini-app version (if exists)
-        let registry = miniAppsManager.getRegistry()
-        var currentVersion = ""
-        var oldBundleId: String?
-
-        if let entry = registry[miniAppName], let bundleId = entry["id"] as? String {
-            oldBundleId = bundleId
-            let bundle = self.implementation.getBundleInfo(id: bundleId)
-            currentVersion = bundle.getVersionName()
         }
 
         // Check if update needed
@@ -1047,23 +1124,18 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
 
             guard reloadSuccess else {
                 // Rollback registry to old bundle if reload failed
-                if let oldId = oldBundleId {
-                    _ = self.miniAppsManager.updateBundleId(name: miniAppName, newBundleId: oldId)
-                }
+                _ = self.miniAppsManager.updateBundleId(name: miniAppName, newBundleId: oldBundleId)
                 call.reject("Failed to reload app after update", "RELOAD_FAILED")
                 return
             }
 
             // Delete old bundle AFTER successful reload (non-fatal if fails)
-            if let oldId = oldBundleId {
-                let oldBundle = self.implementation.getBundleInfo(id: oldId)
-                if !oldBundle.isBuiltin() && !oldBundle.isUnknown() {
-                    let deleted = self.implementation.delete(id: oldId)
-                    if deleted {
-                        logger.info("Deleted old bundle \(oldId) for mini-app '\(miniAppName)'")
-                    } else {
-                        logger.warn("Failed to delete old bundle \(oldId) - non-fatal, new bundle is active")
-                    }
+            if !oldBundle.isBuiltin() && !oldBundle.isUnknown() {
+                let deleted = self.implementation.delete(id: oldBundleId)
+                if deleted {
+                    logger.info("Deleted old bundle \(oldBundleId) for mini-app '\(miniAppName)'")
+                } else {
+                    logger.warn("Failed to delete old bundle \(oldBundleId) - non-fatal, new bundle is active")
                 }
             }
 
@@ -1173,6 +1245,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
             call.reject("setMiniApp called without name", "INVALID_PARAMS")
             return
         }
+        guard miniAppsManager.isValidMiniAppName(name) else {
+            logger.error("setMiniApp called with invalid name: \(name)")
+            call.reject(
+                "Invalid mini-app name '\(name)'. Names must contain only alphanumeric characters, hyphens, and underscores.",
+                "INVALID_MINIAPP_NAME"
+            )
+            return
+        }
 
         // Get bundle ID - use provided ID or current bundle
         let bundleId = call.getString("id") ?? implementation.getCurrentBundleId()
@@ -1202,6 +1282,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
             call.reject("writeAppState called without miniApp", "INVALID_PARAMS")
             return
         }
+        guard miniAppsManager.isValidMiniAppName(miniApp) else {
+            logger.error("writeAppState called with invalid miniApp: \(miniApp)")
+            call.reject(
+                "Invalid mini-app name '\(miniApp)'. Names must contain only alphanumeric characters, hyphens, and underscores.",
+                "INVALID_MINIAPP_NAME"
+            )
+            return
+        }
 
         // Get state - can be null to clear
         let stateValue = call.getObject("state")
@@ -1219,6 +1307,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
         guard let miniApp = call.getString("miniApp") else {
             logger.error("readAppState called without miniApp")
             call.reject("readAppState called without miniApp", "INVALID_PARAMS")
+            return
+        }
+        guard miniAppsManager.isValidMiniAppName(miniApp) else {
+            logger.error("readAppState called with invalid miniApp: \(miniApp)")
+            call.reject(
+                "Invalid mini-app name '\(miniApp)'. Names must contain only alphanumeric characters, hyphens, and underscores.",
+                "INVALID_MINIAPP_NAME"
+            )
             return
         }
 
@@ -1240,6 +1336,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
         guard let miniApp = call.getString("miniApp") else {
             logger.error("clearAppState called without miniApp")
             call.reject("clearAppState called without miniApp", "INVALID_PARAMS")
+            return
+        }
+        guard miniAppsManager.isValidMiniAppName(miniApp) else {
+            logger.error("clearAppState called with invalid miniApp: \(miniApp)")
+            call.reject(
+                "Invalid mini-app name '\(miniApp)'. Names must contain only alphanumeric characters, hyphens, and underscores.",
+                "INVALID_MINIAPP_NAME"
+            )
             return
         }
 
@@ -1556,7 +1660,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
                 self.endBackGroundTask()
             }
             self.logger.info("Check for update via \(self.updateUrl)")
-            let res = self.implementation.getLatest(url: url, channel: nil)
+            let autoUpdateChannel = self.getCurrentMiniAppName()
+            let res = self.implementation.getLatest(url: url, channel: autoUpdateChannel)
             let current = self.implementation.getCurrentBundle()
 
             // Handle network errors and other failures first
@@ -1741,6 +1846,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
             logger.info("Background Timer Task canceled, Activity resumed before timer completes")
         }
         if self._isAutoUpdateEnabled() {
+            // When mini-apps are enabled and a non-main mini-app is active, also check the main mini-app channel in parallel.
+            self.checkMainMiniAppUpdateInBackground()
             self.backgroundDownload()
         } else {
             let instanceDescriptor = (self.bridge?.viewController as? CAPBridgeViewController)?.instanceDescriptor()
@@ -1773,7 +1880,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
                 return
             }
             DispatchQueue.global(qos: .background).async {
-                let res = self.implementation.getLatest(url: url, channel: nil)
+                let autoUpdateChannel = self.getCurrentMiniAppName()
+                let res = self.implementation.getLatest(url: url, channel: autoUpdateChannel)
                 let current = self.implementation.getCurrentBundle()
 
                 if res.version != current.getVersionName() {

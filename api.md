@@ -919,8 +919,10 @@ Register or update a mini-app in the mini-apps registry.
 Mini-apps are bundles that can be switched between at runtime. Each mini-app
 corresponds to a Capgo channel (mini-app name = channel name).
 
-The main app is a mini-app with `isMain: true` - this is the one that receives
-auto-updates from Capgo.
+When mini-apps are enabled and the currently active bundle is a registered mini-app,
+auto-update checks run against that mini-app's channel.
+
+The main app is a mini-app with `isMain: true` (only one can be main at a time).
 
 Requires {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} to be `true`.
 

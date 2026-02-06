@@ -161,6 +161,103 @@ public class CapacitorUpdaterPlugin extends Plugin implements SplashscreenManage
         return jsObject;
     }
 
+    /**
+     * Resolve the current mini-app name (channel name) for the active bundle.
+     *
+     * When mini-apps are enabled, the currently active bundle may be part of the mini-app registry.
+     * In that case, the mini-app name should be used as the update channel.
+     *
+     * @return The mini-app name for the current bundle, or null if not a registered mini-app / feature disabled.
+     */
+    private String getCurrentMiniAppName() {
+        if (!Boolean.TRUE.equals(this.miniAppsEnabled) || this.miniAppsManager == null || this.implementation == null) {
+            return null;
+        }
+        try {
+            BundleInfo current = this.implementation.getCurrentBundle();
+            if (current == null || current.getId() == null) {
+                return null;
+            }
+            String[] miniAppInfo = this.miniAppsManager.getMiniAppForBundleId(current.getId());
+            if (miniAppInfo != null && miniAppInfo.length > 0 && miniAppInfo[0] != null && !miniAppInfo[0].isEmpty()) {
+                return miniAppInfo[0];
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to resolve current mini-app name: " + e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * Best-effort: checks whether the main mini-app has an update available while a non-main mini-app is active.
+     *
+     * This method does NOT download or switch bundles. It only performs the update check and logs the result.
+     */
+    private void checkMainMiniAppUpdateInBackground() {
+        if (!Boolean.TRUE.equals(this.miniAppsEnabled) || this.miniAppsManager == null || this.implementation == null) {
+            return;
+        }
+
+        final MiniAppEntry mainApp = this.miniAppsManager.getMainApp();
+        if (mainApp == null) {
+            return;
+        }
+
+        final String currentMiniAppName = getCurrentMiniAppName();
+        if (currentMiniAppName != null && currentMiniAppName.equals(mainApp.name)) {
+            return;
+        }
+
+        // Resolve main app version name (not the currently active bundle's version).
+        final BundleInfo mainBundle = this.implementation.getBundleInfo(mainApp.bundleId);
+        final String mainVersionName = mainBundle != null ? mainBundle.getVersionName() : "";
+
+        // Run the check in the background; the network call itself is async.
+        startNewThread(() -> {
+            try {
+                this.implementation.getLatest(this.updateUrl, mainApp.name, mainVersionName, (res) -> {
+                    try {
+                        if (res == null) {
+                            return;
+                        }
+                        if (res.containsKey("error")) {
+                            // Non-fatal: ignore and keep current main mini-app bundle.
+                            return;
+                        }
+                        Object versionObj = res.get("version");
+                        String latestVersionName = versionObj instanceof String ? (String) versionObj : null;
+                        Object urlObj = res.get("url");
+                        String url = urlObj instanceof String ? (String) urlObj : null;
+
+                        if (latestVersionName == null || latestVersionName.isEmpty()) {
+                            return;
+                        }
+                        // No update available when url is missing/empty (common backend behavior).
+                        if (url == null || url.isEmpty()) {
+                            return;
+                        }
+                        if (mainVersionName != null && !mainVersionName.isEmpty() && latestVersionName.equals(mainVersionName)) {
+                            return;
+                        }
+
+                        logger.info(
+                            "Main mini-app update available (checked in parallel): " +
+                                mainApp.name +
+                                " " +
+                                (mainVersionName == null ? "" : mainVersionName) +
+                                " -> " +
+                                latestVersionName
+                        );
+                    } catch (Exception ignored) {
+                        // Non-fatal
+                    }
+                });
+            } catch (Exception e) {
+                logger.warn("Failed to check main mini-app update: " + e.getMessage());
+            }
+        });
+    }
+
     private void persistLastFailedBundle(BundleInfo bundle) {
         if (this.prefs == null) {
             return;
@@ -992,6 +1089,14 @@ public class CapacitorUpdaterPlugin extends Plugin implements SplashscreenManage
             call.reject("setMiniApp called without name", "INVALID_PARAMS");
             return;
         }
+        if (!miniAppsManager.isValidMiniAppName(name)) {
+            logger.error("setMiniApp called with invalid name: " + name);
+            call.reject(
+                "Invalid mini-app name '" + name + "'. Names must contain only alphanumeric characters, hyphens, and underscores.",
+                "INVALID_MINIAPP_NAME"
+            );
+            return;
+        }
 
         // Get bundle ID - use provided ID or current bundle
         String bundleId = call.getString("id");
@@ -1026,6 +1131,14 @@ public class CapacitorUpdaterPlugin extends Plugin implements SplashscreenManage
             call.reject("writeAppState called without miniApp", "INVALID_PARAMS");
             return;
         }
+        if (!miniAppsManager.isValidMiniAppName(miniApp)) {
+            logger.error("writeAppState called with invalid miniApp: " + miniApp);
+            call.reject(
+                "Invalid mini-app name '" + miniApp + "'. Names must contain only alphanumeric characters, hyphens, and underscores.",
+                "INVALID_MINIAPP_NAME"
+            );
+            return;
+        }
 
         // Get state - can be null to clear
         JSObject stateObj = call.getObject("state");
@@ -1057,6 +1170,14 @@ public class CapacitorUpdaterPlugin extends Plugin implements SplashscreenManage
             call.reject("readAppState called without miniApp", "INVALID_PARAMS");
             return;
         }
+        if (!miniAppsManager.isValidMiniAppName(miniApp)) {
+            logger.error("readAppState called with invalid miniApp: " + miniApp);
+            call.reject(
+                "Invalid mini-app name '" + miniApp + "'. Names must contain only alphanumeric characters, hyphens, and underscores.",
+                "INVALID_MINIAPP_NAME"
+            );
+            return;
+        }
 
         JSONObject state = miniAppsManager.readState(miniApp);
         JSObject result = new JSObject();
@@ -1084,6 +1205,14 @@ public class CapacitorUpdaterPlugin extends Plugin implements SplashscreenManage
         if (miniApp == null || miniApp.isEmpty()) {
             logger.error("clearAppState called without miniApp");
             call.reject("clearAppState called without miniApp", "INVALID_PARAMS");
+            return;
+        }
+        if (!miniAppsManager.isValidMiniAppName(miniApp)) {
+            logger.error("clearAppState called with invalid miniApp: " + miniApp);
+            call.reject(
+                "Invalid mini-app name '" + miniApp + "'. Names must contain only alphanumeric characters, hyphens, and underscores.",
+                "INVALID_MINIAPP_NAME"
+            );
             return;
         }
 
@@ -1528,12 +1657,26 @@ public class CapacitorUpdaterPlugin extends Plugin implements SplashscreenManage
                 call.reject("Mini-apps support is disabled. Set miniAppsEnabled: true in your Capacitor config.", "MINIAPPS_DISABLED");
                 return;
             }
+            if (!miniAppsManager.isValidMiniAppName(updateMiniApp)) {
+                logger.error("getLatest called with invalid updateMiniApp: " + updateMiniApp);
+                call.reject(
+                    "Invalid mini-app name '" +
+                        updateMiniApp +
+                        "'. Names must contain only alphanumeric characters, hyphens, and underscores.",
+                    "INVALID_MINIAPP_NAME"
+                );
+                return;
+            }
             performMiniAppUpdate(call, updateMiniApp);
             return;
         }
 
+        final String effectiveChannel = (channel == null || channel.isEmpty()) && Boolean.TRUE.equals(this.miniAppsEnabled)
+            ? getCurrentMiniAppName()
+            : channel;
+
         startNewThread(() ->
-            CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.updateUrl, channel, (res) -> {
+            CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.updateUrl, effectiveChannel, (res) -> {
                 JSObject jsRes = mapToJSObject(res);
                 if (jsRes.has("error")) {
                     String error = jsRes.getString("error");
@@ -1564,6 +1707,11 @@ public class CapacitorUpdaterPlugin extends Plugin implements SplashscreenManage
 
                 JSONObject entry = registry.getJSONObject(miniAppName);
                 String oldBundleId = entry.optString("id", "");
+                if (oldBundleId == null || oldBundleId.isEmpty()) {
+                    logger.error("performMiniAppUpdate: mini-app '" + miniAppName + "' has no bundle id");
+                    call.reject("Mini-app '" + miniAppName + "' has no bundle id", "MINIAPP_INVALID");
+                    return;
+                }
 
                 // Check if mini-app is the current bundle
                 BundleInfo currentBundle = this.implementation.getCurrentBundle();
@@ -1575,10 +1723,12 @@ public class CapacitorUpdaterPlugin extends Plugin implements SplashscreenManage
 
                 // Use mini-app name as channel to check for updates
                 final String channelName = miniAppName;
+                final BundleInfo oldBundle = this.implementation.getBundleInfo(oldBundleId);
+                final String oldVersionName = oldBundle != null ? oldBundle.getVersionName() : "";
                 final JSObject[] latestResult = new JSObject[1];
                 final boolean[] gotResult = { false };
 
-                this.implementation.getLatest(this.updateUrl, channelName, (res) -> {
+                this.implementation.getLatest(this.updateUrl, channelName, oldVersionName, (res) -> {
                     latestResult[0] = mapToJSObject(res);
                     gotResult[0] = true;
                     synchronized (gotResult) {
@@ -1657,7 +1807,6 @@ public class CapacitorUpdaterPlugin extends Plugin implements SplashscreenManage
 
                 // Delete old bundle AFTER successful activation (non-fatal if fails)
                 if (!oldBundleId.isEmpty()) {
-                    BundleInfo oldBundle = this.implementation.getBundleInfo(oldBundleId);
                     if (!oldBundle.isBuiltin() && !oldBundle.isUnknown()) {
                         try {
                             logger.info("performMiniAppUpdate: deleting old bundle " + oldBundleId);
@@ -1781,23 +1930,28 @@ public class CapacitorUpdaterPlugin extends Plugin implements SplashscreenManage
                 @Override
                 public void run() {
                     try {
-                        CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.updateUrl, null, (res) -> {
-                            JSObject jsRes = mapToJSObject(res);
-                            if (jsRes.has("error")) {
-                                String error = jsRes.getString("error");
-                                String errorMessage = jsRes.has("message")
-                                    ? jsRes.getString("message")
-                                    : "server did not provide a message";
-                                logger.error("getLatest failed with error: " + error + ", message: " + errorMessage);
-                            } else if (jsRes.has("version")) {
-                                String newVersion = jsRes.getString("version");
-                                String currentVersion = String.valueOf(CapacitorUpdaterPlugin.this.implementation.getCurrentBundle());
-                                if (!Objects.equals(newVersion, currentVersion)) {
-                                    logger.info("New version found: " + newVersion);
-                                    CapacitorUpdaterPlugin.this.backgroundDownload();
+                        final String autoUpdateChannel = getCurrentMiniAppName();
+                        CapacitorUpdaterPlugin.this.implementation.getLatest(
+                            CapacitorUpdaterPlugin.this.updateUrl,
+                            autoUpdateChannel,
+                            (res) -> {
+                                JSObject jsRes = mapToJSObject(res);
+                                if (jsRes.has("error")) {
+                                    String error = jsRes.getString("error");
+                                    String errorMessage = jsRes.has("message")
+                                        ? jsRes.getString("message")
+                                        : "server did not provide a message";
+                                    logger.error("getLatest failed with error: " + error + ", message: " + errorMessage);
+                                } else if (jsRes.has("version")) {
+                                    String newVersion = jsRes.getString("version");
+                                    String currentVersion = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle().getVersionName();
+                                    if (!Objects.equals(newVersion, currentVersion)) {
+                                        logger.info("New version found: " + newVersion);
+                                        CapacitorUpdaterPlugin.this.backgroundDownload();
+                                    }
                                 }
                             }
-                        });
+                        );
                     } catch (final Exception e) {
                         logger.error("Failed to check for update " + e.getMessage());
                     }
@@ -2002,7 +2156,8 @@ public class CapacitorUpdaterPlugin extends Plugin implements SplashscreenManage
             waitForCleanupIfNeeded();
             logger.info("Check for update via: " + CapacitorUpdaterPlugin.this.updateUrl);
             try {
-                CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.updateUrl, null, (res) -> {
+                final String autoUpdateChannel = getCurrentMiniAppName();
+                CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.updateUrl, autoUpdateChannel, (res) -> {
                     JSObject jsRes = mapToJSObject(res);
                     final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
 
@@ -2318,6 +2473,8 @@ public class CapacitorUpdaterPlugin extends Plugin implements SplashscreenManage
             CapacitorUpdaterPlugin.this._isAutoUpdateEnabled() &&
             (this.backgroundDownloadTask == null || !this.backgroundDownloadTask.isAlive())
         ) {
+            // When mini-apps are enabled and a non-main mini-app is active, also check the main mini-app channel in parallel.
+            checkMainMiniAppUpdateInBackground();
             this.backgroundDownloadTask = this.backgroundDownload();
         } else {
             final CapConfig config = CapConfig.loadDefault(this.getActivity());
