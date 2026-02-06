@@ -46,9 +46,9 @@ class AppStoreUpdateManager {
         guard let encodedBundleId = bundleId.addingPercentEncoding(
             withAllowedCharacters: .urlQueryAllowed
         ),
-              let encodedCountry = country.addingPercentEncoding(
-                  withAllowedCharacters: .urlQueryAllowed
-              ) else {
+        let encodedCountry = country.addingPercentEncoding(
+            withAllowedCharacters: .urlQueryAllowed
+        ) else {
             return nil
         }
         let urlString = "https://itunes.apple.com/lookup?bundleId=\(encodedBundleId)&country=\(encodedCountry)"

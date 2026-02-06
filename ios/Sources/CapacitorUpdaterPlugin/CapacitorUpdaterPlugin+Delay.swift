@@ -17,6 +17,38 @@ extension CapacitorUpdaterPlugin {
         call.resolve(["bundle": bundle.toJSON()])
     }
 
+    // Legacy API kept for backward compatibility: setDelay({ kind, value })
+    // Internally this is implemented using the same storage as setMultiDelay.
+    @objc func setDelay(_ call: CAPPluginCall) {
+        let nested = call.getValue("delayCondition") as? [String: Any]
+        let kind = call.getString("kind") ?? nested?["kind"] as? String
+        let rawValue = call.getString("value") ?? nested?["value"] as? String
+
+        guard let kind = kind, !kind.isEmpty else {
+            logger.error("setDelay called without kind")
+            call.reject("setDelay called without kind")
+            return
+        }
+
+        let value = rawValue ?? ""
+        var condition: [String: String] = [
+            "kind": kind,
+            "value": value
+        ]
+
+        // Match setMultiDelay semantics for background conditions with empty value.
+        if kind == "background" && value.isEmpty {
+            condition["value"] = "0"
+        }
+
+        let delayConditions = toJson(object: [condition])
+        if delayUpdateUtils.setMultiDelay(delayConditions: delayConditions) {
+            call.resolve()
+        } else {
+            call.reject("Failed to delay update")
+        }
+    }
+
     @objc func setMultiDelay(_ call: CAPPluginCall) {
         guard let delayConditionList = call.getValue("delayConditions") else {
             logger.error("setMultiDelay called without delayCondition")

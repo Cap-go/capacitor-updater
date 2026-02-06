@@ -55,6 +55,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "setCustomId", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getDeviceId", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getPluginVersion", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getAppId", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setAppId", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "next", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "isAutoUpdateEnabled", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getBuiltinVersion", returnType: CAPPluginReturnPromise),

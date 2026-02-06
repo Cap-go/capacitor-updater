@@ -151,14 +151,15 @@ extension CapgoUpdater {
         url: URL,
         bundleId: String,
         version: String,
-        totalReceivedBytes: inout Int64,
+        startingReceivedBytes: Int64,
         semaphore: DispatchSemaphore
     ) -> (Session, DataStreamRequest, NSError?) {
         var lastSentProgress = 0
         var targetSize = -1
         var mainError: NSError?
 
-        let requestHeaders: HTTPHeaders = ["Range": "bytes=\(totalReceivedBytes)-"]
+        var totalReceivedBytes = startingReceivedBytes
+        let requestHeaders: HTTPHeaders = ["Range": "bytes=\(startingReceivedBytes)-"]
 
         let monitor = ClosureEventMonitor()
         monitor.requestDidCompleteTaskWithError = { (_, _, error) in
@@ -173,7 +174,7 @@ extension CapgoUpdater {
         let session = Session(configuration: configuration, eventMonitors: [monitor])
 
         // Capture initial value for closure
-        let initialReceivedBytes = totalReceivedBytes
+        let initialReceivedBytes = startingReceivedBytes
 
         let request = session.streamRequest(url, headers: requestHeaders).validate().onHTTPResponse { response in
             if let contentLength = response.headers.value(for: "Content-Length") {

@@ -147,7 +147,7 @@ extension CapacitorUpdaterPlugin {
         }
     }
 
-    private func handleBackendError(res: LatestRelease, current: BundleInfo) -> Bool {
+    private func handleBackendError(res: AppVersion, current: BundleInfo) -> Bool {
         guard let backendError = res.error, !backendError.isEmpty else {
             return false
         }
@@ -164,7 +164,7 @@ extension CapacitorUpdaterPlugin {
         return true
     }
 
-    private func handleBuiltinUpdate(res: LatestRelease, current: BundleInfo, plannedDirectUpdate: Bool) {
+    private func handleBuiltinUpdate(res: AppVersion, current: BundleInfo, plannedDirectUpdate: Bool) {
         self.logger.info("Latest version is builtin")
         let directUpdateAllowed = plannedDirectUpdate && !self.splashscreenManager.hasTimedOut
         if directUpdateAllowed {
@@ -185,7 +185,7 @@ extension CapacitorUpdaterPlugin {
         }
     }
 
-    private func handleNewVersionDownload(res: LatestRelease, current: BundleInfo, plannedDirectUpdate: Bool) {
+    private func handleNewVersionDownload(res: AppVersion, current: BundleInfo, plannedDirectUpdate: Bool) {
         let messageUpdate = plannedDirectUpdate ? "Update will occur now." : "Update will occur next time app moves to background."
         let sessionKey = res.sessionKey ?? ""
         guard let downloadUrl = URL(string: res.url) else {
@@ -210,7 +210,7 @@ extension CapacitorUpdaterPlugin {
         }
     }
 
-    private func downloadOrReuseBundle(res: LatestRelease, downloadUrl: URL, latestVersionName: String, sessionKey: String, current: BundleInfo) throws -> BundleInfo? {
+    private func downloadOrReuseBundle(res: AppVersion, downloadUrl: URL, latestVersionName: String, sessionKey: String, current: BundleInfo) throws -> BundleInfo? {
         var nextImpl = self.implementation.getBundleInfoByVersionName(version: latestVersionName)
         if nextImpl == nil || nextImpl?.isDeleted() == true {
             if let existing = nextImpl, existing.isDeleted() {
@@ -237,7 +237,7 @@ extension CapacitorUpdaterPlugin {
         return next
     }
 
-    private func processDownloadedBundle(next: BundleInfo, res: LatestRelease, current: BundleInfo, latestVersionName: String, plannedDirectUpdate: Bool) throws {
+    private func processDownloadedBundle(next: BundleInfo, res: AppVersion, current: BundleInfo, latestVersionName: String, plannedDirectUpdate: Bool) throws {
         let decryptedChecksum = try CryptoCipher.decryptChecksum(checksum: res.checksum, publicKey: self.implementation.publicKey)
         CryptoCipher.logChecksumInfo(label: "Bundle checksum", hexChecksum: next.getChecksum())
         CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: decryptedChecksum)

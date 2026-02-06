@@ -1467,6 +1467,56 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
+    /**
+     * Legacy API kept for backward compatibility: setDelay({ kind, value })
+     * Internally this is implemented using the same storage as setMultiDelay.
+     */
+    @PluginMethod
+    public void setDelay(final PluginCall call) {
+        try {
+            // Support both { kind, value } and { delayCondition: { kind, value } }
+            JSONObject condition = call.getData().optJSONObject("delayCondition");
+            String kind = call.getString("kind");
+            String value = call.getString("value");
+
+            if (condition != null) {
+                if (kind == null) {
+                    kind = condition.optString("kind", null);
+                }
+                if (value == null) {
+                    value = condition.optString("value", null);
+                }
+            }
+
+            if (kind == null || kind.isEmpty()) {
+                logger.error("setDelay called without kind");
+                call.reject("setDelay called without kind");
+                return;
+            }
+
+            JSONObject obj = new JSONObject();
+            obj.put("kind", kind);
+            obj.put("value", value == null ? "" : value);
+
+            // Match setMultiDelay semantics for background conditions with empty value.
+            if ("background".equals(kind) && obj.optString("value").isEmpty()) {
+                obj.put("value", "0");
+            }
+
+            JSONArray delayConditions = new JSONArray();
+            delayConditions.put(obj);
+
+            if (this.delayUpdateUtils.setMultiDelay(delayConditions.toString())) {
+                call.resolve();
+            } else {
+                call.reject("Failed to delay update");
+            }
+        } catch (final Exception e) {
+            logger.error("Failed to delay update, [Error calling 'setDelay()'] " + e.getMessage());
+            call.reject("Failed to delay update", e);
+        }
+    }
+
     @PluginMethod
     public void cancelDelay(final PluginCall call) {
         if (this.delayUpdateUtils.cancelDelay("JS")) {

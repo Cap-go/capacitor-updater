@@ -243,7 +243,7 @@ class BundleManager {
 
     /// Save bundle info
     func saveBundleInfo(id: String, bundle: BundleInfo?) {
-        if let bundle = bundle, (bundle.isBuiltin() || bundle.isUnknown()) {
+        if let bundle = bundle, bundle.isBuiltin() || bundle.isUnknown() {
             logger.info("Not saving info for bundle [\(id)] \(bundle.toString())")
             return
         }
