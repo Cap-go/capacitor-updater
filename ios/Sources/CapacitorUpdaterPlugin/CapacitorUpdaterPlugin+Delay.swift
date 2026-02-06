@@ -134,6 +134,24 @@ extension CapacitorUpdaterPlugin {
         ])
     }
 
+    @objc func setShakeChannelSelector(_ call: CAPPluginCall) {
+        guard let enabled = call.getBool("enabled") else {
+            logger.error("setShakeChannelSelector called without enabled parameter")
+            call.reject("setShakeChannelSelector called without enabled parameter")
+            return
+        }
+
+        self.shakeChannelSelectorEnabled = enabled
+        logger.info("Shake channel selector \(enabled ? "enabled" : "disabled")")
+        call.resolve()
+    }
+
+    @objc func isShakeChannelSelectorEnabled(_ call: CAPPluginCall) {
+        call.resolve([
+            "enabled": self.shakeChannelSelectorEnabled
+        ])
+    }
+
     @objc func toJson(object: Any) -> String {
         guard let data = try? JSONSerialization.data(withJSONObject: object, options: []) else {
             return ""

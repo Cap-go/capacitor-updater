@@ -84,6 +84,11 @@ extension CapacitorUpdaterPlugin {
         }
     }
 
+    // Backward-compatible alias used by ShakeMenu and older internal call sites.
+    func _reload() -> Bool {
+        return performReload()
+    }
+
     public func performReload() -> Bool {
         guard let bridge = self.bridge else { return false }
         self.semaphoreUp()

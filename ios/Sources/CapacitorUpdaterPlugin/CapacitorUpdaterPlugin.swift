@@ -65,6 +65,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getFailedUpdate", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setShakeMenu", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "isShakeMenuEnabled", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setShakeChannelSelector", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "isShakeChannelSelectorEnabled", returnType: CAPPluginReturnPromise),
         // App Store update methods
         CAPPluginMethod(name: "getAppUpdateInfo", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "openAppStore", returnType: CAPPluginReturnPromise),
@@ -73,7 +75,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "completeFlexibleUpdate", returnType: CAPPluginReturnPromise)
     ]
     public var implementation = CapgoUpdater()
-    let pluginVersion: String = "8.42.10"
+    let pluginVersion: String = "8.43.0"
     static let updateUrlDefault = "https://plugin.capgo.app/updates"
     static let statsUrlDefault = "https://plugin.capgo.app/stats"
     static let channelUrlDefault = "https://plugin.capgo.app/channel_self"
@@ -120,6 +122,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     var allowManualBundleError = false
     private var keepUrlPathFlagLastValue: Bool?
     public var shakeMenuEnabled = false
+    public var shakeChannelSelectorEnabled = false
     let semaphoreReady = DispatchSemaphore(value: 0)
 
     var delayUpdateUtils: DelayUpdateUtils!
@@ -222,6 +225,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         implementation.timeout = Double(getConfig().getInt("responseTimeout", 20))
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
         shakeMenuEnabled = getConfig().getBoolean("shakeMenu", false)
+        shakeChannelSelectorEnabled = getConfig().getBoolean("allowShakeChannelSelector", false)
         let periodCheckDelayValue = getConfig().getInt("periodCheckDelay", 0)
         if periodCheckDelayValue >= 0 && periodCheckDelayValue > 600 {
             periodCheckDelay = 600

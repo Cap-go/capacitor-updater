@@ -28,6 +28,11 @@ extension CapacitorUpdaterPlugin {
         call.resolve()
     }
 
+    // Used internally (e.g. ShakeMenu) to access the effective update URL.
+    func getUpdateUrl() -> String {
+        return updateUrl
+    }
+
     @objc func setStatsUrl(_ call: CAPPluginCall) {
         if !getConfig().getBoolean("allowModifyUrl", false) {
             logger.error("setStatsUrl called without allowModifyUrl")
