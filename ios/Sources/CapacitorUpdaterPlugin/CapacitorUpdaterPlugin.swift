@@ -67,6 +67,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
         CAPPluginMethod(name: "getFailedUpdate", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setShakeMenu", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "isShakeMenuEnabled", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setShakeChannelSelector", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "isShakeChannelSelectorEnabled", returnType: CAPPluginReturnPromise),
         // App Store update methods
         CAPPluginMethod(name: "getAppUpdateInfo", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "openAppStore", returnType: CAPPluginReturnPromise),
@@ -75,7 +77,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
         CAPPluginMethod(name: "completeFlexibleUpdate", returnType: CAPPluginReturnPromise)
     ]
     public var implementation = CapgoUpdater()
-    private let pluginVersion: String = "8.42.10"
+    private let pluginVersion: String = "8.43.1"
     static let updateUrlDefault = "https://plugin.capgo.app/updates"
     static let statsUrlDefault = "https://plugin.capgo.app/stats"
     static let channelUrlDefault = "https://plugin.capgo.app/channel_self"
@@ -103,11 +105,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
     private var splashscreenManager: SplashscreenManager?
     private var autoDeleteFailed = false
     private var autoDeletePrevious = false
-    private var allowSetDefaultChannel = true
+    var allowSetDefaultChannel = true
     private var keepUrlPathAfterReload = false
     private var backgroundWork: DispatchWorkItem?
     private var taskRunning = false
     private var periodCheckDelay = 0
+    private let downloadLock = NSLock()
+    private var downloadInProgress = false
+    private var downloadStartTime: Date?
+    private let downloadTimeout: TimeInterval = 3600 // 1 hour timeout
 
     // Lock to ensure cleanup completes before downloads start
     private let cleanupLock = NSLock()
@@ -118,6 +124,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
     private var allowManualBundleError = false
     private var keepUrlPathFlagLastValue: Bool?
     public var shakeMenuEnabled = false
+    public var shakeChannelSelectorEnabled = false
     let semaphoreReady = DispatchSemaphore(value: 0)
 
     // Mini-apps support
@@ -272,17 +279,18 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
         }
         autoUpdate = getConfig().getBoolean("autoUpdate", true)
         appReadyTimeout = max(1000, getConfig().getInt("appReadyTimeout", 10000))  // Minimum 1 second
-        implementation.timeout = Double(getConfig().getInt("responseTimeout", 20))
-        resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
-        shakeMenuEnabled = getConfig().getBoolean("shakeMenu", false)
-        miniAppsEnabled = getConfig().getBoolean("miniAppsEnabled", false)
-        if miniAppsEnabled {
-            logger.info("Mini-apps support enabled")
-        }
-        let periodCheckDelayValue = getConfig().getInt("periodCheckDelay", 0)
-        if periodCheckDelayValue >= 0 && periodCheckDelayValue > 600 {
-            periodCheckDelay = 600
-        } else {
+	        implementation.timeout = Double(getConfig().getInt("responseTimeout", 20))
+	        resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
+	        shakeMenuEnabled = getConfig().getBoolean("shakeMenu", false)
+	        shakeChannelSelectorEnabled = getConfig().getBoolean("allowShakeChannelSelector", false)
+	        miniAppsEnabled = getConfig().getBoolean("miniAppsEnabled", false)
+	        if miniAppsEnabled {
+	            logger.info("Mini-apps support enabled")
+	        }
+	        let periodCheckDelayValue = getConfig().getInt("periodCheckDelay", 0)
+	        if periodCheckDelayValue >= 0 && periodCheckDelayValue > 600 {
+	            periodCheckDelay = 600
+	        } else {
             periodCheckDelay = periodCheckDelayValue
         }
 
@@ -584,6 +592,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
             UserDefaults.standard.synchronize()
         }
         call.resolve()
+    }
+
+    func getUpdateUrl() -> String {
+        return updateUrl
     }
 
     @objc func setStatsUrl(_ call: CAPPluginCall) {
@@ -1162,7 +1174,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
             } else {
                 if self._isAutoUpdateEnabled() && triggerAutoUpdate {
                     self.logger.info("Calling autoupdater after channel change!")
-                    self.backgroundDownload()
+                    // Check if download is already in progress (with timeout protection)
+                    if !self.isDownloadStuckOrTimedOut() {
+                        self.backgroundDownload()
+                    } else {
+                        self.logger.info("Download already in progress, skipping duplicate download request")
+                    }
                 }
                 call.resolve(res.toDict())
             }
@@ -1196,7 +1213,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
             } else {
                 if self._isAutoUpdateEnabled() && triggerAutoUpdate {
                     self.logger.info("Calling autoupdater after channel change!")
-                    self.backgroundDownload()
+                    // Check if download is already in progress (with timeout protection)
+                    if !self.isDownloadStuckOrTimedOut() {
+                        self.backgroundDownload()
+                    } else {
+                        self.logger.info("Download already in progress, skipping duplicate download request")
+                    }
                 }
                 call.resolve(res.toDict())
             }
@@ -1633,6 +1655,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
         failureEvent: String = "downloadFailed",
         sendStats: Bool = true
     ) {
+        // Clear download in progress flag - this is called at the end of every download attempt
+        // whether it succeeds, fails, or is skipped (e.g., already up to date)
+        downloadLock.lock()
+        defer { downloadLock.unlock() }
+        downloadInProgress = false
+        downloadStartTime = nil
+
         if error {
             if sendStats {
                 self.implementation.sendStats(action: failureAction, versionName: current.getVersionName())
@@ -1645,13 +1674,47 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
         self.endBackGroundTask()
     }
 
+    private func isDownloadStuckOrTimedOut() -> Bool {
+        downloadLock.lock()
+        defer { downloadLock.unlock() }
+
+        guard downloadInProgress else {
+            return false
+        }
+
+        // Check if download has timed out
+        if let startTime = downloadStartTime {
+            let elapsed = Date().timeIntervalSince(startTime)
+            if elapsed > downloadTimeout {
+                self.logger.warn("Download has been in progress for \(elapsed) seconds, exceeding timeout of \(downloadTimeout) seconds. Clearing stuck state.")
+                downloadInProgress = false
+                downloadStartTime = nil
+                return false // Now it's not stuck anymore, caller can proceed
+            }
+        }
+
+        return true
+    }
+
     func backgroundDownload() {
+        // Set download in progress flag (thread-safe)
+        downloadLock.lock()
+        downloadInProgress = true
+        downloadStartTime = Date()
+        downloadLock.unlock()
+
         let plannedDirectUpdate = self.shouldUseDirectUpdate()
         let messageUpdate = plannedDirectUpdate ? "Update will occur now." : "Update will occur next time app moves to background."
         guard let url = URL(string: self.updateUrl) else {
             logger.error("Error no url or wrong format")
+            // Clear the flag if we return early
+            downloadLock.lock()
+            defer { downloadLock.unlock() }
+            downloadInProgress = false
+            downloadStartTime = nil
             return
         }
+
         DispatchQueue.global(qos: .background).async {
             // Wait for cleanup to complete before starting download
             self.waitForCleanupIfNeeded()
@@ -1844,15 +1907,20 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
         if backgroundWork != nil && taskRunning {
             backgroundWork!.cancel()
             logger.info("Background Timer Task canceled, Activity resumed before timer completes")
-        }
-        if self._isAutoUpdateEnabled() {
-            // When mini-apps are enabled and a non-main mini-app is active, also check the main mini-app channel in parallel.
-            self.checkMainMiniAppUpdateInBackground()
-            self.backgroundDownload()
-        } else {
-            let instanceDescriptor = (self.bridge?.viewController as? CAPBridgeViewController)?.instanceDescriptor()
-            if instanceDescriptor?.serverURL != nil {
-                self.implementation.sendStats(action: "blocked_by_server_url", versionName: current.getVersionName())
+	        }
+	        if self._isAutoUpdateEnabled() {
+	            // When mini-apps are enabled and a non-main mini-app is active, also check the main mini-app channel in parallel.
+	            self.checkMainMiniAppUpdateInBackground()
+	            // Check if download is already in progress (with timeout protection)
+	            if !isDownloadStuckOrTimedOut() {
+	                self.backgroundDownload()
+	            } else {
+	                logger.info("Download already in progress, skipping duplicate download request")
+	            }
+	        } else {
+	            let instanceDescriptor = (self.bridge?.viewController as? CAPBridgeViewController)?.instanceDescriptor()
+	            if instanceDescriptor?.serverURL != nil {
+	                self.implementation.sendStats(action: "blocked_by_server_url", versionName: current.getVersionName())
             }
             logger.info("Auto update is disabled")
             self.sendReadyToJs(current: current, msg: "disabled")
@@ -1886,7 +1954,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
 
                 if res.version != current.getVersionName() {
                     self.logger.info("New version found: \(res.version)")
-                    self.backgroundDownload()
+                    // Check if download is already in progress (with timeout protection)
+                    if !self.isDownloadStuckOrTimedOut() {
+                        self.backgroundDownload()
+                    } else {
+                        self.logger.info("Download already in progress, skipping duplicate download request")
+                    }
                 }
             }
         }
@@ -1966,6 +2039,24 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenMa
     @objc func isShakeMenuEnabled(_ call: CAPPluginCall) {
         call.resolve([
             "enabled": self.shakeMenuEnabled
+        ])
+    }
+
+    @objc func setShakeChannelSelector(_ call: CAPPluginCall) {
+        guard let enabled = call.getBool("enabled") else {
+            logger.error("setShakeChannelSelector called without enabled parameter")
+            call.reject("setShakeChannelSelector called without enabled parameter")
+            return
+        }
+
+        self.shakeChannelSelectorEnabled = enabled
+        logger.info("Shake channel selector \(enabled ? "enabled" : "disabled")")
+        call.resolve()
+    }
+
+    @objc func isShakeChannelSelectorEnabled(_ call: CAPPluginCall) {
+        call.resolve([
+            "enabled": self.shakeChannelSelectorEnabled
         ])
     }
 
