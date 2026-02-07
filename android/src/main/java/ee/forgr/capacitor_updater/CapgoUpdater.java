@@ -1203,11 +1203,19 @@ public class CapgoUpdater {
     }
 
     public void getLatest(final String updateUrl, final String channel, final Callback callback) {
+        getLatest(updateUrl, channel, null, callback);
+    }
+
+    public void getLatest(final String updateUrl, final String channel, final String versionNameOverride, final Callback callback) {
         JSONObject json;
         try {
             json = this.createInfoObject();
             if (channel != null && json != null) {
                 json.put("defaultChannel", channel);
+            }
+            if (versionNameOverride != null && !versionNameOverride.isEmpty() && json != null) {
+                // Override the current bundle version used for update checks (e.g. when checking updates for a non-active mini-app).
+                json.put("version_name", versionNameOverride);
             }
         } catch (JSONException e) {
             logger.error("Error getting latest version");

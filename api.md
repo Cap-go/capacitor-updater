@@ -50,6 +50,7 @@ CapacitorUpdater can be configured with these options:
 | **`osLogging`** | `boolean` | Enable OS-level logging. When enabled, logs are written to the system log which can be inspected in production builds. - **iOS**: Uses os_log instead of Swift.print, logs accessible via Console.app or Instruments - **Android**: Logs to Logcat (android.util.Log) When set to false, system logging is disabled on both platforms (only JavaScript console logging will occur if enabled). This is useful for debugging production apps (App Store/TestFlight builds on iOS, or production APKs on Android). | `true` | 8.42.0 |
 | **`shakeMenu`** | `boolean` | Enable shake gesture to show update menu for debugging/testing purposes | `false` | 7.5.0 |
 | **`allowShakeChannelSelector`** | `boolean` | Enable the shake gesture to show a channel selector menu for switching between update channels. When enabled AND `shakeMenu` is true, the shake gesture shows a channel selector instead of the default debug menu (Go Home/Reload/Close). After selecting a channel, the app automatically checks for updates and downloads if available. Only works if channels have `allow_self_set` enabled on the backend. Only available for Android and iOS. | `false` | 8.43.0 |
+| **`miniAppsEnabled`** | `boolean` | Enable mini-apps support. When enabled, you can register multiple bundles as mini-apps and switch between them. The main app is treated as a mini-app with `isMain: true`. Only available for Android and iOS. | `false` | 8.42.0 |
 
 
 </docgen-config>
@@ -79,6 +80,10 @@ CapacitorUpdater can be configured with these options:
 - [`unsetChannel`](#unsetchannel)
 - [`getChannel`](#getchannel)
 - [`listChannels`](#listchannels)
+- [`setMiniApp`](#setminiapp)
+- [`writeAppState`](#writeappstate)
+- [`readAppState`](#readappstate)
+- [`clearAppState`](#clearappstate)
 - [`setCustomId`](#setcustomid)
 - [`getBuiltinVersion`](#getbuiltinversion)
 - [`getDeviceId`](#getdeviceid)
@@ -901,6 +906,210 @@ Use this to:
 **Since:** 7.5.0
 
 **Throws:** {Error} If the operation fails or the request to the backend fails.
+
+
+--------------------
+
+
+### setMiniApp
+
+```typescript
+setMiniApp(options: SetMiniAppOptions) => Promise<void>
+```
+
+Register or update a mini-app in the mini-apps registry.
+
+Mini-apps are bundles that can be switched between at runtime. Each mini-app
+corresponds to a Capgo channel (mini-app name = channel name).
+
+When mini-apps are enabled and the currently active bundle is a registered mini-app,
+auto-update checks run against that mini-app's channel.
+
+The main app is a mini-app with `isMain: true` (only one can be main at a time).
+
+Requires {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} to be `true`.
+
+**Note:** This method only registers the bundle as a mini-app. To switch to it,
+use {@link set} with the `miniApp` option.
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `options` | `SetMiniAppOptions` | The {@link SetMiniAppOptions} containing the mini-app name and optional bundle ID. |
+
+**Returns**
+
+`Promise<void>` — Resolves when the mini-app is registered.
+
+**Since:** 8.42.0
+
+**Throws:** {Error} If mini-apps are disabled or the bundle doesn't exist.
+
+**Example**
+
+```ts
+// Register current bundle as main app
+await CapacitorUpdater.setMiniApp({ name: 'main', isMain: true });
+
+// Download and register a mini-app
+const bundle = await CapacitorUpdater.download({ url, version });
+await CapacitorUpdater.setMiniApp({ name: 'games', id: bundle.id });
+
+// Switch to the mini-app
+await CapacitorUpdater.set({ miniApp: 'games' });
+```
+
+
+--------------------
+
+
+### writeAppState
+
+```typescript
+writeAppState(options: WriteAppStateOptions) => Promise<void>
+```
+
+Write state data for a mini-app.
+
+This enables communication between mini-apps by allowing any app to write
+state data that can be read by other apps. The state is persisted to storage
+and survives app restarts.
+
+**Common use cases:**
+- Pass navigation parameters when switching to a mini-app
+- Share user session/authentication data across mini-apps
+- Save mini-app state before switching away (to restore later)
+- Enable mini-app to mini-app communication
+
+Requires {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} to be `true`.
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `options` | `WriteAppStateOptions` | The {@link WriteAppStateOptions} containing mini-app name and state object. |
+
+**Returns**
+
+`Promise<void>` — Resolves when the state is saved.
+
+**Since:** 8.42.0
+
+**Throws:** {Error} If mini-apps are disabled.
+
+**Example**
+
+```ts
+// Main app sets state before launching games mini-app
+await CapacitorUpdater.writeAppState({
+  miniApp: 'games',
+  state: { userId: '123', startScreen: 'leaderboard' }
+});
+await CapacitorUpdater.set({ miniApp: 'games' });
+```
+
+**Example**
+
+```ts
+// Mini-app saves its state before user leaves
+await CapacitorUpdater.writeAppState({
+  miniApp: 'games',
+  state: { currentLevel: 5, score: 1000, scrollPosition: 250 }
+});
+```
+
+
+--------------------
+
+
+### readAppState
+
+```typescript
+readAppState(options: ReadAppStateOptions) => Promise<ReadAppStateResult>
+```
+
+Read state data for a mini-app.
+
+Retrieves the state previously saved with {@link writeAppState}. Use this to:
+- Get navigation parameters when a mini-app is launched
+- Restore mini-app state after being switched back to
+- Read shared data from other mini-apps
+
+Requires {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} to be `true`.
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `options` | `ReadAppStateOptions` | The {@link ReadAppStateOptions} containing the mini-app name. |
+
+**Returns**
+
+`Promise<ReadAppStateResult>` — The saved state, or null if no state exists.
+
+**Since:** 8.42.0
+
+**Throws:** {Error} If mini-apps are disabled.
+
+**Example**
+
+```ts
+// Mini-app reads its state on startup
+const { state } = await CapacitorUpdater.readAppState({ miniApp: 'games' });
+if (state?.startScreen) {
+  navigateTo(state.startScreen);
+}
+```
+
+**Example**
+
+```ts
+// Main app reads mini-app state to show preview
+const { state } = await CapacitorUpdater.readAppState({ miniApp: 'games' });
+console.log(`Last played level: ${state?.currentLevel}`);
+```
+
+
+--------------------
+
+
+### clearAppState
+
+```typescript
+clearAppState(options: ClearAppStateOptions) => Promise<void>
+```
+
+Clear state data for a mini-app.
+
+Removes all saved state for a mini-app. Use this when:
+- User logs out (clear all mini-app states)
+- Mini-app is uninstalled/deleted
+- State needs to be reset for any reason
+
+Requires {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} to be `true`.
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `options` | `ClearAppStateOptions` | The {@link ClearAppStateOptions} containing the mini-app name. |
+
+**Returns**
+
+`Promise<void>` — Resolves when the state is cleared.
+
+**Since:** 8.42.0
+
+**Throws:** {Error} If mini-apps are disabled.
+
+**Example**
+
+```ts
+// Clear state when deleting a mini-app
+await CapacitorUpdater.clearAppState({ miniApp: 'games' });
+await CapacitorUpdater.delete({ miniApp: 'games' });
+```
 
 
 --------------------

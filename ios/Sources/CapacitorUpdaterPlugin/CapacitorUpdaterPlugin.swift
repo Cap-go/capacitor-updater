@@ -15,7 +15,7 @@ import Version
  * here: https://capacitorjs.com/docs/plugins/ios
  */
 @objc(CapacitorUpdaterPlugin)
-public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
+public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin, SplashscreenManagerDelegate {
     lazy var logger: Logger = {
         // Default to true for OS logging. In test environments without a bridge,
         // this will default to true. In production, it reads from config.
@@ -52,6 +52,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "unsetChannel", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getChannel", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "listChannels", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setMiniApp", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "writeAppState", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "readAppState", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "clearAppState", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setCustomId", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getDeviceId", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getPluginVersion", returnType: CAPPluginReturnPromise),
@@ -98,12 +102,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var wasRecentlyInstalledOrUpdated = false
     private var onLaunchDirectUpdateUsed = false
     private var autoSplashscreen = false
-    private var autoSplashscreenLoader = false
-    private var autoSplashscreenTimeout = 10000
-    private var autoSplashscreenTimeoutWorkItem: DispatchWorkItem?
-    private var splashscreenLoaderView: UIActivityIndicatorView?
-    private var splashscreenLoaderContainer: UIView?
-    private var autoSplashscreenTimedOut = false
+    private var splashscreenManager: SplashscreenManager?
     private var autoDeleteFailed = false
     private var autoDeletePrevious = false
     var allowSetDefaultChannel = true
@@ -127,6 +126,64 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     public var shakeMenuEnabled = false
     public var shakeChannelSelectorEnabled = false
     let semaphoreReady = DispatchSemaphore(value: 0)
+
+    // Mini-apps support
+    private var miniAppsEnabled = false
+    private lazy var miniAppsManager = MiniAppsManager(logger: logger)
+
+    /// Resolve the current mini-app name (channel name) for the active bundle.
+    ///
+    /// When mini-apps are enabled, the currently active bundle may be part of the mini-app registry.
+    /// In that case, the mini-app name should be used as the update channel.
+    private func getCurrentMiniAppName() -> String? {
+        guard miniAppsEnabled else { return nil }
+        let currentBundleId = implementation.getCurrentBundleId()
+        guard !currentBundleId.isEmpty else { return nil }
+        return miniAppsManager.getMiniAppForBundleId(currentBundleId)?.name
+    }
+
+    /// Best-effort: checks whether the main mini-app has an update available while a non-main mini-app is active.
+    ///
+    /// This method does NOT download or switch bundles. It only performs the update check and logs the result.
+    private func checkMainMiniAppUpdateInBackground() {
+        guard miniAppsEnabled else { return }
+        guard let mainApp = miniAppsManager.getMainApp() else { return }
+
+        let currentMiniAppName = getCurrentMiniAppName()
+        if currentMiniAppName == mainApp.name {
+            return
+        }
+
+        let mainBundle = implementation.getBundleInfo(id: mainApp.bundleId)
+        let mainVersionName = mainBundle.getVersionName()
+        guard !mainVersionName.isEmpty else { return }
+        guard let url = URL(string: updateUrl) else { return }
+
+        DispatchQueue.global(qos: .background).async {
+            let res = self.implementation.getLatest(
+                url: url,
+                channel: mainApp.name,
+                versionNameOverride: mainVersionName
+            )
+            if res.error != nil || res.message != nil {
+                // Non-fatal: ignore and keep current main mini-app bundle.
+                return
+            }
+            // No update available when url is missing/empty (common backend behavior).
+            if res.url.isEmpty {
+                return
+            }
+            if res.version.isEmpty || res.version == mainVersionName {
+                return
+            }
+            self.logger.info(
+                "Main mini-app update available (checked in parallel): \(mainApp.name) \(mainVersionName) -> \(res.version)"
+            )
+        }
+    }
+
+    // App Store update helper
+    private var appStoreUpdateHelper: AppStoreUpdateHelper!
 
     private var delayUpdateUtils: DelayUpdateUtils!
 
@@ -205,9 +262,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         autoSplashscreen = getConfig().getBoolean("autoSplashscreen", false)
-        autoSplashscreenLoader = getConfig().getBoolean("autoSplashscreenLoader", false)
-        let splashscreenTimeoutValue = getConfig().getInt("autoSplashscreenTimeout", 10000)
-        autoSplashscreenTimeout = max(0, splashscreenTimeoutValue)
+        if autoSplashscreen {
+            let loaderEnabled = getConfig().getBoolean("autoSplashscreenLoader", false)
+            let timeout = max(0, getConfig().getInt("autoSplashscreenTimeout", 10000))
+            splashscreenManager = SplashscreenManager(
+                logger: logger,
+                timeout: timeout,
+                loaderEnabled: loaderEnabled,
+                delegate: self
+            )
+        }
         updateUrl = getConfig().getString("updateUrl", CapacitorUpdaterPlugin.updateUrlDefault)!
         if persistModifyUrl, let storedUpdateUrl = UserDefaults.standard.object(forKey: updateUrlDefaultsKey) as? String {
             updateUrl = storedUpdateUrl
@@ -215,14 +279,18 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         autoUpdate = getConfig().getBoolean("autoUpdate", true)
         appReadyTimeout = max(1000, getConfig().getInt("appReadyTimeout", 10000))  // Minimum 1 second
-        implementation.timeout = Double(getConfig().getInt("responseTimeout", 20))
-        resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
-        shakeMenuEnabled = getConfig().getBoolean("shakeMenu", false)
-        shakeChannelSelectorEnabled = getConfig().getBoolean("allowShakeChannelSelector", false)
-        let periodCheckDelayValue = getConfig().getInt("periodCheckDelay", 0)
-        if periodCheckDelayValue >= 0 && periodCheckDelayValue > 600 {
-            periodCheckDelay = 600
-        } else {
+	        implementation.timeout = Double(getConfig().getInt("responseTimeout", 20))
+	        resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
+	        shakeMenuEnabled = getConfig().getBoolean("shakeMenu", false)
+	        shakeChannelSelectorEnabled = getConfig().getBoolean("allowShakeChannelSelector", false)
+	        miniAppsEnabled = getConfig().getBoolean("miniAppsEnabled", false)
+	        if miniAppsEnabled {
+	            logger.info("Mini-apps support enabled")
+	        }
+	        let periodCheckDelayValue = getConfig().getInt("periodCheckDelay", 0)
+	        if periodCheckDelayValue >= 0 && periodCheckDelayValue > 600 {
+	            periodCheckDelay = 600
+	        } else {
             periodCheckDelay = periodCheckDelayValue
         }
 
@@ -250,6 +318,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             fatalError("appId is missing in capacitor.config.json or plugin config, and cannot be retrieved from the native app, please add it globally or in the plugin config")
         }
         logger.info("appId \(implementation.appId)")
+        self.appStoreUpdateHelper = AppStoreUpdateHelper(logger: logger, appId: implementation.appId)
         implementation.statsUrl = getConfig().getString("statsUrl", CapacitorUpdaterPlugin.statsUrlDefault)!
         implementation.channelUrl = getConfig().getString("channelUrl", CapacitorUpdaterPlugin.channelUrlDefault)!
         if persistModifyUrl {
@@ -445,10 +514,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
 
                 let storedBundles = self.implementation.list(raw: true)
-                let allowedIds = Set(storedBundles.compactMap { info -> String? in
+                var allowedIds = Set(storedBundles.compactMap { info -> String? in
                     let id = info.getId()
                     return id.isEmpty ? nil : id
                 })
+
+                // Add protected mini-app bundle IDs if mini-apps are enabled
+                if self.miniAppsEnabled {
+                    allowedIds.formUnion(self.miniAppsManager.getProtectedBundleIds())
+                }
+
                 self.implementation.cleanupDownloadDirectories(allowedIds: allowedIds, threadToCheck: Thread.current)
                 self.implementation.cleanupOrphanedTempFolders(threadToCheck: Thread.current)
 
@@ -730,11 +805,38 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func set(_ call: CAPPluginCall) {
-        guard let id = call.getString("id") else {
-            logger.error("Set called without id")
-            call.reject("Set called without id")
+        var bundleId: String?
+
+        // Check if miniApp parameter is provided
+        if let miniAppName = call.getString("miniApp") {
+            guard miniAppsEnabled else {
+                logger.error("set called with miniApp but miniAppsEnabled is false")
+                call.reject("Mini-apps support is disabled. Set miniAppsEnabled: true in your Capacitor config.", "MINIAPPS_DISABLED")
+                return
+            }
+
+            let registry = miniAppsManager.getRegistry()
+            guard let entry = registry[miniAppName], let id = entry["id"] as? String else {
+                logger.error("set called with unknown miniApp: \(miniAppName)")
+                call.reject("Mini-app '\(miniAppName)' not found", "MINIAPP_NOT_FOUND")
+                return
+            }
+            bundleId = id
+            logger.info("Set via miniApp name: \(miniAppName) -> bundle \(id)")
+        } else if let id = call.getString("id") {
+            bundleId = id
+        } else {
+            logger.error("Set called without id or miniApp")
+            call.reject("Set called without id or miniApp")
             return
         }
+
+        guard let id = bundleId else {
+            logger.error("Set called without valid bundle id")
+            call.reject("Set called without valid bundle id")
+            return
+        }
+
         let res = implementation.set(id: id)
         logger.info("Set active bundle: \(id)")
         if !res {
@@ -746,13 +848,54 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func delete(_ call: CAPPluginCall) {
-        guard let id = call.getString("id") else {
-            logger.error("Delete called without version")
-            call.reject("Delete called without id")
+        var bundleId: String?
+        var miniAppName: String?
+
+        // Check if miniApp parameter is provided
+        if let name = call.getString("miniApp") {
+            guard miniAppsEnabled else {
+                logger.error("delete called with miniApp but miniAppsEnabled is false")
+                call.reject("Mini-apps support is disabled. Set miniAppsEnabled: true in your Capacitor config.", "MINIAPPS_DISABLED")
+                return
+            }
+
+            miniAppName = name
+            let registry = miniAppsManager.getRegistry()
+            guard let entry = registry[name], let id = entry["id"] as? String else {
+                logger.error("delete called with unknown miniApp: \(name)")
+                call.reject("Mini-app '\(name)' not found", "MINIAPP_NOT_FOUND")
+                return
+            }
+            if id == implementation.getCurrentBundleId() {
+                logger.error("delete: cannot delete current mini-app '\(name)'")
+                call.reject("Cannot delete the currently active mini-app", "CURRENT_MINIAPP")
+                return
+            }
+            bundleId = id
+            logger.info("Delete via miniApp name: \(name) -> bundle \(id)")
+        } else if let id = call.getString("id") {
+            bundleId = id
+        } else {
+            logger.error("Delete called without id or miniApp")
+            call.reject("Delete called without id or miniApp")
             return
         }
+
+        guard let id = bundleId else {
+            logger.error("Delete called without valid bundle id")
+            call.reject("Delete called without valid bundle id")
+            return
+        }
+
         let res = implementation.delete(id: id)
         if res {
+            // If deleting via miniApp, also remove from registry
+            if let name = miniAppName {
+                var registry = miniAppsManager.getRegistry()
+                registry.removeValue(forKey: name)
+                miniAppsManager.saveRegistry(registry)
+                logger.info("Removed mini-app '\(name)' from registry")
+            }
             call.resolve()
         } else {
             logger.error("Delete failed, id \(id) doesn't exist or it cannot be deleted (perhaps it is the 'next' bundle)")
@@ -797,15 +940,83 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         for v in res {
             resArr.append(v.toJSON())
         }
-        call.resolve([
+
+        var result: [String: Any] = [
             "bundles": resArr
-        ])
+        ]
+
+        // Add mini-apps list if enabled
+        if miniAppsEnabled {
+            let registry = miniAppsManager.getRegistry()
+            var miniAppsArr: [[String: Any]] = []
+
+            for (name, entry) in registry {
+                if let bundleId = entry["id"] as? String {
+                    let isMain = entry["isMain"] as? Bool ?? false
+                    let bundleInfo = implementation.getBundleInfo(id: bundleId)
+                    miniAppsArr.append([
+                        "name": name,
+                        "bundle": bundleInfo.toJSON(),
+                        "isMain": isMain
+                    ])
+                }
+            }
+
+            result["miniApps"] = miniAppsArr
+        }
+
+        call.resolve(result)
     }
 
     @objc func getLatest(_ call: CAPPluginCall) {
         let channel = call.getString("channel")
+        let updateMiniApp = call.getString("updateMiniApp")
+
+        // Handle updateMiniApp flow
+        if let miniAppName = updateMiniApp {
+            guard miniAppsEnabled else {
+                logger.error("getLatest called with updateMiniApp but miniAppsEnabled is false")
+                call.reject("Mini-apps support is disabled. Set miniAppsEnabled: true in your Capacitor config.", "MINIAPPS_DISABLED")
+                return
+            }
+            guard miniAppsManager.isValidMiniAppName(miniAppName) else {
+                logger.error("getLatest called with invalid updateMiniApp: \(miniAppName)")
+                call.reject(
+                    "Invalid mini-app name '\(miniAppName)'. Names must contain only alphanumeric characters, hyphens, and underscores.",
+                    "INVALID_MINIAPP_NAME"
+                )
+                return
+            }
+
+            // Check if this mini-app is current
+            let currentBundleId = implementation.getCurrentBundleId()
+            let registry = miniAppsManager.getRegistry()
+
+            if let entry = registry[miniAppName], let bundleId = entry["id"] as? String {
+                if bundleId == currentBundleId {
+                    logger.error("Cannot update mini-app '\(miniAppName)' because it is currently active")
+                    call.reject("Cannot update mini-app that is currently in use", "MINIAPP_IS_CURRENT")
+                    return
+                }
+            }
+
+            // Use mini-app name as channel
+            DispatchQueue.global(qos: .background).async {
+                self.performMiniAppUpdate(miniAppName: miniAppName, call: call)
+            }
+            return
+        }
+
+        let effectiveChannel: String?
+        if let channel = channel, !channel.isEmpty {
+            effectiveChannel = channel
+        } else {
+            effectiveChannel = getCurrentMiniAppName()
+        }
+
+        // Regular getLatest flow
         DispatchQueue.global(qos: .background).async {
-            let res = self.implementation.getLatest(url: URL(string: self.updateUrl)!, channel: channel)
+            let res = self.implementation.getLatest(url: URL(string: self.updateUrl)!, channel: effectiveChannel)
             if res.error != nil {
                 call.reject( res.error!)
             } else if res.message != nil {
@@ -813,6 +1024,140 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             } else {
                 call.resolve(res.toDict())
             }
+        }
+    }
+
+    private func performMiniAppUpdate(miniAppName: String, call: CAPPluginCall) {
+        // Resolve current mini-app bundle/version (this mini-app must exist in the registry).
+        let registry = miniAppsManager.getRegistry()
+        guard let entry = registry[miniAppName],
+              let oldBundleId = entry["id"] as? String,
+              !oldBundleId.isEmpty else {
+            logger.error("performMiniAppUpdate: mini-app '\(miniAppName)' not found")
+            call.reject("Mini-app '\(miniAppName)' not found", "MINIAPP_NOT_FOUND")
+            return
+        }
+        let oldBundle = self.implementation.getBundleInfo(id: oldBundleId)
+        let currentVersion = oldBundle.getVersionName()
+
+        // Check for updates on this channel (channel name = mini-app name).
+        // Override version_name with the mini-app's registered bundle version (not the currently active bundle).
+        let res = self.implementation.getLatest(
+            url: URL(string: self.updateUrl)!,
+            channel: miniAppName,
+            versionNameOverride: currentVersion
+        )
+
+        if res.error != nil || res.message != nil {
+            // No update available or error - return with miniAppUpdated: false
+            var result = res.toDict()
+            result["miniAppUpdated"] = false
+            call.resolve(result)
+            return
+        }
+
+        // Check if update needed
+        if res.version == currentVersion {
+            var result = res.toDict()
+            result["miniAppUpdated"] = false
+            call.resolve(result)
+            return
+        }
+
+        logger.info("Mini-app '\(miniAppName)' has update: \(currentVersion) -> \(res.version)")
+
+        // Download new version
+        do {
+            let sessionKey = res.sessionKey ?? ""
+            guard let downloadUrl = URL(string: res.url ?? "") else {
+                call.reject("Invalid download URL", "INVALID_URL")
+                return
+            }
+
+            var newBundle: BundleInfo
+
+            if let manifest = res.manifest, !manifest.isEmpty {
+                newBundle = try self.implementation.downloadManifest(
+                    manifest: manifest,
+                    version: res.version,
+                    sessionKey: sessionKey,
+                    link: res.link,
+                    comment: res.comment
+                )
+            } else {
+                newBundle = try self.implementation.download(
+                    url: downloadUrl,
+                    version: res.version,
+                    sessionKey: sessionKey,
+                    link: res.link,
+                    comment: res.comment
+                )
+            }
+
+            // Verify checksum if provided
+            if !res.checksum.isEmpty {
+                let decryptedChecksum = try CryptoCipher.decryptChecksum(
+                    checksum: res.checksum,
+                    publicKey: self.implementation.publicKey
+                )
+                if !decryptedChecksum.isEmpty && newBundle.getChecksum() != decryptedChecksum {
+                    _ = self.implementation.delete(id: newBundle.getId())
+                    call.reject("Checksum mismatch", "CHECKSUM_MISMATCH")
+                    return
+                }
+            }
+
+            // Atomically update registry with new bundle ID
+            guard self.miniAppsManager.updateBundleId(name: miniAppName, newBundleId: newBundle.getId()) else {
+                call.reject("Failed to update mini-app registry", "REGISTRY_UPDATE_FAILED")
+                return
+            }
+
+            // Auto-switch: set the new bundle active
+            let setSuccess = self.implementation.set(id: newBundle.getId())
+            guard setSuccess else {
+                call.reject("Failed to set new bundle", "SET_FAILED")
+                return
+            }
+
+            logger.info("Mini-app '\(miniAppName)' updated and switched to bundle \(newBundle.getId())")
+
+            // Reload the app synchronously and verify success before cleanup
+            let reloadSuccess: Bool
+            if Thread.isMainThread {
+                reloadSuccess = self._reload()
+            } else {
+                var success = false
+                DispatchQueue.main.sync {
+                    success = self._reload()
+                }
+                reloadSuccess = success
+            }
+
+            guard reloadSuccess else {
+                // Rollback registry to old bundle if reload failed
+                _ = self.miniAppsManager.updateBundleId(name: miniAppName, newBundleId: oldBundleId)
+                call.reject("Failed to reload app after update", "RELOAD_FAILED")
+                return
+            }
+
+            // Delete old bundle AFTER successful reload (non-fatal if fails)
+            if !oldBundle.isBuiltin() && !oldBundle.isUnknown() {
+                let deleted = self.implementation.delete(id: oldBundleId)
+                if deleted {
+                    logger.info("Deleted old bundle \(oldBundleId) for mini-app '\(miniAppName)'")
+                } else {
+                    logger.warn("Failed to delete old bundle \(oldBundleId) - non-fatal, new bundle is active")
+                }
+            }
+
+            var result = res.toDict()
+            result["miniAppUpdated"] = true
+            call.resolve(result)
+
+        } catch {
+            logger.error("Failed to download mini-app update: \(error.localizedDescription)")
+            call.reject("Failed to download update: \(error.localizedDescription)", "DOWNLOAD_FAILED")
         }
     }
 
@@ -908,6 +1253,126 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    // MARK: - Mini-Apps Methods
+
+    @objc func setMiniApp(_ call: CAPPluginCall) {
+        guard miniAppsEnabled else {
+            logger.error("setMiniApp called but miniAppsEnabled is false")
+            call.reject("Mini-apps support is disabled. Set miniAppsEnabled: true in your Capacitor config.", "MINIAPPS_DISABLED")
+            return
+        }
+
+        guard let name = call.getString("name") else {
+            logger.error("setMiniApp called without name")
+            call.reject("setMiniApp called without name", "INVALID_PARAMS")
+            return
+        }
+        guard miniAppsManager.isValidMiniAppName(name) else {
+            logger.error("setMiniApp called with invalid name: \(name)")
+            call.reject(
+                "Invalid mini-app name '\(name)'. Names must contain only alphanumeric characters, hyphens, and underscores.",
+                "INVALID_MINIAPP_NAME"
+            )
+            return
+        }
+
+        // Get bundle ID - use provided ID or current bundle
+        let bundleId = call.getString("id") ?? implementation.getCurrentBundleId()
+        let isMain = call.getBool("isMain") ?? false
+
+        // Verify the bundle exists
+        let bundleInfo = implementation.getBundleInfo(id: bundleId)
+        if bundleInfo.isUnknown() && !bundleInfo.isBuiltin() {
+            logger.error("setMiniApp: bundle \(bundleId) not found")
+            call.reject("Bundle '\(bundleId)' not found", "BUNDLE_NOT_FOUND")
+            return
+        }
+
+        miniAppsManager.register(name: name, bundleId: bundleId, isMain: isMain)
+        call.resolve()
+    }
+
+    @objc func writeAppState(_ call: CAPPluginCall) {
+        guard miniAppsEnabled else {
+            logger.error("writeAppState called but miniAppsEnabled is false")
+            call.reject("Mini-apps support is disabled. Set miniAppsEnabled: true in your Capacitor config.", "MINIAPPS_DISABLED")
+            return
+        }
+
+        guard let miniApp = call.getString("miniApp") else {
+            logger.error("writeAppState called without miniApp")
+            call.reject("writeAppState called without miniApp", "INVALID_PARAMS")
+            return
+        }
+        guard miniAppsManager.isValidMiniAppName(miniApp) else {
+            logger.error("writeAppState called with invalid miniApp: \(miniApp)")
+            call.reject(
+                "Invalid mini-app name '\(miniApp)'. Names must contain only alphanumeric characters, hyphens, and underscores.",
+                "INVALID_MINIAPP_NAME"
+            )
+            return
+        }
+
+        // Get state - can be null to clear
+        let stateValue = call.getObject("state")
+        miniAppsManager.writeState(miniApp: miniApp, state: stateValue)
+        call.resolve()
+    }
+
+    @objc func readAppState(_ call: CAPPluginCall) {
+        guard miniAppsEnabled else {
+            logger.error("readAppState called but miniAppsEnabled is false")
+            call.reject("Mini-apps support is disabled. Set miniAppsEnabled: true in your Capacitor config.", "MINIAPPS_DISABLED")
+            return
+        }
+
+        guard let miniApp = call.getString("miniApp") else {
+            logger.error("readAppState called without miniApp")
+            call.reject("readAppState called without miniApp", "INVALID_PARAMS")
+            return
+        }
+        guard miniAppsManager.isValidMiniAppName(miniApp) else {
+            logger.error("readAppState called with invalid miniApp: \(miniApp)")
+            call.reject(
+                "Invalid mini-app name '\(miniApp)'. Names must contain only alphanumeric characters, hyphens, and underscores.",
+                "INVALID_MINIAPP_NAME"
+            )
+            return
+        }
+
+        let state = miniAppsManager.readState(miniApp: miniApp)
+        if let state = state {
+            call.resolve(["state": state])
+        } else {
+            call.resolve(["state": NSNull()])
+        }
+    }
+
+    @objc func clearAppState(_ call: CAPPluginCall) {
+        guard miniAppsEnabled else {
+            logger.error("clearAppState called but miniAppsEnabled is false")
+            call.reject("Mini-apps support is disabled. Set miniAppsEnabled: true in your Capacitor config.", "MINIAPPS_DISABLED")
+            return
+        }
+
+        guard let miniApp = call.getString("miniApp") else {
+            logger.error("clearAppState called without miniApp")
+            call.reject("clearAppState called without miniApp", "INVALID_PARAMS")
+            return
+        }
+        guard miniAppsManager.isValidMiniAppName(miniApp) else {
+            logger.error("clearAppState called with invalid miniApp: \(miniApp)")
+            call.reject(
+                "Invalid mini-app name '\(miniApp)'. Names must contain only alphanumeric characters, hyphens, and underscores.",
+                "INVALID_MINIAPP_NAME"
+            )
+            return
+        }
+
+        miniAppsManager.clearState(miniApp: miniApp)
+        call.resolve()
+    }
+
     @objc func setCustomId(_ call: CAPPluginCall) {
         guard let customId = call.getString("customId") else {
             logger.error("setCustomId called without customId")
@@ -961,10 +1426,19 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func current(_ call: CAPPluginCall) {
         let bundle: BundleInfo = self.implementation.getCurrentBundle()
-        call.resolve([
+        var result: [String: Any] = [
             "bundle": bundle.toJSON(),
             "native": self.currentVersionNative.description
-        ])
+        ]
+
+        // Add mini-app info if enabled and current bundle is a registered mini-app
+        if miniAppsEnabled {
+            if let miniAppEntry = miniAppsManager.getMiniAppForBundleId(bundle.getId()) {
+                result["miniApp"] = miniAppEntry.toDict()
+            }
+        }
+
+        call.resolve(result)
     }
 
     @objc func notifyAppReady(_ call: CAPPluginCall) {
@@ -1104,212 +1578,20 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             // Auto hide splashscreen if enabled
             // We show it on background when conditions are met, so we should hide it on foreground regardless of update outcome
             if self.autoSplashscreen {
-                self.hideSplashscreen()
+                self.splashscreenManager?.hide()
             }
         }
     }
 
-    private func hideSplashscreen() {
-        if Thread.isMainThread {
-            self.performHideSplashscreen()
-        } else {
-            DispatchQueue.main.async {
-                self.performHideSplashscreen()
-            }
-        }
+    // MARK: - SplashscreenManagerDelegate
+
+    public func getSplashscreenBridge() -> CAPBridgeProtocol? {
+        return self.bridge
     }
 
-    private func performHideSplashscreen() {
-        self.cancelSplashscreenTimeout()
-        self.removeSplashscreenLoader()
-
-        guard let bridge = self.bridge else {
-            self.logger.warn("Bridge not available for hiding splashscreen with autoSplashscreen")
-            return
-        }
-
-        // Create a plugin call for the hide method
-        let call = CAPPluginCall(callbackId: "autoHideSplashscreen", options: [:], success: { (_, _) in
-            self.logger.info("Splashscreen hidden automatically")
-        }, error: { (_) in
-            self.logger.error("Failed to auto-hide splashscreen")
-        })
-
-        // Try to call the SplashScreen hide method directly through the bridge
-        if let splashScreenPlugin = bridge.plugin(withName: "SplashScreen") {
-            // Use runtime method invocation to call hide method
-            let selector = NSSelectorFromString("hide:")
-            if splashScreenPlugin.responds(to: selector) {
-                _ = splashScreenPlugin.perform(selector, with: call)
-                self.logger.info("Called SplashScreen hide method")
-            } else {
-                self.logger.warn("autoSplashscreen: SplashScreen plugin does not respond to hide: method. Make sure @capacitor/splash-screen plugin is properly installed.")
-            }
-        } else {
-            self.logger.warn("autoSplashscreen: SplashScreen plugin not found. Install @capacitor/splash-screen plugin.")
-        }
-    }
-
-    private func showSplashscreen() {
-        if Thread.isMainThread {
-            self.performShowSplashscreen()
-        } else {
-            DispatchQueue.main.async {
-                self.performShowSplashscreen()
-            }
-        }
-    }
-
-    private func performShowSplashscreen() {
-        self.cancelSplashscreenTimeout()
-        self.autoSplashscreenTimedOut = false
-
-        guard let bridge = self.bridge else {
-            self.logger.warn("Bridge not available for showing splashscreen with autoSplashscreen")
-            return
-        }
-
-        // Create a plugin call for the show method
-        let call = CAPPluginCall(callbackId: "autoShowSplashscreen", options: [:], success: { (_, _) in
-            self.logger.info("Splashscreen shown automatically")
-        }, error: { (_) in
-            self.logger.error("Failed to auto-show splashscreen")
-        })
-
-        // Try to call the SplashScreen show method directly through the bridge
-        if let splashScreenPlugin = bridge.plugin(withName: "SplashScreen") {
-            // Use runtime method invocation to call show method
-            let selector = NSSelectorFromString("show:")
-            if splashScreenPlugin.responds(to: selector) {
-                _ = splashScreenPlugin.perform(selector, with: call)
-                self.logger.info("Called SplashScreen show method")
-            } else {
-                self.logger.warn("autoSplashscreen: SplashScreen plugin does not respond to show: method. Make sure @capacitor/splash-screen plugin is properly installed.")
-            }
-        } else {
-            self.logger.warn("autoSplashscreen: SplashScreen plugin not found. Install @capacitor/splash-screen plugin.")
-        }
-
-        self.addSplashscreenLoaderIfNeeded()
-        self.scheduleSplashscreenTimeout()
-    }
-
-    private func addSplashscreenLoaderIfNeeded() {
-        guard self.autoSplashscreenLoader else {
-            return
-        }
-
-        let addLoader = {
-            guard self.splashscreenLoaderContainer == nil else {
-                return
-            }
-            guard let rootView = self.bridge?.viewController?.view else {
-                self.logger.warn("autoSplashscreen: Unable to access root view for loader overlay")
-                return
-            }
-
-            let container = UIView()
-            container.translatesAutoresizingMaskIntoConstraints = false
-            container.backgroundColor = UIColor.clear
-            container.isUserInteractionEnabled = false
-
-            let indicatorStyle: UIActivityIndicatorView.Style
-            if #available(iOS 13.0, *) {
-                indicatorStyle = .large
-            } else {
-                indicatorStyle = .whiteLarge
-            }
-
-            let indicator = UIActivityIndicatorView(style: indicatorStyle)
-            indicator.translatesAutoresizingMaskIntoConstraints = false
-            indicator.hidesWhenStopped = false
-            if #available(iOS 13.0, *) {
-                indicator.color = UIColor.label
-            }
-            indicator.startAnimating()
-
-            container.addSubview(indicator)
-            rootView.addSubview(container)
-
-            NSLayoutConstraint.activate([
-                container.leadingAnchor.constraint(equalTo: rootView.leadingAnchor),
-                container.trailingAnchor.constraint(equalTo: rootView.trailingAnchor),
-                container.topAnchor.constraint(equalTo: rootView.topAnchor),
-                container.bottomAnchor.constraint(equalTo: rootView.bottomAnchor),
-                indicator.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-                indicator.centerYAnchor.constraint(equalTo: container.centerYAnchor)
-            ])
-
-            self.splashscreenLoaderContainer = container
-            self.splashscreenLoaderView = indicator
-        }
-
-        if Thread.isMainThread {
-            addLoader()
-        } else {
-            DispatchQueue.main.async {
-                addLoader()
-            }
-        }
-    }
-
-    private func removeSplashscreenLoader() {
-        let removeLoader = {
-            self.splashscreenLoaderView?.stopAnimating()
-            self.splashscreenLoaderContainer?.removeFromSuperview()
-            self.splashscreenLoaderView = nil
-            self.splashscreenLoaderContainer = nil
-        }
-
-        if Thread.isMainThread {
-            removeLoader()
-        } else {
-            DispatchQueue.main.async {
-                removeLoader()
-            }
-        }
-    }
-
-    private func scheduleSplashscreenTimeout() {
-        guard self.autoSplashscreenTimeout > 0 else {
-            return
-        }
-
-        let scheduleTimeout = {
-            self.autoSplashscreenTimeoutWorkItem?.cancel()
-
-            let workItem = DispatchWorkItem { [weak self] in
-                guard let self = self else { return }
-                self.autoSplashscreenTimedOut = true
-                self.logger.info("autoSplashscreen timeout reached, hiding splashscreen")
-                self.hideSplashscreen()
-            }
-            self.autoSplashscreenTimeoutWorkItem = workItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(self.autoSplashscreenTimeout), execute: workItem)
-        }
-
-        if Thread.isMainThread {
-            scheduleTimeout()
-        } else {
-            DispatchQueue.main.async {
-                scheduleTimeout()
-            }
-        }
-    }
-
-    private func cancelSplashscreenTimeout() {
-        let cancelTimeout = {
-            self.autoSplashscreenTimeoutWorkItem?.cancel()
-            self.autoSplashscreenTimeoutWorkItem = nil
-        }
-
-        if Thread.isMainThread {
-            cancelTimeout()
-        } else {
-            DispatchQueue.main.async {
-                cancelTimeout()
-            }
-        }
+    public func onSplashscreenTimeout() {
+        // Disable direct update when splashscreen times out
+        self.directUpdate = false
     }
 
     private func checkIfRecentlyInstalledOrUpdated() -> Bool {
@@ -1329,7 +1611,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func shouldUseDirectUpdate() -> Bool {
-        if self.autoSplashscreenTimedOut {
+        if self.splashscreenManager?.hasTimedOut == true {
             return false
         }
         switch directUpdateMode {
@@ -1441,7 +1723,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 self.endBackGroundTask()
             }
             self.logger.info("Check for update via \(self.updateUrl)")
-            let res = self.implementation.getLatest(url: url, channel: nil)
+            let autoUpdateChannel = self.getCurrentMiniAppName()
+            let res = self.implementation.getLatest(url: url, channel: autoUpdateChannel)
             let current = self.implementation.getCurrentBundle()
 
             // Handle network errors and other failures first
@@ -1460,7 +1743,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             if res.version == "builtin" {
                 self.logger.info("Latest version is builtin")
-                let directUpdateAllowed = plannedDirectUpdate && !self.autoSplashscreenTimedOut
+                let directUpdateAllowed = plannedDirectUpdate && !(self.splashscreenManager?.hasTimedOut == true)
                 if directUpdateAllowed {
                     self.logger.info("Direct update to builtin version")
                     if self.directUpdateMode == "onLaunch" {
@@ -1530,7 +1813,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         self.endBackGroundTaskWithNotif(msg: "Error checksum", latestVersionName: latestVersionName, current: current)
                         return
                     }
-                    let directUpdateAllowed = plannedDirectUpdate && !self.autoSplashscreenTimedOut
+                    let directUpdateAllowed = plannedDirectUpdate && !(self.splashscreenManager?.hasTimedOut == true)
                     if directUpdateAllowed {
                         let delayUpdatePreferences = UserDefaults.standard.string(forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES) ?? "[]"
                         let delayConditionList: [DelayCondition] = self.fromJsonArr(json: delayUpdatePreferences).map { obj -> DelayCondition in
@@ -1624,18 +1907,20 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if backgroundWork != nil && taskRunning {
             backgroundWork!.cancel()
             logger.info("Background Timer Task canceled, Activity resumed before timer completes")
-        }
-        if self._isAutoUpdateEnabled() {
-            // Check if download is already in progress (with timeout protection)
-            if !isDownloadStuckOrTimedOut() {
-                self.backgroundDownload()
-            } else {
-                logger.info("Download already in progress, skipping duplicate download request")
-            }
-        } else {
-            let instanceDescriptor = (self.bridge?.viewController as? CAPBridgeViewController)?.instanceDescriptor()
-            if instanceDescriptor?.serverURL != nil {
-                self.implementation.sendStats(action: "blocked_by_server_url", versionName: current.getVersionName())
+	        }
+	        if self._isAutoUpdateEnabled() {
+	            // When mini-apps are enabled and a non-main mini-app is active, also check the main mini-app channel in parallel.
+	            self.checkMainMiniAppUpdateInBackground()
+	            // Check if download is already in progress (with timeout protection)
+	            if !isDownloadStuckOrTimedOut() {
+	                self.backgroundDownload()
+	            } else {
+	                logger.info("Download already in progress, skipping duplicate download request")
+	            }
+	        } else {
+	            let instanceDescriptor = (self.bridge?.viewController as? CAPBridgeViewController)?.instanceDescriptor()
+	            if instanceDescriptor?.serverURL != nil {
+	                self.implementation.sendStats(action: "blocked_by_server_url", versionName: current.getVersionName())
             }
             logger.info("Auto update is disabled")
             self.sendReadyToJs(current: current, msg: "disabled")
@@ -1663,7 +1948,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
             DispatchQueue.global(qos: .background).async {
-                let res = self.implementation.getLatest(url: url, channel: nil)
+                let autoUpdateChannel = self.getCurrentMiniAppName()
+                let res = self.implementation.getLatest(url: url, channel: autoUpdateChannel)
                 let current = self.implementation.getCurrentBundle()
 
                 if res.version != current.getVersionName() {
@@ -1681,9 +1967,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func appMovedToBackground() {
-        // Reset timeout flag at start of each background cycle
-        self.autoSplashscreenTimedOut = false
-
         let current: BundleInfo = self.implementation.getCurrentBundle()
         self.implementation.sendStats(action: "app_moved_to_background", versionName: current.getVersionName())
         logger.info("Check for pending update")
@@ -1707,7 +1990,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
 
             if canShowSplashscreen {
-                self.showSplashscreen()
+                self.splashscreenManager?.show()
             }
         }
 
@@ -1800,204 +2083,43 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     // MARK: - App Store Update Methods
 
-    /// AppUpdateAvailability enum values matching TypeScript definitions
-    private enum AppUpdateAvailability: Int {
-        case unknown = 0
-        case updateNotAvailable = 1
-        case updateAvailable = 2
-        case updateInProgress = 3
-    }
-
     @objc func getAppUpdateInfo(_ call: CAPPluginCall) {
         let country = call.getString("country", "US")
-        let bundleId = implementation.appId
 
-        logger.info("Getting App Store update info for \(bundleId) in country \(country)")
-
-        DispatchQueue.global(qos: .background).async {
-            let urlString = "https://itunes.apple.com/lookup?bundleId=\(bundleId)&country=\(country)"
-            guard let url = URL(string: urlString) else {
-                call.reject("Invalid URL for App Store lookup")
-                return
+        appStoreUpdateHelper.getAppUpdateInfo(country: country) { result in
+            switch result {
+            case .success(let info):
+                call.resolve(info)
+            case .failure(let error):
+                call.reject(error.localizedDescription)
             }
-
-            let task = URLSession.shared.dataTask(with: url) { data, _, error in
-                if let error = error {
-                    self.logger.error("App Store lookup failed: \(error.localizedDescription)")
-                    call.reject("App Store lookup failed: \(error.localizedDescription)")
-                    return
-                }
-
-                guard let data = data else {
-                    call.reject("No data received from App Store")
-                    return
-                }
-
-                do {
-                    guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                          let resultCount = json["resultCount"] as? Int else {
-                        call.reject("Invalid response from App Store")
-                        return
-                    }
-
-                    let currentVersionName = Bundle.main.versionName ?? "0.0.0"
-                    let currentVersionCode = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
-
-                    var result: [String: Any] = [
-                        "currentVersionName": currentVersionName,
-                        "currentVersionCode": currentVersionCode,
-                        "updateAvailability": AppUpdateAvailability.unknown.rawValue
-                    ]
-
-                    if resultCount > 0,
-                       let results = json["results"] as? [[String: Any]],
-                       let appInfo = results.first {
-
-                        let availableVersion = appInfo["version"] as? String
-                        let releaseDate = appInfo["currentVersionReleaseDate"] as? String
-                        let minimumOsVersion = appInfo["minimumOsVersion"] as? String
-
-                        result["availableVersionName"] = availableVersion
-                        result["availableVersionCode"] = availableVersion // iOS doesn't have separate version code
-                        result["availableVersionReleaseDate"] = releaseDate
-                        result["minimumOsVersion"] = minimumOsVersion
-
-                        // Determine update availability by comparing versions
-                        if let availableVersion = availableVersion {
-                            do {
-                                let currentVer = try Version(currentVersionName)
-                                let availableVer = try Version(availableVersion)
-                                if availableVer > currentVer {
-                                    result["updateAvailability"] = AppUpdateAvailability.updateAvailable.rawValue
-                                } else {
-                                    result["updateAvailability"] = AppUpdateAvailability.updateNotAvailable.rawValue
-                                }
-                            } catch {
-                                // If version parsing fails, do string comparison
-                                if availableVersion != currentVersionName {
-                                    result["updateAvailability"] = AppUpdateAvailability.updateAvailable.rawValue
-                                } else {
-                                    result["updateAvailability"] = AppUpdateAvailability.updateNotAvailable.rawValue
-                                }
-                            }
-                        } else {
-                            result["updateAvailability"] = AppUpdateAvailability.updateNotAvailable.rawValue
-                        }
-
-                        // iOS doesn't support in-app updates like Android
-                        result["immediateUpdateAllowed"] = false
-                        result["flexibleUpdateAllowed"] = false
-                    } else {
-                        // App not found in App Store (maybe not published yet)
-                        result["updateAvailability"] = AppUpdateAvailability.updateNotAvailable.rawValue
-                        self.logger.info("App not found in App Store for bundleId: \(bundleId)")
-                    }
-
-                    call.resolve(result)
-                } catch {
-                    self.logger.error("Failed to parse App Store response: \(error.localizedDescription)")
-                    call.reject("Failed to parse App Store response: \(error.localizedDescription)")
-                }
-            }
-            task.resume()
         }
     }
 
     @objc func openAppStore(_ call: CAPPluginCall) {
         let appId = call.getString("appId")
 
-        if let appId = appId {
-            // Open App Store with provided app ID
-            let urlString = "https://apps.apple.com/app/id\(appId)"
-            guard let url = URL(string: urlString) else {
-                call.reject("Invalid App Store URL")
-                return
-            }
-            DispatchQueue.main.async {
-                UIApplication.shared.open(url) { success in
-                    if success {
-                        call.resolve()
-                    } else {
-                        call.reject("Failed to open App Store")
-                    }
-                }
-            }
-        } else {
-            // Look up app ID using bundle identifier
-            let bundleId = implementation.appId
-            let lookupUrl = "https://itunes.apple.com/lookup?bundleId=\(bundleId)"
-
-            DispatchQueue.global(qos: .background).async {
-                guard let url = URL(string: lookupUrl) else {
-                    call.reject("Invalid lookup URL")
-                    return
-                }
-
-                let task = URLSession.shared.dataTask(with: url) { data, _, error in
-                    if let error = error {
-                        call.reject("Failed to lookup app: \(error.localizedDescription)")
-                        return
-                    }
-
-                    guard let data = data,
-                          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                          let results = json["results"] as? [[String: Any]],
-                          let appInfo = results.first,
-                          let trackId = appInfo["trackId"] as? Int else {
-                        // If lookup fails, try opening the generic App Store app page using bundle ID
-                        let fallbackUrlString = "https://apps.apple.com/app/\(bundleId)"
-                        guard let fallbackUrl = URL(string: fallbackUrlString) else {
-                            call.reject("Failed to find app in App Store and fallback URL is invalid")
-                            return
-                        }
-                        DispatchQueue.main.async {
-                            UIApplication.shared.open(fallbackUrl) { success in
-                                if success {
-                                    call.resolve()
-                                } else {
-                                    call.reject("Failed to open App Store")
-                                }
-                            }
-                        }
-                        return
-                    }
-
-                    let appStoreUrl = "https://apps.apple.com/app/id\(trackId)"
-                    guard let url = URL(string: appStoreUrl) else {
-                        call.reject("Invalid App Store URL")
-                        return
-                    }
-
-                    DispatchQueue.main.async {
-                        UIApplication.shared.open(url) { success in
-                            if success {
-                                call.resolve()
-                            } else {
-                                call.reject("Failed to open App Store")
-                            }
-                        }
-                    }
-                }
-                task.resume()
+        appStoreUpdateHelper.openAppStore(specificAppId: appId) { result in
+            switch result {
+            case .success:
+                call.resolve()
+            case .failure(let error):
+                call.reject(error.localizedDescription)
             }
         }
     }
 
     @objc func performImmediateUpdate(_ call: CAPPluginCall) {
-        // iOS doesn't support in-app updates like Android's Play Store
-        // Redirect users to the App Store instead
         logger.warn("performImmediateUpdate is not supported on iOS. Use openAppStore() instead.")
         call.reject("In-app updates are not supported on iOS. Use openAppStore() to direct users to the App Store.", "NOT_SUPPORTED")
     }
 
     @objc func startFlexibleUpdate(_ call: CAPPluginCall) {
-        // iOS doesn't support flexible in-app updates
         logger.warn("startFlexibleUpdate is not supported on iOS. Use openAppStore() instead.")
         call.reject("Flexible updates are not supported on iOS. Use openAppStore() to direct users to the App Store.", "NOT_SUPPORTED")
     }
 
     @objc func completeFlexibleUpdate(_ call: CAPPluginCall) {
-        // iOS doesn't support flexible in-app updates
         logger.warn("completeFlexibleUpdate is not supported on iOS.")
         call.reject("Flexible updates are not supported on iOS.", "NOT_SUPPORTED")
     }

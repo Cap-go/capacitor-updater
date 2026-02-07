@@ -321,6 +321,7 @@ CapacitorUpdater can be configured with these options:
 | **`osLogging`**                 | <code>boolean</code>                                          | Enable OS-level logging. When enabled, logs are written to the system log which can be inspected in production builds. - **iOS**: Uses os_log instead of Swift.print, logs accessible via Console.app or Instruments - **Android**: Logs to Logcat (android.util.Log) When set to false, system logging is disabled on both platforms (only JavaScript console logging will occur if enabled). This is useful for debugging production apps (App Store/TestFlight builds on iOS, or production APKs on Android).                                                                                                                                                                                                                                                                                                                                                                                                                                                             | <code>true</code>                                                             | 8.42.0  |
 | **`shakeMenu`**                 | <code>boolean</code>                                          | Enable shake gesture to show update menu for debugging/testing purposes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | <code>false</code>                                                            | 7.5.0   |
 | **`allowShakeChannelSelector`** | <code>boolean</code>                                          | Enable the shake gesture to show a channel selector menu for switching between update channels. When enabled AND `shakeMenu` is true, the shake gesture shows a channel selector instead of the default debug menu (Go Home/Reload/Close). After selecting a channel, the app automatically checks for updates and downloads if available. Only works if channels have `allow_self_set` enabled on the backend. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | <code>false</code>                                                            | 8.43.0  |
+| **`miniAppsEnabled`**           | <code>boolean</code>                                          | Enable mini-apps support. When enabled, you can register multiple bundles as mini-apps and switch between them. The main app is treated as a mini-app with `isMain: true`. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | <code>false</code>                                                            | 8.42.0  |
 
 ### Examples
 
@@ -365,7 +366,8 @@ In `capacitor.config.json`:
       "disableJSLogging": undefined,
       "osLogging": undefined,
       "shakeMenu": undefined,
-      "allowShakeChannelSelector": undefined
+      "allowShakeChannelSelector": undefined,
+      "miniAppsEnabled": false
     }
   }
 }
@@ -417,6 +419,7 @@ const config: CapacitorConfig = {
       osLogging: undefined,
       shakeMenu: undefined,
       allowShakeChannelSelector: undefined,
+      miniAppsEnabled: false,
     },
   },
 };
@@ -451,6 +454,10 @@ export default config;
 * [`unsetChannel(...)`](#unsetchannel)
 * [`getChannel()`](#getchannel)
 * [`listChannels()`](#listchannels)
+* [`setMiniApp(...)`](#setminiapp)
+* [`writeAppState(...)`](#writeappstate)
+* [`readAppState(...)`](#readappstate)
+* [`clearAppState(...)`](#clearappstate)
 * [`setCustomId(...)`](#setcustomid)
 * [`getBuiltinVersion()`](#getbuiltinversion)
 * [`getDeviceId()`](#getdeviceid)
@@ -1090,6 +1097,115 @@ Use this to:
 **Returns:** <code>Promise&lt;<a href="#listchannelsresult">ListChannelsResult</a>&gt;</code>
 
 **Since:** 7.5.0
+
+--------------------
+
+
+#### setMiniApp(...)
+
+```typescript
+setMiniApp(options: SetMiniAppOptions) => Promise<void>
+```
+
+Register or update a mini-app in the mini-apps registry.
+
+Mini-apps are bundles that can be switched between at runtime. Each mini-app
+corresponds to a Capgo channel (mini-app name = channel name).
+
+When mini-apps are enabled and the currently active bundle is a registered mini-app,
+auto-update checks run against that mini-app's channel.
+
+The main app is a mini-app with `isMain: true` (only one can be main at a time).
+
+Requires {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} to be `true`.
+
+**Note:** This method only registers the bundle as a mini-app. To switch to it,
+use {@link set} with the `miniApp` option.
+
+| Param         | Type                                                            | Description                                                                                                         |
+| ------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **`options`** | <code><a href="#setminiappoptions">SetMiniAppOptions</a></code> | The {@link <a href="#setminiappoptions">SetMiniAppOptions</a>} containing the mini-app name and optional bundle ID. |
+
+**Since:** 8.42.0
+
+--------------------
+
+
+#### writeAppState(...)
+
+```typescript
+writeAppState(options: WriteAppStateOptions) => Promise<void>
+```
+
+Write state data for a mini-app.
+
+This enables communication between mini-apps by allowing any app to write
+state data that can be read by other apps. The state is persisted to storage
+and survives app restarts.
+
+**Common use cases:**
+- Pass navigation parameters when switching to a mini-app
+- Share user session/authentication data across mini-apps
+- Save mini-app state before switching away (to restore later)
+- Enable mini-app to mini-app communication
+
+Requires {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} to be `true`.
+
+| Param         | Type                                                                  | Description                                                                                                     |
+| ------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| **`options`** | <code><a href="#writeappstateoptions">WriteAppStateOptions</a></code> | The {@link <a href="#writeappstateoptions">WriteAppStateOptions</a>} containing mini-app name and state object. |
+
+**Since:** 8.42.0
+
+--------------------
+
+
+#### readAppState(...)
+
+```typescript
+readAppState(options: ReadAppStateOptions) => Promise<ReadAppStateResult>
+```
+
+Read state data for a mini-app.
+
+Retrieves the state previously saved with {@link writeAppState}. Use this to:
+- Get navigation parameters when a mini-app is launched
+- Restore mini-app state after being switched back to
+- Read shared data from other mini-apps
+
+Requires {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} to be `true`.
+
+| Param         | Type                                                                | Description                                                                                      |
+| ------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| **`options`** | <code><a href="#readappstateoptions">ReadAppStateOptions</a></code> | The {@link <a href="#readappstateoptions">ReadAppStateOptions</a>} containing the mini-app name. |
+
+**Returns:** <code>Promise&lt;<a href="#readappstateresult">ReadAppStateResult</a>&gt;</code>
+
+**Since:** 8.42.0
+
+--------------------
+
+
+#### clearAppState(...)
+
+```typescript
+clearAppState(options: ClearAppStateOptions) => Promise<void>
+```
+
+Clear state data for a mini-app.
+
+Removes all saved state for a mini-app. Use this when:
+- User logs out (clear all mini-app states)
+- Mini-app is uninstalled/deleted
+- State needs to be reset for any reason
+
+Requires {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} to be `true`.
+
+| Param         | Type                                                                  | Description                                                                                        |
+| ------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| **`options`** | <code><a href="#clearappstateoptions">ClearAppStateOptions</a></code> | The {@link <a href="#clearappstateoptions">ClearAppStateOptions</a>} containing the mini-app name. |
+
+**Since:** 8.42.0
 
 --------------------
 
@@ -1991,18 +2107,42 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 | **`download_url`** | <code>string \| null</code> |
 
 
-##### BundleId
+##### BundleIdById
 
-| Prop     | Type                |
-| -------- | ------------------- |
-| **`id`** | <code>string</code> |
+Identifies a bundle by its ID.
+
+| Prop     | Type                | Description                  |
+| -------- | ------------------- | ---------------------------- |
+| **`id`** | <code>string</code> | The bundle ID to operate on. |
+
+
+##### BundleIdByMiniApp
+
+Identifies a bundle by its mini-app name.
+Requires {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} to be `true`.
+
+| Prop          | Type                | Description                                                                          |
+| ------------- | ------------------- | ------------------------------------------------------------------------------------ |
+| **`miniApp`** | <code>string</code> | The mini-app name to operate on. Looks up the bundle ID from the mini-apps registry. |
 
 
 ##### BundleListResult
 
-| Prop          | Type                      |
-| ------------- | ------------------------- |
-| **`bundles`** | <code>BundleInfo[]</code> |
+| Prop           | Type                       | Description                                                                                                   | Since  |
+| -------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------- | ------ |
+| **`bundles`**  | <code>BundleInfo[]</code>  |                                                                                                               |        |
+| **`miniApps`** | <code>MiniAppInfo[]</code> | All registered mini-apps. Only present when {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} is `true`. | 8.42.0 |
+
+
+##### MiniAppInfo
+
+Information about a registered mini-app.
+
+| Prop         | Type                                              | Description                                                |
+| ------------ | ------------------------------------------------- | ---------------------------------------------------------- |
+| **`name`**   | <code>string</code>                               | The name of the mini-app (matches the Capgo channel name). |
+| **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | The bundle info for this mini-app.                         |
+| **`isMain`** | <code>boolean</code>                              | Whether this is the main app.                              |
 
 
 ##### ListOptions
@@ -2021,10 +2161,11 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 
 ##### CurrentBundleResult
 
-| Prop         | Type                                              |
-| ------------ | ------------------------------------------------- |
-| **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> |
-| **`native`** | <code>string</code>                               |
+| Prop          | Type                                              | Description                                                                                                                                            | Since  |
+| ------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
+| **`bundle`**  | <code><a href="#bundleinfo">BundleInfo</a></code> |                                                                                                                                                        |        |
+| **`native`**  | <code>string</code>                               |                                                                                                                                                        |        |
+| **`miniApp`** | <code>{ name: string; isMain: boolean; }</code>   | If the current bundle is a registered mini-app, contains its info. Only present when {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} is `true`. | 8.42.0 |
 
 
 ##### MultiDelayConditions
@@ -2044,27 +2185,29 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 
 ##### LatestVersion
 
-| Prop             | Type                         | Description                                                                                                                                                                                                   | Since  |
-| ---------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| **`version`**    | <code>string</code>          | Result of getLatest method                                                                                                                                                                                    | 4.0.0  |
-| **`checksum`**   | <code>string</code>          |                                                                                                                                                                                                               | 6      |
-| **`breaking`**   | <code>boolean</code>         | Indicates whether the update was flagged as breaking by the backend.                                                                                                                                          | 7.22.0 |
-| **`major`**      | <code>boolean</code>         |                                                                                                                                                                                                               |        |
-| **`message`**    | <code>string</code>          | Optional message from the server. When no new version is available, this will be "No new version available".                                                                                                  |        |
-| **`sessionKey`** | <code>string</code>          |                                                                                                                                                                                                               |        |
-| **`error`**      | <code>string</code>          | Error code from the server, if any. Common values: - `"no_new_version_available"`: Device is already on the latest version (not a failure) - Other error codes indicate actual failures in the update process |        |
-| **`old`**        | <code>string</code>          | The previous/current version name (provided for reference).                                                                                                                                                   |        |
-| **`url`**        | <code>string</code>          | Download URL for the bundle (when a new version is available).                                                                                                                                                |        |
-| **`manifest`**   | <code>ManifestEntry[]</code> | File list for delta updates (when using multi-file downloads).                                                                                                                                                | 6.1    |
-| **`link`**       | <code>string</code>          | Optional link associated with this bundle version (e.g., release notes URL, changelog, GitHub release).                                                                                                       | 7.35.0 |
-| **`comment`**    | <code>string</code>          | Optional comment or description for this bundle version.                                                                                                                                                      | 7.35.0 |
+| Prop                 | Type                         | Description                                                                                                                                                                                                   | Since  |
+| -------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| **`version`**        | <code>string</code>          | Result of getLatest method                                                                                                                                                                                    | 4.0.0  |
+| **`checksum`**       | <code>string</code>          |                                                                                                                                                                                                               | 6      |
+| **`breaking`**       | <code>boolean</code>         | Indicates whether the update was flagged as breaking by the backend.                                                                                                                                          | 7.22.0 |
+| **`major`**          | <code>boolean</code>         |                                                                                                                                                                                                               |        |
+| **`message`**        | <code>string</code>          | Optional message from the server. When no new version is available, this will be "No new version available".                                                                                                  |        |
+| **`sessionKey`**     | <code>string</code>          |                                                                                                                                                                                                               |        |
+| **`error`**          | <code>string</code>          | Error code from the server, if any. Common values: - `"no_new_version_available"`: Device is already on the latest version (not a failure) - Other error codes indicate actual failures in the update process |        |
+| **`old`**            | <code>string</code>          | The previous/current version name (provided for reference).                                                                                                                                                   |        |
+| **`url`**            | <code>string</code>          | Download URL for the bundle (when a new version is available).                                                                                                                                                |        |
+| **`manifest`**       | <code>ManifestEntry[]</code> | File list for delta updates (when using multi-file downloads).                                                                                                                                                | 6.1    |
+| **`link`**           | <code>string</code>          | Optional link associated with this bundle version (e.g., release notes URL, changelog, GitHub release).                                                                                                       | 7.35.0 |
+| **`comment`**        | <code>string</code>          | Optional comment or description for this bundle version.                                                                                                                                                      | 7.35.0 |
+| **`miniAppUpdated`** | <code>boolean</code>         | Whether a mini-app was updated as part of this getLatest call. Only present when {@link <a href="#getlatestoptions">GetLatestOptions.updateMiniApp</a>} was provided.                                         | 8.42.0 |
 
 
 ##### GetLatestOptions
 
-| Prop          | Type                | Description                                                                                     | Default                | Since |
-| ------------- | ------------------- | ----------------------------------------------------------------------------------------------- | ---------------------- | ----- |
-| **`channel`** | <code>string</code> | The channel to get the latest version for The channel must allow 'self_assign' for this to work | <code>undefined</code> | 6.8.0 |
+| Prop                | Type                | Description                                                                                                                                                                                                                                                                                                                                                                                                               | Default                | Since  |
+| ------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ------ |
+| **`channel`**       | <code>string</code> | The channel to get the latest version for The channel must allow 'self_assign' for this to work                                                                                                                                                                                                                                                                                                                           | <code>undefined</code> | 6.8.0  |
+| **`updateMiniApp`** | <code>string</code> | Mini-app name to update. When set, performs a full update flow: 1. Checks the channel (channel name = mini-app name) for a new version 2. If new version available: downloads, deletes old bundle, updates registry, auto-switches Requires {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} to be `true`. **Important:** Cannot update the currently active mini-app. The mini-app must not be the current bundle. | <code>undefined</code> | 8.42.0 |
 
 
 ##### ChannelRes
@@ -2117,6 +2260,54 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 | **`name`**           | <code>string</code>  | The channel name                                | 7.5.0 |
 | **`public`**         | <code>boolean</code> | Whether this is a public channel                | 7.5.0 |
 | **`allow_self_set`** | <code>boolean</code> | Whether devices can self-assign to this channel | 7.5.0 |
+
+
+##### SetMiniAppOptions
+
+Options for {@link CapacitorUpdaterPlugin.setMiniApp}.
+
+| Prop         | Type                 | Description                                                                                                                                                         | Default            |
+| ------------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| **`name`**   | <code>string</code>  | The name of the mini-app. This should match the Capgo channel name.                                                                                                 |                    |
+| **`id`**     | <code>string</code>  | The bundle ID to register as this mini-app. If not provided, uses the current bundle.                                                                               |                    |
+| **`isMain`** | <code>boolean</code> | If true, this mini-app becomes THE main app. Only one mini-app can have `isMain: true` at a time. Setting this clears the `isMain` flag from any previous main app. | <code>false</code> |
+
+
+##### WriteAppStateOptions
+
+Options for {@link CapacitorUpdaterPlugin.writeAppState}.
+
+| Prop          | Type                                                                     | Description                                                                          |
+| ------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| **`miniApp`** | <code>string</code>                                                      | The name of the mini-app to write state for.                                         |
+| **`state`**   | <code><a href="#record">Record</a>&lt;string, unknown&gt; \| null</code> | The state object to save. Must be JSON-serializable. Pass `null` to clear the state. |
+
+
+##### ReadAppStateResult
+
+Result of {@link CapacitorUpdaterPlugin.readAppState}.
+
+| Prop        | Type                                                                     | Description                                                     |
+| ----------- | ------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| **`state`** | <code><a href="#record">Record</a>&lt;string, unknown&gt; \| null</code> | The saved state for the mini-app, or `null` if no state exists. |
+
+
+##### ReadAppStateOptions
+
+Options for {@link CapacitorUpdaterPlugin.readAppState}.
+
+| Prop          | Type                | Description                                 |
+| ------------- | ------------------- | ------------------------------------------- |
+| **`miniApp`** | <code>string</code> | The name of the mini-app to read state for. |
+
+
+##### ClearAppStateOptions
+
+Options for {@link CapacitorUpdaterPlugin.clearAppState}.
+
+| Prop          | Type                | Description                                  |
+| ------------- | ------------------- | -------------------------------------------- |
+| **`miniApp`** | <code>string</code> | The name of the mini-app to clear state for. |
 
 
 ##### SetCustomIdOptions
@@ -2348,9 +2539,24 @@ error: The bundle has failed to download.
 <code>'success' | 'error' | 'pending' | 'downloading'</code>
 
 
+##### BundleId
+
+Identifies a bundle either by its ID or by a mini-app name.
+At least one of `id` or `miniApp` must be provided.
+
+<code><a href="#bundleidbyid">BundleIdById</a> | <a href="#bundleidbyminiapp">BundleIdByMiniApp</a></code>
+
+
 ##### DelayUntilNext
 
 <code>'background' | 'kill' | 'nativeVersion' | 'date'</code>
+
+
+##### Record
+
+Construct a type with a set of properties K of type T
+
+<code>{ [P in K]: T; }</code>
 
 
 ##### BreakingAvailableEvent

@@ -454,11 +454,19 @@ import UIKit
     }
 
     public func getLatest(url: URL, channel: String?) -> AppVersion {
+        return getLatest(url: url, channel: channel, versionNameOverride: nil)
+    }
+
+    public func getLatest(url: URL, channel: String?, versionNameOverride: String?) -> AppVersion {
         let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
         let latest: AppVersion = AppVersion()
         var parameters: InfoObject = self.createInfoObject()
         if let channel = channel {
             parameters.defaultChannel = channel
+        }
+        if let versionNameOverride = versionNameOverride, !versionNameOverride.isEmpty {
+            // Override the current bundle version used for update checks (e.g. when checking updates for a non-active mini-app).
+            parameters.version_name = versionNameOverride
         }
         logger.info("Auto-update parameters: \(parameters)")
         let request = alamofireSession.request(url, method: .post, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })

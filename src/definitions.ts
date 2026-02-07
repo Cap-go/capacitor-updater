@@ -363,30 +363,41 @@ declare module '@capacitor/cli' {
        */
       osLogging?: boolean;
 
-      /**
-       * Enable shake gesture to show update menu for debugging/testing purposes
-       *
-       * @default false
-       * @since  7.5.0
-       */
-      shakeMenu?: boolean;
+	      /**
+	       * Enable shake gesture to show update menu for debugging/testing purposes
+	       *
+	       * @default false
+	       * @since  7.5.0
+	       */
+	      shakeMenu?: boolean;
 
-      /**
-       * Enable the shake gesture to show a channel selector menu for switching between update channels.
-       * When enabled AND `shakeMenu` is true, the shake gesture shows a channel selector
-       * instead of the default debug menu (Go Home/Reload/Close).
-       *
-       * After selecting a channel, the app automatically checks for updates and downloads if available.
-       * Only works if channels have `allow_self_set` enabled on the backend.
-       *
-       * Only available for Android and iOS.
-       *
-       * @default false
-       * @since 8.43.0
-       */
-      allowShakeChannelSelector?: boolean;
-    };
-  }
+	      /**
+	       * Enable the shake gesture to show a channel selector menu for switching between update channels.
+	       * When enabled AND `shakeMenu` is true, the shake gesture shows a channel selector
+	       * instead of the default debug menu (Go Home/Reload/Close).
+	       *
+	       * After selecting a channel, the app automatically checks for updates and downloads if available.
+	       * Only works if channels have `allow_self_set` enabled on the backend.
+	       *
+	       * Only available for Android and iOS.
+	       *
+	       * @default false
+	       * @since 8.43.0
+	       */
+	      allowShakeChannelSelector?: boolean;
+
+	      /**
+	       * Enable mini-apps support. When enabled, you can register multiple bundles as mini-apps
+	       * and switch between them. The main app is treated as a mini-app with `isMain: true`.
+	       *
+	       * Only available for Android and iOS.
+	       *
+	       * @default false
+	       * @since 8.42.0
+	       */
+	      miniAppsEnabled?: boolean;
+	    };
+	  }
 }
 
 export interface CapacitorUpdaterPlugin {
@@ -886,6 +897,128 @@ export interface CapacitorUpdaterPlugin {
    * @since 7.5.0
    */
   listChannels(): Promise<ListChannelsResult>;
+
+  /**
+   * Register or update a mini-app in the mini-apps registry.
+   *
+   * Mini-apps are bundles that can be switched between at runtime. Each mini-app
+   * corresponds to a Capgo channel (mini-app name = channel name).
+   *
+   * When mini-apps are enabled and the currently active bundle is a registered mini-app,
+   * auto-update checks run against that mini-app's channel.
+   *
+   * The main app is a mini-app with `isMain: true` (only one can be main at a time).
+   *
+   * Requires {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} to be `true`.
+   *
+   * **Note:** This method only registers the bundle as a mini-app. To switch to it,
+   * use {@link set} with the `miniApp` option.
+   *
+   * @example
+   * // Register current bundle as main app
+   * await CapacitorUpdater.setMiniApp({ name: 'main', isMain: true });
+   *
+   * // Download and register a mini-app
+   * const bundle = await CapacitorUpdater.download({ url, version });
+   * await CapacitorUpdater.setMiniApp({ name: 'games', id: bundle.id });
+   *
+   * // Switch to the mini-app
+   * await CapacitorUpdater.set({ miniApp: 'games' });
+   *
+   * @param options The {@link SetMiniAppOptions} containing the mini-app name and optional bundle ID.
+   * @returns {Promise<void>} Resolves when the mini-app is registered.
+   * @throws {Error} If mini-apps are disabled or the bundle doesn't exist.
+   * @since 8.42.0
+   */
+  setMiniApp(options: SetMiniAppOptions): Promise<void>;
+
+  /**
+   * Write state data for a mini-app.
+   *
+   * This enables communication between mini-apps by allowing any app to write
+   * state data that can be read by other apps. The state is persisted to storage
+   * and survives app restarts.
+   *
+   * **Common use cases:**
+   * - Pass navigation parameters when switching to a mini-app
+   * - Share user session/authentication data across mini-apps
+   * - Save mini-app state before switching away (to restore later)
+   * - Enable mini-app to mini-app communication
+   *
+   * Requires {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} to be `true`.
+   *
+   * @example
+   * // Main app sets state before launching games mini-app
+   * await CapacitorUpdater.writeAppState({
+   *   miniApp: 'games',
+   *   state: { userId: '123', startScreen: 'leaderboard' }
+   * });
+   * await CapacitorUpdater.set({ miniApp: 'games' });
+   *
+   * @example
+   * // Mini-app saves its state before user leaves
+   * await CapacitorUpdater.writeAppState({
+   *   miniApp: 'games',
+   *   state: { currentLevel: 5, score: 1000, scrollPosition: 250 }
+   * });
+   *
+   * @param options The {@link WriteAppStateOptions} containing mini-app name and state object.
+   * @returns {Promise<void>} Resolves when the state is saved.
+   * @throws {Error} If mini-apps are disabled.
+   * @since 8.42.0
+   */
+  writeAppState(options: WriteAppStateOptions): Promise<void>;
+
+  /**
+   * Read state data for a mini-app.
+   *
+   * Retrieves the state previously saved with {@link writeAppState}. Use this to:
+   * - Get navigation parameters when a mini-app is launched
+   * - Restore mini-app state after being switched back to
+   * - Read shared data from other mini-apps
+   *
+   * Requires {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} to be `true`.
+   *
+   * @example
+   * // Mini-app reads its state on startup
+   * const { state } = await CapacitorUpdater.readAppState({ miniApp: 'games' });
+   * if (state?.startScreen) {
+   *   navigateTo(state.startScreen);
+   * }
+   *
+   * @example
+   * // Main app reads mini-app state to show preview
+   * const { state } = await CapacitorUpdater.readAppState({ miniApp: 'games' });
+   * console.log(`Last played level: ${state?.currentLevel}`);
+   *
+   * @param options The {@link ReadAppStateOptions} containing the mini-app name.
+   * @returns {Promise<ReadAppStateResult>} The saved state, or null if no state exists.
+   * @throws {Error} If mini-apps are disabled.
+   * @since 8.42.0
+   */
+  readAppState(options: ReadAppStateOptions): Promise<ReadAppStateResult>;
+
+  /**
+   * Clear state data for a mini-app.
+   *
+   * Removes all saved state for a mini-app. Use this when:
+   * - User logs out (clear all mini-app states)
+   * - Mini-app is uninstalled/deleted
+   * - State needs to be reset for any reason
+   *
+   * Requires {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} to be `true`.
+   *
+   * @example
+   * // Clear state when deleting a mini-app
+   * await CapacitorUpdater.clearAppState({ miniApp: 'games' });
+   * await CapacitorUpdater.delete({ miniApp: 'games' });
+   *
+   * @param options The {@link ClearAppStateOptions} containing the mini-app name.
+   * @returns {Promise<void>} Resolves when the state is cleared.
+   * @throws {Error} If mini-apps are disabled.
+   * @since 8.42.0
+   */
+  clearAppState(options: ClearAppStateOptions): Promise<void>;
 
   /**
    * Set a custom identifier for this device.
@@ -1696,6 +1829,14 @@ export interface LatestVersion {
    * @since 7.35.0
    */
   comment?: string;
+
+  /**
+   * Whether a mini-app was updated as part of this getLatest call.
+   * Only present when {@link GetLatestOptions.updateMiniApp} was provided.
+   *
+   * @since 8.42.0
+   */
+  miniAppUpdated?: boolean;
 }
 
 export interface BundleInfo {
@@ -1739,6 +1880,123 @@ export interface GetLatestOptions {
    * @default undefined
    */
   channel?: string;
+
+  /**
+   * Mini-app name to update. When set, performs a full update flow:
+   * 1. Checks the channel (channel name = mini-app name) for a new version
+   * 2. If new version available: downloads, deletes old bundle, updates registry, auto-switches
+   *
+   * Requires {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} to be `true`.
+   *
+   * **Important:** Cannot update the currently active mini-app. The mini-app must not be the current bundle.
+   *
+   * @since 8.42.0
+   * @default undefined
+   */
+  updateMiniApp?: string;
+}
+
+/**
+ * Options for {@link CapacitorUpdaterPlugin.setMiniApp}.
+ *
+ * @since 8.42.0
+ */
+export interface SetMiniAppOptions {
+  /**
+   * The name of the mini-app. This should match the Capgo channel name.
+   */
+  name: string;
+
+  /**
+   * The bundle ID to register as this mini-app.
+   * If not provided, uses the current bundle.
+   */
+  id?: string;
+
+  /**
+   * If true, this mini-app becomes THE main app.
+   * Only one mini-app can have `isMain: true` at a time.
+   * Setting this clears the `isMain` flag from any previous main app.
+   *
+   * @default false
+   */
+  isMain?: boolean;
+}
+
+/**
+ * Information about a registered mini-app.
+ *
+ * @since 8.42.0
+ */
+export interface MiniAppInfo {
+  /**
+   * The name of the mini-app (matches the Capgo channel name).
+   */
+  name: string;
+
+  /**
+   * The bundle info for this mini-app.
+   */
+  bundle: BundleInfo;
+
+  /**
+   * Whether this is the main app.
+   */
+  isMain: boolean;
+}
+
+/**
+ * Options for {@link CapacitorUpdaterPlugin.writeAppState}.
+ *
+ * @since 8.42.0
+ */
+export interface WriteAppStateOptions {
+  /**
+   * The name of the mini-app to write state for.
+   */
+  miniApp: string;
+
+  /**
+   * The state object to save. Must be JSON-serializable.
+   * Pass `null` to clear the state.
+   */
+  state: Record<string, unknown> | null;
+}
+
+/**
+ * Options for {@link CapacitorUpdaterPlugin.readAppState}.
+ *
+ * @since 8.42.0
+ */
+export interface ReadAppStateOptions {
+  /**
+   * The name of the mini-app to read state for.
+   */
+  miniApp: string;
+}
+
+/**
+ * Result of {@link CapacitorUpdaterPlugin.readAppState}.
+ *
+ * @since 8.42.0
+ */
+export interface ReadAppStateResult {
+  /**
+   * The saved state for the mini-app, or `null` if no state exists.
+   */
+  state: Record<string, unknown> | null;
+}
+
+/**
+ * Options for {@link CapacitorUpdaterPlugin.clearAppState}.
+ *
+ * @since 8.42.0
+ */
+export interface ClearAppStateOptions {
+  /**
+   * The name of the mini-app to clear state for.
+   */
+  miniApp: string;
 }
 
 export interface AppReadyResult {
@@ -1790,12 +2048,44 @@ export interface DownloadOptions {
   manifest?: ManifestEntry[];
 }
 
-export interface BundleId {
+/**
+ * Identifies a bundle either by its ID or by a mini-app name.
+ * At least one of `id` or `miniApp` must be provided.
+ */
+export type BundleId = BundleIdById | BundleIdByMiniApp;
+
+/**
+ * Identifies a bundle by its ID.
+ */
+export interface BundleIdById {
+  /**
+   * The bundle ID to operate on.
+   */
   id: string;
+}
+
+/**
+ * Identifies a bundle by its mini-app name.
+ * Requires {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} to be `true`.
+ *
+ * @since 8.42.0
+ */
+export interface BundleIdByMiniApp {
+  /**
+   * The mini-app name to operate on. Looks up the bundle ID from the mini-apps registry.
+   */
+  miniApp: string;
 }
 
 export interface BundleListResult {
   bundles: BundleInfo[];
+
+  /**
+   * All registered mini-apps. Only present when {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} is `true`.
+   *
+   * @since 8.42.0
+   */
+  miniApps?: MiniAppInfo[];
 }
 
 export interface ResetOptions {
@@ -1814,6 +2104,24 @@ export interface ListOptions {
 export interface CurrentBundleResult {
   bundle: BundleInfo;
   native: string;
+
+  /**
+   * If the current bundle is a registered mini-app, contains its info.
+   * Only present when {@link PluginsConfig.CapacitorUpdater.miniAppsEnabled} is `true`.
+   *
+   * @since 8.42.0
+   */
+  miniApp?: {
+    /**
+     * The name of the current mini-app.
+     */
+    name: string;
+
+    /**
+     * Whether this is the main app.
+     */
+    isMain: boolean;
+  };
 }
 
 export interface MultiDelayConditions {

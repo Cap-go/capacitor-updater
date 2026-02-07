@@ -17,6 +17,7 @@ import type {
   CapacitorUpdaterPlugin,
   ChannelRes,
   ChannelUrl,
+  ClearAppStateOptions,
   CurrentBundleResult,
   DelayCondition,
   DeviceId,
@@ -28,9 +29,12 @@ import type {
   MultiDelayConditions,
   OpenAppStoreOptions,
   PluginVersion,
+  ReadAppStateOptions,
+  ReadAppStateResult,
   ResetOptions,
   SetChannelOptions,
   SetCustomIdOptions,
+  SetMiniAppOptions,
   StatsUrl,
   UnsetChannelOptions,
   UpdateUrl,
@@ -41,6 +45,7 @@ import type {
   SetShakeChannelSelectorOptions,
   ShakeChannelSelectorEnabled,
   UpdateFailedEvent,
+  WriteAppStateOptions,
 } from './definitions';
 import { AppUpdateAvailability } from './definitions';
 
@@ -235,6 +240,30 @@ export class CapacitorUpdaterWeb extends WebPlugin implements CapacitorUpdaterPl
   async setAppId(options: { appId: string }): Promise<void> {
     console.warn('Cannot setAppId in web', options);
     return;
+  }
+
+  // ============================================================================
+  // Mini-Apps Methods (Web stubs)
+  // ============================================================================
+
+  async setMiniApp(options: SetMiniAppOptions): Promise<void> {
+    console.warn('Cannot setMiniApp in web', options);
+    throw this.unimplemented('Mini-apps are not available on web platform');
+  }
+
+  async writeAppState(options: WriteAppStateOptions): Promise<void> {
+    console.warn('Cannot writeAppState in web', options);
+    throw this.unimplemented('Mini-apps are not available on web platform');
+  }
+
+  async readAppState(options: ReadAppStateOptions): Promise<ReadAppStateResult> {
+    console.warn('Cannot readAppState in web', options);
+    throw this.unimplemented('Mini-apps are not available on web platform');
+  }
+
+  async clearAppState(options: ClearAppStateOptions): Promise<void> {
+    console.warn('Cannot clearAppState in web', options);
+    throw this.unimplemented('Mini-apps are not available on web platform');
   }
 
   // ============================================================================
