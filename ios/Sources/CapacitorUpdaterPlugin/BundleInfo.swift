@@ -171,7 +171,6 @@ import Foundation
     }
 
     public func toString() -> String {
-        // swiftlint:disable:next line_length
         return "{ \"id\": \"\(self.getId())\", \"version\": \"\(self.getVersionName())\", \"downloaded\": \"\(self.getDownloaded())\", \"checksum\": \"\(self.getChecksum())\", \"status\": \"\(self.getStatus())\"}"
     }
 }

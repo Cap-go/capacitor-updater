@@ -90,6 +90,7 @@ struct ManualRSAPublicKey {
     }
 
     // Parse PKCS#1 format public key
+    // swiftlint:disable cyclomatic_complexity
     static func fromPKCS1(_ publicKeyData: Data) -> ManualRSAPublicKey? {
         // Parse ASN.1 DER encoded RSA public key
         // Format: RSAPublicKey ::= SEQUENCE { modulus INTEGER, publicExponent INTEGER }
@@ -152,8 +153,8 @@ struct ManualRSAPublicKey {
                 return nil
             }
             index += 1
-            for i in 0..<lenBytes {
-                modulusLength = (modulusLength << 8) | Int(bytes[index + i])
+            for idx in 0..<lenBytes {
+                modulusLength = (modulusLength << 8) | Int(bytes[index + idx])
             }
             index += lenBytes
         } else {
@@ -197,8 +198,8 @@ struct ManualRSAPublicKey {
                 return nil
             }
             index += 1
-            for i in 0..<lenBytes {
-                exponentLength = (exponentLength << 8) | Int(bytes[index + i])
+            for idx in 0..<lenBytes {
+                exponentLength = (exponentLength << 8) | Int(bytes[index + idx])
             }
             index += lenBytes
         } else {
@@ -214,6 +215,7 @@ struct ManualRSAPublicKey {
         let exponentData = Data(bytes[index..<(index + exponentLength)])
         return ManualRSAPublicKey(modulus: modulusData, exponent: exponentData)
     }
+    // swiftlint:enable cyclomatic_complexity
 
     // Decrypt data using raw RSA operation (c^d mod n)
     func decrypt(_ encryptedData: Data) -> Data? {
@@ -257,9 +259,9 @@ struct ManualRSAPublicKey {
         // Check for privateEncrypt padding format (0x00 || 0x01 || PS || 0x00)
         var startIndex = 0
         if paddedBytes.count > 2 && paddedBytes[0] == 0x00 && paddedBytes[1] == 0x01 {
-            for i in 2..<paddedBytes.count {
-                if paddedBytes[i] == 0x00 {
-                    startIndex = i + 1
+            for idx in 2..<paddedBytes.count {
+                if paddedBytes[idx] == 0x00 {
+                    startIndex = idx + 1
                     break
                 }
             }

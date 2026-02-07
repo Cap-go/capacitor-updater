@@ -73,16 +73,13 @@ public class DelayUpdateUtils {
                     }
 
                     if delta > longValue {
-                        // swiftlint:disable:next line_length
                         logger.info("Background condition (value: \(value ?? "")) deleted at index \(index). Delta: \(delta), longValue: \(longValue)")
                     } else {
                         delayConditionListToKeep.append(condition)
-                        // swiftlint:disable:next line_length
                         logger.info("Background delay (value: \(value ?? "")) condition kept at index \(index) (source: \(source.description))")
                     }
                 } else {
                     delayConditionListToKeep.append(condition)
-                    // swiftlint:disable:next line_length
                     logger.info("Background delay (value: \(value ?? "")) condition kept at index \(index) (source: \(source.description))")
                 }
 
@@ -91,7 +88,6 @@ public class DelayUpdateUtils {
                     logger.info("Kill delay (value: \(value ?? "")) removed at index \(index) after app kill")
                 } else {
                     delayConditionListToKeep.append(condition)
-                    // swiftlint:disable:next line_length
                     logger.info("Kill delay (value: \(value ?? "")) condition kept at index \(index) (source: \(source.description))")
                 }
 
@@ -103,22 +99,18 @@ public class DelayUpdateUtils {
 
                         if let date = dateFormatter.date(from: value) {
                             if Date() > date {
-                                // swiftlint:disable:next line_length
                                 logger.info("Date delay (value: \(value)) condition removed due to expired date at index \(index)")
                             } else {
                                 delayConditionListToKeep.append(condition)
                                 logger.info("Date delay (value: \(value)) kept at index \(index)")
                             }
                         } else {
-                            // swiftlint:disable:next line_length
                             logger.error("Date delay (value: \(value)) condition removed due to parsing issue at index \(index)")
                         }
                     } catch {
-                        // swiftlint:disable:next line_length
                         logger.error("Date delay (value: \(value)) condition removed due to parsing issue at index \(index): \(error)")
                     }
                 } else {
-                    // swiftlint:disable:next line_length
                     logger.error("Date delay (value: \(value ?? "")) condition removed due to empty value at index \(index)")
                 }
 
@@ -127,18 +119,15 @@ public class DelayUpdateUtils {
                     do {
                         let versionLimit = try Version(value)
                         if currentVersionNative >= versionLimit {
-                            // swiftlint:disable:next line_length
                             logger.info("Native version delay (value: \(value)) condition removed due to above limit at index \(index)")
                         } else {
                             delayConditionListToKeep.append(condition)
                             logger.info("Native version delay (value: \(value)) kept at index \(index)")
                         }
                     } catch {
-                        // swiftlint:disable:next line_length
                         logger.error("Native version delay (value: \(value)) condition removed due to parsing issue at index \(index): \(error)")
                     }
                 } else {
-                    // swiftlint:disable:next line_length
                     logger.error("Native version delay (value: \(value ?? "")) condition removed due to empty value at index \(index)")
                 }
 
@@ -186,7 +175,6 @@ public class DelayUpdateUtils {
             UserDefaults.standard.synchronize()
             logger.info("Background timestamp removed")
         } catch {
-            // swiftlint:disable:next line_length
             logger.error("Failed to remove background timestamp, [Error calling 'unsetBackgroundTimestamp()']: \(error)")
         }
     }
