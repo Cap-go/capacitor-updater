@@ -573,7 +573,7 @@ public class CapgoUpdater {
             this.notifyDownload(id, 100);
 
             final Map<String, Object> ret = new HashMap<>();
-            ret.put("bundle", next.toJSONMap());
+            ret.put("bundle", InternalUtils.mapToJSObject(next.toJSONMap()));
             logger.info("updateAvailable: " + ret);
             CapgoUpdater.this.notifyListeners("updateAvailable", ret);
             logger.info("setNext: " + setNext);
