@@ -3,9 +3,7 @@ package ee.forgr.capacitor_updater;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.os.Build;
-
 import com.getcapacitor.JSObject;
-
 import java.util.Map;
 
 public class InternalUtils {
