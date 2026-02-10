@@ -3,8 +3,21 @@ package ee.forgr.capacitor_updater;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.os.Build;
+import com.getcapacitor.JSObject;
+import java.util.Map;
 
 public class InternalUtils {
+
+    /**
+     * Converts a Map to JSObject for proper bridge serialization.
+     */
+    public static JSObject mapToJSObject(Map<String, Object> map) {
+        JSObject jsObject = new JSObject();
+        for (Map.Entry<String, Object> entry : map.entrySet()) {
+            jsObject.put(entry.getKey(), entry.getValue());
+        }
+        return jsObject;
+    }
 
     public static String getPackageName(PackageManager pm, String packageName) {
         try {
