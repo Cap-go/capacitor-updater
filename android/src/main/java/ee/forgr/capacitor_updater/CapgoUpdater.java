@@ -529,6 +529,8 @@ public class CapgoUpdater {
                     // V1 Encryption (privateKey) - deprecated not supported
                     this.sendStats("checksum_fail");
                     throw new IOException("V1 decryption is no longer supported for security reasons.");
+                } else {
+                  checksum = CryptoCipher.calcChecksum(downloaded);
                 }
                 CryptoCipher.logChecksumInfo("Calculated checksum", checksum);
                 CryptoCipher.logChecksumInfo("Expected checksum", checksumDecrypted);
