@@ -1179,7 +1179,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     final BundleInfo downloaded;
                     if (manifest != null) {
                         // For manifest downloads, we need to handle this asynchronously
-                        // since there's no synchronous downloadManifest method in Java
+                        // to avoid automatically scheduling/applying the downloaded bundle.
                         // Manual download must not schedule/apply the bundle automatically.
                         CapacitorUpdaterPlugin.this.implementation.downloadBackground(url, version, sessionKey, checksum, manifest, false);
                         // Return immediately with a pending status - the actual result will come via listeners
