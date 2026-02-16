@@ -38,6 +38,8 @@ import type {
   AutoUpdateAvailable,
   SetShakeMenuOptions,
   ShakeMenuEnabled,
+  SetShakeChannelSelectorOptions,
+  ShakeChannelSelectorEnabled,
   UpdateFailedEvent,
 } from './definitions';
 import { AppUpdateAvailability } from './definitions';
@@ -214,6 +216,14 @@ export class CapacitorUpdaterWeb extends WebPlugin implements CapacitorUpdaterPl
   }
 
   async isShakeMenuEnabled(): Promise<ShakeMenuEnabled> {
+    return Promise.resolve({ enabled: false });
+  }
+
+  async setShakeChannelSelector(_options: SetShakeChannelSelectorOptions): Promise<void> {
+    throw this.unimplemented('Shake channel selector not available on web platform');
+  }
+
+  async isShakeChannelSelectorEnabled(): Promise<ShakeChannelSelectorEnabled> {
     return Promise.resolve({ enabled: false });
   }
 

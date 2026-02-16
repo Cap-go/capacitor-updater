@@ -34,6 +34,8 @@ jobs:
       - name: Install dependencies
         id: install_code
         run: bun i
+      - name: Check plugin wiring
+        run: bun run check:wiring
       - name: Setup java
         uses: actions/setup-java@v5
         with:
@@ -54,6 +56,8 @@ jobs:
       - name: Install dependencies
         id: install_code
         run: bun i
+      - name: Check plugin wiring
+        run: bun run check:wiring
       - name: Build
         id: build_code
         run: bun run verify:ios
@@ -70,6 +74,8 @@ jobs:
       - name: Install dependencies
         id: install_code
         run: bun i
+      - name: Check plugin wiring
+        run: bun run check:wiring
       - name: Lint
         id: lint_code
         run: bun run lint
