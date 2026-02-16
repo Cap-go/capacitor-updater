@@ -345,7 +345,7 @@ public class CapgoUpdater {
         }
     }
 
-    private void observeWorkProgress(Context context, String id) {
+    private void observeWorkProgress(Context context, String id, boolean setNext) {
         if (!(context instanceof LifecycleOwner)) {
             logger.error("Context is not a LifecycleOwner, cannot observe work progress");
             return;
@@ -375,7 +375,7 @@ public class CapgoUpdater {
                             boolean isManifest = outputData.getBoolean(DownloadService.IS_MANIFEST, false);
 
                             io.execute(() -> {
-                                boolean success = finishDownload(id, dest, version, sessionKey, checksum, true, isManifest);
+                                boolean success = finishDownload(id, dest, version, sessionKey, checksum, setNext, isManifest);
                                 BundleInfo resultBundle;
                                 if (!success) {
                                     logger.error("Finish download failed");
@@ -454,13 +454,14 @@ public class CapgoUpdater {
         final String version,
         final String sessionKey,
         final String checksum,
-        final JSONArray manifest
+        final JSONArray manifest,
+        final boolean setNext
     ) {
         if (this.activity == null) {
             logger.error("Activity is null, cannot observe work progress");
             return;
         }
-        observeWorkProgress(this.activity, id);
+        observeWorkProgress(this.activity, id, setNext);
 
         DownloadWorkerManager.enqueueDownload(
             this.activity,
@@ -764,6 +765,17 @@ public class CapgoUpdater {
         final String checksum,
         final JSONArray manifest
     ) {
+        downloadBackground(url, version, sessionKey, checksum, manifest, true);
+    }
+
+    public void downloadBackground(
+        final String url,
+        final String version,
+        final String sessionKey,
+        final String checksum,
+        final JSONArray manifest,
+        final boolean setNext
+    ) {
         final String id = this.randomString();
 
         // Check if version is already downloading, but allow retry if previous download failed
@@ -784,7 +796,7 @@ public class CapgoUpdater {
         this.notifyDownload(id, 0);
         this.notifyDownload(id, 5);
 
-        this.download(id, url, this.randomString(), version, sessionKey, checksum, manifest);
+        this.download(id, url, this.randomString(), version, sessionKey, checksum, manifest, setNext);
     }
 
     public BundleInfo download(final String url, final String version, final String sessionKey, final String checksum) throws IOException {
@@ -806,7 +818,7 @@ public class CapgoUpdater {
         downloadFutures.put(id, downloadFuture);
 
         // Start the download
-        this.download(id, url, dest, version, sessionKey, checksum, null);
+        this.download(id, url, dest, version, sessionKey, checksum, null, false);
 
         // Wait for completion without timeout
         try {
@@ -858,7 +870,7 @@ public class CapgoUpdater {
         downloadFutures.put(id, downloadFuture);
 
         // Start the download
-        this.download(id, url, dest, version, sessionKey, checksum, manifest);
+        this.download(id, url, dest, version, sessionKey, checksum, manifest, false);
 
         // Wait for completion without timeout
         try {
