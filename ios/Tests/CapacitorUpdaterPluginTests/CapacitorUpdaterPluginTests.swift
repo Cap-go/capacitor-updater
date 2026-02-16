@@ -1,5 +1,6 @@
 import XCTest
 @testable import CapacitorUpdaterPlugin
+import Version
 
 class CapacitorUpdaterTests: XCTestCase {
 
@@ -160,6 +161,60 @@ class CapacitorUpdaterTests: XCTestCase {
 
         XCTAssertTrue(condition1 == condition2)
         XCTAssertFalse(condition1 == condition3)
+    }
+
+    func testDelayUpdateUtilsSetMultiDelayStoresMultipleConditions() throws {
+        let logger = Logger(withTag: "TestLogger")
+        let version = try Version("1.0.0")
+        let utils = DelayUpdateUtils(currentVersionNative: version, logger: logger)
+        let preferencesKey = DelayUpdateUtils.DELAY_CONDITION_PREFERENCES
+
+        UserDefaults.standard.removeObject(forKey: preferencesKey)
+        defer {
+            UserDefaults.standard.removeObject(forKey: preferencesKey)
+            UserDefaults.standard.removeObject(forKey: DelayUpdateUtils.BACKGROUND_TIMESTAMP_KEY)
+        }
+
+        let conditions = [
+            ["kind": "kill", "value": ""],
+            ["kind": "background", "value": "5000"]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: conditions)
+        let json = try XCTUnwrap(String(data: data, encoding: .utf8))
+
+        XCTAssertTrue(utils.setMultiDelay(delayConditions: json))
+        XCTAssertEqual(UserDefaults.standard.string(forKey: preferencesKey), json)
+    }
+
+    func testDelayUpdateUtilsCheckCancelDelayKilledKeepsOtherConditions() throws {
+        let logger = Logger(withTag: "TestLogger")
+        let version = try Version("1.0.0")
+        let utils = DelayUpdateUtils(currentVersionNative: version, logger: logger)
+        let preferencesKey = DelayUpdateUtils.DELAY_CONDITION_PREFERENCES
+
+        UserDefaults.standard.removeObject(forKey: preferencesKey)
+        defer {
+            UserDefaults.standard.removeObject(forKey: preferencesKey)
+            UserDefaults.standard.removeObject(forKey: DelayUpdateUtils.BACKGROUND_TIMESTAMP_KEY)
+        }
+
+        let conditions = [
+            ["kind": "kill", "value": ""],
+            ["kind": "background", "value": "5000"]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: conditions)
+        let json = try XCTUnwrap(String(data: data, encoding: .utf8))
+        XCTAssertTrue(utils.setMultiDelay(delayConditions: json))
+
+        utils.checkCancelDelay(source: .killed)
+
+        let stored = try XCTUnwrap(UserDefaults.standard.string(forKey: preferencesKey))
+        let storedData = try XCTUnwrap(stored.data(using: .utf8))
+        let parsed = try XCTUnwrap(JSONSerialization.jsonObject(with: storedData) as? [[String: String]])
+
+        XCTAssertEqual(parsed.count, 1)
+        XCTAssertEqual(parsed.first?["kind"], "background")
+        XCTAssertEqual(parsed.first?["value"], "5000")
     }
 
     // MARK: - DelayUntilNext Tests

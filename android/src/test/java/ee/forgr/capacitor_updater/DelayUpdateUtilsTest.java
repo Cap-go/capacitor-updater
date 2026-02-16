@@ -134,4 +134,24 @@ public class DelayUpdateUtilsTest {
         assertEquals("background", remaining.getString("kind"));
         assertEquals("5000", remaining.getString("value"));
     }
+
+    @Test
+    public void checkCancelDelay_foregroundKeepsIsoDateWithoutMilliseconds() throws Exception {
+        JSONArray stored = new JSONArray();
+        stored.put(new JSONObject().put("kind", "date").put("value", "2099-12-31T23:59:59Z"));
+        when(prefs.getString(eq(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES), anyString())).thenReturn(stored.toString());
+
+        utils.checkCancelDelay(DelayUpdateUtils.CancelDelaySource.FOREGROUND);
+
+        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+        verify(editor).putString(eq(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES), captor.capture());
+        verify(editor).commit();
+        verify(editor, never()).remove(eq(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES));
+
+        JSONArray updated = new JSONArray(captor.getValue());
+        assertEquals(1, updated.length());
+        JSONObject remaining = updated.getJSONObject(0);
+        assertEquals("date", remaining.getString("kind"));
+        assertEquals("2099-12-31T23:59:59Z", remaining.getString("value"));
+    }
 }

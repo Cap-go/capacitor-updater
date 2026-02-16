@@ -44,7 +44,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "current", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "reload", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "notifyAppReady", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "setDelay", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setMultiDelay", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cancelDelay", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getLatest", returnType: CAPPluginReturnPromise),
