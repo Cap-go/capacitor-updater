@@ -225,6 +225,9 @@ public class DelayUpdateUtils {
         for format in ["yyyy-MM-dd'T'HH:mm:ss.SSS", "yyyy-MM-dd'T'HH:mm:ss"] {
             let formatter = DateFormatter()
             formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.calendar = Calendar(identifier: .gregorian)
+            formatter.timeZone = .current
+            formatter.isLenient = false
             formatter.dateFormat = format
             if let date = formatter.date(from: value) {
                 return date

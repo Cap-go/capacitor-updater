@@ -2,6 +2,7 @@ package ee.forgr.capacitor_updater;
 
 import android.content.SharedPreferences;
 import io.github.g00fy2.versioncompare.Version;
+import java.text.ParsePosition;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -187,26 +188,40 @@ public class DelayUpdateUtils {
         String[] patterns = {
             "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
             "yyyy-MM-dd'T'HH:mm:ssXXX",
+            "yyyy-MM-dd'T'HH:mm:ss.SSSXX",
+            "yyyy-MM-dd'T'HH:mm:ssXX",
+            "yyyy-MM-dd'T'HH:mm:ss.SSSX",
+            "yyyy-MM-dd'T'HH:mm:ssX",
             "yyyy-MM-dd'T'HH:mm:ss.SSS",
             "yyyy-MM-dd'T'HH:mm:ss"
         };
 
         for (String pattern : patterns) {
-            try {
-                SimpleDateFormat sdf = new SimpleDateFormat(pattern, Locale.US);
-                sdf.setLenient(false);
-
-                // If no timezone is provided, keep historical behavior and interpret as local time.
-                if (!pattern.contains("XXX")) {
-                    sdf.setTimeZone(TimeZone.getDefault());
-                }
-
-                Date parsed = sdf.parse(value);
-                if (parsed != null) {
-                    return parsed;
-                }
-            } catch (Exception ignored) {}
+            Date parsed = parseDateWithPattern(value, pattern);
+            if (parsed != null) {
+                return parsed;
+            }
         }
+
+        return null;
+    }
+
+    private Date parseDateWithPattern(String value, String pattern) {
+        try {
+            SimpleDateFormat sdf = new SimpleDateFormat(pattern, Locale.US);
+            sdf.setLenient(false);
+
+            // If no timezone is provided, keep historical behavior and interpret as local time.
+            if (!pattern.contains("X")) {
+                sdf.setTimeZone(TimeZone.getDefault());
+            }
+
+            ParsePosition position = new ParsePosition(0);
+            Date parsed = sdf.parse(value, position);
+            if (parsed != null && position.getIndex() == value.length()) {
+                return parsed;
+            }
+        } catch (Exception ignored) {}
 
         return null;
     }

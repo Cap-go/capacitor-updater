@@ -30,7 +30,10 @@ let package = Package(
             path: "ios/Sources/CapacitorUpdaterPlugin"),
         .testTarget(
             name: "CapacitorUpdaterPluginTests",
-            dependencies: ["CapacitorUpdaterPlugin"],
+            dependencies: [
+                "CapacitorUpdaterPlugin",
+                .product(name: "Version", package: "Version")
+            ],
             path: "ios/Tests/CapacitorUpdaterPluginTests")
     ],
     swiftLanguageVersions: [.v5]
