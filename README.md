@@ -50,7 +50,7 @@ Perfect for fixing bugs immediately, A/B testing features, and maintaining contr
 - ⚔️ **Battle-Tested**: Used in more than 3000 projects.
 - 📊 View your deployment statistics
 - 🔋 Supports Android and iOS
-- ⚡️ Capacitor 6/7 support
+- ⚡️ Capacitor 4/5/6/7/8 support
 - 🌐 **Open Source**: Licensed under the Mozilla Public License 2.0
 - 🌐 **Open Source Backend**: Self install [our backend](https://github.com/Cap-go/capgo) in your infra
 
@@ -96,11 +96,11 @@ Starting from v8, the plugin uses [ZIPFoundation](https://github.com/weichsel/ZI
 | v7.\*.\*       | v7.\*.\*                | ✅                 |
 | v6.\*.\*       | v6.\*.\*                | ✅                 |
 | v5.\*.\*       | v5.\*.\*                | ✅ |
-| v4.\*.\*       | v4.\*.\*                | ⚠️ Deprecated |
+| v4.\*.\*       | v4.\*.\*                | ✅                 |
 | v3.\*.\*       | v3.\*.\*                | ⚠️ Deprecated     |
 | > 7            | v4.\*.\*                | ⚠️ Deprecated, our CI got crazy and bumped too much version     |
 
-> **Note:** Versions 5, 6, 7, and 8 all share the same features. The major version simply follows your Capacitor version. You can safely use any of these versions that matches your Capacitor installation.
+> **Note:** Versions 4, 5, 6, 7, and 8 all share the same features. The major version simply follows your Capacitor version. You can safely use any of these versions that matches your Capacitor installation.
 
 ### iOS
 
@@ -158,6 +158,9 @@ npm install @capgo/capacitor-updater@lts-v6
 
 # For Capacitor 5
 npm install @capgo/capacitor-updater@lts-v5
+
+# For Capacitor 4
+npm install @capgo/capacitor-updater@lts-v4
 ```
 
 ## Auto-update setup
