@@ -225,7 +225,6 @@ public class DelayUpdateUtils {
 
         return null;
     }
-
     private String convertDelayConditionsToJson(ArrayList<DelayCondition> conditions) {
         JSONArray array = new JSONArray();
         for (DelayCondition condition : conditions) {
