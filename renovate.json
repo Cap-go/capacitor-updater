@@ -64,7 +64,7 @@
         "^ionic-team/capacitor-swift-pm$",
         "^capacitor-swift-pm$"
       ],
-      "allowedVersions": "8.0.0",
+      "allowedVersions": "6.0.0",
       "enabled": false
     },
     {

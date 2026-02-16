@@ -1,6 +1,6 @@
 {
   "name": "@capgo/capacitor-updater",
-  "version": "8.43.5",
+  "version": "6.43.5",
   "license": "MPL-2.0",
   "description": "Live update for capacitor apps",
   "main": "dist/plugin.cjs.js",
@@ -41,31 +41,31 @@
     "native"
   ],
   "scripts": {
-    "verify": "npm run verify:ios && npm run verify:android && npm run verify:web",
-    "verify:ios": "xcodebuild -scheme CapgoCapacitorUpdater -destination generic/platform=iOS",
+    "verify": "bun run verify:ios && bun run verify:android && bun run verify:web",
+    "verify:ios": "TMP_DERIVED_DATA=$(mktemp -d \"${TMPDIR:-/tmp}/capgo-updater-ios-verify.XXXXXX\") && xcodebuild -scheme CapgoCapacitorUpdater -destination generic/platform=iOS -derivedDataPath \"$TMP_DERIVED_DATA\" SWIFT_ENABLE_EXPLICIT_MODULES=NO; EXIT_CODE=$?; rm -rf \"$TMP_DERIVED_DATA\"; exit $EXIT_CODE",
     "verify:android": "cd android && ./gradlew clean build test && cd ..",
-    "verify:web": "npm run build",
-    "test": "npm run test:ios && npm run test:android",
+    "verify:web": "bun run build",
+    "test": "bun run test:ios && bun run test:android",
     "test:ios": "./scripts/test-ios.sh",
     "test:android": "cd android && ./gradlew test && cd ..",
-    "lint": "npm run eslint && npm run prettier -- --check && npm run swiftlint -- lint",
-    "fmt": "npm run eslint -- --fix && npm run prettier -- --write && npm run swiftlint -- --fix --format",
+    "lint": "bun run eslint && bun run prettier -- --check && bun run swiftlint -- lint",
+    "fmt": "bun run eslint -- --fix && bun run prettier -- --write && bun run swiftlint -- --fix --format",
     "eslint": "eslint . --ext .ts",
     "prettier": "prettier-pretty-check \"**/*.{css,html,ts,js,java}\" --plugin=prettier-plugin-java",
     "swiftlint": "node-swiftlint",
     "docgen": "node scripts/generate-docs.js",
-    "build": "npm run clean && npm run docgen && tsc && rollup -c rollup.config.mjs",
+    "build": "bun run clean && bun run docgen && tsc && rollup -c rollup.config.mjs",
     "clean": "rimraf ./dist",
     "watch": "tsc --watch",
-    "prepublishOnly": "npm run build",
+    "prepublishOnly": "bun run build",
     "check:wiring": "node scripts/check-capacitor-plugin-wiring.mjs"
   },
   "devDependencies": {
-    "@capacitor/android": "^8.0.0",
-    "@capacitor/cli": "^8.0.0",
-    "@capacitor/core": "^8.0.0",
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/cli": "^6.1.2",
+    "@capacitor/core": "^6.1.2",
     "@capacitor/docgen": "^0.3.0",
-    "@capacitor/ios": "^8.0.0",
+    "@capacitor/ios": "^6.1.2",
     "@ionic/eslint-config": "^0.4.0",
     "@ionic/prettier-config": "^4.0.0",
     "@ionic/swiftlint-config": "^2.0.0",
@@ -82,7 +82,7 @@
     "prettier-pretty-check": "^0.2.0"
   },
   "peerDependencies": {
-    "@capacitor/core": "^8.0.0"
+    "@capacitor/core": "^6.0.0"
   },
   "prettier": "@ionic/prettier-config",
   "swiftlint": "@ionic/swiftlint-config",
