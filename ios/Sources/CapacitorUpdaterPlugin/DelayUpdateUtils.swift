@@ -97,25 +97,17 @@ public class DelayUpdateUtils {
 
             case "date":
                 if let value = value, !value.isEmpty {
-                    do {
-                        let dateFormatter = ISO8601DateFormatter()
-                        dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-
-                        if let date = dateFormatter.date(from: value) {
-                            if Date() > date {
-                                // swiftlint:disable:next line_length
-                                logger.info("Date delay (value: \(value)) condition removed due to expired date at index \(index)")
-                            } else {
-                                delayConditionListToKeep.append(condition)
-                                logger.info("Date delay (value: \(value)) kept at index \(index)")
-                            }
-                        } else {
+                    if let date = parseDateCondition(value) {
+                        if Date() > date {
                             // swiftlint:disable:next line_length
-                            logger.error("Date delay (value: \(value)) condition removed due to parsing issue at index \(index)")
+                            logger.info("Date delay (value: \(value)) condition removed due to expired date at index \(index)")
+                        } else {
+                            delayConditionListToKeep.append(condition)
+                            logger.info("Date delay (value: \(value)) kept at index \(index)")
                         }
-                    } catch {
+                    } else {
                         // swiftlint:disable:next line_length
-                        logger.error("Date delay (value: \(value)) condition removed due to parsing issue at index \(index): \(error)")
+                        logger.error("Date delay (value: \(value)) condition removed due to parsing issue at index \(index)")
                     }
                 } else {
                     // swiftlint:disable:next line_length
@@ -215,6 +207,32 @@ public class DelayUpdateUtils {
     }
 
     // MARK: - Helper methods
+
+    private func parseDateCondition(_ value: String) -> Date? {
+        let withFractionalSeconds = ISO8601DateFormatter()
+        withFractionalSeconds.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = withFractionalSeconds.date(from: value) {
+            return date
+        }
+
+        let withoutFractionalSeconds = ISO8601DateFormatter()
+        withoutFractionalSeconds.formatOptions = [.withInternetDateTime]
+        if let date = withoutFractionalSeconds.date(from: value) {
+            return date
+        }
+
+        // Legacy fallback for strings without timezone.
+        for format in ["yyyy-MM-dd'T'HH:mm:ss.SSS", "yyyy-MM-dd'T'HH:mm:ss"] {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.dateFormat = format
+            if let date = formatter.date(from: value) {
+                return date
+            }
+        }
+
+        return nil
+    }
 
     private func toJson(object: Any) -> String {
         guard let data = try? JSONSerialization.data(withJSONObject: object, options: []) else {
