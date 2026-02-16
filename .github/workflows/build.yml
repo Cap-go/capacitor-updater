@@ -27,6 +27,8 @@ jobs:
       - name: Install dependencies
         id: install_code
         run: bun i
+      - name: Check plugin wiring
+        run: bun run check:wiring
       - name: Build
         id: build_code
         run: bun run build
