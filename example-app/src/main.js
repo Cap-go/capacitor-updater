@@ -1,11 +1,45 @@
 
 import './style.css';
 import { CapacitorUpdater } from '@capgo/capacitor-updater';
+import { SplashScreen } from '@capacitor/splash-screen';
+import { App } from '@capacitor/app';
 
 const plugin = CapacitorUpdater;
 const state = {};
 
+plugin.addListener('appReady', () => {
+  SplashScreen.hide();
+});
+
 plugin.notifyAppReady();
+
+const DELAY_CONDITIONS = [{ kind: 'background', value: '60000' }];
+
+// Delay conditions MUST be set before the foreground listener below.
+plugin.setMultiDelay({ delayConditions: DELAY_CONDITIONS });
+
+// On resume: if all delay conditions cleared, show splash and apply the queued update.
+App.addListener('appStateChange', async ({ isActive }) => {
+  if (!isActive) return;
+
+  try {
+    const { delayConditions } = await plugin.getDelayConditions();
+    if (delayConditions && delayConditions.length > 0) return;
+
+    const nextBundle = await plugin.getNextBundle();
+    if (!nextBundle) {
+      // No update pending — re-arm delay conditions for the next update cycle.
+      await plugin.setMultiDelay({ delayConditions: DELAY_CONDITIONS });
+      return;
+    }
+
+    await SplashScreen.show();
+    await plugin.set(nextBundle);
+  } catch (err) {
+    console.error('[CapacitorUpdater] foreground update check failed:', err);
+    SplashScreen.hide();
+  }
+});
 
 
 const actions = [
@@ -58,7 +92,25 @@ return 'notifyAppReady() resolved.';
 await plugin.setUpdateUrl({ url: values.updateUrl });
 return 'Update URL set.';
               },
-            }
+            },
+{
+  id: 'get-delay-conditions',
+  label: 'Get delay conditions',
+  description: 'Returns the currently stored delay conditions.',
+  inputs: [],
+  run: async () => {
+    return await plugin.getDelayConditions();
+  },
+},
+{
+  id: 'get-next-bundle',
+  label: 'Get next bundle',
+  description: 'Returns the bundle queued for the next update, or null if none.',
+  inputs: [],
+  run: async () => {
+    return await plugin.getNextBundle();
+  },
+},
 ];
 
 const actionSelect = document.getElementById('action-select');
