@@ -1679,11 +1679,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     @PluginMethod
     public void getDelayConditions(final PluginCall call) {
         try {
-            final SharedPreferences prefs = this.getContext().getSharedPreferences(
-                this.getContext().getPackageName(),
-                Context.MODE_PRIVATE
-            );
-            final String delayUpdatePreferences = prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]");
+            final String delayUpdatePreferences = this.prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]");
             final JSONArray conditions = new JSONArray(delayUpdatePreferences);
             final JSObject ret = new JSObject();
             ret.put("delayConditions", conditions);
