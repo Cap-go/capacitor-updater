@@ -578,10 +578,36 @@ import UIKit
         for entry in manifest {
             guard let fileName = entry.file_name,
                   let downloadUrl = entry.download_url else {
+                let error = NSError(
+                    domain: "ManifestEntryError",
+                    code: 1,
+                    userInfo: [
+                        NSLocalizedDescriptionKey: "Manifest entry is missing file_name or download_url",
+                    ]
+                )
+                errorLock.lock()
+                if downloadError == nil {
+                    downloadError = error
+                }
+                errorLock.unlock()
+                hasError.value = true
+                logger.error("Manifest entry is missing file_name or download_url")
                 continue
             }
             guard let entryFileHash = entry.file_hash, !entryFileHash.isEmpty else {
                 logger.error("Missing file_hash for manifest entry: \(entry.file_name ?? "unknown")")
+                let error = NSError(
+                    domain: "ManifestEntryError",
+                    code: 2,
+                    userInfo: [
+                        NSLocalizedDescriptionKey: "Manifest entry is missing file_hash for \(entry.file_name ?? "unknown")",
+                    ]
+                )
+                errorLock.lock()
+                if downloadError == nil {
+                    downloadError = error
+                }
+                errorLock.unlock()
                 hasError.value = true
                 continue
             }
@@ -670,11 +696,16 @@ import UIKit
         // Execute all operations concurrently and wait for completion
         manifestDownloadQueue.addOperations(operations, waitUntilFinished: true)
 
-        if hasError.value, let error = downloadError {
+        if hasError.value {
+            let resolvedError = downloadError ?? NSError(
+                domain: "ManifestDownloadError",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Manifest download failed due to invalid or missing entries"]
+            )
             // Update bundle status to ERROR if download failed
             let errorBundle = bundleInfo.setStatus(status: BundleStatus.ERROR.localizedString)
             self.saveBundleInfo(id: id, bundle: errorBundle)
-            throw error
+            throw resolvedError
         }
 
         // Update bundle status to PENDING after successful download
