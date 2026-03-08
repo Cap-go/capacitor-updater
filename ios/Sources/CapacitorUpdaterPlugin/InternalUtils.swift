@@ -74,11 +74,37 @@ struct ChannelInfo: Codable {
     let name: String?
     let `public`: Bool?
     let allow_self_set: Bool?
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // Handle both string and integer IDs — the backend may return either
+        if let stringId = try? container.decodeIfPresent(String.self, forKey: .id) {
+            id = stringId
+        } else if let intId = try? container.decodeIfPresent(Int.self, forKey: .id) {
+            id = String(intId)
+        } else {
+            id = nil
+        }
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+        `public` = try container.decodeIfPresent(Bool.self, forKey: .public)
+        allow_self_set = try container.decodeIfPresent(Bool.self, forKey: .allow_self_set)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case `public`
+        case allow_self_set
+    }
 }
 // swiftlint:enable identifier_name
 struct ListChannelsDec: Decodable {
     let channels: [ChannelInfo]?
     let error: String?
+
+    private struct ErrorResponse: Decodable {
+        let error: String?
+    }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
@@ -87,16 +113,15 @@ struct ListChannelsDec: Decodable {
             // Backend returns direct array
             self.channels = channelsArray
             self.error = nil
-        } else {
-            // Handle error response
-            let errorContainer = try decoder.container(keyedBy: CodingKeys.self)
+        } else if let errorResponse = try? container.decode(ErrorResponse.self),
+                  let errorValue = errorResponse.error {
+            // Handle error response object
             self.channels = nil
-            self.error = try? errorContainer.decode(String.self, forKey: .error)
+            self.error = errorValue
+        } else {
+            self.channels = nil
+            self.error = nil
         }
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case error
     }
 }
 public class ListChannels: NSObject {

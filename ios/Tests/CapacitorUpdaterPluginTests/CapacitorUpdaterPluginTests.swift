@@ -342,6 +342,51 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(trimmed, "test")
     }
 
+    // MARK: - ChannelInfo / ListChannelsDec Decoding Tests
+
+    func testChannelInfoDecodesStringId() throws {
+        let json = """
+        {"id": "abc-123", "name": "production", "public": true, "allow_self_set": true}
+        """.data(using: .utf8)!
+        let info = try JSONDecoder().decode(ChannelInfo.self, from: json)
+        XCTAssertEqual(info.id, "abc-123")
+        XCTAssertEqual(info.name, "production")
+        XCTAssertEqual(info.public, true)
+        XCTAssertEqual(info.allow_self_set, true)
+    }
+
+    func testChannelInfoDecodesIntegerId() throws {
+        let json = """
+        {"id": 42, "name": "beta", "public": false, "allow_self_set": true}
+        """.data(using: .utf8)!
+        let info = try JSONDecoder().decode(ChannelInfo.self, from: json)
+        XCTAssertEqual(info.id, "42")
+        XCTAssertEqual(info.name, "beta")
+        XCTAssertEqual(info.public, false)
+        XCTAssertEqual(info.allow_self_set, true)
+    }
+
+    func testListChannelsDecDecodesDirectArray() throws {
+        let json = """
+        [{"id": 1, "name": "production", "public": true, "allow_self_set": true},
+         {"id": "uuid-456", "name": "beta", "public": false, "allow_self_set": false}]
+        """.data(using: .utf8)!
+        let result = try JSONDecoder().decode(ListChannelsDec.self, from: json)
+        XCTAssertNil(result.error)
+        XCTAssertEqual(result.channels?.count, 2)
+        XCTAssertEqual(result.channels?[0].id, "1")
+        XCTAssertEqual(result.channels?[1].id, "uuid-456")
+    }
+
+    func testListChannelsDecDecodesErrorResponse() throws {
+        let json = """
+        {"error": "channel_self_set_not_allowed", "message": "Not allowed"}
+        """.data(using: .utf8)!
+        let result = try JSONDecoder().decode(ListChannelsDec.self, from: json)
+        XCTAssertEqual(result.error, "channel_self_set_not_allowed")
+        XCTAssertNil(result.channels)
+    }
+
     // MARK: - CapgoUpdater Tests
 
     func testCapgoUpdaterInitialization() {
