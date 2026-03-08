@@ -467,6 +467,7 @@ export default config;
 * [`addListener('breakingAvailable', ...)`](#addlistenerbreakingavailable-)
 * [`addListener('majorAvailable', ...)`](#addlistenermajoravailable-)
 * [`addListener('updateFailed', ...)`](#addlistenerupdatefailed-)
+* [`addListener('updateInstalled', ...)`](#addlistenerupdateinstalled-)
 * [`addListener('downloadFailed', ...)`](#addlistenerdownloadfailed-)
 * [`addListener('appReloaded', ...)`](#addlistenerappreloaded-)
 * [`addListener('appReady', ...)`](#addlistenerappready-)
@@ -1407,6 +1408,26 @@ Listen for update fail event in the App, let you know when update has fail to in
 --------------------
 
 
+#### addListener('updateInstalled', ...)
+
+```typescript
+addListener(eventName: 'updateInstalled', listenerFunc: (state: UpdateInstalledEvent) => void) => Promise<PluginListenerHandle>
+```
+
+Listen for update installed event in the App, let you know when a background update (via {@link next}) has been successfully installed.
+
+| Param              | Type                                                                                      |
+| ------------------ | ----------------------------------------------------------------------------------------- |
+| **`eventName`**    | <code>'updateInstalled'</code>                                                            |
+| **`listenerFunc`** | <code>(state: <a href="#updateinstalledevent">UpdateInstalledEvent</a>) =&gt; void</code> |
+
+**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
+
+**Since:** 6.14.0
+
+--------------------
+
+
 #### addListener('downloadFailed', ...)
 
 ```typescript
@@ -2205,6 +2226,13 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 | Prop         | Type                                              | Description                           | Since |
 | ------------ | ------------------------------------------------- | ------------------------------------- | ----- |
 | **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emit when a update failed to install. | 4.0.0 |
+
+
+##### UpdateInstalledEvent
+
+| Prop         | Type                                              | Description                                                                                               | Since  |
+| ------------ | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ------ |
+| **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emit when a background update (queued via {@link CapacitorUpdaterPlugin.next}) is successfully installed. | 6.14.0 |
 
 
 ##### DownloadFailedEvent
