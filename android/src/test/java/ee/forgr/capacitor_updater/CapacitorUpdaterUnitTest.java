@@ -181,4 +181,17 @@ public class CapacitorUpdaterUnitTest {
         assertEquals(largeData, bundleInfo.getVersionName());
         assertEquals(largeData, bundleInfo.getChecksum());
     }
+
+    @Test
+    public void testBuildUserAgentUsesUnknownForNullOrEmptyValues() {
+        assertEquals("CapacitorUpdater/unknown (unknown) android/unknown", DownloadService.buildUserAgent("", null, ""));
+    }
+
+    @Test
+    public void testBuildUserAgentMatchesExpectedAndroidFormat() {
+        assertEquals(
+            "CapacitorUpdater/8.43.9 (app.capgo.test) android/16",
+            DownloadService.buildUserAgent("app.capgo.test", "8.43.9", "16")
+        );
+    }
 }

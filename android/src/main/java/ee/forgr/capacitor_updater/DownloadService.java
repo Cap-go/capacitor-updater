@@ -91,27 +91,36 @@ public class DownloadService extends Worker {
             .protocols(Arrays.asList(Protocol.HTTP_2, Protocol.HTTP_1_1))
             .addInterceptor((chain) -> {
                 Request originalRequest = chain.request();
-                String userAgent =
-                    "CapacitorUpdater/" +
-                    (currentPluginVersion != null ? currentPluginVersion : "unknown") +
-                    " (" +
-                    (currentAppId != null ? currentAppId : "unknown") +
-                    ") android/" +
-                    (currentVersionOs != null ? currentVersionOs : "unknown");
+                String userAgent = buildUserAgent(currentAppId, currentPluginVersion, currentVersionOs);
                 Request requestWithUserAgent = originalRequest.newBuilder().header("User-Agent", userAgent).build();
                 return chain.proceed(requestWithUserAgent);
             })
             .build();
     }
 
+    static String buildUserAgent(String appId, String pluginVersion, String versionOs) {
+        return (
+            "CapacitorUpdater/" +
+            sanitizeUserAgentValue(pluginVersion) +
+            " (" +
+            sanitizeUserAgentValue(appId) +
+            ") android/" +
+            sanitizeUserAgentValue(versionOs)
+        );
+    }
+
+    private static String sanitizeUserAgentValue(String value) {
+        return value == null || value.isEmpty() ? "unknown" : value;
+    }
+
     // Method to update User-Agent values
     public static void updateUserAgent(String appId, String pluginVersion, String versionOs) {
-        currentAppId = appId != null ? appId : "unknown";
-        currentPluginVersion = pluginVersion != null ? pluginVersion : "unknown";
-        currentVersionOs = versionOs != null ? versionOs : "unknown";
-        logger.debug(
-            "Updated User-Agent: CapacitorUpdater/" + currentPluginVersion + " (" + currentAppId + ") android/" + currentVersionOs
-        );
+        currentAppId = sanitizeUserAgentValue(appId);
+        currentPluginVersion = sanitizeUserAgentValue(pluginVersion);
+        currentVersionOs = sanitizeUserAgentValue(versionOs);
+        if (logger != null) {
+            logger.debug("Updated User-Agent: " + buildUserAgent(currentAppId, currentPluginVersion, currentVersionOs));
+        }
     }
 
     public DownloadService(@NonNull Context context, @NonNull WorkerParameters params) {
