@@ -81,21 +81,35 @@ struct ListChannelsDec: Decodable {
     let error: String?
 
     init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-
-        if let channelsArray = try? container.decode([ChannelInfo].self) {
-            // Backend returns direct array
+        // First, try to decode as a direct array (backend returns direct array format)
+        if let singleContainer = try? decoder.singleValueContainer(),
+           let channelsArray = try? singleContainer.decode([ChannelInfo].self) {
             self.channels = channelsArray
             self.error = nil
-        } else {
-            // Handle error response
-            let errorContainer = try decoder.container(keyedBy: CodingKeys.self)
+            return
+        }
+
+        // Fall back to keyed container for error responses or wrapped formats
+        // Use try? to avoid throwing a decode error when keys are missing
+        if let keyedContainer = try? decoder.container(keyedBy: CodingKeys.self) {
+            // Try wrapped channels array format: { "channels": [...] }
+            if let channelsArray = try? keyedContainer.decode([ChannelInfo].self, forKey: .channels) {
+                self.channels = channelsArray
+                self.error = try? keyedContainer.decode(String.self, forKey: .error)
+                return
+            }
+            // Error response format: { "error": "..." }
             self.channels = nil
-            self.error = try? errorContainer.decode(String.self, forKey: .error)
+            self.error = try? keyedContainer.decode(String.self, forKey: .error)
+        } else {
+            // Could not decode in any known format — return empty/nil gracefully
+            self.channels = nil
+            self.error = "Response could not be decoded: unexpected format"
         }
     }
 
     private enum CodingKeys: String, CodingKey {
+        case channels
         case error
     }
 }
