@@ -186,6 +186,11 @@ export class CapacitorUpdaterWeb extends WebPlugin implements CapacitorUpdaterPl
     return;
   }
 
+  async getDelayConditions(): Promise<MultiDelayConditions> {
+    console.warn('Cannot getDelayConditions in web');
+    return { delayConditions: [] };
+  }
+
   async isAutoUpdateAvailable(): Promise<AutoUpdateAvailable> {
     console.warn('Cannot isAutoUpdateAvailable in web');
     return { available: false };

@@ -74,6 +74,7 @@ CapacitorUpdater can be configured with these options:
 - [`reload`](#reload)
 - [`setMultiDelay`](#setmultidelay)
 - [`cancelDelay`](#canceldelay)
+- [`getDelayConditions`](#getdelayconditions)
 - [`getLatest`](#getlatest)
 - [`setChannel`](#setchannel)
 - [`unsetChannel`](#unsetchannel)
@@ -673,6 +674,35 @@ This is useful when:
 `Promise<void>` — Resolves when the delay conditions are cleared.
 
 **Since:** 4.0.0
+
+**Throws:** {Error} If the operation fails.
+
+
+--------------------
+
+
+### getDelayConditions
+
+```typescript
+getDelayConditions() => Promise<MultiDelayConditions>
+```
+
+Get the currently configured delay conditions.
+
+Returns the list of delay conditions that were set via {@link setMultiDelay}.
+If no delay conditions are set, returns an empty array.
+
+Use this to:
+- Check if any delay conditions are currently blocking an update
+- Debug delay condition behavior
+- Display pending delay status to users or in debug screens
+- Verify that delay conditions were correctly set after calling {@link setMultiDelay}
+
+**Returns**
+
+`Promise<MultiDelayConditions>` — The currently stored delay conditions.
+
+**Since:** 8.44.0
 
 **Throws:** {Error} If the operation fails.
 
