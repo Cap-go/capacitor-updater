@@ -13,11 +13,13 @@ on:
 jobs:
   # Run all tests first before creating any tags
   test:
+    timeout-minutes: 30
     if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
     uses: ./.github/workflows/test.yml
 
   # Only bump version and create tag if all tests pass
   bump-version:
+    timeout-minutes: 30
     needs: [test]
     if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
     runs-on: ubuntu-latest

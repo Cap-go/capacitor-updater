@@ -12,6 +12,7 @@ on:
 jobs:
   # Tests already passed before tag was created, so just build and deploy
   deploy:
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     name: "Build code and npm release"
     permissions:
