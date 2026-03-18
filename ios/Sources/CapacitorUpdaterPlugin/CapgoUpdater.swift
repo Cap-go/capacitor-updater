@@ -1479,25 +1479,24 @@ import UIKit
         return false
     }
 
-    public func autoReset(currentNativeBuildVersion: String) {
+    public func autoReset() {
         let currentBundle: BundleInfo = self.getCurrentBundle()
         if currentBundle.isBuiltin() {
             return
         }
 
-        if !self.bundleExists(id: currentBundle.getId()) {
-            logger.info("Folder at bundle path does not exist. Triggering reset.")
+        let currentBundlePath = UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH) ?? self.DEFAULT_FOLDER
+        let expectedBundlePath = self.getBundleDirectory(id: currentBundle.getId()).path
+        if currentBundlePath != expectedBundlePath {
+            logger.info(
+                "Current bundle path \(currentBundlePath) is not managed by Capgo (expected \(expectedBundlePath)). Triggering reset."
+            )
             self.reset()
             return
         }
 
-        let previousNativeBuildVersion = UserDefaults.standard.string(forKey: "LatestNativeBuildVersion")
-            ?? UserDefaults.standard.string(forKey: "LatestVersionNative")
-            ?? ""
-        if !previousNativeBuildVersion.isEmpty && previousNativeBuildVersion != currentNativeBuildVersion {
-            logger.info(
-                "Stored native build version \(previousNativeBuildVersion) does not match current native build version \(currentNativeBuildVersion). Triggering reset."
-            )
+        if !self.bundleExists(id: currentBundle.getId()) {
+            logger.info("Folder at bundle path does not exist. Triggering reset.")
             self.reset()
         }
     }

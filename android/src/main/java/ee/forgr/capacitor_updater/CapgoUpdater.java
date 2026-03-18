@@ -1001,42 +1001,28 @@ public class CapgoUpdater {
         return false;
     }
 
-    @Deprecated
     public void autoReset() {
-        String currentBuildVersion = this.versionCode;
-
-        if ((currentBuildVersion == null || currentBuildVersion.isEmpty()) && this.activity != null) {
-            try {
-                currentBuildVersion = Integer.toString(
-                    this.activity.getPackageManager().getPackageInfo(this.activity.getPackageName(), 0).versionCode
-                );
-            } catch (Exception ignored) {}
-        }
-
-        this.autoReset(currentBuildVersion == null ? "" : currentBuildVersion);
-    }
-
-    public void autoReset(final String currentNativeBuildVersion) {
         final BundleInfo currentBundle = this.getCurrentBundle();
         if (currentBundle.isBuiltin()) {
             return;
         }
 
-        if (!this.bundleExists(currentBundle.getId())) {
-            logger.info("Folder at bundle path does not exist. Triggering reset.");
+        final String currentBundlePath = this.getCurrentBundlePath();
+        final String expectedBundlePath = this.getBundleDirectory(currentBundle.getId()).getPath();
+        if (!Objects.equals(currentBundlePath, expectedBundlePath)) {
+            logger.info(
+                "Current bundle path " +
+                    currentBundlePath +
+                    " is not managed by Capgo (expected " +
+                    expectedBundlePath +
+                    "). Triggering reset."
+            );
             this.reset();
             return;
         }
 
-        final String previousNativeBuildVersion = this.prefs.getString("LatestNativeBuildVersion", "");
-        if (!previousNativeBuildVersion.isEmpty() && !Objects.equals(previousNativeBuildVersion, currentNativeBuildVersion)) {
-            logger.info(
-                "Stored native build version " +
-                    previousNativeBuildVersion +
-                    " does not match current native build version " +
-                    currentNativeBuildVersion +
-                    ". Triggering reset."
-            );
+        if (!this.bundleExists(currentBundle.getId())) {
+            logger.info("Folder at bundle path does not exist. Triggering reset.");
             this.reset();
         }
     }

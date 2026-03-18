@@ -269,7 +269,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         } else {
             implementation.defaultChannel = getConfig().getString("defaultChannel", "")!
         }
-        self.implementation.autoReset(currentNativeBuildVersion: self.currentBuildVersion)
+        self.implementation.autoReset()
 
         // Check if app was recently installed/updated BEFORE cleanupObsoleteVersions updates LatestVersionNative
         self.wasRecentlyInstalledOrUpdated = self.checkIfRecentlyInstalledOrUpdated()
