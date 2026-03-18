@@ -1007,10 +1007,9 @@ public class CapgoUpdater {
 
         if ((currentBuildVersion == null || currentBuildVersion.isEmpty()) && this.activity != null) {
             try {
-                currentBuildVersion =
-                    Integer.toString(
-                        this.activity.getPackageManager().getPackageInfo(this.activity.getPackageName(), 0).versionCode
-                    );
+                currentBuildVersion = Integer.toString(
+                    this.activity.getPackageManager().getPackageInfo(this.activity.getPackageName(), 0).versionCode
+                );
             } catch (Exception ignored) {}
         }
 

@@ -582,7 +582,7 @@ import UIKit
                     domain: "ManifestEntryError",
                     code: 1,
                     userInfo: [
-                        NSLocalizedDescriptionKey: "Manifest entry is missing file_name or download_url",
+                        NSLocalizedDescriptionKey: "Manifest entry is missing file_name or download_url"
                     ]
                 )
                 errorLock.lock()
@@ -600,7 +600,7 @@ import UIKit
                     domain: "ManifestEntryError",
                     code: 2,
                     userInfo: [
-                        NSLocalizedDescriptionKey: "Manifest entry is missing file_hash for \(entry.file_name ?? "unknown")",
+                        NSLocalizedDescriptionKey: "Manifest entry is missing file_hash for \(entry.file_name ?? "unknown")"
                     ]
                 )
                 errorLock.lock()
