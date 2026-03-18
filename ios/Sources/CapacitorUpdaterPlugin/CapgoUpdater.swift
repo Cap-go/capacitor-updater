@@ -1479,10 +1479,22 @@ import UIKit
         return false
     }
 
-    public func autoReset() {
+    public func autoReset(currentVersionNative: String) {
         let currentBundle: BundleInfo = self.getCurrentBundle()
-        if !currentBundle.isBuiltin() && !self.bundleExists(id: currentBundle.getId()) {
+        if currentBundle.isBuiltin() {
+            return
+        }
+
+        if !self.bundleExists(id: currentBundle.getId()) {
             logger.info("Folder at bundle path does not exist. Triggering reset.")
+            self.reset()
+            return
+        }
+
+        if currentBundle.getVersionName() != currentVersionNative {
+            logger.info(
+                "Bundle version \(currentBundle.getVersionName()) does not match native version \(currentVersionNative). Triggering reset."
+            )
             self.reset()
         }
     }

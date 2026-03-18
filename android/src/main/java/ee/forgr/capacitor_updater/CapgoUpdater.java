@@ -1001,10 +1001,26 @@ public class CapgoUpdater {
         return false;
     }
 
-    public void autoReset() {
+    public void autoReset(final String currentVersionNative) {
         final BundleInfo currentBundle = this.getCurrentBundle();
-        if (!currentBundle.isBuiltin() && !this.bundleExists(currentBundle.getId())) {
+        if (currentBundle.isBuiltin()) {
+            return;
+        }
+
+        if (!this.bundleExists(currentBundle.getId())) {
             logger.info("Folder at bundle path does not exist. Triggering reset.");
+            this.reset();
+            return;
+        }
+
+        if (!Objects.equals(currentBundle.getVersionName(), currentVersionNative)) {
+            logger.info(
+                "Bundle version " +
+                    currentBundle.getVersionName() +
+                    " does not match native version " +
+                    currentVersionNative +
+                    ". Triggering reset."
+            );
             this.reset();
         }
     }
