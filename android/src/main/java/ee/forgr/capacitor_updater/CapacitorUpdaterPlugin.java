@@ -443,7 +443,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         // Check if app was recently installed/updated BEFORE cleanupObsoleteVersions updates LatestVersionNative
         this.wasRecentlyInstalledOrUpdated = this.checkIfRecentlyInstalledOrUpdated();
 
-        this.implementation.autoReset(this.currentVersionNative.getOriginalString());
+        this.implementation.autoReset(this.currentBuildVersion);
         if (resetWhenUpdate) {
             this.cleanupObsoleteVersions();
         }

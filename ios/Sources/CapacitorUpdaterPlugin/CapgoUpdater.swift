@@ -1479,7 +1479,7 @@ import UIKit
         return false
     }
 
-    public func autoReset(currentVersionNative: String) {
+    public func autoReset(currentNativeBuildVersion: String) {
         let currentBundle: BundleInfo = self.getCurrentBundle()
         if currentBundle.isBuiltin() {
             return
@@ -1491,9 +1491,12 @@ import UIKit
             return
         }
 
-        if currentBundle.getVersionName() != currentVersionNative {
+        let previousNativeBuildVersion = UserDefaults.standard.string(forKey: "LatestNativeBuildVersion")
+            ?? UserDefaults.standard.string(forKey: "LatestVersionNative")
+            ?? ""
+        if !previousNativeBuildVersion.isEmpty && previousNativeBuildVersion != currentNativeBuildVersion {
             logger.info(
-                "Bundle version \(currentBundle.getVersionName()) does not match native version \(currentVersionNative). Triggering reset."
+                "Stored native build version \(previousNativeBuildVersion) does not match current native build version \(currentNativeBuildVersion). Triggering reset."
             )
             self.reset()
         }
