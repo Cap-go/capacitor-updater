@@ -582,7 +582,7 @@ import UIKit
                     domain: "ManifestEntryError",
                     code: 1,
                     userInfo: [
-                        NSLocalizedDescriptionKey: "Manifest entry is missing file_name or download_url",
+                        NSLocalizedDescriptionKey: "Manifest entry is missing file_name or download_url"
                     ]
                 )
                 errorLock.lock()
@@ -600,7 +600,7 @@ import UIKit
                     domain: "ManifestEntryError",
                     code: 2,
                     userInfo: [
-                        NSLocalizedDescriptionKey: "Manifest entry is missing file_hash for \(entry.file_name ?? "unknown")",
+                        NSLocalizedDescriptionKey: "Manifest entry is missing file_hash for \(entry.file_name ?? "unknown")"
                     ]
                 )
                 errorLock.lock()
@@ -1481,7 +1481,21 @@ import UIKit
 
     public func autoReset() {
         let currentBundle: BundleInfo = self.getCurrentBundle()
-        if !currentBundle.isBuiltin() && !self.bundleExists(id: currentBundle.getId()) {
+        if currentBundle.isBuiltin() {
+            return
+        }
+
+        let currentBundlePath = UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH) ?? self.DEFAULT_FOLDER
+        let expectedBundlePath = self.getBundleDirectory(id: currentBundle.getId()).path
+        if currentBundlePath != expectedBundlePath {
+            logger.info(
+                "Current bundle path \(currentBundlePath) is not managed by Capgo (expected \(expectedBundlePath)). Triggering reset."
+            )
+            self.reset()
+            return
+        }
+
+        if !self.bundleExists(id: currentBundle.getId()) {
             logger.info("Folder at bundle path does not exist. Triggering reset.")
             self.reset()
         }

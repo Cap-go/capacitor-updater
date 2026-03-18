@@ -1003,7 +1003,25 @@ public class CapgoUpdater {
 
     public void autoReset() {
         final BundleInfo currentBundle = this.getCurrentBundle();
-        if (!currentBundle.isBuiltin() && !this.bundleExists(currentBundle.getId())) {
+        if (currentBundle.isBuiltin()) {
+            return;
+        }
+
+        final String currentBundlePath = this.getCurrentBundlePath();
+        final String expectedBundlePath = this.getBundleDirectory(currentBundle.getId()).getPath();
+        if (!Objects.equals(currentBundlePath, expectedBundlePath)) {
+            logger.info(
+                "Current bundle path " +
+                    currentBundlePath +
+                    " is not managed by Capgo (expected " +
+                    expectedBundlePath +
+                    "). Triggering reset."
+            );
+            this.reset();
+            return;
+        }
+
+        if (!this.bundleExists(currentBundle.getId())) {
             logger.info("Folder at bundle path does not exist. Triggering reset.");
             this.reset();
         }
