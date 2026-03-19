@@ -449,6 +449,7 @@ export default config;
 * [`reload()`](#reload)
 * [`setMultiDelay(...)`](#setmultidelay)
 * [`cancelDelay()`](#canceldelay)
+* [`getDelayConditions()`](#getdelayconditions)
 * [`getLatest(...)`](#getlatest)
 * [`setChannel(...)`](#setchannel)
 * [`unsetChannel(...)`](#unsetchannel)
@@ -900,6 +901,30 @@ This is useful when:
 - You want to override a time-based delay early
 
 **Since:** 4.0.0
+
+--------------------
+
+
+#### getDelayConditions()
+
+```typescript
+getDelayConditions() => Promise<MultiDelayConditions>
+```
+
+Get the currently configured delay conditions.
+
+Returns the list of delay conditions that were set via {@link setMultiDelay}.
+If no delay conditions are set, returns an empty array.
+
+Use this to:
+- Check if any delay conditions are currently blocking an update
+- Debug delay condition behavior
+- Display pending delay status to users or in debug screens
+- Verify that delay conditions were correctly set after calling {@link setMultiDelay}
+
+**Returns:** <code>Promise&lt;<a href="#multidelayconditions">MultiDelayConditions</a>&gt;</code>
+
+**Since:** 8.44.0
 
 --------------------
 

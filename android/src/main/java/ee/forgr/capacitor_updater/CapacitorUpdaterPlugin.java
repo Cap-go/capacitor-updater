@@ -1676,6 +1676,20 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
+    @PluginMethod
+    public void getDelayConditions(final PluginCall call) {
+        try {
+            final String delayUpdatePreferences = this.prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]");
+            final JSONArray conditions = new JSONArray(delayUpdatePreferences);
+            final JSObject ret = new JSObject();
+            ret.put("delayConditions", conditions);
+            call.resolve(ret);
+        } catch (final Exception e) {
+            logger.error("Failed to get delay conditions: " + e.getMessage());
+            call.reject("Failed to get delay conditions", e);
+        }
+    }
+
     private Boolean _isAutoUpdateEnabled() {
         final CapConfig config = CapConfig.loadDefault(this.getActivity());
         String serverUrl = config.getServerUrl();

@@ -46,6 +46,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "notifyAppReady", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setMultiDelay", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cancelDelay", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getDelayConditions", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getLatest", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setChannel", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "unsetChannel", returnType: CAPPluginReturnPromise),
@@ -1015,6 +1016,17 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         } else {
             call.reject("Failed to cancel delay")
         }
+    }
+
+    @objc func getDelayConditions(_ call: CAPPluginCall) {
+        let delayUpdatePreferences = UserDefaults.standard.string(forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES) ?? "[]"
+        let conditions: [NSObject] = fromJsonArr(json: delayUpdatePreferences)
+        let result: [[String: String]] = conditions.compactMap { obj in
+            guard let kind = obj.value(forKey: "kind") as? String else { return nil }
+            let value = obj.value(forKey: "value") as? String ?? ""
+            return ["kind": kind, "value": value]
+        }
+        call.resolve(["delayConditions": result])
     }
 
     // Note: _checkCancelDelay method has been moved to DelayUpdateUtils class

@@ -732,6 +732,24 @@ export interface CapacitorUpdaterPlugin {
   cancelDelay(): Promise<void>;
 
   /**
+   * Get the currently configured delay conditions.
+   *
+   * Returns the list of delay conditions that were set via {@link setMultiDelay}.
+   * If no delay conditions are set, returns an empty array.
+   *
+   * Use this to:
+   * - Check if any delay conditions are currently blocking an update
+   * - Debug delay condition behavior
+   * - Display pending delay status to users or in debug screens
+   * - Verify that delay conditions were correctly set after calling {@link setMultiDelay}
+   *
+   * @returns {Promise<MultiDelayConditions>} The currently stored delay conditions.
+   * @throws {Error} If the operation fails.
+   * @since 8.44.0
+   */
+  getDelayConditions(): Promise<MultiDelayConditions>;
+
+  /**
    * Check the update server for the latest available bundle version.
    *
    * This queries your configured update URL (or Capgo backend) to see if a newer bundle
