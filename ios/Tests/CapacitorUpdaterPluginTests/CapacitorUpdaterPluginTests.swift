@@ -194,10 +194,6 @@ class CapacitorUpdaterTests: XCTestCase {
     }
 
     func testDelayUpdateUtilsCheckCancelDelayKilledKeepsOtherConditions() throws {
-        XCTAssertEqual(UserDefaults.standard.string(forKey: delayPreferencesKey), json)
-    }
-
-    func testDelayUpdateUtilsCheckCancelDelayKilledKeepsOtherConditions() throws {
         let utils = try makeDelayUpdateUtils()
         clearDelayStorage()
         defer { clearDelayStorage() }
