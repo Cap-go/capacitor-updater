@@ -154,6 +154,7 @@ public class DelayUpdateUtilsTest {
         assertEquals("date", remaining.getString("kind"));
         assertEquals("2099-12-31T23:59:59Z", remaining.getString("value"));
     }
+
     @Test
     public void checkCancelDelay_foregroundKeepsIsoDateWithCompactOffset() throws Exception {
         JSONArray stored = new JSONArray();
