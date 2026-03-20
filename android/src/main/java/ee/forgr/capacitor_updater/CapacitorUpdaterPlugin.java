@@ -536,16 +536,16 @@ public class CapacitorUpdaterPlugin extends Plugin implements SplashscreenManage
             boolean loaderEnabled = this.getConfig().getBoolean("autoSplashscreenLoader", false);
             int timeout = Math.max(0, this.getConfig().getInt("autoSplashscreenTimeout", 10000));
             this.splashscreenManager = new SplashscreenManager(this.logger, timeout, loaderEnabled, this, this.mainHandler);
-	        }
-	        this.implementation.timeout = this.getConfig().getInt("responseTimeout", 20) * 1000;
-	        this.shakeMenuEnabled = this.getConfig().getBoolean("shakeMenu", false);
-	        this.shakeChannelSelectorEnabled = this.getConfig().getBoolean("allowShakeChannelSelector", false);
-	        this.miniAppsEnabled = this.getConfig().getBoolean("miniAppsEnabled", false);
-	        this.miniAppsManager = new MiniAppsManager(this.prefs, this.editor, this.logger);
-	        if (Boolean.TRUE.equals(this.miniAppsEnabled)) {
-	            logger.info("Mini-apps support enabled");
-	        }
-	        boolean resetWhenUpdate = this.getConfig().getBoolean("resetWhenUpdate", true);
+        }
+        this.implementation.timeout = this.getConfig().getInt("responseTimeout", 20) * 1000;
+        this.shakeMenuEnabled = this.getConfig().getBoolean("shakeMenu", false);
+        this.shakeChannelSelectorEnabled = this.getConfig().getBoolean("allowShakeChannelSelector", false);
+        this.miniAppsEnabled = this.getConfig().getBoolean("miniAppsEnabled", false);
+        this.miniAppsManager = new MiniAppsManager(this.prefs, this.editor, this.logger);
+        if (Boolean.TRUE.equals(this.miniAppsEnabled)) {
+            logger.info("Mini-apps support enabled");
+        }
+        boolean resetWhenUpdate = this.getConfig().getBoolean("resetWhenUpdate", true);
 
         // Check if app was recently installed/updated BEFORE cleanupObsoleteVersions updates LatestVersionNative
         this.wasRecentlyInstalledOrUpdated = this.checkIfRecentlyInstalledOrUpdated();

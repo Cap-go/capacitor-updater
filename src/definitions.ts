@@ -363,41 +363,41 @@ declare module '@capacitor/cli' {
        */
       osLogging?: boolean;
 
-	      /**
-	       * Enable shake gesture to show update menu for debugging/testing purposes
-	       *
-	       * @default false
-	       * @since  7.5.0
-	       */
-	      shakeMenu?: boolean;
+      /**
+       * Enable shake gesture to show update menu for debugging/testing purposes
+       *
+       * @default false
+       * @since  7.5.0
+       */
+      shakeMenu?: boolean;
 
-	      /**
-	       * Enable the shake gesture to show a channel selector menu for switching between update channels.
-	       * When enabled AND `shakeMenu` is true, the shake gesture shows a channel selector
-	       * instead of the default debug menu (Go Home/Reload/Close).
-	       *
-	       * After selecting a channel, the app automatically checks for updates and downloads if available.
-	       * Only works if channels have `allow_self_set` enabled on the backend.
-	       *
-	       * Only available for Android and iOS.
-	       *
-	       * @default false
-	       * @since 8.43.0
-	       */
-	      allowShakeChannelSelector?: boolean;
+      /**
+       * Enable the shake gesture to show a channel selector menu for switching between update channels.
+       * When enabled AND `shakeMenu` is true, the shake gesture shows a channel selector
+       * instead of the default debug menu (Go Home/Reload/Close).
+       *
+       * After selecting a channel, the app automatically checks for updates and downloads if available.
+       * Only works if channels have `allow_self_set` enabled on the backend.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default false
+       * @since 8.43.0
+       */
+      allowShakeChannelSelector?: boolean;
 
-	      /**
-	       * Enable mini-apps support. When enabled, you can register multiple bundles as mini-apps
-	       * and switch between them. The main app is treated as a mini-app with `isMain: true`.
-	       *
-	       * Only available for Android and iOS.
-	       *
-	       * @default false
-	       * @since 8.42.0
-	       */
-	      miniAppsEnabled?: boolean;
-	    };
-	  }
+      /**
+       * Enable mini-apps support. When enabled, you can register multiple bundles as mini-apps
+       * and switch between them. The main app is treated as a mini-app with `isMain: true`.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default false
+       * @since 8.42.0
+       */
+      miniAppsEnabled?: boolean;
+    };
+  }
 }
 
 export interface CapacitorUpdaterPlugin {
