@@ -85,19 +85,19 @@ CapacitorUpdater can be configured with these options:
 - [`getPluginVersion`](#getpluginversion)
 - [`isAutoUpdateEnabled`](#isautoupdateenabled)
 - [`removeAllListeners`](#removealllisteners)
-- [`addListener('download')`](#addlistenerdownload-)
-- [`addListener('noNeedUpdate')`](#addlistenernoneedupdate-)
-- [`addListener('updateAvailable')`](#addlistenerupdateavailable-)
-- [`addListener('downloadComplete')`](#addlistenerdownloadcomplete-)
-- [`addListener('breakingAvailable')`](#addlistenerbreakingavailable-)
-- [`addListener('majorAvailable')`](#addlistenermajoravailable-)
-- [`addListener('updateFailed')`](#addlistenerupdatefailed-)
-- [`addListener('updateInstalled')`](#addlistenerupdateinstalled-)
-- [`addListener('downloadFailed')`](#addlistenerdownloadfailed-)
-- [`addListener('appReloaded')`](#addlistenerappreloaded-)
-- [`addListener('appReady')`](#addlistenerappready-)
-- [`addListener('channelPrivate')`](#addlistenerchannelprivate-)
-- [`addListener('onFlexibleUpdateStateChange')`](#addlisteneronflexibleupdatestatechange-)
+- [`addListener('download')`](#addlistenerdownload)
+- [`addListener('noNeedUpdate')`](#addlistenernoneedupdate)
+- [`addListener('updateAvailable')`](#addlistenerupdateavailable)
+- [`addListener('downloadComplete')`](#addlistenerdownloadcomplete)
+- [`addListener('breakingAvailable')`](#addlistenerbreakingavailable)
+- [`addListener('majorAvailable')`](#addlistenermajoravailable)
+- [`addListener('updateFailed')`](#addlistenerupdatefailed)
+- [`addListener('updateInstalled')`](#addlistenerupdateinstalled)
+- [`addListener('downloadFailed')`](#addlistenerdownloadfailed)
+- [`addListener('appReloaded')`](#addlistenerappreloaded)
+- [`addListener('appReady')`](#addlistenerappready)
+- [`addListener('channelPrivate')`](#addlistenerchannelprivate)
+- [`addListener('onFlexibleUpdateStateChange')`](#addlisteneronflexibleupdatestatechange)
 - [`isAutoUpdateAvailable`](#isautoupdateavailable)
 - [`getNextBundle`](#getnextbundle)
 - [`getFailedUpdate`](#getfailedupdate)
@@ -1303,7 +1303,7 @@ Listen for update installed event in the App, let you know when a background upd
 
 `Promise<PluginListenerHandle>`
 
-**Since:** 6.14.0
+**Since:** 8.43.11
 
 
 --------------------

@@ -460,19 +460,19 @@ export default config;
 * [`getPluginVersion()`](#getpluginversion)
 * [`isAutoUpdateEnabled()`](#isautoupdateenabled)
 * [`removeAllListeners()`](#removealllisteners)
-* [`addListener('download', ...)`](#addlistenerdownload-)
-* [`addListener('noNeedUpdate', ...)`](#addlistenernoneedupdate-)
-* [`addListener('updateAvailable', ...)`](#addlistenerupdateavailable-)
-* [`addListener('downloadComplete', ...)`](#addlistenerdownloadcomplete-)
-* [`addListener('breakingAvailable', ...)`](#addlistenerbreakingavailable-)
-* [`addListener('majorAvailable', ...)`](#addlistenermajoravailable-)
-* [`addListener('updateFailed', ...)`](#addlistenerupdatefailed-)
-* [`addListener('updateInstalled', ...)`](#addlistenerupdateinstalled-)
-* [`addListener('downloadFailed', ...)`](#addlistenerdownloadfailed-)
-* [`addListener('appReloaded', ...)`](#addlistenerappreloaded-)
-* [`addListener('appReady', ...)`](#addlistenerappready-)
-* [`addListener('channelPrivate', ...)`](#addlistenerchannelprivate-)
-* [`addListener('onFlexibleUpdateStateChange', ...)`](#addlisteneronflexibleupdatestatechange-)
+* [`addListener('download', ...)`](#addlistenerdownload)
+* [`addListener('noNeedUpdate', ...)`](#addlistenernoneedupdate)
+* [`addListener('updateAvailable', ...)`](#addlistenerupdateavailable)
+* [`addListener('downloadComplete', ...)`](#addlistenerdownloadcomplete)
+* [`addListener('breakingAvailable', ...)`](#addlistenerbreakingavailable)
+* [`addListener('majorAvailable', ...)`](#addlistenermajoravailable)
+* [`addListener('updateFailed', ...)`](#addlistenerupdatefailed)
+* [`addListener('updateInstalled', ...)`](#addlistenerupdateinstalled)
+* [`addListener('downloadFailed', ...)`](#addlistenerdownloadfailed)
+* [`addListener('appReloaded', ...)`](#addlistenerappreloaded)
+* [`addListener('appReady', ...)`](#addlistenerappready)
+* [`addListener('channelPrivate', ...)`](#addlistenerchannelprivate)
+* [`addListener('onFlexibleUpdateStateChange', ...)`](#addlisteneronflexibleupdatestatechange)
 * [`isAutoUpdateAvailable()`](#isautoupdateavailable)
 * [`getNextBundle()`](#getnextbundle)
 * [`getFailedUpdate()`](#getfailedupdate)
@@ -1423,7 +1423,7 @@ Listen for update installed event in the App, let you know when a background upd
 
 **Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
 
-**Since:** 6.14.0
+**Since:** 8.43.11
 
 --------------------
 
@@ -2230,9 +2230,9 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 
 ##### UpdateInstalledEvent
 
-| Prop         | Type                                              | Description                                                                                               | Since  |
-| ------------ | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ------ |
-| **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emit when a background update (queued via {@link CapacitorUpdaterPlugin.next}) is successfully installed. | 6.14.0 |
+| Prop         | Type                                              | Description                                                                                               | Since   |
+| ------------ | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ------- |
+| **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emit when a background update (queued via {@link CapacitorUpdaterPlugin.next}) is successfully installed. | 8.43.11 |
 
 
 ##### DownloadFailedEvent

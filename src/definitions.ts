@@ -1091,7 +1091,7 @@ export interface CapacitorUpdaterPlugin {
   /**
    * Listen for update installed event in the App, let you know when a background update (via {@link next}) has been successfully installed.
    *
-   * @since 6.14.0
+   * @since 8.43.11
    */
   addListener(
     eventName: 'updateInstalled',
@@ -1627,7 +1627,7 @@ export interface UpdateInstalledEvent {
   /**
    * Emit when a background update (queued via {@link CapacitorUpdaterPlugin.next}) is successfully installed.
    *
-   * @since 6.14.0
+   * @since 8.43.11
    */
   bundle: BundleInfo;
 }
