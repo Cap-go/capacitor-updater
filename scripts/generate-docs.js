@@ -147,7 +147,8 @@ function renderMethods(api) {
         } else if (!m.signature?.includes('(')) {
           label = `${m.name}()`;
         }
-        return `- [\`${label}\`](#${m.slug})`;
+        const slug = m.name === 'addListener' ? m.slug.replace(/-+$/, '') : m.slug;
+        return `- [\`${label}\`](#${slug})`;
       })
       .join('\n') + '\n\n';
   out += '</docgen-index>\n\n';
@@ -239,7 +240,7 @@ function tweakReadmeHeadings() {
     if (!lines[1]?.includes('Auto-generated')) {
       lines.splice(1, 0, '<!--Auto-generated, compact index-->');
     }
-    return lines.join('\n');
+    return lines.join('\n').replace(/\(#addlistener([a-z0-9]+)-\)/g, '(#addlistener$1)');
   });
   writeFileSync(README, md);
   log('ok', 'README polished (headings + index)');

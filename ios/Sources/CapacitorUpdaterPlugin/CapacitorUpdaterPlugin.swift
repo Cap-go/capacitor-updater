@@ -123,6 +123,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var persistModifyUrl = false
     private var allowManualBundleError = false
     private var keepUrlPathFlagLastValue: Bool?
+    private var pendingBackgroundInstallSuccess: (bundle: BundleInfo, previousVersionName: String)?
     public var shakeMenuEnabled = false
     public var shakeChannelSelectorEnabled = false
     let semaphoreReady = DispatchSemaphore(value: 0)
@@ -970,6 +971,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.semaphoreDown()
         let bundle = self.implementation.getCurrentBundle()
         self.implementation.setSuccess(bundle: bundle, autoDeletePrevious: self.autoDeletePrevious)
+        if let pendingBackgroundInstallSuccess, pendingBackgroundInstallSuccess.bundle.getId() == bundle.getId() {
+            self.implementation.sendStats(
+                action: "install_next",
+                versionName: bundle.getVersionName(),
+                oldVersionName: pendingBackgroundInstallSuccess.previousVersionName
+            )
+            self.notifyListeners("updateInstalled", data: ["bundle": bundle.toJSON()], retainUntilConsumed: true)
+            self.pendingBackgroundInstallSuccess = nil
+        }
         logger.info("Current bundle loaded successfully. [notifyAppReady was called] \(bundle.toString())")
         call.resolve(["bundle": bundle.toJSON()])
     }
@@ -1063,6 +1073,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if BundleStatus.SUCCESS.localizedString != current.getStatus() {
             logger.error("notifyAppReady was not called, roll back current bundle: \(current.toString())")
             logger.error("Did you forget to call 'notifyAppReady()' in your Capacitor App code?")
+            if self.pendingBackgroundInstallSuccess?.bundle.getId() == current.getId() {
+                self.pendingBackgroundInstallSuccess = nil
+            }
             self.notifyListeners("updateFailed", data: [
                 "bundle": current.toJSON()
             ])
@@ -1590,6 +1603,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             logger.info("Next bundle is: \(next!.toString())")
             if self.implementation.set(bundle: next!) && self._reload() {
                 logger.info("Updated to bundle: \(next!.toString())")
+                self.pendingBackgroundInstallSuccess = (bundle: next!, previousVersionName: current.getVersionName())
                 _ = self.implementation.setNextBundle(next: Optional<String>.none)
             } else {
                 logger.error("Update to bundle: \(next!.toString()) Failed!")

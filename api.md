@@ -85,18 +85,19 @@ CapacitorUpdater can be configured with these options:
 - [`getPluginVersion`](#getpluginversion)
 - [`isAutoUpdateEnabled`](#isautoupdateenabled)
 - [`removeAllListeners`](#removealllisteners)
-- [`addListener('download')`](#addlistenerdownload-)
-- [`addListener('noNeedUpdate')`](#addlistenernoneedupdate-)
-- [`addListener('updateAvailable')`](#addlistenerupdateavailable-)
-- [`addListener('downloadComplete')`](#addlistenerdownloadcomplete-)
-- [`addListener('breakingAvailable')`](#addlistenerbreakingavailable-)
-- [`addListener('majorAvailable')`](#addlistenermajoravailable-)
-- [`addListener('updateFailed')`](#addlistenerupdatefailed-)
-- [`addListener('downloadFailed')`](#addlistenerdownloadfailed-)
-- [`addListener('appReloaded')`](#addlistenerappreloaded-)
-- [`addListener('appReady')`](#addlistenerappready-)
-- [`addListener('channelPrivate')`](#addlistenerchannelprivate-)
-- [`addListener('onFlexibleUpdateStateChange')`](#addlisteneronflexibleupdatestatechange-)
+- [`addListener('download')`](#addlistenerdownload)
+- [`addListener('noNeedUpdate')`](#addlistenernoneedupdate)
+- [`addListener('updateAvailable')`](#addlistenerupdateavailable)
+- [`addListener('downloadComplete')`](#addlistenerdownloadcomplete)
+- [`addListener('breakingAvailable')`](#addlistenerbreakingavailable)
+- [`addListener('majorAvailable')`](#addlistenermajoravailable)
+- [`addListener('updateFailed')`](#addlistenerupdatefailed)
+- [`addListener('updateInstalled')`](#addlistenerupdateinstalled)
+- [`addListener('downloadFailed')`](#addlistenerdownloadfailed)
+- [`addListener('appReloaded')`](#addlistenerappreloaded)
+- [`addListener('appReady')`](#addlistenerappready)
+- [`addListener('channelPrivate')`](#addlistenerchannelprivate)
+- [`addListener('onFlexibleUpdateStateChange')`](#addlisteneronflexibleupdatestatechange)
 - [`isAutoUpdateAvailable`](#isautoupdateavailable)
 - [`getNextBundle`](#getnextbundle)
 - [`getFailedUpdate`](#getfailedupdate)
@@ -1278,6 +1279,31 @@ Listen for update fail event in the App, let you know when update has fail to in
 `Promise<PluginListenerHandle>`
 
 **Since:** 2.3.0
+
+
+--------------------
+
+
+### addListener('updateInstalled')
+
+```typescript
+addListener(eventName: 'updateInstalled', listenerFunc: (state: UpdateInstalledEvent) => void) => Promise<PluginListenerHandle>
+```
+
+Listen for update installed event in the App, let you know when a background update (via {@link next}) has been successfully installed.
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `eventName` | `'updateInstalled'` |  |
+| `listenerFunc` | `(state: UpdateInstalledEvent) => void` |  |
+
+**Returns**
+
+`Promise<PluginListenerHandle>`
+
+**Since:** 8.43.11
 
 
 --------------------

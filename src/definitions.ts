@@ -1089,6 +1089,16 @@ export interface CapacitorUpdaterPlugin {
   ): Promise<PluginListenerHandle>;
 
   /**
+   * Listen for update installed event in the App, let you know when a background update (via {@link next}) has been successfully installed.
+   *
+   * @since 8.43.11
+   */
+  addListener(
+    eventName: 'updateInstalled',
+    listenerFunc: (state: UpdateInstalledEvent) => void,
+  ): Promise<PluginListenerHandle>;
+
+  /**
    * Listen for download fail event in the App, let you know when a bundle download has failed
    *
    * @since 4.0.0
@@ -1609,6 +1619,15 @@ export interface UpdateFailedEvent {
    * Emit when a update failed to install.
    *
    * @since 4.0.0
+   */
+  bundle: BundleInfo;
+}
+
+export interface UpdateInstalledEvent {
+  /**
+   * Emit when a background update (queued via {@link CapacitorUpdaterPlugin.next}) is successfully installed.
+   *
+   * @since 8.43.11
    */
   bundle: BundleInfo;
 }
