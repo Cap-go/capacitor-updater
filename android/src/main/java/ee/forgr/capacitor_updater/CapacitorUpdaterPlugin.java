@@ -126,6 +126,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private volatile Thread backgroundDownloadTask;
     private volatile Thread appReadyCheck;
     private volatile long downloadStartTimeMs = 0;
+    private BundleInfo pendingBackgroundInstallSuccess = null;
+    private String pendingBackgroundInstallPreviousVersionName = null;
     private static final long DOWNLOAD_TIMEOUT_MS = 3600000; // 1 hour timeout
 
     //  private static final CountDownLatch semaphoreReady = new CountDownLatch(1);
@@ -1626,6 +1628,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
         try {
             final BundleInfo bundle = this.implementation.getCurrentBundle();
             this.implementation.setSuccess(bundle, this.autoDeletePrevious);
+            if (this.pendingBackgroundInstallSuccess != null && this.pendingBackgroundInstallSuccess.getId().equals(bundle.getId())) {
+                this.implementation.sendStats("install_next", bundle.getVersionName(), this.pendingBackgroundInstallPreviousVersionName);
+                final JSObject installed = new JSObject();
+                installed.put("bundle", InternalUtils.mapToJSObject(bundle.toJSONMap()));
+                this.notifyListeners("updateInstalled", installed, true);
+                this.pendingBackgroundInstallSuccess = null;
+                this.pendingBackgroundInstallPreviousVersionName = null;
+            }
             logger.info("Current bundle loaded successfully. ['notifyAppReady()' was called] " + bundle);
             logger.info("semaphoreReady countDown");
             this.semaphoreDown();
@@ -2088,10 +2098,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 logger.debug("Next bundle is: " + next.getVersionName());
                 if (this.implementation.set(next) && this._reload()) {
                     logger.info("Updated to bundle: " + next.getVersionName());
-                    this.implementation.sendStats("install_next", next.getVersionName(), current.getVersionName());
-                    final JSObject ret = new JSObject();
-                    ret.put("bundle", InternalUtils.mapToJSObject(next.toJSONMap()));
-                    this.notifyListeners("updateInstalled", ret, true);
+                    this.pendingBackgroundInstallSuccess = next;
+                    this.pendingBackgroundInstallPreviousVersionName = current.getVersionName();
                     this.implementation.setNextBundle(null);
                 } else {
                     logger.error("Update to bundle: " + next.getVersionName() + " Failed!");
@@ -2115,6 +2123,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
         if (BundleStatus.SUCCESS != current.getStatus()) {
             logger.error("notifyAppReady was not called, roll back current bundle: " + current.getId());
             logger.info("Did you forget to call 'notifyAppReady()' in your Capacitor App code?");
+            if (this.pendingBackgroundInstallSuccess != null && this.pendingBackgroundInstallSuccess.getId().equals(current.getId())) {
+                this.pendingBackgroundInstallSuccess = null;
+                this.pendingBackgroundInstallPreviousVersionName = null;
+            }
             final JSObject ret = new JSObject();
             ret.put("bundle", InternalUtils.mapToJSObject(current.toJSONMap()));
             this.persistLastFailedBundle(current);
