@@ -71,6 +71,7 @@ import UIKit
         notifyDownloadRaw(id, percent, ignoreMultipleOfTen, bundle)
     }
     public var notifyDownload: (String, Int) -> Void = { _, _  in }
+    public var notifyListeners: (String, [String: Any]) -> Void = { _, _ in }
 
     public func setLogger(_ logger: Logger) {
         self.logger = logger
@@ -1985,6 +1986,8 @@ import UIKit
         UserDefaults.standard.set(nextId, forKey: self.NEXT_VERSION)
         UserDefaults.standard.synchronize()
         self.setBundleStatus(id: nextId, status: BundleStatus.PENDING)
+        self.sendStats(action: "set_next", versionName: newBundle.getVersionName(), oldVersionName: self.getCurrentBundle().getVersionName())
+        self.notifyListeners("setNext", ["bundle": newBundle.toJSON()])
         return true
     }
 }

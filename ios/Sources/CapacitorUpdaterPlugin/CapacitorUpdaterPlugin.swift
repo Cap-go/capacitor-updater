@@ -227,6 +227,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         implementation.setPublicKey(getConfig().getString("publicKey") ?? "")
         implementation.notifyDownloadRaw = notifyDownload
+        implementation.notifyListeners = { [weak self] eventName, data in
+            self?.notifyListeners(eventName, data: data)
+        }
         implementation.pluginVersion = self.pluginVersion
 
         // Set logger for shared classes
@@ -1590,8 +1593,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             logger.info("Next bundle is: \(next!.toString())")
             if self.implementation.set(bundle: next!) && self._reload() {
                 logger.info("Updated to bundle: \(next!.toString())")
-                self.implementation.sendStats(action: "install_next", versionName: next!.getVersionName(), oldVersionName: current.getVersionName())
-                self.notifyListeners("updateInstalled", data: ["bundle": next!.toJSON()])
                 _ = self.implementation.setNextBundle(next: Optional<String>.none)
             } else {
                 logger.error("Update to bundle: \(next!.toString()) Failed!")

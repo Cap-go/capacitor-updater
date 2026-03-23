@@ -92,7 +92,7 @@ CapacitorUpdater can be configured with these options:
 - [`addListener('breakingAvailable')`](#addlistenerbreakingavailable-)
 - [`addListener('majorAvailable')`](#addlistenermajoravailable-)
 - [`addListener('updateFailed')`](#addlistenerupdatefailed-)
-- [`addListener('updateInstalled')`](#addlistenerupdateinstalled-)
+- [`addListener('setNext')`](#addlistenersetnext-)
 - [`addListener('downloadFailed')`](#addlistenerdownloadfailed-)
 - [`addListener('appReloaded')`](#addlistenerappreloaded-)
 - [`addListener('appReady')`](#addlistenerappready-)
@@ -1284,20 +1284,20 @@ Listen for update fail event in the App, let you know when update has fail to in
 --------------------
 
 
-### addListener('updateInstalled')
+### addListener('setNext')
 
 ```typescript
-addListener(eventName: 'updateInstalled', listenerFunc: (state: UpdateInstalledEvent) => void) => Promise<PluginListenerHandle>
+addListener(eventName: 'setNext', listenerFunc: (state: SetNextEvent) => void) => Promise<PluginListenerHandle>
 ```
 
-Listen for update installed event in the App, let you know when a background update (via {@link next}) has been successfully installed.
+Listen for set next event in the App, let you know when a bundle is queued as the next bundle to install.
 
 **Parameters**
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `eventName` | `'updateInstalled'` |  |
-| `listenerFunc` | `(state: UpdateInstalledEvent) => void` |  |
+| `eventName` | `'setNext'` |  |
+| `listenerFunc` | `(state: SetNextEvent) => void` |  |
 
 **Returns**
 

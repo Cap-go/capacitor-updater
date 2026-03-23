@@ -1812,6 +1812,7 @@ public class CapgoUpdater {
     }
 
     public boolean setNextBundle(final String next) {
+        BundleInfo bundleToNotify = null;
         if (next == null) {
             this.editor.remove(NEXT_VERSION);
         } else {
@@ -1821,8 +1822,15 @@ public class CapgoUpdater {
             }
             this.editor.putString(NEXT_VERSION, next);
             this.setBundleStatus(next, BundleStatus.PENDING);
+            bundleToNotify = newBundle;
         }
         this.editor.commit();
+        if (bundleToNotify != null) {
+            this.sendStats("set_next", bundleToNotify.getVersionName(), this.getCurrentBundle().getVersionName());
+            final Map<String, Object> payload = new HashMap<>();
+            payload.put("bundle", bundleToNotify.toJSONMap());
+            this.notifyListeners("setNext", payload);
+        }
         return true;
     }
 

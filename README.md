@@ -467,7 +467,7 @@ export default config;
 * [`addListener('breakingAvailable', ...)`](#addlistenerbreakingavailable-)
 * [`addListener('majorAvailable', ...)`](#addlistenermajoravailable-)
 * [`addListener('updateFailed', ...)`](#addlistenerupdatefailed-)
-* [`addListener('updateInstalled', ...)`](#addlistenerupdateinstalled-)
+* [`addListener('setNext', ...)`](#addlistenersetnext-)
 * [`addListener('downloadFailed', ...)`](#addlistenerdownloadfailed-)
 * [`addListener('appReloaded', ...)`](#addlistenerappreloaded-)
 * [`addListener('appReady', ...)`](#addlistenerappready-)
@@ -1408,18 +1408,18 @@ Listen for update fail event in the App, let you know when update has fail to in
 --------------------
 
 
-#### addListener('updateInstalled', ...)
+#### addListener('setNext', ...)
 
 ```typescript
-addListener(eventName: 'updateInstalled', listenerFunc: (state: UpdateInstalledEvent) => void) => Promise<PluginListenerHandle>
+addListener(eventName: 'setNext', listenerFunc: (state: SetNextEvent) => void) => Promise<PluginListenerHandle>
 ```
 
-Listen for update installed event in the App, let you know when a background update (via {@link next}) has been successfully installed.
+Listen for set next event in the App, let you know when a bundle is queued as the next bundle to install.
 
-| Param              | Type                                                                                      |
-| ------------------ | ----------------------------------------------------------------------------------------- |
-| **`eventName`**    | <code>'updateInstalled'</code>                                                            |
-| **`listenerFunc`** | <code>(state: <a href="#updateinstalledevent">UpdateInstalledEvent</a>) =&gt; void</code> |
+| Param              | Type                                                                      |
+| ------------------ | ------------------------------------------------------------------------- |
+| **`eventName`**    | <code>'setNext'</code>                                                    |
+| **`listenerFunc`** | <code>(state: <a href="#setnextevent">SetNextEvent</a>) =&gt; void</code> |
 
 **Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
 
@@ -2228,11 +2228,11 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 | **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emit when a update failed to install. | 4.0.0 |
 
 
-##### UpdateInstalledEvent
+##### SetNextEvent
 
-| Prop         | Type                                              | Description                                                                                               | Since  |
-| ------------ | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ------ |
-| **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emit when a background update (queued via {@link CapacitorUpdaterPlugin.next}) is successfully installed. | 6.14.0 |
+| Prop         | Type                                              | Description                                                 | Since  |
+| ------------ | ------------------------------------------------- | ----------------------------------------------------------- | ------ |
+| **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emit when a bundle is queued as the next bundle to install. | 6.14.0 |
 
 
 ##### DownloadFailedEvent

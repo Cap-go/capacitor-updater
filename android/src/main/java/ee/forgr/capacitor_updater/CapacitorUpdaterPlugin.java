@@ -2088,10 +2088,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 logger.debug("Next bundle is: " + next.getVersionName());
                 if (this.implementation.set(next) && this._reload()) {
                     logger.info("Updated to bundle: " + next.getVersionName());
-                    this.implementation.sendStats("install_next", next.getVersionName(), current.getVersionName());
-                    final JSObject ret = new JSObject();
-                    ret.put("bundle", InternalUtils.mapToJSObject(next.toJSONMap()));
-                    this.notifyListeners("updateInstalled", ret);
                     this.implementation.setNextBundle(null);
                 } else {
                     logger.error("Update to bundle: " + next.getVersionName() + " Failed!");
