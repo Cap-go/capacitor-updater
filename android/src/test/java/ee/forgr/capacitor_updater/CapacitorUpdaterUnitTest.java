@@ -194,4 +194,28 @@ public class CapacitorUpdaterUnitTest {
             DownloadService.buildUserAgent("app.capgo.test", "8.43.9", "16")
         );
     }
+
+    @Test
+    public void testGetBundleInfoBuiltinReturnsVersionBuildWhenPresent() {
+        CapgoUpdater updater = new CapgoUpdater(null);
+        updater.versionBuild = "1.2.3";
+
+        BundleInfo bundleInfo = updater.getBundleInfo(BundleInfo.ID_BUILTIN);
+
+        assertEquals(BundleInfo.ID_BUILTIN, bundleInfo.getId());
+        assertEquals("1.2.3", bundleInfo.getVersionName());
+        assertEquals(BundleStatus.SUCCESS, bundleInfo.getStatus());
+    }
+
+    @Test
+    public void testGetBundleInfoBuiltinHandlesNullVersionBuild() {
+        CapgoUpdater updater = new CapgoUpdater(null);
+        updater.versionBuild = null;
+
+        BundleInfo bundleInfo = updater.getBundleInfo(BundleInfo.ID_BUILTIN);
+
+        assertEquals(BundleInfo.ID_BUILTIN, bundleInfo.getId());
+        assertEquals(BundleInfo.ID_BUILTIN, bundleInfo.getVersionName());
+        assertEquals(BundleStatus.SUCCESS, bundleInfo.getStatus());
+    }
 }

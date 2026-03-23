@@ -1707,7 +1707,13 @@ public class CapgoUpdater {
         }
         BundleInfo result;
         if (BundleInfo.ID_BUILTIN.equals(trueId)) {
-            result = new BundleInfo(trueId, this.versionBuild.isEmpty() ? null : this.versionBuild, BundleStatus.SUCCESS, "", "");
+            result = new BundleInfo(
+                trueId,
+                this.versionBuild == null || this.versionBuild.isEmpty() ? null : this.versionBuild,
+                BundleStatus.SUCCESS,
+                "",
+                ""
+            );
         } else if (BundleInfo.VERSION_UNKNOWN.equals(trueId)) {
             result = new BundleInfo(trueId, null, BundleStatus.ERROR, "", "");
         } else {
