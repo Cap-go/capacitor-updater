@@ -1486,6 +1486,13 @@ import UIKit
             logger.info("Folder at bundle path does not exist. Triggering reset.")
             self.reset()
         }
+        let bundlePath: String = UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH)
+        if currentBundle.isBuiltin() && bundlePath != nil && !bundlePath!.isEmpty {
+            logger.info("Current bundle is builtin but CAP_SERVER_PATH is set. Triggering reset to alignith CAP_SERVER_PATH with our internals.")
+            // This can happen if the app was updated from an older version of the plugin or another plugin that set CAP_SERVER_PATH directly. We reset to ensure our internal state is consistent and CAP_SERVER_PATH is managed solely by us.
+            self.reset()
+        }
+
     }
 
     public func reset() {
