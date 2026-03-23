@@ -1001,20 +1001,35 @@ public class CapgoUpdater {
         return false;
     }
 
+    @Deprecated
     public void autoReset() {
+        String currentBuildVersion = this.versionCode;
+
+        if ((currentBuildVersion == null || currentBuildVersion.isEmpty()) && this.activity != null) {
+            try {
+                currentBuildVersion = Integer.toString(
+                    this.activity.getPackageManager().getPackageInfo(this.activity.getPackageName(), 0).versionCode
+                );
+            } catch (Exception ignored) {}
+        }
+
+        this.autoReset(currentBuildVersion == null ? "" : currentBuildVersion);
+    }
+
+    public void autoReset(final String currentNativeBuildVersion) {
         final BundleInfo currentBundle = this.getCurrentBundle();
         if (currentBundle.isBuiltin()) {
             return;
         }
 
         final String currentBundlePath = this.getCurrentBundlePath();
-        final String expectedBundlePath = this.getBundleDirectory(currentBundle.getId()).getPath();
-        if (!Objects.equals(currentBundlePath, expectedBundlePath)) {
+        final String expectedBundlePathSuffix = this.getManagedBundlePathSuffix(currentBundle.getId());
+        if (!this.isCapgoManagedBundlePath(currentBundlePath, currentBundle.getId())) {
             logger.info(
                 "Current bundle path " +
                     currentBundlePath +
-                    " is not managed by Capgo (expected " +
-                    expectedBundlePath +
+                    " is not managed by Capgo (expected suffix " +
+                    expectedBundlePathSuffix +
                     "). Triggering reset."
             );
             this.reset();
@@ -1023,6 +1038,19 @@ public class CapgoUpdater {
 
         if (!this.bundleExists(currentBundle.getId())) {
             logger.info("Folder at bundle path does not exist. Triggering reset.");
+            this.reset();
+            return;
+        }
+
+        final String previousNativeBuildVersion = this.getStoredNativeBuildVersion();
+        if (!previousNativeBuildVersion.isEmpty() && !Objects.equals(previousNativeBuildVersion, currentNativeBuildVersion)) {
+            logger.info(
+                "Stored native build version " +
+                    previousNativeBuildVersion +
+                    " does not match current native build version " +
+                    currentNativeBuildVersion +
+                    ". Triggering reset."
+            );
             this.reset();
         }
     }
@@ -1807,6 +1835,26 @@ public class CapgoUpdater {
             return "public";
         }
         return path;
+    }
+
+    private String getStoredNativeBuildVersion() {
+        String previousNativeBuildVersion = this.prefs.getString("LatestNativeBuildVersion", "");
+        if (previousNativeBuildVersion.isEmpty()) {
+            previousNativeBuildVersion = this.prefs.getString("LatestVersionNative", "");
+        }
+        return previousNativeBuildVersion;
+    }
+
+    private boolean isCapgoManagedBundlePath(final String bundlePath, final String bundleId) {
+        if (bundleId == null || bundleId.isEmpty()) {
+            return false;
+        }
+        final String normalizedPath = bundlePath == null ? "" : bundlePath.replace('\\', '/');
+        return normalizedPath.endsWith(this.getManagedBundlePathSuffix(bundleId));
+    }
+
+    private String getManagedBundlePathSuffix(final String bundleId) {
+        return bundleDirectory + "/" + bundleId;
     }
 
     public Boolean isUsingBuiltin() {

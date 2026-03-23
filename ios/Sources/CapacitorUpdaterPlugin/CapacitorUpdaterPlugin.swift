@@ -269,7 +269,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         } else {
             implementation.defaultChannel = getConfig().getString("defaultChannel", "")!
         }
-        self.implementation.autoReset()
+        self.implementation.autoReset(currentNativeBuildVersion: self.currentBuildVersion)
 
         // Check if app was recently installed/updated BEFORE cleanupObsoleteVersions updates LatestVersionNative
         self.wasRecentlyInstalledOrUpdated = self.checkIfRecentlyInstalledOrUpdated()
@@ -426,7 +426,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             // 1. Write "LatestVersionNative" - this fixes the part 1 of this bug
             // 2. Compare both keys. If any is not equal to "currentBuildVersion", then revert to builtin version. This fixes the part 2 of this bug
 
-            let previous = UserDefaults.standard.string(forKey: "LatestNativeBuildVersion") ?? UserDefaults.standard.string(forKey: "LatestVersionNative") ?? "0"
+            let previous = self.getStoredNativeBuildVersion(defaultValue: "0")
             if previous != "0" && self.currentBuildVersion != previous {
                 _ = self._reset(toLastSuccessful: false)
                 let res = self.implementation.list()
@@ -1312,9 +1312,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func checkIfRecentlyInstalledOrUpdated() -> Bool {
-        let userDefaults = UserDefaults.standard
         let currentVersion = self.currentBuildVersion
-        let lastKnownVersion = userDefaults.string(forKey: "LatestNativeBuildVersion") ?? "0"
+        let lastKnownVersion = self.getStoredNativeBuildVersion(defaultValue: "0")
 
         if lastKnownVersion == "0" {
             // First time running, consider it as recently installed
@@ -1325,6 +1324,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         return false
+    }
+
+    private func getStoredNativeBuildVersion(defaultValue: String = "") -> String {
+        return UserDefaults.standard.string(forKey: "LatestNativeBuildVersion")
+            ?? UserDefaults.standard.string(forKey: "LatestVersionNative")
+            ?? defaultValue
     }
 
     private func shouldUseDirectUpdate() -> Bool {

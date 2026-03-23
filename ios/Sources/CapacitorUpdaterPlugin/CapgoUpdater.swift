@@ -1479,17 +1479,22 @@ import UIKit
         return false
     }
 
+    @available(*, deprecated, message: "Use autoReset(currentNativeBuildVersion:)")
     public func autoReset() {
+        self.autoReset(currentNativeBuildVersion: self.versionCode)
+    }
+
+    public func autoReset(currentNativeBuildVersion: String) {
         let currentBundle: BundleInfo = self.getCurrentBundle()
         if currentBundle.isBuiltin() {
             return
         }
 
         let currentBundlePath = UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH) ?? self.DEFAULT_FOLDER
-        let expectedBundlePath = self.getBundleDirectory(id: currentBundle.getId()).path
-        if currentBundlePath != expectedBundlePath {
+        let expectedBundlePathSuffix = self.getManagedBundlePathSuffix(bundleId: currentBundle.getId())
+        if !self.isCapgoManagedBundlePath(currentBundlePath, bundleId: currentBundle.getId()) {
             logger.info(
-                "Current bundle path \(currentBundlePath) is not managed by Capgo (expected \(expectedBundlePath)). Triggering reset."
+                "Current bundle path \(currentBundlePath) is not managed by Capgo (expected suffix \(expectedBundlePathSuffix)). Triggering reset."
             )
             self.reset()
             return
@@ -1497,6 +1502,15 @@ import UIKit
 
         if !self.bundleExists(id: currentBundle.getId()) {
             logger.info("Folder at bundle path does not exist. Triggering reset.")
+            self.reset()
+            return
+        }
+
+        let previousNativeBuildVersion = self.getStoredNativeBuildVersion()
+        if !previousNativeBuildVersion.isEmpty && previousNativeBuildVersion != currentNativeBuildVersion {
+            logger.info(
+                "Stored native build version \(previousNativeBuildVersion) does not match current native build version \(currentNativeBuildVersion). Triggering reset."
+            )
             self.reset()
         }
     }
@@ -1965,6 +1979,25 @@ import UIKit
         }
         let bundleID: String = bundlePath.components(separatedBy: "/").last ?? bundlePath
         return bundleID
+    }
+
+    private func getStoredNativeBuildVersion() -> String {
+        return UserDefaults.standard.string(forKey: "LatestNativeBuildVersion")
+            ?? UserDefaults.standard.string(forKey: "LatestVersionNative")
+            ?? ""
+    }
+
+    private func isCapgoManagedBundlePath(_ bundlePath: String, bundleId: String) -> Bool {
+        if bundleId.isEmpty {
+            return false
+        }
+        let normalizedBundlePath = bundlePath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let expectedSuffix = self.getManagedBundlePathSuffix(bundleId: bundleId).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return normalizedBundlePath.hasSuffix(expectedSuffix)
+    }
+
+    private func getManagedBundlePathSuffix(bundleId: String) -> String {
+        return "\(self.bundleDirectory)/\(bundleId)"
     }
 
     public func isUsingBuiltin() -> Bool {
