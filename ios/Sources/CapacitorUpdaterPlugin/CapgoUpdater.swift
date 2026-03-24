@@ -1890,7 +1890,7 @@ import UIKit
         }
         let result: BundleInfo
         if BundleInfo.ID_BUILTIN == trueId {
-            result = BundleInfo(id: trueId, version: "", status: BundleStatus.SUCCESS, checksum: "")
+            result = BundleInfo(id: trueId, version: self.versionBuild, status: BundleStatus.SUCCESS, checksum: "")
         } else if BundleInfo.VERSION_UNKNOWN == trueId {
             result = BundleInfo(id: trueId, version: "", status: BundleStatus.ERROR, checksum: "")
         } else {
