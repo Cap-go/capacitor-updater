@@ -521,6 +521,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
         sendReadyToJs(current, msg, false);
     }
 
+    private void notifyBundleSet(final BundleInfo bundle) {
+        if (bundle == null) {
+            return;
+        }
+        final JSObject ret = new JSObject();
+        ret.put("bundle", InternalUtils.mapToJSObject(bundle.toJSONMap()));
+        this.notifyListeners("set", ret, true);
+    }
+
     private void sendReadyToJs(final BundleInfo current, final String msg, final boolean isDirectUpdate) {
         logger.info("sendReadyToJs: " + msg);
         final JSObject ret = new JSObject();
@@ -779,9 +788,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.onLaunchDirectUpdateUsed = true;
             this.implementation.directUpdate = false;
         }
-        CapacitorUpdaterPlugin.this.implementation.set(latest);
-        CapacitorUpdaterPlugin.this._reload();
-        sendReadyToJs(latest, "update installed", true);
+        if (CapacitorUpdaterPlugin.this.implementation.set(latest) && CapacitorUpdaterPlugin.this._reload()) {
+            this.notifyBundleSet(latest);
+            sendReadyToJs(latest, "update installed", true);
+        }
     }
 
     private void cleanupObsoleteVersions() {
@@ -1401,9 +1411,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
             if (!this.implementation.set(id)) {
                 logger.info("No such bundle " + id);
                 call.reject("Update failed, id " + id + " does not exist.");
+            } else if (!this._reload()) {
+                logger.error("Reload failed after setting bundle " + id);
+                call.reject("Reload failed after setting bundle " + id);
             } else {
                 logger.info("Bundle successfully set to " + id);
-                this.reload(call);
+                this.notifyBundleSet(this.implementation.getBundleInfo(id));
+                call.resolve();
             }
         } catch (final Exception e) {
             logger.error("Could not set id " + id + " " + e.getMessage());
@@ -1517,7 +1531,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
         if (toLastSuccessful && !fallback.isBuiltin()) {
             logger.info("Resetting to: " + fallback);
-            return this.implementation.set(fallback) && this._reload();
+            if (this.implementation.set(fallback) && this._reload()) {
+                this.notifyBundleSet(fallback);
+                return true;
+            }
+            return false;
         }
 
         logger.info("Resetting to native.");
@@ -1969,15 +1987,26 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                             );
                                             return;
                                         }
-                                        CapacitorUpdaterPlugin.this.implementation.set(latest);
-                                        CapacitorUpdaterPlugin.this._reload();
-                                        CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                                            "Update installed",
-                                            latestVersionName,
-                                            latest,
-                                            false,
-                                            true
-                                        );
+                                        if (
+                                            CapacitorUpdaterPlugin.this.implementation.set(latest) && CapacitorUpdaterPlugin.this._reload()
+                                        ) {
+                                            CapacitorUpdaterPlugin.this.notifyBundleSet(latest);
+                                            CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                                                "Update installed",
+                                                latestVersionName,
+                                                latest,
+                                                false,
+                                                true
+                                            );
+                                        } else {
+                                            CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                                                "Update install failed",
+                                                latestVersionName,
+                                                latest,
+                                                true,
+                                                true
+                                            );
+                                        }
                                     } else {
                                         if (plannedDirectUpdate && !directUpdateAllowedNow) {
                                             logger.info(
@@ -2101,6 +2130,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 logger.debug("Next bundle is: " + next.getVersionName());
                 if (this.implementation.set(next) && this._reload()) {
                     logger.info("Updated to bundle: " + next.getVersionName());
+                    this.notifyBundleSet(next);
                     this.implementation.setNextBundle(null);
                 } else {
                     logger.error("Update to bundle: " + next.getVersionName() + " Failed!");

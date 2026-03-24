@@ -467,6 +467,7 @@ export default config;
 * [`addListener('breakingAvailable', ...)`](#addlistenerbreakingavailable-)
 * [`addListener('majorAvailable', ...)`](#addlistenermajoravailable-)
 * [`addListener('updateFailed', ...)`](#addlistenerupdatefailed-)
+* [`addListener('set', ...)`](#addlistenerset-)
 * [`addListener('setNext', ...)`](#addlistenersetnext-)
 * [`addListener('downloadFailed', ...)`](#addlistenerdownloadfailed-)
 * [`addListener('appReloaded', ...)`](#addlistenerappreloaded-)
@@ -1408,6 +1409,28 @@ Listen for update fail event in the App, let you know when update has fail to in
 --------------------
 
 
+#### addListener('set', ...)
+
+```typescript
+addListener(eventName: 'set', listenerFunc: (state: SetEvent) => void) => Promise<PluginListenerHandle>
+```
+
+Listen for set event in the App, let you know when a bundle has been applied successfully.
+This event is retained natively until JavaScript consumes it, so if the app reloads before your
+listener is attached, the last pending `set` event is delivered once the listener subscribes.
+
+| Param              | Type                                                              |
+| ------------------ | ----------------------------------------------------------------- |
+| **`eventName`**    | <code>'set'</code>                                                |
+| **`listenerFunc`** | <code>(state: <a href="#setevent">SetEvent</a>) =&gt; void</code> |
+
+**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
+
+**Since:** 8.43.12
+
+--------------------
+
+
 #### addListener('setNext', ...)
 
 ```typescript
@@ -1474,7 +1497,9 @@ Listen for reload event in the App, let you know when reload has happened
 addListener(eventName: 'appReady', listenerFunc: (state: AppReadyEvent) => void) => Promise<PluginListenerHandle>
 ```
 
-Listen for app ready event in the App, let you know when app is ready to use, this event is retain till consumed.
+Listen for app ready event in the App, let you know when app is ready to use.
+This event is retained natively until JavaScript consumes it, so it can still be delivered after
+a reload even if the listener is attached later in app startup.
 
 | Param              | Type                                                                        |
 | ------------------ | --------------------------------------------------------------------------- |
@@ -2228,6 +2253,13 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 | **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emit when a update failed to install. | 4.0.0 |
 
 
+##### SetEvent
+
+| Prop         | Type                                              | Description                                                                                              | Since   |
+| ------------ | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------- |
+| **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emit when a bundle has been applied successfully. This event uses native `retainUntilConsumed` behavior. | 8.43.12 |
+
+
 ##### SetNextEvent
 
 | Prop         | Type                                              | Description                                                 | Since  |
@@ -2244,10 +2276,10 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 
 ##### AppReadyEvent
 
-| Prop         | Type                                              | Description                           | Since |
-| ------------ | ------------------------------------------------- | ------------------------------------- | ----- |
-| **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emitted when the app is ready to use. | 5.2.0 |
-| **`status`** | <code>string</code>                               |                                       |       |
+| Prop         | Type                                              | Description                                                                                  | Since |
+| ------------ | ------------------------------------------------- | -------------------------------------------------------------------------------------------- | ----- |
+| **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emitted when the app is ready to use. This event uses native `retainUntilConsumed` behavior. | 5.2.0 |
+| **`status`** | <code>string</code>                               |                                                                                              |       |
 
 
 ##### ChannelPrivateEvent

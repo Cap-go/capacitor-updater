@@ -92,6 +92,7 @@ CapacitorUpdater can be configured with these options:
 - [`addListener('breakingAvailable')`](#addlistenerbreakingavailable-)
 - [`addListener('majorAvailable')`](#addlistenermajoravailable-)
 - [`addListener('updateFailed')`](#addlistenerupdatefailed-)
+- [`addListener('set')`](#addlistenerset-)
 - [`addListener('setNext')`](#addlistenersetnext-)
 - [`addListener('downloadFailed')`](#addlistenerdownloadfailed-)
 - [`addListener('appReloaded')`](#addlistenerappreloaded-)
@@ -1284,6 +1285,33 @@ Listen for update fail event in the App, let you know when update has fail to in
 --------------------
 
 
+### addListener('set')
+
+```typescript
+addListener(eventName: 'set', listenerFunc: (state: SetEvent) => void) => Promise<PluginListenerHandle>
+```
+
+Listen for set event in the App, let you know when a bundle has been applied successfully.
+This event is retained natively until JavaScript consumes it, so if the app reloads before your
+listener is attached, the last pending `set` event is delivered once the listener subscribes.
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `eventName` | `'set'` |  |
+| `listenerFunc` | `(state: SetEvent) => void` |  |
+
+**Returns**
+
+`Promise<PluginListenerHandle>`
+
+**Since:** 8.43.12
+
+
+--------------------
+
+
 ### addListener('setNext')
 
 ```typescript
@@ -1365,7 +1393,9 @@ Listen for reload event in the App, let you know when reload has happened
 addListener(eventName: 'appReady', listenerFunc: (state: AppReadyEvent) => void) => Promise<PluginListenerHandle>
 ```
 
-Listen for app ready event in the App, let you know when app is ready to use, this event is retain till consumed.
+Listen for app ready event in the App, let you know when app is ready to use.
+This event is retained natively until JavaScript consumes it, so it can still be delivered after
+a reload even if the listener is attached later in app startup.
 
 **Parameters**
 

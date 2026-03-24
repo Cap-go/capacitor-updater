@@ -742,8 +742,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if !res {
             logger.info("Bundle successfully set to: \(id) ")
             call.reject("Update failed, id \(id) doesn't exist")
+        } else if !self._reload() {
+            call.reject("Reload failed after setting bundle \(id)")
         } else {
-            self.reload(call)
+            self.notifyBundleSet(self.implementation.getBundleInfo(id: id))
+            call.resolve()
         }
     }
 
@@ -938,7 +941,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             // the built-in bundle, set it as the bundle to use and reload.
             if toLastSuccessful && !fallback.isBuiltin() {
                 logger.info("Resetting to: \(fallback.toString())")
-                return self.implementation.set(bundle: fallback) && self._reload()
+                if self.implementation.set(bundle: fallback) && self._reload() {
+                    self.notifyBundleSet(fallback)
+                    return true
+                }
+                return false
             }
 
             logger.info("Resetting to builtin version")
@@ -1095,6 +1102,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     func endBackGroundTask() {
         UIApplication.shared.endBackgroundTask(self.backgroundTaskID)
         self.backgroundTaskID = UIBackgroundTaskIdentifier.invalid
+    }
+
+    private func notifyBundleSet(_ bundle: BundleInfo) {
+        self.notifyListeners("set", data: ["bundle": bundle.toJSON()], retainUntilConsumed: true)
     }
 
     func sendReadyToJs(current: BundleInfo, msg: String) {
@@ -1549,9 +1560,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                             self.onLaunchDirectUpdateUsed = true
                             self.directUpdate = false
                         }
-                        _ = self.implementation.set(bundle: next)
-                        _ = self._reload()
-                        self.endBackGroundTaskWithNotif(msg: "update installed", latestVersionName: latestVersionName, current: next, error: false)
+                        if self.implementation.set(bundle: next) && self._reload() {
+                            self.notifyBundleSet(next)
+                            self.endBackGroundTaskWithNotif(msg: "update installed", latestVersionName: latestVersionName, current: next, error: false)
+                        } else {
+                            self.endBackGroundTaskWithNotif(msg: "Update install failed", latestVersionName: latestVersionName, current: next)
+                        }
                     } else {
                         if plannedDirectUpdate && !directUpdateAllowed {
                             self.logger.info("Direct update skipped because splashscreen timeout occurred. Update will install on next app background.")
@@ -1593,6 +1607,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             logger.info("Next bundle is: \(next!.toString())")
             if self.implementation.set(bundle: next!) && self._reload() {
                 logger.info("Updated to bundle: \(next!.toString())")
+                self.notifyBundleSet(next!)
                 _ = self.implementation.setNextBundle(next: Optional<String>.none)
             } else {
                 logger.error("Update to bundle: \(next!.toString()) Failed!")

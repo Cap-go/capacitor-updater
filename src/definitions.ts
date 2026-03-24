@@ -1089,6 +1089,15 @@ export interface CapacitorUpdaterPlugin {
   ): Promise<PluginListenerHandle>;
 
   /**
+   * Listen for set event in the App, let you know when a bundle has been applied successfully.
+   * This event is retained natively until JavaScript consumes it, so if the app reloads before your
+   * listener is attached, the last pending `set` event is delivered once the listener subscribes.
+   *
+   * @since 8.43.12
+   */
+  addListener(eventName: 'set', listenerFunc: (state: SetEvent) => void): Promise<PluginListenerHandle>;
+
+  /**
    * Listen for set next event in the App, let you know when a bundle is queued as the next bundle to install.
    *
    * @since 6.14.0
@@ -1113,7 +1122,9 @@ export interface CapacitorUpdaterPlugin {
   addListener(eventName: 'appReloaded', listenerFunc: () => void): Promise<PluginListenerHandle>;
 
   /**
-   * Listen for app ready event in the App, let you know when app is ready to use, this event is retain till consumed.
+   * Listen for app ready event in the App, let you know when app is ready to use.
+   * This event is retained natively until JavaScript consumes it, so it can still be delivered after
+   * a reload even if the listener is attached later in app startup.
    *
    * @since 5.1.0
    */
@@ -1620,6 +1631,16 @@ export interface UpdateFailedEvent {
   bundle: BundleInfo;
 }
 
+export interface SetEvent {
+  /**
+   * Emit when a bundle has been applied successfully.
+   * This event uses native `retainUntilConsumed` behavior.
+   *
+   * @since 8.43.12
+   */
+  bundle: BundleInfo;
+}
+
 export interface SetNextEvent {
   /**
    * Emit when a bundle is queued as the next bundle to install.
@@ -1632,6 +1653,7 @@ export interface SetNextEvent {
 export interface AppReadyEvent {
   /**
    * Emitted when the app is ready to use.
+   * This event uses native `retainUntilConsumed` behavior.
    *
    * @since  5.2.0
    */
