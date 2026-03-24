@@ -154,6 +154,19 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final int APP_UPDATE_REQUEST_CODE = 9001;
     private InstallStateUpdatedListener installStateUpdatedListener;
 
+    private PackageInfo getCurrentPackageInfo() throws PackageManager.NameNotFoundException {
+        final PackageManager packageManager = this.getContext().getPackageManager();
+        final String packageName = this.getContext().getPackageName();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            return packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0));
+        }
+        return packageManager.getPackageInfo(packageName, 0);
+    }
+
+    private String getVersionCode(final PackageInfo packageInfo) {
+        return Long.toString(packageInfo.getLongVersionCode());
+    }
+
     private void notifyBreakingEvents(final String version) {
         if (version == null || version.isEmpty()) {
             return;
@@ -263,12 +276,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     }
                 }
             };
-            final PackageInfo pInfo = this.getContext().getPackageManager().getPackageInfo(this.getContext().getPackageName(), 0);
+            final PackageInfo pInfo = this.getCurrentPackageInfo();
             this.implementation.activity = this.getActivity();
             this.implementation.versionBuild = this.getConfig().getString("version", pInfo.versionName);
             this.implementation.CAP_SERVER_PATH = WebView.CAP_SERVER_PATH;
             this.implementation.pluginVersion = this.pluginVersion;
-            this.implementation.versionCode = Integer.toString(pInfo.versionCode);
+            this.implementation.versionCode = this.getVersionCode(pInfo);
             // Removed unused OkHttpClient creation - using shared client in DownloadService instead
             // Handle directUpdate configuration - support string values and backward compatibility
             String directUpdateConfig = this.getConfig().getString("directUpdate", null);
@@ -310,7 +323,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 }
             }
             this.currentVersionNative = new Version(this.getConfig().getString("version", pInfo.versionName));
-            this.currentBuildVersion = Integer.toString(pInfo.versionCode);
+            this.currentBuildVersion = this.getVersionCode(pInfo);
             this.delayUpdateUtils = new DelayUpdateUtils(this.prefs, this.editor, this.currentVersionNative, logger);
         } catch (final PackageManager.NameNotFoundException e) {
             logger.error("Error instantiating implementation " + e.getMessage());
@@ -2493,9 +2506,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
                     JSObject result = new JSObject();
                     try {
-                        PackageInfo pInfo = getContext().getPackageManager().getPackageInfo(getContext().getPackageName(), 0);
+                        PackageInfo pInfo = getCurrentPackageInfo();
                         result.put("currentVersionName", pInfo.versionName);
-                        result.put("currentVersionCode", String.valueOf(pInfo.versionCode));
+                        result.put("currentVersionCode", getVersionCode(pInfo));
                     } catch (PackageManager.NameNotFoundException e) {
                         result.put("currentVersionName", "0.0.0");
                         result.put("currentVersionCode", "0");

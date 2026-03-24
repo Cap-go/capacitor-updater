@@ -208,6 +208,9 @@ public class CapacitorUpdaterUnitTest {
     @Test
     public void testShouldNotResetForForeignBundleWhenBundleIsStored() {
         assertFalse(CapgoUpdater.shouldResetForForeignBundle("/data/user/0/app/files/versions/abc123", false, true));
+    }
+
+    @Test
     public void testGetBundleInfoBuiltinReturnsVersionBuildWhenPresent() {
         CapgoUpdater updater = new CapgoUpdater(null);
         updater.versionBuild = "1.2.3";

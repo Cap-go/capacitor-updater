@@ -249,12 +249,7 @@ public class ShakeMenu implements ShakeDetector.Listener {
                             }
 
                             List<?> channelsRaw = (List<?>) channelsObj;
-                            List<Map<String, Object>> channels = new ArrayList<>();
-                            for (Object item : channelsRaw) {
-                                if (item instanceof Map) {
-                                    channels.add((Map<String, Object>) item);
-                                }
-                            }
+                            List<Map<String, Object>> channels = toChannelList(channelsRaw);
 
                             if (channels.isEmpty()) {
                                 showError("No channels available for self-assignment");
@@ -271,6 +266,27 @@ public class ShakeMenu implements ShakeDetector.Listener {
                 isShowing = false;
             }
         });
+    }
+
+    private List<Map<String, Object>> toChannelList(List<?> channelsRaw) {
+        List<Map<String, Object>> channels = new ArrayList<>();
+        for (Object item : channelsRaw) {
+            if (!(item instanceof Map<?, ?> rawMap)) {
+                continue;
+            }
+
+            Map<String, Object> channel = new java.util.HashMap<>();
+            for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+                if (entry.getKey() instanceof String key) {
+                    channel.put(key, entry.getValue());
+                }
+            }
+
+            if (!channel.isEmpty()) {
+                channels.add(channel);
+            }
+        }
+        return channels;
     }
 
     private void presentChannelPicker(List<Map<String, Object>> channels) {
