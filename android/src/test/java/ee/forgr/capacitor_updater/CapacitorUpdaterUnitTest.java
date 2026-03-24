@@ -194,4 +194,19 @@ public class CapacitorUpdaterUnitTest {
             DownloadService.buildUserAgent("app.capgo.test", "8.43.9", "16")
         );
     }
+
+    @Test
+    public void testShouldResetForForeignBundleWhenPathIsSetButBundleIsNotStored() {
+        assertTrue(CapgoUpdater.shouldResetForForeignBundle("/data/user/0/app/files/versions/abc123", false, false));
+    }
+
+    @Test
+    public void testShouldNotResetForForeignBundleWhenBundleIsBuiltin() {
+        assertFalse(CapgoUpdater.shouldResetForForeignBundle("public", true, false));
+    }
+
+    @Test
+    public void testShouldNotResetForForeignBundleWhenBundleIsStored() {
+        assertFalse(CapgoUpdater.shouldResetForForeignBundle("/data/user/0/app/files/versions/abc123", false, true));
+    }
 }

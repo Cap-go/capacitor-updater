@@ -1093,10 +1093,7 @@ export interface CapacitorUpdaterPlugin {
    *
    * @since 6.14.0
    */
-  addListener(
-    eventName: 'setNext',
-    listenerFunc: (state: SetNextEvent) => void,
-  ): Promise<PluginListenerHandle>;
+  addListener(eventName: 'setNext', listenerFunc: (state: SetNextEvent) => void): Promise<PluginListenerHandle>;
 
   /**
    * Listen for download fail event in the App, let you know when a bundle download has failed

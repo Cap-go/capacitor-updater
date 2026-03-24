@@ -523,6 +523,22 @@ import UIKit
         logger.info("Current bundle set to: \((bundle ).isEmpty ? BundleInfo.ID_BUILTIN : bundle)")
     }
 
+    static func shouldResetForForeignBundle(bundlePath: String?, isBuiltin: Bool, hasStoredBundleInfo: Bool) -> Bool {
+        guard let bundlePath, !bundlePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+        return !isBuiltin && !hasStoredBundleInfo
+    }
+
+    private func hasStoredBundleInfo(id: String) -> Bool {
+        guard !id.isEmpty,
+              id != BundleInfo.ID_BUILTIN,
+              id != BundleInfo.VERSION_UNKNOWN else {
+            return false
+        }
+        return UserDefaults.standard.object(forKey: "\(id)\(self.INFO_SUFFIX)") != nil
+    }
+
     // Per-download temp file paths to prevent collisions when multiple downloads run concurrently
     private func tempDataPath(for id: String) -> URL {
         return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent("package_\(id).tmp")
@@ -583,7 +599,7 @@ import UIKit
                     domain: "ManifestEntryError",
                     code: 1,
                     userInfo: [
-                        NSLocalizedDescriptionKey: "Manifest entry is missing file_name or download_url",
+                        NSLocalizedDescriptionKey: "Manifest entry is missing file_name or download_url"
                     ]
                 )
                 errorLock.lock()
@@ -601,7 +617,7 @@ import UIKit
                     domain: "ManifestEntryError",
                     code: 2,
                     userInfo: [
-                        NSLocalizedDescriptionKey: "Manifest entry is missing file_hash for \(entry.file_name ?? "unknown")",
+                        NSLocalizedDescriptionKey: "Manifest entry is missing file_hash for \(entry.file_name ?? "unknown")"
                     ]
                 )
                 errorLock.lock()
@@ -1485,14 +1501,17 @@ import UIKit
         if !currentBundle.isBuiltin() && !self.bundleExists(id: currentBundle.getId()) {
             logger.info("Folder at bundle path does not exist. Triggering reset.")
             self.reset()
+            return
         }
-        let bundlePath: String = UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH)
-        if currentBundle.isBuiltin() && bundlePath != nil && !bundlePath!.isEmpty {
-            logger.info("Current bundle is builtin but CAP_SERVER_PATH is set. Triggering reset to alignith CAP_SERVER_PATH with our internals.")
-            // This can happen if the app was updated from an older version of the plugin or another plugin that set CAP_SERVER_PATH directly. We reset to ensure our internal state is consistent and CAP_SERVER_PATH is managed solely by us.
+        let bundlePath = UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH)
+        if Self.shouldResetForForeignBundle(
+            bundlePath: bundlePath,
+            isBuiltin: currentBundle.isBuiltin(),
+            hasStoredBundleInfo: self.hasStoredBundleInfo(id: currentBundle.getId())
+        ) {
+            logger.info("Current bundle id is not one of the bundle ids stored by this plugin. Triggering reset.")
             self.reset()
         }
-
     }
 
     public func reset() {

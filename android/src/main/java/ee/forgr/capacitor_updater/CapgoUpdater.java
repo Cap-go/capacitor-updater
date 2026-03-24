@@ -758,6 +758,20 @@ public class CapgoUpdater {
         this.editor.commit();
     }
 
+    static boolean shouldResetForForeignBundle(final String bundlePath, final boolean isBuiltin, final boolean hasStoredBundleInfo) {
+        return bundlePath != null && !bundlePath.trim().isEmpty() && !isBuiltin && !hasStoredBundleInfo;
+    }
+
+    private boolean hasStoredBundleInfo(final String id) {
+        return (
+            id != null &&
+            !id.isEmpty() &&
+            !BundleInfo.ID_BUILTIN.equals(id) &&
+            !BundleInfo.VERSION_UNKNOWN.equals(id) &&
+            this.prefs.contains(id + INFO_SUFFIX)
+        );
+    }
+
     public void downloadBackground(
         final String url,
         final String version,
@@ -1006,11 +1020,11 @@ public class CapgoUpdater {
         if (!currentBundle.isBuiltin() && !this.bundleExists(currentBundle.getId())) {
             logger.info("Folder at bundle path does not exist. Triggering reset.");
             this.reset();
+            return;
         }
-        String bundlePath = this.prefs.getString(this.CAP_SERVER_PATH);
-        if (bundlePath != null && !bundlePath.isEmpty() && currentBundle.isBuiltin()) {
-            logger.info("Current bundle is builtin but CAP_SERVER_PATH is set. Triggering reset to align CAP_SERVER_PATH with our internals.");
-            // This can happen if the app was updated from an older version of the plugin or another plugin that set CAP_SERVER_PATH directly. We reset to ensure our internal state is consistent and CAP_SERVER_PATH is managed solely by us.
+        String bundlePath = this.prefs.getString(this.CAP_SERVER_PATH, null);
+        if (shouldResetForForeignBundle(bundlePath, currentBundle.isBuiltin(), this.hasStoredBundleInfo(currentBundle.getId()))) {
+            logger.info("Current bundle id is not one of the bundle ids stored by this plugin. Triggering reset.");
             this.reset();
         }
     }

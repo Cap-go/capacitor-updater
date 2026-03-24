@@ -133,6 +133,30 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(decodedBundle.getChecksum(), originalBundle.getChecksum())
     }
 
+    func testShouldResetForForeignBundleWhenPathIsSetButBundleIsNotStored() {
+        XCTAssertTrue(CapgoUpdater.shouldResetForForeignBundle(
+            bundlePath: "/data/user/0/app/files/versions/abc123",
+            isBuiltin: false,
+            hasStoredBundleInfo: false
+        ))
+    }
+
+    func testShouldNotResetForForeignBundleWhenBundleIsBuiltin() {
+        XCTAssertFalse(CapgoUpdater.shouldResetForForeignBundle(
+            bundlePath: "public",
+            isBuiltin: true,
+            hasStoredBundleInfo: false
+        ))
+    }
+
+    func testShouldNotResetForForeignBundleWhenBundleIsStored() {
+        XCTAssertFalse(CapgoUpdater.shouldResetForForeignBundle(
+            bundlePath: "/data/user/0/app/files/versions/abc123",
+            isBuiltin: false,
+            hasStoredBundleInfo: true
+        ))
+    }
+
     // MARK: - BundleStatus Tests
 
     func testBundleStatusLocalization() {
