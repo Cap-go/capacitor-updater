@@ -3,8 +3,13 @@ import XCTest
 import Version
 
 private final class TestableCapacitorUpdaterPlugin: CapacitorUpdaterPlugin {
-    override func endBackGroundTask() {}
-    override func sendReadyToJs(current: BundleInfo, msg: String) {}
+    override func endBackGroundTask() {
+        // Intentionally blank: tests avoid touching UIApplication background-task APIs.
+    }
+
+    override func sendReadyToJs(current: BundleInfo, msg: String) {
+        // Intentionally blank: tests assert native state transitions without JS bridge side effects.
+    }
 }
 
 private final class FreshDownloadCapgoUpdater: CapgoUpdater {
@@ -29,7 +34,9 @@ private final class FreshDownloadCapgoUpdater: CapgoUpdater {
         throw NSError(domain: "CapacitorUpdaterPluginTests", code: 1)
     }
 
-    override func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {}
+    override func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {
+        // Intentionally blank: test doubles should not emit network-backed stats.
+    }
 }
 
 class CapacitorUpdaterTests: XCTestCase {
