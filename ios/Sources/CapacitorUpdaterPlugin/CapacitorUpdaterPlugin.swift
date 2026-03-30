@@ -1398,6 +1398,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.setOnLaunchDirectUpdateUsed(onLaunchDirectUpdateUsed)
     }
 
+    func setUpdateUrlForTesting(_ updateUrl: String) {
+        self.updateUrl = updateUrl
+    }
+
     func shouldUseDirectUpdateForTesting() -> Bool {
         self.shouldUseDirectUpdate()
     }
@@ -1568,6 +1572,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                                 self.logger.error("Failed to delete failed bundle: \(nextImpl!.toString())")
                             }
                         }
+                        self.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate: plannedDirectUpdate)
                         if res.manifest != nil {
                             nextImpl = try self.implementation.downloadManifest(manifest: res.manifest!, version: latestVersionName, sessionKey: sessionKey, link: res.link, comment: res.comment)
                         } else {

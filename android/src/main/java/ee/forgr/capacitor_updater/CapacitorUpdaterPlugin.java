@@ -2072,6 +2072,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     }
                                 }
                             }
+                            CapacitorUpdaterPlugin.this.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate);
                             startNewThread(() -> {
                                 try {
                                     logger.info(
