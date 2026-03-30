@@ -111,6 +111,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var taskRunning = false
     private var periodCheckDelay = 0
     private let downloadLock = NSLock()
+    private let onLaunchDirectUpdateStateLock = NSLock()
     private var downloadInProgress = false
     private var downloadStartTime: Date?
     private let downloadTimeout: TimeInterval = 3600 // 1 hour timeout
@@ -1358,7 +1359,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             return false
         case "onLaunch":
-            if !self.onLaunchDirectUpdateUsed {
+            if !self.getOnLaunchDirectUpdateUsed() {
                 return true
             }
             return false
@@ -1372,17 +1373,29 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         plannedDirectUpdate && directUpdateMode == "onLaunch"
     }
 
+    private func getOnLaunchDirectUpdateUsed() -> Bool {
+        self.onLaunchDirectUpdateStateLock.lock()
+        defer { self.onLaunchDirectUpdateStateLock.unlock() }
+        return self.onLaunchDirectUpdateUsed
+    }
+
+    private func setOnLaunchDirectUpdateUsed(_ used: Bool) {
+        self.onLaunchDirectUpdateStateLock.lock()
+        self.onLaunchDirectUpdateUsed = used
+        self.onLaunchDirectUpdateStateLock.unlock()
+    }
+
     private func consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate: Bool) {
         guard Self.shouldConsumeOnLaunchDirectUpdate(directUpdateMode: self.directUpdateMode, plannedDirectUpdate: plannedDirectUpdate) else {
             return
         }
 
-        self.onLaunchDirectUpdateUsed = true
+        self.setOnLaunchDirectUpdateUsed(true)
     }
 
     func configureDirectUpdateModeForTesting(_ directUpdateMode: String, onLaunchDirectUpdateUsed: Bool = false) {
         self.directUpdateMode = directUpdateMode
-        self.onLaunchDirectUpdateUsed = onLaunchDirectUpdateUsed
+        self.setOnLaunchDirectUpdateUsed(onLaunchDirectUpdateUsed)
     }
 
     func shouldUseDirectUpdateForTesting() -> Bool {
@@ -1390,7 +1403,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     var hasConsumedOnLaunchDirectUpdateForTesting: Bool {
-        self.onLaunchDirectUpdateUsed
+        self.getOnLaunchDirectUpdateUsed()
     }
 
     private func notifyBreakingEvents(version: String) {

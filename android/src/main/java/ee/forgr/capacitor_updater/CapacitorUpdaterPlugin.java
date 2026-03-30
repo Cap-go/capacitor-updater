@@ -110,7 +110,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private Boolean autoSplashscreenTimedOut = false;
     private String directUpdateMode = "false";
     private Boolean wasRecentlyInstalledOrUpdated = false;
-    private Boolean onLaunchDirectUpdateUsed = false;
+    private volatile boolean onLaunchDirectUpdateUsed = false;
     Boolean shakeMenuEnabled = false;
     Boolean shakeChannelSelectorEnabled = false;
     private Boolean allowManualBundleError = false;
