@@ -783,6 +783,19 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return plannedDirectUpdate && !Boolean.TRUE.equals(this.autoSplashscreenTimedOut);
     }
 
+    static boolean shouldConsumeOnLaunchDirectUpdate(final String directUpdateMode, final boolean plannedDirectUpdate) {
+        return plannedDirectUpdate && "onLaunch".equals(directUpdateMode);
+    }
+
+    private void consumeOnLaunchDirectUpdateAttempt(final boolean plannedDirectUpdate) {
+        if (!shouldConsumeOnLaunchDirectUpdate(this.directUpdateMode, plannedDirectUpdate)) {
+            return;
+        }
+
+        this.onLaunchDirectUpdateUsed = true;
+        this.implementation.directUpdate = false;
+    }
+
     private void directUpdateFinish(final BundleInfo latest) {
         if ("onLaunch".equals(this.directUpdateMode)) {
             this.onLaunchDirectUpdateUsed = true;
@@ -1804,11 +1817,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
         String latestVersionName,
         BundleInfo current,
         Boolean error,
-        Boolean isDirectUpdate,
+        Boolean plannedDirectUpdate,
         String failureAction,
         String failureEvent,
         boolean shouldSendStats
     ) {
+        this.consumeOnLaunchDirectUpdateAttempt(Boolean.TRUE.equals(plannedDirectUpdate));
         if (error) {
             logger.info(
                 "endBackGroundTaskWithNotif error: " +
@@ -1828,7 +1842,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final JSObject ret = new JSObject();
         ret.put("bundle", InternalUtils.mapToJSObject(current.toJSONMap()));
         this.notifyListeners("noNeedUpdate", ret);
-        this.sendReadyToJs(current, msg, isDirectUpdate);
+        this.sendReadyToJs(current, msg, plannedDirectUpdate);
         this.backgroundDownloadTask = null;
         this.downloadStartTimeMs = 0;
         logger.info("endBackGroundTaskWithNotif " + msg);
@@ -1930,7 +1944,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     "Next update will be to builtin version",
                                     latestVersionName,
                                     current,
-                                    false
+                                    false,
+                                    plannedDirectUpdate
                                 );
                             }
                             return;
@@ -2019,7 +2034,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                             "update downloaded, will install next background",
                                             latestVersionName,
                                             latest,
-                                            false
+                                            false,
+                                            plannedDirectUpdate
                                         );
                                     }
                                     return;
@@ -2084,7 +2100,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
                             });
                         } else {
                             logger.info("No need to update, " + current.getId() + " is the latest bundle.");
-                            CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif("No need to update", latestVersionName, current, false);
+                            CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                                "No need to update",
+                                latestVersionName,
+                                current,
+                                false,
+                                plannedDirectUpdate
+                            );
                         }
                     } catch (final Exception e) {
                         logger.error("error in update check " + e.getMessage());

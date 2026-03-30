@@ -209,6 +209,20 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertFalse(condition1 == condition3)
     }
 
+    func testShouldConsumeOnLaunchDirectUpdateForOnLaunchAttempt() {
+        XCTAssertTrue(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate(directUpdateMode: "onLaunch", plannedDirectUpdate: true))
+    }
+
+    func testShouldNotConsumeOnLaunchDirectUpdateForNonLaunchAttempt() {
+        XCTAssertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate(directUpdateMode: "onLaunch", plannedDirectUpdate: false))
+    }
+
+    func testShouldNotConsumeOnLaunchDirectUpdateForOtherModes() {
+        XCTAssertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate(directUpdateMode: "always", plannedDirectUpdate: true))
+        XCTAssertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate(directUpdateMode: "atInstall", plannedDirectUpdate: true))
+        XCTAssertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate(directUpdateMode: "false", plannedDirectUpdate: true))
+    }
+
     func testDelayUpdateUtilsSetMultiDelayStoresMultipleConditions() throws {
         let utils = try makeDelayUpdateUtils()
         clearDelayStorage()

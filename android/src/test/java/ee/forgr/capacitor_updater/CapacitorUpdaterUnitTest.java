@@ -233,4 +233,21 @@ public class CapacitorUpdaterUnitTest {
         assertEquals(BundleInfo.ID_BUILTIN, bundleInfo.getVersionName());
         assertEquals(BundleStatus.SUCCESS, bundleInfo.getStatus());
     }
+
+    @Test
+    public void testShouldConsumeOnLaunchDirectUpdateForOnLaunchAttempt() {
+        assertTrue(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate("onLaunch", true));
+    }
+
+    @Test
+    public void testShouldNotConsumeOnLaunchDirectUpdateForNonLaunchAttempt() {
+        assertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate("onLaunch", false));
+    }
+
+    @Test
+    public void testShouldNotConsumeOnLaunchDirectUpdateForOtherModes() {
+        assertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate("always", true));
+        assertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate("atInstall", true));
+        assertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate("false", true));
+    }
 }
