@@ -1378,7 +1378,19 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         self.onLaunchDirectUpdateUsed = true
-        self.directUpdate = false
+    }
+
+    func configureDirectUpdateModeForTesting(_ directUpdateMode: String, onLaunchDirectUpdateUsed: Bool = false) {
+        self.directUpdateMode = directUpdateMode
+        self.onLaunchDirectUpdateUsed = onLaunchDirectUpdateUsed
+    }
+
+    func shouldUseDirectUpdateForTesting() -> Bool {
+        self.shouldUseDirectUpdate()
+    }
+
+    var hasConsumedOnLaunchDirectUpdateForTesting: Bool {
+        self.onLaunchDirectUpdateUsed
     }
 
     private func notifyBreakingEvents(version: String) {

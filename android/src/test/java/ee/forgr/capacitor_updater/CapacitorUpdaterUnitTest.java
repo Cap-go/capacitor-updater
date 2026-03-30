@@ -1,12 +1,27 @@
 package ee.forgr.capacitor_updater;
 
 import static org.junit.Assert.*;
+import static org.mockito.Mockito.*;
 
+import android.os.Handler;
+import android.os.Looper;
+import com.getcapacitor.JSObject;
 import io.github.g00fy2.versioncompare.Version;
 import java.util.Date;
 import org.junit.Test;
+import org.mockito.MockedConstruction;
+import org.mockito.MockedStatic;
 
 public class CapacitorUpdaterUnitTest {
+
+    private static final class TestableCapacitorUpdaterPlugin extends CapacitorUpdaterPlugin {
+
+        @Override
+        public void notifyListeners(String eventName, JSObject data) {}
+
+        @Override
+        public void notifyListeners(String eventName, JSObject data, boolean retainUntilConsumed) {}
+    }
 
     // BundleInfo Tests
 
@@ -249,5 +264,32 @@ public class CapacitorUpdaterUnitTest {
         assertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate("always", true));
         assertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate("atInstall", true));
         assertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate("false", true));
+    }
+
+    @Test
+    public void testOnLaunchCompletionConsumesWindowWithoutClearingInFlightDirectUpdate() {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            plugin.implementation = new CapgoUpdater(null);
+            plugin.implementation.directUpdate = true;
+            plugin.configureDirectUpdateModeForTesting("onLaunch", false);
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            BundleInfo current = new BundleInfo("test-id", "1.0.0", BundleStatus.SUCCESS, new Date(), "abc123");
+
+            assertTrue(plugin.shouldUseDirectUpdateForTesting());
+            assertFalse(plugin.hasConsumedOnLaunchDirectUpdateForTesting());
+
+            plugin.completeBackgroundTaskForTesting(current, true);
+
+            assertTrue(plugin.hasConsumedOnLaunchDirectUpdateForTesting());
+            assertFalse(plugin.shouldUseDirectUpdateForTesting());
+            assertTrue(plugin.implementation.directUpdate);
+        }
     }
 }

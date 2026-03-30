@@ -793,7 +793,27 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
 
         this.onLaunchDirectUpdateUsed = true;
-        this.implementation.directUpdate = false;
+    }
+
+    void configureDirectUpdateModeForTesting(final String directUpdateMode, final boolean onLaunchDirectUpdateUsed) {
+        this.directUpdateMode = directUpdateMode;
+        this.onLaunchDirectUpdateUsed = onLaunchDirectUpdateUsed;
+    }
+
+    boolean shouldUseDirectUpdateForTesting() {
+        return this.shouldUseDirectUpdate();
+    }
+
+    boolean hasConsumedOnLaunchDirectUpdateForTesting() {
+        return this.onLaunchDirectUpdateUsed;
+    }
+
+    void setLoggerForTesting(final Logger logger) {
+        this.logger = logger;
+    }
+
+    void completeBackgroundTaskForTesting(final BundleInfo current, final boolean plannedDirectUpdate) {
+        this.endBackGroundTaskWithNotif("test", current.getVersionName(), current, false, plannedDirectUpdate);
     }
 
     private void directUpdateFinish(final BundleInfo latest) {

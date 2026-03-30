@@ -223,6 +223,32 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate(directUpdateMode: "false", plannedDirectUpdate: true))
     }
 
+    func testOnLaunchCompletionConsumesWindowAfterFirstCycle() {
+        let current = BundleInfo(
+            id: "test-id",
+            version: "1.0.0",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "abc123"
+        )
+
+        plugin.configureDirectUpdateModeForTesting("onLaunch")
+
+        XCTAssertTrue(plugin.shouldUseDirectUpdateForTesting())
+        XCTAssertFalse(plugin.hasConsumedOnLaunchDirectUpdateForTesting)
+
+        plugin.endBackGroundTaskWithNotif(
+            msg: "No need to update",
+            latestVersionName: current.getVersionName(),
+            current: current,
+            error: false,
+            plannedDirectUpdate: true
+        )
+
+        XCTAssertTrue(plugin.hasConsumedOnLaunchDirectUpdateForTesting)
+        XCTAssertFalse(plugin.shouldUseDirectUpdateForTesting())
+    }
+
     func testDelayUpdateUtilsSetMultiDelayStoresMultipleConditions() throws {
         let utils = try makeDelayUpdateUtils()
         clearDelayStorage()
