@@ -339,7 +339,7 @@ class CapacitorUpdaterTests: XCTestCase {
         defer { clearDelayStorage() }
         let json = try makeDelayConditionsJSON()
 
-        utils.setMultiDelay(delayConditions: json)
+        XCTAssertTrue(utils.setMultiDelay(delayConditions: json))
         XCTAssertEqual(UserDefaults.standard.string(forKey: delayPreferencesKey), json)
     }
 
@@ -348,7 +348,7 @@ class CapacitorUpdaterTests: XCTestCase {
         clearDelayStorage()
         defer { clearDelayStorage() }
         let json = try makeDelayConditionsJSON()
-        utils.setMultiDelay(delayConditions: json)
+        XCTAssertTrue(utils.setMultiDelay(delayConditions: json))
 
         utils.checkCancelDelay(source: .killed)
 
@@ -369,7 +369,7 @@ class CapacitorUpdaterTests: XCTestCase {
         let data = try JSONSerialization.data(withJSONObject: conditions)
         let json = try XCTUnwrap(String(data: data, encoding: .utf8))
 
-        utils.setMultiDelay(delayConditions: json)
+        XCTAssertTrue(utils.setMultiDelay(delayConditions: json))
         utils.setBackgroundTimestamp(Int64(Date().timeIntervalSince1970 * 1000))
 
         utils.checkCancelDelay(source: .foreground)

@@ -878,11 +878,15 @@ import UIKit
         streamPointer.pointee.dst_size = outputBufferSize
 
         while true {
+            let previousSrcSize = streamPointer.pointee.src_size
+            let previousDstSize = streamPointer.pointee.dst_size
             let status = compression_stream_process(streamPointer, 0)
 
             let bytesWritten = outputBufferSize - streamPointer.pointee.dst_size
             if bytesWritten > 0 {
                 decompressedData.append(outputBaseAddress, count: bytesWritten)
+                streamPointer.pointee.dst_ptr = outputBaseAddress
+                streamPointer.pointee.dst_size = outputBufferSize
             }
 
             if status == COMPRESSION_STATUS_END {
@@ -903,9 +907,18 @@ import UIKit
                 return nil
             }
 
-            if streamPointer.pointee.dst_size == 0 {
-                streamPointer.pointee.dst_ptr = outputBaseAddress
-                streamPointer.pointee.dst_size = outputBufferSize
+            let noInputConsumed = streamPointer.pointee.src_size == previousSrcSize
+            let noOutputProgress = bytesWritten == 0 && streamPointer.pointee.dst_size == previousDstSize
+            if noInputConsumed && noOutputProgress {
+                logger.error("Brotli stream stalled during decompression")
+                logger.debug("File: \(fileName), Status: \(status)")
+                return nil
+            }
+
+            if streamPointer.pointee.src_size == 0 && bytesWritten == 0 {
+                logger.error("Brotli stream ended before COMPRESSION_STATUS_END")
+                logger.debug("File: \(fileName)")
+                return nil
             }
         }
     }
@@ -941,18 +954,22 @@ import UIKit
         var outputBuffer = [UInt8](repeating: 0, count: outputBufferSize)
 
         let streamPointer = UnsafeMutablePointer<compression_stream>.allocate(capacity: 1)
-        let status = compression_stream_init(streamPointer, COMPRESSION_STREAM_DECODE, COMPRESSION_BROTLI)
+        var didInitializeStream = false
 
+        defer {
+            if didInitializeStream {
+                compression_stream_destroy(streamPointer)
+            }
+            streamPointer.deallocate()
+        }
+
+        let status = compression_stream_init(streamPointer, COMPRESSION_STREAM_DECODE, COMPRESSION_BROTLI)
         guard status != COMPRESSION_STATUS_ERROR else {
             logger.error("Failed to initialize Brotli stream")
             logger.debug("File: \(fileName), Status: \(status)")
             return nil
         }
-
-        defer {
-            compression_stream_destroy(streamPointer)
-            streamPointer.deallocate()
-        }
+        didInitializeStream = true
 
         return data.withUnsafeBytes { rawBufferPointer -> Data? in
             guard let inputBaseAddress = rawBufferPointer.baseAddress?.assumingMemoryBound(to: UInt8.self) else {

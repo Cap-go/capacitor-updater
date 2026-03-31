@@ -150,10 +150,12 @@ public class DelayUpdateUtils {
         }
     }
 
-    public func setMultiDelay(delayConditions: String) {
+    @discardableResult
+    public func setMultiDelay(delayConditions: String) -> Bool {
         UserDefaults.standard.set(delayConditions, forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES)
         UserDefaults.standard.synchronize()
         logger.info("Delay update saved")
+        return true
     }
 
     public func setBackgroundTimestamp(_ backgroundTimestamp: Int64) {
@@ -174,10 +176,12 @@ public class DelayUpdateUtils {
         return timestamp
     }
 
-    public func cancelDelay(source: String) {
+    @discardableResult
+    public func cancelDelay(source: String) -> Bool {
         UserDefaults.standard.removeObject(forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES)
         UserDefaults.standard.synchronize()
         logger.info("All delays canceled from \(source)")
+        return true
     }
 
     // MARK: - Helper methods
