@@ -1003,29 +1003,20 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
             }
             let delayConditions: String = toJson(object: modifiableList)
-            if delayUpdateUtils.setMultiDelay(delayConditions: delayConditions) {
-                call.resolve()
-            } else {
-                call.reject("Failed to delay update")
-            }
+            delayUpdateUtils.setMultiDelay(delayConditions: delayConditions)
+            call.resolve()
         } else {
             let delayConditions: String = toJson(object: delayConditionList)
-            if delayUpdateUtils.setMultiDelay(delayConditions: delayConditions) {
-                call.resolve()
-            } else {
-                call.reject("Failed to delay update")
-            }
+            delayUpdateUtils.setMultiDelay(delayConditions: delayConditions)
+            call.resolve()
         }
     }
 
     // Note: _setMultiDelay and _cancelDelay methods have been moved to DelayUpdateUtils class
 
     @objc func cancelDelay(_ call: CAPPluginCall) {
-        if delayUpdateUtils.cancelDelay(source: "JS") {
-            call.resolve()
-        } else {
-            call.reject("Failed to cancel delay")
-        }
+        delayUpdateUtils.cancelDelay(source: "JS")
+        call.resolve()
     }
 
     // Note: _checkCancelDelay method has been moved to DelayUpdateUtils class

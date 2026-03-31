@@ -143,18 +143,17 @@ public class DelayUpdateUtils {
 
         if !delayConditionListToKeep.isEmpty {
             let json = toJson(object: delayConditionListToKeep.map { $0.toJSON() })
-            _ = setMultiDelay(delayConditions: json)
+            setMultiDelay(delayConditions: json)
         } else {
             // Clear all delay conditions if none are left to keep
-            _ = cancelDelay(source: "checkCancelDelay")
+            cancelDelay(source: "checkCancelDelay")
         }
     }
 
-    public func setMultiDelay(delayConditions: String) -> Bool {
+    public func setMultiDelay(delayConditions: String) {
         UserDefaults.standard.set(delayConditions, forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES)
         UserDefaults.standard.synchronize()
         logger.info("Delay update saved")
-        return true
     }
 
     public func setBackgroundTimestamp(_ backgroundTimestamp: Int64) {
@@ -171,15 +170,14 @@ public class DelayUpdateUtils {
 
     private func getBackgroundTimestamp() -> Int64 {
         let key = DelayUpdateUtils.BACKGROUND_TIMESTAMP_KEY
-        let timestamp = UserDefaults.standard.object(forKey: key) as? Int64 ?? 0
+        let timestamp = (UserDefaults.standard.object(forKey: key) as? NSNumber)?.int64Value ?? 0
         return timestamp
     }
 
-    public func cancelDelay(source: String) -> Bool {
+    public func cancelDelay(source: String) {
         UserDefaults.standard.removeObject(forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES)
         UserDefaults.standard.synchronize()
         logger.info("All delays canceled from \(source)")
-        return true
     }
 
     // MARK: - Helper methods

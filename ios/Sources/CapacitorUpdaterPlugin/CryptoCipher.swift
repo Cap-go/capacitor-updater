@@ -164,6 +164,7 @@ public struct CryptoCipher {
             }
         }
 
+        var readFailed = false
         while autoreleasepool(invoking: {
             let fileData: Data
             do {
@@ -171,6 +172,7 @@ public struct CryptoCipher {
             } catch {
                 logger.error("Error reading file during checksum")
                 logger.debug("Error: \(error)")
+                readFailed = true
                 return false
             }
 
@@ -182,6 +184,9 @@ public struct CryptoCipher {
             }
         }) {}
 
+        if readFailed {
+            return ""
+        }
         let digest = sha256.finalize()
         return digest.compactMap { String(format: "%02x", $0) }.joined()
     }
