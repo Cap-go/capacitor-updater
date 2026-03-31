@@ -1896,7 +1896,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private Thread backgroundDownload() {
         final boolean plannedDirectUpdate = this.shouldUseDirectUpdate();
         final boolean initialDirectUpdateAllowed = this.isDirectUpdateCurrentlyAllowed(plannedDirectUpdate);
-        this.implementation.directUpdate = initialDirectUpdateAllowed;
         final String messageUpdate = initialDirectUpdateAllowed
             ? "Update will occur now."
             : "Update will occur next time app moves to background.";
@@ -2071,8 +2070,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                         logger.error("Failed to delete failed bundle: " + latest.getVersionName() + " " + e.getMessage());
                                     }
                                 }
+                                if (BundleStatus.DOWNLOADING == latest.getStatus()) {
+                                    logger.info("Latest bundle is already downloading. Skipping duplicate fresh download request.");
+                                    return;
+                                }
                             }
                             CapacitorUpdaterPlugin.this.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate);
+                            CapacitorUpdaterPlugin.this.implementation.directUpdate = initialDirectUpdateAllowed;
                             startNewThread(() -> {
                                 try {
                                     logger.info(

@@ -46,6 +46,7 @@ public class CapacitorUpdaterUnitTest {
     private static final class FreshDownloadCapgoUpdater extends CapgoUpdater {
 
         private final BundleInfo currentBundle = new BundleInfo("current-id", "1.0.0", BundleStatus.SUCCESS, new Date(), "abc123");
+        private BundleInfo existingLatestBundle;
         private BooleanSupplier consumedStateSupplier = () -> false;
         private boolean downloadBackgroundCalled = false;
         private boolean consumedWhenDownloadStarted = false;
@@ -69,7 +70,7 @@ public class CapacitorUpdaterUnitTest {
 
         @Override
         public BundleInfo getBundleInfoByName(final String version) {
-            return null;
+            return this.existingLatestBundle;
         }
 
         @Override
@@ -387,6 +388,37 @@ public class CapacitorUpdaterUnitTest {
             assertTrue(plugin.hasConsumedOnLaunchDirectUpdateForTesting());
             assertFalse(plugin.shouldUseDirectUpdateForTesting());
             assertTrue(plugin.implementation.directUpdate);
+        }
+    }
+
+    @Test
+    public void testInFlightDirectUpdateIsNotClearedByFollowUpForegroundCheck() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
+            FreshDownloadCapgoUpdater updater = new FreshDownloadCapgoUpdater();
+            updater.existingLatestBundle = new BundleInfo(
+                "download-id",
+                "2.0.0",
+                BundleStatus.DOWNLOADING,
+                new Date(),
+                "next-checksum"
+            );
+
+            plugin.implementation = updater;
+            plugin.implementation.directUpdate = true;
+            plugin.configureDirectUpdateModeForTesting("onLaunch", true);
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            invokeBackgroundDownload(plugin);
+
+            assertFalse(updater.downloadBackgroundCalled);
+            assertTrue(plugin.implementation.directUpdate);
+            assertFalse(plugin.shouldUseDirectUpdateForTesting());
         }
     }
 }
