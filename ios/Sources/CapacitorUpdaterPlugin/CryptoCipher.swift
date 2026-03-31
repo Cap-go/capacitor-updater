@@ -146,50 +146,44 @@ public struct CryptoCipher {
         let bufferSize = 1024 * 1024 * 5 // 5 MB
         var sha256 = SHA256()
 
+        let fileHandle: FileHandle
         do {
-            let fileHandle: FileHandle
-            do {
-                fileHandle = try FileHandle(forReadingFrom: filePath)
-            } catch {
-                logger.error("Cannot open file for checksum calculation")
-                logger.debug("Path: \(filePath.path), Error: \(error)")
-                return ""
-            }
-
-            defer {
-                do {
-                    try fileHandle.close()
-                } catch {
-                    logger.error("Error closing file during checksum")
-                    logger.debug("Error: \(error)")
-                }
-            }
-
-            while autoreleasepool(invoking: {
-                let fileData: Data
-                do {
-                    fileData = try fileHandle.read(upToCount: bufferSize) ?? Data()
-                } catch {
-                    logger.error("Error reading file during checksum")
-                    logger.debug("Error: \(error)")
-                    return false
-                }
-
-                if fileData.count > 0 {
-                    sha256.update(data: fileData)
-                    return true // Continue
-                } else {
-                    return false // End of file
-                }
-            }) {}
-
-            let digest = sha256.finalize()
-            return digest.compactMap { String(format: "%02x", $0) }.joined()
+            fileHandle = try FileHandle(forReadingFrom: filePath)
         } catch {
-            logger.error("Cannot calculate checksum")
+            logger.error("Cannot open file for checksum calculation")
             logger.debug("Path: \(filePath.path), Error: \(error)")
             return ""
         }
+
+        defer {
+            do {
+                try fileHandle.close()
+            } catch {
+                logger.error("Error closing file during checksum")
+                logger.debug("Error: \(error)")
+            }
+        }
+
+        while autoreleasepool(invoking: {
+            let fileData: Data
+            do {
+                fileData = try fileHandle.read(upToCount: bufferSize) ?? Data()
+            } catch {
+                logger.error("Error reading file during checksum")
+                logger.debug("Error: \(error)")
+                return false
+            }
+
+            if fileData.count > 0 {
+                sha256.update(data: fileData)
+                return true // Continue
+            } else {
+                return false // End of file
+            }
+        }) {}
+
+        let digest = sha256.finalize()
+        return digest.compactMap { String(format: "%02x", $0) }.joined()
     }
 
     public static func decryptFile(filePath: URL, publicKey: String, sessionKey: String, version: String) throws {

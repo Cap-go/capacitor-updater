@@ -8,18 +8,36 @@ import UIKit
 import Capacitor
 
 extension UIApplication {
-    // swiftlint:disable:next line_length
-    public class func topViewController(_ base: UIViewController? = UIApplication.shared.windows.first?.rootViewController) -> UIViewController? {
-        if let nav = base as? UINavigationController {
+    private class var activeRootViewController: UIViewController? {
+        let windowScenes = shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let activeWindows = windowScenes
+            .filter { $0.activationState == .foregroundActive || $0.activationState == .foregroundInactive }
+            .flatMap(\.windows)
+
+        if let keyWindow = activeWindows.first(where: \.isKeyWindow) {
+            return keyWindow.rootViewController
+        }
+
+        if let visibleWindow = activeWindows.first {
+            return visibleWindow.rootViewController
+        }
+
+        return windowScenes.flatMap(\.windows).first?.rootViewController
+    }
+
+    public class func topViewController(_ base: UIViewController? = nil) -> UIViewController? {
+        let resolvedBase = base ?? UIApplication.activeRootViewController
+
+        if let nav = resolvedBase as? UINavigationController {
             return topViewController(nav.visibleViewController)
         }
-        if let tab = base as? UITabBarController, let selected = tab.selectedViewController {
+        if let tab = resolvedBase as? UITabBarController, let selected = tab.selectedViewController {
             return topViewController(selected)
         }
-        if let presented = base?.presentedViewController {
+        if let presented = resolvedBase?.presentedViewController {
             return topViewController(presented)
         }
-        return base
+        return resolvedBase
     }
 }
 

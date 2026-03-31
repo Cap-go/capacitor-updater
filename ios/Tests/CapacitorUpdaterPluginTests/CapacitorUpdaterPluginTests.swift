@@ -7,6 +7,14 @@ private final class TestableCapacitorUpdaterPlugin: CapacitorUpdaterPlugin {
         // Intentionally blank: tests avoid touching UIApplication background-task APIs.
     }
 
+    override func beginBackgroundTaskForDownload() -> UIBackgroundTaskIdentifier {
+        .invalid
+    }
+
+    override func executeBackgroundDownloadWork(_ work: @escaping () -> Void) {
+        work()
+    }
+
     override func sendReadyToJs(current: BundleInfo, msg: String) {
         // Intentionally blank: tests assert native state transitions without JS bridge side effects.
     }
@@ -58,9 +66,9 @@ class CapacitorUpdaterTests: XCTestCase {
         super.tearDown()
     }
 
-    private func makeDelayUpdateUtils() throws -> DelayUpdateUtils {
+    private func makeDelayUpdateUtils() -> DelayUpdateUtils {
         let logger = Logger(withTag: "TestLogger")
-        let version = try Version("1.0.0")
+        let version = Version("1.0.0")
         return DelayUpdateUtils(currentVersionNative: version, logger: logger)
     }
 
@@ -326,7 +334,7 @@ class CapacitorUpdaterTests: XCTestCase {
     }
 
     func testDelayUpdateUtilsSetMultiDelayStoresMultipleConditions() throws {
-        let utils = try makeDelayUpdateUtils()
+        let utils = makeDelayUpdateUtils()
         clearDelayStorage()
         defer { clearDelayStorage() }
         let json = try makeDelayConditionsJSON()
@@ -336,7 +344,7 @@ class CapacitorUpdaterTests: XCTestCase {
     }
 
     func testDelayUpdateUtilsCheckCancelDelayKilledKeepsOtherConditions() throws {
-        let utils = try makeDelayUpdateUtils()
+        let utils = makeDelayUpdateUtils()
         clearDelayStorage()
         defer { clearDelayStorage() }
         let json = try makeDelayConditionsJSON()
