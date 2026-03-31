@@ -30,6 +30,8 @@ public class CapacitorUpdaterUnitTest {
 
     private static final class ImmediateThreadCapacitorUpdaterPlugin extends TestableCapacitorUpdaterPlugin {
 
+        private boolean versionDownloadInProgress = false;
+
         @Override
         public Thread startNewThread(final Runnable function, Number waitTime) {
             function.run();
@@ -40,6 +42,11 @@ public class CapacitorUpdaterUnitTest {
         public Thread startNewThread(final Runnable function) {
             function.run();
             return new Thread();
+        }
+
+        @Override
+        boolean isVersionDownloadInProgress(final String version) {
+            return this.versionDownloadInProgress;
         }
     }
 
@@ -411,6 +418,7 @@ public class CapacitorUpdaterUnitTest {
             plugin.implementation = updater;
             plugin.implementation.directUpdate = true;
             plugin.configureDirectUpdateModeForTesting("onLaunch", true);
+            plugin.versionDownloadInProgress = true;
             plugin.setLoggerForTesting(mock(Logger.class));
             updater.directUpdateStateSupplier = () -> Boolean.TRUE.equals(plugin.implementation.directUpdate);
 
@@ -424,7 +432,7 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
-    public void testStaleDirectUpdateFlagIsClearedBeforeNonLaunchFreshDownloadRetry() throws Exception {
+    public void testStaleDirectUpdateFlagIsClearedBeforeRetryingStaleDownloadingBundle() throws Exception {
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);
             MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
@@ -437,6 +445,7 @@ public class CapacitorUpdaterUnitTest {
             plugin.implementation = updater;
             plugin.implementation.directUpdate = true;
             plugin.configureDirectUpdateModeForTesting("onLaunch", true);
+            updater.existingLatestBundle = new BundleInfo("stale-download-id", "2.0.0", BundleStatus.DOWNLOADING, new Date(), "checksum");
             plugin.setLoggerForTesting(mock(Logger.class));
             updater.directUpdateStateSupplier = () -> Boolean.TRUE.equals(plugin.implementation.directUpdate);
 

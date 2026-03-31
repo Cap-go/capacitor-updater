@@ -808,6 +808,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return this.onLaunchDirectUpdateUsed;
     }
 
+    boolean isVersionDownloadInProgress(final String version) {
+        return (
+            version != null &&
+            !version.isEmpty() &&
+            this.implementation != null &&
+            this.implementation.activity != null &&
+            DownloadWorkerManager.isVersionDownloading(this.implementation.activity, version)
+        );
+    }
+
     void setLoggerForTesting(final Logger logger) {
         this.logger = logger;
     }
@@ -2071,7 +2081,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     }
                                 }
                             }
-                            final boolean retryingInFlightDownload = latest != null && BundleStatus.DOWNLOADING == latest.getStatus();
+                            final boolean retryingInFlightDownload =
+                                latest != null &&
+                                BundleStatus.DOWNLOADING == latest.getStatus() &&
+                                CapacitorUpdaterPlugin.this.isVersionDownloadInProgress(latest.getVersionName());
                             CapacitorUpdaterPlugin.this.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate);
                             CapacitorUpdaterPlugin.this.implementation.directUpdate = retryingInFlightDownload
                                 ? Boolean.TRUE.equals(CapacitorUpdaterPlugin.this.implementation.directUpdate) || initialDirectUpdateAllowed
