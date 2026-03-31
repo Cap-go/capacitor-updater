@@ -422,4 +422,32 @@ public class CapacitorUpdaterUnitTest {
             assertFalse(plugin.shouldUseDirectUpdateForTesting());
         }
     }
+
+    @Test
+    public void testStaleDirectUpdateFlagIsClearedBeforeNonLaunchFreshDownloadRetry() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
+            FreshDownloadCapgoUpdater updater = new FreshDownloadCapgoUpdater();
+
+            plugin.implementation = updater;
+            plugin.implementation.directUpdate = true;
+            plugin.configureDirectUpdateModeForTesting("onLaunch", true);
+            plugin.setLoggerForTesting(mock(Logger.class));
+            updater.directUpdateStateSupplier = () -> Boolean.TRUE.equals(plugin.implementation.directUpdate);
+
+            assertFalse(plugin.shouldUseDirectUpdateForTesting());
+
+            invokeBackgroundDownload(plugin);
+
+            assertTrue(updater.downloadBackgroundCalled);
+            assertFalse(updater.directUpdateWhenDownloadStarted);
+            assertFalse(plugin.implementation.directUpdate);
+            assertFalse(plugin.shouldUseDirectUpdateForTesting());
+        }
+    }
 }

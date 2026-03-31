@@ -2071,9 +2071,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     }
                                 }
                             }
+                            final boolean retryingInFlightDownload = latest != null && BundleStatus.DOWNLOADING == latest.getStatus();
                             CapacitorUpdaterPlugin.this.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate);
-                            CapacitorUpdaterPlugin.this.implementation.directUpdate =
-                                Boolean.TRUE.equals(CapacitorUpdaterPlugin.this.implementation.directUpdate) || initialDirectUpdateAllowed;
+                            CapacitorUpdaterPlugin.this.implementation.directUpdate = retryingInFlightDownload
+                                ? Boolean.TRUE.equals(CapacitorUpdaterPlugin.this.implementation.directUpdate) || initialDirectUpdateAllowed
+                                : initialDirectUpdateAllowed;
                             startNewThread(() -> {
                                 try {
                                     logger.info(
