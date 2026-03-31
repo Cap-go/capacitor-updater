@@ -63,7 +63,13 @@ public class DelayUpdateUtils {
             switch kind {
             case "background":
                 if source == .foreground {
-                    let backgroundedAt = getBackgroundTimestamp()
+                    guard let backgroundedAt = getBackgroundTimestamp() else {
+                        delayConditionListToKeep.append(condition)
+                        // swiftlint:disable:next line_length
+                        logger.info("Background delay (value: \(value ?? "")) condition kept at index \(index) because no background timestamp was found")
+                        index += 1
+                        continue
+                    }
                     let now = Int64(Date().timeIntervalSince1970 * 1000) // Convert to milliseconds
                     let delta = max(0, now - backgroundedAt)
 
@@ -170,10 +176,9 @@ public class DelayUpdateUtils {
         logger.info("Background timestamp removed")
     }
 
-    private func getBackgroundTimestamp() -> Int64 {
+    private func getBackgroundTimestamp() -> Int64? {
         let key = DelayUpdateUtils.BACKGROUND_TIMESTAMP_KEY
-        let timestamp = (UserDefaults.standard.object(forKey: key) as? NSNumber)?.int64Value ?? 0
-        return timestamp
+        return (UserDefaults.standard.object(forKey: key) as? NSNumber)?.int64Value
     }
 
     @discardableResult

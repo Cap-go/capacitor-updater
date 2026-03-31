@@ -383,6 +383,27 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(parsed.first?["value"], "5000")
     }
 
+    func testDelayUpdateUtilsForegroundKeepsBackgroundConditionWithoutTimestamp() throws {
+        let utils = makeDelayUpdateUtils()
+        clearDelayStorage()
+        defer { clearDelayStorage() }
+        let conditions = [["kind": "background", "value": "5000"]]
+        let data = try JSONSerialization.data(withJSONObject: conditions)
+        let json = try XCTUnwrap(String(data: data, encoding: .utf8))
+
+        XCTAssertTrue(utils.setMultiDelay(delayConditions: json))
+
+        utils.checkCancelDelay(source: .foreground)
+
+        let stored = try XCTUnwrap(UserDefaults.standard.string(forKey: delayPreferencesKey))
+        let storedData = try XCTUnwrap(stored.data(using: .utf8))
+        let parsed = try XCTUnwrap(JSONSerialization.jsonObject(with: storedData) as? [[String: String]])
+
+        XCTAssertEqual(parsed.count, 1)
+        XCTAssertEqual(parsed.first?["kind"], "background")
+        XCTAssertEqual(parsed.first?["value"], "5000")
+    }
+
     // MARK: - DelayUntilNext Tests
 
     func testDelayUntilNextDescription() {
