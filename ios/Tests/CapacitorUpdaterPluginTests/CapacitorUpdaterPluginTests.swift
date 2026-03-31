@@ -2,6 +2,43 @@ import XCTest
 @testable import CapacitorUpdaterPlugin
 import Version
 
+private final class TestableCapacitorUpdaterPlugin: CapacitorUpdaterPlugin {
+    override func endBackGroundTask() {
+        // Intentionally blank: tests avoid touching UIApplication background-task APIs.
+    }
+
+    override func sendReadyToJs(current: BundleInfo, msg: String) {
+        // Intentionally blank: tests assert native state transitions without JS bridge side effects.
+    }
+}
+
+private final class FreshDownloadCapgoUpdater: CapgoUpdater {
+    var currentBundleValue: BundleInfo!
+    var latestResponse = AppVersion()
+    var onDownloadStart: (() -> Void)?
+
+    override func getLatest(url: URL, channel: String?) -> AppVersion {
+        latestResponse
+    }
+
+    override func getCurrentBundle() -> BundleInfo {
+        currentBundleValue
+    }
+
+    override func getBundleInfoByVersionName(version: String) -> BundleInfo? {
+        nil
+    }
+
+    override func download(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
+        onDownloadStart?()
+        throw NSError(domain: "CapacitorUpdaterPluginTests", code: 1)
+    }
+
+    override func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {
+        // Intentionally blank: test doubles should not emit network-backed stats.
+    }
+}
+
 class CapacitorUpdaterTests: XCTestCase {
 
     var plugin: CapacitorUpdaterPlugin!
@@ -11,7 +48,7 @@ class CapacitorUpdaterTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        plugin = CapacitorUpdaterPlugin()
+        plugin = TestableCapacitorUpdaterPlugin()
         implementation = CapgoUpdater()
     }
 
@@ -207,6 +244,85 @@ class CapacitorUpdaterTests: XCTestCase {
 
         XCTAssertTrue(condition1 == condition2)
         XCTAssertFalse(condition1 == condition3)
+    }
+
+    func testShouldConsumeOnLaunchDirectUpdateForOnLaunchAttempt() {
+        XCTAssertTrue(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate(directUpdateMode: "onLaunch", plannedDirectUpdate: true))
+    }
+
+    func testShouldNotConsumeOnLaunchDirectUpdateForNonLaunchAttempt() {
+        XCTAssertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate(directUpdateMode: "onLaunch", plannedDirectUpdate: false))
+    }
+
+    func testShouldNotConsumeOnLaunchDirectUpdateForOtherModes() {
+        XCTAssertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate(directUpdateMode: "always", plannedDirectUpdate: true))
+        XCTAssertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate(directUpdateMode: "atInstall", plannedDirectUpdate: true))
+        XCTAssertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate(directUpdateMode: "false", plannedDirectUpdate: true))
+    }
+
+    func testOnLaunchCompletionConsumesWindowAfterFirstCycle() {
+        let current = BundleInfo(
+            id: "test-id",
+            version: "1.0.0",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "abc123"
+        )
+
+        plugin.configureDirectUpdateModeForTesting("onLaunch")
+
+        XCTAssertTrue(plugin.shouldUseDirectUpdateForTesting())
+        XCTAssertFalse(plugin.hasConsumedOnLaunchDirectUpdateForTesting)
+
+        plugin.endBackGroundTaskWithNotif(
+            msg: "No need to update",
+            latestVersionName: current.getVersionName(),
+            current: current,
+            error: false,
+            plannedDirectUpdate: true
+        )
+
+        XCTAssertTrue(plugin.hasConsumedOnLaunchDirectUpdateForTesting)
+        XCTAssertFalse(plugin.shouldUseDirectUpdateForTesting())
+    }
+
+    func testOnLaunchFreshDownloadConsumesWindowBeforeDownloadStarts() {
+        let downloadStarted = expectation(description: "fresh download started")
+        let current = BundleInfo(
+            id: "test-id",
+            version: "1.0.0",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "abc123"
+        )
+        let latest = AppVersion()
+        latest.version = "2.0.0"
+        latest.url = "https://example.com/update.zip"
+
+        let freshDownloadImplementation = FreshDownloadCapgoUpdater()
+        freshDownloadImplementation.currentBundleValue = current
+        freshDownloadImplementation.latestResponse = latest
+
+        plugin = TestableCapacitorUpdaterPlugin()
+        plugin.implementation = freshDownloadImplementation
+        plugin.configureDirectUpdateModeForTesting("onLaunch")
+        plugin.setUpdateUrlForTesting("https://example.com/channel")
+
+        XCTAssertTrue(plugin.shouldUseDirectUpdateForTesting())
+        XCTAssertFalse(plugin.hasConsumedOnLaunchDirectUpdateForTesting)
+
+        var consumedWhenDownloadStarted = false
+        freshDownloadImplementation.onDownloadStart = {
+            consumedWhenDownloadStarted = self.plugin.hasConsumedOnLaunchDirectUpdateForTesting
+            downloadStarted.fulfill()
+        }
+
+        plugin.backgroundDownload()
+
+        wait(for: [downloadStarted], timeout: 5.0)
+        XCTAssertTrue(consumedWhenDownloadStarted)
+        XCTAssertTrue(plugin.hasConsumedOnLaunchDirectUpdateForTesting)
+        XCTAssertFalse(plugin.shouldUseDirectUpdateForTesting())
     }
 
     func testDelayUpdateUtilsSetMultiDelayStoresMultipleConditions() throws {

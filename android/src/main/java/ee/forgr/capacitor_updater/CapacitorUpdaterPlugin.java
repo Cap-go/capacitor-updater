@@ -110,7 +110,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private Boolean autoSplashscreenTimedOut = false;
     private String directUpdateMode = "false";
     private Boolean wasRecentlyInstalledOrUpdated = false;
-    private Boolean onLaunchDirectUpdateUsed = false;
+    private volatile boolean onLaunchDirectUpdateUsed = false;
     Boolean shakeMenuEnabled = false;
     Boolean shakeChannelSelectorEnabled = false;
     private Boolean allowManualBundleError = false;
@@ -781,6 +781,49 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private boolean isDirectUpdateCurrentlyAllowed(final boolean plannedDirectUpdate) {
         return plannedDirectUpdate && !Boolean.TRUE.equals(this.autoSplashscreenTimedOut);
+    }
+
+    static boolean shouldConsumeOnLaunchDirectUpdate(final String directUpdateMode, final boolean plannedDirectUpdate) {
+        return plannedDirectUpdate && "onLaunch".equals(directUpdateMode);
+    }
+
+    private void consumeOnLaunchDirectUpdateAttempt(final boolean plannedDirectUpdate) {
+        if (!shouldConsumeOnLaunchDirectUpdate(this.directUpdateMode, plannedDirectUpdate)) {
+            return;
+        }
+
+        this.onLaunchDirectUpdateUsed = true;
+    }
+
+    void configureDirectUpdateModeForTesting(final String directUpdateMode, final boolean onLaunchDirectUpdateUsed) {
+        this.directUpdateMode = directUpdateMode;
+        this.onLaunchDirectUpdateUsed = onLaunchDirectUpdateUsed;
+    }
+
+    boolean shouldUseDirectUpdateForTesting() {
+        return this.shouldUseDirectUpdate();
+    }
+
+    boolean hasConsumedOnLaunchDirectUpdateForTesting() {
+        return this.onLaunchDirectUpdateUsed;
+    }
+
+    boolean isVersionDownloadInProgress(final String version) {
+        return (
+            version != null &&
+            !version.isEmpty() &&
+            this.implementation != null &&
+            this.implementation.activity != null &&
+            DownloadWorkerManager.isVersionDownloading(this.implementation.activity, version)
+        );
+    }
+
+    void setLoggerForTesting(final Logger logger) {
+        this.logger = logger;
+    }
+
+    void completeBackgroundTaskForTesting(final BundleInfo current, final boolean plannedDirectUpdate) {
+        this.endBackGroundTaskWithNotif("test", current.getVersionName(), current, false, plannedDirectUpdate);
     }
 
     private void directUpdateFinish(final BundleInfo latest) {
@@ -1804,11 +1847,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
         String latestVersionName,
         BundleInfo current,
         Boolean error,
-        Boolean isDirectUpdate,
+        Boolean plannedDirectUpdate,
         String failureAction,
         String failureEvent,
         boolean shouldSendStats
     ) {
+        this.consumeOnLaunchDirectUpdateAttempt(Boolean.TRUE.equals(plannedDirectUpdate));
         if (error) {
             logger.info(
                 "endBackGroundTaskWithNotif error: " +
@@ -1828,7 +1872,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final JSObject ret = new JSObject();
         ret.put("bundle", InternalUtils.mapToJSObject(current.toJSONMap()));
         this.notifyListeners("noNeedUpdate", ret);
-        this.sendReadyToJs(current, msg, isDirectUpdate);
+        this.sendReadyToJs(current, msg, plannedDirectUpdate);
         this.backgroundDownloadTask = null;
         this.downloadStartTimeMs = 0;
         logger.info("endBackGroundTaskWithNotif " + msg);
@@ -1862,7 +1906,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private Thread backgroundDownload() {
         final boolean plannedDirectUpdate = this.shouldUseDirectUpdate();
         final boolean initialDirectUpdateAllowed = this.isDirectUpdateCurrentlyAllowed(plannedDirectUpdate);
-        this.implementation.directUpdate = initialDirectUpdateAllowed;
         final String messageUpdate = initialDirectUpdateAllowed
             ? "Update will occur now."
             : "Update will occur next time app moves to background.";
@@ -1930,7 +1973,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     "Next update will be to builtin version",
                                     latestVersionName,
                                     current,
-                                    false
+                                    false,
+                                    plannedDirectUpdate
                                 );
                             }
                             return;
@@ -1966,7 +2010,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     );
                                     return;
                                 }
-                                if (latest.isDownloaded()) {
+                                if (latest.isDownloaded() && BundleStatus.DOWNLOADING != latest.getStatus()) {
                                     logger.info("Latest bundle already exists and download is NOT required. " + messageUpdate);
                                     final boolean directUpdateAllowedNow = CapacitorUpdaterPlugin.this.isDirectUpdateCurrentlyAllowed(
                                         plannedDirectUpdate
@@ -2019,7 +2063,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                             "update downloaded, will install next background",
                                             latestVersionName,
                                             latest,
-                                            false
+                                            false,
+                                            plannedDirectUpdate
                                         );
                                     }
                                     return;
@@ -2036,6 +2081,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     }
                                 }
                             }
+                            final boolean retryingInFlightDownload =
+                                latest != null &&
+                                BundleStatus.DOWNLOADING == latest.getStatus() &&
+                                CapacitorUpdaterPlugin.this.isVersionDownloadInProgress(latest.getVersionName());
+                            CapacitorUpdaterPlugin.this.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate);
+                            CapacitorUpdaterPlugin.this.implementation.directUpdate = retryingInFlightDownload
+                                ? Boolean.TRUE.equals(CapacitorUpdaterPlugin.this.implementation.directUpdate) || initialDirectUpdateAllowed
+                                : initialDirectUpdateAllowed;
                             startNewThread(() -> {
                                 try {
                                     logger.info(
@@ -2084,7 +2137,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
                             });
                         } else {
                             logger.info("No need to update, " + current.getId() + " is the latest bundle.");
-                            CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif("No need to update", latestVersionName, current, false);
+                            CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                                "No need to update",
+                                latestVersionName,
+                                current,
+                                false,
+                                plannedDirectUpdate
+                            );
                         }
                     } catch (final Exception e) {
                         logger.error("error in update check " + e.getMessage());

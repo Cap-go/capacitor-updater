@@ -111,6 +111,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var taskRunning = false
     private var periodCheckDelay = 0
     private let downloadLock = NSLock()
+    private let onLaunchDirectUpdateStateLock = NSLock()
     private var downloadInProgress = false
     private var downloadStartTime: Date?
     private let downloadTimeout: TimeInterval = 3600 // 1 hour timeout
@@ -1358,7 +1359,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             return false
         case "onLaunch":
-            if !self.onLaunchDirectUpdateUsed {
+            if !self.getOnLaunchDirectUpdateUsed() {
                 return true
             }
             return false
@@ -1366,6 +1367,47 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             logger.error("Invalid directUpdateMode: \"\(self.directUpdateMode)\". Supported values are: \"false\", \"always\", \"atInstall\", \"onLaunch\". Defaulting to \"false\" behavior.")
             return false
         }
+    }
+
+    static func shouldConsumeOnLaunchDirectUpdate(directUpdateMode: String, plannedDirectUpdate: Bool) -> Bool {
+        plannedDirectUpdate && directUpdateMode == "onLaunch"
+    }
+
+    private func getOnLaunchDirectUpdateUsed() -> Bool {
+        self.onLaunchDirectUpdateStateLock.lock()
+        defer { self.onLaunchDirectUpdateStateLock.unlock() }
+        return self.onLaunchDirectUpdateUsed
+    }
+
+    private func setOnLaunchDirectUpdateUsed(_ used: Bool) {
+        self.onLaunchDirectUpdateStateLock.lock()
+        self.onLaunchDirectUpdateUsed = used
+        self.onLaunchDirectUpdateStateLock.unlock()
+    }
+
+    private func consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate: Bool) {
+        guard Self.shouldConsumeOnLaunchDirectUpdate(directUpdateMode: self.directUpdateMode, plannedDirectUpdate: plannedDirectUpdate) else {
+            return
+        }
+
+        self.setOnLaunchDirectUpdateUsed(true)
+    }
+
+    func configureDirectUpdateModeForTesting(_ directUpdateMode: String, onLaunchDirectUpdateUsed: Bool = false) {
+        self.directUpdateMode = directUpdateMode
+        self.setOnLaunchDirectUpdateUsed(onLaunchDirectUpdateUsed)
+    }
+
+    func setUpdateUrlForTesting(_ updateUrl: String) {
+        self.updateUrl = updateUrl
+    }
+
+    func shouldUseDirectUpdateForTesting() -> Bool {
+        self.shouldUseDirectUpdate()
+    }
+
+    var hasConsumedOnLaunchDirectUpdateForTesting: Bool {
+        self.getOnLaunchDirectUpdateUsed()
     }
 
     private func notifyBreakingEvents(version: String) {
@@ -1382,6 +1424,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         latestVersionName: String,
         current: BundleInfo,
         error: Bool = true,
+        plannedDirectUpdate: Bool = false,
         failureAction: String = "download_fail",
         failureEvent: String = "downloadFailed",
         sendStats: Bool = true
@@ -1392,6 +1435,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         defer { downloadLock.unlock() }
         downloadInProgress = false
         downloadStartTime = nil
+
+        self.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate: plannedDirectUpdate)
 
         if error {
             if sendStats {
@@ -1467,6 +1512,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     latestVersionName: res.version,
                     current: current,
                     error: true,
+                    plannedDirectUpdate: plannedDirectUpdate,
                     sendStats: !responseIsOk
                 )
                 return
@@ -1476,26 +1522,39 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 let directUpdateAllowed = plannedDirectUpdate && !self.autoSplashscreenTimedOut
                 if directUpdateAllowed {
                     self.logger.info("Direct update to builtin version")
-                    if self.directUpdateMode == "onLaunch" {
-                        self.onLaunchDirectUpdateUsed = true
-                        self.directUpdate = false
-                    }
                     _ = self._reset(toLastSuccessful: false)
-                    self.endBackGroundTaskWithNotif(msg: "Updated to builtin version", latestVersionName: res.version, current: self.implementation.getCurrentBundle(), error: false)
+                    self.endBackGroundTaskWithNotif(
+                        msg: "Updated to builtin version",
+                        latestVersionName: res.version,
+                        current: self.implementation.getCurrentBundle(),
+                        error: false,
+                        plannedDirectUpdate: plannedDirectUpdate
+                    )
                 } else {
                     if plannedDirectUpdate && !directUpdateAllowed {
                         self.logger.info("Direct update skipped because splashscreen timeout occurred. Update will apply later.")
                     }
                     self.logger.info("Setting next bundle to builtin")
                     _ = self.implementation.setNextBundle(next: BundleInfo.ID_BUILTIN)
-                    self.endBackGroundTaskWithNotif(msg: "Next update will be to builtin version", latestVersionName: res.version, current: current, error: false)
+                    self.endBackGroundTaskWithNotif(
+                        msg: "Next update will be to builtin version",
+                        latestVersionName: res.version,
+                        current: current,
+                        error: false,
+                        plannedDirectUpdate: plannedDirectUpdate
+                    )
                 }
                 return
             }
             let sessionKey = res.sessionKey ?? ""
             guard let downloadUrl = URL(string: res.url) else {
                 self.logger.error("Error no url or wrong format")
-                self.endBackGroundTaskWithNotif(msg: "Error no url or wrong format", latestVersionName: res.version, current: current)
+                self.endBackGroundTaskWithNotif(
+                    msg: "Error no url or wrong format",
+                    latestVersionName: res.version,
+                    current: current,
+                    plannedDirectUpdate: plannedDirectUpdate
+                )
                 return
             }
             let latestVersionName = res.version
@@ -1513,6 +1572,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                                 self.logger.error("Failed to delete failed bundle: \(nextImpl!.toString())")
                             }
                         }
+                        self.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate: plannedDirectUpdate)
                         if res.manifest != nil {
                             nextImpl = try self.implementation.downloadManifest(manifest: res.manifest!, version: latestVersionName, sessionKey: sessionKey, link: res.link, comment: res.comment)
                         } else {
@@ -1521,12 +1581,22 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     }
                     guard let next = nextImpl else {
                         self.logger.error("Error downloading file")
-                        self.endBackGroundTaskWithNotif(msg: "Error downloading file", latestVersionName: latestVersionName, current: current)
+                        self.endBackGroundTaskWithNotif(
+                            msg: "Error downloading file",
+                            latestVersionName: latestVersionName,
+                            current: current,
+                            plannedDirectUpdate: plannedDirectUpdate
+                        )
                         return
                     }
                     if next.isErrorStatus() {
                         self.logger.error("Latest bundle already exists and is in error state. Aborting update.")
-                        self.endBackGroundTaskWithNotif(msg: "Latest version is in error state. Aborting update.", latestVersionName: latestVersionName, current: current)
+                        self.endBackGroundTaskWithNotif(
+                            msg: "Latest version is in error state. Aborting update.",
+                            latestVersionName: latestVersionName,
+                            current: current,
+                            plannedDirectUpdate: plannedDirectUpdate
+                        )
                         return
                     }
                     res.checksum = try CryptoCipher.decryptChecksum(checksum: res.checksum, publicKey: self.implementation.publicKey)
@@ -1540,7 +1610,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         if !resDel {
                             self.logger.error("Delete failed, id \(id) doesn't exist")
                         }
-                        self.endBackGroundTaskWithNotif(msg: "Error checksum", latestVersionName: latestVersionName, current: current)
+                        self.endBackGroundTaskWithNotif(
+                            msg: "Error checksum",
+                            latestVersionName: latestVersionName,
+                            current: current,
+                            plannedDirectUpdate: plannedDirectUpdate
+                        )
                         return
                     }
                     let directUpdateAllowed = plannedDirectUpdate && !self.autoSplashscreenTimedOut
@@ -1553,18 +1628,31 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         }
                         if !delayConditionList.isEmpty {
                             self.logger.info("Update delayed until delay conditions met")
-                            self.endBackGroundTaskWithNotif(msg: "Update delayed until delay conditions met", latestVersionName: latestVersionName, current: next, error: false)
+                            self.endBackGroundTaskWithNotif(
+                                msg: "Update delayed until delay conditions met",
+                                latestVersionName: latestVersionName,
+                                current: next,
+                                error: false,
+                                plannedDirectUpdate: plannedDirectUpdate
+                            )
                             return
-                        }
-                        if self.directUpdateMode == "onLaunch" {
-                            self.onLaunchDirectUpdateUsed = true
-                            self.directUpdate = false
                         }
                         if self.implementation.set(bundle: next) && self._reload() {
                             self.notifyBundleSet(next)
-                            self.endBackGroundTaskWithNotif(msg: "update installed", latestVersionName: latestVersionName, current: next, error: false)
+                            self.endBackGroundTaskWithNotif(
+                                msg: "update installed",
+                                latestVersionName: latestVersionName,
+                                current: next,
+                                error: false,
+                                plannedDirectUpdate: plannedDirectUpdate
+                            )
                         } else {
-                            self.endBackGroundTaskWithNotif(msg: "Update install failed", latestVersionName: latestVersionName, current: next)
+                            self.endBackGroundTaskWithNotif(
+                                msg: "Update install failed",
+                                latestVersionName: latestVersionName,
+                                current: next,
+                                plannedDirectUpdate: plannedDirectUpdate
+                            )
                         }
                     } else {
                         if plannedDirectUpdate && !directUpdateAllowed {
@@ -1572,18 +1660,35 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         }
                         self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
                         _ = self.implementation.setNextBundle(next: next.getId())
-                        self.endBackGroundTaskWithNotif(msg: "update downloaded, will install next background", latestVersionName: latestVersionName, current: current, error: false)
+                        self.endBackGroundTaskWithNotif(
+                            msg: "update downloaded, will install next background",
+                            latestVersionName: latestVersionName,
+                            current: current,
+                            error: false,
+                            plannedDirectUpdate: plannedDirectUpdate
+                        )
                     }
                     return
                 } catch {
                     self.logger.error("Error downloading file \(error.localizedDescription)")
                     let current: BundleInfo = self.implementation.getCurrentBundle()
-                    self.endBackGroundTaskWithNotif(msg: "Error downloading file", latestVersionName: latestVersionName, current: current)
+                    self.endBackGroundTaskWithNotif(
+                        msg: "Error downloading file",
+                        latestVersionName: latestVersionName,
+                        current: current,
+                        plannedDirectUpdate: plannedDirectUpdate
+                    )
                     return
                 }
             } else {
                 self.logger.info("No need to update, \(current.getId()) is the latest bundle.")
-                self.endBackGroundTaskWithNotif(msg: "No need to update, \(current.getId()) is the latest bundle.", latestVersionName: latestVersionName, current: current, error: false)
+                self.endBackGroundTaskWithNotif(
+                    msg: "No need to update, \(current.getId()) is the latest bundle.",
+                    latestVersionName: latestVersionName,
+                    current: current,
+                    error: false,
+                    plannedDirectUpdate: plannedDirectUpdate
+                )
                 return
             }
         }

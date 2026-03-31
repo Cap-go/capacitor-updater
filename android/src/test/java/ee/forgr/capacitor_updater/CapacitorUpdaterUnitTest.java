@@ -1,12 +1,106 @@
 package ee.forgr.capacitor_updater;
 
 import static org.junit.Assert.*;
+import static org.mockito.Mockito.*;
 
+import android.os.Handler;
+import android.os.Looper;
+import com.getcapacitor.JSObject;
 import io.github.g00fy2.versioncompare.Version;
+import java.lang.reflect.Method;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.function.BooleanSupplier;
+import org.json.JSONArray;
 import org.junit.Test;
+import org.mockito.MockedConstruction;
+import org.mockito.MockedStatic;
 
 public class CapacitorUpdaterUnitTest {
+
+    private static class TestableCapacitorUpdaterPlugin extends CapacitorUpdaterPlugin {
+
+        @Override
+        public void notifyListeners(String eventName, JSObject data) {}
+
+        @Override
+        public void notifyListeners(String eventName, JSObject data, boolean retainUntilConsumed) {}
+    }
+
+    private static final class ImmediateThreadCapacitorUpdaterPlugin extends TestableCapacitorUpdaterPlugin {
+
+        private boolean versionDownloadInProgress = false;
+
+        @Override
+        public Thread startNewThread(final Runnable function, Number waitTime) {
+            function.run();
+            return new Thread();
+        }
+
+        @Override
+        public Thread startNewThread(final Runnable function) {
+            function.run();
+            return new Thread();
+        }
+
+        @Override
+        boolean isVersionDownloadInProgress(final String version) {
+            return this.versionDownloadInProgress;
+        }
+    }
+
+    private static final class FreshDownloadCapgoUpdater extends CapgoUpdater {
+
+        private final BundleInfo currentBundle = new BundleInfo("current-id", "1.0.0", BundleStatus.SUCCESS, new Date(), "abc123");
+        private BundleInfo existingLatestBundle;
+        private BooleanSupplier consumedStateSupplier = () -> false;
+        private BooleanSupplier directUpdateStateSupplier = () -> false;
+        private boolean downloadBackgroundCalled = false;
+        private boolean consumedWhenDownloadStarted = false;
+        private boolean directUpdateWhenDownloadStarted = false;
+
+        FreshDownloadCapgoUpdater() {
+            super(null);
+        }
+
+        @Override
+        public void getLatest(final String updateUrl, final String channel, final Callback callback) {
+            final Map<String, Object> response = new HashMap<>();
+            response.put("version", "2.0.0");
+            response.put("url", "https://example.com/update.zip");
+            callback.callback(response);
+        }
+
+        @Override
+        public BundleInfo getCurrentBundle() {
+            return this.currentBundle;
+        }
+
+        @Override
+        public BundleInfo getBundleInfoByName(final String version) {
+            return this.existingLatestBundle;
+        }
+
+        @Override
+        public void downloadBackground(
+            final String url,
+            final String version,
+            final String sessionKey,
+            final String checksum,
+            final JSONArray manifest
+        ) {
+            this.downloadBackgroundCalled = true;
+            this.consumedWhenDownloadStarted = this.consumedStateSupplier.getAsBoolean();
+            this.directUpdateWhenDownloadStarted = this.directUpdateStateSupplier.getAsBoolean();
+        }
+    }
+
+    private static void invokeBackgroundDownload(final CapacitorUpdaterPlugin plugin) throws Exception {
+        final Method backgroundDownload = CapacitorUpdaterPlugin.class.getDeclaredMethod("backgroundDownload");
+        backgroundDownload.setAccessible(true);
+        backgroundDownload.invoke(plugin);
+    }
 
     // BundleInfo Tests
 
@@ -232,5 +326,137 @@ public class CapacitorUpdaterUnitTest {
         assertEquals(BundleInfo.ID_BUILTIN, bundleInfo.getId());
         assertEquals(BundleInfo.ID_BUILTIN, bundleInfo.getVersionName());
         assertEquals(BundleStatus.SUCCESS, bundleInfo.getStatus());
+    }
+
+    @Test
+    public void testShouldConsumeOnLaunchDirectUpdateForOnLaunchAttempt() {
+        assertTrue(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate("onLaunch", true));
+    }
+
+    @Test
+    public void testShouldNotConsumeOnLaunchDirectUpdateForNonLaunchAttempt() {
+        assertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate("onLaunch", false));
+    }
+
+    @Test
+    public void testShouldNotConsumeOnLaunchDirectUpdateForOtherModes() {
+        assertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate("always", true));
+        assertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate("atInstall", true));
+        assertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate("false", true));
+    }
+
+    @Test
+    public void testOnLaunchCompletionConsumesWindowWithoutClearingInFlightDirectUpdate() {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            plugin.implementation = new CapgoUpdater(null);
+            plugin.implementation.directUpdate = true;
+            plugin.configureDirectUpdateModeForTesting("onLaunch", false);
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            BundleInfo current = new BundleInfo("test-id", "1.0.0", BundleStatus.SUCCESS, new Date(), "abc123");
+
+            assertTrue(plugin.shouldUseDirectUpdateForTesting());
+            assertFalse(plugin.hasConsumedOnLaunchDirectUpdateForTesting());
+
+            plugin.completeBackgroundTaskForTesting(current, true);
+
+            assertTrue(plugin.hasConsumedOnLaunchDirectUpdateForTesting());
+            assertFalse(plugin.shouldUseDirectUpdateForTesting());
+            assertTrue(plugin.implementation.directUpdate);
+        }
+    }
+
+    @Test
+    public void testOnLaunchFreshDownloadConsumesWindowBeforeDownloadStarts() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
+            FreshDownloadCapgoUpdater updater = new FreshDownloadCapgoUpdater();
+
+            plugin.implementation = updater;
+            plugin.configureDirectUpdateModeForTesting("onLaunch", false);
+            plugin.setLoggerForTesting(mock(Logger.class));
+            updater.consumedStateSupplier = plugin::hasConsumedOnLaunchDirectUpdateForTesting;
+            updater.directUpdateStateSupplier = () -> Boolean.TRUE.equals(plugin.implementation.directUpdate);
+
+            assertTrue(plugin.shouldUseDirectUpdateForTesting());
+            assertFalse(plugin.hasConsumedOnLaunchDirectUpdateForTesting());
+
+            invokeBackgroundDownload(plugin);
+
+            assertTrue(updater.downloadBackgroundCalled);
+            assertTrue(updater.consumedWhenDownloadStarted);
+            assertTrue(updater.directUpdateWhenDownloadStarted);
+            assertTrue(plugin.hasConsumedOnLaunchDirectUpdateForTesting());
+            assertFalse(plugin.shouldUseDirectUpdateForTesting());
+            assertTrue(plugin.implementation.directUpdate);
+        }
+    }
+
+    @Test
+    public void testInFlightDirectUpdateIsNotClearedByFollowUpForegroundCheck() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
+            FreshDownloadCapgoUpdater updater = new FreshDownloadCapgoUpdater();
+            updater.existingLatestBundle = new BundleInfo("download-id", "2.0.0", BundleStatus.DOWNLOADING, new Date(), "next-checksum");
+
+            plugin.implementation = updater;
+            plugin.implementation.directUpdate = true;
+            plugin.configureDirectUpdateModeForTesting("onLaunch", true);
+            plugin.versionDownloadInProgress = true;
+            plugin.setLoggerForTesting(mock(Logger.class));
+            updater.directUpdateStateSupplier = () -> Boolean.TRUE.equals(plugin.implementation.directUpdate);
+
+            invokeBackgroundDownload(plugin);
+
+            assertTrue(updater.downloadBackgroundCalled);
+            assertTrue(updater.directUpdateWhenDownloadStarted);
+            assertTrue(plugin.implementation.directUpdate);
+            assertFalse(plugin.shouldUseDirectUpdateForTesting());
+        }
+    }
+
+    @Test
+    public void testStaleDirectUpdateFlagIsClearedBeforeRetryingStaleDownloadingBundle() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
+            FreshDownloadCapgoUpdater updater = new FreshDownloadCapgoUpdater();
+
+            plugin.implementation = updater;
+            plugin.implementation.directUpdate = true;
+            plugin.configureDirectUpdateModeForTesting("onLaunch", true);
+            updater.existingLatestBundle = new BundleInfo("stale-download-id", "2.0.0", BundleStatus.DOWNLOADING, new Date(), "checksum");
+            plugin.setLoggerForTesting(mock(Logger.class));
+            updater.directUpdateStateSupplier = () -> Boolean.TRUE.equals(plugin.implementation.directUpdate);
+
+            assertFalse(plugin.shouldUseDirectUpdateForTesting());
+
+            invokeBackgroundDownload(plugin);
+
+            assertTrue(updater.downloadBackgroundCalled);
+            assertFalse(updater.directUpdateWhenDownloadStarted);
+            assertFalse(plugin.implementation.directUpdate);
+            assertFalse(plugin.shouldUseDirectUpdateForTesting());
+        }
     }
 }
