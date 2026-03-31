@@ -325,6 +325,18 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertFalse(plugin.shouldUseDirectUpdateForTesting())
     }
 
+    func testShowSplashscreenOptionsDisableAutoHide() {
+        let options = plugin.splashscreenOptionsForTesting(methodName: "show")
+
+        XCTAssertEqual(options["autoHide"] as? Bool, false)
+    }
+
+    func testHideSplashscreenOptionsStayEmpty() {
+        let options = plugin.splashscreenOptionsForTesting(methodName: "hide")
+
+        XCTAssertTrue(options.isEmpty)
+    }
+
     func testDelayUpdateUtilsSetMultiDelayStoresMultipleConditions() throws {
         let utils = try makeDelayUpdateUtils()
         clearDelayStorage()
