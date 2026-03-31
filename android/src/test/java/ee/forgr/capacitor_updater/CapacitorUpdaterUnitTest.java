@@ -48,8 +48,10 @@ public class CapacitorUpdaterUnitTest {
         private final BundleInfo currentBundle = new BundleInfo("current-id", "1.0.0", BundleStatus.SUCCESS, new Date(), "abc123");
         private BundleInfo existingLatestBundle;
         private BooleanSupplier consumedStateSupplier = () -> false;
+        private BooleanSupplier directUpdateStateSupplier = () -> false;
         private boolean downloadBackgroundCalled = false;
         private boolean consumedWhenDownloadStarted = false;
+        private boolean directUpdateWhenDownloadStarted = false;
 
         FreshDownloadCapgoUpdater() {
             super(null);
@@ -83,6 +85,7 @@ public class CapacitorUpdaterUnitTest {
         ) {
             this.downloadBackgroundCalled = true;
             this.consumedWhenDownloadStarted = this.consumedStateSupplier.getAsBoolean();
+            this.directUpdateWhenDownloadStarted = this.directUpdateStateSupplier.getAsBoolean();
         }
     }
 
@@ -377,6 +380,7 @@ public class CapacitorUpdaterUnitTest {
             plugin.configureDirectUpdateModeForTesting("onLaunch", false);
             plugin.setLoggerForTesting(mock(Logger.class));
             updater.consumedStateSupplier = plugin::hasConsumedOnLaunchDirectUpdateForTesting;
+            updater.directUpdateStateSupplier = () -> Boolean.TRUE.equals(plugin.implementation.directUpdate);
 
             assertTrue(plugin.shouldUseDirectUpdateForTesting());
             assertFalse(plugin.hasConsumedOnLaunchDirectUpdateForTesting());
@@ -385,6 +389,7 @@ public class CapacitorUpdaterUnitTest {
 
             assertTrue(updater.downloadBackgroundCalled);
             assertTrue(updater.consumedWhenDownloadStarted);
+            assertTrue(updater.directUpdateWhenDownloadStarted);
             assertTrue(plugin.hasConsumedOnLaunchDirectUpdateForTesting());
             assertFalse(plugin.shouldUseDirectUpdateForTesting());
             assertTrue(plugin.implementation.directUpdate);
@@ -401,22 +406,18 @@ public class CapacitorUpdaterUnitTest {
 
             ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
             FreshDownloadCapgoUpdater updater = new FreshDownloadCapgoUpdater();
-            updater.existingLatestBundle = new BundleInfo(
-                "download-id",
-                "2.0.0",
-                BundleStatus.DOWNLOADING,
-                new Date(),
-                "next-checksum"
-            );
+            updater.existingLatestBundle = new BundleInfo("download-id", "2.0.0", BundleStatus.DOWNLOADING, new Date(), "next-checksum");
 
             plugin.implementation = updater;
             plugin.implementation.directUpdate = true;
             plugin.configureDirectUpdateModeForTesting("onLaunch", true);
             plugin.setLoggerForTesting(mock(Logger.class));
+            updater.directUpdateStateSupplier = () -> Boolean.TRUE.equals(plugin.implementation.directUpdate);
 
             invokeBackgroundDownload(plugin);
 
-            assertFalse(updater.downloadBackgroundCalled);
+            assertTrue(updater.downloadBackgroundCalled);
+            assertTrue(updater.directUpdateWhenDownloadStarted);
             assertTrue(plugin.implementation.directUpdate);
             assertFalse(plugin.shouldUseDirectUpdateForTesting());
         }

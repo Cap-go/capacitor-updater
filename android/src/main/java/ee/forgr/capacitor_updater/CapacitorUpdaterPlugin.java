@@ -2000,7 +2000,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     );
                                     return;
                                 }
-                                if (latest.isDownloaded()) {
+                                if (latest.isDownloaded() && BundleStatus.DOWNLOADING != latest.getStatus()) {
                                     logger.info("Latest bundle already exists and download is NOT required. " + messageUpdate);
                                     final boolean directUpdateAllowedNow = CapacitorUpdaterPlugin.this.isDirectUpdateCurrentlyAllowed(
                                         plannedDirectUpdate
@@ -2070,13 +2070,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                         logger.error("Failed to delete failed bundle: " + latest.getVersionName() + " " + e.getMessage());
                                     }
                                 }
-                                if (BundleStatus.DOWNLOADING == latest.getStatus()) {
-                                    logger.info("Latest bundle is already downloading. Skipping duplicate fresh download request.");
-                                    return;
-                                }
                             }
                             CapacitorUpdaterPlugin.this.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate);
-                            CapacitorUpdaterPlugin.this.implementation.directUpdate = initialDirectUpdateAllowed;
+                            CapacitorUpdaterPlugin.this.implementation.directUpdate =
+                                Boolean.TRUE.equals(CapacitorUpdaterPlugin.this.implementation.directUpdate) || initialDirectUpdateAllowed;
                             startNewThread(() -> {
                                 try {
                                     logger.info(
