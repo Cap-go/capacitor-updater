@@ -337,6 +337,14 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertTrue(options.isEmpty)
     }
 
+    func testSplashscreenInvocationTokenRejectsStaleRequests() {
+        XCTAssertTrue(plugin.isCurrentSplashscreenInvocationTokenForTesting(0))
+
+        plugin.advanceSplashscreenInvocationTokenForTesting()
+
+        XCTAssertFalse(plugin.isCurrentSplashscreenInvocationTokenForTesting(0))
+    }
+
     func testDelayUpdateUtilsSetMultiDelayStoresMultipleConditions() throws {
         let utils = try makeDelayUpdateUtils()
         clearDelayStorage()

@@ -112,6 +112,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private Boolean autoSplashscreenLoader = false;
     private Integer autoSplashscreenTimeout = 10000;
     private Boolean autoSplashscreenTimedOut = false;
+    private int splashscreenInvocationToken = 0;
     private String directUpdateMode = "false";
     private Boolean wasRecentlyInstalledOrUpdated = false;
     private volatile boolean onLaunchDirectUpdateUsed = false;
@@ -583,7 +584,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private void hideSplashscreenInternal() {
         cancelSplashscreenTimeout();
         removeSplashscreenLoader();
-        invokeSplashScreenPluginMethod("hide", new JSObject(), SPLASH_SCREEN_MAX_RETRIES);
+        invokeSplashScreenPluginMethod("hide", new JSObject(), SPLASH_SCREEN_MAX_RETRIES, ++this.splashscreenInvocationToken);
     }
 
     private void showSplashscreen() {
@@ -600,13 +601,22 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
         final JSObject options = new JSObject();
         options.put("autoHide", false);
-        invokeSplashScreenPluginMethod("show", options, SPLASH_SCREEN_MAX_RETRIES);
+        invokeSplashScreenPluginMethod("show", options, SPLASH_SCREEN_MAX_RETRIES, ++this.splashscreenInvocationToken);
 
         addSplashscreenLoaderIfNeeded();
         scheduleSplashscreenTimeout();
     }
 
-    private void invokeSplashScreenPluginMethod(final String methodName, final JSObject options, final int retriesRemaining) {
+    private void invokeSplashScreenPluginMethod(
+        final String methodName,
+        final JSObject options,
+        final int retriesRemaining,
+        final int requestToken
+    ) {
+        if (requestToken != this.splashscreenInvocationToken) {
+            return;
+        }
+
         try {
             final Bridge bridge = getBridge();
             if (bridge == null) {
@@ -614,6 +624,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     methodName,
                     options,
                     retriesRemaining,
+                    requestToken,
                     "Bridge not ready for " + ("show".equals(methodName) ? "showing" : "hiding") + " splashscreen"
                 );
                 return;
@@ -625,6 +636,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     methodName,
                     options,
                     retriesRemaining,
+                    requestToken,
                     "autoSplashscreen: SplashScreen plugin not found. Install @capacitor/splash-screen plugin."
                 );
                 return;
@@ -637,6 +649,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 methodName,
                 options,
                 retriesRemaining,
+                requestToken,
                 "Failed to call SplashScreen " + methodName + " method: " + e.getMessage()
             );
         }
@@ -646,12 +659,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final String methodName,
         final JSObject options,
         final int retriesRemaining,
+        final int requestToken,
         final String message
     ) {
         if (retriesRemaining > 0) {
             logger.info(message + ". Retrying.");
             this.mainHandler.postDelayed(
-                () -> invokeSplashScreenPluginMethod(methodName, options, retriesRemaining - 1),
+                () -> invokeSplashScreenPluginMethod(methodName, options, retriesRemaining - 1, requestToken),
                 SPLASH_SCREEN_RETRY_DELAY_MS
             );
             return;
@@ -662,6 +676,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
         } else {
             logger.error(message);
         }
+    }
+
+    boolean isCurrentSplashscreenInvocationTokenForTesting(final int requestToken) {
+        return requestToken == this.splashscreenInvocationToken;
     }
 
     private void addSplashscreenLoaderIfNeeded() {

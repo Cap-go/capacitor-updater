@@ -112,6 +112,24 @@ public class CapacitorUpdaterUnitTest {
         method.invoke(plugin);
     }
 
+    private static void invokePrivateSplashMethod(
+        final CapacitorUpdaterPlugin plugin,
+        final String methodName,
+        final JSObject options,
+        final int retriesRemaining,
+        final int requestToken
+    ) throws Exception {
+        final Method method = CapacitorUpdaterPlugin.class.getDeclaredMethod(
+            "invokeSplashScreenPluginMethod",
+            String.class,
+            JSObject.class,
+            Integer.TYPE,
+            Integer.TYPE
+        );
+        method.setAccessible(true);
+        method.invoke(plugin, methodName, options, retriesRemaining, requestToken);
+    }
+
     // BundleInfo Tests
 
     @Test
@@ -525,6 +543,34 @@ public class CapacitorUpdaterUnitTest {
             callCaptor.getValue().resolve();
             assertEquals(Boolean.FALSE, callCaptor.getValue().getBoolean("autoHide"));
             assertEquals("show", callCaptor.getValue().getMethodName());
+        }
+    }
+
+    @Test
+    public void testStaleSplashscreenRetryTokenSkipsInvocation() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            final Looper mainLooper = mock(Looper.class);
+            looperMock.when(Looper::getMainLooper).thenReturn(mainLooper);
+            looperMock.when(Looper::myLooper).thenReturn(mainLooper);
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            final Bridge bridge = mock(Bridge.class);
+            final PluginHandle splashScreenPlugin = mock(PluginHandle.class);
+
+            when(bridge.getPlugin("SplashScreen")).thenReturn(splashScreenPlugin);
+
+            plugin.setBridge(bridge);
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            invokePrivateVoidMethod(plugin, "showSplashscreenNow");
+            assertFalse(plugin.isCurrentSplashscreenInvocationTokenForTesting(0));
+
+            invokePrivateSplashMethod(plugin, "hide", new JSObject(), 1, 0);
+
+            verify(splashScreenPlugin, never()).invoke(eq("hide"), any(PluginCall.class));
         }
     }
 }
