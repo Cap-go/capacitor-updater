@@ -234,9 +234,7 @@ struct ManualRSAPublicKey {
         let decrypted = encrypted.manualPower(exponent, modulus: modulus)
 
         // Convert to bytes with proper padding
-        guard let bigUIntValue = decrypted.magnitude as? BigUInt else {
-            return nil
-        }
+        let bigUIntValue = decrypted.magnitude
 
         // Convert BigUInt to bytes with padding
         var resultBytes = [UInt8]()

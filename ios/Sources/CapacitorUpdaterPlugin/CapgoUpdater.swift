@@ -858,6 +858,71 @@ import UIKit
         }
     }
 
+    private func hexDump(of data: Data, maxBytes: Int = 32) -> String {
+        data.prefix(maxBytes).map { String(format: "%02x", $0) }.joined(separator: " ")
+    }
+
+    private func processBrotliStream(
+        streamPointer: UnsafeMutablePointer<compression_stream>,
+        data: Data,
+        fileName: String,
+        inputBaseAddress: UnsafePointer<UInt8>,
+        outputBaseAddress: UnsafeMutablePointer<UInt8>,
+        outputBufferSize: Int
+    ) -> Data? {
+        var decompressedData = Data()
+
+        streamPointer.pointee.src_ptr = inputBaseAddress
+        streamPointer.pointee.src_size = data.count
+        streamPointer.pointee.dst_ptr = outputBaseAddress
+        streamPointer.pointee.dst_size = outputBufferSize
+
+        while true {
+            let previousSrcSize = streamPointer.pointee.src_size
+            let previousDstSize = streamPointer.pointee.dst_size
+            let status = compression_stream_process(streamPointer, 0)
+
+            let bytesWritten = outputBufferSize - streamPointer.pointee.dst_size
+            if bytesWritten > 0 {
+                decompressedData.append(outputBaseAddress, count: bytesWritten)
+                streamPointer.pointee.dst_ptr = outputBaseAddress
+                streamPointer.pointee.dst_size = outputBufferSize
+            }
+
+            if status == COMPRESSION_STATUS_END {
+                return decompressedData
+            }
+
+            if status == COMPRESSION_STATUS_ERROR {
+                logger.error("Brotli process failed")
+                logger.debug("File: \(fileName), Status: \(status)")
+                if let text = String(data: data, encoding: .utf8) {
+                    let asciiCount = text.unicodeScalars.filter { $0.isASCII }.count
+                    let totalCount = text.unicodeScalars.count
+                    if totalCount > 0 && Double(asciiCount) / Double(totalCount) >= 0.8 {
+                        logger.debug("Input appears to be plain text: \(text)")
+                    }
+                }
+                logger.debug("Raw data: \(hexDump(of: data))")
+                return nil
+            }
+
+            let noInputConsumed = streamPointer.pointee.src_size == previousSrcSize
+            let noOutputProgress = bytesWritten == 0 && streamPointer.pointee.dst_size == previousDstSize
+            if noInputConsumed && noOutputProgress {
+                logger.error("Brotli stream stalled during decompression")
+                logger.debug("File: \(fileName), Status: \(status)")
+                return nil
+            }
+
+            if streamPointer.pointee.src_size == 0 && bytesWritten == 0 {
+                logger.error("Brotli stream ended before COMPRESSION_STATUS_END")
+                logger.debug("File: \(fileName)")
+                return nil
+            }
+        }
+    }
+
     private func decompressBrotli(data: Data, fileName: String) -> Data? {
         // Handle empty files
         if data.count == 0 {
@@ -871,8 +936,6 @@ import UIKit
 
         // For small files, check if it's a minimal Brotli wrapper
         if data.count > 3 {
-            let maxBytes = min(32, data.count)
-            let hexDump = data.prefix(maxBytes).map { String(format: "%02x", $0) }.joined(separator: " ")
             // Handle our minimal wrapper pattern
             if data[0] == 0x1B && data[1] == 0x00 && data[2] == 0x06 && data.last == 0x03 {
                 let range = data.index(data.startIndex, offsetBy: 3)..<data.index(data.endIndex, offsetBy: -1)
@@ -889,91 +952,49 @@ import UIKit
         // For all other cases, try standard decompression
         let outputBufferSize = 65536
         var outputBuffer = [UInt8](repeating: 0, count: outputBufferSize)
-        var decompressedData = Data()
 
         let streamPointer = UnsafeMutablePointer<compression_stream>.allocate(capacity: 1)
-        var status = compression_stream_init(streamPointer, COMPRESSION_STREAM_DECODE, COMPRESSION_BROTLI)
+        var didInitializeStream = false
 
+        defer {
+            if didInitializeStream {
+                compression_stream_destroy(streamPointer)
+            }
+            streamPointer.deallocate()
+        }
+
+        let status = compression_stream_init(streamPointer, COMPRESSION_STREAM_DECODE, COMPRESSION_BROTLI)
         guard status != COMPRESSION_STATUS_ERROR else {
             logger.error("Failed to initialize Brotli stream")
             logger.debug("File: \(fileName), Status: \(status)")
             return nil
         }
+        didInitializeStream = true
 
-        defer {
-            compression_stream_destroy(streamPointer)
-            streamPointer.deallocate()
-        }
-
-        streamPointer.pointee.src_size = 0
-        streamPointer.pointee.dst_ptr = UnsafeMutablePointer<UInt8>(&outputBuffer)
-        streamPointer.pointee.dst_size = outputBufferSize
-
-        let input = data
-
-        while true {
-            if streamPointer.pointee.src_size == 0 {
-                streamPointer.pointee.src_size = input.count
-                input.withUnsafeBytes { rawBufferPointer in
-                    if let baseAddress = rawBufferPointer.baseAddress {
-                        streamPointer.pointee.src_ptr = baseAddress.assumingMemoryBound(to: UInt8.self)
-                    } else {
-                        logger.error("Failed to get base address for Brotli decompression")
-                        logger.debug("File: \(fileName)")
-                        status = COMPRESSION_STATUS_ERROR
-                        return
-                    }
-                }
-            }
-
-            if status == COMPRESSION_STATUS_ERROR {
-                let maxBytes = min(32, data.count)
-                let hexDump = data.prefix(maxBytes).map { String(format: "%02x", $0) }.joined(separator: " ")
-                logger.error("Brotli decompression failed")
-                logger.debug("File: \(fileName), First \(maxBytes) bytes: \(hexDump)")
-                break
-            }
-
-            status = compression_stream_process(streamPointer, 0)
-
-            let have = outputBufferSize - streamPointer.pointee.dst_size
-            if have > 0 {
-                decompressedData.append(outputBuffer, count: have)
-            }
-
-            if status == COMPRESSION_STATUS_END {
-                break
-            } else if status == COMPRESSION_STATUS_ERROR {
-                logger.error("Brotli process failed")
-                logger.debug("File: \(fileName), Status: \(status)")
-                if let text = String(data: data, encoding: .utf8) {
-                    let asciiCount = text.unicodeScalars.filter { $0.isASCII }.count
-                    let totalCount = text.unicodeScalars.count
-                    if totalCount > 0 && Double(asciiCount) / Double(totalCount) >= 0.8 {
-                        logger.debug("Input appears to be plain text: \(text)")
-                    }
-                }
-
-                let maxBytes = min(32, data.count)
-                let hexDump = data.prefix(maxBytes).map { String(format: "%02x", $0) }.joined(separator: " ")
-                logger.debug("Raw data: \(hexDump)")
-
+        return data.withUnsafeBytes { rawBufferPointer -> Data? in
+            guard let inputBaseAddress = rawBufferPointer.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
+                logger.error("Failed to get base address for Brotli decompression")
+                logger.debug("File: \(fileName)")
                 return nil
             }
 
-            if streamPointer.pointee.dst_size == 0 {
-                streamPointer.pointee.dst_ptr = UnsafeMutablePointer<UInt8>(&outputBuffer)
-                streamPointer.pointee.dst_size = outputBufferSize
-            }
+            return outputBuffer.withUnsafeMutableBufferPointer { outputBufferPointer -> Data? in
+                guard let outputBaseAddress = outputBufferPointer.baseAddress else {
+                    logger.error("Failed to allocate output buffer for Brotli decompression")
+                    logger.debug("File: \(fileName)")
+                    return nil
+                }
 
-            if input.count == 0 {
-                logger.error("Zero input size for Brotli decompression")
-                logger.debug("File: \(fileName)")
-                break
+                return processBrotliStream(
+                    streamPointer: streamPointer,
+                    data: data,
+                    fileName: fileName,
+                    inputBaseAddress: inputBaseAddress,
+                    outputBaseAddress: outputBaseAddress,
+                    outputBufferSize: outputBufferSize
+                )
             }
         }
-
-        return status == COMPRESSION_STATUS_END ? decompressedData : nil
     }
 
     public func download(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {

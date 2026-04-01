@@ -1003,29 +1003,20 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
             }
             let delayConditions: String = toJson(object: modifiableList)
-            if delayUpdateUtils.setMultiDelay(delayConditions: delayConditions) {
-                call.resolve()
-            } else {
-                call.reject("Failed to delay update")
-            }
+            delayUpdateUtils.setMultiDelay(delayConditions: delayConditions)
+            call.resolve()
         } else {
             let delayConditions: String = toJson(object: delayConditionList)
-            if delayUpdateUtils.setMultiDelay(delayConditions: delayConditions) {
-                call.resolve()
-            } else {
-                call.reject("Failed to delay update")
-            }
+            delayUpdateUtils.setMultiDelay(delayConditions: delayConditions)
+            call.resolve()
         }
     }
 
     // Note: _setMultiDelay and _cancelDelay methods have been moved to DelayUpdateUtils class
 
     @objc func cancelDelay(_ call: CAPPluginCall) {
-        if delayUpdateUtils.cancelDelay(source: "JS") {
-            call.resolve()
-        } else {
-            call.reject("Failed to cancel delay")
-        }
+        delayUpdateUtils.cancelDelay(source: "JS")
+        call.resolve()
     }
 
     // Note: _checkCancelDelay method has been moved to DelayUpdateUtils class
@@ -1143,7 +1134,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         // Create a plugin call for the hide method
-        let call = CAPPluginCall(callbackId: "autoHideSplashscreen", options: [:], success: { (_, _) in
+        let call = CAPPluginCall(callbackId: "autoHideSplashscreen", methodName: "hide", options: [:], success: { (_, _) in
             self.logger.info("Splashscreen hidden automatically")
         }, error: { (_) in
             self.logger.error("Failed to auto-hide splashscreen")
@@ -1184,7 +1175,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         // Create a plugin call for the show method
-        let call = CAPPluginCall(callbackId: "autoShowSplashscreen", options: [:], success: { (_, _) in
+        let call = CAPPluginCall(callbackId: "autoShowSplashscreen", methodName: "show", options: [:], success: { (_, _) in
             self.logger.info("Splashscreen shown automatically")
         }, error: { (_) in
             self.logger.error("Failed to auto-show splashscreen")
@@ -1472,6 +1463,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         return true
     }
 
+    func executeBackgroundDownloadWork(_ work: @escaping () -> Void) {
+        DispatchQueue.global(qos: .background).async(execute: work)
+    }
+
+    func beginBackgroundTaskForDownload() -> UIBackgroundTaskIdentifier {
+        UIApplication.shared.beginBackgroundTask(withName: "Finish Download Tasks") {
+            self.endBackGroundTask()
+        }
+    }
+
     func backgroundDownload() {
         // Set download in progress flag (thread-safe)
         downloadLock.lock()
@@ -1491,13 +1492,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
-        DispatchQueue.global(qos: .background).async {
+        self.executeBackgroundDownloadWork {
             // Wait for cleanup to complete before starting download
             self.waitForCleanupIfNeeded()
-            self.backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "Finish Download Tasks") {
-                // End the task if time expires.
-                self.endBackGroundTask()
-            }
+            self.backgroundTaskID = self.beginBackgroundTaskForDownload()
             self.logger.info("Check for update via \(self.updateUrl)")
             let res = self.implementation.getLatest(url: url, channel: nil)
             let current = self.implementation.getCurrentBundle()

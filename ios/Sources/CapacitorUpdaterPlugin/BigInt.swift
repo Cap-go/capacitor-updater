@@ -31,11 +31,9 @@ extension BigInt {
             return 1
         }
 
-        guard let base = self.magnitude as? BigUInt,
-              let exp = exponent.magnitude as? BigUInt,
-              let mod = modulus.magnitude as? BigUInt else {
-            return 0
-        }
+        let base = self.magnitude
+        let exp = exponent.magnitude
+        let mod = modulus.magnitude
 
         // Square and multiply algorithm for modular exponentiation
         var result = BigUInt(1)

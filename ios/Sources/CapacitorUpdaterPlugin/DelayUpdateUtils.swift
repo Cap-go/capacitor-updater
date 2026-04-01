@@ -63,7 +63,13 @@ public class DelayUpdateUtils {
             switch kind {
             case "background":
                 if source == .foreground {
-                    let backgroundedAt = getBackgroundTimestamp()
+                    guard let backgroundedAt = getBackgroundTimestamp() else {
+                        delayConditionListToKeep.append(condition)
+                        // swiftlint:disable:next line_length
+                        logger.info("Background delay (value: \(value ?? "")) condition kept at index \(index) because no background timestamp was found")
+                        index += 1
+                        continue
+                    }
                     let now = Int64(Date().timeIntervalSince1970 * 1000) // Convert to milliseconds
                     let delta = max(0, now - backgroundedAt)
 
@@ -143,67 +149,44 @@ public class DelayUpdateUtils {
 
         if !delayConditionListToKeep.isEmpty {
             let json = toJson(object: delayConditionListToKeep.map { $0.toJSON() })
-            _ = setMultiDelay(delayConditions: json)
+            setMultiDelay(delayConditions: json)
         } else {
             // Clear all delay conditions if none are left to keep
-            _ = cancelDelay(source: "checkCancelDelay")
+            cancelDelay(source: "checkCancelDelay")
         }
     }
 
+    @discardableResult
     public func setMultiDelay(delayConditions: String) -> Bool {
-        do {
-            UserDefaults.standard.set(delayConditions, forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES)
-            UserDefaults.standard.synchronize()
-            logger.info("Delay update saved")
-            return true
-        } catch {
-            logger.error("Failed to delay update, [Error calling 'setMultiDelay()']: \(error)")
-            return false
-        }
+        UserDefaults.standard.set(delayConditions, forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES)
+        UserDefaults.standard.synchronize()
+        logger.info("Delay update saved")
+        return true
     }
 
     public func setBackgroundTimestamp(_ backgroundTimestamp: Int64) {
-        do {
-            UserDefaults.standard.set(backgroundTimestamp, forKey: DelayUpdateUtils.BACKGROUND_TIMESTAMP_KEY)
-            UserDefaults.standard.synchronize()
-            logger.info("Background timestamp saved")
-        } catch {
-            logger.error("Failed to save background timestamp, [Error calling 'setBackgroundTimestamp()']: \(error)")
-        }
+        UserDefaults.standard.set(backgroundTimestamp, forKey: DelayUpdateUtils.BACKGROUND_TIMESTAMP_KEY)
+        UserDefaults.standard.synchronize()
+        logger.info("Background timestamp saved")
     }
 
     public func unsetBackgroundTimestamp() {
-        do {
-            UserDefaults.standard.removeObject(forKey: DelayUpdateUtils.BACKGROUND_TIMESTAMP_KEY)
-            UserDefaults.standard.synchronize()
-            logger.info("Background timestamp removed")
-        } catch {
-            // swiftlint:disable:next line_length
-            logger.error("Failed to remove background timestamp, [Error calling 'unsetBackgroundTimestamp()']: \(error)")
-        }
+        UserDefaults.standard.removeObject(forKey: DelayUpdateUtils.BACKGROUND_TIMESTAMP_KEY)
+        UserDefaults.standard.synchronize()
+        logger.info("Background timestamp removed")
     }
 
-    private func getBackgroundTimestamp() -> Int64 {
-        do {
-            let key = DelayUpdateUtils.BACKGROUND_TIMESTAMP_KEY
-            let timestamp = UserDefaults.standard.object(forKey: key) as? Int64 ?? 0
-            return timestamp
-        } catch {
-            logger.error("Failed to get background timestamp, [Error calling 'getBackgroundTimestamp()']: \(error)")
-            return 0
-        }
+    private func getBackgroundTimestamp() -> Int64? {
+        let key = DelayUpdateUtils.BACKGROUND_TIMESTAMP_KEY
+        return (UserDefaults.standard.object(forKey: key) as? NSNumber)?.int64Value
     }
 
+    @discardableResult
     public func cancelDelay(source: String) -> Bool {
-        do {
-            UserDefaults.standard.removeObject(forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES)
-            UserDefaults.standard.synchronize()
-            logger.info("All delays canceled from \(source)")
-            return true
-        } catch {
-            logger.error("Failed to cancel update delay: \(error)")
-            return false
-        }
+        UserDefaults.standard.removeObject(forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES)
+        UserDefaults.standard.synchronize()
+        logger.info("All delays canceled from \(source)")
+        return true
     }
 
     // MARK: - Helper methods
