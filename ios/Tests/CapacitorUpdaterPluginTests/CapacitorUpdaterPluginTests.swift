@@ -365,7 +365,7 @@ class CapacitorUpdaterTests: XCTestCase {
         let utils = makeDelayUpdateUtils()
         clearDelayStorage()
         defer { clearDelayStorage() }
-        let conditions = [["kind": "background", "value": "5000"]]
+        let conditions = [["kind": "background", "value": "60000"]]
         let data = try JSONSerialization.data(withJSONObject: conditions)
         let json = try XCTUnwrap(String(data: data, encoding: .utf8))
 
@@ -380,7 +380,7 @@ class CapacitorUpdaterTests: XCTestCase {
 
         XCTAssertEqual(parsed.count, 1)
         XCTAssertEqual(parsed.first?["kind"], "background")
-        XCTAssertEqual(parsed.first?["value"], "5000")
+        XCTAssertEqual(parsed.first?["value"], "60000")
     }
 
     func testDelayUpdateUtilsForegroundKeepsBackgroundConditionWithoutTimestamp() throws {
