@@ -7,6 +7,10 @@ private final class TestableCapacitorUpdaterPlugin: CapacitorUpdaterPlugin {
         // Intentionally blank: tests avoid touching UIApplication background-task APIs.
     }
 
+    override func runBackgroundDownloadWork(_ work: @escaping () -> Void) {
+        work()
+    }
+
     override func sendReadyToJs(current: BundleInfo, msg: String) {
         // Intentionally blank: tests assert native state transitions without JS bridge side effects.
     }
