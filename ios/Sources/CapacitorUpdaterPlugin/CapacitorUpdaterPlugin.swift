@@ -1197,9 +1197,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func makeSplashscreenCall(callbackId: String, options: [String: Any], methodName: String) -> CAPPluginCall {
-        CAPPluginCall(callbackId: callbackId, options: options, success: { (_, _) in
+        CAPPluginCall(callbackId: callbackId, options: options, success: { [weak self] (_, _) in
+            guard let self = self else { return }
             self.logger.info(self.splashscreenCompletedMessage(methodName: methodName))
-        }, error: { (_) in
+        }, error: { [weak self] (_) in
+            guard let self = self else { return }
             self.logger.error("Failed to auto-\(methodName) splashscreen")
         })
     }
