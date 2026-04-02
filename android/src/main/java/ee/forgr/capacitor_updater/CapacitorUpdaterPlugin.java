@@ -1444,6 +1444,21 @@ public class CapacitorUpdaterPlugin extends Plugin {
     @PluginMethod
     public void reload(final PluginCall call) {
         try {
+            final BundleInfo current = this.implementation.getCurrentBundle();
+            final BundleInfo next = this.implementation.getNextBundle();
+
+            if (next != null && !next.isErrorStatus() && !next.getId().equals(current.getId())) {
+                logger.info("Applying pending bundle on reload: " + next.getVersionName());
+                if (this.implementation.set(next)) {
+                    this.implementation.setNextBundle(null);
+                    this.notifyBundleSet(next);
+                } else {
+                    logger.error("Failed to activate pending bundle on reload: " + next.getVersionName());
+                    call.reject("Failed to activate pending bundle on reload");
+                    return;
+                }
+            }
+
             if (this._reload()) {
                 call.resolve();
             } else {
