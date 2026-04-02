@@ -713,6 +713,21 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func reload(_ call: CAPPluginCall) {
+        let current: BundleInfo = self.implementation.getCurrentBundle()
+        let next: BundleInfo? = self.implementation.getNextBundle()
+
+        if next != nil && !next!.isErrorStatus() && next!.getId() != current.getId() {
+            logger.info("Applying pending bundle on reload: \(next!.toString())")
+            if self.implementation.set(bundle: next!) {
+                _ = self.implementation.setNextBundle(next: Optional<String>.none)
+                self.notifyBundleSet(next!)
+            } else {
+                logger.error("Failed to activate pending bundle on reload: \(next!.toString())")
+                call.reject("Failed to activate pending bundle on reload")
+                return
+            }
+        }
+
         if self._reload() {
             call.resolve()
         } else {
