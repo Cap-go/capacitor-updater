@@ -102,7 +102,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var autoSplashscreenTimeoutWorkItem: DispatchWorkItem?
     private var splashscreenLoaderView: UIActivityIndicatorView?
     private var splashscreenLoaderContainer: UIView?
+    private let splashscreenPluginName = "SplashScreen"
+    private let splashscreenRetryDelayMilliseconds = 100
+    private let splashscreenMaxRetries = 20
     private var autoSplashscreenTimedOut = false
+    private var splashscreenInvocationToken = 0
     private var autoDeleteFailed = false
     private var autoDeletePrevious = false
     var allowSetDefaultChannel = true
@@ -1136,32 +1140,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private func performHideSplashscreen() {
         self.cancelSplashscreenTimeout()
         self.removeSplashscreenLoader()
-
-        guard let bridge = self.bridge else {
-            self.logger.warn("Bridge not available for hiding splashscreen with autoSplashscreen")
-            return
-        }
-
-        // Create a plugin call for the hide method
-        let call = CAPPluginCall(callbackId: "autoHideSplashscreen", options: [:], success: { (_, _) in
-            self.logger.info("Splashscreen hidden automatically")
-        }, error: { (_) in
-            self.logger.error("Failed to auto-hide splashscreen")
-        })
-
-        // Try to call the SplashScreen hide method directly through the bridge
-        if let splashScreenPlugin = bridge.plugin(withName: "SplashScreen") {
-            // Use runtime method invocation to call hide method
-            let selector = NSSelectorFromString("hide:")
-            if splashScreenPlugin.responds(to: selector) {
-                _ = splashScreenPlugin.perform(selector, with: call)
-                self.logger.info("Called SplashScreen hide method")
-            } else {
-                self.logger.warn("autoSplashscreen: SplashScreen plugin does not respond to hide: method. Make sure @capacitor/splash-screen plugin is properly installed.")
-            }
-        } else {
-            self.logger.warn("autoSplashscreen: SplashScreen plugin not found. Install @capacitor/splash-screen plugin.")
-        }
+        self.splashscreenInvocationToken += 1
+        self.invokeSplashscreenMethod(
+            methodName: "hide",
+            callbackId: "autoHideSplashscreen",
+            options: self.splashscreenOptions(methodName: "hide"),
+            retriesRemaining: self.splashscreenMaxRetries,
+            requestToken: self.splashscreenInvocationToken
+        )
     }
 
     private func showSplashscreen() {
@@ -1177,35 +1163,132 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private func performShowSplashscreen() {
         self.cancelSplashscreenTimeout()
         self.autoSplashscreenTimedOut = false
-
-        guard let bridge = self.bridge else {
-            self.logger.warn("Bridge not available for showing splashscreen with autoSplashscreen")
-            return
-        }
-
-        // Create a plugin call for the show method
-        let call = CAPPluginCall(callbackId: "autoShowSplashscreen", options: [:], success: { (_, _) in
-            self.logger.info("Splashscreen shown automatically")
-        }, error: { (_) in
-            self.logger.error("Failed to auto-show splashscreen")
-        })
-
-        // Try to call the SplashScreen show method directly through the bridge
-        if let splashScreenPlugin = bridge.plugin(withName: "SplashScreen") {
-            // Use runtime method invocation to call show method
-            let selector = NSSelectorFromString("show:")
-            if splashScreenPlugin.responds(to: selector) {
-                _ = splashScreenPlugin.perform(selector, with: call)
-                self.logger.info("Called SplashScreen show method")
-            } else {
-                self.logger.warn("autoSplashscreen: SplashScreen plugin does not respond to show: method. Make sure @capacitor/splash-screen plugin is properly installed.")
-            }
-        } else {
-            self.logger.warn("autoSplashscreen: SplashScreen plugin not found. Install @capacitor/splash-screen plugin.")
-        }
+        self.splashscreenInvocationToken += 1
+        self.invokeSplashscreenMethod(
+            methodName: "show",
+            callbackId: "autoShowSplashscreen",
+            options: self.splashscreenOptions(methodName: "show"),
+            retriesRemaining: self.splashscreenMaxRetries,
+            requestToken: self.splashscreenInvocationToken
+        )
 
         self.addSplashscreenLoaderIfNeeded()
         self.scheduleSplashscreenTimeout()
+    }
+
+    private func splashscreenOptions(methodName: String) -> [String: Any] {
+        methodName == "show" ? ["autoHide": false] : [:]
+    }
+
+    private func splashscreenCompletedMessage(methodName: String) -> String {
+        methodName == "show" ? "Splashscreen shown automatically" : "Splashscreen hidden automatically"
+    }
+
+    func splashscreenOptionsForTesting(methodName: String) -> [String: Any] {
+        self.splashscreenOptions(methodName: methodName)
+    }
+
+    func isCurrentSplashscreenInvocationTokenForTesting(_ requestToken: Int) -> Bool {
+        requestToken == self.splashscreenInvocationToken
+    }
+
+    func advanceSplashscreenInvocationTokenForTesting() {
+        self.splashscreenInvocationToken += 1
+    }
+
+    private func makeSplashscreenCall(callbackId: String, options: [String: Any], methodName: String) -> CAPPluginCall {
+        CAPPluginCall(callbackId: callbackId, options: options, success: { [weak self] (_, _) in
+            guard let self = self else { return }
+            self.logger.info(self.splashscreenCompletedMessage(methodName: methodName))
+        }, error: { [weak self] (_) in
+            guard let self = self else { return }
+            self.logger.error("Failed to auto-\(methodName) splashscreen")
+        })
+    }
+
+    private func invokeSplashscreenMethod(
+        methodName: String,
+        callbackId: String,
+        options: [String: Any],
+        retriesRemaining: Int,
+        requestToken: Int
+    ) {
+        guard requestToken == self.splashscreenInvocationToken else {
+            return
+        }
+
+        guard let bridge = self.bridge else {
+            self.retrySplashscreenMethod(
+                methodName: methodName,
+                callbackId: callbackId,
+                options: options,
+                retriesRemaining: retriesRemaining,
+                requestToken: requestToken,
+                message: "Bridge not available for \(methodName == "show" ? "showing" : "hiding") splashscreen with autoSplashscreen"
+            )
+            return
+        }
+
+        guard let splashScreenPlugin = bridge.plugin(withName: self.splashscreenPluginName) else {
+            self.retrySplashscreenMethod(
+                methodName: methodName,
+                callbackId: callbackId,
+                options: options,
+                retriesRemaining: retriesRemaining,
+                requestToken: requestToken,
+                message: "autoSplashscreen: SplashScreen plugin not found. Install @capacitor/splash-screen plugin."
+            )
+            return
+        }
+
+        let selector = NSSelectorFromString("\(methodName):")
+        guard splashScreenPlugin.responds(to: selector) else {
+            self.retrySplashscreenMethod(
+                methodName: methodName,
+                callbackId: callbackId,
+                options: options,
+                retriesRemaining: retriesRemaining,
+                requestToken: requestToken,
+                message: "autoSplashscreen: SplashScreen plugin does not respond to \(methodName): method. Make sure @capacitor/splash-screen plugin is properly installed."
+            )
+            return
+        }
+
+        let call = self.makeSplashscreenCall(callbackId: callbackId, options: options, methodName: methodName)
+        _ = splashScreenPlugin.perform(selector, with: call)
+        self.logger.info("Called SplashScreen \(methodName) method")
+    }
+
+    private func retrySplashscreenMethod(
+        methodName: String,
+        callbackId: String,
+        options: [String: Any],
+        retriesRemaining: Int,
+        requestToken: Int,
+        message: String
+    ) {
+        guard retriesRemaining > 0 else {
+            if methodName == "show" {
+                self.logger.warn(message)
+            } else {
+                self.logger.error(message)
+            }
+            return
+        }
+
+        self.logger.info("\(message). Retrying.")
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(self.splashscreenRetryDelayMilliseconds)) { [weak self] in
+            guard let self = self, requestToken == self.splashscreenInvocationToken else {
+                return
+            }
+            self.invokeSplashscreenMethod(
+                methodName: methodName,
+                callbackId: callbackId,
+                options: options,
+                retriesRemaining: retriesRemaining - 1,
+                requestToken: requestToken
+            )
+        }
     }
 
     private func addSplashscreenLoaderIfNeeded() {
@@ -1472,6 +1555,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         return true
     }
 
+    func runBackgroundDownloadWork(_ work: @escaping () -> Void) {
+        DispatchQueue.global(qos: .background).async(execute: work)
+    }
+
     func backgroundDownload() {
         // Set download in progress flag (thread-safe)
         downloadLock.lock()
@@ -1491,7 +1578,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
-        DispatchQueue.global(qos: .background).async {
+        self.runBackgroundDownloadWork {
             // Wait for cleanup to complete before starting download
             self.waitForCleanupIfNeeded()
             self.backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "Finish Download Tasks") {

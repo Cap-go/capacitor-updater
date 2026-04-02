@@ -7,6 +7,10 @@ private final class TestableCapacitorUpdaterPlugin: CapacitorUpdaterPlugin {
         // Intentionally blank: tests avoid touching UIApplication background-task APIs.
     }
 
+    override func runBackgroundDownloadWork(_ work: @escaping () -> Void) {
+        work()
+    }
+
     override func sendReadyToJs(current: BundleInfo, msg: String) {
         // Intentionally blank: tests assert native state transitions without JS bridge side effects.
     }
@@ -323,6 +327,26 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertTrue(consumedWhenDownloadStarted)
         XCTAssertTrue(plugin.hasConsumedOnLaunchDirectUpdateForTesting)
         XCTAssertFalse(plugin.shouldUseDirectUpdateForTesting())
+    }
+
+    func testShowSplashscreenOptionsDisableAutoHide() {
+        let options = plugin.splashscreenOptionsForTesting(methodName: "show")
+
+        XCTAssertEqual(options["autoHide"] as? Bool, false)
+    }
+
+    func testHideSplashscreenOptionsStayEmpty() {
+        let options = plugin.splashscreenOptionsForTesting(methodName: "hide")
+
+        XCTAssertTrue(options.isEmpty)
+    }
+
+    func testSplashscreenInvocationTokenRejectsStaleRequests() {
+        XCTAssertTrue(plugin.isCurrentSplashscreenInvocationTokenForTesting(0))
+
+        plugin.advanceSplashscreenInvocationTokenForTesting()
+
+        XCTAssertFalse(plugin.isCurrentSplashscreenInvocationTokenForTesting(0))
     }
 
     func testDelayUpdateUtilsSetMultiDelayStoresMultipleConditions() throws {

@@ -22,6 +22,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.ProgressBar;
+import com.getcapacitor.Bridge;
 import com.getcapacitor.CapConfig;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -29,6 +30,7 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginHandle;
 import com.getcapacitor.PluginMethod;
+import com.getcapacitor.PluginResult;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.plugin.WebView;
 import com.google.android.gms.tasks.Task;
@@ -56,7 +58,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.Timer;
 import java.util.TimerTask;
-import java.util.UUID;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
@@ -83,6 +84,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final String DEFAULT_CHANNEL_PREF_KEY = "CapacitorUpdater.defaultChannel";
     private static final String[] BREAKING_EVENT_NAMES = { "breakingAvailable", "majorAvailable" };
     private static final String LAST_FAILED_BUNDLE_PREF_KEY = "CapacitorUpdater.lastFailedBundle";
+    private static final String SPLASH_SCREEN_PLUGIN_ID = "SplashScreen";
+    private static final int SPLASH_SCREEN_RETRY_DELAY_MS = 100;
+    private static final int SPLASH_SCREEN_MAX_RETRIES = 20;
 
     private final String pluginVersion = "8.45.0";
     private static final String DELAY_CONDITION_PREFERENCES = "";
@@ -108,6 +112,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private Boolean autoSplashscreenLoader = false;
     private Integer autoSplashscreenTimeout = 10000;
     private Boolean autoSplashscreenTimedOut = false;
+    private int splashscreenInvocationToken = 0;
     private String directUpdateMode = "false";
     private Boolean wasRecentlyInstalledOrUpdated = false;
     private volatile boolean onLaunchDirectUpdateUsed = false;
@@ -144,6 +149,28 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private FrameLayout splashscreenLoaderOverlay;
     private Runnable splashscreenTimeoutRunnable;
+
+    private static final class FireAndForgetPluginCall extends PluginCall {
+
+        FireAndForgetPluginCall(final String methodName, final JSObject data) {
+            super(null, SPLASH_SCREEN_PLUGIN_ID, PluginCall.CALLBACK_ID_DANGLING, methodName, data);
+        }
+
+        @Override
+        public void successCallback(final PluginResult successResult) {}
+
+        @Override
+        public void resolve(final JSObject data) {}
+
+        @Override
+        public void resolve() {}
+
+        @Override
+        public void errorCallback(final String msg) {}
+
+        @Override
+        public void reject(final String msg, final String code, final Exception ex, final JSObject data) {}
+    }
 
     // App lifecycle observer using ProcessLifecycleOwner for reliable foreground/background detection
     private AppLifecycleObserver appLifecycleObserver;
@@ -557,47 +584,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private void hideSplashscreenInternal() {
         cancelSplashscreenTimeout();
         removeSplashscreenLoader();
-
-        try {
-            if (getBridge() == null) {
-                logger.warn("Bridge not ready for hiding splashscreen with autoSplashscreen");
-                return;
-            }
-
-            // Try to call the SplashScreen plugin directly through the bridge
-            PluginHandle splashScreenPlugin = getBridge().getPlugin("SplashScreen");
-            if (splashScreenPlugin != null) {
-                try {
-                    // Create a plugin call for the hide method using reflection to access private msgHandler
-                    JSObject options = new JSObject();
-                    java.lang.reflect.Field msgHandlerField = getBridge().getClass().getDeclaredField("msgHandler");
-                    msgHandlerField.setAccessible(true);
-                    Object msgHandler = msgHandlerField.get(getBridge());
-
-                    PluginCall call = new PluginCall(
-                        (com.getcapacitor.MessageHandler) msgHandler,
-                        "SplashScreen",
-                        "FAKE_CALLBACK_ID_HIDE",
-                        "hide",
-                        options
-                    );
-
-                    // Call the hide method directly
-                    splashScreenPlugin.invoke("hide", call);
-                    logger.info("Splashscreen hidden automatically via direct plugin call");
-                } catch (Exception e) {
-                    logger.error("Failed to call SplashScreen hide method: " + e.getMessage());
-                }
-            } else {
-                logger.warn("autoSplashscreen: SplashScreen plugin not found. Install @capacitor/splash-screen plugin.");
-            }
-        } catch (Exception e) {
-            logger.error(
-                "Error hiding splashscreen with autoSplashscreen: " +
-                    e.getMessage() +
-                    ". Make sure @capacitor/splash-screen plugin is installed and configured."
-            );
-        }
+        invokeSplashScreenPluginMethod("hide", new JSObject(), SPLASH_SCREEN_MAX_RETRIES, ++this.splashscreenInvocationToken);
     }
 
     private void showSplashscreen() {
@@ -612,37 +599,87 @@ public class CapacitorUpdaterPlugin extends Plugin {
         cancelSplashscreenTimeout();
         this.autoSplashscreenTimedOut = false;
 
-        try {
-            if (getBridge() == null) {
-                logger.warn("Bridge not ready for showing splashscreen with autoSplashscreen");
-            } else {
-                PluginHandle splashScreenPlugin = getBridge().getPlugin("SplashScreen");
-                if (splashScreenPlugin != null) {
-                    JSObject options = new JSObject();
-                    java.lang.reflect.Field msgHandlerField = getBridge().getClass().getDeclaredField("msgHandler");
-                    msgHandlerField.setAccessible(true);
-                    Object msgHandler = msgHandlerField.get(getBridge());
-
-                    PluginCall call = new PluginCall(
-                        (com.getcapacitor.MessageHandler) msgHandler,
-                        "SplashScreen",
-                        "FAKE_CALLBACK_ID_SHOW",
-                        "show",
-                        options
-                    );
-
-                    splashScreenPlugin.invoke("show", call);
-                    logger.info("Splashscreen shown synchronously to prevent flash");
-                } else {
-                    logger.warn("autoSplashscreen: SplashScreen plugin not found");
-                }
-            }
-        } catch (Exception e) {
-            logger.error("Failed to show splashscreen synchronously: " + e.getMessage());
-        }
+        final JSObject options = new JSObject();
+        options.put("autoHide", false);
+        invokeSplashScreenPluginMethod("show", options, SPLASH_SCREEN_MAX_RETRIES, ++this.splashscreenInvocationToken);
 
         addSplashscreenLoaderIfNeeded();
         scheduleSplashscreenTimeout();
+    }
+
+    private void invokeSplashScreenPluginMethod(
+        final String methodName,
+        final JSObject options,
+        final int retriesRemaining,
+        final int requestToken
+    ) {
+        if (requestToken != this.splashscreenInvocationToken) {
+            return;
+        }
+
+        try {
+            final Bridge bridge = getBridge();
+            if (bridge == null) {
+                retrySplashScreenInvocation(
+                    methodName,
+                    options,
+                    retriesRemaining,
+                    requestToken,
+                    "Bridge not ready for " + ("show".equals(methodName) ? "showing" : "hiding") + " splashscreen"
+                );
+                return;
+            }
+
+            final PluginHandle splashScreenPlugin = bridge.getPlugin(SPLASH_SCREEN_PLUGIN_ID);
+            if (splashScreenPlugin == null) {
+                retrySplashScreenInvocation(
+                    methodName,
+                    options,
+                    retriesRemaining,
+                    requestToken,
+                    "autoSplashscreen: SplashScreen plugin not found. Install @capacitor/splash-screen plugin."
+                );
+                return;
+            }
+
+            splashScreenPlugin.invoke(methodName, new FireAndForgetPluginCall(methodName, options));
+            logger.info("Splashscreen " + methodName + " invoked automatically");
+        } catch (final Exception e) {
+            retrySplashScreenInvocation(
+                methodName,
+                options,
+                retriesRemaining,
+                requestToken,
+                "Failed to call SplashScreen " + methodName + " method: " + e.getMessage()
+            );
+        }
+    }
+
+    private void retrySplashScreenInvocation(
+        final String methodName,
+        final JSObject options,
+        final int retriesRemaining,
+        final int requestToken,
+        final String message
+    ) {
+        if (retriesRemaining > 0) {
+            logger.info(message + ". Retrying.");
+            this.mainHandler.postDelayed(
+                () -> invokeSplashScreenPluginMethod(methodName, options, retriesRemaining - 1, requestToken),
+                SPLASH_SCREEN_RETRY_DELAY_MS
+            );
+            return;
+        }
+
+        if ("show".equals(methodName)) {
+            logger.warn(message);
+        } else {
+            logger.error(message);
+        }
+    }
+
+    boolean isCurrentSplashscreenInvocationTokenForTesting(final int requestToken) {
+        return requestToken == this.splashscreenInvocationToken;
     }
 
     private void addSplashscreenLoaderIfNeeded() {
