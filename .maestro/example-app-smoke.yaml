@@ -1,0 +1,34 @@
+appId: app.capgo.updater
+---
+- launchApp
+- assertVisible: "@capgo/capacitor-updater"
+- tapOn: "Run notifyAppReady"
+- extendedWaitUntil:
+    visible: "Last action: Notify app ready"
+    timeout: 10000
+- assertVisible: "notifyAppReady() resolved."
+- tapOn: "Run get current bundle"
+- extendedWaitUntil:
+    visible: "Last action: Get current bundle"
+    timeout: 10000
+- assertVisible: "\"bundle\":"
+- assertVisible: "\"native\":"
+- tapOn: "Run list downloaded bundles"
+- extendedWaitUntil:
+    visible: "Last action: List downloaded bundles"
+    timeout: 10000
+- assertVisible: "\"bundles\":"
+- tapOn: "Run get plugin version"
+- extendedWaitUntil:
+    visible: "Last action: Get plugin version"
+    timeout: 10000
+- assertVisible: "\"version\":"
+- scrollUntilVisible:
+    element:
+      text: "Apply update URL"
+    direction: DOWN
+- tapOn: "Apply update URL"
+- extendedWaitUntil:
+    visible: "Last action: Set update URL"
+    timeout: 10000
+- assertVisible: "Update URL set."
