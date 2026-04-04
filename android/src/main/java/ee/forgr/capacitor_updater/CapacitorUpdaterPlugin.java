@@ -1444,6 +1444,22 @@ public class CapacitorUpdaterPlugin extends Plugin {
     @PluginMethod
     public void reload(final PluginCall call) {
         try {
+            final BundleInfo current = this.implementation.getCurrentBundle();
+            final BundleInfo next = this.implementation.getNextBundle();
+
+            if (next != null && !next.isErrorStatus() && !next.getId().equals(current.getId())) {
+                logger.info("Applying pending bundle before reload: " + next.getVersionName());
+                if (this.implementation.set(next) && this._reload()) {
+                    this.notifyBundleSet(next);
+                    this.implementation.setNextBundle(null);
+                    call.resolve();
+                    return;
+                }
+                logger.error("Reload failed after applying pending bundle: " + next.getVersionName());
+                call.reject("Reload failed after applying pending bundle: " + next.getVersionName());
+                return;
+            }
+
             if (this._reload()) {
                 call.resolve();
             } else {
@@ -1605,11 +1621,26 @@ public class CapacitorUpdaterPlugin extends Plugin {
         );
     }
 
-    private boolean _reset(final Boolean toLastSuccessful) {
+    private boolean _reset(final Boolean toLastSuccessful, final Boolean usePendingBundle) {
         final BundleInfo fallback = this.implementation.getFallbackBundle();
+        final BundleInfo pending = this.implementation.getNextBundle();
         this.implementation.reset();
 
-        if (toLastSuccessful && !fallback.isBuiltin()) {
+        if (Boolean.TRUE.equals(usePendingBundle)) {
+            if (pending == null || pending.isErrorStatus()) {
+                logger.error("No pending bundle available to reset to");
+                return false;
+            }
+            logger.info("Resetting to pending bundle: " + pending.getVersionName());
+            if (this.implementation.set(pending) && this._reload()) {
+                this.notifyBundleSet(pending);
+                this.implementation.setNextBundle(null);
+                return true;
+            }
+            return false;
+        }
+
+        if (Boolean.TRUE.equals(toLastSuccessful) && !fallback.isBuiltin()) {
             logger.info("Resetting to: " + fallback);
             if (this.implementation.set(fallback) && this._reload()) {
                 this.notifyBundleSet(fallback);
@@ -1626,7 +1657,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     public void reset(final PluginCall call) {
         try {
             final Boolean toLastSuccessful = call.getBoolean("toLastSuccessful", false);
-            if (this._reset(toLastSuccessful)) {
+            final Boolean usePendingBundle = call.getBoolean("usePendingBundle", false);
+            if (this._reset(toLastSuccessful, usePendingBundle)) {
                 call.resolve();
                 return;
             }
@@ -1990,7 +2022,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                             );
                             if (directUpdateAllowedNow) {
                                 logger.info("Direct update to builtin version");
-                                this._reset(false);
+                                this._reset(false, false);
                                 CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
                                     "Updated to builtin version",
                                     latestVersionName,
@@ -2256,7 +2288,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.notifyListeners("updateFailed", ret);
             this.implementation.sendStats("update_fail", current.getVersionName());
             this.implementation.setError(current);
-            this._reset(true);
+            this._reset(true, false);
             if (CapacitorUpdaterPlugin.this.autoDeleteFailed && !current.isBuiltin()) {
                 logger.info("Deleting failing bundle: " + current.getVersionName());
                 try {

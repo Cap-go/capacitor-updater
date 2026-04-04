@@ -436,7 +436,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
             let previous = UserDefaults.standard.string(forKey: "LatestNativeBuildVersion") ?? UserDefaults.standard.string(forKey: "LatestVersionNative") ?? "0"
             if previous != "0" && self.currentBuildVersion != previous {
-                _ = self._reset(toLastSuccessful: false)
+                _ = self._reset(toLastSuccessful: false, usePendingBundle: false)
                 let res = self.implementation.list()
                 for version in res {
                     // Check if thread was cancelled
@@ -713,6 +713,22 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func reload(_ call: CAPPluginCall) {
+        let current: BundleInfo = self.implementation.getCurrentBundle()
+        let next: BundleInfo? = self.implementation.getNextBundle()
+
+        if let next = next, !next.isErrorStatus(), next.getId() != current.getId() {
+            logger.info("Applying pending bundle before reload: \(next.toString())")
+            if self.implementation.set(bundle: next) && self._reload() {
+                self.notifyBundleSet(next)
+                _ = self.implementation.setNextBundle(next: Optional<String>.none)
+                call.resolve()
+                return
+            }
+            logger.error("Reload failed after applying pending bundle: \(next.toString())")
+            call.reject("Reload failed after applying pending bundle")
+            return
+        }
+
         if self._reload() {
             call.resolve()
         } else {
@@ -936,11 +952,27 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         call.resolve()
     }
 
-    @objc func _reset(toLastSuccessful: Bool) -> Bool {
+    @objc func _reset(toLastSuccessful: Bool, usePendingBundle: Bool) -> Bool {
         guard let bridge = self.bridge else { return false }
 
         if (bridge.viewController as? CAPBridgeViewController) != nil {
             let fallback: BundleInfo = self.implementation.getFallbackBundle()
+            let pending: BundleInfo? = self.implementation.getNextBundle()
+            self.implementation.reset()
+
+            if usePendingBundle {
+                guard let pending = pending, !pending.isErrorStatus() else {
+                    logger.error("No pending bundle available to reset to")
+                    return false
+                }
+                logger.info("Resetting to pending bundle: \(pending.toString())")
+                if self.implementation.set(bundle: pending) && self._reload() {
+                    self.notifyBundleSet(pending)
+                    _ = self.implementation.setNextBundle(next: Optional<String>.none)
+                    return true
+                }
+                return false
+            }
 
             // If developer wants to reset to the last successful bundle, and that bundle is not
             // the built-in bundle, set it as the bundle to use and reload.
@@ -954,9 +986,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
 
             logger.info("Resetting to builtin version")
-
-            // Otherwise, reset back to the built-in bundle and reload.
-            self.implementation.reset()
             return self._reload()
         }
 
@@ -965,7 +994,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func reset(_ call: CAPPluginCall) {
         let toLastSuccessful = call.getBool("toLastSuccessful") ?? false
-        if self._reset(toLastSuccessful: toLastSuccessful) {
+        let usePendingBundle = call.getBool("usePendingBundle") ?? false
+        if self._reset(toLastSuccessful: toLastSuccessful, usePendingBundle: usePendingBundle) {
             call.resolve()
         } else {
             logger.error("Reset failed")
@@ -1084,7 +1114,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             self.persistLastFailedBundle(current)
             self.implementation.sendStats(action: "update_fail", versionName: current.getVersionName())
             self.implementation.setError(bundle: current)
-            _ = self._reset(toLastSuccessful: true)
+            _ = self._reset(toLastSuccessful: true, usePendingBundle: false)
             if self.autoDeleteFailed && !current.isBuiltin() {
                 logger.info("Deleting failing bundle: \(current.toString())")
                 let res = self.implementation.delete(id: current.getId(), removeInfo: false)
@@ -1609,7 +1639,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 let directUpdateAllowed = plannedDirectUpdate && !self.autoSplashscreenTimedOut
                 if directUpdateAllowed {
                     self.logger.info("Direct update to builtin version")
-                    _ = self._reset(toLastSuccessful: false)
+                    _ = self._reset(toLastSuccessful: false, usePendingBundle: false)
                     self.endBackGroundTaskWithNotif(
                         msg: "Updated to builtin version",
                         latestVersionName: res.version,
