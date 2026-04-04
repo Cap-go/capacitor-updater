@@ -90,6 +90,15 @@ jobs:
         run: |
           curl -Ls "https://get.maestro.mobile.dev" | bash
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+      - name: Build plugin and example app
+        run: |
+          bun run build
+          cd example-app
+          bun install
+          bun run build
+          bunx cap sync android
+      - name: Assemble Android example app
+        run: cd example-app/android && ./gradlew assembleDebug
       - name: Run Maestro smoke tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -98,7 +107,7 @@ jobs:
           profile: pixel_7
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: bun run test:maestro:android
+          script: CAPGO_MAESTRO_SKIP_BUILD=1 bun run test:maestro:android
       - name: Upload Maestro artifacts
         if: always()
         uses: actions/upload-artifact@v4
