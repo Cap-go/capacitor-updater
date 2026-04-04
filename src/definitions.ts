@@ -620,7 +620,10 @@ export interface CapacitorUpdaterPlugin {
    * - Testing rollback functionality
    * - Providing users a "reset to factory" option
    *
-   * @param options {@link ResetOptions} to control reset behavior. If `toLastSuccessful` is `false` (or omitted), resets to builtin. If `true`, resets to last successful bundle.
+   * @param options {@link ResetOptions} to control reset behavior.
+   * If `toLastSuccessful` is `false` (or omitted), resets to builtin.
+   * If `true`, resets to last successful bundle.
+   * If `usePendingBundle` is `true`, applies the pending bundle set via {@link next} and clears it.
    * @returns {Promise<void>} A promise that may never resolve because the app will be reloaded.
    * @throws {Error} If the reset operation fails.
    */
@@ -1837,7 +1840,19 @@ export interface BundleListResult {
 }
 
 export interface ResetOptions {
-  toLastSuccessful: boolean;
+  /**
+   * Reset to the last successfully loaded bundle instead of the builtin one.
+   * @default false
+   */
+  toLastSuccessful?: boolean;
+  /**
+   * Apply the pending bundle set via {@link next} while resetting.
+   *
+   * When `true`, the plugin will switch to the pending bundle immediately and clear the pending flag.
+   * If no pending bundle exists, the reset will fail.
+   * @default false
+   */
+  usePendingBundle?: boolean;
 }
 
 export interface ListOptions {
