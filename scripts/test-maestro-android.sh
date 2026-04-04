@@ -61,10 +61,16 @@ adb install -r "$APK_PATH"
 rm -rf "$RESULTS_DIR"
 mkdir -p "$RESULTS_DIR"
 
-maestro test \
+if ! timeout 5m maestro test \
   "$ROOT_DIR/.maestro" \
   --format junit \
   --output "$RESULTS_DIR/junit.xml" \
   --debug-output "$RESULTS_DIR/debug" \
   --flatten-debug-output \
-  --test-output-dir "$RESULTS_DIR/artifacts"
+  --test-output-dir "$RESULTS_DIR/artifacts"; then
+  status=$?
+  if [[ $status -eq 124 ]]; then
+    echo "Maestro test timed out after 5 minutes." >&2
+  fi
+  exit "$status"
+fi
