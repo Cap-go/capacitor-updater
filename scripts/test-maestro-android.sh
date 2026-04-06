@@ -128,8 +128,9 @@ install_apk_with_retries() {
   while (( attempt <= APK_INSTALL_RETRIES )); do
     if adb install -r "$APK_PATH"; then
       return 0
+    else
+      status=$?
     fi
-    status=$?
 
     if (( attempt == APK_INSTALL_RETRIES )); then
       echo "Failed to install the example APK after ${APK_INSTALL_RETRIES} attempts." >&2
