@@ -9,6 +9,16 @@ SKIP_BUILD="${CAPGO_MAESTRO_SKIP_BUILD:-0}"
 EMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_EMULATOR_BOOT_TIMEOUT_SECONDS:-180}"
 MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-300}"
 MAESTRO_DRIVER_STARTUP_TIMEOUT="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-180000}"
+ANR_WATCHER_PID=""
+
+cleanup() {
+  if [[ -n "$ANR_WATCHER_PID" ]]; then
+    kill "$ANR_WATCHER_PID" >/dev/null 2>&1 || true
+    wait "$ANR_WATCHER_PID" 2>/dev/null || true
+  fi
+}
+
+trap cleanup EXIT
 
 wait_for_emulator_boot() {
   local deadline=$((SECONDS + EMULATOR_BOOT_TIMEOUT_SECONDS))
@@ -31,6 +41,26 @@ wait_for_emulator_boot() {
 
   echo "Emulator failed to complete boot within ${EMULATOR_BOOT_TIMEOUT_SECONDS} seconds." >&2
   exit 1
+}
+
+watch_for_android_anr_dialog() {
+  local hierarchy=""
+  local wait_button_pattern='text="Wait".*bounds="\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]"'
+  local x=""
+  local y=""
+
+  while true; do
+    hierarchy="$(adb exec-out uiautomator dump /dev/tty 2>/dev/null | tr -d '\r' | tr '\n' ' ' || true)"
+    if [[ "$hierarchy" =~ $wait_button_pattern ]]; then
+      x=$(((BASH_REMATCH[1] + BASH_REMATCH[3]) / 2))
+      y=$(((BASH_REMATCH[2] + BASH_REMATCH[4]) / 2))
+      echo "Detected Android ANR dialog; tapping Wait." >&2
+      adb shell input tap "$x" "$y" >/dev/null 2>&1 || true
+      sleep 1
+      continue
+    fi
+    sleep 2
+  done
 }
 
 if ! command -v adb >/dev/null 2>&1; then
@@ -96,6 +126,9 @@ adb install -r "$APK_PATH"
 
 rm -rf "$RESULTS_DIR"
 mkdir -p "$RESULTS_DIR"
+
+watch_for_android_anr_dialog &
+ANR_WATCHER_PID=$!
 
 if timeout "${MAESTRO_TIMEOUT_SECONDS}s" env MAESTRO_DRIVER_STARTUP_TIMEOUT="$MAESTRO_DRIVER_STARTUP_TIMEOUT" maestro test \
   "$ROOT_DIR/.maestro" \
