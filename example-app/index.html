@@ -18,6 +18,7 @@
           <h2>Smoke Actions</h2>
           <p>Each button runs one currently exposed example action and prints the latest result below.</p>
         </div>
+        <button id="run-smoke-sequence" type="button">Run smoke test sequence</button>
         <div id="smoke-actions" class="actions-grid"></div>
       </section>
       <section class="panel result-panel">
@@ -27,6 +28,7 @@
             <p id="last-action" class="status-line">Last action: none</p>
             <p id="action-status" class="status-line">Status: idle</p>
           </div>
+          <p id="sequence-status" class="status-line">Sequence: idle</p>
           <p id="result-marker" class="status-line">Result marker: idle</p>
         </div>
         <pre id="plugin-output">Ready to run a smoke action.</pre>

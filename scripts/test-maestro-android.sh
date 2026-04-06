@@ -5,11 +5,18 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 EXAMPLE_DIR="$ROOT_DIR/example-app"
 APK_PATH="$EXAMPLE_DIR/android/app/build/outputs/apk/debug/app-debug.apk"
 RESULTS_DIR="$ROOT_DIR/maestro-results"
+FLOW_PATH="$ROOT_DIR/.maestro/android/example-app-smoke.yaml"
 SKIP_BUILD="${CAPGO_MAESTRO_SKIP_BUILD:-0}"
 EMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_EMULATOR_BOOT_TIMEOUT_SECONDS:-180}"
 MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-300}"
 MAESTRO_DRIVER_STARTUP_TIMEOUT="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-180000}"
 APK_INSTALL_RETRIES="${CAPGO_MAESTRO_APK_INSTALL_RETRIES:-3}"
+APP_ACTIVITY="${CAPGO_MAESTRO_ANDROID_ACTIVITY:-app.capgo.updater/.MainActivity}"
+APP_LAUNCH_RETRIES="${CAPGO_MAESTRO_APP_LAUNCH_RETRIES:-2}"
+APP_UI_TIMEOUT_SECONDS="${CAPGO_MAESTRO_APP_UI_TIMEOUT_SECONDS:-90}"
+APP_READY_TITLE="@capgo/capacitor-updater"
+APP_READY_ACTION="Run notifyAppReady"
+APP_ID="app.capgo.updater"
 ANR_WATCHER_PID=""
 
 cleanup() {
@@ -45,23 +52,65 @@ wait_for_emulator_boot() {
 }
 
 watch_for_android_anr_dialog() {
-  local hierarchy=""
+  while true; do
+    tap_android_anr_wait_button_if_present "$(dump_ui_hierarchy)"
+    sleep 2
+  done
+}
+
+dump_ui_hierarchy() {
+  adb exec-out uiautomator dump /dev/tty 2>/dev/null | tr -d '\r' | tr '\n' ' ' || true
+}
+
+tap_android_anr_wait_button_if_present() {
+  local hierarchy="$1"
   local wait_button_pattern='text="Wait".*bounds="\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]"'
   local x=""
   local y=""
 
-  while true; do
-    hierarchy="$(adb exec-out uiautomator dump /dev/tty 2>/dev/null | tr -d '\r' | tr '\n' ' ' || true)"
-    if [[ "$hierarchy" =~ $wait_button_pattern ]]; then
-      x=$(((BASH_REMATCH[1] + BASH_REMATCH[3]) / 2))
-      y=$(((BASH_REMATCH[2] + BASH_REMATCH[4]) / 2))
-      echo "Detected Android ANR dialog; tapping Wait." >&2
-      adb shell input tap "$x" "$y" >/dev/null 2>&1 || true
-      sleep 1
-      continue
-    fi
+  if [[ "$hierarchy" =~ $wait_button_pattern ]]; then
+    x=$(((BASH_REMATCH[1] + BASH_REMATCH[3]) / 2))
+    y=$(((BASH_REMATCH[2] + BASH_REMATCH[4]) / 2))
+    echo "Detected Android ANR dialog; tapping Wait." >&2
+    adb shell input tap "$x" "$y" >/dev/null 2>&1 || true
+    sleep 1
+    return 0
+  fi
+
+  return 1
+}
+
+launch_example_app() {
+  adb shell am start -W -n "$APP_ACTIVITY" >/dev/null 2>&1 || \
+    adb shell monkey -p "$APP_ID" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1 || true
+}
+
+wait_for_example_app_ui() {
+  local attempt=1
+  local hierarchy=""
+  local deadline=0
+
+  while (( attempt <= APP_LAUNCH_RETRIES )); do
+    launch_example_app
+    deadline=$((SECONDS + APP_UI_TIMEOUT_SECONDS))
+
+    while (( SECONDS < deadline )); do
+      hierarchy="$(dump_ui_hierarchy)"
+      tap_android_anr_wait_button_if_present "$hierarchy" || true
+      if [[ "$hierarchy" == *"$APP_READY_TITLE"* || "$hierarchy" == *"$APP_READY_ACTION"* ]]; then
+        return 0
+      fi
+      sleep 5
+    done
+
+    echo "Example app UI did not appear on Android launch attempt ${attempt}; restarting the app." >&2
+    adb shell am force-stop "$APP_ID" >/dev/null 2>&1 || true
     sleep 2
+    ((attempt += 1))
   done
+
+  echo "Example app UI never became visible on Android after ${APP_LAUNCH_RETRIES} attempts." >&2
+  return 1
 }
 
 install_apk_with_retries() {
@@ -150,6 +199,7 @@ adb shell settings put global transition_animation_scale 0 || true
 adb shell settings put global animator_duration_scale 0 || true
 adb shell input keyevent 82 || true
 install_apk_with_retries
+wait_for_example_app_ui
 
 rm -rf "$RESULTS_DIR"
 mkdir -p "$RESULTS_DIR"
@@ -158,7 +208,7 @@ watch_for_android_anr_dialog &
 ANR_WATCHER_PID=$!
 
 if timeout "${MAESTRO_TIMEOUT_SECONDS}s" env MAESTRO_DRIVER_STARTUP_TIMEOUT="$MAESTRO_DRIVER_STARTUP_TIMEOUT" maestro test \
-  "$ROOT_DIR/.maestro" \
+  "$FLOW_PATH" \
   --platform android \
   --udid "$ANDROID_DEVICE_ID" \
   --format junit \

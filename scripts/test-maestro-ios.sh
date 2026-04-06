@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 EXAMPLE_DIR="$ROOT_DIR/example-app"
 RESULTS_DIR="${CAPGO_MAESTRO_RESULTS_DIR:-$ROOT_DIR/maestro-results-ios}"
+FLOW_PATH="$ROOT_DIR/.maestro/ios/example-app-smoke.yaml"
 SKIP_BUILD="${CAPGO_MAESTRO_SKIP_BUILD:-0}"
 SIMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_IOS_BOOT_TIMEOUT_SECONDS:-180}"
 MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-300}"
@@ -124,7 +125,7 @@ mkdir -p "$RESULTS_DIR"
 if run_with_timeout "$MAESTRO_TIMEOUT_SECONDS" maestro test \
   -p ios \
   --device "$SIMULATOR_ID" \
-  "$ROOT_DIR/.maestro" \
+  "$FLOW_PATH" \
   --format junit \
   --output "$RESULTS_DIR/junit.xml" \
   --debug-output "$RESULTS_DIR/debug" \

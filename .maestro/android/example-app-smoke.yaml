@@ -1,0 +1,11 @@
+appId: app.capgo.updater
+---
+- assertVisible: "@capgo/capacitor-updater"
+- tapOn: "Run smoke test sequence"
+- scrollUntilVisible:
+    element:
+      text: "Sequence: success"
+    direction: DOWN
+- assertVisible: "Sequence: success"
+- assertVisible: "Last action: Set update URL"
+- assertVisible: "Status: success"

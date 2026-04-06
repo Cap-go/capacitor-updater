@@ -68,8 +68,11 @@ const output = document.getElementById('plugin-output');
 const actionStatus = document.getElementById('action-status');
 const lastAction = document.getElementById('last-action');
 const resultMarker = document.getElementById('result-marker');
+const sequenceStatus = document.getElementById('sequence-status');
+const runSmokeSequenceButton = document.getElementById('run-smoke-sequence');
+const actionCards = new Map();
 
-if (!actionGrid || !output || !actionStatus || !lastAction) {
+if (!actionGrid || !output || !actionStatus || !lastAction || !sequenceStatus || !runSmokeSequenceButton) {
   throw new Error('Smoke UI anchors are missing from index.html');
 }
 
@@ -114,6 +117,27 @@ async function runAction(action, values) {
     actionStatus.textContent = 'Status: error';
     resultMarker.textContent = `Result marker: ${action.id}:error`;
     output.textContent = `Error: ${error?.message ?? error}`;
+    throw error;
+  }
+}
+
+async function runSmokeSequence() {
+  sequenceStatus.textContent = 'Sequence: running';
+  runSmokeSequenceButton.disabled = true;
+
+  try {
+    for (const action of actions) {
+      const card = actionCards.get(action.id);
+      const values = card ? getCardValues(card, action) : {};
+      await runAction(action, values);
+    }
+    sequenceStatus.textContent = 'Sequence: success';
+    resultMarker.textContent = 'Result marker: smoke-sequence:success';
+  } catch (error) {
+    sequenceStatus.textContent = 'Sequence: error';
+    resultMarker.textContent = 'Result marker: smoke-sequence:error';
+  } finally {
+    runSmokeSequenceButton.disabled = false;
   }
 }
 
@@ -156,7 +180,7 @@ function createActionCard(action) {
   button.textContent = action.buttonLabel;
   button.addEventListener('click', () => {
     const values = getCardValues(card, action);
-    void runAction(action, values);
+    void runAction(action, values).catch(() => {});
   });
   card.appendChild(button);
 
@@ -165,8 +189,14 @@ function createActionCard(action) {
 
 function renderActions() {
   actions.forEach((action) => {
-    actionGrid.appendChild(createActionCard(action));
+    const card = createActionCard(action);
+    actionCards.set(action.id, card);
+    actionGrid.appendChild(card);
   });
 }
+
+runSmokeSequenceButton.addEventListener('click', () => {
+  void runSmokeSequence();
+});
 
 renderActions();
