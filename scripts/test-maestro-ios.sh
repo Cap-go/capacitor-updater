@@ -8,10 +8,31 @@ FLOW_PATH="$ROOT_DIR/.maestro/ios/example-app-smoke.yaml"
 SKIP_BUILD="${CAPGO_MAESTRO_SKIP_BUILD:-0}"
 SIMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_IOS_BOOT_TIMEOUT_SECONDS:-180}"
 MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-300}"
-DERIVED_DATA_PATH="${CAPGO_MAESTRO_IOS_DERIVED_DATA_PATH:-$(mktemp -d "${TMPDIR:-/tmp}/capgo-maestro-ios-derived-data.XXXXXX")}"
-SIMULATOR_ID="${CAPGO_MAESTRO_IOS_SIMULATOR_ID:-$(xcrun simctl list devices available | awk -F '[()]' '/iPhone/{print $2; exit}')}"
-APP_PATH="${CAPGO_MAESTRO_IOS_APP_PATH:-$DERIVED_DATA_PATH/Build/Products/Debug-iphonesimulator/App.app}"
 APP_ID="app.capgo.updater"
+
+default_simulator_id() {
+  xcrun simctl list devices available | sed -nE 's/^[[:space:]]*iPhone.*\(([0-9A-F-]{36})\) \([^)]*\)[[:space:]]*$/\1/p' | head -n 1
+}
+
+default_app_path() {
+  if [[ -n "${DERIVED_DATA_PATH:-}" ]]; then
+    printf '%s\n' "$DERIVED_DATA_PATH/Build/Products/Debug-iphonesimulator/App.app"
+    return 0
+  fi
+
+  ls -td "$HOME"/Library/Developer/Xcode/DerivedData/*/Build/Products/Debug-iphonesimulator/App.app 2>/dev/null | head -n 1 || true
+}
+
+if [[ -n "${CAPGO_MAESTRO_IOS_DERIVED_DATA_PATH:-}" ]]; then
+  DERIVED_DATA_PATH="$CAPGO_MAESTRO_IOS_DERIVED_DATA_PATH"
+elif [[ "$SKIP_BUILD" != "1" ]]; then
+  DERIVED_DATA_PATH="$(mktemp -d "${TMPDIR:-/tmp}/capgo-maestro-ios-derived-data.XXXXXX")"
+else
+  DERIVED_DATA_PATH=""
+fi
+
+SIMULATOR_ID="${CAPGO_MAESTRO_IOS_SIMULATOR_ID:-$(default_simulator_id)}"
+APP_PATH="${CAPGO_MAESTRO_IOS_APP_PATH:-$(default_app_path)}"
 
 cleanup() {
   if [[ -z "${CAPGO_MAESTRO_IOS_DERIVED_DATA_PATH:-}" && -d "$DERIVED_DATA_PATH" ]]; then
@@ -75,6 +96,11 @@ fi
 
 if [[ -z "${SIMULATOR_ID:-}" ]]; then
   echo "No available iPhone simulator found. Please install one via Xcode." >&2
+  exit 1
+fi
+
+if [[ -z "${APP_PATH:-}" ]]; then
+  echo "Unable to locate a built iOS example app. Set CAPGO_MAESTRO_IOS_APP_PATH or run without CAPGO_MAESTRO_SKIP_BUILD=1." >&2
   exit 1
 fi
 

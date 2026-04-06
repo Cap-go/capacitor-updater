@@ -31,18 +31,20 @@ cleanup() {
 trap cleanup EXIT
 
 wait_for_emulator_boot() {
-  local deadline=$((SECONDS + EMULATOR_BOOT_TIMEOUT_SECONDS))
   local sys_boot_completed=""
   local dev_boot_completed=""
+  local deadline=0
 
   if ! timeout "${EMULATOR_BOOT_TIMEOUT_SECONDS}s" adb wait-for-device; then
     echo "Emulator failed to connect within ${EMULATOR_BOOT_TIMEOUT_SECONDS} seconds." >&2
     exit 1
   fi
 
+  deadline=$((SECONDS + EMULATOR_BOOT_TIMEOUT_SECONDS))
+
   while (( SECONDS < deadline )); do
-    sys_boot_completed="$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')"
-    dev_boot_completed="$(adb shell getprop dev.bootcomplete 2>/dev/null | tr -d '\r')"
+    sys_boot_completed="$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)"
+    dev_boot_completed="$(adb shell getprop dev.bootcomplete 2>/dev/null | tr -d '\r' || true)"
     if [[ "$sys_boot_completed" == "1" || "$dev_boot_completed" == "1" ]]; then
       return 0
     fi
@@ -55,7 +57,7 @@ wait_for_emulator_boot() {
 
 watch_for_android_anr_dialog() {
   while true; do
-    tap_android_anr_wait_button_if_present "$(dump_ui_hierarchy)"
+    tap_android_anr_wait_button_if_present "$(dump_ui_hierarchy)" || true
     sleep 2
   done
 
@@ -124,11 +126,10 @@ install_apk_with_retries() {
   local status=0
 
   while (( attempt <= APK_INSTALL_RETRIES )); do
-    adb install -r "$APK_PATH"
-    status=$?
-    if (( status == 0 )); then
+    if adb install -r "$APK_PATH"; then
       return 0
     fi
+    status=$?
 
     if (( attempt == APK_INSTALL_RETRIES )); then
       echo "Failed to install the example APK after ${APK_INSTALL_RETRIES} attempts." >&2
@@ -136,7 +137,6 @@ install_apk_with_retries() {
     fi
 
     echo "APK install attempt ${attempt} failed; waiting for the emulator before retrying." >&2
-    adb wait-for-device >/dev/null 2>&1 || true
     wait_for_emulator_boot
     sleep 5
     ((attempt += 1))
