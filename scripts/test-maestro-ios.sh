@@ -3,13 +3,22 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 EXAMPLE_DIR="$ROOT_DIR/example-app"
-DERIVED_DATA_DIR="${CAPGO_MAESTRO_IOS_DERIVED_DATA_DIR:-$EXAMPLE_DIR/ios/DerivedData}"
-APP_PATH="$DERIVED_DATA_DIR/Build/Products/Debug-iphonesimulator/App.app"
 RESULTS_DIR="${CAPGO_MAESTRO_RESULTS_DIR:-$ROOT_DIR/maestro-results-ios}"
-APP_ID="app.capgo.updater"
 SKIP_BUILD="${CAPGO_MAESTRO_SKIP_BUILD:-0}"
 SIMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_IOS_BOOT_TIMEOUT_SECONDS:-180}"
 MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-300}"
+DERIVED_DATA_PATH="${CAPGO_MAESTRO_IOS_DERIVED_DATA_PATH:-$(mktemp -d "${TMPDIR:-/tmp}/capgo-maestro-ios-derived-data.XXXXXX")}"
+SIMULATOR_ID="${CAPGO_MAESTRO_IOS_SIMULATOR_ID:-$(xcrun simctl list devices available | awk -F '[()]' '/iPhone/{print $2; exit}')}"
+APP_PATH="${CAPGO_MAESTRO_IOS_APP_PATH:-$DERIVED_DATA_PATH/Build/Products/Debug-iphonesimulator/App.app}"
+APP_ID="app.capgo.updater"
+
+cleanup() {
+  if [[ -z "${CAPGO_MAESTRO_IOS_DERIVED_DATA_PATH:-}" && -d "$DERIVED_DATA_PATH" ]]; then
+    rm -rf "$DERIVED_DATA_PATH"
+  fi
+}
+
+trap cleanup EXIT
 
 run_with_timeout() {
   local timeout_seconds="$1"
@@ -30,7 +39,6 @@ except subprocess.TimeoutExpired:
 sys.exit(completed.returncode)
 PY
 }
-
 if ! command -v maestro >/dev/null 2>&1; then
   echo "maestro is required to run iOS Maestro tests." >&2
   exit 1
@@ -51,8 +59,18 @@ if ! command -v xcrun >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "python3 is required to enforce iOS Maestro timeouts." >&2
+  exit 1
+fi
+
 if ! node -e "process.exit(Number(process.versions.node.split('.')[0]) >= 22 ? 0 : 1)"; then
   echo "Node.js >=22 is required because Capacitor CLI no longer supports older versions." >&2
+  exit 1
+fi
+
+if [[ -z "${SIMULATOR_ID:-}" ]]; then
+  echo "No available iPhone simulator found. Please install one via Xcode." >&2
   exit 1
 fi
 
@@ -72,25 +90,17 @@ if [[ "$SKIP_BUILD" != "1" ]]; then
     bunx cap sync ios
   )
 
-  rm -rf "$DERIVED_DATA_DIR"
   xcodebuild \
     -project "$EXAMPLE_DIR/ios/App/App.xcodeproj" \
     -scheme App \
     -configuration Debug \
-    -destination 'generic/platform=iOS Simulator' \
-    -derivedDataPath "$DERIVED_DATA_DIR" \
+    -destination "id=$SIMULATOR_ID" \
+    -derivedDataPath "$DERIVED_DATA_PATH" \
     build
 fi
 
 if [[ ! -d "$APP_PATH" ]]; then
-  echo "Expected built iOS app at $APP_PATH" >&2
-  exit 1
-fi
-
-SIMULATOR_ID="${CAPGO_MAESTRO_IOS_SIMULATOR_ID:-$(xcrun simctl list devices available | awk -F '[()]' '/iPhone/{print $2; exit}')}"
-
-if [[ -z "${SIMULATOR_ID:-}" ]]; then
-  echo "No available iPhone simulator found. Please install one via Xcode." >&2
+  echo "Expected simulator app at $APP_PATH" >&2
   exit 1
 fi
 
@@ -112,9 +122,9 @@ rm -rf "$RESULTS_DIR"
 mkdir -p "$RESULTS_DIR"
 
 if run_with_timeout "$MAESTRO_TIMEOUT_SECONDS" maestro test \
+  -p ios \
+  --device "$SIMULATOR_ID" \
   "$ROOT_DIR/.maestro" \
-  --platform ios \
-  --udid "$SIMULATOR_ID" \
   --format junit \
   --output "$RESULTS_DIR/junit.xml" \
   --debug-output "$RESULTS_DIR/debug" \

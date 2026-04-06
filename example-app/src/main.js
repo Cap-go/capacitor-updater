@@ -67,6 +67,7 @@ const actionGrid = document.getElementById('smoke-actions');
 const output = document.getElementById('plugin-output');
 const actionStatus = document.getElementById('action-status');
 const lastAction = document.getElementById('last-action');
+const resultMarker = document.getElementById('result-marker');
 
 if (!actionGrid || !output || !actionStatus || !lastAction) {
   throw new Error('Smoke UI anchors are missing from index.html');
@@ -101,14 +102,17 @@ function getCardValues(card, action) {
 async function runAction(action, values) {
   lastAction.textContent = `Last action: ${action.label}`;
   actionStatus.textContent = 'Status: running';
+  resultMarker.textContent = `Result marker: ${action.id}:running`;
   output.textContent = `Running ${action.label}...`;
 
   try {
     const result = await action.run(values);
     actionStatus.textContent = 'Status: success';
+    resultMarker.textContent = `Result marker: ${action.id}:success`;
     output.textContent = formatResult(result);
   } catch (error) {
     actionStatus.textContent = 'Status: error';
+    resultMarker.textContent = `Result marker: ${action.id}:error`;
     output.textContent = `Error: ${error?.message ?? error}`;
   }
 }
