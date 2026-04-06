@@ -112,8 +112,34 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: maestro-results
+          name: maestro-results-android
           path: maestro-results
+  maestro_ios_example_app:
+    timeout-minutes: 45
+    runs-on: macOS-latest
+    name: iOS example app Maestro smoke
+    steps:
+      - name: Check out
+        uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+      - name: Install root dependencies
+        run: bun i
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Maestro CLI
+        run: |
+          curl -Ls "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+      - name: Run Maestro smoke tests
+        run: bun run test:maestro:ios
+      - name: Upload Maestro artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maestro-results-ios
+          path: maestro-results-ios
   web:
     timeout-minutes: 30
     runs-on: ubuntu-latest

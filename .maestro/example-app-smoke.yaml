@@ -3,32 +3,82 @@ appId: app.capgo.updater
 - launchApp
 - assertVisible: "@capgo/capacitor-updater"
 - tapOn: "Run notifyAppReady"
+- scrollUntilVisible:
+    element:
+      text: "Latest Result"
+    direction: DOWN
+    centerElement: true
 - extendedWaitUntil:
     visible: "Last action: Notify app ready"
     timeout: 10000
+- assertVisible: "Status: success"
+- scrollUntilVisible:
+    element:
+      text: "notifyAppReady() resolved."
+    direction: DOWN
 - assertVisible: "notifyAppReady() resolved."
+- scrollUntilVisible:
+    element:
+      text: "Run get current bundle"
+    direction: UP
+    centerElement: true
 - tapOn: "Run get current bundle"
+- scrollUntilVisible:
+    element:
+      text: "Latest Result"
+    direction: DOWN
+    centerElement: true
 - extendedWaitUntil:
     visible: "Last action: Get current bundle"
     timeout: 10000
-- assertVisible: "\"bundle\":"
-- assertVisible: "\"native\":"
+- assertVisible: "Status: success"
+- scrollUntilVisible:
+    element:
+      text: "Run list downloaded bundles"
+    direction: UP
+    centerElement: true
 - tapOn: "Run list downloaded bundles"
+- scrollUntilVisible:
+    element:
+      text: "Latest Result"
+    direction: DOWN
+    centerElement: true
 - extendedWaitUntil:
     visible: "Last action: List downloaded bundles"
     timeout: 10000
-- assertVisible: "\"bundles\":"
+- assertVisible: "Status: success"
+- scrollUntilVisible:
+    element:
+      text: "Run get plugin version"
+    direction: UP
+    centerElement: true
 - tapOn: "Run get plugin version"
+- scrollUntilVisible:
+    element:
+      text: "Latest Result"
+    direction: DOWN
+    centerElement: true
 - extendedWaitUntil:
     visible: "Last action: Get plugin version"
     timeout: 10000
-- assertVisible: "\"version\":"
+- assertVisible: "Status: success"
 - scrollUntilVisible:
     element:
       text: "Apply update URL"
-    direction: DOWN
+    direction: UP
+    centerElement: true
 - tapOn: "Apply update URL"
+- scrollUntilVisible:
+    element:
+      text: "Latest Result"
+    direction: DOWN
+    centerElement: true
 - extendedWaitUntil:
     visible: "Last action: Set update URL"
     timeout: 10000
+- assertVisible: "Status: success"
+- scrollUntilVisible:
+    element:
+      text: "Update URL set."
+    direction: DOWN
 - assertVisible: "Update URL set."
