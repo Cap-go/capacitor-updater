@@ -106,7 +106,7 @@ jobs:
           arch: x86_64
           profile: pixel_7
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
           script: CAPGO_MAESTRO_SKIP_BUILD=1 bun run test:maestro:android
       - name: Upload Maestro artifacts
         if: always()
