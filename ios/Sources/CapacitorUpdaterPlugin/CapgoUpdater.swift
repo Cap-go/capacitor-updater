@@ -54,10 +54,31 @@ import UIKit
     private var statsFlushTimer: Timer?
     private static let statsFlushInterval: TimeInterval = 1.0
 
+    private static func sanitizeHeaderValue(_ value: String) -> String {
+        if value.isEmpty {
+            return "unknown"
+        }
+
+        let filteredScalars = value.unicodeScalars.filter { scalar in
+            let cp = scalar.value
+            let isVisibleAscii = (0x20...0x7E).contains(cp)
+            let isIso88591 = (0xA0...0xFF).contains(cp)
+            return isVisibleAscii || isIso88591
+        }
+
+        let sanitized = String(String.UnicodeScalarView(filteredScalars)).trimmingCharacters(in: .whitespacesAndNewlines)
+        return sanitized.isEmpty ? "unknown" : sanitized
+    }
+
+    static func buildUserAgent(appId: String, pluginVersion: String, versionOs: String) -> String {
+        let safePluginVersion = sanitizeHeaderValue(pluginVersion)
+        let safeAppId = sanitizeHeaderValue(appId)
+        let safeVersionOs = sanitizeHeaderValue(versionOs)
+        return "CapacitorUpdater/\(safePluginVersion) (\(safeAppId)) ios/\(safeVersionOs)"
+    }
+
     private var userAgent: String {
-        let safePluginVersion = pluginVersion.isEmpty ? "unknown" : pluginVersion
-        let safeAppId = appId.isEmpty ? "unknown" : appId
-        return "CapacitorUpdater/\(safePluginVersion) (\(safeAppId)) ios/\(versionOs)"
+        CapgoUpdater.buildUserAgent(appId: appId, pluginVersion: pluginVersion, versionOs: versionOs)
     }
 
     private lazy var alamofireSession: Session = {
