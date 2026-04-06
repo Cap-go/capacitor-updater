@@ -8,6 +8,7 @@ RESULTS_DIR="$ROOT_DIR/maestro-results"
 SKIP_BUILD="${CAPGO_MAESTRO_SKIP_BUILD:-0}"
 EMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_EMULATOR_BOOT_TIMEOUT_SECONDS:-180}"
 MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-300}"
+MAESTRO_DRIVER_STARTUP_TIMEOUT="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-180000}"
 
 wait_for_emulator_boot() {
   local deadline=$((SECONDS + EMULATOR_BOOT_TIMEOUT_SECONDS))
@@ -81,16 +82,25 @@ if [[ ! -f "$APK_PATH" ]]; then
 fi
 
 wait_for_emulator_boot
+ANDROID_DEVICE_ID="${CAPGO_MAESTRO_ANDROID_DEVICE_ID:-$(adb get-serialno 2>/dev/null | tr -d '\r')}"
+if [[ -z "$ANDROID_DEVICE_ID" || "$ANDROID_DEVICE_ID" == "unknown" ]]; then
+  echo "Unable to determine the Android emulator device ID for Maestro." >&2
+  exit 1
+fi
+
 adb shell settings put global window_animation_scale 0 || true
 adb shell settings put global transition_animation_scale 0 || true
 adb shell settings put global animator_duration_scale 0 || true
+adb shell input keyevent 82 || true
 adb install -r "$APK_PATH"
 
 rm -rf "$RESULTS_DIR"
 mkdir -p "$RESULTS_DIR"
 
-if timeout "${MAESTRO_TIMEOUT_SECONDS}s" maestro test \
+if timeout "${MAESTRO_TIMEOUT_SECONDS}s" env MAESTRO_DRIVER_STARTUP_TIMEOUT="$MAESTRO_DRIVER_STARTUP_TIMEOUT" maestro test \
   "$ROOT_DIR/.maestro" \
+  --platform android \
+  --udid "$ANDROID_DEVICE_ID" \
   --format junit \
   --output "$RESULTS_DIR/junit.xml" \
   --debug-output "$RESULTS_DIR/debug" \
