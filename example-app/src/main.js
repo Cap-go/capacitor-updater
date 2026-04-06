@@ -68,6 +68,10 @@ const output = document.getElementById('plugin-output');
 const actionStatus = document.getElementById('action-status');
 const lastAction = document.getElementById('last-action');
 
+if (!actionGrid || !output || !actionStatus || !lastAction) {
+  throw new Error('Smoke UI anchors are missing from index.html');
+}
+
 plugin.notifyAppReady().catch((error) => {
   console.error('notifyAppReady() bootstrap failed', error);
 });

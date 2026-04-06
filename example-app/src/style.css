@@ -173,7 +173,8 @@ pre#plugin-output {
   max-height: 320px;
   overflow-y: auto;
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: anywhere;
+  word-break: normal;
 }
 
 @media (max-width: 640px) {
