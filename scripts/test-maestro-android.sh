@@ -9,6 +9,7 @@ SKIP_BUILD="${CAPGO_MAESTRO_SKIP_BUILD:-0}"
 EMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_EMULATOR_BOOT_TIMEOUT_SECONDS:-180}"
 MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-300}"
 MAESTRO_DRIVER_STARTUP_TIMEOUT="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-180000}"
+APK_INSTALL_RETRIES="${CAPGO_MAESTRO_APK_INSTALL_RETRIES:-3}"
 ANR_WATCHER_PID=""
 
 cleanup() {
@@ -61,6 +62,32 @@ watch_for_android_anr_dialog() {
     fi
     sleep 2
   done
+}
+
+install_apk_with_retries() {
+  local attempt=1
+  local status=0
+
+  while (( attempt <= APK_INSTALL_RETRIES )); do
+    adb install -r "$APK_PATH"
+    status=$?
+    if (( status == 0 )); then
+      return 0
+    fi
+
+    if (( attempt == APK_INSTALL_RETRIES )); then
+      echo "Failed to install the example APK after ${APK_INSTALL_RETRIES} attempts." >&2
+      return "$status"
+    fi
+
+    echo "APK install attempt ${attempt} failed; waiting for the emulator before retrying." >&2
+    adb wait-for-device >/dev/null 2>&1 || true
+    wait_for_emulator_boot
+    sleep 5
+    ((attempt += 1))
+  done
+
+  return "$status"
 }
 
 if ! command -v adb >/dev/null 2>&1; then
@@ -122,7 +149,7 @@ adb shell settings put global window_animation_scale 0 || true
 adb shell settings put global transition_animation_scale 0 || true
 adb shell settings put global animator_duration_scale 0 || true
 adb shell input keyevent 82 || true
-adb install -r "$APK_PATH"
+install_apk_with_retries
 
 rm -rf "$RESULTS_DIR"
 mkdir -p "$RESULTS_DIR"
