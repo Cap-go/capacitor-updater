@@ -17,6 +17,8 @@ cleanup() {
   if [[ -z "${CAPGO_MAESTRO_IOS_DERIVED_DATA_PATH:-}" && -d "$DERIVED_DATA_PATH" ]]; then
     rm -rf "$DERIVED_DATA_PATH"
   fi
+
+  return 0
 }
 
 trap cleanup EXIT
@@ -39,6 +41,7 @@ except subprocess.TimeoutExpired:
 
 sys.exit(completed.returncode)
 PY
+  return $?
 }
 if ! command -v maestro >/dev/null 2>&1; then
   echo "maestro is required to run iOS Maestro tests." >&2

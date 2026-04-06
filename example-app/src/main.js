@@ -136,6 +136,7 @@ async function runSmokeSequence() {
   } catch (error) {
     sequenceStatus.textContent = 'Sequence: error';
     resultMarker.textContent = 'Result marker: smoke-sequence:error';
+    console.error('Smoke sequence failed', error);
   } finally {
     runSmokeSequenceButton.disabled = false;
   }

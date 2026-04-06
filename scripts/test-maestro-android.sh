@@ -24,6 +24,8 @@ cleanup() {
     kill "$ANR_WATCHER_PID" >/dev/null 2>&1 || true
     wait "$ANR_WATCHER_PID" 2>/dev/null || true
   fi
+
+  return 0
 }
 
 trap cleanup EXIT
@@ -56,10 +58,13 @@ watch_for_android_anr_dialog() {
     tap_android_anr_wait_button_if_present "$(dump_ui_hierarchy)"
     sleep 2
   done
+
+  return 0
 }
 
 dump_ui_hierarchy() {
   adb exec-out uiautomator dump /dev/tty 2>/dev/null | tr -d '\r' | tr '\n' ' ' || true
+  return 0
 }
 
 tap_android_anr_wait_button_if_present() {
@@ -83,6 +88,7 @@ tap_android_anr_wait_button_if_present() {
 launch_example_app() {
   adb shell am start -W -n "$APP_ACTIVITY" >/dev/null 2>&1 || \
     adb shell monkey -p "$APP_ID" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1 || true
+  return 0
 }
 
 wait_for_example_app_ui() {
