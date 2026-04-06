@@ -95,7 +95,9 @@ if [[ -z "${SIMULATOR_ID:-}" ]]; then
 fi
 
 xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
-if ! run_with_timeout "$SIMULATOR_BOOT_TIMEOUT_SECONDS" xcrun simctl bootstatus "$SIMULATOR_ID" -b; then
+if run_with_timeout "$SIMULATOR_BOOT_TIMEOUT_SECONDS" xcrun simctl bootstatus "$SIMULATOR_ID" -b; then
+  :
+else
   status=$?
   if [[ $status -eq 124 ]]; then
     echo "Simulator failed to boot within ${SIMULATOR_BOOT_TIMEOUT_SECONDS} seconds." >&2
