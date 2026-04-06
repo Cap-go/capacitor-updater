@@ -6,6 +6,31 @@ EXAMPLE_DIR="$ROOT_DIR/example-app"
 APK_PATH="$EXAMPLE_DIR/android/app/build/outputs/apk/debug/app-debug.apk"
 RESULTS_DIR="$ROOT_DIR/maestro-results"
 SKIP_BUILD="${CAPGO_MAESTRO_SKIP_BUILD:-0}"
+EMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_EMULATOR_BOOT_TIMEOUT_SECONDS:-180}"
+MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-300}"
+
+wait_for_emulator_boot() {
+  local deadline=$((SECONDS + EMULATOR_BOOT_TIMEOUT_SECONDS))
+  local sys_boot_completed=""
+  local dev_boot_completed=""
+
+  if ! timeout "${EMULATOR_BOOT_TIMEOUT_SECONDS}s" adb wait-for-device; then
+    echo "Emulator failed to connect within ${EMULATOR_BOOT_TIMEOUT_SECONDS} seconds." >&2
+    exit 1
+  fi
+
+  while (( SECONDS < deadline )); do
+    sys_boot_completed="$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')"
+    dev_boot_completed="$(adb shell getprop dev.bootcomplete 2>/dev/null | tr -d '\r')"
+    if [[ "$sys_boot_completed" == "1" || "$dev_boot_completed" == "1" ]]; then
+      return 0
+    fi
+    sleep 2
+  done
+
+  echo "Emulator failed to complete boot within ${EMULATOR_BOOT_TIMEOUT_SECONDS} seconds." >&2
+  exit 1
+}
 
 if ! command -v adb >/dev/null 2>&1; then
   echo "adb is required to run Android Maestro tests." >&2
@@ -55,7 +80,7 @@ if [[ ! -f "$APK_PATH" ]]; then
   exit 1
 fi
 
-adb wait-for-device
+wait_for_emulator_boot
 adb shell settings put global window_animation_scale 0 || true
 adb shell settings put global transition_animation_scale 0 || true
 adb shell settings put global animator_duration_scale 0 || true
@@ -64,16 +89,18 @@ adb install -r "$APK_PATH"
 rm -rf "$RESULTS_DIR"
 mkdir -p "$RESULTS_DIR"
 
-if ! timeout 5m maestro test \
+if timeout "${MAESTRO_TIMEOUT_SECONDS}s" maestro test \
   "$ROOT_DIR/.maestro" \
   --format junit \
   --output "$RESULTS_DIR/junit.xml" \
   --debug-output "$RESULTS_DIR/debug" \
   --flatten-debug-output \
   --test-output-dir "$RESULTS_DIR/artifacts"; then
+  :
+else
   status=$?
   if [[ $status -eq 124 ]]; then
-    echo "Maestro test timed out after 5 minutes." >&2
+    echo "Maestro test timed out after ${MAESTRO_TIMEOUT_SECONDS} seconds." >&2
   fi
   exit "$status"
 fi
