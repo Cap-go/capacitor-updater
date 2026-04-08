@@ -189,4 +189,9 @@ const server = Bun.serve({
   fetch: handleRequest,
 });
 
-console.log(`[fake-capgo] listening on ${defaultHostBaseUrl.replace(/:${defaultPort}$/, `:${server.port}`)}`);
+const defaultPortSuffix = `:${defaultPort}`;
+const listeningUrl = defaultHostBaseUrl.endsWith(defaultPortSuffix)
+  ? `${defaultHostBaseUrl.slice(0, -defaultPortSuffix.length)}:${server.port}`
+  : defaultHostBaseUrl;
+
+console.log(`[fake-capgo] listening on ${listeningUrl}`);

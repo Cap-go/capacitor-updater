@@ -1,42 +1,21 @@
 import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
 import {
   bundleArtifactDir,
-  defaultDeviceBaseUrl,
+  createBuildEnv,
   exampleAppDir,
   getBundleZipPath,
   repoRoot,
   scenarios,
 } from './scenarios.mjs';
-
-function runCommand(command, args, options = {}) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      cwd: options.cwd,
-      env: options.env,
-      stdio: 'inherit',
-    });
-
-    child.on('exit', (code) => {
-      if (code === 0) {
-        resolve();
-        return;
-      }
-
-      reject(new Error(`${command} ${args.join(' ')} failed with exit code ${code}`));
-    });
-  });
-}
+import { runCommand } from './command.mjs';
 
 async function buildBundle({ scenarioId, directUpdate, release }) {
-  const env = {
-    ...process.env,
-    VITE_CAPGO_APP_LABEL: release.label,
-    VITE_CAPGO_SCENARIO: scenarioId,
-    VITE_CAPGO_DIRECT_UPDATE: directUpdate,
-    VITE_CAPGO_SERVER_URL: `${defaultDeviceBaseUrl}/api/updates/${scenarioId}`,
-  };
+  const env = createBuildEnv({
+    scenarioId,
+    directUpdate,
+    appLabel: release.label,
+  });
 
   await runCommand('bun', ['run', 'build'], {
     cwd: exampleAppDir,

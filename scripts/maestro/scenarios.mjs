@@ -72,3 +72,18 @@ export function getScenario(id) {
 export function getBundleZipPath(version) {
   return path.join(bundleArtifactDir, `${version}.zip`);
 }
+
+export function createBuildEnv({ scenarioId, directUpdate, appLabel, env = process.env }) {
+  const updateUrl = `${defaultDeviceBaseUrl}/api/updates/${scenarioId}`;
+
+  return {
+    ...env,
+    VITE_CAPGO_APP_LABEL: appLabel,
+    VITE_CAPGO_SCENARIO: scenarioId,
+    VITE_CAPGO_DIRECT_UPDATE: directUpdate,
+    VITE_CAPGO_SERVER_URL: updateUrl,
+    CAPGO_UPDATE_URL: updateUrl,
+    CAPGO_STATS_URL: `${defaultDeviceBaseUrl}/api/stats`,
+    CAPGO_CHANNEL_URL: `${defaultDeviceBaseUrl}/api/channel`,
+  };
+}
