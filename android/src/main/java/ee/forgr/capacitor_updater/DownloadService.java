@@ -117,7 +117,7 @@ public class DownloadService extends Worker {
         StringBuilder sanitized = new StringBuilder();
         value
             .codePoints()
-            .forEach(cp -> {
+            .forEach((cp) -> {
                 boolean isVisibleAscii = cp >= 0x20 && cp <= 0x7E;
                 boolean isIso88591 = cp >= 0xA0 && cp <= 0xFF;
                 if (isVisibleAscii || isIso88591) {
