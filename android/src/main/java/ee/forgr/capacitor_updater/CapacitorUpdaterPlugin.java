@@ -1469,11 +1469,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     this.implementation.prepareResetStateForTransition();
                     didApplyPendingBundle = true;
                 } else {
-                    didApplyPendingBundle = this.implementation.set(next);
+                    didApplyPendingBundle = this.implementation.stagePendingReload(next);
                 }
                 if (didApplyPendingBundle && this._reload()) {
                     if (next.isBuiltin()) {
                         this.implementation.finalizeResetTransition(previousBundleName, false);
+                    } else {
+                        this.implementation.finalizePendingReload(next, previousBundleName);
                     }
                     this.notifyBundleSet(next);
                     this.implementation.setNextBundle(null);

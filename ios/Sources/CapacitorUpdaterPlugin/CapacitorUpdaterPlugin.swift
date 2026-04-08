@@ -755,11 +755,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 self.implementation.prepareResetStateForTransition()
                 didApplyPendingBundle = true
             } else {
-                didApplyPendingBundle = self.implementation.set(bundle: next)
+                didApplyPendingBundle = self.implementation.stagePendingReload(bundle: next)
             }
             if didApplyPendingBundle && self._reload() {
                 if next.isBuiltin() {
                     self.implementation.finalizeResetTransition(previousBundleName: previousBundleName, isInternal: false)
+                } else {
+                    self.implementation.finalizePendingReload(bundle: next, previousBundleName: previousBundleName)
                 }
                 self.notifyBundleSet(next)
                 _ = self.implementation.setNextBundle(next: Optional<String>.none)

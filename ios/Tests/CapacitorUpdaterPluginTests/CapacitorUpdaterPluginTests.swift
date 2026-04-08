@@ -69,6 +69,11 @@ private final class ResetTrackingCapgoUpdater: CapgoUpdater {
     var setResult = true
     var canSetCalls = 0
     var setCalls = 0
+    var stagePendingReloadResult = true
+    var stagePendingReloadCalls = 0
+    var finalizePendingReloadCalls = 0
+    var finalizedPendingReloadBundle: BundleInfo?
+    var finalizePendingReloadPreviousBundleName: String?
     var restoreResetStateCalls = 0
     let capturedState = ResetState(
         currentBundlePath: "/stored/current",
@@ -108,6 +113,21 @@ private final class ResetTrackingCapgoUpdater: CapgoUpdater {
         return setResult
     }
 
+    override func setNextBundle(next: String?) -> Bool {
+        true
+    }
+
+    override func stagePendingReload(bundle: BundleInfo) -> Bool {
+        stagePendingReloadCalls += 1
+        return stagePendingReloadResult
+    }
+
+    override func finalizePendingReload(bundle: BundleInfo, previousBundleName: String) {
+        finalizePendingReloadCalls += 1
+        finalizedPendingReloadBundle = bundle
+        finalizePendingReloadPreviousBundleName = previousBundleName
+    }
+
     override func reset(isInternal: Bool) {
         resetCalled = true
     }
@@ -128,6 +148,12 @@ private final class ResetTestableCapacitorUpdaterPlugin: TestableCapacitorUpdate
         true
     }
 
+    override func _reload() -> Bool {
+        true
+    }
+}
+
+private final class ReloadBypassCapacitorUpdaterPlugin: TestableCapacitorUpdaterPlugin {
     override func _reload() -> Bool {
         true
     }
@@ -548,12 +574,45 @@ class CapacitorUpdaterTests: XCTestCase {
         reloadPlugin.reload(call)
 
         XCTAssertTrue(rejected)
-        XCTAssertEqual(reloadImplementation.setCalls, 1)
+        XCTAssertEqual(reloadImplementation.setCalls, 0)
+        XCTAssertEqual(reloadImplementation.stagePendingReloadCalls, 1)
+        XCTAssertEqual(reloadImplementation.finalizePendingReloadCalls, 0)
         XCTAssertEqual(reloadImplementation.restoreResetStateCalls, 1)
         XCTAssertEqual(reloadPlugin.restoreLiveBundleStateAfterFailedReloadCalls, 1)
         XCTAssertEqual(reloadImplementation.restoredState?.currentBundlePath, reloadImplementation.capturedState.currentBundlePath)
         XCTAssertEqual(reloadImplementation.restoredState?.fallbackBundleId, reloadImplementation.capturedState.fallbackBundleId)
         XCTAssertEqual(reloadImplementation.restoredState?.nextBundleId, reloadImplementation.capturedState.nextBundleId)
+    }
+
+    func testReloadFinalizesPendingBundleSideEffectsAfterSuccess() throws {
+        let reloadPlugin = ReloadBypassCapacitorUpdaterPlugin()
+        let reloadImplementation = ResetTrackingCapgoUpdater()
+
+        reloadImplementation.nextBundleValue = BundleInfo(
+            id: "pending-id",
+            version: "2.0.0",
+            status: .PENDING,
+            downloaded: Date(),
+            checksum: "pending"
+        )
+        reloadPlugin.implementation = reloadImplementation
+
+        let call = try XCTUnwrap(CAPPluginCall(
+            callbackId: "reload-success-test",
+            options: [:],
+            success: { _, _ in },
+            error: { _ in
+                XCTFail("reload should resolve when the pending bundle reload succeeds")
+            }
+        ))
+
+        reloadPlugin.reload(call)
+
+        XCTAssertEqual(reloadImplementation.setCalls, 0)
+        XCTAssertEqual(reloadImplementation.stagePendingReloadCalls, 1)
+        XCTAssertEqual(reloadImplementation.finalizePendingReloadCalls, 1)
+        XCTAssertEqual(reloadImplementation.finalizePendingReloadPreviousBundleName, "1.0.0")
+        XCTAssertEqual(reloadImplementation.finalizedPendingReloadBundle?.getId(), "pending-id")
     }
 
     func testReloadRestoresStateWhenBuiltinPendingReloadFails() throws {
@@ -585,6 +644,8 @@ class CapacitorUpdaterTests: XCTestCase {
 
         XCTAssertTrue(rejected)
         XCTAssertEqual(reloadImplementation.setCalls, 0)
+        XCTAssertEqual(reloadImplementation.stagePendingReloadCalls, 0)
+        XCTAssertEqual(reloadImplementation.finalizePendingReloadCalls, 0)
         XCTAssertTrue(reloadImplementation.prepareResetStateForTransitionCalled)
         XCTAssertFalse(reloadImplementation.finalizeResetTransitionCalled)
         XCTAssertEqual(reloadImplementation.restoreResetStateCalls, 1)

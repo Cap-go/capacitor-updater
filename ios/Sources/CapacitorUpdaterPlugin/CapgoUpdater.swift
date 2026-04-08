@@ -1542,6 +1542,22 @@ import UIKit
         return false
     }
 
+    func stagePendingReload(bundle: BundleInfo) -> Bool {
+        guard !bundle.isBuiltin(), bundleExists(id: bundle.getId()) else {
+            return false
+        }
+        self.setCurrentBundle(bundle: self.getBundleDirectory(id: bundle.getId()).path)
+        return true
+    }
+
+    func finalizePendingReload(bundle: BundleInfo, previousBundleName: String) {
+        guard !bundle.isBuiltin() else {
+            return
+        }
+        self.setBundleStatus(id: bundle.getId(), status: .PENDING)
+        self.sendStats(action: "set", versionName: bundle.getVersionName(), oldVersionName: previousBundleName)
+    }
+
     public func autoReset() {
         let currentBundle: BundleInfo = self.getCurrentBundle()
         if !currentBundle.isBuiltin() && !self.bundleExists(id: currentBundle.getId()) {

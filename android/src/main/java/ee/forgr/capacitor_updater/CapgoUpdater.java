@@ -1073,6 +1073,22 @@ public class CapgoUpdater {
         return false;
     }
 
+    boolean stagePendingReload(final BundleInfo bundle) {
+        if (bundle == null || bundle.isBuiltin() || !this.bundleExists(bundle.getId())) {
+            return false;
+        }
+        this.setCurrentBundle(this.getBundleDirectory(bundle.getId()));
+        return true;
+    }
+
+    void finalizePendingReload(final BundleInfo bundle, final String previousBundleName) {
+        if (bundle == null || bundle.isBuiltin()) {
+            return;
+        }
+        this.setBundleStatus(bundle.getId(), BundleStatus.PENDING);
+        this.sendStats("set", bundle.getVersionName(), previousBundleName);
+    }
+
     public void autoReset() {
         final BundleInfo currentBundle = this.getCurrentBundle();
         if (!currentBundle.isBuiltin() && !this.bundleExists(currentBundle.getId())) {

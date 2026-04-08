@@ -120,6 +120,11 @@ public class CapacitorUpdaterUnitTest {
         private boolean setResult = true;
         private int canSetCalls = 0;
         private int setCalls = 0;
+        private boolean stagePendingReloadResult = true;
+        private int stagePendingReloadCalls = 0;
+        private int finalizePendingReloadCalls = 0;
+        private BundleInfo finalizedPendingReloadBundle;
+        private String finalizePendingReloadPreviousBundleName;
         private int restoreResetStateCalls = 0;
         private final ResetState capturedState = new ResetState("/stored/current", "fallback-id", "next-id");
         private ResetState restoredState;
@@ -164,6 +169,24 @@ public class CapacitorUpdaterUnitTest {
         public Boolean set(final BundleInfo bundle) {
             this.setCalls++;
             return this.setResult;
+        }
+
+        @Override
+        public boolean setNextBundle(final String next) {
+            return true;
+        }
+
+        @Override
+        boolean stagePendingReload(final BundleInfo bundle) {
+            this.stagePendingReloadCalls++;
+            return this.stagePendingReloadResult;
+        }
+
+        @Override
+        void finalizePendingReload(final BundleInfo bundle, final String previousBundleName) {
+            this.finalizePendingReloadCalls++;
+            this.finalizedPendingReloadBundle = bundle;
+            this.finalizePendingReloadPreviousBundleName = previousBundleName;
         }
 
         @Override
@@ -707,11 +730,40 @@ public class CapacitorUpdaterUnitTest {
 
             plugin.reload(call);
 
-            assertEquals(1, updater.setCalls);
+            assertEquals(0, updater.setCalls);
+            assertEquals(1, updater.stagePendingReloadCalls);
+            assertEquals(0, updater.finalizePendingReloadCalls);
             assertEquals(1, updater.restoreResetStateCalls);
             assertSame(updater.capturedState, updater.restoredState);
             assertEquals(1, plugin.restoreLiveBundleStateAfterFailedReloadCalls);
             verify(call).reject("Reload failed after applying pending bundle: 2.0.0");
+        }
+    }
+
+    @Test
+    public void testReloadFinalizesPendingBundleSideEffectsAfterSuccess() {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ReloadBypassCapacitorUpdaterPlugin plugin = new ReloadBypassCapacitorUpdaterPlugin();
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            final PluginCall call = mock(PluginCall.class);
+            updater.nextBundle = new BundleInfo("pending-id", "2.0.0", BundleStatus.PENDING, new Date(), "pending");
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            plugin.reload(call);
+
+            assertEquals(0, updater.setCalls);
+            assertEquals(1, updater.stagePendingReloadCalls);
+            assertEquals(1, updater.finalizePendingReloadCalls);
+            assertEquals("1.0.0", updater.finalizePendingReloadPreviousBundleName);
+            assertSame(updater.nextBundle, updater.finalizedPendingReloadBundle);
+            verify(call).resolve();
         }
     }
 
@@ -740,6 +792,8 @@ public class CapacitorUpdaterUnitTest {
             plugin.reload(call);
 
             assertEquals(0, updater.setCalls);
+            assertEquals(0, updater.stagePendingReloadCalls);
+            assertEquals(0, updater.finalizePendingReloadCalls);
             assertTrue(updater.prepareResetStateForTransitionCalled);
             assertFalse(updater.finalizeResetTransitionCalled);
             assertEquals(1, updater.restoreResetStateCalls);
