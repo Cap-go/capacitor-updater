@@ -655,46 +655,76 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    public func _reload() -> Bool {
-        guard let bridge = self.bridge else { return false }
-        self.semaphoreUp()
+    private func currentReloadDestination() -> URL {
         let id = self.implementation.getCurrentBundleId()
-        let dest: URL
         if BundleInfo.ID_BUILTIN == id {
-            dest = Bundle.main.resourceURL!.appendingPathComponent("public")
+            return Bundle.main.resourceURL!.appendingPathComponent("public")
         } else {
-            dest = self.implementation.getBundleDirectory(id: id)
+            return self.implementation.getBundleDirectory(id: id)
         }
+    }
+
+    private func applyCurrentBundleToBridge(_ bridge: CAPBridgeProtocol) -> Bool {
+        let id = self.implementation.getCurrentBundleId()
+        let dest = self.currentReloadDestination()
         logger.info("Reloading \(id)")
 
-        let performReload: () -> Bool = {
-            guard let vc = bridge.viewController as? CAPBridgeViewController else {
-                self.logger.error("Cannot get viewController")
-                return false
-            }
-            guard let capBridge = vc.bridge else {
-                self.logger.error("Cannot get capBridge")
-                return false
-            }
-            if self.keepUrlPathAfterReload {
-                if let currentURL = vc.webView?.url {
-                    capBridge.setServerBasePath(dest.path)
-                    var urlComponents = URLComponents(url: capBridge.config.serverURL, resolvingAgainstBaseURL: false)!
-                    urlComponents.path = currentURL.path
-                    urlComponents.query = currentURL.query
-                    urlComponents.fragment = currentURL.fragment
-                    if let finalUrl = urlComponents.url {
-                        _ = vc.webView?.load(URLRequest(url: finalUrl))
-                    } else {
-                        self.logger.error("Unable to build final URL when keeping path after reload; falling back to base path")
-                        vc.setServerBasePath(path: dest.path)
-                    }
+        guard let vc = bridge.viewController as? CAPBridgeViewController else {
+            self.logger.error("Cannot get viewController")
+            return false
+        }
+        guard let capBridge = vc.bridge else {
+            self.logger.error("Cannot get capBridge")
+            return false
+        }
+        if self.keepUrlPathAfterReload {
+            if let currentURL = vc.webView?.url {
+                capBridge.setServerBasePath(dest.path)
+                var urlComponents = URLComponents(url: capBridge.config.serverURL, resolvingAgainstBaseURL: false)!
+                urlComponents.path = currentURL.path
+                urlComponents.query = currentURL.query
+                urlComponents.fragment = currentURL.fragment
+                if let finalUrl = urlComponents.url {
+                    _ = vc.webView?.load(URLRequest(url: finalUrl))
                 } else {
-                    self.logger.error("vc.webView?.url is null? Falling back to base path reload.")
+                    self.logger.error("Unable to build final URL when keeping path after reload; falling back to base path")
                     vc.setServerBasePath(path: dest.path)
                 }
             } else {
+                self.logger.error("vc.webView?.url is null? Falling back to base path reload.")
                 vc.setServerBasePath(path: dest.path)
+            }
+        } else {
+            vc.setServerBasePath(path: dest.path)
+        }
+        return true
+    }
+
+    func restoreLiveBundleStateAfterFailedReload() {
+        guard let bridge = self.bridge else {
+            return
+        }
+
+        let restoreLiveState = {
+            _ = self.applyCurrentBundleToBridge(bridge)
+        }
+
+        if Thread.isMainThread {
+            restoreLiveState()
+        } else {
+            DispatchQueue.main.sync {
+                restoreLiveState()
+            }
+        }
+    }
+
+    public func _reload() -> Bool {
+        guard let bridge = self.bridge else { return false }
+        self.semaphoreUp()
+
+        let performReload: () -> Bool = {
+            guard self.applyCurrentBundleToBridge(bridge) else {
+                return false
             }
             self.checkAppReady()
             self.notifyListeners("appReloaded", data: [:])
@@ -726,6 +756,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
             self.implementation.restoreResetState(previousState)
+            self.restoreLiveBundleStateAfterFailedReload()
             logger.error("Reload failed after applying pending bundle: \(next.toString())")
             call.reject("Reload failed after applying pending bundle")
             return

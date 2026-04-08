@@ -178,9 +178,16 @@ public class CapacitorUpdaterUnitTest {
 
     private static final class ReloadFailureCapacitorUpdaterPlugin extends TestableCapacitorUpdaterPlugin {
 
+        private int restoreLiveBundleStateAfterFailedReloadCalls = 0;
+
         @Override
         protected boolean _reload() {
             return false;
+        }
+
+        @Override
+        protected void restoreLiveBundleStateAfterFailedReload() {
+            this.restoreLiveBundleStateAfterFailedReloadCalls++;
         }
     }
 
@@ -615,6 +622,7 @@ public class CapacitorUpdaterUnitTest {
             assertEquals(1, updater.setCalls);
             assertEquals(1, updater.restoreResetStateCalls);
             assertSame(updater.capturedState, updater.restoredState);
+            assertEquals(1, plugin.restoreLiveBundleStateAfterFailedReloadCalls);
             verify(call).reject("Reload failed after applying pending bundle: 2.0.0");
         }
     }

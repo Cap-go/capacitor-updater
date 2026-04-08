@@ -120,8 +120,14 @@ private final class ResetTestableCapacitorUpdaterPlugin: TestableCapacitorUpdate
 }
 
 private final class ReloadFailureCapacitorUpdaterPlugin: TestableCapacitorUpdaterPlugin {
+    var restoreLiveBundleStateAfterFailedReloadCalls = 0
+
     override func _reload() -> Bool {
         false
+    }
+
+    override func restoreLiveBundleStateAfterFailedReload() {
+        restoreLiveBundleStateAfterFailedReloadCalls += 1
     }
 }
 
@@ -466,6 +472,7 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertTrue(rejected)
         XCTAssertEqual(reloadImplementation.setCalls, 1)
         XCTAssertEqual(reloadImplementation.restoreResetStateCalls, 1)
+        XCTAssertEqual(reloadPlugin.restoreLiveBundleStateAfterFailedReloadCalls, 1)
         XCTAssertEqual(reloadImplementation.restoredState?.currentBundlePath, reloadImplementation.capturedState.currentBundlePath)
         XCTAssertEqual(reloadImplementation.restoredState?.fallbackBundleId, reloadImplementation.capturedState.fallbackBundleId)
         XCTAssertEqual(reloadImplementation.restoredState?.nextBundleId, reloadImplementation.capturedState.nextBundleId)

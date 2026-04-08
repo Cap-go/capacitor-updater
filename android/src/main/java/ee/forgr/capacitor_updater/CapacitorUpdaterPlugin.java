@@ -1333,12 +1333,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.bridge.getWebView().post(() -> this.bridge.getWebView().evaluateJavascript(script, null));
     }
 
-    protected boolean _reload() {
+    private void applyCurrentBundleToBridge() {
         final String path = this.implementation.getCurrentBundlePath();
+        final boolean usingBuiltin = this.implementation.isUsingBuiltin();
         if (this.keepUrlPathAfterReload) {
             this.syncKeepUrlPathFlag(true);
         }
-        this.semaphoreUp();
         logger.info("Reloading: " + path);
 
         AtomicReference<URL> url = new AtomicReference<>();
@@ -1383,7 +1383,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
 
         if (url.get() != null) {
-            if (this.implementation.isUsingBuiltin()) {
+            if (usingBuiltin) {
                 this.bridge.getLocalServer().hostAssets(path);
             } else {
                 this.bridge.getLocalServer().hostFiles(path);
@@ -1403,14 +1403,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
             } catch (MalformedURLException e) {
                 logger.error("Cannot get finalUrl from capacitor bridge " + e.getMessage());
 
-                if (this.implementation.isUsingBuiltin()) {
+                if (usingBuiltin) {
                     this.bridge.setServerAssetPath(path);
                 } else {
                     this.bridge.setServerBasePath(path);
                 }
             }
         } else {
-            if (this.implementation.isUsingBuiltin()) {
+            if (usingBuiltin) {
                 this.bridge.setServerAssetPath(path);
             } else {
                 this.bridge.setServerBasePath(path);
@@ -1426,6 +1426,19 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 });
             }
         }
+    }
+
+    protected void restoreLiveBundleStateAfterFailedReload() {
+        try {
+            this.applyCurrentBundleToBridge();
+        } catch (final Exception e) {
+            logger.warn("Failed to restore live bundle after rejected reload: " + e.getMessage());
+        }
+    }
+
+    protected boolean _reload() {
+        this.semaphoreUp();
+        this.applyCurrentBundleToBridge();
 
         this.checkAppReady();
         this.notifyListeners("appReloaded", new JSObject());
@@ -1457,6 +1470,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     return;
                 }
                 this.implementation.restoreResetState(previousState);
+                this.restoreLiveBundleStateAfterFailedReload();
                 logger.error("Reload failed after applying pending bundle: " + next.getVersionName());
                 call.reject("Reload failed after applying pending bundle: " + next.getVersionName());
                 return;
