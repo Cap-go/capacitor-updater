@@ -443,6 +443,32 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(resetImplementation.restoredState?.nextBundleId, resetImplementation.capturedState.nextBundleId)
     }
 
+    func testResetToPendingRestoresStateWhenBuiltinPendingReloadFails() {
+        let resetPlugin = ReloadFailureCapacitorUpdaterPlugin()
+        let resetImplementation = ResetTrackingCapgoUpdater()
+        resetImplementation.nextBundleValue = BundleInfo(
+            id: BundleInfo.ID_BUILTIN,
+            version: "builtin",
+            status: .SUCCESS,
+            downloaded: BundleInfo.DOWNLOADED_BUILTIN,
+            checksum: "builtin"
+        )
+
+        resetPlugin.implementation = resetImplementation
+
+        XCTAssertFalse(resetPlugin._reset(toLastSuccessful: false, usePendingBundle: true))
+        XCTAssertFalse(resetImplementation.resetCalled)
+        XCTAssertTrue(resetImplementation.prepareResetStateForTransitionCalled)
+        XCTAssertFalse(resetImplementation.finalizeResetTransitionCalled)
+        XCTAssertEqual(resetImplementation.canSetCalls, 1)
+        XCTAssertEqual(resetImplementation.setCalls, 0)
+        XCTAssertEqual(resetImplementation.restoreResetStateCalls, 1)
+        XCTAssertEqual(resetPlugin.restoreLiveBundleStateAfterFailedReloadCalls, 1)
+        XCTAssertEqual(resetImplementation.restoredState?.currentBundlePath, resetImplementation.capturedState.currentBundlePath)
+        XCTAssertEqual(resetImplementation.restoredState?.fallbackBundleId, resetImplementation.capturedState.fallbackBundleId)
+        XCTAssertEqual(resetImplementation.restoredState?.nextBundleId, resetImplementation.capturedState.nextBundleId)
+    }
+
     func testResetToLastSuccessfulWithoutInstallableFallbackFallsBackToBuiltin() {
         let resetPlugin = ResetTestableCapacitorUpdaterPlugin()
         let resetImplementation = ResetTrackingCapgoUpdater()

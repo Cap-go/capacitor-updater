@@ -1665,7 +1665,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
             this.implementation.prepareResetStateForTransition();
             logger.info("Resetting to pending bundle: " + pending.getVersionName());
-            if (this.implementation.set(pending) && this._reload()) {
+            final boolean didApplyPendingBundle;
+            if (pending.isBuiltin()) {
+                didApplyPendingBundle = true;
+            } else {
+                didApplyPendingBundle = this.implementation.set(pending);
+            }
+            if (didApplyPendingBundle && this._reload()) {
                 this.implementation.finalizeResetTransition(previousBundleName, false);
                 this.notifyBundleSet(pending);
                 this.implementation.setNextBundle(null);

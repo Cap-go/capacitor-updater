@@ -1015,7 +1015,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             self.implementation.prepareResetStateForTransition()
             logger.info("Resetting to pending bundle: \(pending.toString())")
-            if self.implementation.set(bundle: pending) && self._reload() {
+            let didApplyPendingBundle: Bool
+            if pending.isBuiltin() {
+                didApplyPendingBundle = true
+            } else {
+                didApplyPendingBundle = self.implementation.set(bundle: pending)
+            }
+            if didApplyPendingBundle && self._reload() {
                 self.implementation.finalizeResetTransition(previousBundleName: previousBundleName, isInternal: false)
                 self.notifyBundleSet(pending)
                 _ = self.implementation.setNextBundle(next: Optional<String>.none)
