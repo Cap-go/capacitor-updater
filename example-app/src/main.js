@@ -40,6 +40,7 @@ const state = {
   lastDownload: 'none',
   events: [],
   lastError: null,
+  lastHarnessSnapshot: '',
 };
 
 function incrementBootCount() {
@@ -115,6 +116,8 @@ function renderEventLog() {
 }
 
 function renderState() {
+  const harnessSnapshot = createHarnessSnapshot();
+
   elements.appLabel.textContent = `Build label: ${buildLabel}`;
   elements.scenarioId.textContent = `Scenario: ${scenarioId}`;
   elements.directUpdateMode.textContent = `Direct update mode: ${directUpdateMode}`;
@@ -128,23 +131,45 @@ function renderState() {
   elements.lastDownload.textContent = `Last completed download: ${state.lastDownload}`;
   elements.output.textContent = JSON.stringify(
     {
-      buildLabel,
-      scenarioId,
-      directUpdateMode,
+      ...harnessSnapshot,
       serverUrl,
-      bootCount: state.bootCount,
       probe: window.__capgoProbe ?? null,
-      notifyStatus: state.notifyStatus,
       currentBundle: state.currentBundle,
       nextBundle: state.nextBundle,
       downloadedBundles: state.bundles,
-      lastDownload: state.lastDownload,
       lastError: state.lastError,
       recentEvents: state.events,
     },
     null,
     2,
   );
+
+  logHarnessState(harnessSnapshot);
+}
+
+function createHarnessSnapshot() {
+  return {
+    buildLabel,
+    scenarioId,
+    directUpdateMode,
+    bootCount: state.bootCount,
+    notifyStatus: state.notifyStatus,
+    currentBundleSource: getBundleSource(state.currentBundle),
+    currentBundleVersion: getBundleVersion(state.currentBundle),
+    nextBundleVersion: getBundleVersion(state.nextBundle),
+    downloadedBundleCount: state.bundles.length,
+    lastDownload: state.lastDownload,
+  };
+}
+
+function logHarnessState(snapshot) {
+  const serializedSnapshot = JSON.stringify(snapshot);
+  if (serializedSnapshot === state.lastHarnessSnapshot) {
+    return;
+  }
+
+  state.lastHarnessSnapshot = serializedSnapshot;
+  console.log(`[HarnessState] ${serializedSnapshot}`);
 }
 
 async function refreshState() {

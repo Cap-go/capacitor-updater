@@ -2,6 +2,3 @@ appId: app.capgo.updater
 ---
 - launchApp:
     clearState: true
-- assertVisible: "Scenario: ${SCENARIO_ID}"
-- assertVisible: "Direct update mode: ${DIRECT_UPDATE_MODE}"
-- runFlow: helpers/assert-applied-update.yaml

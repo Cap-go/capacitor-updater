@@ -104,6 +104,7 @@ prepare_device_for_maestro() {
 }
 
 install_apk() {
+  prepare_device_for_maestro
   adb uninstall "$APP_ID" >/dev/null 2>&1 || true
   adb install -r "$APK_PATH" >/dev/null
   return 0
@@ -114,6 +115,47 @@ control_server() {
   local scenario="$2"
   curl --silent --show-error --fail -X POST "$HOST_SERVER_URL/api/control/$action?scenario=$scenario" >/dev/null
   return 0
+}
+
+clear_logcat() {
+  adb logcat -c >/dev/null 2>&1 || true
+  return 0
+}
+
+latest_harness_state() {
+  adb logcat -d 2>/dev/null | rg '\[HarnessState\]' | tail -n 1 || true
+  return 0
+}
+
+wait_for_harness_state() {
+  local description="$1"
+  shift
+  local line=""
+  local matched=0
+
+  for _ in $(seq 1 45); do
+    line="$(latest_harness_state)"
+    if [[ -n "$line" ]]; then
+      matched=1
+      for expected in "$@"; do
+        if [[ "$line" != *"$expected"* ]]; then
+          matched=0
+          break
+        fi
+      done
+
+      if [[ $matched -eq 1 ]]; then
+        return 0
+      fi
+    fi
+
+    sleep 1
+  done
+
+  echo "Harness state did not reach expected state: $description" >&2
+  echo "Last harness state: ${line:-<none>}" >&2
+  adb logcat -d 2>/dev/null | rg '\[HarnessState\]|Capacitor/Console|CapgoUpdater|AndroidRuntime' | tail -n 200 >&2 || true
+  return 1
 }
 
 run_flow() {
@@ -134,6 +176,7 @@ run_flow() {
   while [[ $attempt -le $max_attempts ]]; do
     prepare_device_for_maestro
     reset_adb_forwarding
+    clear_logcat
     output_file="$(mktemp)"
 
     if maestro test "${maestro_args[@]}" "$ROOT_DIR/.maestro/$flow_file" 2>&1 | tee "$output_file"; then
@@ -198,11 +241,29 @@ case "$SCENARIO_SELECTION" in
       DIRECT_UPDATE_MODE=false \
       BUILTIN_LABEL=deferred-builtin \
       FIRST_RELEASE=deferred-v1
+    wait_for_harness_state \
+      "deferred release downloads while builtin bundle stays active" \
+      '"buildLabel":"deferred-builtin"' \
+      '"scenarioId":"deferred"' \
+      '"directUpdateMode":"false"' \
+      '"currentBundleSource":"builtin"' \
+      '"currentBundleVersion":"1.0"' \
+      '"nextBundleVersion":"deferred-v1"' \
+      '"lastDownload":"deferred-v1"'
     run_flow \
       apply-after-background.yaml \
       SOURCE_LABEL=deferred-builtin \
       EXPECTED_LABEL=deferred-v1 \
       EXPECTED_RELEASE=deferred-v1
+    wait_for_harness_state \
+      "deferred release applies after the app backgrounds and resumes" \
+      '"buildLabel":"deferred-v1"' \
+      '"scenarioId":"deferred"' \
+      '"directUpdateMode":"false"' \
+      '"currentBundleSource":"downloaded"' \
+      '"currentBundleVersion":"deferred-v1"' \
+      '"nextBundleVersion":"none"' \
+      '"lastDownload":"deferred-v1"'
     ;;
   always)
     control_server reset always
@@ -213,12 +274,30 @@ case "$SCENARIO_SELECTION" in
       DIRECT_UPDATE_MODE=always \
       EXPECTED_LABEL=always-v1 \
       EXPECTED_RELEASE=always-v1
+    wait_for_harness_state \
+      "always direct update applies the first release on launch" \
+      '"buildLabel":"always-v1"' \
+      '"scenarioId":"always"' \
+      '"directUpdateMode":"always"' \
+      '"currentBundleSource":"downloaded"' \
+      '"currentBundleVersion":"always-v1"' \
+      '"nextBundleVersion":"none"' \
+      '"lastDownload":"always-v1"'
     control_server advance always
     run_flow \
       resume-direct-update.yaml \
       SOURCE_LABEL=always-v1 \
       EXPECTED_LABEL=always-v2 \
       EXPECTED_RELEASE=always-v2
+    wait_for_harness_state \
+      "always direct update applies the second release after resume" \
+      '"buildLabel":"always-v2"' \
+      '"scenarioId":"always"' \
+      '"directUpdateMode":"always"' \
+      '"currentBundleSource":"downloaded"' \
+      '"currentBundleVersion":"always-v2"' \
+      '"nextBundleVersion":"none"' \
+      '"lastDownload":"always-v2"'
     ;;
   at-install)
     control_server reset at-install
@@ -229,13 +308,38 @@ case "$SCENARIO_SELECTION" in
       DIRECT_UPDATE_MODE=atInstall \
       EXPECTED_LABEL=at-install-v1 \
       EXPECTED_RELEASE=at-install-v1
+    wait_for_harness_state \
+      "atInstall applies the first release on initial launch" \
+      '"buildLabel":"at-install-v1"' \
+      '"scenarioId":"at-install"' \
+      '"directUpdateMode":"atInstall"' \
+      '"currentBundleSource":"downloaded"' \
+      '"currentBundleVersion":"at-install-v1"' \
+      '"nextBundleVersion":"none"' \
+      '"lastDownload":"at-install-v1"'
     control_server advance at-install
     run_flow \
-      resume-download-then-background.yaml \
-      SOURCE_LABEL=at-install-v1 \
-      PENDING_RELEASE=at-install-v2 \
-      EXPECTED_LABEL=at-install-v2 \
-      EXPECTED_RELEASE=at-install-v2
+      apply-after-background.yaml
+    wait_for_harness_state \
+      "atInstall downloads the second release and queues it for the next launch" \
+      '"buildLabel":"at-install-v1"' \
+      '"scenarioId":"at-install"' \
+      '"directUpdateMode":"atInstall"' \
+      '"currentBundleSource":"downloaded"' \
+      '"currentBundleVersion":"at-install-v1"' \
+      '"nextBundleVersion":"at-install-v2"' \
+      '"lastDownload":"at-install-v2"'
+    run_flow \
+      apply-after-background.yaml
+    wait_for_harness_state \
+      "atInstall applies the second release after another background and resume" \
+      '"buildLabel":"at-install-v2"' \
+      '"scenarioId":"at-install"' \
+      '"directUpdateMode":"atInstall"' \
+      '"currentBundleSource":"downloaded"' \
+      '"currentBundleVersion":"at-install-v2"' \
+      '"nextBundleVersion":"none"' \
+      '"lastDownload":"at-install-v2"'
     ;;
   on-launch)
     control_server reset on-launch
@@ -246,12 +350,30 @@ case "$SCENARIO_SELECTION" in
       DIRECT_UPDATE_MODE=onLaunch \
       EXPECTED_LABEL=on-launch-v1 \
       EXPECTED_RELEASE=on-launch-v1
+    wait_for_harness_state \
+      "onLaunch applies the first release on the initial cold launch" \
+      '"buildLabel":"on-launch-v1"' \
+      '"scenarioId":"on-launch"' \
+      '"directUpdateMode":"onLaunch"' \
+      '"currentBundleSource":"downloaded"' \
+      '"currentBundleVersion":"on-launch-v1"' \
+      '"nextBundleVersion":"none"' \
+      '"lastDownload":"on-launch-v1"'
     control_server advance on-launch
     run_flow \
       kill-then-direct-update.yaml \
       SOURCE_LABEL=on-launch-v1 \
       EXPECTED_LABEL=on-launch-v2 \
       EXPECTED_RELEASE=on-launch-v2
+    wait_for_harness_state \
+      "onLaunch applies the second release after a full cold start" \
+      '"buildLabel":"on-launch-v2"' \
+      '"scenarioId":"on-launch"' \
+      '"directUpdateMode":"onLaunch"' \
+      '"currentBundleSource":"downloaded"' \
+      '"currentBundleVersion":"on-launch-v2"' \
+      '"nextBundleVersion":"none"' \
+      '"lastDownload":"on-launch-v2"'
     ;;
   *)
     echo "Unknown Maestro scenario selection: $SCENARIO_SELECTION" >&2
