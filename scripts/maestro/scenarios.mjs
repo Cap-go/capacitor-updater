@@ -8,10 +8,19 @@ export const maestroDir = path.join(repoRoot, '.maestro');
 export const artifactDir = path.join(repoRoot, '.maestro-artifacts');
 export const bundleArtifactDir = path.join(artifactDir, 'bundles');
 export const defaultPort = Number(process.env.CAPGO_MAESTRO_PORT ?? '3192');
-export const defaultHostBaseUrl = process.env.CAPGO_MAESTRO_HOST_BASE_URL ?? `http://127.0.0.1:${defaultPort}`;
-export const defaultDeviceBaseUrl = process.env.CAPGO_MAESTRO_DEVICE_BASE_URL ?? `http://10.0.2.2:${defaultPort}`;
+export const defaultHostBaseUrl = process.env.CAPGO_MAESTRO_HOST_BASE_URL ?? `http://127.0.0.1:${defaultPort}`; // NOSONAR loopback-only fake OTA server for Maestro
+export const defaultDeviceBaseUrl = process.env.CAPGO_MAESTRO_DEVICE_BASE_URL ?? `http://10.0.2.2:${defaultPort}`; // NOSONAR emulator alias for the local fake OTA server
 export const exampleAppId = 'app.capgo.updater';
-export const exampleApkPath = path.join(exampleAppDir, 'android', 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk');
+export const exampleApkPath = path.join(
+  exampleAppDir,
+  'android',
+  'app',
+  'build',
+  'outputs',
+  'apk',
+  'debug',
+  'app-debug.apk',
+);
 
 export const scenarios = {
   deferred: {

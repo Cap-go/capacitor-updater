@@ -6,25 +6,25 @@
     <title>Capgo Live Update Test Harness</title>
     <link rel="stylesheet" href="/src/style.css" />
     <script>
-      window.__capgoProbe = {
+      const probe = (globalThis.__capgoProbe = {
         htmlLoadedAt: new Date().toISOString(),
         moduleLoadedAt: null,
         errors: [],
-      };
+      });
 
-      window.addEventListener('error', (event) => {
+      globalThis.addEventListener('error', (event) => {
         const detail = `${event.message} @ ${event.filename || 'inline'}:${event.lineno || 0}:${event.colno || 0}`;
-        window.__capgoProbe.errors.push(detail);
+        probe.errors.push(detail);
         console.log('[Harness] window.error', detail);
       });
 
-      window.addEventListener('unhandledrejection', (event) => {
+      globalThis.addEventListener('unhandledrejection', (event) => {
         const detail = event.reason?.stack || event.reason?.message || String(event.reason);
-        window.__capgoProbe.errors.push(detail);
+        probe.errors.push(detail);
         console.log('[Harness] window.unhandledrejection', detail);
       });
 
-      console.log('[Harness] inline boot', window.__capgoProbe.htmlLoadedAt);
+      console.log('[Harness] inline boot', probe.htmlLoadedAt);
     </script>
   </head>
   <body>

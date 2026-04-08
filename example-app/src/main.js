@@ -108,7 +108,8 @@ function renderEventLog() {
     const item = document.createElement('li');
     const bundle = entry.payload?.bundle ? getBundleVersion(entry.payload.bundle) : '';
     const detail = bundle || entry.payload?.version || entry.payload?.message || entry.payload?.status || '';
-    item.textContent = `${entry.label}${detail ? `: ${detail}` : ''}`;
+    const detailSuffix = detail ? `: ${detail}` : '';
+    item.textContent = `${entry.label}${detailSuffix}`;
     elements.eventLog.appendChild(item);
   });
 }

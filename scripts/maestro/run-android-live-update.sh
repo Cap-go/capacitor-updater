@@ -10,6 +10,7 @@ APP_ID="app.capgo.updater"
 APK_PATH="$ROOT_DIR/example-app/android/app/build/outputs/apk/debug/app-debug.apk"
 SCENARIO_SELECTION="${1:-all}"
 SERVER_PID=""
+FLOW_RETRY_PATTERN="TcpForwarder.waitFor|allocateForwarder|TimeoutException|Android driver did not start up in time|UNAVAILABLE: io exception|Connection refused"
 
 if [[ "$SCENARIO_SELECTION" == "all" ]]; then
   for scenario in deferred always at-install on-launch; do
@@ -23,6 +24,7 @@ cleanup() {
     kill "$SERVER_PID" >/dev/null 2>&1 || true
   fi
   stop_stale_fake_server
+  return 0
 }
 
 stop_stale_fake_server() {
@@ -33,6 +35,8 @@ stop_stale_fake_server() {
     echo "$pids" | xargs kill >/dev/null 2>&1 || true
     sleep 1
   fi
+
+  return 0
 }
 
 wait_for_server() {
@@ -50,6 +54,7 @@ wait_for_server() {
 reset_adb_forwarding() {
   adb forward --remove-all >/dev/null 2>&1 || true
   adb reverse --remove-all >/dev/null 2>&1 || true
+  return 0
 }
 
 ensure_android_device() {
@@ -58,33 +63,76 @@ ensure_android_device() {
     echo "No Android emulator/device is available for Maestro." >&2
     exit 1
   fi
+
+  return 0
+}
+
+wait_for_android_boot() {
+  local boot_completed=""
+
+  for _ in $(seq 1 30); do
+    boot_completed="$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')"
+    if [[ "$boot_completed" == "1" ]]; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "Android emulator did not finish booting in time for Maestro." >&2
+  return 1
+}
+
+unlock_android_device() {
+  adb shell input keyevent KEYCODE_WAKEUP >/dev/null 2>&1 || true
+  adb shell wm dismiss-keyguard >/dev/null 2>&1 || true
+  adb shell input keyevent 82 >/dev/null 2>&1 || true
+  adb shell settings put global stay_on_while_plugged_in 3 >/dev/null 2>&1 || true
+  return 0
+}
+
+restart_adb_server() {
+  adb kill-server >/dev/null 2>&1 || true
+  adb start-server >/dev/null 2>&1 || true
+  return 0
+}
+
+prepare_device_for_maestro() {
+  ensure_android_device
+  wait_for_android_boot
+  unlock_android_device
+  return 0
 }
 
 install_apk() {
   adb uninstall "$APP_ID" >/dev/null 2>&1 || true
   adb install -r "$APK_PATH" >/dev/null
+  return 0
 }
 
 control_server() {
   local action="$1"
   local scenario="$2"
   curl --silent --show-error --fail -X POST "$HOST_SERVER_URL/api/control/$action?scenario=$scenario" >/dev/null
+  return 0
 }
 
 run_flow() {
   local flow_file="$1"
   shift
-  local maestro_args=()
+  local -a maestro_args=()
   local attempt=1
-  local max_attempts=2
+  local max_attempts=3
   local output_file
+  local env_arg
 
   while [[ $# -gt 0 ]]; do
-    maestro_args+=("-e" "$1")
+    env_arg="$1"
+    maestro_args+=("-e" "$env_arg")
     shift
   done
 
   while [[ $attempt -le $max_attempts ]]; do
+    prepare_device_for_maestro
     reset_adb_forwarding
     output_file="$(mktemp)"
 
@@ -93,23 +141,29 @@ run_flow() {
       return 0
     fi
 
-    if grep -q "TcpForwarder.waitFor\|allocateForwarder\|TimeoutException" "$output_file" && [[ $attempt -lt $max_attempts ]]; then
+    if grep -Eq "$FLOW_RETRY_PATTERN" "$output_file" && [[ $attempt -lt $max_attempts ]]; then
       echo "Retrying $flow_file after Maestro ADB forwarding timeout..." >&2
       rm -f "$output_file"
       attempt=$((attempt + 1))
-      sleep 2
+      restart_adb_server
+      prepare_device_for_maestro
+      reset_adb_forwarding
+      sleep 5
       continue
     fi
 
     rm -f "$output_file"
     return 1
   done
+
+  return 1
 }
 
 prepare_scenario() {
   local scenario="$1"
   bun "$ROOT_DIR/scripts/maestro/prepare-android-scenario.mjs" "$scenario"
   install_apk
+  return 0
 }
 
 mkdir -p "$ARTIFACT_DIR"
@@ -147,8 +201,8 @@ case "$SCENARIO_SELECTION" in
     run_flow \
       apply-after-background.yaml \
       SOURCE_LABEL=deferred-builtin \
-      FINAL_LABEL=deferred-v1 \
-      FINAL_RELEASE=deferred-v1
+      EXPECTED_LABEL=deferred-v1 \
+      EXPECTED_RELEASE=deferred-v1
     ;;
   always)
     control_server reset always
@@ -180,8 +234,8 @@ case "$SCENARIO_SELECTION" in
       resume-download-then-background.yaml \
       SOURCE_LABEL=at-install-v1 \
       PENDING_RELEASE=at-install-v2 \
-      FINAL_LABEL=at-install-v2 \
-      FINAL_RELEASE=at-install-v2
+      EXPECTED_LABEL=at-install-v2 \
+      EXPECTED_RELEASE=at-install-v2
     ;;
   on-launch)
     control_server reset on-launch
@@ -196,8 +250,8 @@ case "$SCENARIO_SELECTION" in
     run_flow \
       kill-then-direct-update.yaml \
       SOURCE_LABEL=on-launch-v1 \
-      FINAL_LABEL=on-launch-v2 \
-      FINAL_RELEASE=on-launch-v2
+      EXPECTED_LABEL=on-launch-v2 \
+      EXPECTED_RELEASE=on-launch-v2
     ;;
   *)
     echo "Unknown Maestro scenario selection: $SCENARIO_SELECTION" >&2

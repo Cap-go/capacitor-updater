@@ -1,7 +1,14 @@
 import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { bundleArtifactDir, defaultDeviceBaseUrl, exampleAppDir, getBundleZipPath, repoRoot, scenarios } from './scenarios.mjs';
+import {
+  bundleArtifactDir,
+  defaultDeviceBaseUrl,
+  exampleAppDir,
+  getBundleZipPath,
+  repoRoot,
+  scenarios,
+} from './scenarios.mjs';
 
 function runCommand(command, args, options = {}) {
   return new Promise((resolve, reject) => {

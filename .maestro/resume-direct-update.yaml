@@ -3,12 +3,5 @@ appId: app.capgo.updater
 - extendedWaitUntil:
     visible: "Build label: ${SOURCE_LABEL}"
     timeout: 15000
-- pressKey: Home
-- launchApp
-- extendedWaitUntil:
-    visible: "Build label: ${EXPECTED_LABEL}"
-    timeout: 30000
-- assertVisible: "Current bundle version: ${EXPECTED_RELEASE}"
-- extendedWaitUntil:
-    visible: "Notify app ready: ok.*"
-    timeout: 15000
+- runFlow: helpers/relaunch-app.yaml
+- runFlow: helpers/assert-applied-update.yaml

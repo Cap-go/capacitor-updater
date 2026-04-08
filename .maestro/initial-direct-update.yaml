@@ -2,12 +2,6 @@ appId: app.capgo.updater
 ---
 - launchApp:
     clearState: true
-- extendedWaitUntil:
-    visible: "Build label: ${EXPECTED_LABEL}"
-    timeout: 30000
 - assertVisible: "Scenario: ${SCENARIO_ID}"
 - assertVisible: "Direct update mode: ${DIRECT_UPDATE_MODE}"
-- assertVisible: "Current bundle version: ${EXPECTED_RELEASE}"
-- extendedWaitUntil:
-    visible: "Notify app ready: ok.*"
-    timeout: 15000
+- runFlow: helpers/assert-applied-update.yaml
