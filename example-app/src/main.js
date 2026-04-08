@@ -3,212 +3,201 @@ import './style.css';
 import { CapacitorUpdater } from '@capgo/capacitor-updater';
 
 const plugin = CapacitorUpdater;
-const state = {};
-
-plugin.notifyAppReady();
-
-
 const actions = [
-{
-              id: 'notify-app-ready',
-              label: 'Notify app ready',
-              description: 'Signals to the native plugin that the current bundle launched successfully.',
-              inputs: [],
-              run: async (values) => {
-                await plugin.notifyAppReady();
-return 'notifyAppReady() resolved.';
-              },
-            },
-{
-  id: 'current-bundle',
-  label: 'Get current bundle',
-  description: 'Returns the bundle currently in use.',
-  inputs: [],
-  run: async (values) => {
-    return await plugin.current();
+  {
+    id: 'notify-app-ready',
+    label: 'Notify app ready',
+    buttonLabel: 'Run notifyAppReady',
+    description: 'Confirm that the current bundle booted successfully.',
+    inputs: [],
+    run: async () => {
+      await plugin.notifyAppReady();
+      return 'notifyAppReady() resolved.';
+    },
   },
-},
-{
-  id: 'list-bundles',
-  label: 'List downloaded bundles',
-  description: 'Lists bundles that were downloaded on the device.',
-  inputs: [],
-  run: async (values) => {
-    return await plugin.list();
+  {
+    id: 'current-bundle',
+    label: 'Get current bundle',
+    buttonLabel: 'Run get current bundle',
+    description: 'Read the active bundle and builtin native version.',
+    inputs: [],
+    run: async () => plugin.current(),
   },
-},
-{
-  id: 'get-plugin-version',
-  label: 'Get plugin version',
-  description: 'Returns the native plugin version.',
-  inputs: [],
-  run: async (values) => {
-    return await plugin.getPluginVersion();
+  {
+    id: 'list-bundles',
+    label: 'List downloaded bundles',
+    buttonLabel: 'Run list downloaded bundles',
+    description: 'Inspect bundles currently stored on the device.',
+    inputs: [],
+    run: async () => plugin.list(),
   },
-},
-{
-              id: 'set-update-url',
-              label: 'Set update URL',
-              description: 'Configures the update server endpoint.',
-              inputs: [{ name: 'updateUrl', label: 'Update URL', type: 'text', placeholder: 'https://example.com/api/auto_update' }],
-              run: async (values) => {
-                if (!values.updateUrl) {
-  throw new Error('Provide an update URL.');
-}
-await plugin.setUpdateUrl({ url: values.updateUrl });
-return 'Update URL set.';
-              },
-            }
+  {
+    id: 'get-plugin-version',
+    label: 'Get plugin version',
+    buttonLabel: 'Run get plugin version',
+    description: 'Return the installed native plugin version.',
+    inputs: [],
+    run: async () => plugin.getPluginVersion(),
+  },
+  {
+    id: 'set-update-url',
+    label: 'Set update URL',
+    buttonLabel: 'Apply update URL',
+    description: 'Point the example app at a custom update endpoint.',
+    inputs: [
+      {
+        name: 'updateUrl',
+        label: 'Update URL',
+        type: 'text',
+        value: 'https://example.com/api/auto_update',
+        placeholder: 'https://example.com/api/auto_update',
+      },
+    ],
+    run: async (values) => {
+      if (!values.updateUrl) {
+        throw new Error('Provide an update URL.');
+      }
+      await plugin.setUpdateUrl({ url: values.updateUrl });
+      return 'Update URL set.';
+    },
+  },
 ];
 
-const actionSelect = document.getElementById('action-select');
-const formContainer = document.getElementById('action-form');
-const descriptionBox = document.getElementById('action-description');
-const runButton = document.getElementById('run-action');
+const actionGrid = document.getElementById('smoke-actions');
 const output = document.getElementById('plugin-output');
+const actionStatus = document.getElementById('action-status');
+const lastAction = document.getElementById('last-action');
+const resultMarker = document.getElementById('result-marker');
+const sequenceStatus = document.getElementById('sequence-status');
+const runSmokeSequenceButton = document.getElementById('run-smoke-sequence');
+const actionCards = new Map();
 
-function buildForm(action) {
-  formContainer.innerHTML = '';
-  if (!action.inputs || !action.inputs.length) {
-    const note = document.createElement('p');
-    note.className = 'no-input-note';
-    note.textContent = 'This action does not require any inputs.';
-    formContainer.appendChild(note);
-    return;
-  }
-  action.inputs.forEach((input) => {
-    const fieldWrapper = document.createElement('div');
-    fieldWrapper.className = input.type === 'checkbox' ? 'form-field inline' : 'form-field';
-
-    const label = document.createElement('label');
-    label.textContent = input.label;
-    label.htmlFor = `field-${input.name}`;
-
-    let field;
-    switch (input.type) {
-      case 'textarea': {
-        field = document.createElement('textarea');
-        field.rows = input.rows || 4;
-        break;
-      }
-      case 'select': {
-        field = document.createElement('select');
-        (input.options || []).forEach((option) => {
-          const opt = document.createElement('option');
-          opt.value = option.value;
-          opt.textContent = option.label;
-          if (input.value !== undefined && option.value === input.value) {
-            opt.selected = true;
-          }
-          field.appendChild(opt);
-        });
-        break;
-      }
-      case 'checkbox': {
-        field = document.createElement('input');
-        field.type = 'checkbox';
-        field.checked = Boolean(input.value);
-        break;
-      }
-      case 'number': {
-        field = document.createElement('input');
-        field.type = 'number';
-        if (input.value !== undefined && input.value !== null) {
-          field.value = String(input.value);
-        }
-        break;
-      }
-      default: {
-        field = document.createElement('input');
-        field.type = 'text';
-        if (input.value !== undefined && input.value !== null) {
-          field.value = String(input.value);
-        }
-      }
-    }
-
-    field.id = `field-${input.name}`;
-    field.name = input.name;
-    field.dataset.type = input.type || 'text';
-
-    if (input.placeholder && input.type !== 'checkbox') {
-      field.placeholder = input.placeholder;
-    }
-
-    if (input.type === 'checkbox') {
-      fieldWrapper.appendChild(field);
-      fieldWrapper.appendChild(label);
-    } else {
-      fieldWrapper.appendChild(label);
-      fieldWrapper.appendChild(field);
-    }
-
-    formContainer.appendChild(fieldWrapper);
-  });
+if (!actionGrid || !output || !actionStatus || !lastAction || !sequenceStatus || !runSmokeSequenceButton) {
+  throw new Error('Smoke UI anchors are missing from index.html');
 }
 
-function getFormValues(action) {
+plugin.notifyAppReady().catch((error) => {
+  console.error('notifyAppReady() bootstrap failed', error);
+});
+
+function formatResult(result) {
+  if (result === undefined) {
+    return 'Action completed.';
+  }
+  if (typeof result === 'string') {
+    return result;
+  }
+  return JSON.stringify(result, null, 2);
+}
+
+function getCardValues(card, action) {
   const values = {};
   (action.inputs || []).forEach((input) => {
-    const field = document.getElementById(`field-${input.name}`);
-    if (!field) return;
-    switch (input.type) {
-      case 'number': {
-        values[input.name] = field.value === '' ? null : Number(field.value);
-        break;
-      }
-      case 'checkbox': {
-        values[input.name] = field.checked;
-        break;
-      }
-      default: {
-        values[input.name] = field.value;
-      }
+    const field = card.querySelector(`[name="${input.name}"]`);
+    if (!field) {
+      return;
     }
+    values[input.name] = field.value;
   });
   return values;
 }
 
-function setAction(action) {
-  descriptionBox.textContent = action.description || '';
-  buildForm(action);
-  output.textContent = 'Ready to run the selected action.';
-}
+async function runAction(action, values) {
+  lastAction.textContent = `Last action: ${action.label}`;
+  actionStatus.textContent = 'Status: running';
+  resultMarker.textContent = `Result marker: ${action.id}:running`;
+  output.textContent = `Running ${action.label}...`;
 
-function populateActions() {
-  actionSelect.innerHTML = '';
-  actions.forEach((action) => {
-    const option = document.createElement('option');
-    option.value = action.id;
-    option.textContent = action.label;
-    actionSelect.appendChild(option);
-  });
-  setAction(actions[0]);
-}
-
-actionSelect.addEventListener('change', () => {
-  const action = actions.find((item) => item.id === actionSelect.value);
-  if (action) {
-    setAction(action);
-  }
-});
-
-runButton.addEventListener('click', async () => {
-  const action = actions.find((item) => item.id === actionSelect.value);
-  if (!action) return;
-  const values = getFormValues(action);
   try {
     const result = await action.run(values);
-    if (result === undefined) {
-      output.textContent = 'Action completed.';
-    } else if (typeof result === 'string') {
-      output.textContent = result;
-    } else {
-      output.textContent = JSON.stringify(result, null, 2);
-    }
+    actionStatus.textContent = 'Status: success';
+    resultMarker.textContent = `Result marker: ${action.id}:success`;
+    output.textContent = formatResult(result);
   } catch (error) {
+    actionStatus.textContent = 'Status: error';
+    resultMarker.textContent = `Result marker: ${action.id}:error`;
     output.textContent = `Error: ${error?.message ?? error}`;
+    throw error;
   }
+}
+
+async function runSmokeSequence() {
+  sequenceStatus.textContent = 'Sequence: running';
+  runSmokeSequenceButton.disabled = true;
+
+  try {
+    for (const action of actions) {
+      const card = actionCards.get(action.id);
+      const values = card ? getCardValues(card, action) : {};
+      await runAction(action, values);
+    }
+    sequenceStatus.textContent = 'Sequence: success';
+    resultMarker.textContent = 'Result marker: smoke-sequence:success';
+  } catch (error) {
+    sequenceStatus.textContent = 'Sequence: error';
+    resultMarker.textContent = 'Result marker: smoke-sequence:error';
+    console.error('Smoke sequence failed', error);
+  } finally {
+    runSmokeSequenceButton.disabled = false;
+  }
+}
+
+function createInputField(card, input) {
+  const fieldWrapper = document.createElement('label');
+  fieldWrapper.className = 'action-input';
+  fieldWrapper.textContent = input.label;
+
+  const field = document.createElement('input');
+  field.type = input.type || 'text';
+  field.name = input.name;
+  field.value = input.value || '';
+  if (input.placeholder) {
+    field.placeholder = input.placeholder;
+  }
+
+  fieldWrapper.appendChild(field);
+  card.appendChild(fieldWrapper);
+}
+
+function createActionCard(action) {
+  const card = document.createElement('article');
+  card.className = 'action-card';
+
+  const title = document.createElement('h2');
+  title.textContent = action.label;
+  card.appendChild(title);
+
+  const description = document.createElement('p');
+  description.className = 'action-copy';
+  description.textContent = action.description;
+  card.appendChild(description);
+
+  (action.inputs || []).forEach((input) => {
+    createInputField(card, input);
+  });
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = action.buttonLabel;
+  button.addEventListener('click', () => {
+    const values = getCardValues(card, action);
+    void runAction(action, values).catch(() => {});
+  });
+  card.appendChild(button);
+
+  return card;
+}
+
+function renderActions() {
+  actions.forEach((action) => {
+    const card = createActionCard(action);
+    actionCards.set(action.id, card);
+    actionGrid.appendChild(card);
+  });
+}
+
+runSmokeSequenceButton.addEventListener('click', () => {
+  void runSmokeSequence();
 });
 
-populateActions();
+renderActions();

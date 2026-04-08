@@ -8,14 +8,31 @@
   </head>
   <body>
     <main class="container">
-      <h1>@capgo/capacitor-updater Example</h1>
-      <p class="lead">Run native plugin APIs with the source linked locally.</p>
-      <label for="action-select">Available actions</label>
-      <select id="action-select"></select>
-      <div id="action-description" class="action-description"></div>
-      <div id="action-form" class="form-grid"></div>
-      <button id="run-action">Run action</button>
-      <pre id="plugin-output">Select an action to begin.</pre>
+      <header class="hero">
+        <p class="eyebrow">Example app</p>
+        <h1>@capgo/capacitor-updater</h1>
+        <p class="lead">Smoke-test the native plugin APIs against the local source checkout.</p>
+      </header>
+      <section class="panel">
+        <div class="panel-heading">
+          <h2>Smoke Actions</h2>
+          <p>Each button runs one currently exposed example action and prints the latest result below.</p>
+        </div>
+        <button id="run-smoke-sequence" type="button">Run smoke test sequence</button>
+        <div id="smoke-actions" class="actions-grid"></div>
+      </section>
+      <section class="panel result-panel">
+        <div class="panel-heading">
+          <h2>Latest Result</h2>
+          <div class="status-row">
+            <p id="last-action" class="status-line">Last action: none</p>
+            <p id="action-status" class="status-line">Status: idle</p>
+          </div>
+          <p id="sequence-status" class="status-line">Sequence: idle</p>
+          <p id="result-marker" class="status-line">Result marker: idle</p>
+        </div>
+        <pre id="plugin-output">Ready to run a smoke action.</pre>
+      </section>
     </main>
     <script type="module" src="/src/main.js"></script>
   </body>

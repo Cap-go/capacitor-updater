@@ -4,7 +4,10 @@
   "webDir": "dist",
   "plugins": {
     "SplashScreen": {
-      "launchAutoHide": false
+      "launchAutoHide": true
+    },
+    "CapacitorUpdater": {
+      "allowModifyUrl": true
     }
   }
 }

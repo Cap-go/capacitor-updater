@@ -1,0 +1,54 @@
+appId: app.capgo.updater
+---
+- launchApp
+- assertVisible: "@capgo/capacitor-updater"
+- scrollUntilVisible:
+    element:
+      text: "Run notifyAppReady"
+    direction: DOWN
+- tapOn: "Run notifyAppReady"
+- scrollUntilVisible:
+    element:
+      text: "Result marker: notify-app-ready:success"
+    direction: DOWN
+- assertVisible: "Result marker: notify-app-ready:success"
+- scrollUntilVisible:
+    element:
+      text: "Run get current bundle"
+    direction: UP
+- tapOn: "Run get current bundle"
+- scrollUntilVisible:
+    element:
+      text: "Result marker: current-bundle:success"
+    direction: DOWN
+- assertVisible: "Result marker: current-bundle:success"
+- scrollUntilVisible:
+    element:
+      text: "Run list downloaded bundles"
+    direction: UP
+- tapOn: "Run list downloaded bundles"
+- scrollUntilVisible:
+    element:
+      text: "Result marker: list-bundles:success"
+    direction: DOWN
+- assertVisible: "Result marker: list-bundles:success"
+- scrollUntilVisible:
+    element:
+      text: "Run get plugin version"
+    direction: UP
+- tapOn: "Run get plugin version"
+- scrollUntilVisible:
+    element:
+      text: "Result marker: get-plugin-version:success"
+    direction: DOWN
+- assertVisible: "Result marker: get-plugin-version:success"
+- scrollUntilVisible:
+    element:
+      text: "Apply update URL"
+    direction: UP
+- tapOn: "Apply update URL"
+- scrollUntilVisible:
+    element:
+      text: "Result marker: set-update-url:success"
+    direction: DOWN
+- assertVisible: "Result marker: set-update-url:success"
