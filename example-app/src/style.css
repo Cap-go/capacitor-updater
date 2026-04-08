@@ -102,7 +102,7 @@ h2 {
 #plugin-output {
   margin: 0;
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: anywhere;
   font-family: 'SFMono-Regular', 'Menlo', monospace;
   font-size: 0.82rem;
   color: #ffe9d3;

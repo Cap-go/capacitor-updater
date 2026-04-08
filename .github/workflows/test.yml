@@ -9,9 +9,9 @@ on:
     branches:
       - renovate/**
   pull_request:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
-  workflow_call:  # Allow this workflow to be called by other workflows
+  workflow_call: # Allow this workflow to be called by other workflows
 
 jobs:
   guard_swiftpm_version:
@@ -56,7 +56,7 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
       - name: Install dependencies
         id: install_code
         run: bun i
@@ -75,7 +75,7 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
       - name: Install dependencies
         id: install_code
         run: bun i
@@ -96,7 +96,7 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
@@ -109,8 +109,27 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
       - name: Install Maestro
+        env:
+          MAESTRO_VERSION: cli-2.4.0
         run: |
-          curl -Ls "https://get.maestro.mobile.dev" | bash
+          set -euo pipefail
+          base_url="https://github.com/mobile-dev-inc/Maestro/releases/download/${MAESTRO_VERSION}"
+          tmp_dir="$(mktemp -d)"
+          trap 'rm -rf "$tmp_dir"' EXIT
+          curl -fsSL -o "$tmp_dir/maestro.zip" "${base_url}/maestro.zip"
+          curl -fsSL -o "$tmp_dir/checksums_sha256.txt" "${base_url}/checksums_sha256.txt"
+          (
+            cd "$tmp_dir"
+            grep ' maestro.zip$' checksums_sha256.txt | sha256sum -c -
+          )
+          unzip -q "$tmp_dir/maestro.zip" -d "$tmp_dir/maestro"
+          install_path="$(find "$tmp_dir/maestro" -type f -name maestro | head -n 1)"
+          if [[ -z "$install_path" ]]; then
+            echo "Unable to locate Maestro binary after extracting ${MAESTRO_VERSION}" >&2
+            exit 1
+          fi
+          mkdir -p "$HOME/.maestro/bin"
+          install -m 0755 "$install_path" "$HOME/.maestro/bin/maestro"
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
       - name: Run live update Maestro flow
         uses: reactivecircus/android-emulator-runner@e89f39f1abbbd05b1113a29cf4db69e7540cae5a # v2

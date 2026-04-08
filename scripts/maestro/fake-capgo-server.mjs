@@ -3,8 +3,8 @@ import {
   defaultDeviceBaseUrl,
   defaultHostBaseUrl,
   defaultPort,
+  findScenario,
   getBundleZipPath,
-  getScenario,
   scenarios,
 } from './scenarios.mjs';
 
@@ -30,7 +30,7 @@ function getScenarioFromQuery(requestUrl) {
     return null;
   }
 
-  return getScenario(scenarioId);
+  return findScenario(scenarioId);
 }
 
 function getScenarioStatePayload(scenario) {
@@ -106,7 +106,12 @@ function handleControlState(requestUrl) {
 }
 
 async function handleUpdate(request, scenarioId) {
-  const scenario = getScenario(scenarioId);
+  const scenario = findScenario(scenarioId);
+
+  if (!scenario) {
+    return jsonResponse({ error: 'unknown_scenario' }, { status: 404 });
+  }
+
   const payload = await request.json().catch(() => ({}));
   const currentVersion = payload.version_name ?? 'builtin';
   const selectedRelease = getReleaseForScenario(scenario, currentVersion);

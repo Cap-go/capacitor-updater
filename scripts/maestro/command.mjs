@@ -8,13 +8,18 @@ export function runCommand(command, args, options = {}) {
       stdio: 'inherit',
     });
 
-    child.on('exit', (code) => {
+    child.once('error', (error) => {
+      reject(new Error(`${command} ${args.join(' ')} failed to start: ${error.message}`));
+    });
+
+    child.once('close', (code, signal) => {
       if (code === 0) {
         resolve();
         return;
       }
 
-      reject(new Error(`${command} ${args.join(' ')} failed with exit code ${code}`));
+      const reason = signal ? `signal ${signal}` : `exit code ${code}`;
+      reject(new Error(`${command} ${args.join(' ')} failed with ${reason}`));
     });
   });
 }

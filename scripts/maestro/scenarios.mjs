@@ -7,7 +7,13 @@ export const exampleAppDir = path.join(repoRoot, 'example-app');
 export const maestroDir = path.join(repoRoot, '.maestro');
 export const artifactDir = path.join(repoRoot, '.maestro-artifacts');
 export const bundleArtifactDir = path.join(artifactDir, 'bundles');
-export const defaultPort = Number(process.env.CAPGO_MAESTRO_PORT ?? '3192');
+const rawPort = process.env.CAPGO_MAESTRO_PORT?.trim() || '3192';
+export const defaultPort = Number.parseInt(rawPort, 10);
+
+if (!Number.isInteger(defaultPort) || defaultPort <= 0 || defaultPort > 65535) {
+  throw new Error(`Invalid CAPGO_MAESTRO_PORT: ${rawPort}`);
+}
+
 export const defaultHostBaseUrl = process.env.CAPGO_MAESTRO_HOST_BASE_URL ?? `http://127.0.0.1:${defaultPort}`; // NOSONAR loopback-only fake OTA server for Maestro
 export const defaultDeviceBaseUrl = process.env.CAPGO_MAESTRO_DEVICE_BASE_URL ?? `http://10.0.2.2:${defaultPort}`; // NOSONAR emulator alias for the local fake OTA server
 export const exampleAppId = 'app.capgo.updater';
@@ -59,8 +65,12 @@ export const scenarios = {
   },
 };
 
+export function findScenario(id) {
+  return scenarios[id] ?? null;
+}
+
 export function getScenario(id) {
-  const scenario = scenarios[id];
+  const scenario = findScenario(id);
 
   if (!scenario) {
     throw new Error(`Unknown Maestro scenario: ${id}`);
