@@ -1459,6 +1459,40 @@ import UIKit
         return libraryDir.appendingPathComponent(self.bundleDirectory).appendingPathComponent(id)
     }
 
+    struct ResetState {
+        let currentBundlePath: String
+        let fallbackBundleId: String
+        let nextBundleId: String?
+    }
+
+    func captureResetState() -> ResetState {
+        ResetState(
+            currentBundlePath: UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH) ?? self.DEFAULT_FOLDER,
+            fallbackBundleId: UserDefaults.standard.string(forKey: self.FALLBACK_VERSION) ?? BundleInfo.ID_BUILTIN,
+            nextBundleId: UserDefaults.standard.string(forKey: self.NEXT_VERSION)
+        )
+    }
+
+    func restoreResetState(_ state: ResetState) {
+        let currentBundlePath = state.currentBundlePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? self.DEFAULT_FOLDER
+            : state.currentBundlePath
+        let fallbackBundleId = state.fallbackBundleId.isEmpty ? BundleInfo.ID_BUILTIN : state.fallbackBundleId
+
+        self.setCurrentBundle(bundle: currentBundlePath)
+        UserDefaults.standard.set(fallbackBundleId, forKey: self.FALLBACK_VERSION)
+        if let nextBundleId = state.nextBundleId, !nextBundleId.isEmpty {
+            UserDefaults.standard.set(nextBundleId, forKey: self.NEXT_VERSION)
+        } else {
+            UserDefaults.standard.removeObject(forKey: self.NEXT_VERSION)
+        }
+        UserDefaults.standard.synchronize()
+    }
+
+    func canSet(bundle: BundleInfo) -> Bool {
+        bundle.isBuiltin() || self.bundleExists(id: bundle.getId())
+    }
+
     public func set(bundle: BundleInfo) -> Bool {
         return self.set(id: bundle.getId())
     }

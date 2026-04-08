@@ -953,45 +953,61 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func _reset(toLastSuccessful: Bool, usePendingBundle: Bool) -> Bool {
-        guard let bridge = self.bridge else { return false }
+        guard self.canPerformResetTransition() else { return false }
 
-        if (bridge.viewController as? CAPBridgeViewController) != nil {
-            let fallback: BundleInfo = self.implementation.getFallbackBundle()
-            let pending: BundleInfo? = self.implementation.getNextBundle()
+        let fallback: BundleInfo = self.implementation.getFallbackBundle()
+        let pending: BundleInfo? = self.implementation.getNextBundle()
+        let previousState = self.implementation.captureResetState()
 
-            if usePendingBundle {
-                guard let pending = pending, !pending.isErrorStatus() else {
-                    logger.error("No pending bundle available to reset to")
-                    return false
-                }
-                self.implementation.reset()
-                logger.info("Resetting to pending bundle: \(pending.toString())")
-                if self.implementation.set(bundle: pending) && self._reload() {
-                    self.notifyBundleSet(pending)
-                    _ = self.implementation.setNextBundle(next: Optional<String>.none)
-                    return true
-                }
+        if usePendingBundle {
+            guard let pending = pending, !pending.isErrorStatus() else {
+                logger.error("No pending bundle available to reset to")
                 return false
             }
-
+            guard self.implementation.canSet(bundle: pending) else {
+                logger.error("Pending bundle is not installable")
+                return false
+            }
             self.implementation.reset()
-
-            // If developer wants to reset to the last successful bundle, and that bundle is not
-            // the built-in bundle, set it as the bundle to use and reload.
-            if toLastSuccessful && !fallback.isBuiltin() {
-                logger.info("Resetting to: \(fallback.toString())")
-                if self.implementation.set(bundle: fallback) && self._reload() {
-                    self.notifyBundleSet(fallback)
-                    return true
-                }
-                return false
+            logger.info("Resetting to pending bundle: \(pending.toString())")
+            if self.implementation.set(bundle: pending) && self._reload() {
+                self.notifyBundleSet(pending)
+                _ = self.implementation.setNextBundle(next: Optional<String>.none)
+                return true
             }
-
-            logger.info("Resetting to builtin version")
-            return self._reload()
+            self.implementation.restoreResetState(previousState)
+            return false
         }
 
+        // If developer wants to reset to the last successful bundle, and that bundle is not
+        // the built-in bundle, set it as the bundle to use and reload.
+        if toLastSuccessful && !fallback.isBuiltin() {
+            guard self.implementation.canSet(bundle: fallback) else {
+                logger.error("Fallback bundle is not installable")
+                return false
+            }
+            self.implementation.reset()
+            logger.info("Resetting to: \(fallback.toString())")
+            if self.implementation.set(bundle: fallback) && self._reload() {
+                self.notifyBundleSet(fallback)
+                return true
+            }
+            self.implementation.restoreResetState(previousState)
+            return false
+        }
+
+        self.implementation.reset()
+        logger.info("Resetting to builtin version")
+        if self._reload() {
+            return true
+        }
+        self.implementation.restoreResetState(previousState)
         return false
+    }
+
+    func canPerformResetTransition() -> Bool {
+        guard let bridge = self.bridge else { return false }
+        return (bridge.viewController as? CAPBridgeViewController) != nil
     }
 
     @objc func reset(_ call: CAPPluginCall) {

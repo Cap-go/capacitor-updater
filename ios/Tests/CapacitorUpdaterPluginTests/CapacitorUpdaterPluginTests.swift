@@ -2,7 +2,7 @@ import XCTest
 @testable import CapacitorUpdaterPlugin
 import Version
 
-private final class TestableCapacitorUpdaterPlugin: CapacitorUpdaterPlugin {
+private class TestableCapacitorUpdaterPlugin: CapacitorUpdaterPlugin {
     override func endBackGroundTask() {
         // Intentionally blank: tests avoid touching UIApplication background-task APIs.
     }
@@ -40,6 +40,77 @@ private final class FreshDownloadCapgoUpdater: CapgoUpdater {
 
     override func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {
         // Intentionally blank: test doubles should not emit network-backed stats.
+    }
+}
+
+private final class ResetTrackingCapgoUpdater: CapgoUpdater {
+    let currentBundleValue = BundleInfo(
+        id: "current-id",
+        version: "1.0.0",
+        status: .SUCCESS,
+        downloaded: Date(),
+        checksum: "abc123"
+    )
+    var fallbackBundleValue = BundleInfo(
+        id: BundleInfo.ID_BUILTIN,
+        version: "builtin",
+        status: .SUCCESS,
+        downloaded: BundleInfo.DOWNLOADED_BUILTIN,
+        checksum: "builtin"
+    )
+    var nextBundleValue: BundleInfo?
+    var resetCalled = false
+    var canSetResult = true
+    var setResult = true
+    var canSetCalls = 0
+    var setCalls = 0
+    var restoreResetStateCalls = 0
+    let capturedState = ResetState(
+        currentBundlePath: "/stored/current",
+        fallbackBundleId: "fallback-id",
+        nextBundleId: "next-id"
+    )
+    var restoredState: ResetState?
+
+    override func getCurrentBundle() -> BundleInfo {
+        currentBundleValue
+    }
+
+    override func getFallbackBundle() -> BundleInfo {
+        fallbackBundleValue
+    }
+
+    override func getNextBundle() -> BundleInfo? {
+        nextBundleValue
+    }
+
+    override func canSet(bundle: BundleInfo) -> Bool {
+        canSetCalls += 1
+        return canSetResult
+    }
+
+    override func captureResetState() -> ResetState {
+        capturedState
+    }
+
+    override func restoreResetState(_ state: ResetState) {
+        restoreResetStateCalls += 1
+        restoredState = state
+    }
+
+    override func set(bundle: BundleInfo) -> Bool {
+        setCalls += 1
+        return setResult
+    }
+
+    override func reset(isInternal: Bool) {
+        resetCalled = true
+    }
+}
+
+private final class ResetTestableCapacitorUpdaterPlugin: TestableCapacitorUpdaterPlugin {
+    override func canPerformResetTransition() -> Bool {
+        true
     }
 }
 
@@ -262,6 +333,96 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate(directUpdateMode: "always", plannedDirectUpdate: true))
         XCTAssertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate(directUpdateMode: "atInstall", plannedDirectUpdate: true))
         XCTAssertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate(directUpdateMode: "false", plannedDirectUpdate: true))
+    }
+
+    func testResetToPendingWithoutInstallablePendingBundleDoesNotResetState() {
+        let resetPlugin = ResetTestableCapacitorUpdaterPlugin()
+        let resetImplementation = ResetTrackingCapgoUpdater()
+        resetImplementation.nextBundleValue = BundleInfo(
+            id: "pending-id",
+            version: "2.0.0",
+            status: .PENDING,
+            downloaded: Date(),
+            checksum: "pending"
+        )
+        resetImplementation.canSetResult = false
+
+        resetPlugin.implementation = resetImplementation
+
+        XCTAssertFalse(resetPlugin._reset(toLastSuccessful: false, usePendingBundle: true))
+        XCTAssertEqual(resetImplementation.canSetCalls, 1)
+        XCTAssertEqual(resetImplementation.setCalls, 0)
+        XCTAssertFalse(resetImplementation.resetCalled)
+        XCTAssertEqual(resetImplementation.restoreResetStateCalls, 0)
+    }
+
+    func testResetToPendingRestoresStateWhenSwitchFails() {
+        let resetPlugin = ResetTestableCapacitorUpdaterPlugin()
+        let resetImplementation = ResetTrackingCapgoUpdater()
+        resetImplementation.nextBundleValue = BundleInfo(
+            id: "pending-id",
+            version: "2.0.0",
+            status: .PENDING,
+            downloaded: Date(),
+            checksum: "pending"
+        )
+        resetImplementation.setResult = false
+
+        resetPlugin.implementation = resetImplementation
+
+        XCTAssertFalse(resetPlugin._reset(toLastSuccessful: false, usePendingBundle: true))
+        XCTAssertTrue(resetImplementation.resetCalled)
+        XCTAssertEqual(resetImplementation.canSetCalls, 1)
+        XCTAssertEqual(resetImplementation.setCalls, 1)
+        XCTAssertEqual(resetImplementation.restoreResetStateCalls, 1)
+        XCTAssertEqual(resetImplementation.restoredState?.currentBundlePath, resetImplementation.capturedState.currentBundlePath)
+        XCTAssertEqual(resetImplementation.restoredState?.fallbackBundleId, resetImplementation.capturedState.fallbackBundleId)
+        XCTAssertEqual(resetImplementation.restoredState?.nextBundleId, resetImplementation.capturedState.nextBundleId)
+    }
+
+    func testResetToLastSuccessfulWithoutInstallableFallbackDoesNotResetState() {
+        let resetPlugin = ResetTestableCapacitorUpdaterPlugin()
+        let resetImplementation = ResetTrackingCapgoUpdater()
+        resetImplementation.fallbackBundleValue = BundleInfo(
+            id: "fallback-id",
+            version: "1.5.0",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "fallback"
+        )
+        resetImplementation.canSetResult = false
+
+        resetPlugin.implementation = resetImplementation
+
+        XCTAssertFalse(resetPlugin._reset(toLastSuccessful: true, usePendingBundle: false))
+        XCTAssertEqual(resetImplementation.canSetCalls, 1)
+        XCTAssertEqual(resetImplementation.setCalls, 0)
+        XCTAssertFalse(resetImplementation.resetCalled)
+        XCTAssertEqual(resetImplementation.restoreResetStateCalls, 0)
+    }
+
+    func testResetToLastSuccessfulRestoresStateWhenSwitchFails() {
+        let resetPlugin = ResetTestableCapacitorUpdaterPlugin()
+        let resetImplementation = ResetTrackingCapgoUpdater()
+        resetImplementation.fallbackBundleValue = BundleInfo(
+            id: "fallback-id",
+            version: "1.5.0",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "fallback"
+        )
+        resetImplementation.setResult = false
+
+        resetPlugin.implementation = resetImplementation
+
+        XCTAssertFalse(resetPlugin._reset(toLastSuccessful: true, usePendingBundle: false))
+        XCTAssertTrue(resetImplementation.resetCalled)
+        XCTAssertEqual(resetImplementation.canSetCalls, 1)
+        XCTAssertEqual(resetImplementation.setCalls, 1)
+        XCTAssertEqual(resetImplementation.restoreResetStateCalls, 1)
+        XCTAssertEqual(resetImplementation.restoredState?.currentBundlePath, resetImplementation.capturedState.currentBundlePath)
+        XCTAssertEqual(resetImplementation.restoredState?.fallbackBundleId, resetImplementation.capturedState.fallbackBundleId)
+        XCTAssertEqual(resetImplementation.restoredState?.nextBundleId, resetImplementation.capturedState.nextBundleId)
     }
 
     func testOnLaunchCompletionConsumesWindowAfterFirstCycle() {

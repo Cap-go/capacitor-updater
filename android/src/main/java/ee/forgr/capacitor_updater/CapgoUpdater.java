@@ -991,6 +991,49 @@ public class CapgoUpdater {
         return (bundle.isDirectory() && bundle.exists() && new File(bundle.getPath(), "/index.html").exists() && !bundleInfo.isDeleted());
     }
 
+    static final class ResetState {
+
+        final String currentBundlePath;
+        final String fallbackBundleId;
+        final String nextBundleId;
+
+        ResetState(final String currentBundlePath, final String fallbackBundleId, final String nextBundleId) {
+            this.currentBundlePath = currentBundlePath;
+            this.fallbackBundleId = fallbackBundleId;
+            this.nextBundleId = nextBundleId;
+        }
+    }
+
+    ResetState captureResetState() {
+        return new ResetState(
+            this.getCurrentBundlePath(),
+            this.prefs.getString(FALLBACK_VERSION, BundleInfo.ID_BUILTIN),
+            this.prefs.getString(NEXT_VERSION, null)
+        );
+    }
+
+    void restoreResetState(final ResetState state) {
+        final String currentBundlePath = state.currentBundlePath == null || state.currentBundlePath.trim().isEmpty()
+            ? "public"
+            : state.currentBundlePath;
+        final String fallbackBundleId = state.fallbackBundleId == null || state.fallbackBundleId.isEmpty()
+            ? BundleInfo.ID_BUILTIN
+            : state.fallbackBundleId;
+
+        this.editor.putString(this.CAP_SERVER_PATH, currentBundlePath);
+        this.editor.putString(FALLBACK_VERSION, fallbackBundleId);
+        if (state.nextBundleId == null || state.nextBundleId.isEmpty()) {
+            this.editor.remove(NEXT_VERSION);
+        } else {
+            this.editor.putString(NEXT_VERSION, state.nextBundleId);
+        }
+        this.editor.commit();
+    }
+
+    boolean canSet(final BundleInfo bundle) {
+        return bundle != null && (bundle.isBuiltin() || this.bundleExists(bundle.getId()));
+    }
+
     public Boolean set(final BundleInfo bundle) {
         return this.set(bundle.getId());
     }

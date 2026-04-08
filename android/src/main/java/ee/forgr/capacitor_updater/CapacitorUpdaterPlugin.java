@@ -1624,10 +1624,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private boolean _reset(final Boolean toLastSuccessful, final Boolean usePendingBundle) {
         final BundleInfo fallback = this.implementation.getFallbackBundle();
         final BundleInfo pending = this.implementation.getNextBundle();
+        final CapgoUpdater.ResetState previousState = this.implementation.captureResetState();
 
         if (Boolean.TRUE.equals(usePendingBundle)) {
             if (pending == null || pending.isErrorStatus()) {
                 logger.error("No pending bundle available to reset to");
+                return false;
+            }
+            if (!this.implementation.canSet(pending)) {
+                logger.error("Pending bundle is not installable");
                 return false;
             }
             this.implementation.reset();
@@ -1637,22 +1642,32 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 this.implementation.setNextBundle(null);
                 return true;
             }
+            this.implementation.restoreResetState(previousState);
             return false;
         }
 
-        this.implementation.reset();
-
         if (Boolean.TRUE.equals(toLastSuccessful) && !fallback.isBuiltin()) {
+            if (!this.implementation.canSet(fallback)) {
+                logger.error("Fallback bundle is not installable");
+                return false;
+            }
+            this.implementation.reset();
             logger.info("Resetting to: " + fallback);
             if (this.implementation.set(fallback) && this._reload()) {
                 this.notifyBundleSet(fallback);
                 return true;
             }
+            this.implementation.restoreResetState(previousState);
             return false;
         }
 
+        this.implementation.reset();
         logger.info("Resetting to native.");
-        return this._reload();
+        if (this._reload()) {
+            return true;
+        }
+        this.implementation.restoreResetState(previousState);
+        return false;
     }
 
     @PluginMethod
