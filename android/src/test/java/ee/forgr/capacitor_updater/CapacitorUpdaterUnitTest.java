@@ -257,6 +257,35 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
+    private static final class PendingReloadFinalizeCapgoUpdater extends CapgoUpdater {
+
+        private final Map<String, BundleInfo> bundleInfos = new HashMap<>();
+        private String lastStatsAction;
+        private String lastStatsVersionName;
+        private String lastStatsOldVersionName;
+
+        PendingReloadFinalizeCapgoUpdater() {
+            super(null);
+        }
+
+        @Override
+        public BundleInfo getBundleInfo(final String id) {
+            return this.bundleInfos.get(id);
+        }
+
+        @Override
+        public void saveBundleInfo(final String id, final BundleInfo info) {
+            this.bundleInfos.put(id, info);
+        }
+
+        @Override
+        public void sendStats(final String action, final String versionName, final String oldVersionName) {
+            this.lastStatsAction = action;
+            this.lastStatsVersionName = versionName;
+            this.lastStatsOldVersionName = oldVersionName;
+        }
+    }
+
     private static void invokeBackgroundDownload(final CapacitorUpdaterPlugin plugin) throws Exception {
         final Method backgroundDownload = CapacitorUpdaterPlugin.class.getDeclaredMethod("backgroundDownload");
         backgroundDownload.setAccessible(true);
@@ -809,6 +838,21 @@ public class CapacitorUpdaterUnitTest {
             assertEquals(0, updater.restoreResetStateCalls);
             assertEquals(0, plugin.restoreLiveBundleStateAfterFailedReloadCalls);
         }
+    }
+
+    @Test
+    public void testFinalizePendingReloadPreservesSuccessfulBundleStatus() {
+        final PendingReloadFinalizeCapgoUpdater updater = new PendingReloadFinalizeCapgoUpdater();
+        final BundleInfo successfulBundle = new BundleInfo("pending-id", "2.0.0", BundleStatus.SUCCESS, new Date(), "pending");
+        final BundleInfo pendingBundle = new BundleInfo("pending-id", "2.0.0", BundleStatus.PENDING, new Date(), "pending");
+        updater.bundleInfos.put("pending-id", successfulBundle);
+
+        updater.finalizePendingReload(pendingBundle, "1.0.0");
+
+        assertEquals(BundleStatus.SUCCESS, updater.bundleInfos.get("pending-id").getStatus());
+        assertEquals("set", updater.lastStatsAction);
+        assertEquals("2.0.0", updater.lastStatsVersionName);
+        assertEquals("1.0.0", updater.lastStatsOldVersionName);
     }
 
     @Test

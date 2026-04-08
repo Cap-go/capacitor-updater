@@ -1554,7 +1554,6 @@ import UIKit
         guard !bundle.isBuiltin() else {
             return
         }
-        self.setBundleStatus(id: bundle.getId(), status: .PENDING)
         self.sendStats(action: "set", versionName: bundle.getVersionName(), oldVersionName: previousBundleName)
     }
 

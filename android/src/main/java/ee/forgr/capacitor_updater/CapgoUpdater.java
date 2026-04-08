@@ -1085,7 +1085,6 @@ public class CapgoUpdater {
         if (bundle == null || bundle.isBuiltin()) {
             return;
         }
-        this.setBundleStatus(bundle.getId(), BundleStatus.PENDING);
         this.sendStats("set", bundle.getVersionName(), previousBundleName);
     }
 

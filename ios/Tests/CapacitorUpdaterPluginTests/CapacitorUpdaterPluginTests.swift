@@ -199,6 +199,27 @@ private final class SequenceReloadCapacitorUpdaterPlugin: TestableCapacitorUpdat
     }
 }
 
+private final class PendingReloadFinalizeCapgoUpdater: CapgoUpdater {
+    var bundleInfos: [String: BundleInfo] = [:]
+    var lastStatsAction: String?
+    var lastStatsVersionName: String?
+    var lastStatsOldVersionName: String?
+
+    override func getBundleInfo(id: String?) -> BundleInfo {
+        bundleInfos[id!]!
+    }
+
+    override func saveBundleInfo(id: String, bundle: BundleInfo?) {
+        bundleInfos[id] = bundle
+    }
+
+    override func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {
+        lastStatsAction = action
+        lastStatsVersionName = versionName
+        lastStatsOldVersionName = oldVersionName
+    }
+}
+
 class CapacitorUpdaterTests: XCTestCase {
 
     var plugin: CapacitorUpdaterPlugin!
@@ -629,6 +650,32 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(resetImplementation.setCalls, 1)
         XCTAssertEqual(resetImplementation.restoreResetStateCalls, 0)
         XCTAssertEqual(resetPlugin.restoreLiveBundleStateAfterFailedReloadCalls, 0)
+    }
+
+    func testFinalizePendingReloadPreservesSuccessfulBundleStatus() {
+        let updater = PendingReloadFinalizeCapgoUpdater()
+        let successfulBundle = BundleInfo(
+            id: "pending-id",
+            version: "2.0.0",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "pending"
+        )
+        let pendingBundle = BundleInfo(
+            id: "pending-id",
+            version: "2.0.0",
+            status: .PENDING,
+            downloaded: Date(),
+            checksum: "pending"
+        )
+        updater.bundleInfos["pending-id"] = successfulBundle
+
+        updater.finalizePendingReload(bundle: pendingBundle, previousBundleName: "1.0.0")
+
+        XCTAssertEqual(updater.bundleInfos["pending-id"]?.getStatus(), BundleStatus.SUCCESS.localizedString)
+        XCTAssertEqual(updater.lastStatsAction, "set")
+        XCTAssertEqual(updater.lastStatsVersionName, "2.0.0")
+        XCTAssertEqual(updater.lastStatsOldVersionName, "1.0.0")
     }
 
     func testReloadRestoresStateWhenPendingApplyReloadFails() throws {
