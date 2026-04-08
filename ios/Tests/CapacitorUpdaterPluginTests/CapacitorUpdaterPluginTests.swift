@@ -151,6 +151,16 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertFalse(bundleInfo.isErrorStatus())
     }
 
+    func testBuildUserAgentStripsNonIsoCharacters() {
+        let ua = CapgoUpdater.buildUserAgent(appId: "com.example.Тест", pluginVersion: "1.2.3🔥", versionOs: "18 😊")
+        XCTAssertEqual(ua, "CapacitorUpdater/1.2.3 (com.example.) ios/18")
+    }
+
+    func testBuildUserAgentFallsBackToUnknown() {
+        let ua = CapgoUpdater.buildUserAgent(appId: "", pluginVersion: "", versionOs: "")
+        XCTAssertEqual(ua, "CapacitorUpdater/unknown (unknown) ios/unknown")
+    }
+
     func testBundleInfoEncodeDecode() throws {
         let originalBundle = BundleInfo(
             id: "test-id",

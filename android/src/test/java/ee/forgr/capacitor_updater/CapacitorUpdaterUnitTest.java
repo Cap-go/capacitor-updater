@@ -573,4 +573,16 @@ public class CapacitorUpdaterUnitTest {
             verify(splashScreenPlugin, never()).invoke(eq("hide"), any(PluginCall.class));
         }
     }
+
+    @Test
+    public void buildUserAgentStripsNonIsoCharacters() {
+        String ua = DownloadService.buildUserAgent("com.example.тест", "1.2.3🔥", "Android 14 😊");
+        assertEquals("CapacitorUpdater/1.2.3 (com.example.) android/Android 14", ua);
+    }
+
+    @Test
+    public void buildUserAgentFallsBackToUnknown() {
+        String ua = DownloadService.buildUserAgent("", "", "");
+        assertEquals("CapacitorUpdater/unknown (unknown) android/unknown", ua);
+    }
 }
