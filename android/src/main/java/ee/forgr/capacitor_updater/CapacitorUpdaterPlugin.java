@@ -1647,18 +1647,17 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
 
         if (Boolean.TRUE.equals(toLastSuccessful) && !fallback.isBuiltin()) {
-            if (!this.implementation.canSet(fallback)) {
-                logger.error("Fallback bundle is not installable");
+            if (this.implementation.canSet(fallback)) {
+                this.implementation.reset();
+                logger.info("Resetting to: " + fallback);
+                if (this.implementation.set(fallback) && this._reload()) {
+                    this.notifyBundleSet(fallback);
+                    return true;
+                }
+                this.implementation.restoreResetState(previousState);
                 return false;
             }
-            this.implementation.reset();
-            logger.info("Resetting to: " + fallback);
-            if (this.implementation.set(fallback) && this._reload()) {
-                this.notifyBundleSet(fallback);
-                return true;
-            }
-            this.implementation.restoreResetState(previousState);
-            return false;
+            logger.warn("Fallback bundle is not installable, resetting to native instead");
         }
 
         this.implementation.reset();

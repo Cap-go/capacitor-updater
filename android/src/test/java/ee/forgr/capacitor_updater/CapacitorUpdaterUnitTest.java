@@ -534,7 +534,7 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
-    public void testResetToLastSuccessfulWithoutInstallableFallbackDoesNotResetState() throws Exception {
+    public void testResetToLastSuccessfulWithoutInstallableFallbackFallsBackToBuiltin() throws Exception {
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);
             MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
@@ -551,10 +551,10 @@ public class CapacitorUpdaterUnitTest {
 
             final boolean result = invokePrivateResetMethod(plugin, true, false);
 
-            assertFalse(result);
+            assertTrue(result);
             assertEquals(1, updater.canSetCalls);
             assertEquals(0, updater.setCalls);
-            assertFalse(updater.resetCalled);
+            assertTrue(updater.resetCalled);
             assertEquals(0, updater.restoreResetStateCalls);
         }
     }

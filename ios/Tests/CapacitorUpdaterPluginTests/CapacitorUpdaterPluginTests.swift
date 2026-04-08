@@ -112,6 +112,10 @@ private final class ResetTestableCapacitorUpdaterPlugin: TestableCapacitorUpdate
     override func canPerformResetTransition() -> Bool {
         true
     }
+
+    override func _reload() -> Bool {
+        true
+    }
 }
 
 class CapacitorUpdaterTests: XCTestCase {
@@ -380,7 +384,7 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(resetImplementation.restoredState?.nextBundleId, resetImplementation.capturedState.nextBundleId)
     }
 
-    func testResetToLastSuccessfulWithoutInstallableFallbackDoesNotResetState() {
+    func testResetToLastSuccessfulWithoutInstallableFallbackFallsBackToBuiltin() {
         let resetPlugin = ResetTestableCapacitorUpdaterPlugin()
         let resetImplementation = ResetTrackingCapgoUpdater()
         resetImplementation.fallbackBundleValue = BundleInfo(
@@ -394,10 +398,10 @@ class CapacitorUpdaterTests: XCTestCase {
 
         resetPlugin.implementation = resetImplementation
 
-        XCTAssertFalse(resetPlugin._reset(toLastSuccessful: true, usePendingBundle: false))
+        XCTAssertTrue(resetPlugin._reset(toLastSuccessful: true, usePendingBundle: false))
         XCTAssertEqual(resetImplementation.canSetCalls, 1)
         XCTAssertEqual(resetImplementation.setCalls, 0)
-        XCTAssertFalse(resetImplementation.resetCalled)
+        XCTAssertTrue(resetImplementation.resetCalled)
         XCTAssertEqual(resetImplementation.restoreResetStateCalls, 0)
     }
 

@@ -982,18 +982,17 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         // If developer wants to reset to the last successful bundle, and that bundle is not
         // the built-in bundle, set it as the bundle to use and reload.
         if toLastSuccessful && !fallback.isBuiltin() {
-            guard self.implementation.canSet(bundle: fallback) else {
-                logger.error("Fallback bundle is not installable")
+            if self.implementation.canSet(bundle: fallback) {
+                self.implementation.reset()
+                logger.info("Resetting to: \(fallback.toString())")
+                if self.implementation.set(bundle: fallback) && self._reload() {
+                    self.notifyBundleSet(fallback)
+                    return true
+                }
+                self.implementation.restoreResetState(previousState)
                 return false
             }
-            self.implementation.reset()
-            logger.info("Resetting to: \(fallback.toString())")
-            if self.implementation.set(bundle: fallback) && self._reload() {
-                self.notifyBundleSet(fallback)
-                return true
-            }
-            self.implementation.restoreResetState(previousState)
-            return false
+            logger.warn("Fallback bundle is not installable, resetting to builtin instead")
         }
 
         self.implementation.reset()
