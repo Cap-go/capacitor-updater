@@ -40,23 +40,26 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           model: claude-sonnet-4-5-20250929 
-      - uses: js-devtools/npm-publish@v4
+      - name: Setup Node.js for npm publish
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          registry-url: 'https://registry.npmjs.org'
+      - name: Publish lts-v6 to npm
         if: ${{ startsWith(github.ref, 'refs/tags/6.') }}
-        with:
-          token: ${{ secrets.NPM_TOKEN }}
-          tag: lts-v6
-          provenance: true
-      - uses: js-devtools/npm-publish@v4
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --tag lts-v6 --provenance --access public
+      - name: Publish to npm
         if: ${{ !contains(github.ref, '-alpha.') && !startsWith(github.ref, 'refs/tags/6.') }}
-        with:
-          token: ${{ secrets.NPM_TOKEN }}
-          provenance: true
-      - uses: js-devtools/npm-publish@v4
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance --access public
+      - name: Publish to npm with next tag
         if: ${{ contains(github.ref, '-alpha.') && !startsWith(github.ref, 'refs/tags/6.')  }}
-        with:
-          token: ${{ secrets.NPM_TOKEN }}
-          tag: next
-          provenance: true
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --tag next --provenance --access public
       - name: Create GitHub release
         id: create_release
         uses: softprops/action-gh-release@v2
