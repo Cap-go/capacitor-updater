@@ -128,8 +128,15 @@ jobs:
             echo "Unable to locate Maestro binary after extracting ${MAESTRO_VERSION}" >&2
             exit 1
           fi
-          mkdir -p "$HOME/.maestro/bin"
-          install -m 0755 "$install_path" "$HOME/.maestro/bin/maestro"
+          install_root="$(dirname "$(dirname "$install_path")")"
+          rm -rf "$HOME/.maestro"
+          mkdir -p "$HOME/.maestro"
+          cp -R "$install_root"/. "$HOME/.maestro/"
+          if [[ ! -f "$HOME/.maestro/bin/maestro" || ! -d "$HOME/.maestro/lib" ]]; then
+            echo "Incomplete Maestro installation for ${MAESTRO_VERSION}" >&2
+            exit 1
+          fi
+          chmod 0755 "$HOME/.maestro/bin/maestro"
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
       - name: Run live update Maestro flow
         uses: reactivecircus/android-emulator-runner@e89f39f1abbbd05b1113a29cf4db69e7540cae5a # v2
