@@ -162,8 +162,20 @@ clear_logcat() {
   return 0
 }
 
+filter_logcat() {
+  local pattern="$1"
+
+  if command -v rg >/dev/null 2>&1; then
+    adb logcat -d 2>/dev/null | rg "$pattern" || true
+    return 0
+  fi
+
+  adb logcat -d 2>/dev/null | grep -E "$pattern" || true
+  return 0
+}
+
 latest_harness_state() {
-  adb logcat -d 2>/dev/null | rg '\[HarnessState\]' | tail -n 1 || true
+  filter_logcat '\[HarnessState\]' | tail -n 1 || true
   return 0
 }
 
@@ -194,7 +206,7 @@ wait_for_harness_state() {
 
   echo "Harness state did not reach expected state: $description" >&2
   echo "Last harness state: ${line:-<none>}" >&2
-  adb logcat -d 2>/dev/null | rg '\[HarnessState\]|Capacitor/Console|CapgoUpdater|AndroidRuntime' | tail -n 200 >&2 || true
+  filter_logcat '\[HarnessState\]|Capacitor/Console|CapgoUpdater|AndroidRuntime' | tail -n 200 >&2 || true
   return 1
 }
 
