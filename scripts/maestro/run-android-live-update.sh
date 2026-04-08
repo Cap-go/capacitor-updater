@@ -103,11 +103,51 @@ prepare_device_for_maestro() {
   return 0
 }
 
+wait_for_package_manager() {
+  for _ in $(seq 1 30); do
+    if adb shell cmd package list packages >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+
+  echo "Android package manager did not become ready in time for APK installation." >&2
+  return 1
+}
+
 install_apk() {
+  local attempt=1
+  local max_attempts=3
+  local output_file
+
   prepare_device_for_maestro
-  adb uninstall "$APP_ID" >/dev/null 2>&1 || true
-  adb install -r "$APK_PATH" >/dev/null
-  return 0
+  wait_for_package_manager
+
+  while [[ $attempt -le $max_attempts ]]; do
+    output_file="$(mktemp)"
+    adb uninstall "$APP_ID" >/dev/null 2>&1 || true
+
+    if adb install -r "$APK_PATH" >"$output_file" 2>&1; then
+      rm -f "$output_file"
+      return 0
+    fi
+
+    if grep -Eq 'Broken pipe|Can.t find service: package|no devices/emulators found|device offline' "$output_file" && [[ $attempt -lt $max_attempts ]]; then
+      rm -f "$output_file"
+      attempt=$((attempt + 1))
+      restart_adb_server
+      prepare_device_for_maestro
+      wait_for_package_manager
+      sleep 5
+      continue
+    fi
+
+    cat "$output_file" >&2
+    rm -f "$output_file"
+    return 1
+  done
+
+  return 1
 }
 
 control_server() {
