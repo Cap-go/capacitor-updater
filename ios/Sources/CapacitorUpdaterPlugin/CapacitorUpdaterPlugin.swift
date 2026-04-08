@@ -999,6 +999,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func _reset(toLastSuccessful: Bool, usePendingBundle: Bool) -> Bool {
+        self.performReset(toLastSuccessful: toLastSuccessful, usePendingBundle: usePendingBundle, isInternal: false)
+    }
+
+    func performReset(toLastSuccessful: Bool, usePendingBundle: Bool, isInternal: Bool) -> Bool {
         guard self.canPerformResetTransition() else { return false }
 
         let fallback: BundleInfo = self.implementation.getFallbackBundle()
@@ -1024,7 +1028,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 didApplyPendingBundle = self.implementation.set(bundle: pending)
             }
             if didApplyPendingBundle && self._reload() {
-                self.implementation.finalizeResetTransition(previousBundleName: previousBundleName, isInternal: false)
+                self.implementation.finalizeResetTransition(previousBundleName: previousBundleName, isInternal: isInternal)
                 self.notifyBundleSet(pending)
                 _ = self.implementation.setNextBundle(next: Optional<String>.none)
                 return true
@@ -1041,25 +1045,31 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 self.implementation.prepareResetStateForTransition()
                 logger.info("Resetting to: \(fallback.toString())")
                 if self.implementation.set(bundle: fallback) && self._reload() {
-                    self.implementation.finalizeResetTransition(previousBundleName: previousBundleName, isInternal: false)
+                    self.implementation.finalizeResetTransition(previousBundleName: previousBundleName, isInternal: isInternal)
                     self.notifyBundleSet(fallback)
                     return true
                 }
-                self.implementation.restoreResetState(previousState)
-                self.restoreLiveBundleStateAfterFailedReload()
-                return false
+                if !isInternal {
+                    self.implementation.restoreResetState(previousState)
+                    self.restoreLiveBundleStateAfterFailedReload()
+                    return false
+                }
+                logger.warn("Fallback reload failed during internal reset, resetting to builtin instead")
+            } else {
+                logger.warn("Fallback bundle is not installable, resetting to builtin instead")
             }
-            logger.warn("Fallback bundle is not installable, resetting to builtin instead")
         }
 
         self.implementation.prepareResetStateForTransition()
         logger.info("Resetting to builtin version")
         if self._reload() {
-            self.implementation.finalizeResetTransition(previousBundleName: previousBundleName, isInternal: false)
+            self.implementation.finalizeResetTransition(previousBundleName: previousBundleName, isInternal: isInternal)
             return true
         }
-        self.implementation.restoreResetState(previousState)
-        self.restoreLiveBundleStateAfterFailedReload()
+        if !isInternal {
+            self.implementation.restoreResetState(previousState)
+            self.restoreLiveBundleStateAfterFailedReload()
+        }
         return false
     }
 
@@ -1190,7 +1200,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             self.persistLastFailedBundle(current)
             self.implementation.sendStats(action: "update_fail", versionName: current.getVersionName())
             self.implementation.setError(bundle: current)
-            _ = self._reset(toLastSuccessful: true, usePendingBundle: false)
+            _ = self.performReset(toLastSuccessful: true, usePendingBundle: false, isInternal: true)
             if self.autoDeleteFailed && !current.isBuiltin() {
                 logger.info("Deleting failing bundle: \(current.toString())")
                 let res = self.implementation.delete(id: current.getId(), removeInfo: false)

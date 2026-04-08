@@ -45,7 +45,7 @@ private final class FreshDownloadCapgoUpdater: CapgoUpdater {
 }
 
 private final class ResetTrackingCapgoUpdater: CapgoUpdater {
-    let currentBundleValue = BundleInfo(
+    var currentBundleValue = BundleInfo(
         id: "current-id",
         version: "1.0.0",
         status: .SUCCESS,
@@ -62,7 +62,9 @@ private final class ResetTrackingCapgoUpdater: CapgoUpdater {
     var nextBundleValue: BundleInfo?
     var resetCalled = false
     var prepareResetStateForTransitionCalled = false
+    var prepareResetStateForTransitionCalls = 0
     var finalizeResetTransitionCalled = false
+    var finalizeResetTransitionCalls = 0
     var finalizeResetTransitionPreviousBundleName: String?
     var finalizeResetTransitionIsInternal = true
     var canSetResult = true
@@ -134,10 +136,12 @@ private final class ResetTrackingCapgoUpdater: CapgoUpdater {
 
     override func prepareResetStateForTransition() {
         prepareResetStateForTransitionCalled = true
+        prepareResetStateForTransitionCalls += 1
     }
 
     override func finalizeResetTransition(previousBundleName: String, isInternal: Bool) {
         finalizeResetTransitionCalled = true
+        finalizeResetTransitionCalls += 1
         finalizeResetTransitionPreviousBundleName = previousBundleName
         finalizeResetTransitionIsInternal = isInternal
     }
@@ -168,6 +172,26 @@ private final class ReloadFailureCapacitorUpdaterPlugin: TestableCapacitorUpdate
 
     override func _reload() -> Bool {
         false
+    }
+
+    override func restoreLiveBundleStateAfterFailedReload() {
+        restoreLiveBundleStateAfterFailedReloadCalls += 1
+    }
+}
+
+private final class SequenceReloadCapacitorUpdaterPlugin: TestableCapacitorUpdaterPlugin {
+    var reloadResults = [false]
+    private var reloadCallCount = 0
+    var restoreLiveBundleStateAfterFailedReloadCalls = 0
+
+    override func canPerformResetTransition() -> Bool {
+        true
+    }
+
+    override func _reload() -> Bool {
+        let resultIndex = min(reloadCallCount, reloadResults.count - 1)
+        reloadCallCount += 1
+        return reloadResults[resultIndex]
     }
 
     override func restoreLiveBundleStateAfterFailedReload() {
@@ -544,6 +568,67 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(resetImplementation.restoredState?.currentBundlePath, resetImplementation.capturedState.currentBundlePath)
         XCTAssertEqual(resetImplementation.restoredState?.fallbackBundleId, resetImplementation.capturedState.fallbackBundleId)
         XCTAssertEqual(resetImplementation.restoredState?.nextBundleId, resetImplementation.capturedState.nextBundleId)
+    }
+
+    func testResetToLastSuccessfulRestoresStateWhenFallbackReloadFails() {
+        let resetPlugin = SequenceReloadCapacitorUpdaterPlugin()
+        let resetImplementation = ResetTrackingCapgoUpdater()
+        resetPlugin.reloadResults = [false]
+        resetImplementation.fallbackBundleValue = BundleInfo(
+            id: "fallback-id",
+            version: "1.5.0",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "fallback"
+        )
+
+        resetPlugin.implementation = resetImplementation
+
+        XCTAssertFalse(resetPlugin._reset(toLastSuccessful: true, usePendingBundle: false))
+        XCTAssertTrue(resetImplementation.prepareResetStateForTransitionCalled)
+        XCTAssertEqual(resetImplementation.prepareResetStateForTransitionCalls, 1)
+        XCTAssertFalse(resetImplementation.finalizeResetTransitionCalled)
+        XCTAssertEqual(resetImplementation.canSetCalls, 1)
+        XCTAssertEqual(resetImplementation.setCalls, 1)
+        XCTAssertEqual(resetImplementation.restoreResetStateCalls, 1)
+        XCTAssertEqual(resetPlugin.restoreLiveBundleStateAfterFailedReloadCalls, 1)
+        XCTAssertEqual(resetImplementation.restoredState?.currentBundlePath, resetImplementation.capturedState.currentBundlePath)
+        XCTAssertEqual(resetImplementation.restoredState?.fallbackBundleId, resetImplementation.capturedState.fallbackBundleId)
+        XCTAssertEqual(resetImplementation.restoredState?.nextBundleId, resetImplementation.capturedState.nextBundleId)
+    }
+
+    func testInternalResetToLastSuccessfulFallsBackToBuiltinWhenFallbackReloadFails() {
+        let resetPlugin = SequenceReloadCapacitorUpdaterPlugin()
+        let resetImplementation = ResetTrackingCapgoUpdater()
+        resetPlugin.reloadResults = [false, true]
+        resetImplementation.currentBundleValue = BundleInfo(
+            id: "current-id",
+            version: "2.0.0",
+            status: .ERROR,
+            downloaded: Date(),
+            checksum: "abc123"
+        )
+        resetImplementation.fallbackBundleValue = BundleInfo(
+            id: "fallback-id",
+            version: "1.5.0",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "fallback"
+        )
+
+        resetPlugin.implementation = resetImplementation
+
+        XCTAssertTrue(resetPlugin.performReset(toLastSuccessful: true, usePendingBundle: false, isInternal: true))
+        XCTAssertTrue(resetImplementation.prepareResetStateForTransitionCalled)
+        XCTAssertEqual(resetImplementation.prepareResetStateForTransitionCalls, 2)
+        XCTAssertTrue(resetImplementation.finalizeResetTransitionCalled)
+        XCTAssertEqual(resetImplementation.finalizeResetTransitionCalls, 1)
+        XCTAssertEqual(resetImplementation.finalizeResetTransitionPreviousBundleName, "2.0.0")
+        XCTAssertTrue(resetImplementation.finalizeResetTransitionIsInternal)
+        XCTAssertEqual(resetImplementation.canSetCalls, 1)
+        XCTAssertEqual(resetImplementation.setCalls, 1)
+        XCTAssertEqual(resetImplementation.restoreResetStateCalls, 0)
+        XCTAssertEqual(resetPlugin.restoreLiveBundleStateAfterFailedReloadCalls, 0)
     }
 
     func testReloadRestoresStateWhenPendingApplyReloadFails() throws {
