@@ -13,6 +13,7 @@ SERVER_PID=""
 FLOW_RETRY_PATTERN="TcpForwarder.waitFor|allocateForwarder|TimeoutException|Android driver did not start up in time|UNAVAILABLE: io exception|Connection refused"
 MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
 MAESTRO_DRIVER_STARTUP_TIMEOUT_VALUE="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-300000}"
+MAESTRO_FLOW_TIMEOUT_SECONDS="${MAESTRO_FLOW_TIMEOUT_SECONDS:-360}"
 SCENARIO_SEQUENCE=(deferred always at-install on-launch)
 
 cleanup() {
@@ -89,6 +90,7 @@ run_scenario() {
   local third_release=""
 
   IFS=$'\t' read -r builtin_label first_release second_release third_release <<<"$(load_scenario_config "$scenario_id")"
+  echo "=== Running Maestro scenario: $scenario_id ==="
 
   case "$scenario_id" in
     deferred)
@@ -218,6 +220,8 @@ run_scenario() {
       return 1
       ;;
   esac
+
+  echo "=== Completed Maestro scenario: $scenario_id ==="
 
   return 0
 }
@@ -374,9 +378,11 @@ wait_for_log_patterns() {
   shift
   local dump=""
 
+  echo "Waiting for log state: $description"
   for _ in $(seq 1 180); do
     dump="$(dump_relevant_logcat)"
     if [[ -n "$dump" ]] && logcat_contains_all "$dump" "$@"; then
+      echo "Verified log state: $description"
       return 0
     fi
 
@@ -394,6 +400,7 @@ run_flow() {
   local -a maestro_args=()
   local attempt=1
   local max_attempts=3
+  local command_status=0
   local output_file
   local env_arg
 
@@ -404,16 +411,34 @@ run_flow() {
   done
 
   while [[ $attempt -le $max_attempts ]]; do
+    echo "Running Maestro flow: $flow_file (attempt $attempt/$max_attempts)"
     prepare_device_for_maestro
     reset_adb_forwarding
     clear_logcat
     output_file="$(mktemp)"
 
-    if MAESTRO_CLI_NO_ANALYTICS="$MAESTRO_CLI_NO_ANALYTICS" \
+    set +e
+    MAESTRO_CLI_NO_ANALYTICS="$MAESTRO_CLI_NO_ANALYTICS" \
       MAESTRO_DRIVER_STARTUP_TIMEOUT="$MAESTRO_DRIVER_STARTUP_TIMEOUT_VALUE" \
-      maestro test "${maestro_args[@]}" "$ROOT_DIR/.maestro/$flow_file" 2>&1 | tee "$output_file"; then
+      timeout --foreground "${MAESTRO_FLOW_TIMEOUT_SECONDS}s" \
+      maestro test "${maestro_args[@]}" "$ROOT_DIR/.maestro/$flow_file" 2>&1 | tee "$output_file"
+    command_status=${PIPESTATUS[0]}
+    set -e
+
+    if [[ $command_status -eq 0 ]]; then
       rm -f "$output_file"
       return 0
+    fi
+
+    if [[ $command_status -eq 124 ]] && [[ $attempt -lt $max_attempts ]]; then
+      echo "Retrying $flow_file after Maestro flow timeout (${MAESTRO_FLOW_TIMEOUT_SECONDS}s)..." >&2
+      rm -f "$output_file"
+      attempt=$((attempt + 1))
+      restart_adb_server
+      prepare_device_for_maestro
+      reset_adb_forwarding
+      sleep 5
+      continue
     fi
 
     if grep -Eq "$FLOW_RETRY_PATTERN" "$output_file" && [[ $attempt -lt $max_attempts ]]; then
