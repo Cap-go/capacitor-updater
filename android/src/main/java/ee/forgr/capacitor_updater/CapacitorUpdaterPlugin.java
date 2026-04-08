@@ -1624,13 +1624,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private boolean _reset(final Boolean toLastSuccessful, final Boolean usePendingBundle) {
         final BundleInfo fallback = this.implementation.getFallbackBundle();
         final BundleInfo pending = this.implementation.getNextBundle();
-        this.implementation.reset();
 
         if (Boolean.TRUE.equals(usePendingBundle)) {
             if (pending == null || pending.isErrorStatus()) {
                 logger.error("No pending bundle available to reset to");
                 return false;
             }
+            this.implementation.reset();
             logger.info("Resetting to pending bundle: " + pending.getVersionName());
             if (this.implementation.set(pending) && this._reload()) {
                 this.notifyBundleSet(pending);
@@ -1639,6 +1639,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
             return false;
         }
+
+        this.implementation.reset();
 
         if (Boolean.TRUE.equals(toLastSuccessful) && !fallback.isBuiltin()) {
             logger.info("Resetting to: " + fallback);

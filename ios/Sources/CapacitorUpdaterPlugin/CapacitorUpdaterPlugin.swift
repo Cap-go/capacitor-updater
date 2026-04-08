@@ -958,13 +958,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if (bridge.viewController as? CAPBridgeViewController) != nil {
             let fallback: BundleInfo = self.implementation.getFallbackBundle()
             let pending: BundleInfo? = self.implementation.getNextBundle()
-            self.implementation.reset()
 
             if usePendingBundle {
                 guard let pending = pending, !pending.isErrorStatus() else {
                     logger.error("No pending bundle available to reset to")
                     return false
                 }
+                self.implementation.reset()
                 logger.info("Resetting to pending bundle: \(pending.toString())")
                 if self.implementation.set(bundle: pending) && self._reload() {
                     self.notifyBundleSet(pending)
@@ -973,6 +973,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
                 return false
             }
+
+            self.implementation.reset()
 
             // If developer wants to reset to the last successful bundle, and that bundle is not
             // the built-in bundle, set it as the bundle to use and reload.

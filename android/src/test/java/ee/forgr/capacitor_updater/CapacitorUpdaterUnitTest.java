@@ -100,6 +100,52 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
+    private static final class ResetTrackingCapgoUpdater extends CapgoUpdater {
+
+        private final BundleInfo currentBundle = new BundleInfo("current-id", "1.0.0", BundleStatus.SUCCESS, new Date(), "abc123");
+        private BundleInfo fallbackBundle = new BundleInfo(
+            BundleInfo.ID_BUILTIN,
+            "builtin",
+            BundleStatus.SUCCESS,
+            BundleInfo.DOWNLOADED_BUILTIN,
+            "builtin"
+        );
+        private BundleInfo nextBundle;
+        private boolean resetCalled = false;
+
+        ResetTrackingCapgoUpdater() {
+            super(null);
+        }
+
+        @Override
+        public BundleInfo getCurrentBundle() {
+            return this.currentBundle;
+        }
+
+        @Override
+        public BundleInfo getFallbackBundle() {
+            return this.fallbackBundle;
+        }
+
+        @Override
+        public BundleInfo getNextBundle() {
+            return this.nextBundle;
+        }
+
+        @Override
+        public void reset(final boolean internal) {
+            this.resetCalled = true;
+        }
+    }
+
+    private static final class ReloadBypassCapacitorUpdaterPlugin extends TestableCapacitorUpdaterPlugin {
+
+        @Override
+        protected boolean _reload() {
+            return true;
+        }
+    }
+
     private static void invokeBackgroundDownload(final CapacitorUpdaterPlugin plugin) throws Exception {
         final Method backgroundDownload = CapacitorUpdaterPlugin.class.getDeclaredMethod("backgroundDownload");
         backgroundDownload.setAccessible(true);
@@ -110,6 +156,16 @@ public class CapacitorUpdaterUnitTest {
         final Method method = CapacitorUpdaterPlugin.class.getDeclaredMethod(methodName);
         method.setAccessible(true);
         method.invoke(plugin);
+    }
+
+    private static boolean invokePrivateResetMethod(
+        final CapacitorUpdaterPlugin plugin,
+        final Boolean toLastSuccessful,
+        final Boolean usePendingBundle
+    ) throws Exception {
+        final Method method = CapacitorUpdaterPlugin.class.getDeclaredMethod("_reset", Boolean.class, Boolean.class);
+        method.setAccessible(true);
+        return (boolean) method.invoke(plugin, toLastSuccessful, usePendingBundle);
     }
 
     private static void invokePrivateSplashMethod(
@@ -371,6 +427,20 @@ public class CapacitorUpdaterUnitTest {
         assertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate("always", true));
         assertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate("atInstall", true));
         assertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate("false", true));
+    }
+
+    @Test
+    public void testResetToPendingWithoutPendingBundleDoesNotResetState() throws Exception {
+        final ReloadBypassCapacitorUpdaterPlugin plugin = new ReloadBypassCapacitorUpdaterPlugin();
+        final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+
+        plugin.implementation = updater;
+        plugin.setLoggerForTesting(mock(Logger.class));
+
+        final boolean result = invokePrivateResetMethod(plugin, false, true);
+
+        assertFalse(result);
+        assertFalse(updater.resetCalled);
     }
 
     @Test
