@@ -1462,8 +1462,19 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
             if (next != null && !next.isErrorStatus() && !next.getId().equals(current.getId())) {
                 final CapgoUpdater.ResetState previousState = this.implementation.captureResetState();
+                final String previousBundleName = this.implementation.getCurrentBundle().getVersionName();
                 logger.info("Applying pending bundle before reload: " + next.getVersionName());
-                if (this.implementation.set(next) && this._reload()) {
+                final boolean didApplyPendingBundle;
+                if (next.isBuiltin()) {
+                    this.implementation.prepareResetStateForTransition();
+                    didApplyPendingBundle = true;
+                } else {
+                    didApplyPendingBundle = this.implementation.set(next);
+                }
+                if (didApplyPendingBundle && this._reload()) {
+                    if (next.isBuiltin()) {
+                        this.implementation.finalizeResetTransition(previousBundleName, false);
+                    }
                     this.notifyBundleSet(next);
                     this.implementation.setNextBundle(null);
                     call.resolve();

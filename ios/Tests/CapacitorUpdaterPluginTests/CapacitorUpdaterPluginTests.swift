@@ -530,6 +530,44 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(reloadImplementation.restoredState?.nextBundleId, reloadImplementation.capturedState.nextBundleId)
     }
 
+    func testReloadRestoresStateWhenBuiltinPendingReloadFails() throws {
+        let reloadPlugin = ReloadFailureCapacitorUpdaterPlugin()
+        let reloadImplementation = ResetTrackingCapgoUpdater()
+        var rejected = false
+
+        reloadImplementation.nextBundleValue = BundleInfo(
+            id: BundleInfo.ID_BUILTIN,
+            version: "builtin",
+            status: .SUCCESS,
+            downloaded: BundleInfo.DOWNLOADED_BUILTIN,
+            checksum: "builtin"
+        )
+        reloadPlugin.implementation = reloadImplementation
+
+        let call = try XCTUnwrap(CAPPluginCall(
+            callbackId: "reload-builtin-test",
+            options: [:],
+            success: { _, _ in
+                XCTFail("reload should reject when the builtin pending reload fails")
+            },
+            error: { _ in
+                rejected = true
+            }
+        ))
+
+        reloadPlugin.reload(call)
+
+        XCTAssertTrue(rejected)
+        XCTAssertEqual(reloadImplementation.setCalls, 0)
+        XCTAssertTrue(reloadImplementation.prepareResetStateForTransitionCalled)
+        XCTAssertFalse(reloadImplementation.finalizeResetTransitionCalled)
+        XCTAssertEqual(reloadImplementation.restoreResetStateCalls, 1)
+        XCTAssertEqual(reloadPlugin.restoreLiveBundleStateAfterFailedReloadCalls, 1)
+        XCTAssertEqual(reloadImplementation.restoredState?.currentBundlePath, reloadImplementation.capturedState.currentBundlePath)
+        XCTAssertEqual(reloadImplementation.restoredState?.fallbackBundleId, reloadImplementation.capturedState.fallbackBundleId)
+        XCTAssertEqual(reloadImplementation.restoredState?.nextBundleId, reloadImplementation.capturedState.nextBundleId)
+    }
+
     func testOnLaunchCompletionConsumesWindowAfterFirstCycle() {
         let current = BundleInfo(
             id: "test-id",

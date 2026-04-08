@@ -681,6 +681,40 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testReloadRestoresStateWhenBuiltinPendingReloadFails() {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ReloadFailureCapacitorUpdaterPlugin plugin = new ReloadFailureCapacitorUpdaterPlugin();
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            final PluginCall call = mock(PluginCall.class);
+            updater.nextBundle = new BundleInfo(
+                BundleInfo.ID_BUILTIN,
+                "builtin",
+                BundleStatus.SUCCESS,
+                BundleInfo.DOWNLOADED_BUILTIN,
+                "builtin"
+            );
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            plugin.reload(call);
+
+            assertEquals(0, updater.setCalls);
+            assertTrue(updater.prepareResetStateForTransitionCalled);
+            assertFalse(updater.finalizeResetTransitionCalled);
+            assertEquals(1, updater.restoreResetStateCalls);
+            assertSame(updater.capturedState, updater.restoredState);
+            assertEquals(1, plugin.restoreLiveBundleStateAfterFailedReloadCalls);
+            verify(call).reject("Reload failed after applying pending bundle: builtin");
+        }
+    }
+
+    @Test
     public void testOnLaunchCompletionConsumesWindowWithoutClearingInFlightDirectUpdate() {
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);

@@ -748,8 +748,19 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         if let next = next, !next.isErrorStatus(), next.getId() != current.getId() {
             let previousState = self.implementation.captureResetState()
+            let previousBundleName = self.implementation.getCurrentBundle().getVersionName()
             logger.info("Applying pending bundle before reload: \(next.toString())")
-            if self.implementation.set(bundle: next) && self._reload() {
+            let didApplyPendingBundle: Bool
+            if next.isBuiltin() {
+                self.implementation.prepareResetStateForTransition()
+                didApplyPendingBundle = true
+            } else {
+                didApplyPendingBundle = self.implementation.set(bundle: next)
+            }
+            if didApplyPendingBundle && self._reload() {
+                if next.isBuiltin() {
+                    self.implementation.finalizeResetTransition(previousBundleName: previousBundleName, isInternal: false)
+                }
                 self.notifyBundleSet(next)
                 _ = self.implementation.setNextBundle(next: Optional<String>.none)
                 call.resolve()
