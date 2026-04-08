@@ -61,6 +61,10 @@ private final class ResetTrackingCapgoUpdater: CapgoUpdater {
     )
     var nextBundleValue: BundleInfo?
     var resetCalled = false
+    var prepareResetStateForTransitionCalled = false
+    var finalizeResetTransitionCalled = false
+    var finalizeResetTransitionPreviousBundleName: String?
+    var finalizeResetTransitionIsInternal = true
     var canSetResult = true
     var setResult = true
     var canSetCalls = 0
@@ -106,6 +110,16 @@ private final class ResetTrackingCapgoUpdater: CapgoUpdater {
 
     override func reset(isInternal: Bool) {
         resetCalled = true
+    }
+
+    override func prepareResetStateForTransition() {
+        prepareResetStateForTransitionCalled = true
+    }
+
+    override func finalizeResetTransition(previousBundleName: String, isInternal: Bool) {
+        finalizeResetTransitionCalled = true
+        finalizeResetTransitionPreviousBundleName = previousBundleName
+        finalizeResetTransitionIsInternal = isInternal
     }
 }
 
@@ -392,7 +406,9 @@ class CapacitorUpdaterTests: XCTestCase {
         resetPlugin.implementation = resetImplementation
 
         XCTAssertFalse(resetPlugin._reset(toLastSuccessful: false, usePendingBundle: true))
-        XCTAssertTrue(resetImplementation.resetCalled)
+        XCTAssertFalse(resetImplementation.resetCalled)
+        XCTAssertTrue(resetImplementation.prepareResetStateForTransitionCalled)
+        XCTAssertFalse(resetImplementation.finalizeResetTransitionCalled)
         XCTAssertEqual(resetImplementation.canSetCalls, 1)
         XCTAssertEqual(resetImplementation.setCalls, 1)
         XCTAssertEqual(resetImplementation.restoreResetStateCalls, 1)
@@ -415,7 +431,9 @@ class CapacitorUpdaterTests: XCTestCase {
         resetPlugin.implementation = resetImplementation
 
         XCTAssertFalse(resetPlugin._reset(toLastSuccessful: false, usePendingBundle: true))
-        XCTAssertTrue(resetImplementation.resetCalled)
+        XCTAssertFalse(resetImplementation.resetCalled)
+        XCTAssertTrue(resetImplementation.prepareResetStateForTransitionCalled)
+        XCTAssertFalse(resetImplementation.finalizeResetTransitionCalled)
         XCTAssertEqual(resetImplementation.canSetCalls, 1)
         XCTAssertEqual(resetImplementation.setCalls, 1)
         XCTAssertEqual(resetImplementation.restoreResetStateCalls, 1)
@@ -442,7 +460,11 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertTrue(resetPlugin._reset(toLastSuccessful: true, usePendingBundle: false))
         XCTAssertEqual(resetImplementation.canSetCalls, 1)
         XCTAssertEqual(resetImplementation.setCalls, 0)
-        XCTAssertTrue(resetImplementation.resetCalled)
+        XCTAssertFalse(resetImplementation.resetCalled)
+        XCTAssertTrue(resetImplementation.prepareResetStateForTransitionCalled)
+        XCTAssertTrue(resetImplementation.finalizeResetTransitionCalled)
+        XCTAssertEqual(resetImplementation.finalizeResetTransitionPreviousBundleName, "1.0.0")
+        XCTAssertFalse(resetImplementation.finalizeResetTransitionIsInternal)
         XCTAssertEqual(resetImplementation.restoreResetStateCalls, 0)
     }
 
@@ -461,7 +483,9 @@ class CapacitorUpdaterTests: XCTestCase {
         resetPlugin.implementation = resetImplementation
 
         XCTAssertFalse(resetPlugin._reset(toLastSuccessful: true, usePendingBundle: false))
-        XCTAssertTrue(resetImplementation.resetCalled)
+        XCTAssertFalse(resetImplementation.resetCalled)
+        XCTAssertTrue(resetImplementation.prepareResetStateForTransitionCalled)
+        XCTAssertFalse(resetImplementation.finalizeResetTransitionCalled)
         XCTAssertEqual(resetImplementation.canSetCalls, 1)
         XCTAssertEqual(resetImplementation.setCalls, 1)
         XCTAssertEqual(resetImplementation.restoreResetStateCalls, 1)

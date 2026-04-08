@@ -1489,6 +1489,18 @@ import UIKit
         UserDefaults.standard.synchronize()
     }
 
+    func prepareResetStateForTransition() {
+        self.setCurrentBundle(bundle: "")
+        self.setFallbackBundle(fallback: Optional<BundleInfo>.none)
+        _ = self.setNextBundle(next: Optional<String>.none)
+    }
+
+    func finalizeResetTransition(previousBundleName: String, isInternal: Bool) {
+        if !isInternal {
+            self.sendStats(action: "reset", versionName: self.getCurrentBundle().getVersionName(), oldVersionName: previousBundleName)
+        }
+    }
+
     func canSet(bundle: BundleInfo) -> Bool {
         bundle.isBuiltin() || self.bundleExists(id: bundle.getId())
     }
@@ -1555,12 +1567,8 @@ import UIKit
     public func reset(isInternal: Bool) {
         logger.info("reset: \(isInternal)")
         let currentBundleName = self.getCurrentBundle().getVersionName()
-        self.setCurrentBundle(bundle: "")
-        self.setFallbackBundle(fallback: Optional<BundleInfo>.none)
-        _ = self.setNextBundle(next: Optional<String>.none)
-        if !isInternal {
-            self.sendStats(action: "reset", versionName: self.getCurrentBundle().getVersionName(), oldVersionName: currentBundleName)
-        }
+        self.prepareResetStateForTransition()
+        self.finalizeResetTransition(previousBundleName: currentBundleName, isInternal: isInternal)
     }
 
     public func setSuccess(bundle: BundleInfo, autoDeletePrevious: Bool) {

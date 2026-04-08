@@ -991,6 +991,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         let fallback: BundleInfo = self.implementation.getFallbackBundle()
         let pending: BundleInfo? = self.implementation.getNextBundle()
         let previousState = self.implementation.captureResetState()
+        let previousBundleName = self.implementation.getCurrentBundle().getVersionName()
 
         if usePendingBundle {
             guard let pending = pending, !pending.isErrorStatus() else {
@@ -1001,9 +1002,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 logger.error("Pending bundle is not installable")
                 return false
             }
-            self.implementation.reset()
+            self.implementation.prepareResetStateForTransition()
             logger.info("Resetting to pending bundle: \(pending.toString())")
             if self.implementation.set(bundle: pending) && self._reload() {
+                self.implementation.finalizeResetTransition(previousBundleName: previousBundleName, isInternal: false)
                 self.notifyBundleSet(pending)
                 _ = self.implementation.setNextBundle(next: Optional<String>.none)
                 return true
@@ -1017,9 +1019,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         // the built-in bundle, set it as the bundle to use and reload.
         if toLastSuccessful && !fallback.isBuiltin() {
             if self.implementation.canSet(bundle: fallback) {
-                self.implementation.reset()
+                self.implementation.prepareResetStateForTransition()
                 logger.info("Resetting to: \(fallback.toString())")
                 if self.implementation.set(bundle: fallback) && self._reload() {
+                    self.implementation.finalizeResetTransition(previousBundleName: previousBundleName, isInternal: false)
                     self.notifyBundleSet(fallback)
                     return true
                 }
@@ -1030,9 +1033,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             logger.warn("Fallback bundle is not installable, resetting to builtin instead")
         }
 
-        self.implementation.reset()
+        self.implementation.prepareResetStateForTransition()
         logger.info("Resetting to builtin version")
         if self._reload() {
+            self.implementation.finalizeResetTransition(previousBundleName: previousBundleName, isInternal: false)
             return true
         }
         self.implementation.restoreResetState(previousState)
