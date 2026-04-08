@@ -112,6 +112,10 @@ public class CapacitorUpdaterUnitTest {
         );
         private BundleInfo nextBundle;
         private boolean resetCalled = false;
+        private boolean prepareResetStateForTransitionCalled = false;
+        private boolean finalizeResetTransitionCalled = false;
+        private String finalizeResetTransitionPreviousBundleName;
+        private boolean finalizeResetTransitionInternal = true;
         private boolean canSetResult = true;
         private boolean setResult = true;
         private int canSetCalls = 0;
@@ -165,6 +169,18 @@ public class CapacitorUpdaterUnitTest {
         @Override
         public void reset(final boolean internal) {
             this.resetCalled = true;
+        }
+
+        @Override
+        void prepareResetStateForTransition() {
+            this.prepareResetStateForTransitionCalled = true;
+        }
+
+        @Override
+        void finalizeResetTransition(final String previousBundleName, final boolean internal) {
+            this.finalizeResetTransitionCalled = true;
+            this.finalizeResetTransitionPreviousBundleName = previousBundleName;
+            this.finalizeResetTransitionInternal = internal;
         }
     }
 
@@ -540,7 +556,9 @@ public class CapacitorUpdaterUnitTest {
             final boolean result = invokePrivateResetMethod(plugin, false, true);
 
             assertFalse(result);
-            assertTrue(updater.resetCalled);
+            assertFalse(updater.resetCalled);
+            assertTrue(updater.prepareResetStateForTransitionCalled);
+            assertFalse(updater.finalizeResetTransitionCalled);
             assertEquals(1, updater.canSetCalls);
             assertEquals(1, updater.setCalls);
             assertEquals(1, updater.restoreResetStateCalls);
@@ -566,7 +584,9 @@ public class CapacitorUpdaterUnitTest {
             final boolean result = invokePrivateResetMethod(plugin, false, true);
 
             assertFalse(result);
-            assertTrue(updater.resetCalled);
+            assertFalse(updater.resetCalled);
+            assertTrue(updater.prepareResetStateForTransitionCalled);
+            assertFalse(updater.finalizeResetTransitionCalled);
             assertEquals(1, updater.canSetCalls);
             assertEquals(1, updater.setCalls);
             assertEquals(1, updater.restoreResetStateCalls);
@@ -596,7 +616,11 @@ public class CapacitorUpdaterUnitTest {
             assertTrue(result);
             assertEquals(1, updater.canSetCalls);
             assertEquals(0, updater.setCalls);
-            assertTrue(updater.resetCalled);
+            assertFalse(updater.resetCalled);
+            assertTrue(updater.prepareResetStateForTransitionCalled);
+            assertTrue(updater.finalizeResetTransitionCalled);
+            assertEquals("1.0.0", updater.finalizeResetTransitionPreviousBundleName);
+            assertFalse(updater.finalizeResetTransitionInternal);
             assertEquals(0, updater.restoreResetStateCalls);
         }
     }
@@ -620,7 +644,9 @@ public class CapacitorUpdaterUnitTest {
             final boolean result = invokePrivateResetMethod(plugin, true, false);
 
             assertFalse(result);
-            assertTrue(updater.resetCalled);
+            assertFalse(updater.resetCalled);
+            assertTrue(updater.prepareResetStateForTransitionCalled);
+            assertFalse(updater.finalizeResetTransitionCalled);
             assertEquals(1, updater.canSetCalls);
             assertEquals(1, updater.setCalls);
             assertEquals(1, updater.restoreResetStateCalls);

@@ -1030,6 +1030,21 @@ public class CapgoUpdater {
         this.editor.commit();
     }
 
+    void prepareResetStateForTransition() {
+        this.setCurrentBundle(new File("public"));
+        this.setFallbackBundle(null);
+        this.setNextBundle(null);
+    }
+
+    void finalizeResetTransition(final String previousBundleName, final boolean internal) {
+        if (this.activity != null) {
+            DownloadWorkerManager.cancelAllDownloads(this.activity);
+        }
+        if (!internal) {
+            this.sendStats("reset", this.getCurrentBundle().getVersionName(), previousBundleName);
+        }
+    }
+
     boolean canSet(final BundleInfo bundle) {
         return bundle != null && (bundle.isBuiltin() || this.bundleExists(bundle.getId()));
     }
@@ -1101,17 +1116,9 @@ public class CapgoUpdater {
 
     public void reset(final boolean internal) {
         logger.debug("reset: " + internal);
-        var currentBundleName = this.getCurrentBundle().getVersionName();
-        this.setCurrentBundle(new File("public"));
-        this.setFallbackBundle(null);
-        this.setNextBundle(null);
-        // Cancel any ongoing downloads
-        if (this.activity != null) {
-            DownloadWorkerManager.cancelAllDownloads(this.activity);
-        }
-        if (!internal) {
-            this.sendStats("reset", this.getCurrentBundle().getVersionName(), currentBundleName);
-        }
+        final String currentBundleName = this.getCurrentBundle().getVersionName();
+        this.prepareResetStateForTransition();
+        this.finalizeResetTransition(currentBundleName, internal);
     }
 
     private JSONObject createInfoObject() throws JSONException {

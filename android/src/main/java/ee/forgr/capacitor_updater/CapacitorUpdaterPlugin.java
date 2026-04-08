@@ -1641,6 +1641,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final BundleInfo fallback = this.implementation.getFallbackBundle();
         final BundleInfo pending = this.implementation.getNextBundle();
         final CapgoUpdater.ResetState previousState = this.implementation.captureResetState();
+        final String previousBundleName = this.implementation.getCurrentBundle().getVersionName();
 
         if (Boolean.TRUE.equals(usePendingBundle)) {
             if (pending == null || pending.isErrorStatus()) {
@@ -1651,9 +1652,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 logger.error("Pending bundle is not installable");
                 return false;
             }
-            this.implementation.reset();
+            this.implementation.prepareResetStateForTransition();
             logger.info("Resetting to pending bundle: " + pending.getVersionName());
             if (this.implementation.set(pending) && this._reload()) {
+                this.implementation.finalizeResetTransition(previousBundleName, false);
                 this.notifyBundleSet(pending);
                 this.implementation.setNextBundle(null);
                 return true;
@@ -1665,9 +1667,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
         if (Boolean.TRUE.equals(toLastSuccessful) && !fallback.isBuiltin()) {
             if (this.implementation.canSet(fallback)) {
-                this.implementation.reset();
+                this.implementation.prepareResetStateForTransition();
                 logger.info("Resetting to: " + fallback);
                 if (this.implementation.set(fallback) && this._reload()) {
+                    this.implementation.finalizeResetTransition(previousBundleName, false);
                     this.notifyBundleSet(fallback);
                     return true;
                 }
@@ -1678,9 +1681,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
             logger.warn("Fallback bundle is not installable, resetting to native instead");
         }
 
-        this.implementation.reset();
+        this.implementation.prepareResetStateForTransition();
         logger.info("Resetting to native.");
         if (this._reload()) {
+            this.implementation.finalizeResetTransition(previousBundleName, false);
             return true;
         }
         this.implementation.restoreResetState(previousState);
