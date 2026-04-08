@@ -271,14 +271,21 @@ prepare_device_for_maestro() {
 }
 
 wait_for_package_manager() {
+  local settings_output=""
+
   for _ in $(seq 1 30); do
-    if adb shell cmd package list packages >/dev/null 2>&1; then
+    settings_output="$(adb shell settings get global adb_enabled 2>&1 | tr -d '\r' | awk 'NF { last = $0 } END { print last }')"
+
+    if adb shell cmd package list packages >/dev/null 2>&1 && [[ "$settings_output" =~ ^(0|1|null)$ ]]; then
       return 0
     fi
     sleep 2
   done
 
-  echo "Android package manager did not become ready in time for APK installation." >&2
+  echo "Android package manager and settings provider did not become ready in time for APK installation." >&2
+  if [[ -n "$settings_output" ]]; then
+    echo "Last settings readiness output: $settings_output" >&2
+  fi
   return 1
 }
 
@@ -299,7 +306,7 @@ install_apk() {
       return 0
     fi
 
-    if grep -Eq 'Broken pipe|Can.t find service: package|no devices/emulators found|device offline' "$output_file" && [[ $attempt -lt $max_attempts ]]; then
+    if grep -Eq "Broken pipe|Can.t find service: package|Can.t find service: settings|Cannot access system provider: 'settings' before system providers are installed!|no devices/emulators found|device offline" "$output_file" && [[ $attempt -lt $max_attempts ]]; then
       rm -f "$output_file"
       attempt=$((attempt + 1))
       restart_adb_server

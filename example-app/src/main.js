@@ -200,7 +200,6 @@ function attachListeners() {
     ['downloadComplete', (payload) => {
       state.lastDownload = getBundleVersion(payload?.bundle ?? payload);
       addEvent('Download complete', payload);
-      renderState();
     }],
     ['downloadFailed', (payload) => addEvent('Download failed', payload)],
     ['download', (payload) => addEvent('Download progress', payload)],
