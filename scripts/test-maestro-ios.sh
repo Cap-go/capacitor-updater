@@ -9,6 +9,8 @@ SKIP_BUILD="${CAPGO_MAESTRO_SKIP_BUILD:-0}"
 SIMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_IOS_BOOT_TIMEOUT_SECONDS:-180}"
 MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-300}"
 APP_ID="app.capgo.updater"
+APP_LAUNCH_RETRIES="${CAPGO_MAESTRO_IOS_APP_LAUNCH_RETRIES:-3}"
+APP_LAUNCH_WAIT_SECONDS="${CAPGO_MAESTRO_IOS_APP_LAUNCH_WAIT_SECONDS:-5}"
 
 default_simulator_id() {
   xcrun simctl list devices available | sed -nE 's/^[[:space:]]*iPhone.*\(([0-9A-F-]{36})\) \([^)]*\)[[:space:]]*$/\1/p' | head -n 1
@@ -63,6 +65,10 @@ except subprocess.TimeoutExpired:
 sys.exit(completed.returncode)
 PY
   return $?
+}
+
+launch_example_app() {
+  xcrun simctl launch "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1
 }
 if ! command -v maestro >/dev/null 2>&1; then
   echo "maestro is required to run iOS Maestro tests." >&2
@@ -147,6 +153,22 @@ fi
 
 xcrun simctl uninstall "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
 xcrun simctl install "$SIMULATOR_ID" "$APP_PATH"
+
+launch_attempt=1
+while (( launch_attempt <= APP_LAUNCH_RETRIES )); do
+  if launch_example_app; then
+    sleep "$APP_LAUNCH_WAIT_SECONDS"
+    break
+  fi
+
+  if (( launch_attempt == APP_LAUNCH_RETRIES )); then
+    echo "Unable to launch the iOS example app after ${APP_LAUNCH_RETRIES} attempts." >&2
+    exit 1
+  fi
+
+  sleep 2
+  ((launch_attempt += 1))
+done
 
 rm -rf "$RESULTS_DIR"
 mkdir -p "$RESULTS_DIR"

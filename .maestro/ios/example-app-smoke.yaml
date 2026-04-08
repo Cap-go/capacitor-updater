@@ -1,6 +1,8 @@
 appId: app.capgo.updater
 ---
-- launchApp
+- extendedWaitUntil:
+    visible: "@capgo/capacitor-updater"
+    timeout: 90000
 - assertVisible: "@capgo/capacitor-updater"
 - scrollUntilVisible:
     element:
