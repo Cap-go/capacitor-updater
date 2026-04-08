@@ -11,6 +11,8 @@ APK_PATH="$ROOT_DIR/example-app/android/app/build/outputs/apk/debug/app-debug.ap
 SCENARIO_SELECTION="${1:-all}"
 SERVER_PID=""
 FLOW_RETRY_PATTERN="TcpForwarder.waitFor|allocateForwarder|TimeoutException|Android driver did not start up in time|UNAVAILABLE: io exception|Connection refused"
+MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
+MAESTRO_DRIVER_STARTUP_TIMEOUT_VALUE="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-300000}"
 SCENARIO_SEQUENCE=(deferred always at-install on-launch)
 
 cleanup() {
@@ -407,7 +409,9 @@ run_flow() {
     clear_logcat
     output_file="$(mktemp)"
 
-    if maestro test "${maestro_args[@]}" "$ROOT_DIR/.maestro/$flow_file" 2>&1 | tee "$output_file"; then
+    if MAESTRO_CLI_NO_ANALYTICS="$MAESTRO_CLI_NO_ANALYTICS" \
+      MAESTRO_DRIVER_STARTUP_TIMEOUT="$MAESTRO_DRIVER_STARTUP_TIMEOUT_VALUE" \
+      maestro test "${maestro_args[@]}" "$ROOT_DIR/.maestro/$flow_file" 2>&1 | tee "$output_file"; then
       rm -f "$output_file"
       return 0
     fi
