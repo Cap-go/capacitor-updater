@@ -1,0 +1,13 @@
+appId: app.capgo.updater
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Build label: ${BUILTIN_LABEL}"
+    timeout: 30000
+- assertVisible: "Scenario: ${SCENARIO_ID}"
+- assertVisible: "Direct update mode: ${DIRECT_UPDATE_MODE}"
+- extendedWaitUntil:
+    visible: "Next bundle version: ${FIRST_RELEASE}"
+    timeout: 30000
+- assertVisible: "Last completed download: ${FIRST_RELEASE}"

@@ -1,0 +1,15 @@
+appId: app.capgo.updater
+---
+- extendedWaitUntil:
+    visible: "Build label: ${SOURCE_LABEL}"
+    timeout: 15000
+- pressKey: Home
+- launchApp
+- extendedWaitUntil:
+    visible: "Build label: ${FINAL_LABEL}"
+    timeout: 30000
+- assertVisible: "Current bundle version: ${FINAL_RELEASE}"
+- extendedWaitUntil:
+    visible: "Notify app ready: ok.*"
+    timeout: 15000
+- assertVisible: "Next bundle version: none"
