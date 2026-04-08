@@ -431,16 +431,23 @@ public class CapacitorUpdaterUnitTest {
 
     @Test
     public void testResetToPendingWithoutPendingBundleDoesNotResetState() throws Exception {
-        final ReloadBypassCapacitorUpdaterPlugin plugin = new ReloadBypassCapacitorUpdaterPlugin();
-        final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
 
-        plugin.implementation = updater;
-        plugin.setLoggerForTesting(mock(Logger.class));
+            final ReloadBypassCapacitorUpdaterPlugin plugin = new ReloadBypassCapacitorUpdaterPlugin();
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
 
-        final boolean result = invokePrivateResetMethod(plugin, false, true);
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
 
-        assertFalse(result);
-        assertFalse(updater.resetCalled);
+            final boolean result = invokePrivateResetMethod(plugin, false, true);
+
+            assertFalse(result);
+            assertFalse(updater.resetCalled);
+        }
     }
 
     @Test
