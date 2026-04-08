@@ -549,6 +549,33 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testResetToPendingRestoresLiveStateWhenReloadFails() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ReloadFailureCapacitorUpdaterPlugin plugin = new ReloadFailureCapacitorUpdaterPlugin();
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            updater.nextBundle = new BundleInfo("pending-id", "2.0.0", BundleStatus.PENDING, new Date(), "pending");
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            final boolean result = invokePrivateResetMethod(plugin, false, true);
+
+            assertFalse(result);
+            assertTrue(updater.resetCalled);
+            assertEquals(1, updater.canSetCalls);
+            assertEquals(1, updater.setCalls);
+            assertEquals(1, updater.restoreResetStateCalls);
+            assertSame(updater.capturedState, updater.restoredState);
+            assertEquals(1, plugin.restoreLiveBundleStateAfterFailedReloadCalls);
+        }
+    }
+
+    @Test
     public void testResetToLastSuccessfulWithoutInstallableFallbackFallsBackToBuiltin() throws Exception {
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);

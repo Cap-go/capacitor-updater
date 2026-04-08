@@ -1009,6 +1009,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 return true
             }
             self.implementation.restoreResetState(previousState)
+            self.restoreLiveBundleStateAfterFailedReload()
             return false
         }
 
@@ -1023,6 +1024,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     return true
                 }
                 self.implementation.restoreResetState(previousState)
+                self.restoreLiveBundleStateAfterFailedReload()
                 return false
             }
             logger.warn("Fallback bundle is not installable, resetting to builtin instead")
@@ -1034,6 +1036,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             return true
         }
         self.implementation.restoreResetState(previousState)
+        self.restoreLiveBundleStateAfterFailedReload()
         return false
     }
 

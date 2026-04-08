@@ -1659,6 +1659,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 return true;
             }
             this.implementation.restoreResetState(previousState);
+            this.restoreLiveBundleStateAfterFailedReload();
             return false;
         }
 
@@ -1671,6 +1672,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     return true;
                 }
                 this.implementation.restoreResetState(previousState);
+                this.restoreLiveBundleStateAfterFailedReload();
                 return false;
             }
             logger.warn("Fallback bundle is not installable, resetting to native instead");
@@ -1682,6 +1684,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return true;
         }
         this.implementation.restoreResetState(previousState);
+        this.restoreLiveBundleStateAfterFailedReload();
         return false;
     }
 

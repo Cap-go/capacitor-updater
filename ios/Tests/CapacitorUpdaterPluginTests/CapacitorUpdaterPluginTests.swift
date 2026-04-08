@@ -122,6 +122,10 @@ private final class ResetTestableCapacitorUpdaterPlugin: TestableCapacitorUpdate
 private final class ReloadFailureCapacitorUpdaterPlugin: TestableCapacitorUpdaterPlugin {
     var restoreLiveBundleStateAfterFailedReloadCalls = 0
 
+    override func canPerformResetTransition() -> Bool {
+        true
+    }
+
     override func _reload() -> Bool {
         false
     }
@@ -392,6 +396,30 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(resetImplementation.canSetCalls, 1)
         XCTAssertEqual(resetImplementation.setCalls, 1)
         XCTAssertEqual(resetImplementation.restoreResetStateCalls, 1)
+        XCTAssertEqual(resetImplementation.restoredState?.currentBundlePath, resetImplementation.capturedState.currentBundlePath)
+        XCTAssertEqual(resetImplementation.restoredState?.fallbackBundleId, resetImplementation.capturedState.fallbackBundleId)
+        XCTAssertEqual(resetImplementation.restoredState?.nextBundleId, resetImplementation.capturedState.nextBundleId)
+    }
+
+    func testResetToPendingRestoresLiveStateWhenReloadFails() {
+        let resetPlugin = ReloadFailureCapacitorUpdaterPlugin()
+        let resetImplementation = ResetTrackingCapgoUpdater()
+        resetImplementation.nextBundleValue = BundleInfo(
+            id: "pending-id",
+            version: "2.0.0",
+            status: .PENDING,
+            downloaded: Date(),
+            checksum: "pending"
+        )
+
+        resetPlugin.implementation = resetImplementation
+
+        XCTAssertFalse(resetPlugin._reset(toLastSuccessful: false, usePendingBundle: true))
+        XCTAssertTrue(resetImplementation.resetCalled)
+        XCTAssertEqual(resetImplementation.canSetCalls, 1)
+        XCTAssertEqual(resetImplementation.setCalls, 1)
+        XCTAssertEqual(resetImplementation.restoreResetStateCalls, 1)
+        XCTAssertEqual(resetPlugin.restoreLiveBundleStateAfterFailedReloadCalls, 1)
         XCTAssertEqual(resetImplementation.restoredState?.currentBundlePath, resetImplementation.capturedState.currentBundlePath)
         XCTAssertEqual(resetImplementation.restoredState?.fallbackBundleId, resetImplementation.capturedState.fallbackBundleId)
         XCTAssertEqual(resetImplementation.restoredState?.nextBundleId, resetImplementation.capturedState.nextBundleId)
