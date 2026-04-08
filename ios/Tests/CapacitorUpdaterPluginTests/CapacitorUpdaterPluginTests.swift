@@ -1,5 +1,6 @@
 import XCTest
 @testable import CapacitorUpdaterPlugin
+import Capacitor
 import Version
 
 private class TestableCapacitorUpdaterPlugin: CapacitorUpdaterPlugin {
@@ -115,6 +116,12 @@ private final class ResetTestableCapacitorUpdaterPlugin: TestableCapacitorUpdate
 
     override func _reload() -> Bool {
         true
+    }
+}
+
+private final class ReloadFailureCapacitorUpdaterPlugin: TestableCapacitorUpdaterPlugin {
+    override func _reload() -> Bool {
+        false
     }
 }
 
@@ -427,6 +434,41 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(resetImplementation.restoredState?.currentBundlePath, resetImplementation.capturedState.currentBundlePath)
         XCTAssertEqual(resetImplementation.restoredState?.fallbackBundleId, resetImplementation.capturedState.fallbackBundleId)
         XCTAssertEqual(resetImplementation.restoredState?.nextBundleId, resetImplementation.capturedState.nextBundleId)
+    }
+
+    func testReloadRestoresStateWhenPendingApplyReloadFails() throws {
+        let reloadPlugin = ReloadFailureCapacitorUpdaterPlugin()
+        let reloadImplementation = ResetTrackingCapgoUpdater()
+        var rejected = false
+
+        reloadImplementation.nextBundleValue = BundleInfo(
+            id: "pending-id",
+            version: "2.0.0",
+            status: .PENDING,
+            downloaded: Date(),
+            checksum: "pending"
+        )
+        reloadPlugin.implementation = reloadImplementation
+
+        let call = try XCTUnwrap(CAPPluginCall(
+            callbackId: "reload-test",
+            options: [:],
+            success: { _, _ in
+                XCTFail("reload should reject when the pending apply reload fails")
+            },
+            error: { _ in
+                rejected = true
+            }
+        ))
+
+        reloadPlugin.reload(call)
+
+        XCTAssertTrue(rejected)
+        XCTAssertEqual(reloadImplementation.setCalls, 1)
+        XCTAssertEqual(reloadImplementation.restoreResetStateCalls, 1)
+        XCTAssertEqual(reloadImplementation.restoredState?.currentBundlePath, reloadImplementation.capturedState.currentBundlePath)
+        XCTAssertEqual(reloadImplementation.restoredState?.fallbackBundleId, reloadImplementation.capturedState.fallbackBundleId)
+        XCTAssertEqual(reloadImplementation.restoredState?.nextBundleId, reloadImplementation.capturedState.nextBundleId)
     }
 
     func testOnLaunchCompletionConsumesWindowAfterFirstCycle() {

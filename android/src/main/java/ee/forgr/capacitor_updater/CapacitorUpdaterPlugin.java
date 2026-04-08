@@ -1448,6 +1448,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             final BundleInfo next = this.implementation.getNextBundle();
 
             if (next != null && !next.isErrorStatus() && !next.getId().equals(current.getId())) {
+                final CapgoUpdater.ResetState previousState = this.implementation.captureResetState();
                 logger.info("Applying pending bundle before reload: " + next.getVersionName());
                 if (this.implementation.set(next) && this._reload()) {
                     this.notifyBundleSet(next);
@@ -1455,6 +1456,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     call.resolve();
                     return;
                 }
+                this.implementation.restoreResetState(previousState);
                 logger.error("Reload failed after applying pending bundle: " + next.getVersionName());
                 call.reject("Reload failed after applying pending bundle: " + next.getVersionName());
                 return;

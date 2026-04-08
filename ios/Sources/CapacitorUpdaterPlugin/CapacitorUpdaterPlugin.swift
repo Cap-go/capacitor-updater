@@ -717,6 +717,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         let next: BundleInfo? = self.implementation.getNextBundle()
 
         if let next = next, !next.isErrorStatus(), next.getId() != current.getId() {
+            let previousState = self.implementation.captureResetState()
             logger.info("Applying pending bundle before reload: \(next.toString())")
             if self.implementation.set(bundle: next) && self._reload() {
                 self.notifyBundleSet(next)
@@ -724,6 +725,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 call.resolve()
                 return
             }
+            self.implementation.restoreResetState(previousState)
             logger.error("Reload failed after applying pending bundle: \(next.toString())")
             call.reject("Reload failed after applying pending bundle")
             return

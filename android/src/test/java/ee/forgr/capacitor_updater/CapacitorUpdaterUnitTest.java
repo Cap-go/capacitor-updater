@@ -176,6 +176,14 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
+    private static final class ReloadFailureCapacitorUpdaterPlugin extends TestableCapacitorUpdaterPlugin {
+
+        @Override
+        protected boolean _reload() {
+            return false;
+        }
+    }
+
     private static void invokeBackgroundDownload(final CapacitorUpdaterPlugin plugin) throws Exception {
         final Method backgroundDownload = CapacitorUpdaterPlugin.class.getDeclaredMethod("backgroundDownload");
         backgroundDownload.setAccessible(true);
@@ -583,6 +591,31 @@ public class CapacitorUpdaterUnitTest {
             assertEquals(1, updater.setCalls);
             assertEquals(1, updater.restoreResetStateCalls);
             assertSame(updater.capturedState, updater.restoredState);
+        }
+    }
+
+    @Test
+    public void testReloadRestoresStateWhenPendingApplyReloadFails() {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ReloadFailureCapacitorUpdaterPlugin plugin = new ReloadFailureCapacitorUpdaterPlugin();
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            final PluginCall call = mock(PluginCall.class);
+            updater.nextBundle = new BundleInfo("pending-id", "2.0.0", BundleStatus.PENDING, new Date(), "pending");
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            plugin.reload(call);
+
+            assertEquals(1, updater.setCalls);
+            assertEquals(1, updater.restoreResetStateCalls);
+            assertSame(updater.capturedState, updater.restoredState);
+            verify(call).reject("Reload failed after applying pending bundle: 2.0.0");
         }
     }
 
