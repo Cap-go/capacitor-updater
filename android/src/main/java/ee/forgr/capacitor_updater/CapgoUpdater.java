@@ -991,6 +991,64 @@ public class CapgoUpdater {
         return (bundle.isDirectory() && bundle.exists() && new File(bundle.getPath(), "/index.html").exists() && !bundleInfo.isDeleted());
     }
 
+    static final class ResetState {
+
+        final String currentBundlePath;
+        final String fallbackBundleId;
+        final String nextBundleId;
+
+        ResetState(final String currentBundlePath, final String fallbackBundleId, final String nextBundleId) {
+            this.currentBundlePath = currentBundlePath;
+            this.fallbackBundleId = fallbackBundleId;
+            this.nextBundleId = nextBundleId;
+        }
+    }
+
+    ResetState captureResetState() {
+        return new ResetState(
+            this.getCurrentBundlePath(),
+            this.prefs.getString(FALLBACK_VERSION, BundleInfo.ID_BUILTIN),
+            this.prefs.getString(NEXT_VERSION, null)
+        );
+    }
+
+    void restoreResetState(final ResetState state) {
+        final String currentBundlePath = state.currentBundlePath == null || state.currentBundlePath.trim().isEmpty()
+            ? "public"
+            : state.currentBundlePath;
+        final String fallbackBundleId = state.fallbackBundleId == null || state.fallbackBundleId.isEmpty()
+            ? BundleInfo.ID_BUILTIN
+            : state.fallbackBundleId;
+
+        this.editor.putString(this.CAP_SERVER_PATH, currentBundlePath);
+        this.editor.putString(FALLBACK_VERSION, fallbackBundleId);
+        if (state.nextBundleId == null || state.nextBundleId.isEmpty()) {
+            this.editor.remove(NEXT_VERSION);
+        } else {
+            this.editor.putString(NEXT_VERSION, state.nextBundleId);
+        }
+        this.editor.commit();
+    }
+
+    void prepareResetStateForTransition() {
+        this.setCurrentBundle(new File("public"));
+        this.setFallbackBundle(null);
+        this.setNextBundle(null);
+    }
+
+    void finalizeResetTransition(final String previousBundleName, final boolean internal) {
+        if (this.activity != null) {
+            DownloadWorkerManager.cancelAllDownloads(this.activity);
+        }
+        if (!internal) {
+            this.sendStats("reset", this.getCurrentBundle().getVersionName(), previousBundleName);
+        }
+    }
+
+    boolean canSet(final BundleInfo bundle) {
+        return bundle != null && (bundle.isBuiltin() || this.bundleExists(bundle.getId()));
+    }
+
     public Boolean set(final BundleInfo bundle) {
         return this.set(bundle.getId());
     }
@@ -1013,6 +1071,21 @@ public class CapgoUpdater {
         this.setBundleStatus(id, BundleStatus.ERROR);
         this.sendStats("set_fail", newBundle.getVersionName());
         return false;
+    }
+
+    boolean stagePendingReload(final BundleInfo bundle) {
+        if (bundle == null || bundle.isBuiltin() || !this.bundleExists(bundle.getId())) {
+            return false;
+        }
+        this.setCurrentBundle(this.getBundleDirectory(bundle.getId()));
+        return true;
+    }
+
+    void finalizePendingReload(final BundleInfo bundle, final String previousBundleName) {
+        if (bundle == null || bundle.isBuiltin()) {
+            return;
+        }
+        this.sendStats("set", bundle.getVersionName(), previousBundleName);
     }
 
     public void autoReset() {
@@ -1058,17 +1131,9 @@ public class CapgoUpdater {
 
     public void reset(final boolean internal) {
         logger.debug("reset: " + internal);
-        var currentBundleName = this.getCurrentBundle().getVersionName();
-        this.setCurrentBundle(new File("public"));
-        this.setFallbackBundle(null);
-        this.setNextBundle(null);
-        // Cancel any ongoing downloads
-        if (this.activity != null) {
-            DownloadWorkerManager.cancelAllDownloads(this.activity);
-        }
-        if (!internal) {
-            this.sendStats("reset", this.getCurrentBundle().getVersionName(), currentBundleName);
-        }
+        final String currentBundleName = this.getCurrentBundle().getVersionName();
+        this.prepareResetStateForTransition();
+        this.finalizeResetTransition(currentBundleName, internal);
     }
 
     private JSONObject createInfoObject() throws JSONException {

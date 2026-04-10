@@ -110,7 +110,23 @@ public class DownloadService extends Worker {
     }
 
     private static String sanitizeUserAgentValue(String value) {
-        return value == null || value.isEmpty() ? "unknown" : value;
+        if (value == null || value.isEmpty()) {
+            return "unknown";
+        }
+
+        StringBuilder sanitized = new StringBuilder();
+        value
+            .codePoints()
+            .forEach((cp) -> {
+                boolean isVisibleAscii = cp >= 0x20 && cp <= 0x7E;
+                boolean isIso88591 = cp >= 0xA0 && cp <= 0xFF;
+                if (isVisibleAscii || isIso88591) {
+                    sanitized.appendCodePoint(cp);
+                }
+            });
+
+        String result = sanitized.toString().trim();
+        return result.isEmpty() ? "unknown" : result;
     }
 
     // Method to update User-Agent values

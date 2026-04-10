@@ -54,10 +54,31 @@ import UIKit
     private var statsFlushTimer: Timer?
     private static let statsFlushInterval: TimeInterval = 1.0
 
+    private static func sanitizeHeaderValue(_ value: String) -> String {
+        if value.isEmpty {
+            return "unknown"
+        }
+
+        let filteredScalars = value.unicodeScalars.filter { scalar in
+            let cp = scalar.value
+            let isVisibleAscii = (0x20...0x7E).contains(cp)
+            let isIso88591 = (0xA0...0xFF).contains(cp)
+            return isVisibleAscii || isIso88591
+        }
+
+        let sanitized = String(String.UnicodeScalarView(filteredScalars)).trimmingCharacters(in: .whitespacesAndNewlines)
+        return sanitized.isEmpty ? "unknown" : sanitized
+    }
+
+    static func buildUserAgent(appId: String, pluginVersion: String, versionOs: String) -> String {
+        let safePluginVersion = sanitizeHeaderValue(pluginVersion)
+        let safeAppId = sanitizeHeaderValue(appId)
+        let safeVersionOs = sanitizeHeaderValue(versionOs)
+        return "CapacitorUpdater/\(safePluginVersion) (\(safeAppId)) ios/\(safeVersionOs)"
+    }
+
     private var userAgent: String {
-        let safePluginVersion = pluginVersion.isEmpty ? "unknown" : pluginVersion
-        let safeAppId = appId.isEmpty ? "unknown" : appId
-        return "CapacitorUpdater/\(safePluginVersion) (\(safeAppId)) ios/\(versionOs)"
+        CapgoUpdater.buildUserAgent(appId: appId, pluginVersion: pluginVersion, versionOs: versionOs)
     }
 
     private lazy var alamofireSession: Session = {
@@ -1459,6 +1480,52 @@ import UIKit
         return libraryDir.appendingPathComponent(self.bundleDirectory).appendingPathComponent(id)
     }
 
+    struct ResetState {
+        let currentBundlePath: String
+        let fallbackBundleId: String
+        let nextBundleId: String?
+    }
+
+    func captureResetState() -> ResetState {
+        ResetState(
+            currentBundlePath: UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH) ?? self.DEFAULT_FOLDER,
+            fallbackBundleId: UserDefaults.standard.string(forKey: self.FALLBACK_VERSION) ?? BundleInfo.ID_BUILTIN,
+            nextBundleId: UserDefaults.standard.string(forKey: self.NEXT_VERSION)
+        )
+    }
+
+    func restoreResetState(_ state: ResetState) {
+        let currentBundlePath = state.currentBundlePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? self.DEFAULT_FOLDER
+            : state.currentBundlePath
+        let fallbackBundleId = state.fallbackBundleId.isEmpty ? BundleInfo.ID_BUILTIN : state.fallbackBundleId
+
+        self.setCurrentBundle(bundle: currentBundlePath)
+        UserDefaults.standard.set(fallbackBundleId, forKey: self.FALLBACK_VERSION)
+        if let nextBundleId = state.nextBundleId, !nextBundleId.isEmpty {
+            UserDefaults.standard.set(nextBundleId, forKey: self.NEXT_VERSION)
+        } else {
+            UserDefaults.standard.removeObject(forKey: self.NEXT_VERSION)
+        }
+        UserDefaults.standard.synchronize()
+    }
+
+    func prepareResetStateForTransition() {
+        self.setCurrentBundle(bundle: "")
+        self.setFallbackBundle(fallback: Optional<BundleInfo>.none)
+        _ = self.setNextBundle(next: Optional<String>.none)
+    }
+
+    func finalizeResetTransition(previousBundleName: String, isInternal: Bool) {
+        if !isInternal {
+            self.sendStats(action: "reset", versionName: self.getCurrentBundle().getVersionName(), oldVersionName: previousBundleName)
+        }
+    }
+
+    func canSet(bundle: BundleInfo) -> Bool {
+        bundle.isBuiltin() || self.bundleExists(id: bundle.getId())
+    }
+
     public func set(bundle: BundleInfo) -> Bool {
         return self.set(id: bundle.getId())
     }
@@ -1496,6 +1563,21 @@ import UIKit
         return false
     }
 
+    func stagePendingReload(bundle: BundleInfo) -> Bool {
+        guard !bundle.isBuiltin(), bundleExists(id: bundle.getId()) else {
+            return false
+        }
+        self.setCurrentBundle(bundle: self.getBundleDirectory(id: bundle.getId()).path)
+        return true
+    }
+
+    func finalizePendingReload(bundle: BundleInfo, previousBundleName: String) {
+        guard !bundle.isBuiltin() else {
+            return
+        }
+        self.sendStats(action: "set", versionName: bundle.getVersionName(), oldVersionName: previousBundleName)
+    }
+
     public func autoReset() {
         let currentBundle: BundleInfo = self.getCurrentBundle()
         if !currentBundle.isBuiltin() && !self.bundleExists(id: currentBundle.getId()) {
@@ -1521,12 +1603,8 @@ import UIKit
     public func reset(isInternal: Bool) {
         logger.info("reset: \(isInternal)")
         let currentBundleName = self.getCurrentBundle().getVersionName()
-        self.setCurrentBundle(bundle: "")
-        self.setFallbackBundle(fallback: Optional<BundleInfo>.none)
-        _ = self.setNextBundle(next: Optional<String>.none)
-        if !isInternal {
-            self.sendStats(action: "reset", versionName: self.getCurrentBundle().getVersionName(), oldVersionName: currentBundleName)
-        }
+        self.prepareResetStateForTransition()
+        self.finalizeResetTransition(previousBundleName: currentBundleName, isInternal: isInternal)
     }
 
     public func setSuccess(bundle: BundleInfo, autoDeletePrevious: Bool) {

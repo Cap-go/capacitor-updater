@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Capgo Live Update Test Harness</title>
+    <title>@capgo/capacitor-updater Live Update Harness</title>
     <link rel="stylesheet" href="/src/style.css" />
     <script>
       const probe = (globalThis.__capgoProbe = {
@@ -31,8 +31,8 @@
     <main class="container">
       <header class="hero">
         <p class="eyebrow">Capgo OTA validation</p>
-        <h1>Live update test harness</h1>
-        <p class="lead">This screen exposes the active bundle, the queued bundle, and retained updater events for Maestro.</p>
+        <h1>@capgo/capacitor-updater</h1>
+        <p class="lead">This screen combines the live update harness and example-app smoke actions used by Maestro.</p>
       </header>
 
       <section class="card">
@@ -56,13 +56,35 @@
       </section>
 
       <section class="card">
+        <div class="panel-heading">
+          <h2>Smoke Actions</h2>
+          <p>Each button runs one exposed example action while the live-update harness continues tracking bundle state.</p>
+        </div>
+        <button id="run-smoke-sequence" type="button">Run smoke test sequence</button>
+        <div id="smoke-actions" class="actions-grid"></div>
+      </section>
+
+      <section class="card result-panel">
+        <div class="panel-heading">
+          <h2>Latest Result</h2>
+          <div class="status-row">
+            <p id="last-action" class="status-line">Last action: none</p>
+            <p id="action-status" class="status-line">Status: idle</p>
+          </div>
+          <p id="sequence-status" class="status-line">Sequence: idle</p>
+          <p id="result-marker" class="status-line">Result marker: idle</p>
+        </div>
+        <pre id="plugin-output">Ready to run a smoke action.</pre>
+      </section>
+
+      <section class="card">
         <h2>Updater events</h2>
         <ul id="event-log" class="event-log"></ul>
       </section>
 
       <section class="card">
         <h2>Debug snapshot</h2>
-        <pre id="plugin-output">Booting updater test harness…</pre>
+        <pre id="debug-output">Booting updater test harness…</pre>
       </section>
     </main>
     <script type="module" src="/src/main.js"></script>

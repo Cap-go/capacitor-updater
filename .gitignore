@@ -1,6 +1,7 @@
 # node files
 dist
 node_modules
+maestro-results
 
 # iOS files
 Pods

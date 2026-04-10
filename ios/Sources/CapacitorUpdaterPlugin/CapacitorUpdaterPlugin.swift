@@ -72,7 +72,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "completeFlexibleUpdate", returnType: CAPPluginReturnPromise)
     ]
     public var implementation = CapgoUpdater()
-    private let pluginVersion: String = "8.45.2"
+    private let pluginVersion: String = "8.45.5"
     static let updateUrlDefault = "https://plugin.capgo.app/updates"
     static let statsUrlDefault = "https://plugin.capgo.app/stats"
     static let channelUrlDefault = "https://plugin.capgo.app/channel_self"
@@ -436,7 +436,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
             let previous = UserDefaults.standard.string(forKey: "LatestNativeBuildVersion") ?? UserDefaults.standard.string(forKey: "LatestVersionNative") ?? "0"
             if previous != "0" && self.currentBuildVersion != previous {
-                _ = self._reset(toLastSuccessful: false)
+                _ = self._reset(toLastSuccessful: false, usePendingBundle: false)
                 let res = self.implementation.list()
                 for version in res {
                     // Check if thread was cancelled
@@ -655,46 +655,76 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    public func _reload() -> Bool {
-        guard let bridge = self.bridge else { return false }
-        self.semaphoreUp()
+    private func currentReloadDestination() -> URL {
         let id = self.implementation.getCurrentBundleId()
-        let dest: URL
         if BundleInfo.ID_BUILTIN == id {
-            dest = Bundle.main.resourceURL!.appendingPathComponent("public")
+            return Bundle.main.resourceURL!.appendingPathComponent("public")
         } else {
-            dest = self.implementation.getBundleDirectory(id: id)
+            return self.implementation.getBundleDirectory(id: id)
         }
+    }
+
+    private func applyCurrentBundleToBridge(_ bridge: CAPBridgeProtocol) -> Bool {
+        let id = self.implementation.getCurrentBundleId()
+        let dest = self.currentReloadDestination()
         logger.info("Reloading \(id)")
 
-        let performReload: () -> Bool = {
-            guard let vc = bridge.viewController as? CAPBridgeViewController else {
-                self.logger.error("Cannot get viewController")
-                return false
-            }
-            guard let capBridge = vc.bridge else {
-                self.logger.error("Cannot get capBridge")
-                return false
-            }
-            if self.keepUrlPathAfterReload {
-                if let currentURL = vc.webView?.url {
-                    capBridge.setServerBasePath(dest.path)
-                    var urlComponents = URLComponents(url: capBridge.config.serverURL, resolvingAgainstBaseURL: false)!
-                    urlComponents.path = currentURL.path
-                    urlComponents.query = currentURL.query
-                    urlComponents.fragment = currentURL.fragment
-                    if let finalUrl = urlComponents.url {
-                        _ = vc.webView?.load(URLRequest(url: finalUrl))
-                    } else {
-                        self.logger.error("Unable to build final URL when keeping path after reload; falling back to base path")
-                        vc.setServerBasePath(path: dest.path)
-                    }
+        guard let vc = bridge.viewController as? CAPBridgeViewController else {
+            self.logger.error("Cannot get viewController")
+            return false
+        }
+        guard let capBridge = vc.bridge else {
+            self.logger.error("Cannot get capBridge")
+            return false
+        }
+        if self.keepUrlPathAfterReload {
+            if let currentURL = vc.webView?.url {
+                capBridge.setServerBasePath(dest.path)
+                var urlComponents = URLComponents(url: capBridge.config.serverURL, resolvingAgainstBaseURL: false)!
+                urlComponents.path = currentURL.path
+                urlComponents.query = currentURL.query
+                urlComponents.fragment = currentURL.fragment
+                if let finalUrl = urlComponents.url {
+                    _ = vc.webView?.load(URLRequest(url: finalUrl))
                 } else {
-                    self.logger.error("vc.webView?.url is null? Falling back to base path reload.")
+                    self.logger.error("Unable to build final URL when keeping path after reload; falling back to base path")
                     vc.setServerBasePath(path: dest.path)
                 }
             } else {
+                self.logger.error("vc.webView?.url is null? Falling back to base path reload.")
                 vc.setServerBasePath(path: dest.path)
+            }
+        } else {
+            vc.setServerBasePath(path: dest.path)
+        }
+        return true
+    }
+
+    func restoreLiveBundleStateAfterFailedReload() {
+        guard let bridge = self.bridge else {
+            return
+        }
+
+        let restoreLiveState = {
+            _ = self.applyCurrentBundleToBridge(bridge)
+        }
+
+        if Thread.isMainThread {
+            restoreLiveState()
+        } else {
+            DispatchQueue.main.sync {
+                restoreLiveState()
+            }
+        }
+    }
+
+    public func _reload() -> Bool {
+        guard let bridge = self.bridge else { return false }
+        self.semaphoreUp()
+
+        let performReload: () -> Bool = {
+            guard self.applyCurrentBundleToBridge(bridge) else {
+                return false
             }
             self.checkAppReady()
             self.notifyListeners("appReloaded", data: [:])
@@ -713,6 +743,38 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func reload(_ call: CAPPluginCall) {
+        let current: BundleInfo = self.implementation.getCurrentBundle()
+        let next: BundleInfo? = self.implementation.getNextBundle()
+
+        if let next = next, !next.isErrorStatus(), next.getId() != current.getId() {
+            let previousState = self.implementation.captureResetState()
+            let previousBundleName = self.implementation.getCurrentBundle().getVersionName()
+            logger.info("Applying pending bundle before reload: \(next.toString())")
+            let didApplyPendingBundle: Bool
+            if next.isBuiltin() {
+                self.implementation.prepareResetStateForTransition()
+                didApplyPendingBundle = true
+            } else {
+                didApplyPendingBundle = self.implementation.stagePendingReload(bundle: next)
+            }
+            if didApplyPendingBundle && self._reload() {
+                if next.isBuiltin() {
+                    self.implementation.finalizeResetTransition(previousBundleName: previousBundleName, isInternal: false)
+                } else {
+                    self.implementation.finalizePendingReload(bundle: next, previousBundleName: previousBundleName)
+                }
+                self.notifyBundleSet(next)
+                _ = self.implementation.setNextBundle(next: Optional<String>.none)
+                call.resolve()
+                return
+            }
+            self.implementation.restoreResetState(previousState)
+            self.restoreLiveBundleStateAfterFailedReload()
+            logger.error("Reload failed after applying pending bundle: \(next.toString())")
+            call.reject("Reload failed after applying pending bundle")
+            return
+        }
+
         if self._reload() {
             call.resolve()
         } else {
@@ -936,36 +998,90 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         call.resolve()
     }
 
-    @objc func _reset(toLastSuccessful: Bool) -> Bool {
-        guard let bridge = self.bridge else { return false }
+    @objc func _reset(toLastSuccessful: Bool, usePendingBundle: Bool) -> Bool {
+        self.performReset(toLastSuccessful: toLastSuccessful, usePendingBundle: usePendingBundle, isInternal: false)
+    }
 
-        if (bridge.viewController as? CAPBridgeViewController) != nil {
-            let fallback: BundleInfo = self.implementation.getFallbackBundle()
+    func performReset(toLastSuccessful: Bool, usePendingBundle: Bool, isInternal: Bool) -> Bool {
+        guard self.canPerformResetTransition() else { return false }
 
-            // If developer wants to reset to the last successful bundle, and that bundle is not
-            // the built-in bundle, set it as the bundle to use and reload.
-            if toLastSuccessful && !fallback.isBuiltin() {
+        let fallback: BundleInfo = self.implementation.getFallbackBundle()
+        let pending: BundleInfo? = self.implementation.getNextBundle()
+        let previousState = self.implementation.captureResetState()
+        let previousBundleName = self.implementation.getCurrentBundle().getVersionName()
+
+        if usePendingBundle {
+            guard let pending = pending, !pending.isErrorStatus() else {
+                logger.error("No pending bundle available to reset to")
+                return false
+            }
+            guard self.implementation.canSet(bundle: pending) else {
+                logger.error("Pending bundle is not installable")
+                return false
+            }
+            self.implementation.prepareResetStateForTransition()
+            logger.info("Resetting to pending bundle: \(pending.toString())")
+            let didApplyPendingBundle: Bool
+            if pending.isBuiltin() {
+                didApplyPendingBundle = true
+            } else {
+                didApplyPendingBundle = self.implementation.set(bundle: pending)
+            }
+            if didApplyPendingBundle && self._reload() {
+                self.implementation.finalizeResetTransition(previousBundleName: previousBundleName, isInternal: isInternal)
+                self.notifyBundleSet(pending)
+                _ = self.implementation.setNextBundle(next: Optional<String>.none)
+                return true
+            }
+            self.implementation.restoreResetState(previousState)
+            self.restoreLiveBundleStateAfterFailedReload()
+            return false
+        }
+
+        // If developer wants to reset to the last successful bundle, and that bundle is not
+        // the built-in bundle, set it as the bundle to use and reload.
+        if toLastSuccessful && !fallback.isBuiltin() {
+            if self.implementation.canSet(bundle: fallback) {
+                self.implementation.prepareResetStateForTransition()
                 logger.info("Resetting to: \(fallback.toString())")
                 if self.implementation.set(bundle: fallback) && self._reload() {
+                    self.implementation.finalizeResetTransition(previousBundleName: previousBundleName, isInternal: isInternal)
                     self.notifyBundleSet(fallback)
                     return true
                 }
-                return false
+                if !isInternal {
+                    self.implementation.restoreResetState(previousState)
+                    self.restoreLiveBundleStateAfterFailedReload()
+                    return false
+                }
+                logger.warn("Fallback reload failed during internal reset, resetting to builtin instead")
+            } else {
+                logger.warn("Fallback bundle is not installable, resetting to builtin instead")
             }
-
-            logger.info("Resetting to builtin version")
-
-            // Otherwise, reset back to the built-in bundle and reload.
-            self.implementation.reset()
-            return self._reload()
         }
 
+        self.implementation.prepareResetStateForTransition()
+        logger.info("Resetting to builtin version")
+        if self._reload() {
+            self.implementation.finalizeResetTransition(previousBundleName: previousBundleName, isInternal: isInternal)
+            return true
+        }
+        if !isInternal {
+            self.implementation.restoreResetState(previousState)
+            self.restoreLiveBundleStateAfterFailedReload()
+        }
         return false
+    }
+
+    func canPerformResetTransition() -> Bool {
+        guard let bridge = self.bridge else { return false }
+        return (bridge.viewController as? CAPBridgeViewController) != nil
     }
 
     @objc func reset(_ call: CAPPluginCall) {
         let toLastSuccessful = call.getBool("toLastSuccessful") ?? false
-        if self._reset(toLastSuccessful: toLastSuccessful) {
+        let usePendingBundle = call.getBool("usePendingBundle") ?? false
+        if self._reset(toLastSuccessful: toLastSuccessful, usePendingBundle: usePendingBundle) {
             call.resolve()
         } else {
             logger.error("Reset failed")
@@ -1084,7 +1200,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             self.persistLastFailedBundle(current)
             self.implementation.sendStats(action: "update_fail", versionName: current.getVersionName())
             self.implementation.setError(bundle: current)
-            _ = self._reset(toLastSuccessful: true)
+            _ = self.performReset(toLastSuccessful: true, usePendingBundle: false, isInternal: true)
             if self.autoDeleteFailed && !current.isBuiltin() {
                 logger.info("Deleting failing bundle: \(current.toString())")
                 let res = self.implementation.delete(id: current.getId(), removeInfo: false)
@@ -1609,7 +1725,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 let directUpdateAllowed = plannedDirectUpdate && !self.autoSplashscreenTimedOut
                 if directUpdateAllowed {
                     self.logger.info("Direct update to builtin version")
-                    _ = self._reset(toLastSuccessful: false)
+                    _ = self._reset(toLastSuccessful: false, usePendingBundle: false)
                     self.endBackGroundTaskWithNotif(
                         msg: "Updated to builtin version",
                         latestVersionName: res.version,

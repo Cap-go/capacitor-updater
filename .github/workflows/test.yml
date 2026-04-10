@@ -68,6 +68,131 @@ jobs:
       - name: Run iOS Tests
         id: test_ios
         run: bun run test:ios
+  maestro_android_example_app:
+    timeout-minutes: 45
+    runs-on: ubuntu-latest
+    name: Android example app Maestro smoke
+    steps:
+      - name: Check out
+        uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Install root dependencies
+        run: bun i
+      - name: Setup java
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'zulu'
+          java-version: '21'
+      - name: Install Maestro
+        env:
+          MAESTRO_VERSION: cli-2.4.0
+        run: |
+          set -euo pipefail
+          base_url="https://github.com/mobile-dev-inc/Maestro/releases/download/${MAESTRO_VERSION}"
+          tmp_dir="$(mktemp -d)"
+          trap 'rm -rf "$tmp_dir"' EXIT
+          curl -fsSL -o "$tmp_dir/maestro.zip" "${base_url}/maestro.zip"
+          curl -fsSL -o "$tmp_dir/checksums_sha256.txt" "${base_url}/checksums_sha256.txt"
+          (
+            cd "$tmp_dir"
+            grep ' maestro.zip$' checksums_sha256.txt | sha256sum -c -
+          )
+          unzip -q "$tmp_dir/maestro.zip" -d "$tmp_dir/maestro"
+          install_path="$(find "$tmp_dir/maestro" -type f -name maestro | head -n 1)"
+          if [[ -z "$install_path" ]]; then
+            echo "Unable to locate Maestro binary after extracting ${MAESTRO_VERSION}" >&2
+            exit 1
+          fi
+          install_root="$(dirname "$(dirname "$install_path")")"
+          rm -rf "$HOME/.maestro"
+          mkdir -p "$HOME/.maestro"
+          cp -R "$install_root"/. "$HOME/.maestro/"
+          if [[ ! -f "$HOME/.maestro/bin/maestro" || ! -d "$HOME/.maestro/lib" ]]; then
+            echo "Incomplete Maestro installation for ${MAESTRO_VERSION}" >&2
+            exit 1
+          fi
+          chmod 0755 "$HOME/.maestro/bin/maestro"
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+      - name: Build plugin and example app
+        run: |
+          bun run build
+          cd example-app
+          bun install
+          bun run build
+          bunx cap sync android
+      - name: Assemble Android example app
+        run: cd example-app/android && ./gradlew assembleDebug
+      - name: Run Maestro smoke tests
+        uses: reactivecircus/android-emulator-runner@e89f39f1abbbd05b1113a29cf4db69e7540cae5a # v2
+        with:
+          api-level: 30
+          arch: x86_64
+          profile: pixel_7
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          script: CAPGO_MAESTRO_SKIP_BUILD=1 CAPGO_MAESTRO_TIMEOUT_SECONDS=600 MAESTRO_DRIVER_STARTUP_TIMEOUT=300000 bun run test:maestro:android
+      - name: Upload Maestro artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maestro-results-android
+          path: maestro-results
+  maestro_ios_example_app:
+    timeout-minutes: 45
+    runs-on: macOS-latest
+    name: iOS example app Maestro smoke
+    steps:
+      - name: Check out
+        uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Install root dependencies
+        run: bun i
+      - name: Install Maestro
+        env:
+          MAESTRO_VERSION: cli-2.4.0
+        run: |
+          set -euo pipefail
+          base_url="https://github.com/mobile-dev-inc/Maestro/releases/download/${MAESTRO_VERSION}"
+          tmp_dir="$(mktemp -d)"
+          trap 'rm -rf "$tmp_dir"' EXIT
+          curl -fsSL -o "$tmp_dir/maestro.zip" "${base_url}/maestro.zip"
+          curl -fsSL -o "$tmp_dir/checksums_sha256.txt" "${base_url}/checksums_sha256.txt"
+          (
+            cd "$tmp_dir"
+            grep ' maestro.zip$' checksums_sha256.txt | shasum -a 256 -c -
+          )
+          unzip -q "$tmp_dir/maestro.zip" -d "$tmp_dir/maestro"
+          install_path="$(find "$tmp_dir/maestro" -type f -name maestro | head -n 1)"
+          if [[ -z "$install_path" ]]; then
+            echo "Unable to locate Maestro binary after extracting ${MAESTRO_VERSION}" >&2
+            exit 1
+          fi
+          install_root="$(dirname "$(dirname "$install_path")")"
+          rm -rf "$HOME/.maestro"
+          mkdir -p "$HOME/.maestro"
+          cp -R "$install_root"/. "$HOME/.maestro/"
+          if [[ ! -f "$HOME/.maestro/bin/maestro" || ! -d "$HOME/.maestro/lib" ]]; then
+            echo "Incomplete Maestro installation for ${MAESTRO_VERSION}" >&2
+            exit 1
+          fi
+          chmod 0755 "$HOME/.maestro/bin/maestro"
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+      - name: Run Maestro smoke tests
+        run: bun run test:maestro:ios
+      - name: Upload Maestro artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maestro-results-ios
+          path: maestro-results-ios
   web:
     timeout-minutes: 30
     runs-on: ubuntu-latest

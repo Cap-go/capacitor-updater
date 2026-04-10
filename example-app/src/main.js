@@ -13,24 +13,42 @@ const directUpdateMode = import.meta.env.VITE_CAPGO_DIRECT_UPDATE ?? 'false';
 const serverUrl = import.meta.env.VITE_CAPGO_SERVER_URL ?? 'not-configured';
 const bootStorageKey = '__capgo_maestro_boot_count';
 const maxEvents = 8;
+const fallbackUpdateUrl = 'https://example.com/api/auto_update';
+const defaultUpdateUrl = serverUrl.startsWith('http') ? serverUrl : fallbackUpdateUrl;
+
+function requireElement(id) {
+  const element = document.getElementById(id);
+  if (!element) {
+    throw new Error(`Expected #${id} in index.html`);
+  }
+  return element;
+}
 
 const elements = {
-  appLabel: document.getElementById('app-label'),
-  scenarioId: document.getElementById('scenario-id'),
-  directUpdateMode: document.getElementById('direct-update-mode'),
-  serverUrl: document.getElementById('server-url'),
-  bootCount: document.getElementById('boot-count'),
-  notifyStatus: document.getElementById('notify-status'),
-  currentBundleSource: document.getElementById('current-bundle-source'),
-  currentBundle: document.getElementById('current-bundle'),
-  nextBundle: document.getElementById('next-bundle'),
-  bundleCount: document.getElementById('bundle-count'),
-  lastDownload: document.getElementById('last-download'),
-  eventLog: document.getElementById('event-log'),
-  output: document.getElementById('plugin-output'),
-  refreshButton: document.getElementById('refresh-state'),
+  appLabel: requireElement('app-label'),
+  scenarioId: requireElement('scenario-id'),
+  directUpdateMode: requireElement('direct-update-mode'),
+  serverUrl: requireElement('server-url'),
+  bootCount: requireElement('boot-count'),
+  notifyStatus: requireElement('notify-status'),
+  currentBundleSource: requireElement('current-bundle-source'),
+  currentBundle: requireElement('current-bundle'),
+  nextBundle: requireElement('next-bundle'),
+  bundleCount: requireElement('bundle-count'),
+  lastDownload: requireElement('last-download'),
+  eventLog: requireElement('event-log'),
+  smokeActions: requireElement('smoke-actions'),
+  runSmokeSequenceButton: requireElement('run-smoke-sequence'),
+  lastAction: requireElement('last-action'),
+  actionStatus: requireElement('action-status'),
+  resultMarker: requireElement('result-marker'),
+  sequenceStatus: requireElement('sequence-status'),
+  output: requireElement('plugin-output'),
+  debugOutput: requireElement('debug-output'),
+  refreshButton: requireElement('refresh-state'),
 };
 
+const actionCards = new Map();
 const state = {
   bootCount: incrementBootCount(),
   notifyStatus: 'pending',
@@ -42,6 +60,70 @@ const state = {
   lastError: null,
   lastHarnessSnapshot: '',
 };
+
+const actions = [
+  {
+    id: 'notify-app-ready',
+    label: 'Notify app ready',
+    buttonLabel: 'Run notifyAppReady',
+    description: 'Confirm that the current bundle booted successfully.',
+    inputs: [],
+    run: async () => {
+      const result = await performNotifyAppReady();
+      return result ?? 'notifyAppReady() resolved.';
+    },
+  },
+  {
+    id: 'current-bundle',
+    label: 'Get current bundle',
+    buttonLabel: 'Run get current bundle',
+    description: 'Read the active bundle and builtin native version.',
+    inputs: [],
+    run: async () => plugin.current(),
+  },
+  {
+    id: 'list-bundles',
+    label: 'List downloaded bundles',
+    buttonLabel: 'Run list downloaded bundles',
+    description: 'Inspect bundles currently stored on the device.',
+    inputs: [],
+    run: async () => plugin.list(),
+  },
+  {
+    id: 'get-plugin-version',
+    label: 'Get plugin version',
+    buttonLabel: 'Run get plugin version',
+    description: 'Return the installed native plugin version.',
+    inputs: [],
+    run: async () => plugin.getPluginVersion(),
+  },
+  {
+    id: 'set-update-url',
+    label: 'Set update URL',
+    buttonLabel: 'Apply update URL',
+    description: 'Point the example app at a custom update endpoint.',
+    inputs: [
+      {
+        name: 'updateUrl',
+        label: 'Update URL',
+        type: 'text',
+        value: defaultUpdateUrl,
+        placeholder: fallbackUpdateUrl,
+      },
+    ],
+    run: async (values) => {
+      if (!values.updateUrl) {
+        throw new Error('Provide an update URL.');
+      }
+      await plugin.setUpdateUrl({ url: values.updateUrl });
+      addEvent('Update URL set', { url: values.updateUrl });
+      return {
+        message: 'Update URL set.',
+        url: values.updateUrl,
+      };
+    },
+  },
+];
 
 function incrementBootCount() {
   const previous = Number(window.localStorage.getItem(bootStorageKey) ?? '0');
@@ -129,7 +211,7 @@ function renderState() {
   elements.nextBundle.textContent = `Next bundle version: ${getBundleVersion(state.nextBundle)}`;
   elements.bundleCount.textContent = `Downloaded bundle count: ${state.bundles.length}`;
   elements.lastDownload.textContent = `Last completed download: ${state.lastDownload}`;
-  elements.output.textContent = JSON.stringify(
+  elements.debugOutput.textContent = JSON.stringify(
     {
       ...harnessSnapshot,
       serverUrl,
@@ -181,7 +263,7 @@ async function refreshState() {
     ]);
 
     state.currentBundle = currentResult?.bundle ?? currentResult;
-    state.nextBundle = nextBundle;
+    state.nextBundle = nextBundle?.bundle ?? nextBundle;
     state.bundles = listResult?.bundles ?? [];
     state.lastDownload = getLastDownloadedBundleVersion(state.bundles);
     state.lastError = null;
@@ -213,26 +295,160 @@ function attachListeners() {
   });
 }
 
-async function notifyAppReady() {
+async function performNotifyAppReady() {
   try {
     const result = await plugin.notifyAppReady();
     state.notifyStatus = result?.bundle
       ? `ok (${getBundleVersion(result.bundle)})`
       : result?.message ?? 'ok';
     addEvent('notifyAppReady()', result ?? { status: 'ok' });
+    state.lastError = null;
+    return result;
   } catch (error) {
     state.notifyStatus = `error: ${error?.message ?? error}`;
     state.lastError = error?.message ?? String(error);
     addEvent('notifyAppReady() failed', { message: state.lastError });
+    throw error;
+  }
+}
+
+function formatResult(result) {
+  if (result === undefined) {
+    return 'Action completed.';
   }
 
-  renderState();
+  if (typeof result === 'string') {
+    return result;
+  }
+
+  return JSON.stringify(result, null, 2);
+}
+
+function getCardValues(card, action) {
+  const values = {};
+
+  (action.inputs || []).forEach((input) => {
+    const field = card.querySelector(`[name="${input.name}"]`);
+    if (!field) {
+      return;
+    }
+
+    values[input.name] = field.value;
+  });
+
+  return values;
+}
+
+async function runAction(action, values) {
+  elements.lastAction.textContent = `Last action: ${action.label}`;
+  elements.actionStatus.textContent = 'Status: running';
+  elements.resultMarker.textContent = `Result marker: ${action.id}:running`;
+  elements.output.textContent = `Running ${action.label}...`;
+
+  try {
+    const result = await action.run(values);
+    elements.actionStatus.textContent = 'Status: success';
+    elements.resultMarker.textContent = `Result marker: ${action.id}:success`;
+    elements.output.textContent = formatResult(result);
+    await refreshState();
+    return result;
+  } catch (error) {
+    const message = error?.message ?? String(error);
+    state.lastError = message;
+    elements.actionStatus.textContent = 'Status: error';
+    elements.resultMarker.textContent = `Result marker: ${action.id}:error`;
+    elements.output.textContent = `Error: ${message}`;
+    renderState();
+    throw error;
+  }
+}
+
+async function runSmokeSequence() {
+  elements.sequenceStatus.textContent = 'Sequence: running';
+  elements.runSmokeSequenceButton.disabled = true;
+
+  try {
+    for (const action of actions) {
+      const card = actionCards.get(action.id);
+      const values = card ? getCardValues(card, action) : {};
+      await runAction(action, values);
+    }
+    elements.sequenceStatus.textContent = 'Sequence: success';
+    elements.resultMarker.textContent = 'Result marker: smoke-sequence:success';
+  } catch (error) {
+    elements.sequenceStatus.textContent = 'Sequence: error';
+    elements.resultMarker.textContent = 'Result marker: smoke-sequence:error';
+    console.error('Smoke sequence failed', error);
+  } finally {
+    elements.runSmokeSequenceButton.disabled = false;
+  }
+}
+
+function createInputField(card, input) {
+  const fieldWrapper = document.createElement('label');
+  fieldWrapper.className = 'action-input';
+  fieldWrapper.textContent = input.label;
+
+  const field = document.createElement('input');
+  field.type = input.type || 'text';
+  field.name = input.name;
+  field.value = input.value || '';
+  if (input.placeholder) {
+    field.placeholder = input.placeholder;
+  }
+
+  fieldWrapper.appendChild(field);
+  card.appendChild(fieldWrapper);
+}
+
+function createActionCard(action) {
+  const card = document.createElement('article');
+  card.className = 'action-card';
+
+  const title = document.createElement('h3');
+  title.textContent = action.label;
+  card.appendChild(title);
+
+  const description = document.createElement('p');
+  description.className = 'action-copy';
+  description.textContent = action.description;
+  card.appendChild(description);
+
+  (action.inputs || []).forEach((input) => {
+    createInputField(card, input);
+  });
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = action.buttonLabel;
+  button.addEventListener('click', () => {
+    const values = getCardValues(card, action);
+    void runAction(action, values).catch(() => {});
+  });
+
+  card.appendChild(button);
+  return card;
+}
+
+function renderActions() {
+  actions.forEach((action) => {
+    const card = createActionCard(action);
+    actionCards.set(action.id, card);
+    elements.smokeActions.appendChild(card);
+  });
 }
 
 async function bootstrap() {
   attachListeners();
+  renderActions();
   renderState();
-  await notifyAppReady();
+
+  try {
+    await performNotifyAppReady();
+  } catch (error) {
+    console.error('notifyAppReady() bootstrap failed', error);
+  }
+
   await refreshState();
 
   window.setInterval(() => {
@@ -248,6 +464,10 @@ async function bootstrap() {
 
 elements.refreshButton.addEventListener('click', () => {
   void refreshState();
+});
+
+elements.runSmokeSequenceButton.addEventListener('click', () => {
+  void runSmokeSequence();
 });
 
 void bootstrap();
