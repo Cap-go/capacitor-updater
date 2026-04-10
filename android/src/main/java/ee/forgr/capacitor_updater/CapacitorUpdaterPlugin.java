@@ -22,6 +22,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.ProgressBar;
+import androidx.core.content.pm.PackageInfoCompat;
 import com.getcapacitor.Bridge;
 import com.getcapacitor.CapConfig;
 import com.getcapacitor.JSArray;
@@ -191,7 +192,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private String getVersionCode(final PackageInfo packageInfo) {
-        return Long.toString(packageInfo.getLongVersionCode());
+        return Long.toString(PackageInfoCompat.getLongVersionCode(packageInfo));
     }
 
     private void notifyBreakingEvents(final String version) {
