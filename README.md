@@ -2063,9 +2063,10 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 
 ##### ResetOptions
 
-| Prop                   | Type                 |
-| ---------------------- | -------------------- |
-| **`toLastSuccessful`** | <code>boolean</code> |
+| Prop                   | Type                 | Description                                                                                                                                                                                                        | Default            |
+| ---------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------ |
+| **`toLastSuccessful`** | <code>boolean</code> | Reset to the last successfully loaded bundle instead of the builtin one.                                                                                                                                           | <code>false</code> |
+| **`usePendingBundle`** | <code>boolean</code> | Apply the pending bundle set via {@link next} while resetting. When `true`, the plugin will switch to the pending bundle immediately and clear the pending flag. If no pending bundle exists, the reset will fail. | <code>false</code> |
 
 
 ##### CurrentBundleResult

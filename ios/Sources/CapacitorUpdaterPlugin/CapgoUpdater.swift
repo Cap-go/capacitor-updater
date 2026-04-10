@@ -1480,6 +1480,52 @@ import UIKit
         return libraryDir.appendingPathComponent(self.bundleDirectory).appendingPathComponent(id)
     }
 
+    struct ResetState {
+        let currentBundlePath: String
+        let fallbackBundleId: String
+        let nextBundleId: String?
+    }
+
+    func captureResetState() -> ResetState {
+        ResetState(
+            currentBundlePath: UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH) ?? self.DEFAULT_FOLDER,
+            fallbackBundleId: UserDefaults.standard.string(forKey: self.FALLBACK_VERSION) ?? BundleInfo.ID_BUILTIN,
+            nextBundleId: UserDefaults.standard.string(forKey: self.NEXT_VERSION)
+        )
+    }
+
+    func restoreResetState(_ state: ResetState) {
+        let currentBundlePath = state.currentBundlePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? self.DEFAULT_FOLDER
+            : state.currentBundlePath
+        let fallbackBundleId = state.fallbackBundleId.isEmpty ? BundleInfo.ID_BUILTIN : state.fallbackBundleId
+
+        self.setCurrentBundle(bundle: currentBundlePath)
+        UserDefaults.standard.set(fallbackBundleId, forKey: self.FALLBACK_VERSION)
+        if let nextBundleId = state.nextBundleId, !nextBundleId.isEmpty {
+            UserDefaults.standard.set(nextBundleId, forKey: self.NEXT_VERSION)
+        } else {
+            UserDefaults.standard.removeObject(forKey: self.NEXT_VERSION)
+        }
+        UserDefaults.standard.synchronize()
+    }
+
+    func prepareResetStateForTransition() {
+        self.setCurrentBundle(bundle: "")
+        self.setFallbackBundle(fallback: Optional<BundleInfo>.none)
+        _ = self.setNextBundle(next: Optional<String>.none)
+    }
+
+    func finalizeResetTransition(previousBundleName: String, isInternal: Bool) {
+        if !isInternal {
+            self.sendStats(action: "reset", versionName: self.getCurrentBundle().getVersionName(), oldVersionName: previousBundleName)
+        }
+    }
+
+    func canSet(bundle: BundleInfo) -> Bool {
+        bundle.isBuiltin() || self.bundleExists(id: bundle.getId())
+    }
+
     public func set(bundle: BundleInfo) -> Bool {
         return self.set(id: bundle.getId())
     }
@@ -1517,6 +1563,21 @@ import UIKit
         return false
     }
 
+    func stagePendingReload(bundle: BundleInfo) -> Bool {
+        guard !bundle.isBuiltin(), bundleExists(id: bundle.getId()) else {
+            return false
+        }
+        self.setCurrentBundle(bundle: self.getBundleDirectory(id: bundle.getId()).path)
+        return true
+    }
+
+    func finalizePendingReload(bundle: BundleInfo, previousBundleName: String) {
+        guard !bundle.isBuiltin() else {
+            return
+        }
+        self.sendStats(action: "set", versionName: bundle.getVersionName(), oldVersionName: previousBundleName)
+    }
+
     public func autoReset() {
         let currentBundle: BundleInfo = self.getCurrentBundle()
         if !currentBundle.isBuiltin() && !self.bundleExists(id: currentBundle.getId()) {
@@ -1542,12 +1603,8 @@ import UIKit
     public func reset(isInternal: Bool) {
         logger.info("reset: \(isInternal)")
         let currentBundleName = self.getCurrentBundle().getVersionName()
-        self.setCurrentBundle(bundle: "")
-        self.setFallbackBundle(fallback: Optional<BundleInfo>.none)
-        _ = self.setNextBundle(next: Optional<String>.none)
-        if !isInternal {
-            self.sendStats(action: "reset", versionName: self.getCurrentBundle().getVersionName(), oldVersionName: currentBundleName)
-        }
+        self.prepareResetStateForTransition()
+        self.finalizeResetTransition(previousBundleName: currentBundleName, isInternal: isInternal)
     }
 
     public func setSuccess(bundle: BundleInfo, autoDeletePrevious: Bool) {

@@ -100,6 +100,192 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
+    private static final class ResetTrackingCapgoUpdater extends CapgoUpdater {
+
+        private BundleInfo currentBundle = new BundleInfo("current-id", "1.0.0", BundleStatus.SUCCESS, new Date(), "abc123");
+        private BundleInfo fallbackBundle = new BundleInfo(
+            BundleInfo.ID_BUILTIN,
+            "builtin",
+            BundleStatus.SUCCESS,
+            BundleInfo.DOWNLOADED_BUILTIN,
+            "builtin"
+        );
+        private BundleInfo nextBundle;
+        private boolean resetCalled = false;
+        private boolean prepareResetStateForTransitionCalled = false;
+        private int prepareResetStateForTransitionCalls = 0;
+        private boolean finalizeResetTransitionCalled = false;
+        private int finalizeResetTransitionCalls = 0;
+        private String finalizeResetTransitionPreviousBundleName;
+        private boolean finalizeResetTransitionInternal = true;
+        private boolean canSetResult = true;
+        private boolean setResult = true;
+        private int canSetCalls = 0;
+        private int setCalls = 0;
+        private boolean stagePendingReloadResult = true;
+        private int stagePendingReloadCalls = 0;
+        private int finalizePendingReloadCalls = 0;
+        private BundleInfo finalizedPendingReloadBundle;
+        private String finalizePendingReloadPreviousBundleName;
+        private int restoreResetStateCalls = 0;
+        private final ResetState capturedState = new ResetState("/stored/current", "fallback-id", "next-id");
+        private ResetState restoredState;
+
+        ResetTrackingCapgoUpdater() {
+            super(null);
+        }
+
+        @Override
+        public BundleInfo getCurrentBundle() {
+            return this.currentBundle;
+        }
+
+        @Override
+        public BundleInfo getFallbackBundle() {
+            return this.fallbackBundle;
+        }
+
+        @Override
+        public BundleInfo getNextBundle() {
+            return this.nextBundle;
+        }
+
+        @Override
+        boolean canSet(final BundleInfo bundle) {
+            this.canSetCalls++;
+            return this.canSetResult;
+        }
+
+        @Override
+        ResetState captureResetState() {
+            return this.capturedState;
+        }
+
+        @Override
+        void restoreResetState(final ResetState state) {
+            this.restoreResetStateCalls++;
+            this.restoredState = state;
+        }
+
+        @Override
+        public Boolean set(final BundleInfo bundle) {
+            this.setCalls++;
+            return this.setResult;
+        }
+
+        @Override
+        public boolean setNextBundle(final String next) {
+            return true;
+        }
+
+        @Override
+        boolean stagePendingReload(final BundleInfo bundle) {
+            this.stagePendingReloadCalls++;
+            return this.stagePendingReloadResult;
+        }
+
+        @Override
+        void finalizePendingReload(final BundleInfo bundle, final String previousBundleName) {
+            this.finalizePendingReloadCalls++;
+            this.finalizedPendingReloadBundle = bundle;
+            this.finalizePendingReloadPreviousBundleName = previousBundleName;
+        }
+
+        @Override
+        public void reset(final boolean internal) {
+            this.resetCalled = true;
+        }
+
+        @Override
+        void prepareResetStateForTransition() {
+            this.prepareResetStateForTransitionCalled = true;
+            this.prepareResetStateForTransitionCalls++;
+        }
+
+        @Override
+        void finalizeResetTransition(final String previousBundleName, final boolean internal) {
+            this.finalizeResetTransitionCalled = true;
+            this.finalizeResetTransitionCalls++;
+            this.finalizeResetTransitionPreviousBundleName = previousBundleName;
+            this.finalizeResetTransitionInternal = internal;
+        }
+    }
+
+    private static final class ReloadBypassCapacitorUpdaterPlugin extends TestableCapacitorUpdaterPlugin {
+
+        @Override
+        protected boolean _reload() {
+            return true;
+        }
+    }
+
+    private static final class ReloadFailureCapacitorUpdaterPlugin extends TestableCapacitorUpdaterPlugin {
+
+        private int restoreLiveBundleStateAfterFailedReloadCalls = 0;
+
+        @Override
+        protected boolean _reload() {
+            return false;
+        }
+
+        @Override
+        protected void restoreLiveBundleStateAfterFailedReload() {
+            this.restoreLiveBundleStateAfterFailedReloadCalls++;
+        }
+    }
+
+    private static final class SequenceReloadCapacitorUpdaterPlugin extends TestableCapacitorUpdaterPlugin {
+
+        private final boolean[] reloadResults;
+        private int reloadCallCount = 0;
+        private int restoreLiveBundleStateAfterFailedReloadCalls = 0;
+
+        SequenceReloadCapacitorUpdaterPlugin(final boolean... reloadResults) {
+            this.reloadResults = reloadResults;
+        }
+
+        @Override
+        protected boolean _reload() {
+            final int resultIndex = Math.min(this.reloadCallCount, this.reloadResults.length - 1);
+            this.reloadCallCount++;
+            return this.reloadResults[resultIndex];
+        }
+
+        @Override
+        protected void restoreLiveBundleStateAfterFailedReload() {
+            this.restoreLiveBundleStateAfterFailedReloadCalls++;
+        }
+    }
+
+    private static final class PendingReloadFinalizeCapgoUpdater extends CapgoUpdater {
+
+        private final Map<String, BundleInfo> bundleInfos = new HashMap<>();
+        private String lastStatsAction;
+        private String lastStatsVersionName;
+        private String lastStatsOldVersionName;
+
+        PendingReloadFinalizeCapgoUpdater() {
+            super(null);
+        }
+
+        @Override
+        public BundleInfo getBundleInfo(final String id) {
+            return this.bundleInfos.get(id);
+        }
+
+        @Override
+        public void saveBundleInfo(final String id, final BundleInfo info) {
+            this.bundleInfos.put(id, info);
+        }
+
+        @Override
+        public void sendStats(final String action, final String versionName, final String oldVersionName) {
+            this.lastStatsAction = action;
+            this.lastStatsVersionName = versionName;
+            this.lastStatsOldVersionName = oldVersionName;
+        }
+    }
+
     private static void invokeBackgroundDownload(final CapacitorUpdaterPlugin plugin) throws Exception {
         final Method backgroundDownload = CapacitorUpdaterPlugin.class.getDeclaredMethod("backgroundDownload");
         backgroundDownload.setAccessible(true);
@@ -110,6 +296,27 @@ public class CapacitorUpdaterUnitTest {
         final Method method = CapacitorUpdaterPlugin.class.getDeclaredMethod(methodName);
         method.setAccessible(true);
         method.invoke(plugin);
+    }
+
+    private static boolean invokePrivateResetMethod(
+        final CapacitorUpdaterPlugin plugin,
+        final Boolean toLastSuccessful,
+        final Boolean usePendingBundle
+    ) throws Exception {
+        final Method method = CapacitorUpdaterPlugin.class.getDeclaredMethod("_reset", Boolean.class, Boolean.class);
+        method.setAccessible(true);
+        return (boolean) method.invoke(plugin, toLastSuccessful, usePendingBundle);
+    }
+
+    private static boolean invokePrivateInternalResetMethod(
+        final CapacitorUpdaterPlugin plugin,
+        final Boolean toLastSuccessful,
+        final Boolean usePendingBundle,
+        final boolean internal
+    ) throws Exception {
+        final Method method = CapacitorUpdaterPlugin.class.getDeclaredMethod("performReset", Boolean.class, Boolean.class, boolean.class);
+        method.setAccessible(true);
+        return (boolean) method.invoke(plugin, toLastSuccessful, usePendingBundle, internal);
     }
 
     private static void invokePrivateSplashMethod(
@@ -371,6 +578,372 @@ public class CapacitorUpdaterUnitTest {
         assertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate("always", true));
         assertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate("atInstall", true));
         assertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate("false", true));
+    }
+
+    @Test
+    public void testResetToPendingWithoutPendingBundleDoesNotResetState() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ReloadBypassCapacitorUpdaterPlugin plugin = new ReloadBypassCapacitorUpdaterPlugin();
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            final boolean result = invokePrivateResetMethod(plugin, false, true);
+
+            assertFalse(result);
+            assertFalse(updater.resetCalled);
+        }
+    }
+
+    @Test
+    public void testResetToPendingWithoutInstallablePendingBundleDoesNotResetState() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ReloadBypassCapacitorUpdaterPlugin plugin = new ReloadBypassCapacitorUpdaterPlugin();
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            updater.nextBundle = new BundleInfo("pending-id", "2.0.0", BundleStatus.PENDING, new Date(), "pending");
+            updater.canSetResult = false;
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            final boolean result = invokePrivateResetMethod(plugin, false, true);
+
+            assertFalse(result);
+            assertEquals(1, updater.canSetCalls);
+            assertEquals(0, updater.setCalls);
+            assertFalse(updater.resetCalled);
+            assertEquals(0, updater.restoreResetStateCalls);
+        }
+    }
+
+    @Test
+    public void testResetToPendingRestoresStateWhenSwitchFails() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ReloadBypassCapacitorUpdaterPlugin plugin = new ReloadBypassCapacitorUpdaterPlugin();
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            updater.nextBundle = new BundleInfo("pending-id", "2.0.0", BundleStatus.PENDING, new Date(), "pending");
+            updater.setResult = false;
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            final boolean result = invokePrivateResetMethod(plugin, false, true);
+
+            assertFalse(result);
+            assertFalse(updater.resetCalled);
+            assertTrue(updater.prepareResetStateForTransitionCalled);
+            assertFalse(updater.finalizeResetTransitionCalled);
+            assertEquals(1, updater.canSetCalls);
+            assertEquals(1, updater.setCalls);
+            assertEquals(1, updater.restoreResetStateCalls);
+            assertSame(updater.capturedState, updater.restoredState);
+        }
+    }
+
+    @Test
+    public void testResetToPendingRestoresLiveStateWhenReloadFails() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ReloadFailureCapacitorUpdaterPlugin plugin = new ReloadFailureCapacitorUpdaterPlugin();
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            updater.nextBundle = new BundleInfo("pending-id", "2.0.0", BundleStatus.PENDING, new Date(), "pending");
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            final boolean result = invokePrivateResetMethod(plugin, false, true);
+
+            assertFalse(result);
+            assertFalse(updater.resetCalled);
+            assertTrue(updater.prepareResetStateForTransitionCalled);
+            assertFalse(updater.finalizeResetTransitionCalled);
+            assertEquals(1, updater.canSetCalls);
+            assertEquals(1, updater.setCalls);
+            assertEquals(1, updater.restoreResetStateCalls);
+            assertSame(updater.capturedState, updater.restoredState);
+            assertEquals(1, plugin.restoreLiveBundleStateAfterFailedReloadCalls);
+        }
+    }
+
+    @Test
+    public void testResetToPendingRestoresStateWhenBuiltinPendingReloadFails() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ReloadFailureCapacitorUpdaterPlugin plugin = new ReloadFailureCapacitorUpdaterPlugin();
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            updater.nextBundle = new BundleInfo(
+                BundleInfo.ID_BUILTIN,
+                "builtin",
+                BundleStatus.SUCCESS,
+                BundleInfo.DOWNLOADED_BUILTIN,
+                "builtin"
+            );
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            final boolean result = invokePrivateResetMethod(plugin, false, true);
+
+            assertFalse(result);
+            assertFalse(updater.resetCalled);
+            assertTrue(updater.prepareResetStateForTransitionCalled);
+            assertFalse(updater.finalizeResetTransitionCalled);
+            assertEquals(1, updater.canSetCalls);
+            assertEquals(0, updater.setCalls);
+            assertEquals(1, updater.restoreResetStateCalls);
+            assertSame(updater.capturedState, updater.restoredState);
+            assertEquals(1, plugin.restoreLiveBundleStateAfterFailedReloadCalls);
+        }
+    }
+
+    @Test
+    public void testResetToLastSuccessfulWithoutInstallableFallbackFallsBackToBuiltin() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ReloadBypassCapacitorUpdaterPlugin plugin = new ReloadBypassCapacitorUpdaterPlugin();
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            updater.fallbackBundle = new BundleInfo("fallback-id", "1.5.0", BundleStatus.SUCCESS, new Date(), "fallback");
+            updater.canSetResult = false;
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            final boolean result = invokePrivateResetMethod(plugin, true, false);
+
+            assertTrue(result);
+            assertEquals(1, updater.canSetCalls);
+            assertEquals(0, updater.setCalls);
+            assertFalse(updater.resetCalled);
+            assertTrue(updater.prepareResetStateForTransitionCalled);
+            assertTrue(updater.finalizeResetTransitionCalled);
+            assertEquals("1.0.0", updater.finalizeResetTransitionPreviousBundleName);
+            assertFalse(updater.finalizeResetTransitionInternal);
+            assertEquals(0, updater.restoreResetStateCalls);
+        }
+    }
+
+    @Test
+    public void testResetToLastSuccessfulRestoresStateWhenSwitchFails() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ReloadBypassCapacitorUpdaterPlugin plugin = new ReloadBypassCapacitorUpdaterPlugin();
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            updater.fallbackBundle = new BundleInfo("fallback-id", "1.5.0", BundleStatus.SUCCESS, new Date(), "fallback");
+            updater.setResult = false;
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            final boolean result = invokePrivateResetMethod(plugin, true, false);
+
+            assertFalse(result);
+            assertFalse(updater.resetCalled);
+            assertTrue(updater.prepareResetStateForTransitionCalled);
+            assertFalse(updater.finalizeResetTransitionCalled);
+            assertEquals(1, updater.canSetCalls);
+            assertEquals(1, updater.setCalls);
+            assertEquals(1, updater.restoreResetStateCalls);
+            assertSame(updater.capturedState, updater.restoredState);
+        }
+    }
+
+    @Test
+    public void testResetToLastSuccessfulRestoresStateWhenFallbackReloadFails() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final SequenceReloadCapacitorUpdaterPlugin plugin = new SequenceReloadCapacitorUpdaterPlugin(false);
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            updater.fallbackBundle = new BundleInfo("fallback-id", "1.5.0", BundleStatus.SUCCESS, new Date(), "fallback");
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            final boolean result = invokePrivateResetMethod(plugin, true, false);
+
+            assertFalse(result);
+            assertTrue(updater.prepareResetStateForTransitionCalled);
+            assertEquals(1, updater.prepareResetStateForTransitionCalls);
+            assertFalse(updater.finalizeResetTransitionCalled);
+            assertEquals(1, updater.canSetCalls);
+            assertEquals(1, updater.setCalls);
+            assertEquals(1, updater.restoreResetStateCalls);
+            assertSame(updater.capturedState, updater.restoredState);
+            assertEquals(1, plugin.restoreLiveBundleStateAfterFailedReloadCalls);
+        }
+    }
+
+    @Test
+    public void testInternalResetToLastSuccessfulFallsBackToBuiltinWhenFallbackReloadFails() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final SequenceReloadCapacitorUpdaterPlugin plugin = new SequenceReloadCapacitorUpdaterPlugin(false, true);
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            updater.currentBundle = new BundleInfo("current-id", "2.0.0", BundleStatus.ERROR, new Date(), "abc123");
+            updater.fallbackBundle = new BundleInfo("fallback-id", "1.5.0", BundleStatus.SUCCESS, new Date(), "fallback");
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            final boolean result = invokePrivateInternalResetMethod(plugin, true, false, true);
+
+            assertTrue(result);
+            assertTrue(updater.prepareResetStateForTransitionCalled);
+            assertEquals(2, updater.prepareResetStateForTransitionCalls);
+            assertTrue(updater.finalizeResetTransitionCalled);
+            assertEquals(1, updater.finalizeResetTransitionCalls);
+            assertEquals("2.0.0", updater.finalizeResetTransitionPreviousBundleName);
+            assertTrue(updater.finalizeResetTransitionInternal);
+            assertEquals(1, updater.canSetCalls);
+            assertEquals(1, updater.setCalls);
+            assertEquals(0, updater.restoreResetStateCalls);
+            assertEquals(0, plugin.restoreLiveBundleStateAfterFailedReloadCalls);
+        }
+    }
+
+    @Test
+    public void testFinalizePendingReloadPreservesSuccessfulBundleStatus() {
+        final PendingReloadFinalizeCapgoUpdater updater = new PendingReloadFinalizeCapgoUpdater();
+        final BundleInfo successfulBundle = new BundleInfo("pending-id", "2.0.0", BundleStatus.SUCCESS, new Date(), "pending");
+        final BundleInfo pendingBundle = new BundleInfo("pending-id", "2.0.0", BundleStatus.PENDING, new Date(), "pending");
+        updater.bundleInfos.put("pending-id", successfulBundle);
+
+        updater.finalizePendingReload(pendingBundle, "1.0.0");
+
+        assertEquals(BundleStatus.SUCCESS, updater.bundleInfos.get("pending-id").getStatus());
+        assertEquals("set", updater.lastStatsAction);
+        assertEquals("2.0.0", updater.lastStatsVersionName);
+        assertEquals("1.0.0", updater.lastStatsOldVersionName);
+    }
+
+    @Test
+    public void testReloadRestoresStateWhenPendingApplyReloadFails() {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ReloadFailureCapacitorUpdaterPlugin plugin = new ReloadFailureCapacitorUpdaterPlugin();
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            final PluginCall call = mock(PluginCall.class);
+            updater.nextBundle = new BundleInfo("pending-id", "2.0.0", BundleStatus.PENDING, new Date(), "pending");
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            plugin.reload(call);
+
+            assertEquals(0, updater.setCalls);
+            assertEquals(1, updater.stagePendingReloadCalls);
+            assertEquals(0, updater.finalizePendingReloadCalls);
+            assertEquals(1, updater.restoreResetStateCalls);
+            assertSame(updater.capturedState, updater.restoredState);
+            assertEquals(1, plugin.restoreLiveBundleStateAfterFailedReloadCalls);
+            verify(call).reject("Reload failed after applying pending bundle: 2.0.0");
+        }
+    }
+
+    @Test
+    public void testReloadFinalizesPendingBundleSideEffectsAfterSuccess() {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ReloadBypassCapacitorUpdaterPlugin plugin = new ReloadBypassCapacitorUpdaterPlugin();
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            final PluginCall call = mock(PluginCall.class);
+            updater.nextBundle = new BundleInfo("pending-id", "2.0.0", BundleStatus.PENDING, new Date(), "pending");
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            plugin.reload(call);
+
+            assertEquals(0, updater.setCalls);
+            assertEquals(1, updater.stagePendingReloadCalls);
+            assertEquals(1, updater.finalizePendingReloadCalls);
+            assertEquals("1.0.0", updater.finalizePendingReloadPreviousBundleName);
+            assertSame(updater.nextBundle, updater.finalizedPendingReloadBundle);
+            verify(call).resolve();
+        }
+    }
+
+    @Test
+    public void testReloadRestoresStateWhenBuiltinPendingReloadFails() {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ReloadFailureCapacitorUpdaterPlugin plugin = new ReloadFailureCapacitorUpdaterPlugin();
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            final PluginCall call = mock(PluginCall.class);
+            updater.nextBundle = new BundleInfo(
+                BundleInfo.ID_BUILTIN,
+                "builtin",
+                BundleStatus.SUCCESS,
+                BundleInfo.DOWNLOADED_BUILTIN,
+                "builtin"
+            );
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            plugin.reload(call);
+
+            assertEquals(0, updater.setCalls);
+            assertEquals(0, updater.stagePendingReloadCalls);
+            assertEquals(0, updater.finalizePendingReloadCalls);
+            assertTrue(updater.prepareResetStateForTransitionCalled);
+            assertFalse(updater.finalizeResetTransitionCalled);
+            assertEquals(1, updater.restoreResetStateCalls);
+            assertSame(updater.capturedState, updater.restoredState);
+            assertEquals(1, plugin.restoreLiveBundleStateAfterFailedReloadCalls);
+            verify(call).reject("Reload failed after applying pending bundle: builtin");
+        }
     }
 
     @Test

@@ -11,6 +11,7 @@ EMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_EMULATOR_BOOT_TIMEOUT_SECONDS:-18
 MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-300}"
 MAESTRO_DRIVER_STARTUP_TIMEOUT="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-180000}"
 APK_INSTALL_RETRIES="${CAPGO_MAESTRO_APK_INSTALL_RETRIES:-3}"
+PACKAGE_SERVICE_TIMEOUT_SECONDS="${CAPGO_MAESTRO_ANDROID_PACKAGE_TIMEOUT_SECONDS:-120}"
 APP_ACTIVITY="${CAPGO_MAESTRO_ANDROID_ACTIVITY:-app.capgo.updater/.MainActivity}"
 APP_LAUNCH_RETRIES="${CAPGO_MAESTRO_APP_LAUNCH_RETRIES:-2}"
 APP_UI_TIMEOUT_SECONDS="${CAPGO_MAESTRO_APP_UI_TIMEOUT_SECONDS:-90}"
@@ -62,6 +63,22 @@ watch_for_android_anr_dialog() {
   done
 
   return 0
+}
+
+wait_for_android_package_service() {
+  local deadline=0
+
+  deadline=$((SECONDS + PACKAGE_SERVICE_TIMEOUT_SECONDS))
+
+  while (( SECONDS < deadline )); do
+    if adb shell pm path android >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+
+  echo "Android package service did not become ready within ${PACKAGE_SERVICE_TIMEOUT_SECONDS} seconds." >&2
+  return 1
 }
 
 dump_ui_hierarchy() {
@@ -126,7 +143,9 @@ install_apk_with_retries() {
   local status=0
 
   while (( attempt <= APK_INSTALL_RETRIES )); do
-    if adb install -r "$APK_PATH"; then
+    if ! wait_for_android_package_service; then
+      status=1
+    elif adb install -r "$APK_PATH"; then
       return 0
     else
       status=$?
@@ -139,6 +158,7 @@ install_apk_with_retries() {
 
     echo "APK install attempt ${attempt} failed; waiting for the emulator before retrying." >&2
     wait_for_emulator_boot
+    wait_for_android_package_service || true
     sleep 5
     ((attempt += 1))
   done

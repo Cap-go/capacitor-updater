@@ -1334,12 +1334,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.bridge.getWebView().post(() -> this.bridge.getWebView().evaluateJavascript(script, null));
     }
 
-    protected boolean _reload() {
+    private void applyCurrentBundleToBridge() {
         final String path = this.implementation.getCurrentBundlePath();
+        final boolean usingBuiltin = this.implementation.isUsingBuiltin();
         if (this.keepUrlPathAfterReload) {
             this.syncKeepUrlPathFlag(true);
         }
-        this.semaphoreUp();
         logger.info("Reloading: " + path);
 
         AtomicReference<URL> url = new AtomicReference<>();
@@ -1384,7 +1384,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
 
         if (url.get() != null) {
-            if (this.implementation.isUsingBuiltin()) {
+            if (usingBuiltin) {
                 this.bridge.getLocalServer().hostAssets(path);
             } else {
                 this.bridge.getLocalServer().hostFiles(path);
@@ -1404,14 +1404,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
             } catch (MalformedURLException e) {
                 logger.error("Cannot get finalUrl from capacitor bridge " + e.getMessage());
 
-                if (this.implementation.isUsingBuiltin()) {
+                if (usingBuiltin) {
                     this.bridge.setServerAssetPath(path);
                 } else {
                     this.bridge.setServerBasePath(path);
                 }
             }
         } else {
-            if (this.implementation.isUsingBuiltin()) {
+            if (usingBuiltin) {
                 this.bridge.setServerAssetPath(path);
             } else {
                 this.bridge.setServerBasePath(path);
@@ -1427,6 +1427,19 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 });
             }
         }
+    }
+
+    protected void restoreLiveBundleStateAfterFailedReload() {
+        try {
+            this.applyCurrentBundleToBridge();
+        } catch (final Exception e) {
+            logger.warn("Failed to restore live bundle after rejected reload: " + e.getMessage());
+        }
+    }
+
+    protected boolean _reload() {
+        this.semaphoreUp();
+        this.applyCurrentBundleToBridge();
 
         this.checkAppReady();
         this.notifyListeners("appReloaded", new JSObject());
@@ -1445,6 +1458,38 @@ public class CapacitorUpdaterPlugin extends Plugin {
     @PluginMethod
     public void reload(final PluginCall call) {
         try {
+            final BundleInfo current = this.implementation.getCurrentBundle();
+            final BundleInfo next = this.implementation.getNextBundle();
+
+            if (next != null && !next.isErrorStatus() && !next.getId().equals(current.getId())) {
+                final CapgoUpdater.ResetState previousState = this.implementation.captureResetState();
+                final String previousBundleName = this.implementation.getCurrentBundle().getVersionName();
+                logger.info("Applying pending bundle before reload: " + next.getVersionName());
+                final boolean didApplyPendingBundle;
+                if (next.isBuiltin()) {
+                    this.implementation.prepareResetStateForTransition();
+                    didApplyPendingBundle = true;
+                } else {
+                    didApplyPendingBundle = this.implementation.stagePendingReload(next);
+                }
+                if (didApplyPendingBundle && this._reload()) {
+                    if (next.isBuiltin()) {
+                        this.implementation.finalizeResetTransition(previousBundleName, false);
+                    } else {
+                        this.implementation.finalizePendingReload(next, previousBundleName);
+                    }
+                    this.notifyBundleSet(next);
+                    this.implementation.setNextBundle(null);
+                    call.resolve();
+                    return;
+                }
+                this.implementation.restoreResetState(previousState);
+                this.restoreLiveBundleStateAfterFailedReload();
+                logger.error("Reload failed after applying pending bundle: " + next.getVersionName());
+                call.reject("Reload failed after applying pending bundle: " + next.getVersionName());
+                return;
+            }
+
             if (this._reload()) {
                 call.resolve();
             } else {
@@ -1606,28 +1651,83 @@ public class CapacitorUpdaterPlugin extends Plugin {
         );
     }
 
-    private boolean _reset(final Boolean toLastSuccessful) {
-        final BundleInfo fallback = this.implementation.getFallbackBundle();
-        this.implementation.reset();
+    private boolean _reset(final Boolean toLastSuccessful, final Boolean usePendingBundle) {
+        return this.performReset(toLastSuccessful, usePendingBundle, false);
+    }
 
-        if (toLastSuccessful && !fallback.isBuiltin()) {
-            logger.info("Resetting to: " + fallback);
-            if (this.implementation.set(fallback) && this._reload()) {
-                this.notifyBundleSet(fallback);
+    private boolean performReset(final Boolean toLastSuccessful, final Boolean usePendingBundle, final boolean internal) {
+        final BundleInfo fallback = this.implementation.getFallbackBundle();
+        final BundleInfo pending = this.implementation.getNextBundle();
+        final CapgoUpdater.ResetState previousState = this.implementation.captureResetState();
+        final String previousBundleName = this.implementation.getCurrentBundle().getVersionName();
+
+        if (Boolean.TRUE.equals(usePendingBundle)) {
+            if (pending == null || pending.isErrorStatus()) {
+                logger.error("No pending bundle available to reset to");
+                return false;
+            }
+            if (!this.implementation.canSet(pending)) {
+                logger.error("Pending bundle is not installable");
+                return false;
+            }
+            this.implementation.prepareResetStateForTransition();
+            logger.info("Resetting to pending bundle: " + pending.getVersionName());
+            final boolean didApplyPendingBundle;
+            if (pending.isBuiltin()) {
+                didApplyPendingBundle = true;
+            } else {
+                didApplyPendingBundle = this.implementation.set(pending);
+            }
+            if (didApplyPendingBundle && this._reload()) {
+                this.implementation.finalizeResetTransition(previousBundleName, internal);
+                this.notifyBundleSet(pending);
+                this.implementation.setNextBundle(null);
                 return true;
             }
+            this.implementation.restoreResetState(previousState);
+            this.restoreLiveBundleStateAfterFailedReload();
             return false;
         }
 
+        if (Boolean.TRUE.equals(toLastSuccessful) && !fallback.isBuiltin()) {
+            if (this.implementation.canSet(fallback)) {
+                this.implementation.prepareResetStateForTransition();
+                logger.info("Resetting to: " + fallback);
+                if (this.implementation.set(fallback) && this._reload()) {
+                    this.implementation.finalizeResetTransition(previousBundleName, internal);
+                    this.notifyBundleSet(fallback);
+                    return true;
+                }
+                if (!internal) {
+                    this.implementation.restoreResetState(previousState);
+                    this.restoreLiveBundleStateAfterFailedReload();
+                    return false;
+                }
+                logger.warn("Fallback reload failed during internal reset, resetting to native instead");
+            } else {
+                logger.warn("Fallback bundle is not installable, resetting to native instead");
+            }
+        }
+
+        this.implementation.prepareResetStateForTransition();
         logger.info("Resetting to native.");
-        return this._reload();
+        if (this._reload()) {
+            this.implementation.finalizeResetTransition(previousBundleName, internal);
+            return true;
+        }
+        if (!internal) {
+            this.implementation.restoreResetState(previousState);
+            this.restoreLiveBundleStateAfterFailedReload();
+        }
+        return false;
     }
 
     @PluginMethod
     public void reset(final PluginCall call) {
         try {
             final Boolean toLastSuccessful = call.getBoolean("toLastSuccessful", false);
-            if (this._reset(toLastSuccessful)) {
+            final Boolean usePendingBundle = call.getBoolean("usePendingBundle", false);
+            if (this._reset(toLastSuccessful, usePendingBundle)) {
                 call.resolve();
                 return;
             }
@@ -1991,7 +2091,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                             );
                             if (directUpdateAllowedNow) {
                                 logger.info("Direct update to builtin version");
-                                this._reset(false);
+                                this._reset(false, false);
                                 CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
                                     "Updated to builtin version",
                                     latestVersionName,
@@ -2257,7 +2357,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.notifyListeners("updateFailed", ret);
             this.implementation.sendStats("update_fail", current.getVersionName());
             this.implementation.setError(current);
-            this._reset(true);
+            this.performReset(true, false, true);
             if (CapacitorUpdaterPlugin.this.autoDeleteFailed && !current.isBuiltin()) {
                 logger.info("Deleting failing bundle: " + current.getVersionName());
                 try {
