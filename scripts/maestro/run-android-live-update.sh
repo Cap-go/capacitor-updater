@@ -15,6 +15,9 @@ MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
 MAESTRO_DRIVER_STARTUP_TIMEOUT_VALUE="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-300000}"
 MAESTRO_FLOW_TIMEOUT_SECONDS="${MAESTRO_FLOW_TIMEOUT_SECONDS:-360}"
 SCENARIO_SEQUENCE=(deferred always at-install on-launch)
+LOG_PATTERN_APP_TO_BACKGROUND='ProcessLifecycleOwner: App moved to background'
+LOG_PATTERN_DOWNLOAD_SUCCEEDED='Download succeeded: SUCCEEDED'
+LOG_PATTERN_DIRECT_UPDATE_TRUE='directUpdate: true'
 
 cleanup() {
   if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
@@ -87,9 +90,8 @@ run_scenario() {
   local builtin_label=""
   local first_release=""
   local second_release=""
-  local third_release=""
 
-  IFS=$'\t' read -r builtin_label first_release second_release third_release <<<"$(load_scenario_config "$scenario_id")"
+  IFS=$'\t' read -r builtin_label first_release second_release _ <<<"$(load_scenario_config "$scenario_id")"
   echo "=== Running Maestro scenario: $scenario_id ==="
 
   case "$scenario_id" in
@@ -105,7 +107,7 @@ run_scenario() {
       wait_for_log_patterns \
         "deferred release downloads while builtin bundle stays active" \
         "New bundle: ${first_release} found\\. Current is: 1\\.0\\. Update will occur next time app moves to background\\." \
-        'Download succeeded: SUCCEEDED' \
+        "$LOG_PATTERN_DOWNLOAD_SUCCEEDED" \
         "updateAvailable: .*\"version\":\"${first_release}\"" \
         'setNext: true' \
         'directUpdate: false'
@@ -116,7 +118,7 @@ run_scenario() {
         EXPECTED_RELEASE="$first_release"
       wait_for_log_patterns \
         "deferred release applies after the app backgrounds and resumes" \
-        'ProcessLifecycleOwner: App moved to background' \
+        "$LOG_PATTERN_APP_TO_BACKGROUND" \
         "Updated to bundle: ${first_release}" \
         "Current bundle loaded successfully\\..*\"version\":\"${first_release}\""
       ;;
@@ -132,8 +134,8 @@ run_scenario() {
       wait_for_log_patterns \
         "always direct update applies the first release on launch" \
         "New bundle: ${first_release} found\\. Current is: 1\\.0\\. Update will occur now\\." \
-        'Download succeeded: SUCCEEDED' \
-        'directUpdate: true' \
+        "$LOG_PATTERN_DOWNLOAD_SUCCEEDED" \
+        "$LOG_PATTERN_DIRECT_UPDATE_TRUE" \
         "Current bundle set to: .*${first_release}" \
         "Current bundle loaded successfully\\..*\"version\":\"${first_release}\""
       control_server advance always
@@ -144,10 +146,10 @@ run_scenario() {
         EXPECTED_RELEASE="$second_release"
       wait_for_log_patterns \
         "always direct update applies the second release after resume" \
-        'ProcessLifecycleOwner: App moved to background' \
+        "$LOG_PATTERN_APP_TO_BACKGROUND" \
         "New bundle: ${second_release} found\\. Current is: ${first_release}\\. Update will occur now\\." \
-        'Download succeeded: SUCCEEDED' \
-        'directUpdate: true' \
+        "$LOG_PATTERN_DOWNLOAD_SUCCEEDED" \
+        "$LOG_PATTERN_DIRECT_UPDATE_TRUE" \
         "Current bundle set to: .*${second_release}" \
         "Current bundle loaded successfully\\..*\"version\":\"${second_release}\""
       ;;
@@ -163,8 +165,8 @@ run_scenario() {
       wait_for_log_patterns \
         "atInstall applies the first release on initial launch" \
         "New bundle: ${first_release} found\\. Current is: 1\\.0\\. Update will occur now\\." \
-        'Download succeeded: SUCCEEDED' \
-        'directUpdate: true' \
+        "$LOG_PATTERN_DOWNLOAD_SUCCEEDED" \
+        "$LOG_PATTERN_DIRECT_UPDATE_TRUE" \
         "Current bundle set to: .*${first_release}" \
         "Current bundle loaded successfully\\..*\"version\":\"${first_release}\""
       control_server advance at-install
@@ -172,16 +174,16 @@ run_scenario() {
         apply-after-background.yaml
       wait_for_log_patterns \
         "atInstall downloads the second release and queues it for the next launch" \
-        'ProcessLifecycleOwner: App moved to background' \
+        "$LOG_PATTERN_APP_TO_BACKGROUND" \
         "New bundle: ${second_release} found\\. Current is: ${first_release}\\. Update will occur next time app moves to background\\." \
-        'Download succeeded: SUCCEEDED' \
+        "$LOG_PATTERN_DOWNLOAD_SUCCEEDED" \
         'setNext: true' \
         'directUpdate: false'
       run_flow \
         apply-after-background.yaml
       wait_for_log_patterns \
         "atInstall applies the second release after another background and resume" \
-        'ProcessLifecycleOwner: App moved to background' \
+        "$LOG_PATTERN_APP_TO_BACKGROUND" \
         "Updated to bundle: ${second_release}" \
         "Current bundle loaded successfully\\..*\"version\":\"${second_release}\""
       ;;
@@ -197,8 +199,8 @@ run_scenario() {
       wait_for_log_patterns \
         "onLaunch applies the first release on the initial cold launch" \
         "New bundle: ${first_release} found\\. Current is: 1\\.0\\. Update will occur now\\." \
-        'Download succeeded: SUCCEEDED' \
-        'directUpdate: true' \
+        "$LOG_PATTERN_DOWNLOAD_SUCCEEDED" \
+        "$LOG_PATTERN_DIRECT_UPDATE_TRUE" \
         "Current bundle set to: .*${first_release}" \
         "Current bundle loaded successfully\\..*\"version\":\"${first_release}\""
       control_server advance on-launch
@@ -210,8 +212,8 @@ run_scenario() {
       wait_for_log_patterns \
         "onLaunch applies the second release after a full cold start" \
         "New bundle: ${second_release} found\\. Current is: ${first_release}\\. Update will occur now\\." \
-        'Download succeeded: SUCCEEDED' \
-        'directUpdate: true' \
+        "$LOG_PATTERN_DOWNLOAD_SUCCEEDED" \
+        "$LOG_PATTERN_DIRECT_UPDATE_TRUE" \
         "Current bundle set to: .*${second_release}" \
         "Current bundle loaded successfully\\..*\"version\":\"${second_release}\""
       ;;
