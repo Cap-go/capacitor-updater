@@ -192,7 +192,7 @@ button:disabled {
   background: rgba(12, 7, 6, 0.82);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-family: 'SFMono-Regular', 'Menlo', monospace;
+  font-family: SFMono-Regular, Menlo, monospace;
   font-size: 0.82rem;
   color: #ffe9d3;
 }

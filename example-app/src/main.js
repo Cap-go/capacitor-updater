@@ -15,6 +15,7 @@ const bootStorageKey = '__capgo_maestro_boot_count';
 const maxEvents = 8;
 const fallbackUpdateUrl = 'https://example.com/api/auto_update';
 const defaultUpdateUrl = serverUrl.startsWith('http') ? serverUrl : fallbackUpdateUrl;
+const isSmokeMode = scenarioId === 'manual' && serverUrl === 'not-configured';
 
 function requireElement(id) {
   const element = document.getElementById(id);
@@ -126,7 +127,8 @@ const actions = [
 ];
 
 function incrementBootCount() {
-  const previous = Number(window.localStorage.getItem(bootStorageKey) ?? '0');
+  const stored = Number(window.localStorage.getItem(bootStorageKey) ?? '0');
+  const previous = Number.isFinite(stored) ? stored : 0;
   const next = previous + 1;
   window.localStorage.setItem(bootStorageKey, String(next));
   return next;
@@ -321,7 +323,12 @@ function formatResult(result) {
     return result;
   }
 
-  return JSON.stringify(result, null, 2);
+  try {
+    return JSON.stringify(result, null, 2);
+  } catch (error) {
+    console.warn('Unable to serialize plugin result for display', error);
+    return String(result);
+  }
 }
 
 function getCardValues(card, action) {
@@ -350,7 +357,7 @@ async function runAction(action, values) {
     elements.actionStatus.textContent = 'Status: success';
     elements.resultMarker.textContent = `Result marker: ${action.id}:success`;
     elements.output.textContent = formatResult(result);
-    await refreshState();
+    void refreshState();
     return result;
   } catch (error) {
     const message = error?.message ?? String(error);
@@ -439,9 +446,18 @@ function renderActions() {
 }
 
 async function bootstrap() {
-  attachListeners();
   renderActions();
   renderState();
+
+  if (isSmokeMode) {
+    plugin.notifyAppReady().catch((error) => {
+      console.error('notifyAppReady() bootstrap failed', error);
+    });
+    void refreshState();
+    return;
+  }
+
+  attachListeners();
 
   try {
     await performNotifyAppReady();

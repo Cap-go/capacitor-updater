@@ -1,19 +1,23 @@
 appId: app.capgo.updater
 ---
-- assertVisible: "@capgo/capacitor-updater"
-- tapOn: "Run smoke test sequence"
+- assertVisible: '@capgo/capacitor-updater'
+- scrollUntilVisible:
+    element:
+      text: 'Run smoke test sequence'
+    direction: DOWN
+- tapOn: 'Run smoke test sequence'
 - repeat:
     times: 3
     while:
-      notVisible: "Latest Result"
+      notVisible: 'Latest Result'
     commands:
       - scroll
-- assertVisible: "Latest Result"
+- assertVisible: 'Latest Result'
 - scroll
 - extendedWaitUntil:
-    visible: "Result marker: smoke-sequence:success"
+    visible: 'Result marker: smoke-sequence:success'
     timeout: 90000
-- assertVisible: "Sequence: success"
-- assertVisible: "Last action: Set update URL"
-- assertVisible: "Status: success"
-- assertVisible: "Result marker: smoke-sequence:success"
+- assertVisible: 'Sequence: success'
+- assertVisible: 'Last action: Set update URL'
+- assertVisible: 'Status: success'
+- assertVisible: 'Result marker: smoke-sequence:success'

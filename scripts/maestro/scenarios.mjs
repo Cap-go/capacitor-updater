@@ -84,7 +84,15 @@ export function getBundleZipPath(version) {
 }
 
 export function createBuildEnv({ scenarioId, directUpdate, appLabel, env = process.env }) {
-  const updateUrl = `${defaultDeviceBaseUrl}/api/updates/${scenarioId}`;
+  const rawEnvPort = env.CAPGO_MAESTRO_PORT?.trim() || String(defaultPort);
+  const envPort = Number.parseInt(rawEnvPort, 10);
+
+  if (!Number.isInteger(envPort) || envPort <= 0 || envPort > 65535) {
+    throw new Error(`Invalid CAPGO_MAESTRO_PORT: ${rawEnvPort}`);
+  }
+
+  const deviceBaseUrl = env.CAPGO_MAESTRO_DEVICE_BASE_URL ?? `http://10.0.2.2:${envPort}`;
+  const updateUrl = `${deviceBaseUrl}/api/updates/${scenarioId}`;
 
   return {
     ...env,
@@ -93,7 +101,7 @@ export function createBuildEnv({ scenarioId, directUpdate, appLabel, env = proce
     VITE_CAPGO_DIRECT_UPDATE: directUpdate,
     VITE_CAPGO_SERVER_URL: updateUrl,
     CAPGO_UPDATE_URL: updateUrl,
-    CAPGO_STATS_URL: `${defaultDeviceBaseUrl}/api/stats`,
-    CAPGO_CHANNEL_URL: `${defaultDeviceBaseUrl}/api/channel`,
+    CAPGO_STATS_URL: `${deviceBaseUrl}/api/stats`,
+    CAPGO_CHANNEL_URL: `${deviceBaseUrl}/api/channel`,
   };
 }

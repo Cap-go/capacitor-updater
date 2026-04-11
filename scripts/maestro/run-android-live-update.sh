@@ -6,6 +6,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ARTIFACT_DIR="$ROOT_DIR/.maestro-artifacts"
 HOST_SERVER_PORT="${CAPGO_MAESTRO_PORT:-3192}"
 HOST_SERVER_URL="${CAPGO_MAESTRO_HOST_BASE_URL:-http://127.0.0.1:${HOST_SERVER_PORT}}"
+DEVICE_SERVER_URL="${CAPGO_MAESTRO_DEVICE_BASE_URL:-http://127.0.0.1:${HOST_SERVER_PORT}}"
 APP_ID="app.capgo.updater"
 APK_PATH="$ROOT_DIR/example-app/android/app/build/outputs/apk/debug/app-debug.apk"
 SCENARIO_SELECTION="${1:-all}"
@@ -14,6 +15,7 @@ FLOW_RETRY_PATTERN="TcpForwarder.waitFor|allocateForwarder|TimeoutException|Andr
 MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
 MAESTRO_DRIVER_STARTUP_TIMEOUT_VALUE="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-300000}"
 MAESTRO_FLOW_TIMEOUT_SECONDS="${MAESTRO_FLOW_TIMEOUT_SECONDS:-360}"
+TIMEOUT_CMD="$(command -v gtimeout || command -v timeout || true)"
 SCENARIO_SEQUENCE=(deferred always at-install on-launch)
 LOG_PATTERN_APP_TO_BACKGROUND='ProcessLifecycleOwner: App moved to background'
 LOG_PATTERN_DOWNLOAD_SUCCEEDED='Download succeeded: SUCCEEDED'
@@ -54,6 +56,12 @@ wait_for_server() {
 reset_adb_forwarding() {
   adb forward --remove-all >/dev/null 2>&1 || true
   adb reverse --remove-all >/dev/null 2>&1 || true
+  configure_server_routing
+  return 0
+}
+
+configure_server_routing() {
+  adb reverse "tcp:${HOST_SERVER_PORT}" "tcp:${HOST_SERVER_PORT}" >/dev/null 2>&1 || true
   return 0
 }
 
@@ -275,6 +283,7 @@ prepare_device_for_maestro() {
   ensure_android_device
   wait_for_android_boot
   unlock_android_device
+  configure_server_routing
   return 0
 }
 
@@ -422,7 +431,7 @@ run_flow() {
     set +e
     MAESTRO_CLI_NO_ANALYTICS="$MAESTRO_CLI_NO_ANALYTICS" \
       MAESTRO_DRIVER_STARTUP_TIMEOUT="$MAESTRO_DRIVER_STARTUP_TIMEOUT_VALUE" \
-      timeout --foreground "${MAESTRO_FLOW_TIMEOUT_SECONDS}s" \
+      "$TIMEOUT_CMD" --foreground "${MAESTRO_FLOW_TIMEOUT_SECONDS}s" \
       maestro test "${maestro_args[@]}" "$ROOT_DIR/.maestro/$flow_file" 2>&1 | tee "$output_file"
     command_status=${PIPESTATUS[0]}
     set -e
@@ -471,6 +480,11 @@ prepare_scenario() {
 mkdir -p "$ARTIFACT_DIR"
 trap cleanup EXIT
 
+if [[ -z "$TIMEOUT_CMD" ]]; then
+  echo "GNU timeout is required to run Maestro flows. Install coreutils (gtimeout) on macOS or make sure timeout is available." >&2
+  exit 1
+fi
+
 command -v maestro >/dev/null 2>&1 || {
   echo "Maestro CLI is required. Install it with https://maestro.mobile.dev/getting-started/installing-maestro." >&2
   exit 1
@@ -480,6 +494,8 @@ command -v adb >/dev/null 2>&1 || {
   echo "adb is required to run the Android live update test." >&2
   exit 1
 }
+
+export CAPGO_MAESTRO_DEVICE_BASE_URL="$DEVICE_SERVER_URL"
 
 ensure_android_device
 
