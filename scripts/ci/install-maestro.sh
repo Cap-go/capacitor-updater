@@ -10,10 +10,13 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 download_maestro_asset() {
   local asset_name="$1"
   local output_path="$2"
+  local downloaded_path="$TMP_DIR/$asset_name"
 
   if command -v gh >/dev/null 2>&1 && [[ -n "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ]]; then
     if gh release download "$MAESTRO_VERSION" --repo mobile-dev-inc/Maestro --pattern "$asset_name" --dir "$TMP_DIR" --clobber; then
-      mv "$TMP_DIR/$asset_name" "$output_path"
+      if [[ "$downloaded_path" != "$output_path" ]]; then
+        mv "$downloaded_path" "$output_path"
+      fi
       return 0
     fi
 

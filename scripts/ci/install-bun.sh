@@ -58,5 +58,6 @@ rm -rf "$HOME/.bun"
 mkdir -p "$HOME/.bun/bin"
 cp "$INSTALL_PATH" "$HOME/.bun/bin/bun"
 chmod 0755 "$HOME/.bun/bin/bun"
+ln -sf "$HOME/.bun/bin/bun" "$HOME/.bun/bin/bunx"
 echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
 "$HOME/.bun/bin/bun" --revision
