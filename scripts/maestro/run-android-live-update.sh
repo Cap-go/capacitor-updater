@@ -8,6 +8,7 @@ HOST_SERVER_PORT="${CAPGO_MAESTRO_PORT:-3192}"
 HOST_SERVER_URL="${CAPGO_MAESTRO_HOST_BASE_URL:-http://127.0.0.1:${HOST_SERVER_PORT}}"
 DEVICE_SERVER_URL="${CAPGO_MAESTRO_DEVICE_BASE_URL:-http://127.0.0.1:${HOST_SERVER_PORT}}"
 APP_ID="app.capgo.updater"
+APP_ACTIVITY="${CAPGO_MAESTRO_ANDROID_ACTIVITY:-app.capgo.updater/.MainActivity}"
 APK_PATH="$ROOT_DIR/example-app/android/app/build/outputs/apk/debug/app-debug.apk"
 SCENARIO_SELECTION="${1:-all}"
 SERVER_PID=""
@@ -15,6 +16,7 @@ FLOW_RETRY_PATTERN="TcpForwarder.waitFor|allocateForwarder|TimeoutException|Andr
 MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
 MAESTRO_DRIVER_STARTUP_TIMEOUT_VALUE="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-300000}"
 MAESTRO_FLOW_TIMEOUT_SECONDS="${MAESTRO_FLOW_TIMEOUT_SECONDS:-360}"
+APP_BACKGROUND_SETTLE_SECONDS="${CAPGO_MAESTRO_BACKGROUND_SETTLE_SECONDS:-3}"
 TIMEOUT_CMD="$(command -v gtimeout || command -v timeout || true)"
 SCENARIO_SEQUENCE=(deferred always at-install on-launch)
 
@@ -113,6 +115,7 @@ run_scenario() {
         EXPECTED_CURRENT_RELEASE=1.0 \
         EXPECTED_NEXT_RELEASE="$first_release" \
         EXPECTED_DOWNLOADED_RELEASE="$first_release"
+      background_and_resume_app
       run_flow \
         apply-after-background.yaml \
         SOURCE_LABEL="$builtin_label" \
@@ -129,6 +132,7 @@ run_scenario() {
         EXPECTED_LABEL="$first_release" \
         EXPECTED_RELEASE="$first_release"
       control_server advance always
+      background_and_resume_app
       run_flow \
         resume-direct-update.yaml \
         SOURCE_LABEL="$first_release" \
@@ -145,6 +149,7 @@ run_scenario() {
         EXPECTED_LABEL="$first_release" \
         EXPECTED_RELEASE="$first_release"
       control_server advance at-install
+      background_and_resume_app
       run_flow \
         resume-download-then-background.yaml \
         EXPECTED_SOURCE=downloaded \
@@ -152,6 +157,7 @@ run_scenario() {
         EXPECTED_CURRENT_RELEASE="$first_release" \
         EXPECTED_NEXT_RELEASE="$second_release" \
         EXPECTED_DOWNLOADED_RELEASE="$second_release"
+      background_and_resume_app
       run_flow \
         apply-after-background.yaml \
         EXPECTED_LABEL="$second_release" \
@@ -261,6 +267,43 @@ wait_for_package_manager() {
     echo "Last settings readiness output: $settings_output" >&2
   fi
   return 1
+}
+
+launch_android_app() {
+  adb shell am start -S -W -n "$APP_ACTIVITY" >/dev/null 2>&1 || \
+    adb shell monkey -p "$APP_ID" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1 || true
+  return 0
+}
+
+wait_for_app_foreground() {
+  local window_dump=""
+
+  for _ in $(seq 1 30); do
+    window_dump="$(
+      {
+        adb shell dumpsys window windows 2>/dev/null || true
+      } | tr -d '\r'
+    )"
+
+    if grep -Eq "mCurrentFocus=.*${APP_ID}|mFocusedApp=.*${APP_ID}" <<<"$window_dump"; then
+      return 0
+    fi
+
+    sleep 1
+  done
+
+  echo "Android app did not return to the foreground in time for Maestro." >&2
+  return 1
+}
+
+background_and_resume_app() {
+  echo "Backgrounding ${APP_ID} and waiting ${APP_BACKGROUND_SETTLE_SECONDS}s for Android lifecycle delivery"
+  adb shell input keyevent KEYCODE_HOME >/dev/null 2>&1 || true
+  sleep "$APP_BACKGROUND_SETTLE_SECONDS"
+  prepare_device_for_maestro
+  launch_android_app
+  wait_for_app_foreground
+  return 0
 }
 
 install_apk() {
