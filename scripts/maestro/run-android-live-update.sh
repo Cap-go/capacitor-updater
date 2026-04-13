@@ -181,7 +181,9 @@ run_scenario() {
         "Current bundle loaded successfully\\..*\"version\":\"${first_release}\""
       control_server advance at-install
       run_flow \
-        apply-after-background.yaml
+        apply-after-background.yaml \
+        EXPECTED_LABEL="$first_release" \
+        EXPECTED_RELEASE="$first_release"
       wait_for_log_patterns \
         "atInstall downloads the second release and queues it for the next launch" \
         "$LOG_PATTERN_APP_TO_BACKGROUND" \
@@ -190,7 +192,9 @@ run_scenario() {
         'setNext: true' \
         'directUpdate: false'
       run_flow \
-        apply-after-background.yaml
+        apply-after-background.yaml \
+        EXPECTED_LABEL="$second_release" \
+        EXPECTED_RELEASE="$second_release"
       wait_for_log_patterns \
         "atInstall applies the second release after another background and resume" \
         "$LOG_PATTERN_APP_TO_BACKGROUND" \

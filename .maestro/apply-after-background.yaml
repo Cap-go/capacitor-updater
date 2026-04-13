@@ -1,3 +1,4 @@
 appId: app.capgo.updater
 ---
 - runFlow: helpers/relaunch-app.yaml
+- runFlow: helpers/assert-applied-update.yaml
