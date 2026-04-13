@@ -1,9 +1,7 @@
 :root {
   color-scheme: dark;
   color: #f5f0e6;
-  background:
-    radial-gradient(circle at top, rgba(210, 121, 80, 0.28), transparent 34%),
-    linear-gradient(160deg, #1f1411 0%, #120c0a 55%, #0a0808 100%);
+  background: linear-gradient(180deg, #1c120f 0%, #120c0a 100%);
   font-family: 'Avenir Next', 'Trebuchet MS', sans-serif;
 }
 
@@ -30,9 +28,8 @@ body {
 .action-card {
   border: 1px solid rgba(255, 230, 196, 0.16);
   border-radius: 20px;
-  background: rgba(22, 14, 12, 0.76);
-  backdrop-filter: blur(10px);
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.28);
+  background: rgba(22, 14, 12, 0.96);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
 }
 
 .hero {
@@ -117,7 +114,7 @@ h3 {
   display: grid;
   gap: 12px;
   padding: 18px;
-  background: rgba(12, 7, 6, 0.82);
+  background: rgba(15, 9, 8, 0.98);
 }
 
 .action-copy {
@@ -155,12 +152,10 @@ button {
   color: #2d130d;
   font-weight: 700;
   cursor: pointer;
-  transition: transform 140ms ease, filter 140ms ease;
 }
 
 button:hover {
   filter: brightness(1.05);
-  transform: translateY(-1px);
 }
 
 button:disabled {
@@ -195,6 +190,10 @@ button:disabled {
   font-family: SFMono-Regular, Menlo, monospace;
   font-size: 0.82rem;
   color: #ffe9d3;
+}
+
+.action-marker {
+  font-size: 0.88rem;
 }
 
 #plugin-output {

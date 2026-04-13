@@ -50,6 +50,7 @@ const elements = {
 };
 
 const actionCards = new Map();
+const actionMarkers = new Map();
 const state = {
   bootCount: incrementBootCount(),
   notifyStatus: 'pending',
@@ -347,16 +348,23 @@ function getCardValues(card, action) {
 }
 
 async function runAction(action, values) {
+  const actionMarker = actionMarkers.get(action.id);
   elements.lastAction.textContent = `Last action: ${action.label}`;
   elements.actionStatus.textContent = 'Status: running';
   elements.resultMarker.textContent = `Result marker: ${action.id}:running`;
   elements.output.textContent = `Running ${action.label}...`;
+  if (actionMarker) {
+    actionMarker.textContent = `Action marker: ${action.id}:running`;
+  }
 
   try {
     const result = await action.run(values);
     elements.actionStatus.textContent = 'Status: success';
     elements.resultMarker.textContent = `Result marker: ${action.id}:success`;
     elements.output.textContent = formatResult(result);
+    if (actionMarker) {
+      actionMarker.textContent = `Action marker: ${action.id}:success`;
+    }
     void refreshState();
     return result;
   } catch (error) {
@@ -365,6 +373,9 @@ async function runAction(action, values) {
     elements.actionStatus.textContent = 'Status: error';
     elements.resultMarker.textContent = `Result marker: ${action.id}:error`;
     elements.output.textContent = `Error: ${message}`;
+    if (actionMarker) {
+      actionMarker.textContent = `Action marker: ${action.id}:error`;
+    }
     renderState();
     throw error;
   }
@@ -434,6 +445,13 @@ function createActionCard(action) {
   });
 
   card.appendChild(button);
+
+  const actionMarker = document.createElement('p');
+  actionMarker.className = 'status-line action-marker';
+  actionMarker.textContent = `Action marker: ${action.id}:idle`;
+  card.appendChild(actionMarker);
+  actionMarkers.set(action.id, actionMarker);
+
   return card;
 }
 

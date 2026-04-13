@@ -13,8 +13,9 @@ MAESTRO_DRIVER_STARTUP_TIMEOUT="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-180000}"
 APK_INSTALL_RETRIES="${CAPGO_MAESTRO_APK_INSTALL_RETRIES:-3}"
 PACKAGE_SERVICE_TIMEOUT_SECONDS="${CAPGO_MAESTRO_ANDROID_PACKAGE_TIMEOUT_SECONDS:-120}"
 APP_ACTIVITY="${CAPGO_MAESTRO_ANDROID_ACTIVITY:-app.capgo.updater/.MainActivity}"
-APP_LAUNCH_RETRIES="${CAPGO_MAESTRO_APP_LAUNCH_RETRIES:-2}"
-APP_UI_TIMEOUT_SECONDS="${CAPGO_MAESTRO_APP_UI_TIMEOUT_SECONDS:-90}"
+APP_LAUNCH_RETRIES="${CAPGO_MAESTRO_APP_LAUNCH_RETRIES:-3}"
+APP_UI_TIMEOUT_SECONDS="${CAPGO_MAESTRO_APP_UI_TIMEOUT_SECONDS:-150}"
+POST_INSTALL_STABILIZE_SECONDS="${CAPGO_MAESTRO_POST_INSTALL_STABILIZE_SECONDS:-8}"
 APP_READY_TITLE="@capgo/capacitor-updater"
 APP_READY_ACTION="Run notifyAppReady"
 APP_ID="app.capgo.updater"
@@ -105,8 +106,15 @@ tap_android_anr_wait_button_if_present() {
 }
 
 launch_example_app() {
-  adb shell am start -W -n "$APP_ACTIVITY" >/dev/null 2>&1 || \
+  adb shell am start -S -W -n "$APP_ACTIVITY" >/dev/null 2>&1 || \
     adb shell monkey -p "$APP_ID" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1 || true
+  return 0
+}
+
+stabilize_android_after_install() {
+  wait_for_emulator_boot
+  wait_for_android_package_service
+  sleep "$POST_INSTALL_STABILIZE_SECONDS"
   return 0
 }
 
@@ -130,6 +138,7 @@ wait_for_example_app_ui() {
 
     echo "Example app UI did not appear on Android launch attempt ${attempt}; restarting the app." >&2
     adb shell am force-stop "$APP_ID" >/dev/null 2>&1 || true
+    wait_for_android_package_service || true
     sleep 2
     ((attempt += 1))
   done
@@ -226,6 +235,7 @@ adb shell settings put global transition_animation_scale 0 || true
 adb shell settings put global animator_duration_scale 0 || true
 adb shell input keyevent 82 || true
 install_apk_with_retries
+stabilize_android_after_install
 wait_for_example_app_ui
 
 rm -rf "$RESULTS_DIR"
