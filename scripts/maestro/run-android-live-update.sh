@@ -16,7 +16,7 @@ MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
 MAESTRO_DRIVER_STARTUP_TIMEOUT_VALUE="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-300000}"
 MAESTRO_FLOW_TIMEOUT_SECONDS="${MAESTRO_FLOW_TIMEOUT_SECONDS:-360}"
 LOG_WAIT_TIMEOUT_SECONDS="${LOG_WAIT_TIMEOUT_SECONDS:-180}"
-ADB_COMMAND_TIMEOUT_SECONDS="${ADB_COMMAND_TIMEOUT_SECONDS:-5}"
+ADB_COMMAND_TIMEOUT_SECONDS="${ADB_COMMAND_TIMEOUT_SECONDS:-15}"
 TIMEOUT_CMD="$(command -v gtimeout || command -v timeout || true)"
 SCENARIO_SEQUENCE=(deferred always at-install on-launch)
 LOG_PATTERN_APP_TO_BACKGROUND='ProcessLifecycleOwner: App moved to background'
@@ -356,8 +356,20 @@ clear_logcat() {
 }
 
 dump_relevant_logcat() {
-  "$TIMEOUT_CMD" --foreground "${ADB_COMMAND_TIMEOUT_SECONDS}s" \
-    adb logcat -d -v brief CapgoUpdater:I AndroidRuntime:I '*:S' 2>/dev/null || true
+  local dump=""
+
+  dump="$("$TIMEOUT_CMD" --foreground "${ADB_COMMAND_TIMEOUT_SECONDS}s" adb logcat -d -v brief 2>/dev/null || true)"
+
+  if [[ -z "$dump" ]]; then
+    return 0
+  fi
+
+  if command -v rg >/dev/null 2>&1; then
+    printf '%s\n' "$dump" | rg 'CapgoUpdater|AndroidRuntime' || true
+    return 0
+  fi
+
+  printf '%s\n' "$dump" | grep -E 'CapgoUpdater|AndroidRuntime' || true
   return 0
 }
 
