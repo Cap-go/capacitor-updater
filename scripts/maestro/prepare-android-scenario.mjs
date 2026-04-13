@@ -1,6 +1,28 @@
 import { runCommand } from './command.mjs';
 import { createBuildEnv, exampleAppDir, getScenario } from './scenarios.mjs';
 
+async function runCommandWithRetries(command, args, options, maxAttempts = 3) {
+  let attempt = 1;
+
+  while (attempt <= maxAttempts) {
+    try {
+      await runCommand(command, args, options);
+      return;
+    } catch (error) {
+      if (attempt === maxAttempts) {
+        throw error;
+      }
+
+      console.warn(
+        `[maestro] ${command} ${args.join(' ')} failed on attempt ${attempt}/${maxAttempts}: ${error.message}`,
+      );
+      console.warn('[maestro] Retrying after a short delay...');
+      await Bun.sleep(attempt * 5000);
+      attempt += 1;
+    }
+  }
+}
+
 const scenarioId = process.argv[2];
 
 if (!scenarioId) {
@@ -29,7 +51,7 @@ await runCommand('bunx', ['cap', 'sync', 'android'], {
   env,
 });
 
-await runCommand('./gradlew', ['assembleDebug'], {
+await runCommandWithRetries('./gradlew', ['assembleDebug'], {
   cwd: `${exampleAppDir}/android`,
   env,
 });
