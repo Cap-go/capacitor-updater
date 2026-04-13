@@ -33,7 +33,8 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - name: Install Bun
+        run: ./scripts/ci/install-bun.sh
       - name: Install dependencies
         id: install_code
         run: bun i
@@ -56,7 +57,8 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - name: Install Bun
+        run: ./scripts/ci/install-bun.sh
       - name: Install dependencies
         id: install_code
         run: bun i
@@ -75,7 +77,8 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - name: Install Bun
+        run: ./scripts/ci/install-bun.sh
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
@@ -90,33 +93,7 @@ jobs:
       - name: Install Maestro
         env:
           MAESTRO_VERSION: cli-2.4.0
-        run: |
-          set -euo pipefail
-          base_url="https://github.com/mobile-dev-inc/Maestro/releases/download/${MAESTRO_VERSION}"
-          tmp_dir="$(mktemp -d)"
-          trap 'rm -rf "$tmp_dir"' EXIT
-          curl -fsSL -o "$tmp_dir/maestro.zip" "${base_url}/maestro.zip"
-          curl -fsSL -o "$tmp_dir/checksums_sha256.txt" "${base_url}/checksums_sha256.txt"
-          (
-            cd "$tmp_dir"
-            grep ' maestro.zip$' checksums_sha256.txt | sha256sum -c -
-          )
-          unzip -q "$tmp_dir/maestro.zip" -d "$tmp_dir/maestro"
-          install_path="$(find "$tmp_dir/maestro" -type f -name maestro | head -n 1)"
-          if [[ -z "$install_path" ]]; then
-            echo "Unable to locate Maestro binary after extracting ${MAESTRO_VERSION}" >&2
-            exit 1
-          fi
-          install_root="$(dirname "$(dirname "$install_path")")"
-          rm -rf "$HOME/.maestro"
-          mkdir -p "$HOME/.maestro"
-          cp -R "$install_root"/. "$HOME/.maestro/"
-          if [[ ! -f "$HOME/.maestro/bin/maestro" || ! -d "$HOME/.maestro/lib" ]]; then
-            echo "Incomplete Maestro installation for ${MAESTRO_VERSION}" >&2
-            exit 1
-          fi
-          chmod 0755 "$HOME/.maestro/bin/maestro"
-          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+        run: ./scripts/ci/install-maestro.sh
       - name: Build plugin and example app
         run: |
           bun run build
@@ -148,7 +125,8 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - name: Install Bun
+        run: ./scripts/ci/install-bun.sh
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
@@ -158,33 +136,7 @@ jobs:
       - name: Install Maestro
         env:
           MAESTRO_VERSION: cli-2.4.0
-        run: |
-          set -euo pipefail
-          base_url="https://github.com/mobile-dev-inc/Maestro/releases/download/${MAESTRO_VERSION}"
-          tmp_dir="$(mktemp -d)"
-          trap 'rm -rf "$tmp_dir"' EXIT
-          curl -fsSL -o "$tmp_dir/maestro.zip" "${base_url}/maestro.zip"
-          curl -fsSL -o "$tmp_dir/checksums_sha256.txt" "${base_url}/checksums_sha256.txt"
-          (
-            cd "$tmp_dir"
-            grep ' maestro.zip$' checksums_sha256.txt | shasum -a 256 -c -
-          )
-          unzip -q "$tmp_dir/maestro.zip" -d "$tmp_dir/maestro"
-          install_path="$(find "$tmp_dir/maestro" -type f -name maestro | head -n 1)"
-          if [[ -z "$install_path" ]]; then
-            echo "Unable to locate Maestro binary after extracting ${MAESTRO_VERSION}" >&2
-            exit 1
-          fi
-          install_root="$(dirname "$(dirname "$install_path")")"
-          rm -rf "$HOME/.maestro"
-          mkdir -p "$HOME/.maestro"
-          cp -R "$install_root"/. "$HOME/.maestro/"
-          if [[ ! -f "$HOME/.maestro/bin/maestro" || ! -d "$HOME/.maestro/lib" ]]; then
-            echo "Incomplete Maestro installation for ${MAESTRO_VERSION}" >&2
-            exit 1
-          fi
-          chmod 0755 "$HOME/.maestro/bin/maestro"
-          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+        run: ./scripts/ci/install-maestro.sh
       - name: Run Maestro smoke tests
         run: bun run test:maestro:ios
       - name: Upload Maestro artifacts
@@ -200,7 +152,8 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - name: Install Bun
+        run: ./scripts/ci/install-bun.sh
       - name: Install dependencies
         id: install_code
         run: bun i
@@ -221,7 +174,8 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - name: Install Bun
+        run: ./scripts/ci/install-bun.sh
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
@@ -236,33 +190,7 @@ jobs:
       - name: Install Maestro
         env:
           MAESTRO_VERSION: cli-2.4.0
-        run: |
-          set -euo pipefail
-          base_url="https://github.com/mobile-dev-inc/Maestro/releases/download/${MAESTRO_VERSION}"
-          tmp_dir="$(mktemp -d)"
-          trap 'rm -rf "$tmp_dir"' EXIT
-          curl -fsSL -o "$tmp_dir/maestro.zip" "${base_url}/maestro.zip"
-          curl -fsSL -o "$tmp_dir/checksums_sha256.txt" "${base_url}/checksums_sha256.txt"
-          (
-            cd "$tmp_dir"
-            grep ' maestro.zip$' checksums_sha256.txt | sha256sum -c -
-          )
-          unzip -q "$tmp_dir/maestro.zip" -d "$tmp_dir/maestro"
-          install_path="$(find "$tmp_dir/maestro" -type f -name maestro | head -n 1)"
-          if [[ -z "$install_path" ]]; then
-            echo "Unable to locate Maestro binary after extracting ${MAESTRO_VERSION}" >&2
-            exit 1
-          fi
-          install_root="$(dirname "$(dirname "$install_path")")"
-          rm -rf "$HOME/.maestro"
-          mkdir -p "$HOME/.maestro"
-          cp -R "$install_root"/. "$HOME/.maestro/"
-          if [[ ! -f "$HOME/.maestro/bin/maestro" || ! -d "$HOME/.maestro/lib" ]]; then
-            echo "Incomplete Maestro installation for ${MAESTRO_VERSION}" >&2
-            exit 1
-          fi
-          chmod 0755 "$HOME/.maestro/bin/maestro"
-          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+        run: ./scripts/ci/install-maestro.sh
       - name: Run live update Maestro flow
         uses: reactivecircus/android-emulator-runner@e89f39f1abbbd05b1113a29cf4db69e7540cae5a # v2
         with:
