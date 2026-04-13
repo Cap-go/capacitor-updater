@@ -13,6 +13,9 @@ on:
   workflow_dispatch:
   workflow_call: # Allow this workflow to be called by other workflows
 
+env:
+  GH_TOKEN: ${{ github.token }}
+
 jobs:
   guard_swiftpm_version:
     timeout-minutes: 30

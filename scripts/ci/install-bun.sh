@@ -30,9 +30,22 @@ BASE_URL="https://github.com/oven-sh/bun/releases/download/bun-v${NORMALIZED_VER
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-curl --retry 5 --retry-all-errors --retry-delay 5 -fsSL \
-  -o "$TMP_DIR/bun.zip" \
-  "${BASE_URL}/${BUN_ARCHIVE}"
+download_bun_archive() {
+  if command -v gh >/dev/null 2>&1 && [[ -n "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ]]; then
+    if gh release download "bun-v${NORMALIZED_VERSION}" --repo oven-sh/bun --pattern "$BUN_ARCHIVE" --dir "$TMP_DIR" --clobber; then
+      mv "$TMP_DIR/$BUN_ARCHIVE" "$TMP_DIR/bun.zip"
+      return 0
+    fi
+
+    echo "Authenticated Bun release download failed; falling back to direct curl." >&2
+  fi
+
+  curl --retry 5 --retry-all-errors --retry-delay 5 -fsSL \
+    -o "$TMP_DIR/bun.zip" \
+    "${BASE_URL}/${BUN_ARCHIVE}"
+}
+
+download_bun_archive
 unzip -q "$TMP_DIR/bun.zip" -d "$TMP_DIR/bun"
 
 INSTALL_PATH="$(find "$TMP_DIR/bun" -type f -name bun | head -n 1)"

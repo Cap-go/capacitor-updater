@@ -7,12 +7,26 @@ BASE_URL="https://github.com/mobile-dev-inc/Maestro/releases/download/${MAESTRO_
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-curl --retry 5 --retry-all-errors --retry-delay 5 -fsSL \
-  -o "$TMP_DIR/maestro.zip" \
-  "${BASE_URL}/maestro.zip"
-curl --retry 5 --retry-all-errors --retry-delay 5 -fsSL \
-  -o "$TMP_DIR/checksums_sha256.txt" \
-  "${BASE_URL}/checksums_sha256.txt"
+download_maestro_asset() {
+  local asset_name="$1"
+  local output_path="$2"
+
+  if command -v gh >/dev/null 2>&1 && [[ -n "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ]]; then
+    if gh release download "$MAESTRO_VERSION" --repo mobile-dev-inc/Maestro --pattern "$asset_name" --dir "$TMP_DIR" --clobber; then
+      mv "$TMP_DIR/$asset_name" "$output_path"
+      return 0
+    fi
+
+    echo "Authenticated Maestro release download failed for ${asset_name}; falling back to direct curl." >&2
+  fi
+
+  curl --retry 5 --retry-all-errors --retry-delay 5 -fsSL \
+    -o "$output_path" \
+    "${BASE_URL}/${asset_name}"
+}
+
+download_maestro_asset maestro.zip "$TMP_DIR/maestro.zip"
+download_maestro_asset checksums_sha256.txt "$TMP_DIR/checksums_sha256.txt"
 
 (
   cd "$TMP_DIR"
