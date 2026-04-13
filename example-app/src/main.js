@@ -51,6 +51,7 @@ const elements = {
 
 const actionCards = new Map();
 const actionMarkers = new Map();
+let smokeSequencePromise = null;
 const state = {
   bootCount: incrementBootCount(),
   notifyStatus: 'pending',
@@ -382,24 +383,36 @@ async function runAction(action, values) {
 }
 
 async function runSmokeSequence() {
-  elements.sequenceStatus.textContent = 'Sequence: running';
-  elements.runSmokeSequenceButton.disabled = true;
-
-  try {
-    for (const action of actions) {
-      const card = actionCards.get(action.id);
-      const values = card ? getCardValues(card, action) : {};
-      await runAction(action, values);
-    }
-    elements.sequenceStatus.textContent = 'Sequence: success';
-    elements.resultMarker.textContent = 'Result marker: smoke-sequence:success';
-  } catch (error) {
-    elements.sequenceStatus.textContent = 'Sequence: error';
-    elements.resultMarker.textContent = 'Result marker: smoke-sequence:error';
-    console.error('Smoke sequence failed', error);
-  } finally {
-    elements.runSmokeSequenceButton.disabled = false;
+  if (smokeSequencePromise) {
+    return smokeSequencePromise;
   }
+
+  smokeSequencePromise = (async () => {
+    elements.sequenceStatus.textContent = 'Sequence: running';
+    elements.resultMarker.textContent = 'Result marker: smoke-sequence:running';
+    elements.output.textContent = 'Running smoke test sequence...';
+    elements.runSmokeSequenceButton.disabled = true;
+
+    try {
+      for (const action of actions) {
+        const card = actionCards.get(action.id);
+        const values = card ? getCardValues(card, action) : {};
+        await runAction(action, values);
+      }
+      elements.sequenceStatus.textContent = 'Sequence: success';
+      elements.resultMarker.textContent = 'Result marker: smoke-sequence:success';
+    } catch (error) {
+      elements.sequenceStatus.textContent = 'Sequence: error';
+      elements.resultMarker.textContent = 'Result marker: smoke-sequence:error';
+      console.error('Smoke sequence failed', error);
+      throw error;
+    } finally {
+      elements.runSmokeSequenceButton.disabled = false;
+      smokeSequencePromise = null;
+    }
+  })();
+
+  return smokeSequencePromise;
 }
 
 function createInputField(card, input) {
@@ -465,15 +478,31 @@ function renderActions() {
   });
 }
 
+function startStateRefreshWatchers() {
+  window.setInterval(() => {
+    void refreshState();
+  }, 1000);
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      void refreshState();
+    }
+  });
+}
+
 async function bootstrap() {
   renderActions();
   renderState();
 
   if (isSmokeMode) {
-    plugin.notifyAppReady().catch((error) => {
-      console.error('notifyAppReady() bootstrap failed', error);
-    });
-    void refreshState();
+    attachListeners();
+    await refreshState();
+    startStateRefreshWatchers();
+    window.setTimeout(() => {
+      void runSmokeSequence().catch((error) => {
+        console.error('Smoke sequence bootstrap failed', error);
+      });
+    }, 250);
     return;
   }
 
@@ -486,16 +515,7 @@ async function bootstrap() {
   }
 
   await refreshState();
-
-  window.setInterval(() => {
-    void refreshState();
-  }, 1000);
-
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) {
-      void refreshState();
-    }
-  });
+  startStateRefreshWatchers();
 }
 
 elements.refreshButton.addEventListener('click', () => {

@@ -4,7 +4,6 @@ appId: app.capgo.updater
     visible: '@capgo/capacitor-updater'
     timeout: 180000
 - assertVisible: '@capgo/capacitor-updater'
-- tapOn: 'Run smoke test sequence'
 - extendedWaitUntil:
     visible: 'Result marker: smoke-sequence:success'
     timeout: 300000

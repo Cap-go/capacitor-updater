@@ -35,15 +35,6 @@
         <p class="lead">This screen combines the live update harness and example-app smoke actions used by Maestro.</p>
       </header>
 
-      <section class="card">
-        <div class="panel-heading">
-          <h2>Smoke Actions</h2>
-          <p>Each button runs one exposed example action while the live-update harness continues tracking bundle state.</p>
-        </div>
-        <button id="run-smoke-sequence" type="button">Run smoke test sequence</button>
-        <div id="smoke-actions" class="actions-grid"></div>
-      </section>
-
       <section class="card result-panel">
         <div class="panel-heading">
           <h2>Latest Result</h2>
@@ -55,6 +46,15 @@
           <p id="result-marker" class="status-line">Result marker: idle</p>
         </div>
         <pre id="plugin-output">Ready to run a smoke action.</pre>
+      </section>
+
+      <section class="card">
+        <div class="panel-heading">
+          <h2>Smoke Actions</h2>
+          <p>Each button runs one exposed example action while the live-update harness continues tracking bundle state.</p>
+        </div>
+        <button id="run-smoke-sequence" type="button">Run smoke test sequence</button>
+        <div id="smoke-actions" class="actions-grid"></div>
       </section>
 
       <section class="card">

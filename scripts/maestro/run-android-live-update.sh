@@ -297,7 +297,6 @@ run_scenario() {
       control_server reset always
       prepare_scenario always
       run_flow initial-direct-update.yaml
-      wait_for_example_app_ui
       wait_for_ui_state \
         "always direct update applies on first launch" \
         "Build label: $first_release" \
@@ -319,7 +318,6 @@ run_scenario() {
       control_server reset at-install
       prepare_scenario at-install
       run_flow initial-direct-update.yaml
-      wait_for_example_app_ui
       wait_for_ui_state \
         "atInstall applies the first downloaded release on first launch" \
         "Build label: $first_release" \
@@ -351,7 +349,6 @@ run_scenario() {
       control_server reset on-launch
       prepare_scenario on-launch
       run_flow initial-direct-update.yaml
-      wait_for_example_app_ui
       wait_for_ui_state \
         "onLaunch applies the first downloaded release on first launch" \
         "Build label: $first_release" \
@@ -361,7 +358,6 @@ run_scenario() {
         "Current bundle version: $first_release"
       control_server advance on-launch
       run_flow kill-then-direct-update.yaml
-      wait_for_example_app_ui
       wait_for_ui_state \
         "onLaunch applies the next release after a cold relaunch" \
         "Build label: $second_release" \
@@ -472,7 +468,7 @@ background_and_resume_app() {
   sleep "$APP_BACKGROUND_SETTLE_SECONDS"
   prepare_device_for_maestro
   launch_android_app
-  wait_for_example_app_ui
+  sleep 2
   return 0
 }
 
