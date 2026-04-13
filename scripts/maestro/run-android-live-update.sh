@@ -22,6 +22,7 @@ APP_BACKGROUND_SETTLE_SECONDS="${CAPGO_MAESTRO_BACKGROUND_SETTLE_SECONDS:-3}"
 APP_LAUNCH_RETRIES="${CAPGO_MAESTRO_APP_LAUNCH_RETRIES:-3}"
 APP_UI_TIMEOUT_SECONDS="${CAPGO_MAESTRO_APP_UI_TIMEOUT_SECONDS:-180}"
 UI_STATE_TIMEOUT_SECONDS="${CAPGO_MAESTRO_UI_STATE_TIMEOUT_SECONDS:-300}"
+DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS="${CAPGO_MAESTRO_DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS:-120}"
 TIMEOUT_CMD="$(command -v gtimeout || command -v timeout || true)"
 SCENARIO_SEQUENCE=(deferred always at-install on-launch)
 
@@ -181,11 +182,12 @@ wait_for_example_app_ui() {
   return 1
 }
 
-wait_for_ui_state() {
+wait_for_ui_state_with_timeout() {
   local description="$1"
-  shift
+  local timeout_seconds="$2"
+  shift 2
   local -a fragments=("$@")
-  local deadline=$((SECONDS + UI_STATE_TIMEOUT_SECONDS))
+  local deadline=$((SECONDS + timeout_seconds))
   local hierarchy=""
   local fragment=""
   local found_fragments=""
@@ -230,6 +232,33 @@ wait_for_ui_state() {
   echo "Timed out waiting for UI state: ${description}" >&2
   dump_ui_hierarchy >&2 || true
   return 1
+}
+
+wait_for_ui_state() {
+  local description="$1"
+  shift
+
+  wait_for_ui_state_with_timeout "$description" "$UI_STATE_TIMEOUT_SECONDS" "$@"
+  return 0
+}
+
+wait_for_direct_update_ui_state() {
+  local description="$1"
+  shift
+  local -a fragments=("$@")
+
+  if wait_for_ui_state_with_timeout "$description" "$DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS" "${fragments[@]}"; then
+    return 0
+  fi
+
+  echo "Direct update UI did not settle for ${description}; force-stopping and relaunching once." >&2
+  adb shell am force-stop "$APP_ID" >/dev/null 2>&1 || true
+  wait_for_package_manager || true
+  prepare_device_for_maestro
+  launch_android_app
+  sleep 3
+  wait_for_ui_state "$description" "${fragments[@]}"
+  return 0
 }
 
 ensure_android_device() {
@@ -297,7 +326,7 @@ run_scenario() {
       control_server reset always
       prepare_scenario always
       run_flow initial-direct-update.yaml
-      wait_for_ui_state \
+      wait_for_direct_update_ui_state \
         "always direct update applies on first launch" \
         "Build label: $first_release" \
         'Scenario: always' \
@@ -306,7 +335,7 @@ run_scenario() {
         "Current bundle version: $first_release"
       control_server advance always
       background_and_resume_app
-      wait_for_ui_state \
+      wait_for_direct_update_ui_state \
         "always direct update applies a newer release after resume" \
         "Build label: $second_release" \
         'Scenario: always' \
@@ -318,7 +347,7 @@ run_scenario() {
       control_server reset at-install
       prepare_scenario at-install
       run_flow initial-direct-update.yaml
-      wait_for_ui_state \
+      wait_for_direct_update_ui_state \
         "atInstall applies the first downloaded release on first launch" \
         "Build label: $first_release" \
         'Scenario: at-install' \
@@ -337,7 +366,7 @@ run_scenario() {
         "Next bundle version: $second_release" \
         "Last completed download: $second_release"
       background_and_resume_app
-      wait_for_ui_state \
+      wait_for_direct_update_ui_state \
         "atInstall applies the downloaded release after the next background cycle" \
         "Build label: $second_release" \
         'Scenario: at-install' \
@@ -349,7 +378,7 @@ run_scenario() {
       control_server reset on-launch
       prepare_scenario on-launch
       run_flow initial-direct-update.yaml
-      wait_for_ui_state \
+      wait_for_direct_update_ui_state \
         "onLaunch applies the first downloaded release on first launch" \
         "Build label: $first_release" \
         'Scenario: on-launch' \
@@ -358,7 +387,7 @@ run_scenario() {
         "Current bundle version: $first_release"
       control_server advance on-launch
       run_flow kill-then-direct-update.yaml
-      wait_for_ui_state \
+      wait_for_direct_update_ui_state \
         "onLaunch applies the next release after a cold relaunch" \
         "Build label: $second_release" \
         'Scenario: on-launch' \
