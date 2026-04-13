@@ -64,6 +64,57 @@ configure_server_routing() {
   return 0
 }
 
+clear_device_logs() {
+  adb logcat -c >/dev/null 2>&1 || true
+  return 0
+}
+
+wait_for_harness_state() {
+  local description="$1"
+  shift
+  local -a fragments=("$@")
+  local timeout_seconds="${CAPGO_MAESTRO_LOG_STATE_TIMEOUT_SECONDS:-90}"
+  local deadline=$((SECONDS + timeout_seconds))
+  local log_file=""
+  local state_lines=""
+  local line=""
+  local fragment=""
+  local matched=0
+
+  echo "Waiting for log state: ${description}"
+
+  while ((SECONDS < deadline)); do
+    log_file="$(mktemp)"
+    adb logcat -d >"$log_file" 2>/dev/null || true
+    state_lines="$(grep -F '[HarnessState]' "$log_file" || true)"
+
+    if [[ -n "$state_lines" ]]; then
+      while IFS= read -r line; do
+        matched=1
+        for fragment in "${fragments[@]}"; do
+          if [[ "$line" != *"$fragment"* ]]; then
+            matched=0
+            break
+          fi
+        done
+
+        if [[ $matched -eq 1 ]]; then
+          echo "Verified log state: ${description}"
+          rm -f "$log_file"
+          return 0
+        fi
+      done <<<"$state_lines"
+    fi
+
+    rm -f "$log_file"
+    sleep 1
+  done
+
+  echo "Timed out waiting for log state: ${description}" >&2
+  adb logcat -d | tail -n 200 >&2 || true
+  return 1
+}
+
 ensure_android_device() {
   local state=""
 
@@ -105,79 +156,106 @@ run_scenario() {
     deferred)
       control_server reset deferred
       prepare_scenario deferred
-      run_flow \
-        deferred-download.yaml \
-        SCENARIO_ID=deferred \
-        DIRECT_UPDATE_MODE=false \
-        BUILTIN_LABEL="$builtin_label" \
-        EXPECTED_SOURCE=builtin \
-        EXPECTED_LABEL="$builtin_label" \
-        EXPECTED_CURRENT_RELEASE=1.0 \
-        EXPECTED_NEXT_RELEASE="$first_release" \
-        EXPECTED_DOWNLOADED_RELEASE="$first_release"
+      clear_device_logs
+      run_flow deferred-download.yaml
+      wait_for_harness_state \
+        "deferred release downloads while builtin bundle stays active" \
+        "\"buildLabel\":\"$builtin_label\"" \
+        '"scenarioId":"deferred"' \
+        '"directUpdateMode":"false"' \
+        '"currentBundleSource":"builtin"' \
+        '"currentBundleVersion":"1.0"' \
+        "\"nextBundleVersion\":\"$first_release\"" \
+        "\"lastDownload\":\"$first_release\""
+      clear_device_logs
       background_and_resume_app
-      run_flow \
-        apply-after-background.yaml \
-        SOURCE_LABEL="$builtin_label" \
-        EXPECTED_LABEL="$first_release" \
-        EXPECTED_RELEASE="$first_release"
+      wait_for_harness_state \
+        "deferred release applies after the app backgrounds and resumes" \
+        "\"buildLabel\":\"$first_release\"" \
+        '"scenarioId":"deferred"' \
+        '"directUpdateMode":"false"' \
+        '"currentBundleSource":"downloaded"' \
+        "\"currentBundleVersion\":\"$first_release\""
       ;;
     always)
       control_server reset always
       prepare_scenario always
-      run_flow \
-        initial-direct-update.yaml \
-        SCENARIO_ID=always \
-        DIRECT_UPDATE_MODE=always \
-        EXPECTED_LABEL="$first_release" \
-        EXPECTED_RELEASE="$first_release"
+      clear_device_logs
+      run_flow initial-direct-update.yaml
+      wait_for_harness_state \
+        "always direct update applies on first launch" \
+        "\"buildLabel\":\"$first_release\"" \
+        '"scenarioId":"always"' \
+        '"directUpdateMode":"always"' \
+        '"currentBundleSource":"downloaded"' \
+        "\"currentBundleVersion\":\"$first_release\""
       control_server advance always
+      clear_device_logs
       background_and_resume_app
-      run_flow \
-        resume-direct-update.yaml \
-        SOURCE_LABEL="$first_release" \
-        EXPECTED_LABEL="$second_release" \
-        EXPECTED_RELEASE="$second_release"
+      wait_for_harness_state \
+        "always direct update applies a newer release after resume" \
+        "\"buildLabel\":\"$second_release\"" \
+        '"scenarioId":"always"' \
+        '"directUpdateMode":"always"' \
+        '"currentBundleSource":"downloaded"' \
+        "\"currentBundleVersion\":\"$second_release\""
       ;;
     at-install)
       control_server reset at-install
       prepare_scenario at-install
-      run_flow \
-        initial-direct-update.yaml \
-        SCENARIO_ID=at-install \
-        DIRECT_UPDATE_MODE=atInstall \
-        EXPECTED_LABEL="$first_release" \
-        EXPECTED_RELEASE="$first_release"
+      clear_device_logs
+      run_flow initial-direct-update.yaml
+      wait_for_harness_state \
+        "atInstall applies the first downloaded release on first launch" \
+        "\"buildLabel\":\"$first_release\"" \
+        '"scenarioId":"at-install"' \
+        '"directUpdateMode":"atInstall"' \
+        '"currentBundleSource":"downloaded"' \
+        "\"currentBundleVersion\":\"$first_release\""
       control_server advance at-install
+      clear_device_logs
       background_and_resume_app
-      run_flow \
-        resume-download-then-background.yaml \
-        EXPECTED_SOURCE=downloaded \
-        EXPECTED_LABEL="$first_release" \
-        EXPECTED_CURRENT_RELEASE="$first_release" \
-        EXPECTED_NEXT_RELEASE="$second_release" \
-        EXPECTED_DOWNLOADED_RELEASE="$second_release"
+      wait_for_harness_state \
+        "atInstall downloads the next release on resume before applying it" \
+        "\"buildLabel\":\"$first_release\"" \
+        '"scenarioId":"at-install"' \
+        '"directUpdateMode":"atInstall"' \
+        '"currentBundleSource":"downloaded"' \
+        "\"currentBundleVersion\":\"$first_release\"" \
+        "\"nextBundleVersion\":\"$second_release\"" \
+        "\"lastDownload\":\"$second_release\""
+      clear_device_logs
       background_and_resume_app
-      run_flow \
-        apply-after-background.yaml \
-        EXPECTED_LABEL="$second_release" \
-        EXPECTED_RELEASE="$second_release"
+      wait_for_harness_state \
+        "atInstall applies the downloaded release after the next background cycle" \
+        "\"buildLabel\":\"$second_release\"" \
+        '"scenarioId":"at-install"' \
+        '"directUpdateMode":"atInstall"' \
+        '"currentBundleSource":"downloaded"' \
+        "\"currentBundleVersion\":\"$second_release\""
       ;;
     on-launch)
       control_server reset on-launch
       prepare_scenario on-launch
-      run_flow \
-        initial-direct-update.yaml \
-        SCENARIO_ID=on-launch \
-        DIRECT_UPDATE_MODE=onLaunch \
-        EXPECTED_LABEL="$first_release" \
-        EXPECTED_RELEASE="$first_release"
+      clear_device_logs
+      run_flow initial-direct-update.yaml
+      wait_for_harness_state \
+        "onLaunch applies the first downloaded release on first launch" \
+        "\"buildLabel\":\"$first_release\"" \
+        '"scenarioId":"on-launch"' \
+        '"directUpdateMode":"onLaunch"' \
+        '"currentBundleSource":"downloaded"' \
+        "\"currentBundleVersion\":\"$first_release\""
       control_server advance on-launch
-      run_flow \
-        kill-then-direct-update.yaml \
-        SOURCE_LABEL="$first_release" \
-        EXPECTED_LABEL="$second_release" \
-        EXPECTED_RELEASE="$second_release"
+      clear_device_logs
+      run_flow kill-then-direct-update.yaml
+      wait_for_harness_state \
+        "onLaunch applies the next release after a cold relaunch" \
+        "\"buildLabel\":\"$second_release\"" \
+        '"scenarioId":"on-launch"' \
+        '"directUpdateMode":"onLaunch"' \
+        '"currentBundleSource":"downloaded"' \
+        "\"currentBundleVersion\":\"$second_release\""
       ;;
     *)
       echo "Unknown Maestro scenario selection: $scenario_id" >&2

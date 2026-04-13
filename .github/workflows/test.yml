@@ -13,9 +13,6 @@ on:
   workflow_dispatch:
   workflow_call: # Allow this workflow to be called by other workflows
 
-env:
-  GH_TOKEN: ${{ github.token }}
-
 jobs:
   guard_swiftpm_version:
     timeout-minutes: 30
@@ -37,6 +34,8 @@ jobs:
       - name: Check out
         uses: actions/checkout@v6
       - name: Install Bun
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: ./scripts/ci/install-bun.sh
       - name: Install dependencies
         id: install_code
@@ -61,6 +60,8 @@ jobs:
       - name: Check out
         uses: actions/checkout@v6
       - name: Install Bun
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: ./scripts/ci/install-bun.sh
       - name: Install dependencies
         id: install_code
@@ -81,6 +82,8 @@ jobs:
       - name: Check out
         uses: actions/checkout@v6
       - name: Install Bun
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: ./scripts/ci/install-bun.sh
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -95,6 +98,7 @@ jobs:
           java-version: '21'
       - name: Install Maestro
         env:
+          GH_TOKEN: ${{ github.token }}
           MAESTRO_VERSION: cli-2.4.0
         run: ./scripts/ci/install-maestro.sh
       - name: Build plugin and example app
@@ -129,6 +133,8 @@ jobs:
       - name: Check out
         uses: actions/checkout@v6
       - name: Install Bun
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: ./scripts/ci/install-bun.sh
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -138,6 +144,7 @@ jobs:
         run: bun i
       - name: Install Maestro
         env:
+          GH_TOKEN: ${{ github.token }}
           MAESTRO_VERSION: cli-2.4.0
         run: ./scripts/ci/install-maestro.sh
       - name: Run Maestro smoke tests
@@ -156,6 +163,8 @@ jobs:
       - name: Check out
         uses: actions/checkout@v6
       - name: Install Bun
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: ./scripts/ci/install-bun.sh
       - name: Install dependencies
         id: install_code
@@ -178,6 +187,8 @@ jobs:
       - name: Check out
         uses: actions/checkout@v6
       - name: Install Bun
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: ./scripts/ci/install-bun.sh
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -192,6 +203,7 @@ jobs:
           java-version: '21'
       - name: Install Maestro
         env:
+          GH_TOKEN: ${{ github.token }}
           MAESTRO_VERSION: cli-2.4.0
         run: ./scripts/ci/install-maestro.sh
       - name: Run live update Maestro flow
