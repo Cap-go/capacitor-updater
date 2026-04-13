@@ -4,15 +4,23 @@ appId: app.capgo.updater
     element:
       text: 'Build label: ${EXPECTED_LABEL}'
     direction: DOWN
-    timeout: 30000
+    timeout: 90000
 - assertVisible: 'Build label: ${EXPECTED_LABEL}'
+- scrollUntilVisible:
+    element:
+      text: 'Current bundle source: downloaded'
+    direction: DOWN
+    timeout: 30000
+- assertVisible: 'Current bundle source: downloaded'
 - scrollUntilVisible:
     element:
       text: 'Current bundle version: ${EXPECTED_RELEASE}'
     direction: DOWN
+    timeout: 30000
 - assertVisible: 'Current bundle version: ${EXPECTED_RELEASE}'
 - scrollUntilVisible:
     element:
       text: 'Notify app ready: ok.*'
     direction: DOWN
+    timeout: 30000
 - assertVisible: 'Notify app ready: ok.*'

@@ -2,3 +2,4 @@ appId: app.capgo.updater
 ---
 - launchApp:
     clearState: true
+- runFlow: helpers/assert-applied-update.yaml

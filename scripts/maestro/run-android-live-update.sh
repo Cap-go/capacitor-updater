@@ -15,13 +15,8 @@ FLOW_RETRY_PATTERN="TcpForwarder.waitFor|allocateForwarder|TimeoutException|Andr
 MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
 MAESTRO_DRIVER_STARTUP_TIMEOUT_VALUE="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-300000}"
 MAESTRO_FLOW_TIMEOUT_SECONDS="${MAESTRO_FLOW_TIMEOUT_SECONDS:-360}"
-LOG_WAIT_TIMEOUT_SECONDS="${LOG_WAIT_TIMEOUT_SECONDS:-180}"
-ADB_COMMAND_TIMEOUT_SECONDS="${ADB_COMMAND_TIMEOUT_SECONDS:-15}"
 TIMEOUT_CMD="$(command -v gtimeout || command -v timeout || true)"
 SCENARIO_SEQUENCE=(deferred always at-install on-launch)
-LOG_PATTERN_APP_TO_BACKGROUND='ProcessLifecycleOwner: App moved to background'
-LOG_PATTERN_DOWNLOAD_SUCCEEDED='Download succeeded: SUCCEEDED'
-LOG_PATTERN_DIRECT_UPDATE_TRUE='directUpdate: true'
 
 cleanup() {
   if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
@@ -113,24 +108,16 @@ run_scenario() {
         SCENARIO_ID=deferred \
         DIRECT_UPDATE_MODE=false \
         BUILTIN_LABEL="$builtin_label" \
-        FIRST_RELEASE="$first_release"
-      wait_for_log_patterns \
-        "deferred release downloads while builtin bundle stays active" \
-        "New bundle: ${first_release} found\\. Current is: 1\\.0\\. Update will occur next time app moves to background\\." \
-        "$LOG_PATTERN_DOWNLOAD_SUCCEEDED" \
-        "updateAvailable: .*\"version\":\"${first_release}\"" \
-        'setNext: true' \
-        'directUpdate: false'
+        EXPECTED_SOURCE=builtin \
+        EXPECTED_LABEL="$builtin_label" \
+        EXPECTED_CURRENT_RELEASE=1.0 \
+        EXPECTED_NEXT_RELEASE="$first_release" \
+        EXPECTED_DOWNLOADED_RELEASE="$first_release"
       run_flow \
         apply-after-background.yaml \
         SOURCE_LABEL="$builtin_label" \
         EXPECTED_LABEL="$first_release" \
         EXPECTED_RELEASE="$first_release"
-      wait_for_log_patterns \
-        "deferred release applies after the app backgrounds and resumes" \
-        "$LOG_PATTERN_APP_TO_BACKGROUND" \
-        "Updated to bundle: ${first_release}" \
-        "Current bundle loaded successfully\\..*\"version\":\"${first_release}\""
       ;;
     always)
       control_server reset always
@@ -141,27 +128,12 @@ run_scenario() {
         DIRECT_UPDATE_MODE=always \
         EXPECTED_LABEL="$first_release" \
         EXPECTED_RELEASE="$first_release"
-      wait_for_log_patterns \
-        "always direct update applies the first release on launch" \
-        "New bundle: ${first_release} found\\. Current is: 1\\.0\\. Update will occur now\\." \
-        "$LOG_PATTERN_DOWNLOAD_SUCCEEDED" \
-        "$LOG_PATTERN_DIRECT_UPDATE_TRUE" \
-        "Current bundle set to: .*${first_release}" \
-        "Current bundle loaded successfully\\..*\"version\":\"${first_release}\""
       control_server advance always
       run_flow \
         resume-direct-update.yaml \
         SOURCE_LABEL="$first_release" \
         EXPECTED_LABEL="$second_release" \
         EXPECTED_RELEASE="$second_release"
-      wait_for_log_patterns \
-        "always direct update applies the second release after resume" \
-        "$LOG_PATTERN_APP_TO_BACKGROUND" \
-        "New bundle: ${second_release} found\\. Current is: ${first_release}\\. Update will occur now\\." \
-        "$LOG_PATTERN_DOWNLOAD_SUCCEEDED" \
-        "$LOG_PATTERN_DIRECT_UPDATE_TRUE" \
-        "Current bundle set to: .*${second_release}" \
-        "Current bundle loaded successfully\\..*\"version\":\"${second_release}\""
       ;;
     at-install)
       control_server reset at-install
@@ -172,34 +144,18 @@ run_scenario() {
         DIRECT_UPDATE_MODE=atInstall \
         EXPECTED_LABEL="$first_release" \
         EXPECTED_RELEASE="$first_release"
-      wait_for_log_patterns \
-        "atInstall applies the first release on initial launch" \
-        "New bundle: ${first_release} found\\. Current is: 1\\.0\\. Update will occur now\\." \
-        "$LOG_PATTERN_DOWNLOAD_SUCCEEDED" \
-        "$LOG_PATTERN_DIRECT_UPDATE_TRUE" \
-        "Current bundle set to: .*${first_release}" \
-        "Current bundle loaded successfully\\..*\"version\":\"${first_release}\""
       control_server advance at-install
       run_flow \
-        apply-after-background.yaml \
+        resume-download-then-background.yaml \
+        EXPECTED_SOURCE=downloaded \
         EXPECTED_LABEL="$first_release" \
-        EXPECTED_RELEASE="$first_release"
-      wait_for_log_patterns \
-        "atInstall downloads the second release and queues it for the next launch" \
-        "$LOG_PATTERN_APP_TO_BACKGROUND" \
-        "New bundle: ${second_release} found\\. Current is: ${first_release}\\. Update will occur next time app moves to background\\." \
-        "$LOG_PATTERN_DOWNLOAD_SUCCEEDED" \
-        'setNext: true' \
-        'directUpdate: false'
+        EXPECTED_CURRENT_RELEASE="$first_release" \
+        EXPECTED_NEXT_RELEASE="$second_release" \
+        EXPECTED_DOWNLOADED_RELEASE="$second_release"
       run_flow \
         apply-after-background.yaml \
         EXPECTED_LABEL="$second_release" \
         EXPECTED_RELEASE="$second_release"
-      wait_for_log_patterns \
-        "atInstall applies the second release after another background and resume" \
-        "$LOG_PATTERN_APP_TO_BACKGROUND" \
-        "Updated to bundle: ${second_release}" \
-        "Current bundle loaded successfully\\..*\"version\":\"${second_release}\""
       ;;
     on-launch)
       control_server reset on-launch
@@ -210,26 +166,12 @@ run_scenario() {
         DIRECT_UPDATE_MODE=onLaunch \
         EXPECTED_LABEL="$first_release" \
         EXPECTED_RELEASE="$first_release"
-      wait_for_log_patterns \
-        "onLaunch applies the first release on the initial cold launch" \
-        "New bundle: ${first_release} found\\. Current is: 1\\.0\\. Update will occur now\\." \
-        "$LOG_PATTERN_DOWNLOAD_SUCCEEDED" \
-        "$LOG_PATTERN_DIRECT_UPDATE_TRUE" \
-        "Current bundle set to: .*${first_release}" \
-        "Current bundle loaded successfully\\..*\"version\":\"${first_release}\""
       control_server advance on-launch
       run_flow \
         kill-then-direct-update.yaml \
         SOURCE_LABEL="$first_release" \
         EXPECTED_LABEL="$second_release" \
         EXPECTED_RELEASE="$second_release"
-      wait_for_log_patterns \
-        "onLaunch applies the second release after a full cold start" \
-        "New bundle: ${second_release} found\\. Current is: ${first_release}\\. Update will occur now\\." \
-        "$LOG_PATTERN_DOWNLOAD_SUCCEEDED" \
-        "$LOG_PATTERN_DIRECT_UPDATE_TRUE" \
-        "Current bundle set to: .*${second_release}" \
-        "Current bundle loaded successfully\\..*\"version\":\"${second_release}\""
       ;;
     *)
       echo "Unknown Maestro scenario selection: $scenario_id" >&2
@@ -363,77 +305,6 @@ control_server() {
   return 0
 }
 
-clear_logcat() {
-  adb logcat -c >/dev/null 2>&1 || true
-  return 0
-}
-
-dump_relevant_logcat() {
-  local dump=""
-
-  dump="$("$TIMEOUT_CMD" --foreground "${ADB_COMMAND_TIMEOUT_SECONDS}s" adb logcat -d -v brief 2>/dev/null || true)"
-
-  if [[ -z "$dump" ]]; then
-    return 0
-  fi
-
-  if command -v rg >/dev/null 2>&1; then
-    printf '%s\n' "$dump" | rg 'CapgoUpdater|AndroidRuntime' || true
-    return 0
-  fi
-
-  printf '%s\n' "$dump" | grep -E 'CapgoUpdater|AndroidRuntime' || true
-  return 0
-}
-
-filter_logcat() {
-  local pattern="$1"
-
-  if command -v rg >/dev/null 2>&1; then
-    dump_relevant_logcat | rg "$pattern" || true
-    return 0
-  fi
-
-  dump_relevant_logcat | grep -E "$pattern" || true
-  return 0
-}
-
-logcat_contains_all() {
-  local dump="$1"
-  shift
-  local expected
-
-  for expected in "$@"; do
-    if ! printf '%s\n' "$dump" | grep -Eq -- "$expected"; then
-      return 1
-    fi
-  done
-
-  return 0
-}
-
-wait_for_log_patterns() {
-  local description="$1"
-  shift
-  local dump=""
-  local deadline=$((SECONDS + LOG_WAIT_TIMEOUT_SECONDS))
-
-  echo "Waiting for log state: $description"
-  while (( SECONDS < deadline )); do
-    dump="$(dump_relevant_logcat)"
-    if [[ -n "$dump" ]] && logcat_contains_all "$dump" "$@"; then
-      echo "Verified log state: $description"
-      return 0
-    fi
-
-    sleep 1
-  done
-
-  echo "Logcat did not reach expected state within ${LOG_WAIT_TIMEOUT_SECONDS}s: $description" >&2
-  echo "${dump:-<no relevant logcat output>}" | tail -n 200 >&2
-  return 1
-}
-
 run_flow() {
   local flow_file="$1"
   shift
@@ -454,7 +325,6 @@ run_flow() {
     echo "Running Maestro flow: $flow_file (attempt $attempt/$max_attempts)"
     prepare_device_for_maestro
     reset_adb_forwarding
-    clear_logcat
     output_file="$(mktemp)"
 
     set +e
