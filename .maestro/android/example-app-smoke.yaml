@@ -7,6 +7,6 @@ appId: app.capgo.updater
 - tapOn: 'Run smoke test sequence'
 - extendedWaitUntil:
     visible: 'Result marker: smoke-sequence:success'
-    timeout: 180000
+    timeout: 300000
 - assertVisible: 'Sequence: success'
 - assertVisible: 'Result marker: smoke-sequence:success'

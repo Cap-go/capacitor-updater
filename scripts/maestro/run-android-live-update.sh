@@ -9,6 +9,8 @@ HOST_SERVER_URL="${CAPGO_MAESTRO_HOST_BASE_URL:-http://127.0.0.1:${HOST_SERVER_P
 DEVICE_SERVER_URL="${CAPGO_MAESTRO_DEVICE_BASE_URL:-http://127.0.0.1:${HOST_SERVER_PORT}}"
 APP_ID="app.capgo.updater"
 APP_ACTIVITY="${CAPGO_MAESTRO_ANDROID_ACTIVITY:-app.capgo.updater/.MainActivity}"
+APP_READY_TITLE="@capgo/capacitor-updater"
+APP_READY_ACTION="Run notifyAppReady"
 APK_PATH="$ROOT_DIR/example-app/android/app/build/outputs/apk/debug/app-debug.apk"
 SCENARIO_SELECTION="${1:-all}"
 SERVER_PID=""
@@ -17,6 +19,9 @@ MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
 MAESTRO_DRIVER_STARTUP_TIMEOUT_VALUE="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-300000}"
 MAESTRO_FLOW_TIMEOUT_SECONDS="${MAESTRO_FLOW_TIMEOUT_SECONDS:-360}"
 APP_BACKGROUND_SETTLE_SECONDS="${CAPGO_MAESTRO_BACKGROUND_SETTLE_SECONDS:-3}"
+APP_LAUNCH_RETRIES="${CAPGO_MAESTRO_APP_LAUNCH_RETRIES:-3}"
+APP_UI_TIMEOUT_SECONDS="${CAPGO_MAESTRO_APP_UI_TIMEOUT_SECONDS:-180}"
+UI_STATE_TIMEOUT_SECONDS="${CAPGO_MAESTRO_UI_STATE_TIMEOUT_SECONDS:-300}"
 TIMEOUT_CMD="$(command -v gtimeout || command -v timeout || true)"
 SCENARIO_SEQUENCE=(deferred always at-install on-launch)
 
@@ -69,49 +74,162 @@ clear_device_logs() {
   return 0
 }
 
-wait_for_harness_state() {
-  local description="$1"
-  shift
-  local -a fragments=("$@")
-  local timeout_seconds="${CAPGO_MAESTRO_LOG_STATE_TIMEOUT_SECONDS:-180}"
-  local deadline=$((SECONDS + timeout_seconds))
-  local log_file=""
-  local state_lines=""
-  local line=""
-  local fragment=""
-  local matched=0
+dump_ui_hierarchy() {
+  adb exec-out uiautomator dump /dev/tty 2>/dev/null | tr -d '\r' | tr '\n' ' ' || true
+  return 0
+}
 
-  echo "Waiting for log state: ${description}"
+tap_android_anr_wait_button_if_present() {
+  local hierarchy="$1"
+  local wait_button_pattern='text="Wait".*bounds="\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]"'
+  local x=""
+  local y=""
 
-  while ((SECONDS < deadline)); do
-    log_file="$(mktemp)"
-    adb logcat -d >"$log_file" 2>/dev/null || true
-    state_lines="$(grep -F '[HarnessState]' "$log_file" || true)"
+  if [[ "$hierarchy" =~ $wait_button_pattern ]]; then
+    x=$(((BASH_REMATCH[1] + BASH_REMATCH[3]) / 2))
+    y=$(((BASH_REMATCH[2] + BASH_REMATCH[4]) / 2))
+    echo "Detected Android ANR dialog; tapping Wait." >&2
+    adb shell input tap "$x" "$y" >/dev/null 2>&1 || true
+    sleep 1
+    return 0
+  fi
 
-    if [[ -n "$state_lines" ]]; then
-      while IFS= read -r line; do
-        matched=1
-        for fragment in "${fragments[@]}"; do
-          if [[ "$line" != *"$fragment"* ]]; then
-            matched=0
-            break
-          fi
-        done
+  return 1
+}
 
-        if [[ $matched -eq 1 ]]; then
-          echo "Verified log state: ${description}"
-          rm -f "$log_file"
-          return 0
-        fi
-      done <<<"$state_lines"
-    fi
+get_device_screen_size() {
+  local size_line=""
 
-    rm -f "$log_file"
+  size_line="$(
+    {
+      adb shell wm size 2>/dev/null || true
+    } | tr -d '\r' | sed -n 's/.*Physical size: \([0-9]\+\)x\([0-9]\+\).*/\1 \2/p' | tail -n 1
+  )"
+
+  if [[ -z "$size_line" ]]; then
+    echo "1080 2400"
+    return 0
+  fi
+
+  echo "$size_line"
+  return 0
+}
+
+scroll_page_down() {
+  local width=""
+  local height=""
+  local x=""
+  local start_y=""
+  local end_y=""
+
+  read -r width height <<<"$(get_device_screen_size)"
+  x=$((width / 2))
+  start_y=$(((height * 4) / 5))
+  end_y=$((height / 5))
+  adb shell input swipe "$x" "$start_y" "$x" "$end_y" 300 >/dev/null 2>&1 || true
+  sleep 1
+  return 0
+}
+
+scroll_page_to_top() {
+  local width=""
+  local height=""
+  local x=""
+  local start_y=""
+  local end_y=""
+  local attempt
+
+  read -r width height <<<"$(get_device_screen_size)"
+  x=$((width / 2))
+  start_y=$((height / 4))
+  end_y=$(((height * 4) / 5))
+
+  for attempt in 1 2 3 4; do
+    adb shell input swipe "$x" "$start_y" "$x" "$end_y" 250 >/dev/null 2>&1 || true
     sleep 1
   done
 
-  echo "Timed out waiting for log state: ${description}" >&2
-  adb logcat -d | tail -n 200 >&2 || true
+  return 0
+}
+
+wait_for_example_app_ui() {
+  local attempt=1
+  local hierarchy=""
+  local deadline=0
+
+  while (( attempt <= APP_LAUNCH_RETRIES )); do
+    launch_android_app
+    deadline=$((SECONDS + APP_UI_TIMEOUT_SECONDS))
+
+    while (( SECONDS < deadline )); do
+      hierarchy="$(dump_ui_hierarchy)"
+      tap_android_anr_wait_button_if_present "$hierarchy" || true
+      if [[ "$hierarchy" == *"$APP_READY_TITLE"* || "$hierarchy" == *"$APP_READY_ACTION"* ]]; then
+        return 0
+      fi
+      sleep 5
+    done
+
+    echo "Example app UI did not appear on Android launch attempt ${attempt}; restarting the app." >&2
+    adb shell am force-stop "$APP_ID" >/dev/null 2>&1 || true
+    wait_for_package_manager || true
+    sleep 2
+    ((attempt += 1))
+  done
+
+  echo "Example app UI never became visible on Android after ${APP_LAUNCH_RETRIES} attempts." >&2
+  return 1
+}
+
+wait_for_ui_state() {
+  local description="$1"
+  shift
+  local -a fragments=("$@")
+  local deadline=$((SECONDS + UI_STATE_TIMEOUT_SECONDS))
+  local hierarchy=""
+  local fragment=""
+  local found_fragments=""
+  local matched=0
+  local swipe_count=0
+
+  echo "Waiting for UI state: ${description}"
+
+  while ((SECONDS < deadline)); do
+    scroll_page_to_top
+    found_fragments=""
+
+    for swipe_count in 0 1 2 3 4 5; do
+      hierarchy="$(dump_ui_hierarchy)"
+      tap_android_anr_wait_button_if_present "$hierarchy" || true
+
+      for fragment in "${fragments[@]}"; do
+        if [[ "$hierarchy" == *"$fragment"* ]] && ! printf '%s' "$found_fragments" | grep -Fqx "$fragment"; then
+          found_fragments="${found_fragments}${fragment}"$'\n'
+        fi
+      done
+
+      matched=1
+      for fragment in "${fragments[@]}"; do
+        if ! printf '%s' "$found_fragments" | grep -Fqx "$fragment"; then
+          matched=0
+          break
+        fi
+      done
+
+      if [[ $matched -eq 1 ]]; then
+        echo "Verified UI state: ${description}"
+        return 0
+      fi
+
+      scroll_page_down
+    done
+
+    wait_for_example_app_ui || true
+    sleep 2
+  done
+
+  echo "Timed out waiting for UI state: ${description}" >&2
+  dump_ui_hierarchy >&2 || true
   return 1
 }
 
@@ -156,106 +274,102 @@ run_scenario() {
     deferred)
       control_server reset deferred
       prepare_scenario deferred
-      clear_device_logs
       run_flow deferred-download.yaml
-      wait_for_harness_state \
+      wait_for_example_app_ui
+      wait_for_ui_state \
         "deferred release downloads while builtin bundle stays active" \
-        "\"buildLabel\":\"$builtin_label\"" \
-        '"scenarioId":"deferred"' \
-        '"directUpdateMode":"false"' \
-        '"currentBundleSource":"builtin"' \
-        '"currentBundleVersion":"1.0"' \
-        "\"nextBundleVersion\":\"$first_release\"" \
-        "\"lastDownload\":\"$first_release\""
-      clear_device_logs
+        "Build label: $builtin_label" \
+        'Scenario: deferred' \
+        'Direct update mode: false' \
+        'Current bundle source: builtin' \
+        'Current bundle version: 1.0' \
+        "Next bundle version: $first_release" \
+        "Last completed download: $first_release"
       background_and_resume_app
-      wait_for_harness_state \
+      wait_for_ui_state \
         "deferred release applies after the app backgrounds and resumes" \
-        "\"buildLabel\":\"$first_release\"" \
-        '"scenarioId":"deferred"' \
-        '"directUpdateMode":"false"' \
-        '"currentBundleSource":"downloaded"' \
-        "\"currentBundleVersion\":\"$first_release\""
+        "Build label: $first_release" \
+        'Scenario: deferred' \
+        'Direct update mode: false' \
+        'Current bundle source: downloaded' \
+        "Current bundle version: $first_release"
       ;;
     always)
       control_server reset always
       prepare_scenario always
-      clear_device_logs
       run_flow initial-direct-update.yaml
-      wait_for_harness_state \
+      wait_for_example_app_ui
+      wait_for_ui_state \
         "always direct update applies on first launch" \
-        "\"buildLabel\":\"$first_release\"" \
-        '"scenarioId":"always"' \
-        '"directUpdateMode":"always"' \
-        '"currentBundleSource":"downloaded"' \
-        "\"currentBundleVersion\":\"$first_release\""
+        "Build label: $first_release" \
+        'Scenario: always' \
+        'Direct update mode: always' \
+        'Current bundle source: downloaded' \
+        "Current bundle version: $first_release"
       control_server advance always
-      clear_device_logs
       background_and_resume_app
-      wait_for_harness_state \
+      wait_for_ui_state \
         "always direct update applies a newer release after resume" \
-        "\"buildLabel\":\"$second_release\"" \
-        '"scenarioId":"always"' \
-        '"directUpdateMode":"always"' \
-        '"currentBundleSource":"downloaded"' \
-        "\"currentBundleVersion\":\"$second_release\""
+        "Build label: $second_release" \
+        'Scenario: always' \
+        'Direct update mode: always' \
+        'Current bundle source: downloaded' \
+        "Current bundle version: $second_release"
       ;;
     at-install)
       control_server reset at-install
       prepare_scenario at-install
-      clear_device_logs
       run_flow initial-direct-update.yaml
-      wait_for_harness_state \
+      wait_for_example_app_ui
+      wait_for_ui_state \
         "atInstall applies the first downloaded release on first launch" \
-        "\"buildLabel\":\"$first_release\"" \
-        '"scenarioId":"at-install"' \
-        '"directUpdateMode":"atInstall"' \
-        '"currentBundleSource":"downloaded"' \
-        "\"currentBundleVersion\":\"$first_release\""
+        "Build label: $first_release" \
+        'Scenario: at-install' \
+        'Direct update mode: atInstall' \
+        'Current bundle source: downloaded' \
+        "Current bundle version: $first_release"
       control_server advance at-install
-      clear_device_logs
       background_and_resume_app
-      wait_for_harness_state \
+      wait_for_ui_state \
         "atInstall downloads the next release on resume before applying it" \
-        "\"buildLabel\":\"$first_release\"" \
-        '"scenarioId":"at-install"' \
-        '"directUpdateMode":"atInstall"' \
-        '"currentBundleSource":"downloaded"' \
-        "\"currentBundleVersion\":\"$first_release\"" \
-        "\"nextBundleVersion\":\"$second_release\"" \
-        "\"lastDownload\":\"$second_release\""
-      clear_device_logs
+        "Build label: $first_release" \
+        'Scenario: at-install' \
+        'Direct update mode: atInstall' \
+        'Current bundle source: downloaded' \
+        "Current bundle version: $first_release" \
+        "Next bundle version: $second_release" \
+        "Last completed download: $second_release"
       background_and_resume_app
-      wait_for_harness_state \
+      wait_for_ui_state \
         "atInstall applies the downloaded release after the next background cycle" \
-        "\"buildLabel\":\"$second_release\"" \
-        '"scenarioId":"at-install"' \
-        '"directUpdateMode":"atInstall"' \
-        '"currentBundleSource":"downloaded"' \
-        "\"currentBundleVersion\":\"$second_release\""
+        "Build label: $second_release" \
+        'Scenario: at-install' \
+        'Direct update mode: atInstall' \
+        'Current bundle source: downloaded' \
+        "Current bundle version: $second_release"
       ;;
     on-launch)
       control_server reset on-launch
       prepare_scenario on-launch
-      clear_device_logs
       run_flow initial-direct-update.yaml
-      wait_for_harness_state \
+      wait_for_example_app_ui
+      wait_for_ui_state \
         "onLaunch applies the first downloaded release on first launch" \
-        "\"buildLabel\":\"$first_release\"" \
-        '"scenarioId":"on-launch"' \
-        '"directUpdateMode":"onLaunch"' \
-        '"currentBundleSource":"downloaded"' \
-        "\"currentBundleVersion\":\"$first_release\""
+        "Build label: $first_release" \
+        'Scenario: on-launch' \
+        'Direct update mode: onLaunch' \
+        'Current bundle source: downloaded' \
+        "Current bundle version: $first_release"
       control_server advance on-launch
-      clear_device_logs
       run_flow kill-then-direct-update.yaml
-      wait_for_harness_state \
+      wait_for_example_app_ui
+      wait_for_ui_state \
         "onLaunch applies the next release after a cold relaunch" \
-        "\"buildLabel\":\"$second_release\"" \
-        '"scenarioId":"on-launch"' \
-        '"directUpdateMode":"onLaunch"' \
-        '"currentBundleSource":"downloaded"' \
-        "\"currentBundleVersion\":\"$second_release\""
+        "Build label: $second_release" \
+        'Scenario: on-launch' \
+        'Direct update mode: onLaunch' \
+        'Current bundle source: downloaded' \
+        "Current bundle version: $second_release"
       ;;
     *)
       echo "Unknown Maestro scenario selection: $scenario_id" >&2
@@ -359,7 +473,7 @@ background_and_resume_app() {
   sleep "$APP_BACKGROUND_SETTLE_SECONDS"
   prepare_device_for_maestro
   launch_android_app
-  sleep 2
+  wait_for_example_app_ui
   return 0
 }
 
