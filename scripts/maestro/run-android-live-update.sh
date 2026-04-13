@@ -380,13 +380,13 @@ install_apk() {
       return 0
     fi
 
-    if grep -Eq "Broken pipe|Can.t find service: package|Can.t find service: settings|Cannot access system provider: 'settings' before system providers are installed!|no devices/emulators found|device offline" "$output_file" && [[ $attempt -lt $max_attempts ]]; then
+    if grep -Eq "Broken pipe|Can.t find service: package|Can.t find service: settings|Cannot access system provider: 'settings' before system providers are installed!|no devices/emulators found|device offline|PackageManagerInternal\\.freeStorage|StorageManagerService\\.allocateBytes|java\\.lang\\.NullPointerException" "$output_file" && [[ $attempt -lt $max_attempts ]]; then
       rm -f "$output_file"
       attempt=$((attempt + 1))
       restart_adb_server
       prepare_device_for_maestro
       wait_for_package_manager
-      sleep 5
+      sleep 15
       continue
     fi
 
