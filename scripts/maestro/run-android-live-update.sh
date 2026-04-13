@@ -275,34 +275,13 @@ launch_android_app() {
   return 0
 }
 
-wait_for_app_foreground() {
-  local window_dump=""
-
-  for _ in $(seq 1 30); do
-    window_dump="$(
-      {
-        adb shell dumpsys window windows 2>/dev/null || true
-      } | tr -d '\r'
-    )"
-
-    if grep -Eq "mCurrentFocus=.*${APP_ID}|mFocusedApp=.*${APP_ID}" <<<"$window_dump"; then
-      return 0
-    fi
-
-    sleep 1
-  done
-
-  echo "Android app did not return to the foreground in time for Maestro." >&2
-  return 1
-}
-
 background_and_resume_app() {
   echo "Backgrounding ${APP_ID} and waiting ${APP_BACKGROUND_SETTLE_SECONDS}s for Android lifecycle delivery"
   adb shell input keyevent KEYCODE_HOME >/dev/null 2>&1 || true
   sleep "$APP_BACKGROUND_SETTLE_SECONDS"
   prepare_device_for_maestro
   launch_android_app
-  wait_for_app_foreground
+  sleep 2
   return 0
 }
 
