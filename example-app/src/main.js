@@ -1,4 +1,5 @@
 import './style.css';
+import { Capacitor } from '@capacitor/core';
 import { CapacitorUpdater } from '@capgo/capacitor-updater';
 
 if (window.__capgoProbe) {
@@ -16,6 +17,7 @@ const maxEvents = 8;
 const fallbackUpdateUrl = 'https://example.com/api/auto_update';
 const defaultUpdateUrl = serverUrl.startsWith('http') ? serverUrl : fallbackUpdateUrl;
 const isSmokeMode = scenarioId === 'manual' && serverUrl === 'not-configured';
+const shouldAutoRunSmokeSequence = isSmokeMode && Capacitor.getPlatform() === 'android';
 
 function requireElement(id) {
   const element = document.getElementById(id);
@@ -498,11 +500,13 @@ async function bootstrap() {
     attachListeners();
     await refreshState();
     startStateRefreshWatchers();
-    window.setTimeout(() => {
-      void runSmokeSequence().catch((error) => {
-        console.error('Smoke sequence bootstrap failed', error);
-      });
-    }, 250);
+    if (shouldAutoRunSmokeSequence) {
+      window.setTimeout(() => {
+        void runSmokeSequence().catch((error) => {
+          console.error('Smoke sequence bootstrap failed', error);
+        });
+      }, 250);
+    }
     return;
   }
 
