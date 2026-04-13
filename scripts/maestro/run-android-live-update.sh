@@ -224,7 +224,6 @@ wait_for_ui_state() {
       scroll_page_down
     done
 
-    wait_for_example_app_ui || true
     sleep 2
   done
 
