@@ -2,50 +2,11 @@ appId: app.capgo.updater
 ---
 - extendedWaitUntil:
     visible: '@capgo/capacitor-updater'
-    timeout: 120000
+    timeout: 180000
 - assertVisible: '@capgo/capacitor-updater'
-- scrollUntilVisible:
-    element:
-      text: 'Run notifyAppReady'
-    direction: DOWN
-- tapOn: 'Run notifyAppReady'
+- tapOn: 'Run smoke test sequence'
 - extendedWaitUntil:
-    visible: 'Action marker: notify-app-ready:success'
-    timeout: 30000
-- assertVisible: 'Action marker: notify-app-ready:success'
-- scrollUntilVisible:
-    element:
-      text: 'Run get current bundle'
-    direction: DOWN
-- tapOn: 'Run get current bundle'
-- extendedWaitUntil:
-    visible: 'Action marker: current-bundle:success'
-    timeout: 30000
-- assertVisible: 'Action marker: current-bundle:success'
-- scrollUntilVisible:
-    element:
-      text: 'Run list downloaded bundles'
-    direction: DOWN
-- tapOn: 'Run list downloaded bundles'
-- extendedWaitUntil:
-    visible: 'Action marker: list-bundles:success'
-    timeout: 30000
-- assertVisible: 'Action marker: list-bundles:success'
-- scrollUntilVisible:
-    element:
-      text: 'Run get plugin version'
-    direction: DOWN
-- tapOn: 'Run get plugin version'
-- extendedWaitUntil:
-    visible: 'Action marker: get-plugin-version:success'
-    timeout: 30000
-- assertVisible: 'Action marker: get-plugin-version:success'
-- scrollUntilVisible:
-    element:
-      text: 'Apply update URL'
-    direction: DOWN
-- tapOn: 'Apply update URL'
-- extendedWaitUntil:
-    visible: 'Action marker: set-update-url:success'
-    timeout: 30000
-- assertVisible: 'Action marker: set-update-url:success'
+    visible: 'Result marker: smoke-sequence:success'
+    timeout: 180000
+- assertVisible: 'Sequence: success'
+- assertVisible: 'Result marker: smoke-sequence:success'

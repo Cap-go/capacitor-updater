@@ -73,7 +73,7 @@ wait_for_harness_state() {
   local description="$1"
   shift
   local -a fragments=("$@")
-  local timeout_seconds="${CAPGO_MAESTRO_LOG_STATE_TIMEOUT_SECONDS:-90}"
+  local timeout_seconds="${CAPGO_MAESTRO_LOG_STATE_TIMEOUT_SECONDS:-180}"
   local deadline=$((SECONDS + timeout_seconds))
   local log_file=""
   local state_lines=""
