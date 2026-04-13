@@ -256,7 +256,11 @@ wait_for_android_boot() {
   local boot_completed=""
 
   for _ in $(seq 1 30); do
-    boot_completed="$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')"
+    boot_completed="$(
+      {
+        adb shell getprop sys.boot_completed 2>/dev/null || true
+      } | tr -d '\r'
+    )"
     if [[ "$boot_completed" == "1" ]]; then
       return 0
     fi
@@ -293,7 +297,11 @@ wait_for_package_manager() {
   local settings_output=""
 
   for _ in $(seq 1 30); do
-    settings_output="$(adb shell settings get global adb_enabled 2>&1 | tr -d '\r' | awk 'NF { last = $0 } END { print last }')"
+    settings_output="$(
+      {
+        adb shell settings get global adb_enabled 2>&1 || true
+      } | tr -d '\r' | awk 'NF { last = $0 } END { print last }'
+    )"
 
     if adb shell cmd package list packages >/dev/null 2>&1 && [[ "$settings_output" =~ ^(0|1|null)$ ]]; then
       return 0
