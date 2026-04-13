@@ -15,6 +15,8 @@ FLOW_RETRY_PATTERN="TcpForwarder.waitFor|allocateForwarder|TimeoutException|Andr
 MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
 MAESTRO_DRIVER_STARTUP_TIMEOUT_VALUE="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-300000}"
 MAESTRO_FLOW_TIMEOUT_SECONDS="${MAESTRO_FLOW_TIMEOUT_SECONDS:-360}"
+LOG_WAIT_TIMEOUT_SECONDS="${LOG_WAIT_TIMEOUT_SECONDS:-180}"
+ADB_COMMAND_TIMEOUT_SECONDS="${ADB_COMMAND_TIMEOUT_SECONDS:-5}"
 TIMEOUT_CMD="$(command -v gtimeout || command -v timeout || true)"
 SCENARIO_SEQUENCE=(deferred always at-install on-launch)
 LOG_PATTERN_APP_TO_BACKGROUND='ProcessLifecycleOwner: App moved to background'
@@ -354,7 +356,8 @@ clear_logcat() {
 }
 
 dump_relevant_logcat() {
-  adb logcat -d -v brief CapgoUpdater:I AndroidRuntime:I '*:S' 2>/dev/null || true
+  "$TIMEOUT_CMD" --foreground "${ADB_COMMAND_TIMEOUT_SECONDS}s" \
+    adb logcat -d -v brief CapgoUpdater:I AndroidRuntime:I '*:S' 2>/dev/null || true
   return 0
 }
 
@@ -388,9 +391,10 @@ wait_for_log_patterns() {
   local description="$1"
   shift
   local dump=""
+  local deadline=$((SECONDS + LOG_WAIT_TIMEOUT_SECONDS))
 
   echo "Waiting for log state: $description"
-  for _ in $(seq 1 180); do
+  while (( SECONDS < deadline )); do
     dump="$(dump_relevant_logcat)"
     if [[ -n "$dump" ]] && logcat_contains_all "$dump" "$@"; then
       echo "Verified log state: $description"
@@ -400,7 +404,7 @@ wait_for_log_patterns() {
     sleep 1
   done
 
-  echo "Logcat did not reach expected state: $description" >&2
+  echo "Logcat did not reach expected state within ${LOG_WAIT_TIMEOUT_SECONDS}s: $description" >&2
   echo "${dump:-<no relevant logcat output>}" | tail -n 200 >&2
   return 1
 }
