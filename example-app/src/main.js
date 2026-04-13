@@ -446,11 +446,13 @@ function createActionCard(action) {
 
   card.appendChild(button);
 
-  const actionMarker = document.createElement('p');
-  actionMarker.className = 'status-line action-marker';
-  actionMarker.textContent = `Action marker: ${action.id}:idle`;
-  card.appendChild(actionMarker);
-  actionMarkers.set(action.id, actionMarker);
+  if (isSmokeMode) {
+    const actionMarker = document.createElement('p');
+    actionMarker.className = 'status-line action-marker';
+    actionMarker.textContent = `Action marker: ${action.id}:idle`;
+    card.appendChild(actionMarker);
+    actionMarkers.set(action.id, actionMarker);
+  }
 
   return card;
 }
