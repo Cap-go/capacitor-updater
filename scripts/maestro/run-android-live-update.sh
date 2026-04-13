@@ -270,7 +270,7 @@ wait_for_package_manager() {
 }
 
 launch_android_app() {
-  adb shell am start -S -W -n "$APP_ACTIVITY" >/dev/null 2>&1 || \
+  adb shell am start -W -n "$APP_ACTIVITY" >/dev/null 2>&1 || \
     adb shell monkey -p "$APP_ID" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1 || true
   return 0
 }
