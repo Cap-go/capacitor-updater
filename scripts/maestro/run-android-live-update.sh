@@ -303,17 +303,23 @@ wait_for_at_install_direct_update_ui_state() {
   local description="$1"
   shift
   local -a fragments=("$@")
+  local attempt=1
+  local max_attempts=2
 
-  if wait_for_ui_state_with_timeout "$description" "$DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS" "${fragments[@]}"; then
-    return 0
-  fi
+  while [[ $attempt -le $max_attempts ]]; do
+    if wait_for_ui_state_with_timeout "$description" "$DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS" "${fragments[@]}"; then
+      return 0
+    fi
 
-  echo "atInstall UI did not settle for ${description}; cold relaunching and driving one extra background cycle." >&2
-  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell am force-stop "$APP_ID" >/dev/null 2>&1 || true
-  relaunch_android_app
-  background_and_resume_app "$DIRECT_UPDATE_BACKGROUND_SETTLE_SECONDS"
-  wait_for_ui_state_with_timeout "$description" "$DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS" "${fragments[@]}"
-  return 0
+    if [[ $attempt -lt $max_attempts ]]; then
+      echo "atInstall UI did not settle for ${description}; driving one extra background cycle without force-stopping the current bundle." >&2
+      background_and_resume_app "$DIRECT_UPDATE_BACKGROUND_SETTLE_SECONDS"
+    fi
+
+    attempt=$((attempt + 1))
+  done
+
+  return 1
 }
 
 ensure_android_device() {
