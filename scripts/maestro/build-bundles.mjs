@@ -4,11 +4,22 @@ import {
   bundleArtifactDir,
   createBuildEnv,
   exampleAppDir,
+  findScenario,
   getBundleZipPath,
   repoRoot,
   scenarios,
 } from './scenarios.mjs';
 import { runCommand } from './command.mjs';
+
+const scenarioSelection = process.argv[2]?.trim() || 'all';
+const selectedScenarios =
+  scenarioSelection === 'all'
+    ? Object.values(scenarios)
+    : [findScenario(scenarioSelection)].filter(Boolean);
+
+if (!selectedScenarios.length) {
+  throw new Error(`Unknown Maestro scenario selection: ${scenarioSelection}`);
+}
 
 async function buildBundle({ scenarioId, directUpdate, release }) {
   const env = createBuildEnv({
@@ -38,7 +49,7 @@ await runCommand('bun', ['install'], {
   env: process.env,
 });
 
-for (const scenario of Object.values(scenarios)) {
+for (const scenario of selectedScenarios) {
   for (const release of scenario.releases) {
     await buildBundle({
       scenarioId: scenario.id,

@@ -82,8 +82,33 @@ reset_adb_forwarding() {
 }
 
 configure_server_routing() {
-  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" reverse "tcp:${HOST_SERVER_PORT}" "tcp:${HOST_SERVER_PORT}" >/dev/null 2>&1 || true
-  return 0
+  local attempt=1
+  local max_attempts=3
+
+  case "$DEVICE_SERVER_URL" in
+    http://127.0.0.1:*|http://localhost:*|https://127.0.0.1:*|https://localhost:*)
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+
+  while [[ $attempt -le $max_attempts ]]; do
+    if run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" reverse "tcp:${HOST_SERVER_PORT}" "tcp:${HOST_SERVER_PORT}" >/dev/null 2>&1; then
+      return 0
+    fi
+
+    if [[ $attempt -lt $max_attempts ]]; then
+      echo "adb reverse tcp:${HOST_SERVER_PORT} failed (attempt ${attempt}/${max_attempts}); retrying." >&2
+      ensure_android_device || true
+      sleep 2
+    fi
+
+    attempt=$((attempt + 1))
+  done
+
+  echo "Failed to establish adb reverse tcp:${HOST_SERVER_PORT} for ${DEVICE_SERVER_URL}." >&2
+  return 1
 }
 
 clear_device_logs() {
@@ -322,10 +347,19 @@ load_scenario_config() {
   local scenario_id="$1"
 
   bun --eval "
-import { getScenario } from '${ROOT_DIR}/scripts/maestro/scenarios.mjs';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { exampleAppDir, getScenario } from '${ROOT_DIR}/scripts/maestro/scenarios.mjs';
 
 const scenario = getScenario(process.argv[1]);
-console.log([scenario.builtinLabel, ...scenario.releases.map((release) => release.version)].join('\t'));
+const buildGradle = readFileSync(path.join(exampleAppDir, 'android', 'app', 'build.gradle'), 'utf8');
+const versionMatch = buildGradle.match(/versionName\\s*=\\s*['\\\"]([^'\\\"]+)['\\\"]/);
+
+if (!versionMatch) {
+  throw new Error('Unable to determine example-app Android versionName');
+}
+
+console.log([scenario.builtinLabel, versionMatch[1], ...scenario.releases.map((release) => release.version)].join('\t'));
 " "$scenario_id"
 
   return 0
@@ -334,10 +368,11 @@ console.log([scenario.builtinLabel, ...scenario.releases.map((release) => releas
 run_scenario() {
   local scenario_id="$1"
   local builtin_label=""
+  local builtin_version=""
   local first_release=""
   local second_release=""
 
-  IFS=$'\t' read -r builtin_label first_release second_release _ <<<"$(load_scenario_config "$scenario_id")"
+  IFS=$'\t' read -r builtin_label builtin_version first_release second_release _ <<<"$(load_scenario_config "$scenario_id")"
   echo "=== Running Maestro scenario: $scenario_id ==="
 
   case "$scenario_id" in
@@ -352,7 +387,7 @@ run_scenario() {
         'Scenario: deferred' \
         'Direct update mode: false' \
         'Current bundle source: builtin' \
-        'Current bundle version: 1.0' \
+        "Current bundle version: $builtin_version" \
         "Next bundle version: $first_release" \
         "Last completed download: $first_release"
       background_and_resume_app
@@ -703,7 +738,7 @@ restart_adb_server
 ensure_android_device
 
 (cd "$ROOT_DIR/example-app" && bun install)
-bun "$ROOT_DIR/scripts/maestro/build-bundles.mjs"
+bun "$ROOT_DIR/scripts/maestro/build-bundles.mjs" "$SCENARIO_SELECTION"
 stop_stale_fake_server
 bun "$ROOT_DIR/scripts/maestro/fake-capgo-server.mjs" >"$ARTIFACT_DIR/fake-capgo-server.log" 2>&1 &
 SERVER_PID=$!
