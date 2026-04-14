@@ -45,21 +45,13 @@ jobs:
         with:
           node-version: 24.x
           registry-url: 'https://registry.npmjs.org'
-      - name: Publish lts-v6 to npm
-        if: ${{ startsWith(github.ref, 'refs/tags/6.') }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --tag lts-v6 --provenance --access public
+      - name: Resolve npm dist-tag
+        id: npm_tag
+        run: echo "value=$(bun scripts/resolve-npm-dist-tag.mjs \"$GITHUB_REF\")" >> "$GITHUB_OUTPUT"
       - name: Publish to npm
-        if: ${{ !contains(github.ref, '-alpha.') && !startsWith(github.ref, 'refs/tags/6.') }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --provenance --access public
-      - name: Publish to npm with next tag
-        if: ${{ contains(github.ref, '-alpha.') && !startsWith(github.ref, 'refs/tags/6.')  }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --tag next --provenance --access public
+        run: npm publish --tag "${{ steps.npm_tag.outputs.value }}" --provenance --access public
       - name: Create GitHub release
         id: create_release
         uses: softprops/action-gh-release@v2
