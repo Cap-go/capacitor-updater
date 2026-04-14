@@ -89,7 +89,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final int SPLASH_SCREEN_RETRY_DELAY_MS = 100;
     private static final int SPLASH_SCREEN_MAX_RETRIES = 20;
 
-    private final String pluginVersion = "8.45.6";
+    private final String pluginVersion = "8.45.7";
     private static final String DELAY_CONDITION_PREFERENCES = "";
 
     private SharedPreferences.Editor editor;
