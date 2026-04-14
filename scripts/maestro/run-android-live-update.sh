@@ -268,10 +268,7 @@ wait_for_direct_update_ui_state() {
 
   echo "Direct update UI did not settle for ${description}; force-stopping and relaunching once." >&2
   run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell am force-stop "$APP_ID" >/dev/null 2>&1 || true
-  wait_for_package_manager || true
-  prepare_device_for_maestro
-  launch_android_app
-  sleep 3
+  relaunch_android_app
   wait_for_ui_state "$description" "${fragments[@]}"
   return 0
 }
@@ -526,13 +523,26 @@ launch_android_app() {
   return 1
 }
 
+relaunch_android_app() {
+  configure_server_routing
+
+  if launch_android_app; then
+    sleep 2
+    return 0
+  fi
+
+  echo "Android relaunch failed; re-preparing the device before retrying." >&2
+  prepare_device_for_maestro
+  launch_android_app
+  sleep 2
+  return 0
+}
+
 background_and_resume_app() {
   echo "Backgrounding ${APP_ID} and waiting ${APP_BACKGROUND_SETTLE_SECONDS}s for Android lifecycle delivery"
   run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell input keyevent KEYCODE_HOME >/dev/null 2>&1 || true
   sleep "$APP_BACKGROUND_SETTLE_SECONDS"
-  prepare_device_for_maestro
-  launch_android_app
-  sleep 2
+  relaunch_android_app
   return 0
 }
 
