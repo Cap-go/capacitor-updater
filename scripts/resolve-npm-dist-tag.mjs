@@ -18,10 +18,10 @@ const versionTag = ref.slice(tagRefPrefix.length);
 // still contains an accidental 10.0.0 release from an older workflow bug.
 let npmTag = 'latest';
 
-if (versionTag.startsWith('6.')) {
-  npmTag = 'lts-v6';
-} else if (versionTag.includes('-alpha.')) {
+if (versionTag.includes('-alpha.')) {
   npmTag = 'next';
+} else if (versionTag.startsWith('6.')) {
+  npmTag = 'lts-v6';
 }
 
 process.stdout.write(npmTag);
