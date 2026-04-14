@@ -72,8 +72,6 @@ API docs in the README are auto-generated from JSDoc in `src/definitions.ts`. **
 
 The plugin major version must always follow the Capacitor major version (e.g., plugin v8 for Capacitor 8). **Do not introduce breaking changes in `src/definitions.ts` unless explicitly asked or the current definition is broken or unusable.** Breaking changes belong to the matching Capacitor major migration, and all other changes must stay backward compatible.
 
-The bump workflow runs on every push to `main` and `development` (including CI-only changes) and will always create at least a patch tag so npm publishes have a tag to deploy. It fails fast if the package major drifts from the Capacitor peer dependency—update both together when doing an intentional major upgrade.
-
 ## Changelog
 
 `CHANGELOG.md` is managed automatically by CI/CD. Do not edit it manually.

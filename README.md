@@ -138,13 +138,15 @@ Step by step here: [Getting started](https://capgo.app/docs/getting-started/add-
 Or
 
 ```bash
-npm install @capgo/capacitor-updater
+npm install @capgo/capacitor-updater@latest
 npx cap sync
 ```
 
 ### Install a specific version
 
 Use npm tags to install the version matching your Capacitor version:
+
+> **Note**: Always use an explicit npm dist-tag (`latest`, `next`, `lts-v7`, `lts-v6`, etc.). A historical mistaken `10.x` publish means relying on the highest semver version can select the wrong release.
 
 ```bash
 # For Capacitor 8 (latest)
