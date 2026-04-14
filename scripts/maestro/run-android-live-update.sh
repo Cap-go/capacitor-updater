@@ -24,6 +24,7 @@ APP_START_TIMEOUT_SECONDS="${CAPGO_MAESTRO_APP_START_TIMEOUT_SECONDS:-20}"
 APP_UI_TIMEOUT_SECONDS="${CAPGO_MAESTRO_APP_UI_TIMEOUT_SECONDS:-180}"
 UI_STATE_TIMEOUT_SECONDS="${CAPGO_MAESTRO_UI_STATE_TIMEOUT_SECONDS:-300}"
 DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS="${CAPGO_MAESTRO_DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS:-120}"
+DIRECT_UPDATE_BACKGROUND_SETTLE_SECONDS="${CAPGO_MAESTRO_DIRECT_UPDATE_BACKGROUND_SETTLE_SECONDS:-6}"
 ADB_COMMAND_TIMEOUT_SECONDS="${CAPGO_MAESTRO_ADB_COMMAND_TIMEOUT_SECONDS:-20}"
 ADB_INSTALL_TIMEOUT_SECONDS="${CAPGO_MAESTRO_ADB_INSTALL_TIMEOUT_SECONDS:-180}"
 TIMEOUT_CMD="$(command -v gtimeout || command -v timeout || true)"
@@ -269,7 +270,24 @@ wait_for_direct_update_ui_state() {
   echo "Direct update UI did not settle for ${description}; force-stopping and relaunching once." >&2
   run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell am force-stop "$APP_ID" >/dev/null 2>&1 || true
   relaunch_android_app
-  wait_for_ui_state "$description" "${fragments[@]}"
+  wait_for_ui_state_with_timeout "$description" "$DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS" "${fragments[@]}"
+  return 0
+}
+
+wait_for_at_install_direct_update_ui_state() {
+  local description="$1"
+  shift
+  local -a fragments=("$@")
+
+  if wait_for_ui_state_with_timeout "$description" "$DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS" "${fragments[@]}"; then
+    return 0
+  fi
+
+  echo "atInstall UI did not settle for ${description}; cold relaunching and driving one extra background cycle." >&2
+  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell am force-stop "$APP_ID" >/dev/null 2>&1 || true
+  relaunch_android_app
+  background_and_resume_app "$DIRECT_UPDATE_BACKGROUND_SETTLE_SECONDS"
+  wait_for_ui_state_with_timeout "$description" "$DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS" "${fragments[@]}"
   return 0
 }
 
@@ -389,8 +407,8 @@ run_scenario() {
         "Current bundle version: $first_release" \
         "Next bundle version: $second_release" \
         "Last completed download: $second_release"
-      background_and_resume_app
-      wait_for_direct_update_ui_state \
+      background_and_resume_app "$DIRECT_UPDATE_BACKGROUND_SETTLE_SECONDS"
+      wait_for_at_install_direct_update_ui_state \
         "atInstall applies the downloaded release after the next background cycle" \
         "Build label: $second_release" \
         'Scenario: at-install' \
@@ -539,9 +557,11 @@ relaunch_android_app() {
 }
 
 background_and_resume_app() {
-  echo "Backgrounding ${APP_ID} and waiting ${APP_BACKGROUND_SETTLE_SECONDS}s for Android lifecycle delivery"
+  local settle_seconds="${1:-$APP_BACKGROUND_SETTLE_SECONDS}"
+
+  echo "Backgrounding ${APP_ID} and waiting ${settle_seconds}s for Android lifecycle delivery"
   run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell input keyevent KEYCODE_HOME >/dev/null 2>&1 || true
-  sleep "$APP_BACKGROUND_SETTLE_SECONDS"
+  sleep "$settle_seconds"
   relaunch_android_app
   return 0
 }
