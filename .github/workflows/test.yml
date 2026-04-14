@@ -180,9 +180,18 @@ jobs:
       - name: Verify
         id: verify_code
         run: bun run verify:web
-  maestro_android:
+  maestro_android_scenarios:
     timeout-minutes: 30
     runs-on: ubuntu-latest
+    name: maestro_android / ${{ matrix.scenario }}
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario:
+          - deferred
+          - always
+          - at-install
+          - on-launch
     steps:
       - name: Check out
         uses: actions/checkout@v6
@@ -214,4 +223,17 @@ jobs:
           profile: pixel_7
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
-          script: bun run test:maestro
+          script: ./scripts/maestro/run-android-live-update.sh "${{ matrix.scenario }}"
+  maestro_android:
+    if: always()
+    needs:
+      - maestro_android_scenarios
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail when any live update scenario fails
+        run: |
+          if [[ "${{ needs.maestro_android_scenarios.result }}" != "success" ]]; then
+            echo "One or more Android live update Maestro scenarios failed."
+            exit 1
+          fi
