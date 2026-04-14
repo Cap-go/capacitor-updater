@@ -278,12 +278,24 @@ wait_for_direct_update_ui_state() {
 
 ensure_android_device() {
   local state=""
+  local state_output=""
 
   for _ in $(seq 1 30); do
-    state="$(run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" get-state 2>/dev/null || true)"
+    state_output="$(
+      {
+        run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" get-state 2>&1 || true
+      } | tr -d '\r' | awk 'NF { last = $0 } END { print last }'
+    )"
+    state="$state_output"
     if [[ "$state" == "device" ]] && run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" devices | awk 'NR > 1 && $2 == "device" { found = 1 } END { exit(found ? 0 : 1) }'; then
       return 0
     fi
+
+    if [[ "$state_output" == *"Unable to connect to adb daemon"* || "$state_output" == *"cannot connect to daemon"* ]]; then
+      echo "ADB daemon unavailable while waiting for Android device; restarting adb." >&2
+      restart_adb_server
+    fi
+
     sleep 2
   done
 
@@ -657,6 +669,7 @@ command -v adb >/dev/null 2>&1 || {
 
 export CAPGO_MAESTRO_DEVICE_BASE_URL="$DEVICE_SERVER_URL"
 
+restart_adb_server
 ensure_android_device
 
 (cd "$ROOT_DIR/example-app" && bun install)
