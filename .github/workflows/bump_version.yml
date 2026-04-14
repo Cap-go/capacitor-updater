@@ -7,7 +7,6 @@ on:
       - development
     paths-ignore:
       - 'example-app/**'
-      - '.github/**'
   workflow_dispatch:
 
 jobs:
@@ -45,12 +44,30 @@ jobs:
           git add README.md
           git add api.md
           git commit --m "docs: update doc" || true
-      - name: Create version bump main
-        if: github.ref == 'refs/heads/main'
-        run: bunx capacitor-plugin-standard-version@latest --skip.changelog
-      - name: Create version bump development
-        if: github.ref == 'refs/heads/development'
-        run: bunx capacitor-plugin-standard-version@latest --prerelease alpha --skip.changelog
+      - name: Bump version and tag (with patch fallback)
+        run: |
+          set -euo pipefail
+          release_args=(--skip.changelog)
+
+          if [[ "${GITHUB_REF}" == "refs/heads/development" ]]; then
+            release_args+=(--prerelease alpha)
+          fi
+
+          if ! bunx capacitor-plugin-standard-version@latest "${release_args[@]}"; then
+            echo "No conventional bump found; forcing patch release to ensure tag creation."
+            bunx capacitor-plugin-standard-version@latest "${release_args[@]}" --release-as patch
+          fi
+      - name: Enforce plugin major matches Capacitor peer dependency
+        run: |
+          set -euo pipefail
+          plugin_version=$(node -p "require('./package.json').version")
+          plugin_major=${plugin_version%%.*}
+          capacitor_major=$(node -p "require('./package.json').peerDependencies['@capacitor/core'].match(/\\d+/)[0]")
+
+          if [[ "${plugin_major}" != "${capacitor_major}" ]]; then
+            echo "Plugin major (${plugin_major}) must track Capacitor major (${capacitor_major})."
+            exit 1
+          fi
       - name: Push to origin
         run: |
           CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
