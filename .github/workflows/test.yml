@@ -75,7 +75,7 @@ jobs:
         id: test_ios
         run: bun run test:ios
   maestro_android_example_app:
-    timeout-minutes: 45
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     name: Android example app Maestro smoke
     steps:
@@ -126,7 +126,7 @@ jobs:
           name: maestro-results-android
           path: maestro-results
   maestro_ios_example_app:
-    timeout-minutes: 45
+    timeout-minutes: 30
     runs-on: macOS-latest
     name: iOS example app Maestro smoke
     steps:
@@ -181,7 +181,7 @@ jobs:
         id: verify_code
         run: bun run verify:web
   maestro_android:
-    timeout-minutes: 60
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
       - name: Check out

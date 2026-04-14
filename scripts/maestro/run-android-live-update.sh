@@ -20,9 +20,12 @@ MAESTRO_DRIVER_STARTUP_TIMEOUT_VALUE="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-300000}"
 MAESTRO_FLOW_TIMEOUT_SECONDS="${MAESTRO_FLOW_TIMEOUT_SECONDS:-360}"
 APP_BACKGROUND_SETTLE_SECONDS="${CAPGO_MAESTRO_BACKGROUND_SETTLE_SECONDS:-3}"
 APP_LAUNCH_RETRIES="${CAPGO_MAESTRO_APP_LAUNCH_RETRIES:-3}"
+APP_START_TIMEOUT_SECONDS="${CAPGO_MAESTRO_APP_START_TIMEOUT_SECONDS:-20}"
 APP_UI_TIMEOUT_SECONDS="${CAPGO_MAESTRO_APP_UI_TIMEOUT_SECONDS:-180}"
 UI_STATE_TIMEOUT_SECONDS="${CAPGO_MAESTRO_UI_STATE_TIMEOUT_SECONDS:-300}"
 DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS="${CAPGO_MAESTRO_DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS:-120}"
+ADB_COMMAND_TIMEOUT_SECONDS="${CAPGO_MAESTRO_ADB_COMMAND_TIMEOUT_SECONDS:-20}"
+ADB_INSTALL_TIMEOUT_SECONDS="${CAPGO_MAESTRO_ADB_INSTALL_TIMEOUT_SECONDS:-180}"
 TIMEOUT_CMD="$(command -v gtimeout || command -v timeout || true)"
 SCENARIO_SEQUENCE=(deferred always at-install on-launch)
 
@@ -32,6 +35,18 @@ cleanup() {
   fi
   stop_stale_fake_server
   return 0
+}
+
+run_with_timeout() {
+  local timeout_seconds="$1"
+  shift
+  "$TIMEOUT_CMD" --foreground "${timeout_seconds}s" "$@"
+}
+
+run_adb_command() {
+  local timeout_seconds="$1"
+  shift
+  run_with_timeout "$timeout_seconds" adb "$@"
 }
 
 stop_stale_fake_server() {
@@ -59,24 +74,24 @@ wait_for_server() {
 }
 
 reset_adb_forwarding() {
-  adb forward --remove-all >/dev/null 2>&1 || true
-  adb reverse --remove-all >/dev/null 2>&1 || true
+  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" forward --remove-all >/dev/null 2>&1 || true
+  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" reverse --remove-all >/dev/null 2>&1 || true
   configure_server_routing
   return 0
 }
 
 configure_server_routing() {
-  adb reverse "tcp:${HOST_SERVER_PORT}" "tcp:${HOST_SERVER_PORT}" >/dev/null 2>&1 || true
+  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" reverse "tcp:${HOST_SERVER_PORT}" "tcp:${HOST_SERVER_PORT}" >/dev/null 2>&1 || true
   return 0
 }
 
 clear_device_logs() {
-  adb logcat -c >/dev/null 2>&1 || true
+  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" logcat -c >/dev/null 2>&1 || true
   return 0
 }
 
 dump_ui_hierarchy() {
-  adb exec-out uiautomator dump /dev/tty 2>/dev/null | tr -d '\r' | tr '\n' ' ' || true
+  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" exec-out uiautomator dump /dev/tty 2>/dev/null | tr -d '\r' | tr '\n' ' ' || true
   return 0
 }
 
@@ -90,7 +105,7 @@ tap_android_anr_wait_button_if_present() {
     x=$(((BASH_REMATCH[1] + BASH_REMATCH[3]) / 2))
     y=$(((BASH_REMATCH[2] + BASH_REMATCH[4]) / 2))
     echo "Detected Android ANR dialog; tapping Wait." >&2
-    adb shell input tap "$x" "$y" >/dev/null 2>&1 || true
+    run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell input tap "$x" "$y" >/dev/null 2>&1 || true
     sleep 1
     return 0
   fi
@@ -103,7 +118,7 @@ get_device_screen_size() {
 
   size_line="$(
     {
-      adb shell wm size 2>/dev/null || true
+      run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell wm size 2>/dev/null || true
     } | tr -d '\r' | sed -n 's/.*Physical size: \([0-9]\+\)x\([0-9]\+\).*/\1 \2/p' | tail -n 1
   )"
 
@@ -127,7 +142,7 @@ scroll_page_down() {
   x=$((width / 2))
   start_y=$(((height * 4) / 5))
   end_y=$((height / 5))
-  adb shell input swipe "$x" "$start_y" "$x" "$end_y" 300 >/dev/null 2>&1 || true
+  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell input swipe "$x" "$start_y" "$x" "$end_y" 300 >/dev/null 2>&1 || true
   sleep 1
   return 0
 }
@@ -146,7 +161,7 @@ scroll_page_to_top() {
   end_y=$(((height * 4) / 5))
 
   for attempt in 1 2 3 4; do
-    adb shell input swipe "$x" "$start_y" "$x" "$end_y" 250 >/dev/null 2>&1 || true
+    run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell input swipe "$x" "$start_y" "$x" "$end_y" 250 >/dev/null 2>&1 || true
     sleep 1
   done
 
@@ -172,7 +187,7 @@ wait_for_example_app_ui() {
     done
 
     echo "Example app UI did not appear on Android launch attempt ${attempt}; restarting the app." >&2
-    adb shell am force-stop "$APP_ID" >/dev/null 2>&1 || true
+    run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell am force-stop "$APP_ID" >/dev/null 2>&1 || true
     wait_for_package_manager || true
     sleep 2
     ((attempt += 1))
@@ -252,7 +267,7 @@ wait_for_direct_update_ui_state() {
   fi
 
   echo "Direct update UI did not settle for ${description}; force-stopping and relaunching once." >&2
-  adb shell am force-stop "$APP_ID" >/dev/null 2>&1 || true
+  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell am force-stop "$APP_ID" >/dev/null 2>&1 || true
   wait_for_package_manager || true
   prepare_device_for_maestro
   launch_android_app
@@ -265,8 +280,8 @@ ensure_android_device() {
   local state=""
 
   for _ in $(seq 1 30); do
-    state="$(adb get-state 2>/dev/null || true)"
-    if [[ "$state" == "device" ]] && adb devices | awk 'NR > 1 && $2 == "device" { found = 1 } END { exit(found ? 0 : 1) }'; then
+    state="$(run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" get-state 2>/dev/null || true)"
+    if [[ "$state" == "device" ]] && run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" devices | awk 'NR > 1 && $2 == "device" { found = 1 } END { exit(found ? 0 : 1) }'; then
       return 0
     fi
     sleep 2
@@ -426,7 +441,7 @@ wait_for_android_boot() {
   for _ in $(seq 1 30); do
     boot_completed="$(
       {
-        adb shell getprop sys.boot_completed 2>/dev/null || true
+        run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell getprop sys.boot_completed 2>/dev/null || true
       } | tr -d '\r'
     )"
     if [[ "$boot_completed" == "1" ]]; then
@@ -440,16 +455,16 @@ wait_for_android_boot() {
 }
 
 unlock_android_device() {
-  adb shell input keyevent KEYCODE_WAKEUP >/dev/null 2>&1 || true
-  adb shell wm dismiss-keyguard >/dev/null 2>&1 || true
-  adb shell input keyevent 82 >/dev/null 2>&1 || true
-  adb shell settings put global stay_on_while_plugged_in 3 >/dev/null 2>&1 || true
+  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell input keyevent KEYCODE_WAKEUP >/dev/null 2>&1 || true
+  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell wm dismiss-keyguard >/dev/null 2>&1 || true
+  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell input keyevent 82 >/dev/null 2>&1 || true
+  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell settings put global stay_on_while_plugged_in 3 >/dev/null 2>&1 || true
   return 0
 }
 
 restart_adb_server() {
-  adb kill-server >/dev/null 2>&1 || true
-  adb start-server >/dev/null 2>&1 || true
+  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" kill-server >/dev/null 2>&1 || true
+  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" start-server >/dev/null 2>&1 || true
   return 0
 }
 
@@ -468,11 +483,11 @@ wait_for_package_manager() {
   for _ in $(seq 1 30); do
     settings_output="$(
       {
-        adb shell settings get global adb_enabled 2>&1 || true
+        run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell settings get global adb_enabled 2>&1 || true
       } | tr -d '\r' | awk 'NF { last = $0 } END { print last }'
     )"
 
-    if adb shell cmd package list packages >/dev/null 2>&1 && [[ "$settings_output" =~ ^(0|1|null)$ ]]; then
+    if run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell cmd package list packages >/dev/null 2>&1 && [[ "$settings_output" =~ ^(0|1|null)$ ]]; then
       return 0
     fi
     sleep 2
@@ -486,14 +501,22 @@ wait_for_package_manager() {
 }
 
 launch_android_app() {
-  adb shell am start -W -n "$APP_ACTIVITY" >/dev/null 2>&1 || \
-    adb shell monkey -p "$APP_ID" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1 || true
-  return 0
+  if run_adb_command "$APP_START_TIMEOUT_SECONDS" shell am start -n "$APP_ACTIVITY" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  echo "Android activity launch did not finish within ${APP_START_TIMEOUT_SECONDS}s; retrying with monkey." >&2
+  if run_adb_command "$APP_START_TIMEOUT_SECONDS" shell monkey -p "$APP_ID" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1; then
+    return 0
+  fi
+
+  echo "Android app relaunch failed after the primary activity start timed out." >&2
+  return 1
 }
 
 background_and_resume_app() {
   echo "Backgrounding ${APP_ID} and waiting ${APP_BACKGROUND_SETTLE_SECONDS}s for Android lifecycle delivery"
-  adb shell input keyevent KEYCODE_HOME >/dev/null 2>&1 || true
+  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell input keyevent KEYCODE_HOME >/dev/null 2>&1 || true
   sleep "$APP_BACKGROUND_SETTLE_SECONDS"
   prepare_device_for_maestro
   launch_android_app
@@ -511,9 +534,9 @@ install_apk() {
 
   while [[ $attempt -le $max_attempts ]]; do
     output_file="$(mktemp)"
-    adb uninstall "$APP_ID" >/dev/null 2>&1 || true
+    run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" uninstall "$APP_ID" >/dev/null 2>&1 || true
 
-    if adb install -r "$APK_PATH" >"$output_file" 2>&1; then
+    if run_adb_command "$ADB_INSTALL_TIMEOUT_SECONDS" install -r "$APK_PATH" >"$output_file" 2>&1; then
       rm -f "$output_file"
       return 0
     fi
