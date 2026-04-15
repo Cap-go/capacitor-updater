@@ -2359,13 +2359,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
             if (next != null && !next.isErrorStatus() && !next.getId().equals(current.getId())) {
                 // There is a next bundle waiting for activation
                 logger.debug("Next bundle is: " + next.getVersionName());
-                if (this.implementation.set(next) && this._reload()) {
-                    logger.info("Updated to bundle: " + next.getVersionName());
-                    this.notifyBundleSet(next);
-                    this.implementation.setNextBundle(null);
-                } else {
-                    logger.error("Update to bundle: " + next.getVersionName() + " Failed!");
-                }
+                startNewThread(() -> {
+                    if (this.implementation.set(next) && this._reload()) {
+                        logger.info("Updated to bundle: " + next.getVersionName());
+                        this.notifyBundleSet(next);
+                        this.implementation.setNextBundle(null);
+                    } else {
+                        logger.error("Update to bundle: " + next.getVersionName() + " Failed!");
+                    }
+                });
             }
         } catch (final Exception e) {
             logger.error("Error during onActivityStopped " + e.getMessage());
