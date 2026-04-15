@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import org.json.JSONArray;
@@ -525,6 +526,20 @@ public class CapacitorUpdaterUnitTest {
                 field.setAccessible(true);
                 field.set(target, value);
                 return;
+            } catch (final NoSuchFieldException ignored) {
+                current = current.getSuperclass();
+            }
+        }
+        throw new NoSuchFieldException(fieldName);
+    }
+
+    private static Object getPrivateField(final Object target, final String fieldName) throws Exception {
+        Class<?> current = target.getClass();
+        while (current != null) {
+            try {
+                final Field field = current.getDeclaredField(fieldName);
+                field.setAccessible(true);
+                return field.get(target);
             } catch (final NoSuchFieldException ignored) {
                 current = current.getSuperclass();
             }
@@ -1200,6 +1215,58 @@ public class CapacitorUpdaterUnitTest {
             assertTrue("Expected pending bundle timeout extension but reload took only " + elapsedMs + "ms", elapsedMs >= 40);
             assertTrue("Expected bounded pending bundle timeout but reload took " + elapsedMs + "ms", elapsedMs < 1000);
             verify(bridge).setServerBasePath("/tmp/capgo-bundle");
+        }
+    }
+
+    @Test
+    public void testReloadTimeoutCleansUpPendingSemaphoreParty() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final NoOpThreadCapacitorUpdaterPlugin plugin = new NoOpThreadCapacitorUpdaterPlugin();
+            final Bridge bridge = mock(Bridge.class);
+            final WebView webView = mock(WebView.class);
+
+            plugin.implementation = new FixedPathCapgoUpdater("/tmp/capgo-bundle", false);
+            plugin.setLoggerForTesting(mock(Logger.class));
+            plugin.setBridge(bridge);
+            setPrivateField(plugin, "appReadyTimeout", 1);
+
+            when(bridge.getWebView()).thenReturn(webView);
+            when(bridge.getAppUrl()).thenReturn("https://local-app-domain.com");
+            when(webView.post(any(Runnable.class))).thenReturn(true);
+
+            assertFalse(plugin._reload());
+
+            final Phaser semaphore = (Phaser) getPrivateField(plugin, "semaphoreReady");
+            assertEquals(0, semaphore.getRegisteredParties());
+        }
+    }
+
+    @Test
+    public void testNotifyAppReadyWithoutPendingReloadKeepsSemaphoreReusable() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            final PluginCall call = mock(PluginCall.class);
+            final CapgoUpdater updater = mock(CapgoUpdater.class);
+            final BundleInfo bundle = new BundleInfo("current-bundle-id", "current-bundle", BundleStatus.SUCCESS, new Date(), "checksum");
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            when(updater.getCurrentBundle()).thenReturn(bundle);
+
+            plugin.notifyAppReady(call);
+
+            final Phaser semaphore = (Phaser) getPrivateField(plugin, "semaphoreReady");
+            assertFalse(semaphore.isTerminated());
+            assertEquals(0, semaphore.getRegisteredParties());
+            verify(call).resolve(any(JSObject.class));
         }
     }
 

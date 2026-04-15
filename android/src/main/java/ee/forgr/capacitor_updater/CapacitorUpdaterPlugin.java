@@ -135,8 +135,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private volatile long downloadStartTimeMs = 0;
     private static final long DOWNLOAD_TIMEOUT_MS = 3600000; // 1 hour timeout
 
-    //  private static final CountDownLatch semaphoreReady = new CountDownLatch(1);
-    private static final Phaser semaphoreReady = new Phaser(1);
+    private final Phaser semaphoreReady = new Phaser(0) {
+        @Override
+        protected boolean onAdvance(final int phase, final int registeredParties) {
+            return false;
+        }
+    };
 
     // Lock to ensure cleanup completes before downloads start
     private final Object cleanupLock = new Object();
@@ -516,29 +520,43 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
-    private boolean semaphoreWait(Number waitTime) {
+    private boolean semaphoreWait(final int phase, Number waitTime) {
         try {
-            semaphoreReady.awaitAdvanceInterruptibly(semaphoreReady.getPhase(), waitTime.longValue(), TimeUnit.MILLISECONDS);
+            semaphoreReady.awaitAdvanceInterruptibly(phase, waitTime.longValue(), TimeUnit.MILLISECONDS);
             logger.info("semaphoreReady count " + semaphoreReady.getPhase());
             return true;
         } catch (InterruptedException e) {
             logger.info("semaphoreWait InterruptedException");
+            cleanupTimedOutSemaphoreWait(phase);
             Thread.currentThread().interrupt(); // Restore interrupted status
             return false;
         } catch (TimeoutException e) {
             logger.error("Semaphore timeout: " + e.getMessage());
+            cleanupTimedOutSemaphoreWait(phase);
             return false;
         }
     }
 
-    private void semaphoreUp() {
+    private int semaphoreUp() {
         logger.info("semaphoreUp");
-        semaphoreReady.register();
+        return semaphoreReady.register();
     }
 
     private void semaphoreDown() {
+        if (semaphoreReady.getRegisteredParties() == 0) {
+            logger.info("semaphoreDown skipped, no pending app ready wait");
+            return;
+        }
         logger.info("semaphoreDown");
         logger.info("semaphoreDown count " + semaphoreReady.getPhase());
+        semaphoreReady.arriveAndDeregister();
+    }
+
+    private void cleanupTimedOutSemaphoreWait(final int phase) {
+        if (semaphoreReady.getPhase() != phase || semaphoreReady.getRegisteredParties() == 0) {
+            return;
+        }
+        logger.info("Cleaning up stale app ready wait for phase " + phase);
         semaphoreReady.arriveAndDeregister();
     }
 
@@ -1474,7 +1492,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     protected boolean _reload() {
-        this.semaphoreUp();
+        final int phase = this.semaphoreUp();
         this.applyCurrentBundleToBridge();
 
         final long waitTimeMs = this.resolveAppReadyCheckTimeoutMs();
@@ -1482,7 +1500,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.notifyListeners("appReloaded", new JSObject());
 
         // Wait for the reload to complete (until notifyAppReady is called)
-        return this.semaphoreWait(waitTimeMs);
+        return this.semaphoreWait(phase, waitTimeMs);
     }
 
     @PluginMethod
