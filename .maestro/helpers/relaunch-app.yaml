@@ -1,0 +1,4 @@
+appId: app.capgo.updater
+---
+- pressKey: Home
+- launchApp

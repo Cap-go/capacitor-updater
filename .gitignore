@@ -43,6 +43,7 @@ out
 # Gradle files
 .gradle
 build
+.maestro-artifacts
 
 # Local configuration file (sdk path, etc)
 local.properties

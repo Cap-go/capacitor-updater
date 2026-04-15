@@ -48,6 +48,7 @@
     "test": "bun run test:ios && bun run test:android",
     "test:ios": "./scripts/test-ios.sh",
     "test:android": "cd android && ./gradlew test && cd ..",
+    "test:maestro": "./scripts/maestro/run-android-live-update.sh",
     "test:maestro:android": "./scripts/test-maestro-android.sh",
     "test:maestro:ios": "./scripts/test-maestro-ios.sh",
     "lint": "bun run eslint && bun run prettier -- --check && bun run swiftlint -- lint",

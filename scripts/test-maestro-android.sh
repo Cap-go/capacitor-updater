@@ -10,14 +10,19 @@ SKIP_BUILD="${CAPGO_MAESTRO_SKIP_BUILD:-0}"
 EMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_EMULATOR_BOOT_TIMEOUT_SECONDS:-180}"
 MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-300}"
 MAESTRO_DRIVER_STARTUP_TIMEOUT="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-180000}"
+MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
+MAESTRO_TEST_RETRIES="${CAPGO_MAESTRO_TEST_RETRIES:-3}"
 APK_INSTALL_RETRIES="${CAPGO_MAESTRO_APK_INSTALL_RETRIES:-3}"
 PACKAGE_SERVICE_TIMEOUT_SECONDS="${CAPGO_MAESTRO_ANDROID_PACKAGE_TIMEOUT_SECONDS:-120}"
 APP_ACTIVITY="${CAPGO_MAESTRO_ANDROID_ACTIVITY:-app.capgo.updater/.MainActivity}"
-APP_LAUNCH_RETRIES="${CAPGO_MAESTRO_APP_LAUNCH_RETRIES:-2}"
-APP_UI_TIMEOUT_SECONDS="${CAPGO_MAESTRO_APP_UI_TIMEOUT_SECONDS:-90}"
+APP_LAUNCH_RETRIES="${CAPGO_MAESTRO_APP_LAUNCH_RETRIES:-3}"
+APP_UI_TIMEOUT_SECONDS="${CAPGO_MAESTRO_APP_UI_TIMEOUT_SECONDS:-150}"
+POST_INSTALL_STABILIZE_SECONDS="${CAPGO_MAESTRO_POST_INSTALL_STABILIZE_SECONDS:-8}"
 APP_READY_TITLE="@capgo/capacitor-updater"
 APP_READY_ACTION="Run notifyAppReady"
 APP_ID="app.capgo.updater"
+FLOW_RETRY_PATTERN="TcpForwarder.waitFor|allocateForwarder|TimeoutException|Android driver did not start up in time|Maestro Android driver did not start up in time|UNAVAILABLE: io exception|Connection refused|Broken pipe|Failure calling service package|Can.t find service: package|Can.t find service: settings|Cannot access system provider: 'settings'"
+TIMEOUT_CMD="$(command -v gtimeout || command -v timeout || true)"
 ANR_WATCHER_PID=""
 
 cleanup() {
@@ -104,9 +109,22 @@ tap_android_anr_wait_button_if_present() {
   return 1
 }
 
+restart_adb_server() {
+  adb kill-server >/dev/null 2>&1 || true
+  adb start-server >/dev/null 2>&1 || true
+  return 0
+}
+
 launch_example_app() {
-  adb shell am start -W -n "$APP_ACTIVITY" >/dev/null 2>&1 || \
+  adb shell am start -S -W -n "$APP_ACTIVITY" >/dev/null 2>&1 || \
     adb shell monkey -p "$APP_ID" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1 || true
+  return 0
+}
+
+stabilize_android_after_install() {
+  wait_for_emulator_boot
+  wait_for_android_package_service
+  sleep "$POST_INSTALL_STABILIZE_SECONDS"
   return 0
 }
 
@@ -130,6 +148,7 @@ wait_for_example_app_ui() {
 
     echo "Example app UI did not appear on Android launch attempt ${attempt}; restarting the app." >&2
     adb shell am force-stop "$APP_ID" >/dev/null 2>&1 || true
+    wait_for_android_package_service || true
     sleep 2
     ((attempt += 1))
   done
@@ -166,6 +185,56 @@ install_apk_with_retries() {
   return "$status"
 }
 
+run_maestro_test_with_retries() {
+  local attempt=1
+  local output_file=""
+  local command_status=0
+
+  while (( attempt <= MAESTRO_TEST_RETRIES )); do
+    echo "Running Android Maestro smoke flow (attempt ${attempt}/${MAESTRO_TEST_RETRIES})"
+    output_file="$(mktemp)"
+
+    set +e
+    MAESTRO_CLI_NO_ANALYTICS="$MAESTRO_CLI_NO_ANALYTICS" \
+      MAESTRO_DRIVER_STARTUP_TIMEOUT="$MAESTRO_DRIVER_STARTUP_TIMEOUT" \
+      "$TIMEOUT_CMD" --foreground "${MAESTRO_TIMEOUT_SECONDS}s" \
+      maestro test \
+      "$FLOW_PATH" \
+      --platform android \
+      --udid "$ANDROID_DEVICE_ID" \
+      --format junit \
+      --output "$RESULTS_DIR/junit.xml" \
+      --debug-output "$RESULTS_DIR/debug" \
+      --flatten-debug-output \
+      --test-output-dir "$RESULTS_DIR/artifacts" 2>&1 | tee "$output_file"
+    command_status=${PIPESTATUS[0]}
+    set -e
+
+    if [[ $command_status -eq 0 ]]; then
+      rm -f "$output_file"
+      return 0
+    fi
+
+    if [[ $attempt -lt $MAESTRO_TEST_RETRIES ]] && { [[ $command_status -eq 124 ]] || grep -Eq "$FLOW_RETRY_PATTERN" "$output_file"; }; then
+      echo "Retrying Android Maestro smoke after driver/bootstrap failure." >&2
+      rm -f "$output_file"
+      attempt=$((attempt + 1))
+      restart_adb_server
+      wait_for_emulator_boot
+      wait_for_android_package_service || true
+      adb shell input keyevent 82 >/dev/null 2>&1 || true
+      wait_for_example_app_ui
+      sleep 5
+      continue
+    fi
+
+    rm -f "$output_file"
+    return "$command_status"
+  done
+
+  return 1
+}
+
 if ! command -v adb >/dev/null 2>&1; then
   echo "adb is required to run Android Maestro tests." >&2
   exit 1
@@ -173,6 +242,11 @@ fi
 
 if ! command -v maestro >/dev/null 2>&1; then
   echo "maestro is required to run Android Maestro tests." >&2
+  exit 1
+fi
+
+if [[ -z "$TIMEOUT_CMD" ]]; then
+  echo "GNU timeout is required to run Android Maestro tests." >&2
   exit 1
 fi
 
@@ -226,6 +300,7 @@ adb shell settings put global transition_animation_scale 0 || true
 adb shell settings put global animator_duration_scale 0 || true
 adb shell input keyevent 82 || true
 install_apk_with_retries
+stabilize_android_after_install
 wait_for_example_app_ui
 
 rm -rf "$RESULTS_DIR"
@@ -234,15 +309,7 @@ mkdir -p "$RESULTS_DIR"
 watch_for_android_anr_dialog &
 ANR_WATCHER_PID=$!
 
-if timeout "${MAESTRO_TIMEOUT_SECONDS}s" env MAESTRO_DRIVER_STARTUP_TIMEOUT="$MAESTRO_DRIVER_STARTUP_TIMEOUT" maestro test \
-  "$FLOW_PATH" \
-  --platform android \
-  --udid "$ANDROID_DEVICE_ID" \
-  --format junit \
-  --output "$RESULTS_DIR/junit.xml" \
-  --debug-output "$RESULTS_DIR/debug" \
-  --flatten-debug-output \
-  --test-output-dir "$RESULTS_DIR/artifacts"; then
+if run_maestro_test_with_retries; then
   :
 else
   status=$?

@@ -9,8 +9,9 @@ on:
     branches:
       - renovate/**
   pull_request:
-    branches: [ main ]
-  workflow_call:  # Allow this workflow to be called by other workflows
+    branches: [main]
+  workflow_dispatch:
+  workflow_call: # Allow this workflow to be called by other workflows
 
 jobs:
   guard_swiftpm_version:
@@ -32,7 +33,10 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@v2
+      - name: Install Bun
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/ci/install-bun.sh
       - name: Install dependencies
         id: install_code
         run: bun i
@@ -55,7 +59,10 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@v2
+      - name: Install Bun
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/ci/install-bun.sh
       - name: Install dependencies
         id: install_code
         run: bun i
@@ -68,28 +75,32 @@ jobs:
         id: test_ios
         run: bun run test:ios
   maestro_android_example_app:
-    timeout-minutes: 45
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     name: Android example app Maestro smoke
     steps:
       - name: Check out
         uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@v2
-      - name: Install root dependencies
-        run: bun i
-      - name: Setup node
+      - name: Install Bun
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/ci/install-bun.sh
+      - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '22'
+          node-version: 22
+      - name: Install root dependencies
+        run: bun i
       - name: Setup java
         uses: actions/setup-java@v5
         with:
           distribution: 'zulu'
           java-version: '21'
-      - name: Install Maestro CLI
-        run: |
-          curl -Ls "https://get.maestro.mobile.dev" | bash
-          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+      - name: Install Maestro
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAESTRO_VERSION: cli-2.4.0
+        run: ./scripts/ci/install-maestro.sh
       - name: Build plugin and example app
         run: |
           bun run build
@@ -115,23 +126,27 @@ jobs:
           name: maestro-results-android
           path: maestro-results
   maestro_ios_example_app:
-    timeout-minutes: 45
+    timeout-minutes: 30
     runs-on: macOS-latest
     name: iOS example app Maestro smoke
     steps:
       - name: Check out
         uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-      - name: Install root dependencies
-        run: bun i
-      - name: Setup node
+      - name: Install Bun
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/ci/install-bun.sh
+      - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '22'
-      - name: Install Maestro CLI
-        run: |
-          curl -Ls "https://get.maestro.mobile.dev" | bash
-          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+          node-version: 22
+      - name: Install root dependencies
+        run: bun i
+      - name: Install Maestro
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAESTRO_VERSION: cli-2.4.0
+        run: ./scripts/ci/install-maestro.sh
       - name: Run Maestro smoke tests
         run: bun run test:maestro:ios
       - name: Upload Maestro artifacts
@@ -147,7 +162,10 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - name: Install Bun
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/ci/install-bun.sh
       - name: Install dependencies
         id: install_code
         run: bun i
@@ -162,3 +180,60 @@ jobs:
       - name: Verify
         id: verify_code
         run: bun run verify:web
+  maestro_android_scenarios:
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    name: maestro_android / ${{ matrix.scenario }}
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario:
+          - deferred
+          - always
+          - at-install
+          - on-launch
+    steps:
+      - name: Check out
+        uses: actions/checkout@v6
+      - name: Install Bun
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/ci/install-bun.sh
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: bun i
+      - name: Setup java
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'zulu'
+          java-version: '21'
+      - name: Install Maestro
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAESTRO_VERSION: cli-2.4.0
+        run: ./scripts/ci/install-maestro.sh
+      - name: Run live update Maestro flow
+        uses: reactivecircus/android-emulator-runner@e89f39f1abbbd05b1113a29cf4db69e7540cae5a # v2
+        with:
+          api-level: 30
+          arch: x86_64
+          profile: pixel_7
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          script: ./scripts/maestro/run-android-live-update.sh "${{ matrix.scenario }}"
+  maestro_android:
+    if: always()
+    needs:
+      - maestro_android_scenarios
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail when any live update scenario fails
+        run: |
+          if [[ "${{ needs.maestro_android_scenarios.result }}" != "success" ]]; then
+            echo "One or more Android live update Maestro scenarios failed."
+            exit 1
+          fi

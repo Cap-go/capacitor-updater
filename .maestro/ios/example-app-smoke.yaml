@@ -1,56 +1,61 @@
 appId: app.capgo.updater
 ---
 - extendedWaitUntil:
-    visible: "@capgo/capacitor-updater"
+    visible: '@capgo/capacitor-updater'
     timeout: 90000
-- assertVisible: "@capgo/capacitor-updater"
+- assertVisible: '@capgo/capacitor-updater'
 - scrollUntilVisible:
     element:
-      text: "Run notifyAppReady"
+      text: 'Run notifyAppReady'
     direction: DOWN
-- tapOn: "Run notifyAppReady"
+- tapOn: 'Run notifyAppReady'
 - scrollUntilVisible:
     element:
-      text: "Result marker: notify-app-ready:success"
+      text: 'Action marker: notify-app-ready:success'
     direction: DOWN
-- assertVisible: "Result marker: notify-app-ready:success"
+    timeout: 20000
+- assertVisible: 'Action marker: notify-app-ready:success'
 - scrollUntilVisible:
     element:
-      text: "Run get current bundle"
-    direction: UP
-- tapOn: "Run get current bundle"
-- scrollUntilVisible:
-    element:
-      text: "Result marker: current-bundle:success"
+      text: 'Run get current bundle'
     direction: DOWN
-- assertVisible: "Result marker: current-bundle:success"
+- tapOn: 'Run get current bundle'
 - scrollUntilVisible:
     element:
-      text: "Run list downloaded bundles"
-    direction: UP
-- tapOn: "Run list downloaded bundles"
-- scrollUntilVisible:
-    element:
-      text: "Result marker: list-bundles:success"
+      text: 'Action marker: current-bundle:success'
     direction: DOWN
-- assertVisible: "Result marker: list-bundles:success"
+    timeout: 20000
+- assertVisible: 'Action marker: current-bundle:success'
 - scrollUntilVisible:
     element:
-      text: "Run get plugin version"
-    direction: UP
-- tapOn: "Run get plugin version"
-- scrollUntilVisible:
-    element:
-      text: "Result marker: get-plugin-version:success"
+      text: 'Run list downloaded bundles'
     direction: DOWN
-- assertVisible: "Result marker: get-plugin-version:success"
+- tapOn: 'Run list downloaded bundles'
 - scrollUntilVisible:
     element:
-      text: "Apply update URL"
-    direction: UP
-- tapOn: "Apply update URL"
-- scrollUntilVisible:
-    element:
-      text: "Result marker: set-update-url:success"
+      text: 'Action marker: list-bundles:success'
     direction: DOWN
-- assertVisible: "Result marker: set-update-url:success"
+    timeout: 20000
+- assertVisible: 'Action marker: list-bundles:success'
+- scrollUntilVisible:
+    element:
+      text: 'Run get plugin version'
+    direction: DOWN
+- tapOn: 'Run get plugin version'
+- scrollUntilVisible:
+    element:
+      text: 'Action marker: get-plugin-version:success'
+    direction: DOWN
+    timeout: 20000
+- assertVisible: 'Action marker: get-plugin-version:success'
+- scrollUntilVisible:
+    element:
+      text: 'Apply update URL'
+    direction: DOWN
+- tapOn: 'Apply update URL'
+- scrollUntilVisible:
+    element:
+      text: 'Action marker: set-update-url:success'
+    direction: DOWN
+    timeout: 20000
+- assertVisible: 'Action marker: set-update-url:success'

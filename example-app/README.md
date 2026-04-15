@@ -2,19 +2,20 @@
 
 This Vite project links directly to the local plugin source so you can exercise the native APIs while developing.
 
-## Actions in this playground
+## Test harness
 
-- **Notify app ready** – Signals to the native plugin that the current bundle launched successfully.
-- **Get current bundle** – Returns the bundle currently in use.
-- **List downloaded bundles** – Lists bundles that were downloaded on the device.
-- **Get plugin version** – Returns the native plugin version.
-- **Set update URL** – Configures the update server endpoint.
+The example app now renders a deterministic OTA dashboard for the Maestro suite:
+
+- The built asset label bundled into the app or update zip
+- The current bundle version reported by the plugin
+- The next queued bundle version
+- Retained updater events and the most recent download
 
 ## Getting started
 
 ```bash
-npm install
-npm start
+bun install
+bun run start
 ```
 
-Add native shells with `npx cap add ios` or `npx cap add android` from this folder to try behaviour on device or simulator.
+Add native shells with `bunx cap add ios` or `bunx cap add android` from this folder to try behaviour on device or simulator.

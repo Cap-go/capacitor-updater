@@ -284,13 +284,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
                 @Override
                 public void directUpdateFinish(final BundleInfo latest) {
-                    if (activity != null) {
-                        activity.runOnUiThread(() -> {
-                            CapacitorUpdaterPlugin.this.directUpdateFinish(latest);
-                        });
-                    } else {
-                        logger.warn("directUpdateFinish: Activity is null, skipping notification");
-                    }
+                    CapacitorUpdaterPlugin.this.scheduleDirectUpdateFinish(latest);
                 }
 
                 @Override
@@ -862,6 +856,22 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     void completeBackgroundTaskForTesting(final BundleInfo current, final boolean plannedDirectUpdate) {
         this.endBackGroundTaskWithNotif("test", current.getVersionName(), current, false, plannedDirectUpdate);
+    }
+
+    void scheduleDirectUpdateFinish(final BundleInfo latest) {
+        startNewThread(() -> {
+            try {
+                Activity currentActivity = this.getActivity();
+                if (currentActivity != null) {
+                    this.implementation.activity = currentActivity;
+                } else {
+                    logger.warn("directUpdateFinish: Activity is null, proceeding without refreshing the activity reference");
+                }
+                this.directUpdateFinish(latest);
+            } catch (final Exception e) {
+                logger.error("directUpdateFinish failed: " + e.getMessage());
+            }
+        });
     }
 
     private void directUpdateFinish(final BundleInfo latest) {

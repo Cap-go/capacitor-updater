@@ -5,6 +5,7 @@ import static org.mockito.Mockito.*;
 
 import android.os.Handler;
 import android.os.Looper;
+import androidx.appcompat.app.AppCompatActivity;
 import com.getcapacitor.Bridge;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
@@ -51,6 +52,38 @@ public class CapacitorUpdaterUnitTest {
         @Override
         boolean isVersionDownloadInProgress(final String version) {
             return this.versionDownloadInProgress;
+        }
+    }
+
+    private static final class DirectUpdateDispatchPlugin extends TestableCapacitorUpdaterPlugin {
+
+        private final AppCompatActivity activity = mock(AppCompatActivity.class);
+        private boolean startNewThreadCalled = false;
+        private boolean reloadCalled = false;
+
+        @Override
+        public AppCompatActivity getActivity() {
+            return this.activity;
+        }
+
+        @Override
+        public Thread startNewThread(final Runnable function, Number waitTime) {
+            this.startNewThreadCalled = true;
+            function.run();
+            return new Thread();
+        }
+
+        @Override
+        public Thread startNewThread(final Runnable function) {
+            this.startNewThreadCalled = true;
+            function.run();
+            return new Thread();
+        }
+
+        @Override
+        protected boolean _reload() {
+            this.reloadCalled = true;
+            return true;
         }
     }
 
@@ -1087,6 +1120,30 @@ public class CapacitorUpdaterUnitTest {
             callCaptor.getValue().resolve();
             assertEquals(PluginCall.CALLBACK_ID_DANGLING, callCaptor.getValue().getCallbackId());
             assertEquals("hide", callCaptor.getValue().getMethodName());
+        }
+    }
+
+    @Test
+    public void testScheduleDirectUpdateFinishUsesBackgroundDispatchPath() {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final DirectUpdateDispatchPlugin plugin = new DirectUpdateDispatchPlugin();
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            final BundleInfo latest = new BundleInfo("download-id", "2.0.0", BundleStatus.SUCCESS, new Date(), "checksum");
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            plugin.scheduleDirectUpdateFinish(latest);
+
+            assertTrue(plugin.startNewThreadCalled);
+            assertTrue(plugin.reloadCalled);
+            assertEquals(1, updater.setCalls);
+            assertSame(plugin.activity, updater.activity);
         }
     }
 
