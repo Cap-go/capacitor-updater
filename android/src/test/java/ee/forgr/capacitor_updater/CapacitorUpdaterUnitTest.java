@@ -5,8 +5,8 @@ import static org.mockito.Mockito.*;
 
 import android.os.Handler;
 import android.os.Looper;
-import androidx.appcompat.app.AppCompatActivity;
 import android.webkit.WebView;
+import androidx.appcompat.app.AppCompatActivity;
 import com.getcapacitor.Bridge;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
