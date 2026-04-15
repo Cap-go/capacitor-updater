@@ -335,15 +335,57 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
+    private static final class ConfigurableTimeoutCapacitorUpdaterPlugin extends TestableCapacitorUpdaterPlugin {
+
+        private final long minimumPendingBundleAppReadyTimeoutMs;
+
+        ConfigurableTimeoutCapacitorUpdaterPlugin(final long minimumPendingBundleAppReadyTimeoutMs) {
+            this.minimumPendingBundleAppReadyTimeoutMs = minimumPendingBundleAppReadyTimeoutMs;
+        }
+
+        @Override
+        public Thread startNewThread(final Runnable function, Number waitTime) {
+            return this.startNewThread(function);
+        }
+
+        @Override
+        public Thread startNewThread(final Runnable function) {
+            return new Thread();
+        }
+
+        @Override
+        protected long getMinimumPendingBundleAppReadyTimeoutMs() {
+            return this.minimumPendingBundleAppReadyTimeoutMs;
+        }
+    }
+
     private static final class FixedPathCapgoUpdater extends CapgoUpdater {
 
         private final String currentBundlePath;
         private final boolean usingBuiltin;
+        private final BundleInfo currentBundle;
 
         FixedPathCapgoUpdater(final String currentBundlePath, final boolean usingBuiltin) {
+            this(
+                currentBundlePath,
+                usingBuiltin,
+                usingBuiltin
+                    ? new BundleInfo(BundleInfo.ID_BUILTIN, "builtin", BundleStatus.SUCCESS, BundleInfo.DOWNLOADED_BUILTIN, "builtin")
+                    : new BundleInfo(
+                        "current-bundle-id",
+                        "current-bundle",
+                        BundleStatus.SUCCESS,
+                        new Date(),
+                        "current-bundle-checksum"
+                    )
+            );
+        }
+
+        FixedPathCapgoUpdater(final String currentBundlePath, final boolean usingBuiltin, final BundleInfo currentBundle) {
             super(null);
             this.currentBundlePath = currentBundlePath;
             this.usingBuiltin = usingBuiltin;
+            this.currentBundle = currentBundle;
         }
 
         @Override
@@ -354,6 +396,11 @@ public class CapacitorUpdaterUnitTest {
         @Override
         public Boolean isUsingBuiltin() {
             return this.usingBuiltin;
+        }
+
+        @Override
+        public BundleInfo getCurrentBundle() {
+            return this.currentBundle;
         }
     }
 
@@ -1045,10 +1092,42 @@ public class CapacitorUpdaterUnitTest {
             when(webView.post(any(Runnable.class))).thenReturn(true);
 
             final long start = System.nanoTime();
-            assertTrue(plugin._reload());
+            assertFalse(plugin._reload());
             final long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
 
             assertTrue("Expected millisecond timeout but reload took " + elapsedMs + "ms", elapsedMs < 900);
+            verify(bridge).setServerBasePath("/tmp/capgo-bundle");
+        }
+    }
+
+    @Test
+    public void testReloadUsesExtendedTimeoutForPendingBundleValidation() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ConfigurableTimeoutCapacitorUpdaterPlugin plugin = new ConfigurableTimeoutCapacitorUpdaterPlugin(50);
+            final Bridge bridge = mock(Bridge.class);
+            final WebView webView = mock(WebView.class);
+            final BundleInfo pendingBundle = new BundleInfo("pending-bundle-id", "2.0.0", BundleStatus.PENDING, new Date(), "abc123");
+
+            plugin.implementation = new FixedPathCapgoUpdater("/tmp/capgo-bundle", false, pendingBundle);
+            plugin.setLoggerForTesting(mock(Logger.class));
+            plugin.setBridge(bridge);
+            setPrivateField(plugin, "appReadyTimeout", 1);
+
+            when(bridge.getWebView()).thenReturn(webView);
+            when(bridge.getAppUrl()).thenReturn("https://local-app-domain.com");
+            when(webView.post(any(Runnable.class))).thenReturn(true);
+
+            final long start = System.nanoTime();
+            assertFalse(plugin._reload());
+            final long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+
+            assertTrue("Expected pending bundle timeout extension but reload took only " + elapsedMs + "ms", elapsedMs >= 40);
+            assertTrue("Expected bounded pending bundle timeout but reload took " + elapsedMs + "ms", elapsedMs < 1000);
             verify(bridge).setServerBasePath("/tmp/capgo-bundle");
         }
     }

@@ -88,6 +88,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final String SPLASH_SCREEN_PLUGIN_ID = "SplashScreen";
     private static final int SPLASH_SCREEN_RETRY_DELAY_MS = 100;
     private static final int SPLASH_SCREEN_MAX_RETRIES = 20;
+    private static final long PENDING_BUNDLE_APP_READY_MIN_TIMEOUT_MS = 30000L;
 
     private final String pluginVersion = "8.45.8";
     private static final String DELAY_CONDITION_PREFERENCES = "";
@@ -515,16 +516,18 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
-    private void semaphoreWait(Number waitTime) {
+    private boolean semaphoreWait(Number waitTime) {
         try {
             semaphoreReady.awaitAdvanceInterruptibly(semaphoreReady.getPhase(), waitTime.longValue(), TimeUnit.MILLISECONDS);
             logger.info("semaphoreReady count " + semaphoreReady.getPhase());
+            return true;
         } catch (InterruptedException e) {
             logger.info("semaphoreWait InterruptedException");
             Thread.currentThread().interrupt(); // Restore interrupted status
+            return false;
         } catch (TimeoutException e) {
             logger.error("Semaphore timeout: " + e.getMessage());
-            // Don't throw runtime exception, just log and continue
+            return false;
         }
     }
 
@@ -537,6 +540,29 @@ public class CapacitorUpdaterPlugin extends Plugin {
         logger.info("semaphoreDown");
         logger.info("semaphoreDown count " + semaphoreReady.getPhase());
         semaphoreReady.arriveAndDeregister();
+    }
+
+    protected long getMinimumPendingBundleAppReadyTimeoutMs() {
+        return PENDING_BUNDLE_APP_READY_MIN_TIMEOUT_MS;
+    }
+
+    private long resolveAppReadyCheckTimeoutMs() {
+        long configuredTimeoutMs = this.appReadyTimeout.longValue();
+        try {
+            if (this.implementation == null) {
+                return configuredTimeoutMs;
+            }
+
+            final BundleInfo current = this.implementation.getCurrentBundle();
+            if (current == null || BundleStatus.SUCCESS == current.getStatus()) {
+                return configuredTimeoutMs;
+            }
+
+            return Math.max(configuredTimeoutMs, this.getMinimumPendingBundleAppReadyTimeoutMs());
+        } catch (final Exception e) {
+            logger.warn("Falling back to configured appReadyTimeout: " + e.getMessage());
+            return configuredTimeoutMs;
+        }
     }
 
     private void sendReadyToJs(final BundleInfo current, final String msg) {
@@ -1451,18 +1477,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.semaphoreUp();
         this.applyCurrentBundleToBridge();
 
-        this.checkAppReady();
+        final long waitTimeMs = this.resolveAppReadyCheckTimeoutMs();
+        this.checkAppReady(waitTimeMs);
         this.notifyListeners("appReloaded", new JSObject());
 
         // Wait for the reload to complete (until notifyAppReady is called)
-        try {
-            this.semaphoreWait(this.appReadyTimeout);
-        } catch (Exception e) {
-            logger.error("Error waiting for app ready: " + e.getMessage());
-            return false;
-        }
-
-        return true;
+        return this.semaphoreWait(waitTimeMs);
     }
 
     @PluginMethod
@@ -1939,11 +1959,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void checkAppReady() {
+        this.checkAppReady(this.resolveAppReadyCheckTimeoutMs());
+    }
+
+    private void checkAppReady(final long waitTimeMs) {
         try {
             if (this.appReadyCheck != null) {
                 this.appReadyCheck.interrupt();
             }
-            this.appReadyCheck = startNewThread(new DeferredNotifyAppReadyCheck());
+            this.appReadyCheck = startNewThread(new DeferredNotifyAppReadyCheck(waitTimeMs));
         } catch (final Exception e) {
             logger.error("Failed to start " + DeferredNotifyAppReadyCheck.class.getName() + " " + e.getMessage());
         }
@@ -2386,11 +2410,17 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private class DeferredNotifyAppReadyCheck implements Runnable {
 
+        private final long waitTimeMs;
+
+        DeferredNotifyAppReadyCheck(final long waitTimeMs) {
+            this.waitTimeMs = waitTimeMs;
+        }
+
         @Override
         public void run() {
             try {
-                logger.info("Wait for " + CapacitorUpdaterPlugin.this.appReadyTimeout + "ms, then check for notifyAppReady");
-                Thread.sleep(CapacitorUpdaterPlugin.this.appReadyTimeout);
+                logger.info("Wait for " + this.waitTimeMs + "ms, then check for notifyAppReady");
+                Thread.sleep(this.waitTimeMs);
                 CapacitorUpdaterPlugin.this.checkRevert();
                 CapacitorUpdaterPlugin.this.appReadyCheck = null;
             } catch (final InterruptedException e) {
