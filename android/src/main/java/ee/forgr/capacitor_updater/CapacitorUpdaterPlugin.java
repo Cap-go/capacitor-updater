@@ -2370,7 +2370,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 });
             }
         } catch (final Exception e) {
-            logger.error("Error during onActivityStopped " + e.getMessage());
+            logger.error("Error during installNext " + e);
         }
     }
 
