@@ -371,13 +371,7 @@ public class CapacitorUpdaterUnitTest {
                 usingBuiltin,
                 usingBuiltin
                     ? new BundleInfo(BundleInfo.ID_BUILTIN, "builtin", BundleStatus.SUCCESS, BundleInfo.DOWNLOADED_BUILTIN, "builtin")
-                    : new BundleInfo(
-                        "current-bundle-id",
-                        "current-bundle",
-                        BundleStatus.SUCCESS,
-                        new Date(),
-                        "current-bundle-checksum"
-                    )
+                    : new BundleInfo("current-bundle-id", "current-bundle", BundleStatus.SUCCESS, new Date(), "current-bundle-checksum")
             );
         }
 
