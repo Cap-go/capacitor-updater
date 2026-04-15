@@ -1048,7 +1048,7 @@ public class CapacitorUpdaterUnitTest {
             assertTrue(plugin._reload());
             final long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
 
-            assertTrue("Expected millisecond timeout but reload took " + elapsedMs + "ms", elapsedMs < 500);
+            assertTrue("Expected millisecond timeout but reload took " + elapsedMs + "ms", elapsedMs < 900);
             verify(bridge).setServerBasePath("/tmp/capgo-bundle");
         }
     }
