@@ -6,15 +6,18 @@ import static org.mockito.Mockito.*;
 import android.os.Handler;
 import android.os.Looper;
 import androidx.appcompat.app.AppCompatActivity;
+import android.webkit.WebView;
 import com.getcapacitor.Bridge;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginHandle;
 import io.github.g00fy2.versioncompare.Version;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import org.json.JSONArray;
 import org.junit.Test;
@@ -319,6 +322,41 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
+    private static final class NoOpThreadCapacitorUpdaterPlugin extends TestableCapacitorUpdaterPlugin {
+
+        @Override
+        public Thread startNewThread(final Runnable function, Number waitTime) {
+            return this.startNewThread(function);
+        }
+
+        @Override
+        public Thread startNewThread(final Runnable function) {
+            return new Thread();
+        }
+    }
+
+    private static final class FixedPathCapgoUpdater extends CapgoUpdater {
+
+        private final String currentBundlePath;
+        private final boolean usingBuiltin;
+
+        FixedPathCapgoUpdater(final String currentBundlePath, final boolean usingBuiltin) {
+            super(null);
+            this.currentBundlePath = currentBundlePath;
+            this.usingBuiltin = usingBuiltin;
+        }
+
+        @Override
+        public String getCurrentBundlePath() {
+            return this.currentBundlePath;
+        }
+
+        @Override
+        public Boolean isUsingBuiltin() {
+            return this.usingBuiltin;
+        }
+    }
+
     private static void invokeBackgroundDownload(final CapacitorUpdaterPlugin plugin) throws Exception {
         final Method backgroundDownload = CapacitorUpdaterPlugin.class.getDeclaredMethod("backgroundDownload");
         backgroundDownload.setAccessible(true);
@@ -368,6 +406,12 @@ public class CapacitorUpdaterUnitTest {
         );
         method.setAccessible(true);
         method.invoke(plugin, methodName, options, retriesRemaining, requestToken);
+    }
+
+    private static void setPrivateField(final Object target, final String fieldName, final Object value) throws Exception {
+        final Field field = CapacitorUpdaterPlugin.class.getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(target, value);
     }
 
     // BundleInfo Tests
@@ -976,6 +1020,36 @@ public class CapacitorUpdaterUnitTest {
             assertSame(updater.capturedState, updater.restoredState);
             assertEquals(1, plugin.restoreLiveBundleStateAfterFailedReloadCalls);
             verify(call).reject("Reload failed after applying pending bundle: builtin");
+        }
+    }
+
+    @Test
+    public void testReloadTimeoutUsesMilliseconds() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final NoOpThreadCapacitorUpdaterPlugin plugin = new NoOpThreadCapacitorUpdaterPlugin();
+            final Bridge bridge = mock(Bridge.class);
+            final WebView webView = mock(WebView.class);
+
+            plugin.implementation = new FixedPathCapgoUpdater("/tmp/capgo-bundle", false);
+            plugin.setLoggerForTesting(mock(Logger.class));
+            plugin.setBridge(bridge);
+            setPrivateField(plugin, "appReadyTimeout", 1);
+
+            when(bridge.getWebView()).thenReturn(webView);
+            when(bridge.getAppUrl()).thenReturn("https://local-app-domain.com");
+            when(webView.post(any(Runnable.class))).thenReturn(true);
+
+            final long start = System.nanoTime();
+            assertTrue(plugin._reload());
+            final long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+
+            assertTrue("Expected millisecond timeout but reload took " + elapsedMs + "ms", elapsedMs < 500);
+            verify(bridge).setServerBasePath("/tmp/capgo-bundle");
         }
     }
 

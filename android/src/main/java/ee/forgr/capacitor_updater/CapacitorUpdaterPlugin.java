@@ -517,7 +517,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private void semaphoreWait(Number waitTime) {
         try {
-            semaphoreReady.awaitAdvanceInterruptibly(semaphoreReady.getPhase(), waitTime.longValue(), TimeUnit.SECONDS);
+            semaphoreReady.awaitAdvanceInterruptibly(semaphoreReady.getPhase(), waitTime.longValue(), TimeUnit.MILLISECONDS);
             logger.info("semaphoreReady count " + semaphoreReady.getPhase());
         } catch (InterruptedException e) {
             logger.info("semaphoreWait InterruptedException");
