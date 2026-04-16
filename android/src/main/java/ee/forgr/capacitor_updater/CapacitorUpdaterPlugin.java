@@ -90,7 +90,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final int SPLASH_SCREEN_MAX_RETRIES = 20;
     private static final long PENDING_BUNDLE_APP_READY_MIN_TIMEOUT_MS = 30000L;
 
-    private final String pluginVersion = "8.45.8";
+    private final String pluginVersion = "8.45.9";
     private static final String DELAY_CONDITION_PREFERENCES = "";
 
     private SharedPreferences.Editor editor;
