@@ -1,4 +1,6 @@
 appId: app.capgo.updater
 ---
-- pressKey: Home
 - launchApp
+- extendedWaitUntil:
+    visible: '@capgo/capacitor-updater'
+    timeout: 90000

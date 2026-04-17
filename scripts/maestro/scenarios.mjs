@@ -63,6 +63,12 @@ export const scenarios = {
       { version: 'on-launch-v3', label: 'on-launch-v3' },
     ],
   },
+  'native-reset': {
+    id: 'native-reset',
+    directUpdate: 'always',
+    builtinLabel: 'native-reset-builtin-v1',
+    releases: [{ version: 'native-reset-live', label: 'native-reset-live' }],
+  },
 };
 
 export function findScenario(id) {

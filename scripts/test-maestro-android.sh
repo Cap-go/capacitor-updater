@@ -318,3 +318,5 @@ else
   fi
   exit "$status"
 fi
+
+"$ROOT_DIR/scripts/maestro/run-android-native-update-reset.sh"
