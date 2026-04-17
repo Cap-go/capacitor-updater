@@ -12,7 +12,6 @@ HOST_SERVER_PORT="${CAPGO_MAESTRO_PORT:-3192}"
 HOST_SERVER_URL="${CAPGO_MAESTRO_HOST_BASE_URL:-http://127.0.0.1:${HOST_SERVER_PORT}}"
 DEVICE_SERVER_URL="${CAPGO_MAESTRO_DEVICE_BASE_URL:-http://10.0.2.2:${HOST_SERVER_PORT}}"
 APP_ID="app.capgo.updater"
-APP_ACTIVITY="${CAPGO_MAESTRO_ANDROID_ACTIVITY:-app.capgo.updater/.MainActivity}"
 APK_PATH="$EXAMPLE_DIR/android/app/build/outputs/apk/debug/app-debug.apk"
 APK_V1="$ARTIFACT_DIR/native-reset-v1.apk"
 APK_V2="$ARTIFACT_DIR/native-reset-v2.apk"
@@ -168,13 +167,13 @@ run_maestro_flow() {
 
   if run_with_timeout "$MAESTRO_TIMEOUT_SECONDS" "${command[@]}"; then
     return 0
+  else
+    local status=$?
+    if [[ $status -eq 124 ]]; then
+      echo "Android Maestro flow timed out after ${MAESTRO_TIMEOUT_SECONDS} seconds: ${flow_path}" >&2
+    fi
+    return "$status"
   fi
-
-  local status=$?
-  if [[ $status -eq 124 ]]; then
-    echo "Android Maestro flow timed out after ${MAESTRO_TIMEOUT_SECONDS} seconds: ${flow_path}" >&2
-  fi
-  return "$status"
 }
 
 install_apk() {
@@ -224,7 +223,7 @@ if [[ ! -d "$EXAMPLE_DIR/node_modules" ]]; then
 fi
 
 mkdir -p "$ARTIFACT_DIR" "$RESULTS_DIR"
-rm -rf "$RESULTS_DIR"/*
+rm -rf -- "${RESULTS_DIR:?}/"*
 
 export CAPGO_MAESTRO_DEVICE_BASE_URL="$DEVICE_SERVER_URL"
 export CAPGO_MAESTRO_HOST_BASE_URL="$HOST_SERVER_URL"

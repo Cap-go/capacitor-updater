@@ -102,13 +102,13 @@ run_maestro_flow() {
 
   if run_with_timeout "$MAESTRO_TIMEOUT_SECONDS" "${command[@]}"; then
     return 0
+  else
+    local status=$?
+    if [[ $status -eq 124 ]]; then
+      echo "iOS Maestro flow timed out after ${MAESTRO_TIMEOUT_SECONDS} seconds: ${flow_path}" >&2
+    fi
+    return "$status"
   fi
-
-  local status=$?
-  if [[ $status -eq 124 ]]; then
-    echo "iOS Maestro flow timed out after ${MAESTRO_TIMEOUT_SECONDS} seconds: ${flow_path}" >&2
-  fi
-  return "$status"
 }
 
 build_ios_app() {
@@ -222,7 +222,7 @@ export CAPGO_MAESTRO_HOST_BASE_URL="$HOST_SERVER_URL"
 export CAPGO_MAESTRO_PORT="$HOST_SERVER_PORT"
 
 mkdir -p "$ARTIFACT_DIR" "$RESULTS_DIR"
-rm -rf "$RESULTS_DIR"/*
+rm -rf -- "${RESULTS_DIR:?}/"*
 
 if ! run_with_timeout "$SIMULATOR_BOOT_TIMEOUT_SECONDS" xcrun simctl bootstatus "$SIMULATOR_ID" -b >/dev/null 2>&1; then
   xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
