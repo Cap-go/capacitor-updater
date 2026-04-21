@@ -121,7 +121,7 @@ jobs:
           script: CAPGO_MAESTRO_SKIP_BUILD=1 CAPGO_MAESTRO_TIMEOUT_SECONDS=600 MAESTRO_DRIVER_STARTUP_TIMEOUT=300000 bun run test:maestro:android
       - name: Upload Maestro artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: maestro-results-android
           path: maestro-results
@@ -151,7 +151,7 @@ jobs:
         run: bun run test:maestro:ios
       - name: Upload Maestro artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: maestro-results-ios
           path: maestro-results-ios
