@@ -305,15 +305,6 @@ wait_for_at_install_direct_update_ui_state() {
   local -a fragments=("$@")
   local attempt=1
   local max_attempts=2
-  local target_version=""
-  local fragment=""
-
-  for fragment in "${fragments[@]}"; do
-    if [[ "$fragment" == Current\ bundle\ version:\ * ]]; then
-      target_version="${fragment#Current bundle version: }"
-      break
-    fi
-  done
 
   while [[ $attempt -le $max_attempts ]]; do
     if wait_for_ui_state_with_timeout "$description" "$DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS" "${fragments[@]}"; then
@@ -321,18 +312,6 @@ wait_for_at_install_direct_update_ui_state() {
     fi
 
     if [[ $attempt -lt $max_attempts ]]; then
-      if [[ -n "$target_version" ]]; then
-        if ! wait_for_ui_state_with_timeout \
-          "atInstall finished preparing ${target_version} before the extra background cycle" \
-          "$DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS" \
-          'Direct update mode: atInstall' \
-          'Current bundle source: downloaded' \
-          "Next bundle version: ${target_version}" \
-          "Last completed download: ${target_version}"; then
-          echo "atInstall never exposed ${target_version} as the pending next bundle before the extra background cycle." >&2
-        fi
-      fi
-
       echo "atInstall UI did not settle for ${description}; driving one extra background cycle without force-stopping the current bundle." >&2
       background_and_resume_app "$DIRECT_UPDATE_BACKGROUND_SETTLE_SECONDS"
     fi

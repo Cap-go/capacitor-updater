@@ -3,24 +3,18 @@ package ee.forgr.capacitor_updater;
 import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
-import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Looper;
-import android.webkit.WebView;
 import androidx.appcompat.app.AppCompatActivity;
 import com.getcapacitor.Bridge;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginHandle;
 import io.github.g00fy2.versioncompare.Version;
-import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.Phaser;
-import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import org.json.JSONArray;
 import org.junit.Test;
@@ -89,72 +83,6 @@ public class CapacitorUpdaterUnitTest {
         @Override
         protected boolean _reload() {
             this.reloadCalled = true;
-            return true;
-        }
-    }
-
-    private static final class InstallNextDispatchPlugin extends TestableCapacitorUpdaterPlugin {
-
-        private boolean startNewThreadCalled = false;
-        private boolean reloadCalled = false;
-
-        @Override
-        public Thread startNewThread(final Runnable function, Number waitTime) {
-            return this.startNewThread(function);
-        }
-
-        @Override
-        public Thread startNewThread(final Runnable function) {
-            this.startNewThreadCalled = true;
-            function.run();
-            return new Thread();
-        }
-
-        @Override
-        protected boolean _reload() {
-            this.reloadCalled = true;
-            return true;
-        }
-    }
-
-    private static final class InstallNextCapgoUpdater extends CapgoUpdater {
-
-        private BundleInfo currentBundle = new BundleInfo(
-            BundleInfo.ID_BUILTIN,
-            "builtin",
-            BundleStatus.SUCCESS,
-            BundleInfo.DOWNLOADED_BUILTIN,
-            "builtin"
-        );
-        private BundleInfo nextBundle = new BundleInfo("next-bundle-id", "2.0.0", BundleStatus.PENDING, new Date(), "abc123");
-        private int setCalls = 0;
-        private String lastSetNextBundleId = "next-bundle-id";
-
-        InstallNextCapgoUpdater() {
-            super(null);
-        }
-
-        @Override
-        public BundleInfo getCurrentBundle() {
-            return this.currentBundle;
-        }
-
-        @Override
-        public BundleInfo getNextBundle() {
-            return this.nextBundle;
-        }
-
-        @Override
-        public Boolean set(final BundleInfo bundle) {
-            this.setCalls++;
-            this.currentBundle = bundle;
-            return true;
-        }
-
-        @Override
-        public boolean setNextBundle(final String next) {
-            this.lastSetNextBundleId = next;
-            this.nextBundle = next == null ? null : this.nextBundle;
             return true;
         }
     }
@@ -391,82 +319,6 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
-    private static final class NoOpThreadCapacitorUpdaterPlugin extends TestableCapacitorUpdaterPlugin {
-
-        @Override
-        public Thread startNewThread(final Runnable function, Number waitTime) {
-            return this.startNewThread(function);
-        }
-
-        @Override
-        public Thread startNewThread(final Runnable function) {
-            return new Thread();
-        }
-    }
-
-    private static final class ConfigurableTimeoutCapacitorUpdaterPlugin extends TestableCapacitorUpdaterPlugin {
-
-        private final long minimumPendingBundleAppReadyTimeoutMs;
-
-        ConfigurableTimeoutCapacitorUpdaterPlugin(final long minimumPendingBundleAppReadyTimeoutMs) {
-            this.minimumPendingBundleAppReadyTimeoutMs = minimumPendingBundleAppReadyTimeoutMs;
-        }
-
-        @Override
-        public Thread startNewThread(final Runnable function, Number waitTime) {
-            return this.startNewThread(function);
-        }
-
-        @Override
-        public Thread startNewThread(final Runnable function) {
-            return new Thread();
-        }
-
-        @Override
-        protected long getMinimumPendingBundleAppReadyTimeoutMs() {
-            return this.minimumPendingBundleAppReadyTimeoutMs;
-        }
-    }
-
-    private static final class FixedPathCapgoUpdater extends CapgoUpdater {
-
-        private final String currentBundlePath;
-        private final boolean usingBuiltin;
-        private final BundleInfo currentBundle;
-
-        FixedPathCapgoUpdater(final String currentBundlePath, final boolean usingBuiltin) {
-            this(
-                currentBundlePath,
-                usingBuiltin,
-                usingBuiltin
-                    ? new BundleInfo(BundleInfo.ID_BUILTIN, "builtin", BundleStatus.SUCCESS, BundleInfo.DOWNLOADED_BUILTIN, "builtin")
-                    : new BundleInfo("current-bundle-id", "current-bundle", BundleStatus.SUCCESS, new Date(), "current-bundle-checksum")
-            );
-        }
-
-        FixedPathCapgoUpdater(final String currentBundlePath, final boolean usingBuiltin, final BundleInfo currentBundle) {
-            super(null);
-            this.currentBundlePath = currentBundlePath;
-            this.usingBuiltin = usingBuiltin;
-            this.currentBundle = currentBundle;
-        }
-
-        @Override
-        public String getCurrentBundlePath() {
-            return this.currentBundlePath;
-        }
-
-        @Override
-        public Boolean isUsingBuiltin() {
-            return this.usingBuiltin;
-        }
-
-        @Override
-        public BundleInfo getCurrentBundle() {
-            return this.currentBundle;
-        }
-    }
-
     private static void invokeBackgroundDownload(final CapacitorUpdaterPlugin plugin) throws Exception {
         final Method backgroundDownload = CapacitorUpdaterPlugin.class.getDeclaredMethod("backgroundDownload");
         backgroundDownload.setAccessible(true);
@@ -516,35 +368,6 @@ public class CapacitorUpdaterUnitTest {
         );
         method.setAccessible(true);
         method.invoke(plugin, methodName, options, retriesRemaining, requestToken);
-    }
-
-    private static void setPrivateField(final Object target, final String fieldName, final Object value) throws Exception {
-        Class<?> current = target.getClass();
-        while (current != null) {
-            try {
-                final Field field = current.getDeclaredField(fieldName);
-                field.setAccessible(true);
-                field.set(target, value);
-                return;
-            } catch (final NoSuchFieldException ignored) {
-                current = current.getSuperclass();
-            }
-        }
-        throw new NoSuchFieldException(fieldName);
-    }
-
-    private static Object getPrivateField(final Object target, final String fieldName) throws Exception {
-        Class<?> current = target.getClass();
-        while (current != null) {
-            try {
-                final Field field = current.getDeclaredField(fieldName);
-                field.setAccessible(true);
-                return field.get(target);
-            } catch (final NoSuchFieldException ignored) {
-                current = current.getSuperclass();
-            }
-        }
-        throw new NoSuchFieldException(fieldName);
     }
 
     // BundleInfo Tests
@@ -1153,148 +976,6 @@ public class CapacitorUpdaterUnitTest {
             assertSame(updater.capturedState, updater.restoredState);
             assertEquals(1, plugin.restoreLiveBundleStateAfterFailedReloadCalls);
             verify(call).reject("Reload failed after applying pending bundle: builtin");
-        }
-    }
-
-    @Test
-    public void testReloadTimeoutUsesMilliseconds() throws Exception {
-        try (
-            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
-            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
-        ) {
-            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
-
-            final NoOpThreadCapacitorUpdaterPlugin plugin = new NoOpThreadCapacitorUpdaterPlugin();
-            final Bridge bridge = mock(Bridge.class);
-            final WebView webView = mock(WebView.class);
-
-            plugin.implementation = new FixedPathCapgoUpdater("/tmp/capgo-bundle", false);
-            plugin.setLoggerForTesting(mock(Logger.class));
-            plugin.setBridge(bridge);
-            setPrivateField(plugin, "appReadyTimeout", 1);
-
-            when(bridge.getWebView()).thenReturn(webView);
-            when(bridge.getAppUrl()).thenReturn("https://local-app-domain.com");
-            when(webView.post(any(Runnable.class))).thenReturn(true);
-
-            final long start = System.nanoTime();
-            assertFalse(plugin._reload());
-            final long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
-
-            assertTrue("Expected millisecond timeout but reload took " + elapsedMs + "ms", elapsedMs < 900);
-            verify(bridge).setServerBasePath("/tmp/capgo-bundle");
-        }
-    }
-
-    @Test
-    public void testReloadUsesExtendedTimeoutForPendingBundleValidation() throws Exception {
-        try (
-            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
-            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
-        ) {
-            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
-
-            final ConfigurableTimeoutCapacitorUpdaterPlugin plugin = new ConfigurableTimeoutCapacitorUpdaterPlugin(50);
-            final Bridge bridge = mock(Bridge.class);
-            final WebView webView = mock(WebView.class);
-            final BundleInfo pendingBundle = new BundleInfo("pending-bundle-id", "2.0.0", BundleStatus.PENDING, new Date(), "abc123");
-
-            plugin.implementation = new FixedPathCapgoUpdater("/tmp/capgo-bundle", false, pendingBundle);
-            plugin.setLoggerForTesting(mock(Logger.class));
-            plugin.setBridge(bridge);
-            setPrivateField(plugin, "appReadyTimeout", 1);
-
-            when(bridge.getWebView()).thenReturn(webView);
-            when(bridge.getAppUrl()).thenReturn("https://local-app-domain.com");
-            when(webView.post(any(Runnable.class))).thenReturn(true);
-
-            final long start = System.nanoTime();
-            assertFalse(plugin._reload());
-            final long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
-
-            assertTrue("Expected pending bundle timeout extension but reload took only " + elapsedMs + "ms", elapsedMs >= 40);
-            assertTrue("Expected bounded pending bundle timeout but reload took " + elapsedMs + "ms", elapsedMs < 1000);
-            verify(bridge).setServerBasePath("/tmp/capgo-bundle");
-        }
-    }
-
-    @Test
-    public void testReloadTimeoutCleansUpPendingSemaphoreParty() throws Exception {
-        try (
-            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
-            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
-        ) {
-            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
-
-            final NoOpThreadCapacitorUpdaterPlugin plugin = new NoOpThreadCapacitorUpdaterPlugin();
-            final Bridge bridge = mock(Bridge.class);
-            final WebView webView = mock(WebView.class);
-
-            plugin.implementation = new FixedPathCapgoUpdater("/tmp/capgo-bundle", false);
-            plugin.setLoggerForTesting(mock(Logger.class));
-            plugin.setBridge(bridge);
-            setPrivateField(plugin, "appReadyTimeout", 1);
-
-            when(bridge.getWebView()).thenReturn(webView);
-            when(bridge.getAppUrl()).thenReturn("https://local-app-domain.com");
-            when(webView.post(any(Runnable.class))).thenReturn(true);
-
-            assertFalse(plugin._reload());
-
-            final Phaser semaphore = (Phaser) getPrivateField(plugin, "semaphoreReady");
-            assertEquals(0, semaphore.getRegisteredParties());
-        }
-    }
-
-    @Test
-    public void testNotifyAppReadyWithoutPendingReloadKeepsSemaphoreReusable() throws Exception {
-        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
-            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
-
-            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
-            final PluginCall call = mock(PluginCall.class);
-            final CapgoUpdater updater = mock(CapgoUpdater.class);
-            final BundleInfo bundle = new BundleInfo("current-bundle-id", "current-bundle", BundleStatus.SUCCESS, new Date(), "checksum");
-
-            plugin.implementation = updater;
-            plugin.setLoggerForTesting(mock(Logger.class));
-
-            when(updater.getCurrentBundle()).thenReturn(bundle);
-
-            plugin.notifyAppReady(call);
-
-            final Phaser semaphore = (Phaser) getPrivateField(plugin, "semaphoreReady");
-            assertFalse(semaphore.isTerminated());
-            assertEquals(0, semaphore.getRegisteredParties());
-            verify(call).resolve(any(JSObject.class));
-        }
-    }
-
-    @Test
-    public void testInstallNextDispatchesReloadOffLifecycleThread() throws Exception {
-        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
-            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
-
-            final InstallNextDispatchPlugin plugin = new InstallNextDispatchPlugin();
-            final InstallNextCapgoUpdater updater = new InstallNextCapgoUpdater();
-            final SharedPreferences prefs = mock(SharedPreferences.class);
-            final DelayUpdateUtils delayUpdateUtils = mock(DelayUpdateUtils.class);
-
-            plugin.implementation = updater;
-            plugin.setLoggerForTesting(mock(Logger.class));
-
-            when(prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]")).thenReturn("[]");
-            when(delayUpdateUtils.parseDelayConditions("[]")).thenReturn(new ArrayList<>());
-
-            setPrivateField(plugin, "prefs", prefs);
-            setPrivateField(plugin, "delayUpdateUtils", delayUpdateUtils);
-
-            invokePrivateVoidMethod(plugin, "installNext");
-
-            assertTrue(plugin.startNewThreadCalled);
-            assertTrue(plugin.reloadCalled);
-            assertEquals(1, updater.setCalls);
-            assertNull(updater.lastSetNextBundleId);
         }
     }
 
