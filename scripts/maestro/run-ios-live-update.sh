@@ -150,13 +150,16 @@ start_fake_server() {
 }
 
 boot_simulator() {
+  local status=0
+
   xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
 
   if run_with_timeout "$SIMULATOR_BOOT_TIMEOUT_SECONDS" xcrun simctl bootstatus "$SIMULATOR_ID" -b; then
     return 0
+  else
+    status=$?
   fi
 
-  local status=$?
   if [[ $status -eq 124 ]]; then
     echo "Simulator failed to boot within ${SIMULATOR_BOOT_TIMEOUT_SECONDS} seconds." >&2
   fi
