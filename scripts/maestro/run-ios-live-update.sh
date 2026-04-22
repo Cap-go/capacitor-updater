@@ -16,6 +16,7 @@ MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-360}"
 export MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
 export MAESTRO_DRIVER_STARTUP_TIMEOUT="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-300000}"
 SCENARIO_SEQUENCE=(deferred always at-install on-launch)
+APP_MARKETING_VERSION=""
 readonly ASSERT_AUTO_UPDATE_ENABLED='Auto update enabled: true'
 readonly ASSERT_AUTO_UPDATE_AVAILABLE='Auto update available: true'
 readonly ASSERT_SOURCE_BUILTIN='Current bundle source: builtin'
@@ -76,6 +77,16 @@ except subprocess.TimeoutExpired:
     sys.exit(124)
 
 sys.exit(completed.returncode)
+PY
+  return $?
+}
+
+resolve_path() {
+  python3 - "$1" <<'PY'
+import os
+import sys
+
+print(os.path.realpath(sys.argv[1]))
 PY
   return $?
 }
@@ -174,23 +185,48 @@ control_server() {
 
 load_scenario_config() {
   local scenario_id="$1"
+  local builtin_version=""
+
+  builtin_version="$(read_app_marketing_version)"
 
   bun --eval "
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
-import { exampleAppDir, getScenario } from '${ROOT_DIR}/scripts/maestro/scenarios.mjs';
+import { getScenario } from '${ROOT_DIR}/scripts/maestro/scenarios.mjs';
 
 const scenario = getScenario(process.argv[1]);
-const project = readFileSync(path.join(exampleAppDir, 'ios', 'App', 'App.xcodeproj', 'project.pbxproj'), 'utf8');
-const versionMatch = project.match(/MARKETING_VERSION = ([^;]+);/);
+const builtinVersion = process.argv[2];
 
-if (!versionMatch) {
+if (!builtinVersion) {
   throw new Error('Unable to determine example-app iOS MARKETING_VERSION');
 }
 
-console.log([scenario.builtinLabel, versionMatch[1].trim(), ...scenario.releases.map((release) => release.version)].join('\t'));
-" "$scenario_id"
+console.log([scenario.builtinLabel, builtinVersion.trim(), ...scenario.releases.map((release) => release.version)].join('\t'));
+" "$scenario_id" "$builtin_version"
 
+  return 0
+}
+
+read_app_marketing_version() {
+  if [[ -n "$APP_MARKETING_VERSION" ]]; then
+    printf '%s\n' "$APP_MARKETING_VERSION"
+    return 0
+  fi
+
+  APP_MARKETING_VERSION="$(
+    xcodebuild \
+      -project "$EXAMPLE_DIR/ios/App/App.xcodeproj" \
+      -scheme App \
+      -configuration Debug \
+      -showBuildSettings 2>/dev/null |
+      sed -n 's/^[[:space:]]*MARKETING_VERSION = //p' |
+      head -n 1
+  )"
+
+  if [[ -z "$APP_MARKETING_VERSION" ]]; then
+    echo "Unable to determine example-app iOS MARKETING_VERSION." >&2
+    return 1
+  fi
+
+  printf '%s\n' "$APP_MARKETING_VERSION"
   return 0
 }
 
@@ -487,15 +523,35 @@ run_selected_scenarios() {
 }
 
 validate_results_dir() {
-  case "$RESULTS_DIR" in
-    ""|"/"|"$HOME"|"$ROOT_DIR"|"$ARTIFACT_DIR"|"$EXAMPLE_DIR")
+  local resolved_results_dir=""
+  local resolved_default_results_dir=""
+  local resolved_artifact_dir=""
+  local resolved_root_dir=""
+  local resolved_home_dir=""
+  local resolved_example_dir=""
+
+  if [[ -z "$RESULTS_DIR" ]]; then
+    echo "Refusing to delete unsafe Maestro results directory: $RESULTS_DIR" >&2
+    exit 1
+  fi
+
+  resolved_results_dir="$(resolve_path "$RESULTS_DIR")"
+  resolved_default_results_dir="$(resolve_path "$ROOT_DIR/maestro-results-ios-live-update")"
+  resolved_artifact_dir="$(resolve_path "$ARTIFACT_DIR")"
+  resolved_root_dir="$(resolve_path "$ROOT_DIR")"
+  resolved_home_dir="$(resolve_path "$HOME")"
+  resolved_example_dir="$(resolve_path "$EXAMPLE_DIR")"
+
+  case "$resolved_results_dir" in
+    "/"|"$resolved_home_dir"|"$resolved_root_dir"|"$resolved_artifact_dir"|"$resolved_example_dir")
       echo "Refusing to delete unsafe Maestro results directory: $RESULTS_DIR" >&2
       exit 1
       ;;
   esac
 
-  case "$RESULTS_DIR" in
-    "$ROOT_DIR"/maestro-results-ios-live-update|"$ROOT_DIR"/maestro-results-ios-live-update/*|"$ARTIFACT_DIR"/*)
+  case "$resolved_results_dir" in
+    "$resolved_default_results_dir"|"$resolved_default_results_dir"/*|"$resolved_artifact_dir"/*)
+      RESULTS_DIR="$resolved_results_dir"
       return 0
       ;;
   esac
@@ -546,7 +602,7 @@ fi
 
 mkdir -p "$ARTIFACT_DIR"
 validate_results_dir
-rm -rf "$RESULTS_DIR"
+rm -rf -- "$RESULTS_DIR"
 mkdir -p "$RESULTS_DIR"
 
 echo "Using iOS device server URL: $DEVICE_SERVER_URL"
