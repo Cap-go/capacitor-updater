@@ -486,8 +486,31 @@ run_selected_scenarios() {
   return 0
 }
 
+validate_results_dir() {
+  case "$RESULTS_DIR" in
+    ""|"/"|"$HOME"|"$ROOT_DIR"|"$ARTIFACT_DIR"|"$EXAMPLE_DIR")
+      echo "Refusing to delete unsafe Maestro results directory: $RESULTS_DIR" >&2
+      exit 1
+      ;;
+  esac
+
+  case "$RESULTS_DIR" in
+    "$ROOT_DIR"/maestro-results-ios-live-update|"$ROOT_DIR"/maestro-results-ios-live-update/*|"$ARTIFACT_DIR"/*)
+      return 0
+      ;;
+  esac
+
+  echo "Refusing to delete Maestro results outside allowed paths: $RESULTS_DIR" >&2
+  exit 1
+}
+
 if ! command -v maestro >/dev/null 2>&1; then
   echo "Maestro CLI is required. Install it with https://maestro.mobile.dev/getting-started/installing-maestro." >&2
+  exit 1
+fi
+
+if ! command -v bun >/dev/null 2>&1; then
+  echo "bun is required to run parts of this script." >&2
   exit 1
 fi
 
@@ -522,6 +545,7 @@ if [[ -z "${SIMULATOR_ID:-}" ]]; then
 fi
 
 mkdir -p "$ARTIFACT_DIR"
+validate_results_dir
 rm -rf "$RESULTS_DIR"
 mkdir -p "$RESULTS_DIR"
 
