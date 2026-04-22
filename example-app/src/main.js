@@ -284,10 +284,12 @@ function logHarnessState(snapshot) {
 
 async function refreshState() {
   try {
-    const [currentResult, nextBundle, listResult, autoUpdateEnabled, autoUpdateAvailable] = await Promise.all([
+    const [currentResult, nextBundle, listResult] = await Promise.all([
       plugin.current(),
       plugin.getNextBundle(),
       plugin.list(),
+    ]);
+    const [autoUpdateEnabled, autoUpdateAvailable] = await Promise.allSettled([
       plugin.isAutoUpdateEnabled(),
       plugin.isAutoUpdateAvailable(),
     ]);
@@ -295,8 +297,12 @@ async function refreshState() {
     state.currentBundle = currentResult?.bundle ?? currentResult;
     state.nextBundle = nextBundle?.bundle ?? nextBundle;
     state.bundles = listResult?.bundles ?? [];
-    state.autoUpdateEnabled = String(autoUpdateEnabled?.enabled ?? 'unknown');
-    state.autoUpdateAvailable = String(autoUpdateAvailable?.available ?? 'unknown');
+    if (autoUpdateEnabled.status === 'fulfilled') {
+      state.autoUpdateEnabled = String(autoUpdateEnabled.value?.enabled ?? 'unknown');
+    }
+    if (autoUpdateAvailable.status === 'fulfilled') {
+      state.autoUpdateAvailable = String(autoUpdateAvailable.value?.available ?? 'unknown');
+    }
     state.lastDownload = getLastDownloadedBundleVersion(state.bundles);
     state.lastError = null;
   } catch (error) {

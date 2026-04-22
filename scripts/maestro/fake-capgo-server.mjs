@@ -58,6 +58,20 @@ function getScenarioFromRequest(requestUrl) {
   return scenario;
 }
 
+async function readJsonPayload(request) {
+  const rawBody = await request.text().catch(() => '');
+
+  if (!rawBody) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(rawBody);
+  } catch {
+    return {};
+  }
+}
+
 function getReleaseForScenario(scenario, currentVersion) {
   const activeIndex = scenarioState.get(scenario.id) ?? 0;
   const activeRelease = scenario.releases[activeIndex];
@@ -120,7 +134,9 @@ async function handleUpdate(request, scenarioId) {
     return jsonResponse({ error: 'unknown_scenario' }, { status: 404 });
   }
 
-  const selectedRelease = scenario.releases[scenarioState.get(scenario.id) ?? 0];
+  const payload = await readJsonPayload(request);
+  const currentVersion = payload.version_name ?? 'builtin';
+  const selectedRelease = getReleaseForScenario(scenario, currentVersion);
   const zipPath = getBundleZipPath(selectedRelease.version);
 
   if (!existsSync(zipPath)) {
@@ -133,7 +149,7 @@ async function handleUpdate(request, scenarioId) {
     );
   }
 
-  console.log(`[fake-capgo] scenario=${scenario.id} active=${selectedRelease.version}`);
+  console.log(`[fake-capgo] scenario=${scenario.id} current=${currentVersion} active=${selectedRelease.version}`);
 
   return jsonResponse({
     version: selectedRelease.version,
@@ -141,8 +157,8 @@ async function handleUpdate(request, scenarioId) {
   });
 }
 
-function handleBundle(version) {
-  console.log(`[fake-capgo] GET /bundles/${version}.zip`);
+function handleBundle(method, version) {
+  console.log(`[fake-capgo] ${method} /bundles/${version}.zip`);
 
   const zipPath = getBundleZipPath(version);
 
@@ -210,7 +226,7 @@ async function handleRequest(request) {
 
   if (pathname.startsWith('/bundles/') && (method === 'GET' || method === 'HEAD')) {
     const version = pathname.replace('/bundles/', '').replace(/\.zip$/, '');
-    return handleBundle(version);
+    return handleBundle(method, version);
   }
 
   return new Response('not found', { status: 404 });

@@ -13,9 +13,13 @@ SCENARIO_SELECTION="${1:-all}"
 SERVER_PID=""
 SIMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_IOS_BOOT_TIMEOUT_SECONDS:-180}"
 MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-360}"
-MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
-MAESTRO_DRIVER_STARTUP_TIMEOUT_VALUE="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-300000}"
+export MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
+export MAESTRO_DRIVER_STARTUP_TIMEOUT="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-300000}"
 SCENARIO_SEQUENCE=(deferred always at-install on-launch)
+readonly ASSERT_AUTO_UPDATE_ENABLED='Auto update enabled: true'
+readonly ASSERT_AUTO_UPDATE_AVAILABLE='Auto update available: true'
+readonly ASSERT_SOURCE_BUILTIN='Current bundle source: builtin'
+readonly ASSERT_SOURCE_DOWNLOADED='Current bundle source: downloaded'
 
 default_simulator_id() {
   xcrun simctl list devices available | sed -nE 's/^[[:space:]]*iPhone.*\(([0-9A-F-]{36})\) \([^)]*\)[[:space:]]*$/\1/p' | head -n 1
@@ -163,7 +167,6 @@ control_server() {
   local action="$1"
   local scenario="$2"
   curl --silent --show-error --fail -X POST "$HOST_SERVER_URL/api/control/$action?scenario=$scenario" >/dev/null
-  return 0
 }
 
 load_scenario_config() {
@@ -352,10 +355,10 @@ run_scenario() {
         "Build label: $builtin_label" \
         'Scenario: deferred' \
         'Direct update mode: false' \
-        'Auto update enabled: true' \
-        'Auto update available: true' \
+        "$ASSERT_AUTO_UPDATE_ENABLED" \
+        "$ASSERT_AUTO_UPDATE_AVAILABLE" \
         "Notify app ready: ok ($builtin_version)" \
-        'Current bundle source: builtin' \
+        "$ASSERT_SOURCE_BUILTIN" \
         "Current bundle version: $builtin_version" \
         "Next bundle version: $first_release" \
         "Last completed download: $first_release"
@@ -365,10 +368,10 @@ run_scenario() {
         "Build label: $first_release" \
         'Scenario: deferred' \
         'Direct update mode: false' \
-        'Auto update enabled: true' \
-        'Auto update available: true' \
+        "$ASSERT_AUTO_UPDATE_ENABLED" \
+        "$ASSERT_AUTO_UPDATE_AVAILABLE" \
         "Notify app ready: ok ($first_release)" \
-        'Current bundle source: downloaded' \
+        "$ASSERT_SOURCE_DOWNLOADED" \
         "Current bundle version: $first_release"
       ;;
     always)
@@ -377,10 +380,10 @@ run_scenario() {
         "Build label: $first_release" \
         'Scenario: always' \
         'Direct update mode: always' \
-        'Auto update enabled: true' \
-        'Auto update available: true' \
+        "$ASSERT_AUTO_UPDATE_ENABLED" \
+        "$ASSERT_AUTO_UPDATE_AVAILABLE" \
         "Notify app ready: ok ($first_release)" \
-        'Current bundle source: downloaded' \
+        "$ASSERT_SOURCE_DOWNLOADED" \
         "Current bundle version: $first_release"
       control_server advance "$scenario_id"
       run_flow "${scenario_id}-resume" "$ROOT_DIR/.maestro/helpers/relaunch-app.yaml"
@@ -389,10 +392,10 @@ run_scenario() {
         "Build label: $second_release" \
         'Scenario: always' \
         'Direct update mode: always' \
-        'Auto update enabled: true' \
-        'Auto update available: true' \
+        "$ASSERT_AUTO_UPDATE_ENABLED" \
+        "$ASSERT_AUTO_UPDATE_AVAILABLE" \
         "Notify app ready: ok ($second_release)" \
-        'Current bundle source: downloaded' \
+        "$ASSERT_SOURCE_DOWNLOADED" \
         "Current bundle version: $second_release"
       ;;
     at-install)
@@ -401,10 +404,10 @@ run_scenario() {
         "Build label: $first_release" \
         'Scenario: at-install' \
         'Direct update mode: atInstall' \
-        'Auto update enabled: true' \
-        'Auto update available: true' \
+        "$ASSERT_AUTO_UPDATE_ENABLED" \
+        "$ASSERT_AUTO_UPDATE_AVAILABLE" \
         "Notify app ready: ok ($first_release)" \
-        'Current bundle source: downloaded' \
+        "$ASSERT_SOURCE_DOWNLOADED" \
         "Current bundle version: $first_release"
       control_server advance "$scenario_id"
       run_flow "${scenario_id}-resume-one" "$ROOT_DIR/.maestro/helpers/relaunch-app.yaml"
@@ -413,10 +416,10 @@ run_scenario() {
         "Build label: $first_release" \
         'Scenario: at-install' \
         'Direct update mode: atInstall' \
-        'Auto update enabled: true' \
-        'Auto update available: true' \
+        "$ASSERT_AUTO_UPDATE_ENABLED" \
+        "$ASSERT_AUTO_UPDATE_AVAILABLE" \
         "Notify app ready: ok ($first_release)" \
-        'Current bundle source: downloaded' \
+        "$ASSERT_SOURCE_DOWNLOADED" \
         "Current bundle version: $first_release" \
         "Next bundle version: $second_release" \
         "Last completed download: $second_release"
@@ -426,10 +429,10 @@ run_scenario() {
         "Build label: $second_release" \
         'Scenario: at-install' \
         'Direct update mode: atInstall' \
-        'Auto update enabled: true' \
-        'Auto update available: true' \
+        "$ASSERT_AUTO_UPDATE_ENABLED" \
+        "$ASSERT_AUTO_UPDATE_AVAILABLE" \
         "Notify app ready: ok ($second_release)" \
-        'Current bundle source: downloaded' \
+        "$ASSERT_SOURCE_DOWNLOADED" \
         "Current bundle version: $second_release"
       ;;
     on-launch)
@@ -438,10 +441,10 @@ run_scenario() {
         "Build label: $first_release" \
         'Scenario: on-launch' \
         'Direct update mode: onLaunch' \
-        'Auto update enabled: true' \
-        'Auto update available: true' \
+        "$ASSERT_AUTO_UPDATE_ENABLED" \
+        "$ASSERT_AUTO_UPDATE_AVAILABLE" \
         "Notify app ready: ok ($first_release)" \
-        'Current bundle source: downloaded' \
+        "$ASSERT_SOURCE_DOWNLOADED" \
         "Current bundle version: $first_release"
       control_server advance "$scenario_id"
       run_flow "${scenario_id}-cold-relaunch" "$ROOT_DIR/.maestro/helpers/cold-launch-app.yaml"
@@ -450,10 +453,10 @@ run_scenario() {
         "Build label: $second_release" \
         'Scenario: on-launch' \
         'Direct update mode: onLaunch' \
-        'Auto update enabled: true' \
-        'Auto update available: true' \
+        "$ASSERT_AUTO_UPDATE_ENABLED" \
+        "$ASSERT_AUTO_UPDATE_AVAILABLE" \
         "Notify app ready: ok ($second_release)" \
-        'Current bundle source: downloaded' \
+        "$ASSERT_SOURCE_DOWNLOADED" \
         "Current bundle version: $second_release"
       ;;
     *)
