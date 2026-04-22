@@ -107,6 +107,16 @@ listening_pid_for_port() {
   lsof -nP -tiTCP:"$HOST_SERVER_PORT" -sTCP:LISTEN 2>/dev/null | head -n 1
 }
 
+is_supported_scenario() {
+  case "$1" in
+    deferred|always|at-install|on-launch)
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
 ensure_server_port_available() {
   local existing_pid=""
   local existing_command=""
@@ -187,7 +197,7 @@ load_scenario_config() {
   local scenario_id="$1"
   local builtin_version=""
 
-  builtin_version="$(read_app_marketing_version)"
+  builtin_version="$(read_app_marketing_version)" || return $?
 
   bun --eval "
 import { getScenario } from '${ROOT_DIR}/scripts/maestro/scenarios.mjs';
@@ -201,8 +211,6 @@ if (!builtinVersion) {
 
 console.log([scenario.builtinLabel, builtinVersion.trim(), ...scenario.releases.map((release) => release.version)].join('\t'));
 " "$scenario_id" "$builtin_version"
-
-  return 0
 }
 
 read_app_marketing_version() {
@@ -375,12 +383,19 @@ build_and_install_scenario() {
 
 run_scenario() {
   local scenario_id="$1"
+  local scenario_config=""
   local builtin_label=""
   local builtin_version=""
   local first_release=""
   local second_release=""
 
-  IFS=$'\t' read -r builtin_label builtin_version first_release second_release _ <<<"$(load_scenario_config "$scenario_id")"
+  if ! is_supported_scenario "$scenario_id"; then
+    echo "Unknown Maestro scenario selection: $scenario_id" >&2
+    return 1
+  fi
+
+  scenario_config="$(load_scenario_config "$scenario_id")" || return $?
+  IFS=$'\t' read -r builtin_label builtin_version first_release second_release _ <<<"$scenario_config"
   echo "=== Running iOS Maestro scenario: $scenario_id ==="
 
   control_server reset "$scenario_id"
@@ -498,10 +513,6 @@ run_scenario() {
         "$ASSERT_SOURCE_DOWNLOADED" \
         "Current bundle version: $second_release"
       ;;
-    *)
-      echo "Unknown Maestro scenario selection: $scenario_id" >&2
-      return 1
-      ;;
   esac
 
   echo "=== Completed iOS Maestro scenario: $scenario_id ==="
@@ -590,8 +601,23 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! command -v curl >/dev/null 2>&1; then
+  echo "curl is required to communicate with the fake Capgo server." >&2
+  exit 1
+fi
+
+if ! command -v lsof >/dev/null 2>&1; then
+  echo "lsof is required to detect stale fake Capgo server processes." >&2
+  exit 1
+fi
+
 if ! node -e "process.exit(Number(process.versions.node.split('.')[0]) >= 22 ? 0 : 1)"; then
   echo "Node.js >=22 is required because Capacitor CLI no longer supports older versions." >&2
+  exit 1
+fi
+
+if [[ "$SCENARIO_SELECTION" != "all" ]] && ! is_supported_scenario "$SCENARIO_SELECTION"; then
+  echo "Unknown Maestro scenario selection: $SCENARIO_SELECTION" >&2
   exit 1
 fi
 
