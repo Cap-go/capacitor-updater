@@ -148,13 +148,43 @@ jobs:
           MAESTRO_VERSION: cli-2.4.0
         run: ./scripts/ci/install-maestro.sh
       - name: Run Maestro smoke tests
-        run: bun run test:maestro:ios
+        run: bun run test:maestro:ios:smoke
       - name: Upload Maestro artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: maestro-results-ios
           path: maestro-results-ios
+  maestro_ios_live_update:
+    timeout-minutes: 60
+    runs-on: macOS-latest
+    name: iOS example app Maestro live update
+    steps:
+      - name: Check out
+        uses: actions/checkout@v6
+      - name: Install Bun
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/ci/install-bun.sh
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Install root dependencies
+        run: bun i
+      - name: Install Maestro
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAESTRO_VERSION: cli-2.4.0
+        run: ./scripts/ci/install-maestro.sh
+      - name: Run live update Maestro flows
+        run: bun run test:maestro:ios
+      - name: Upload live update Maestro artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maestro-results-ios-live-update
+          path: maestro-results-ios-live-update
   web:
     timeout-minutes: 30
     runs-on: ubuntu-latest

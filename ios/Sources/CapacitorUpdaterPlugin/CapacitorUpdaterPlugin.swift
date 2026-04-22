@@ -1102,6 +1102,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         let bundle = self.implementation.getCurrentBundle()
         self.implementation.setSuccess(bundle: bundle, autoDeletePrevious: self.autoDeletePrevious)
         logger.info("Current bundle loaded successfully. [notifyAppReady was called] \(bundle.toString())")
+
+        // On iOS cold start the initial foreground autoupdate pass can happen
+        // before the bridge is fully ready. If the builtin bundle is still active
+        // once JS confirms readiness, trigger the queued download from here.
+        if bundle.isBuiltin() && self._isAutoUpdateEnabled() && !self.isDownloadStuckOrTimedOut() {
+            logger.info("notifyAppReady triggering builtin autoupdate")
+            self.backgroundDownload()
+        }
+
         call.resolve(["bundle": bundle.toJSON()])
     }
 
@@ -1672,7 +1681,23 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     func runBackgroundDownloadWork(_ work: @escaping () -> Void) {
-        DispatchQueue.global(qos: .background).async(execute: work)
+        // Live update checks/downloads are user-visible work. Using `.background`
+        // lets the scheduler starve them for minutes while the app is active.
+        DispatchQueue.global(qos: .utility).async(execute: work)
+    }
+
+    private func beginDownloadBackgroundTask() {
+        let registerTask = {
+            self.backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "Finish Download Tasks") {
+                self.endBackGroundTask()
+            }
+        }
+
+        if Thread.isMainThread {
+            registerTask()
+        } else {
+            DispatchQueue.main.sync(execute: registerTask)
+        }
     }
 
     func backgroundDownload() {
@@ -1697,10 +1722,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.runBackgroundDownloadWork {
             // Wait for cleanup to complete before starting download
             self.waitForCleanupIfNeeded()
-            self.backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "Finish Download Tasks") {
-                // End the task if time expires.
-                self.endBackGroundTask()
-            }
+            self.beginDownloadBackgroundTask()
             self.logger.info("Check for update via \(self.updateUrl)")
             let res = self.implementation.getLatest(url: url, channel: nil)
             let current = self.implementation.getCurrentBundle()
@@ -1987,7 +2009,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 timer.invalidate()
                 return
             }
-            DispatchQueue.global(qos: .background).async {
+            DispatchQueue.global(qos: .utility).async {
                 let res = self.implementation.getLatest(url: url, channel: nil)
                 let current = self.implementation.getCurrentBundle()
 

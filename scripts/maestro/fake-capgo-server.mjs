@@ -19,6 +19,11 @@ function jsonResponse(payload, init = {}) {
   });
 }
 
+function logRequest(requestUrl, method, details = '') {
+  const suffix = details ? ` ${details}` : '';
+  console.log(`[fake-capgo] ${method} ${requestUrl.pathname}${requestUrl.search}${suffix}`);
+}
+
 function getScenarioId(requestUrl) {
   return requestUrl.searchParams.get('scenario');
 }
@@ -106,15 +111,16 @@ function handleControlState(requestUrl) {
 }
 
 async function handleUpdate(request, scenarioId) {
+  const requestUrl = new URL(request.url);
+  logRequest(requestUrl, request.method, `scenario=${scenarioId}`);
+
   const scenario = findScenario(scenarioId);
 
   if (!scenario) {
     return jsonResponse({ error: 'unknown_scenario' }, { status: 404 });
   }
 
-  const payload = await request.json().catch(() => ({}));
-  const currentVersion = payload.version_name ?? 'builtin';
-  const selectedRelease = getReleaseForScenario(scenario, currentVersion);
+  const selectedRelease = scenario.releases[scenarioState.get(scenario.id) ?? 0];
   const zipPath = getBundleZipPath(selectedRelease.version);
 
   if (!existsSync(zipPath)) {
@@ -127,9 +133,7 @@ async function handleUpdate(request, scenarioId) {
     );
   }
 
-  console.log(
-    `[fake-capgo] scenario=${scenario.id} current=${currentVersion} active=${selectedRelease.version} device=${payload.device_id ?? 'unknown'}`,
-  );
+  console.log(`[fake-capgo] scenario=${scenario.id} active=${selectedRelease.version}`);
 
   return jsonResponse({
     version: selectedRelease.version,
@@ -138,6 +142,8 @@ async function handleUpdate(request, scenarioId) {
 }
 
 function handleBundle(version) {
+  console.log(`[fake-capgo] GET /bundles/${version}.zip`);
+
   const zipPath = getBundleZipPath(version);
 
   if (!existsSync(zipPath)) {
@@ -152,17 +158,38 @@ function handleBundle(version) {
   });
 }
 
-function handleExactRoute(requestUrl, method, pathname) {
+async function handleExactRoute(request, requestUrl, method, pathname) {
+  const routeKey = `${method} ${pathname}`;
   const exactHandlers = {
-    'GET /health': () => jsonResponse({ status: 'ok' }),
-    'POST /api/control/reset': () => handleControl(requestUrl, 'reset'),
-    'POST /api/control/advance': () => handleControl(requestUrl, 'advance'),
-    'GET /api/control/state': () => handleControlState(requestUrl),
-    'POST /api/stats': () => jsonResponse({ status: 'ok' }),
-    'POST /api/channel': () => jsonResponse({ status: 'ok' }),
+    'GET /health': async () => {
+      logRequest(requestUrl, method);
+      return jsonResponse({ status: 'ok' });
+    },
+    'POST /api/control/reset': async () => {
+      logRequest(requestUrl, method);
+      return handleControl(requestUrl, 'reset');
+    },
+    'POST /api/control/advance': async () => {
+      logRequest(requestUrl, method);
+      return handleControl(requestUrl, 'advance');
+    },
+    'GET /api/control/state': async () => {
+      logRequest(requestUrl, method);
+      return handleControlState(requestUrl);
+    },
+    'POST /api/stats': async () => {
+      const body = await request.text().catch(() => '');
+      logRequest(requestUrl, method, `bytes=${body.length}`);
+      return jsonResponse({ status: 'ok' });
+    },
+    'POST /api/channel': async () => {
+      const body = await request.text().catch(() => '');
+      logRequest(requestUrl, method, `bytes=${body.length}`);
+      return jsonResponse({ status: 'ok' });
+    },
   };
 
-  const handler = exactHandlers[`${method} ${pathname}`];
+  const handler = exactHandlers[routeKey];
   return handler ? handler() : null;
 }
 
@@ -170,7 +197,7 @@ async function handleRequest(request) {
   const requestUrl = new URL(request.url);
   const { method } = request;
   const { pathname } = requestUrl;
-  const exactRouteResponse = handleExactRoute(requestUrl, method, pathname);
+  const exactRouteResponse = await handleExactRoute(request, requestUrl, method, pathname);
 
   if (exactRouteResponse) {
     return exactRouteResponse;
@@ -190,6 +217,7 @@ async function handleRequest(request) {
 }
 
 const server = Bun.serve({
+  hostname: '0.0.0.0',
   port: defaultPort,
   fetch: handleRequest,
 });

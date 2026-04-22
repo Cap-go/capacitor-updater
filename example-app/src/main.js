@@ -34,6 +34,9 @@ const elements = {
   serverUrl: requireElement('server-url'),
   bootCount: requireElement('boot-count'),
   notifyStatus: requireElement('notify-status'),
+  autoUpdateEnabled: requireElement('auto-update-enabled'),
+  autoUpdateAvailable: requireElement('auto-update-available'),
+  e2eSummary: requireElement('e2e-summary'),
   currentBundleSource: requireElement('current-bundle-source'),
   currentBundle: requireElement('current-bundle'),
   nextBundle: requireElement('next-bundle'),
@@ -57,6 +60,8 @@ let smokeSequencePromise = null;
 const state = {
   bootCount: incrementBootCount(),
   notifyStatus: 'pending',
+  autoUpdateEnabled: 'loading',
+  autoUpdateAvailable: 'loading',
   currentBundle: null,
   nextBundle: null,
   bundles: [],
@@ -212,6 +217,19 @@ function renderState() {
   elements.serverUrl.textContent = `Server URL: ${serverUrl}`;
   elements.bootCount.textContent = `Boot count: ${state.bootCount}`;
   elements.notifyStatus.textContent = `Notify app ready: ${state.notifyStatus}`;
+  elements.autoUpdateEnabled.textContent = `Auto update enabled: ${state.autoUpdateEnabled}`;
+  elements.autoUpdateAvailable.textContent = `Auto update available: ${state.autoUpdateAvailable}`;
+  elements.e2eSummary.textContent =
+    `Build label: ${buildLabel} | ` +
+    `Scenario: ${scenarioId} | ` +
+    `Direct update mode: ${directUpdateMode} | ` +
+    `Auto update enabled: ${state.autoUpdateEnabled} | ` +
+    `Auto update available: ${state.autoUpdateAvailable} | ` +
+    `Notify app ready: ${state.notifyStatus} | ` +
+    `Current bundle source: ${getBundleSource(state.currentBundle)} | ` +
+    `Current bundle version: ${getBundleVersion(state.currentBundle)} | ` +
+    `Next bundle version: ${getBundleVersion(state.nextBundle)} | ` +
+    `Last completed download: ${state.lastDownload}`;
   elements.currentBundleSource.textContent = `Current bundle source: ${getBundleSource(state.currentBundle)}`;
   elements.currentBundle.textContent = `Current bundle version: ${getBundleVersion(state.currentBundle)}`;
   elements.nextBundle.textContent = `Next bundle version: ${getBundleVersion(state.nextBundle)}`;
@@ -225,6 +243,8 @@ function renderState() {
       currentBundle: state.currentBundle,
       nextBundle: state.nextBundle,
       downloadedBundles: state.bundles,
+      autoUpdateEnabled: state.autoUpdateEnabled,
+      autoUpdateAvailable: state.autoUpdateAvailable,
       lastError: state.lastError,
       recentEvents: state.events,
     },
@@ -242,6 +262,8 @@ function createHarnessSnapshot() {
     directUpdateMode,
     bootCount: state.bootCount,
     notifyStatus: state.notifyStatus,
+    autoUpdateEnabled: state.autoUpdateEnabled,
+    autoUpdateAvailable: state.autoUpdateAvailable,
     currentBundleSource: getBundleSource(state.currentBundle),
     currentBundleVersion: getBundleVersion(state.currentBundle),
     nextBundleVersion: getBundleVersion(state.nextBundle),
@@ -262,15 +284,19 @@ function logHarnessState(snapshot) {
 
 async function refreshState() {
   try {
-    const [currentResult, nextBundle, listResult] = await Promise.all([
+    const [currentResult, nextBundle, listResult, autoUpdateEnabled, autoUpdateAvailable] = await Promise.all([
       plugin.current(),
       plugin.getNextBundle(),
       plugin.list(),
+      plugin.isAutoUpdateEnabled(),
+      plugin.isAutoUpdateAvailable(),
     ]);
 
     state.currentBundle = currentResult?.bundle ?? currentResult;
     state.nextBundle = nextBundle?.bundle ?? nextBundle;
     state.bundles = listResult?.bundles ?? [];
+    state.autoUpdateEnabled = String(autoUpdateEnabled?.enabled ?? 'unknown');
+    state.autoUpdateAvailable = String(autoUpdateAvailable?.available ?? 'unknown');
     state.lastDownload = getLastDownloadedBundleVersion(state.bundles);
     state.lastError = null;
   } catch (error) {

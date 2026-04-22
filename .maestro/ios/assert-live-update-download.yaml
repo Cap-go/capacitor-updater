@@ -1,0 +1,16 @@
+appId: app.capgo.updater
+---
+- launchApp
+- extendedWaitUntil:
+    visible: '@capgo/capacitor-updater'
+    timeout: 180000
+- assertVisible: "${BUILD_LABEL}"
+- assertVisible: "${SCENARIO_LINE}"
+- assertVisible: "${DIRECT_UPDATE_LINE}"
+- assertVisible: "${AUTO_UPDATE_ENABLED_LINE}"
+- assertVisible: "${AUTO_UPDATE_AVAILABLE_LINE}"
+- assertVisible: "${NOTIFY_READY_LINE}"
+- assertVisible: "${CURRENT_SOURCE_LINE}"
+- assertVisible: "${CURRENT_VERSION_LINE}"
+- assertVisible: "${NEXT_VERSION_LINE}"
+- assertVisible: "${LAST_DOWNLOAD_LINE}"

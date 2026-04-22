@@ -1,0 +1,538 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+EXAMPLE_DIR="$ROOT_DIR/example-app"
+ARTIFACT_DIR="$ROOT_DIR/.maestro-artifacts"
+RESULTS_DIR="${CAPGO_MAESTRO_RESULTS_DIR:-$ROOT_DIR/maestro-results-ios-live-update}"
+HOST_SERVER_PORT="${CAPGO_MAESTRO_PORT:-3192}"
+HOST_SERVER_URL="${CAPGO_MAESTRO_HOST_BASE_URL:-http://127.0.0.1:${HOST_SERVER_PORT}}"
+APP_ID="app.capgo.updater"
+SCENARIO_SELECTION="${1:-all}"
+SERVER_PID=""
+SIMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_IOS_BOOT_TIMEOUT_SECONDS:-180}"
+MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-360}"
+MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
+MAESTRO_DRIVER_STARTUP_TIMEOUT_VALUE="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-300000}"
+SCENARIO_SEQUENCE=(deferred always at-install on-launch)
+
+default_simulator_id() {
+  xcrun simctl list devices available | sed -nE 's/^[[:space:]]*iPhone.*\(([0-9A-F-]{36})\) \([^)]*\)[[:space:]]*$/\1/p' | head -n 1
+}
+
+if [[ -n "${CAPGO_MAESTRO_DEVICE_BASE_URL:-}" ]]; then
+  DEVICE_SERVER_URL="$CAPGO_MAESTRO_DEVICE_BASE_URL"
+elif [[ -n "${CAPGO_MAESTRO_DEVICE_HOST_IP:-}" ]]; then
+  DEVICE_SERVER_URL="http://${CAPGO_MAESTRO_DEVICE_HOST_IP}:${HOST_SERVER_PORT}"
+else
+  # This runner targets an iOS simulator via simctl, so loopback is the stable default.
+  # Physical device runs can still override the base URL or host IP through env vars.
+  DEVICE_SERVER_URL="$HOST_SERVER_URL"
+fi
+
+if [[ -n "${CAPGO_MAESTRO_IOS_DERIVED_DATA_PATH:-}" ]]; then
+  DERIVED_DATA_PATH="$CAPGO_MAESTRO_IOS_DERIVED_DATA_PATH"
+else
+  DERIVED_DATA_PATH="$(mktemp -d "${TMPDIR:-/tmp}/capgo-maestro-ios-derived-data.XXXXXX")"
+fi
+
+SIMULATOR_ID="${CAPGO_MAESTRO_IOS_SIMULATOR_ID:-$(default_simulator_id)}"
+APP_PATH="$DERIVED_DATA_PATH/Build/Products/Debug-iphonesimulator/App.app"
+
+cleanup() {
+  if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
+    kill "$SERVER_PID" >/dev/null 2>&1 || true
+    wait "$SERVER_PID" 2>/dev/null || true
+  fi
+
+  if [[ -z "${CAPGO_MAESTRO_IOS_DERIVED_DATA_PATH:-}" && -d "$DERIVED_DATA_PATH" ]]; then
+    rm -rf "$DERIVED_DATA_PATH"
+  fi
+
+  return 0
+}
+
+trap cleanup EXIT
+
+run_with_timeout() {
+  local timeout_seconds="$1"
+  shift
+
+  python3 - "$timeout_seconds" "$@" <<'PY'
+import subprocess
+import sys
+
+timeout_seconds = int(sys.argv[1])
+command = sys.argv[2:]
+
+try:
+    completed = subprocess.run(command, timeout=timeout_seconds)
+except subprocess.TimeoutExpired:
+    sys.exit(124)
+
+sys.exit(completed.returncode)
+PY
+  return $?
+}
+
+wait_for_server() {
+  for _ in $(seq 1 30); do
+    if curl --silent --fail "$HOST_SERVER_URL/health" >/dev/null; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "Fake Capgo server did not start in time." >&2
+  return 1
+}
+
+listening_pid_for_port() {
+  lsof -nP -tiTCP:"$HOST_SERVER_PORT" -sTCP:LISTEN 2>/dev/null | head -n 1
+}
+
+ensure_server_port_available() {
+  local existing_pid=""
+  local existing_command=""
+
+  existing_pid="$(listening_pid_for_port || true)"
+  if [[ -z "$existing_pid" ]]; then
+    return 0
+  fi
+
+  existing_command="$(ps -p "$existing_pid" -o command= 2>/dev/null || true)"
+  if [[ "$existing_command" == *"fake-capgo-server.mjs"* ]]; then
+    echo "Stopping stale fake Capgo server on port $HOST_SERVER_PORT (pid $existing_pid)." >&2
+    kill "$existing_pid" >/dev/null 2>&1 || true
+
+    for _ in $(seq 1 10); do
+      if [[ -z "$(listening_pid_for_port || true)" ]]; then
+        return 0
+      fi
+      sleep 1
+    done
+  fi
+
+  existing_pid="$(listening_pid_for_port || true)"
+  if [[ -n "$existing_pid" ]]; then
+    existing_command="$(ps -p "$existing_pid" -o command= 2>/dev/null || true)"
+    echo "Port $HOST_SERVER_PORT is already in use by pid $existing_pid: $existing_command" >&2
+    return 1
+  fi
+
+  return 0
+}
+
+start_fake_server() {
+  ensure_server_port_available
+
+  bun "$ROOT_DIR/scripts/maestro/fake-capgo-server.mjs" >"$ARTIFACT_DIR/fake-capgo-server-ios.log" 2>&1 &
+  SERVER_PID=$!
+
+  sleep 1
+  if ! kill -0 "$SERVER_PID" >/dev/null 2>&1; then
+    echo "Fake Capgo server exited immediately." >&2
+    sed -n '1,200p' "$ARTIFACT_DIR/fake-capgo-server-ios.log" >&2 || true
+    return 1
+  fi
+
+  if wait_for_server; then
+    return 0
+  fi
+
+  sed -n '1,200p' "$ARTIFACT_DIR/fake-capgo-server-ios.log" >&2 || true
+  return 1
+}
+
+boot_simulator() {
+  xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
+
+  if run_with_timeout "$SIMULATOR_BOOT_TIMEOUT_SECONDS" xcrun simctl bootstatus "$SIMULATOR_ID" -b; then
+    return 0
+  fi
+
+  local status=$?
+  if [[ $status -eq 124 ]]; then
+    echo "Simulator failed to boot within ${SIMULATOR_BOOT_TIMEOUT_SECONDS} seconds." >&2
+  fi
+  return "$status"
+}
+
+control_server() {
+  local action="$1"
+  local scenario="$2"
+  curl --silent --show-error --fail -X POST "$HOST_SERVER_URL/api/control/$action?scenario=$scenario" >/dev/null
+  return 0
+}
+
+load_scenario_config() {
+  local scenario_id="$1"
+
+  bun --eval "
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { exampleAppDir, getScenario } from '${ROOT_DIR}/scripts/maestro/scenarios.mjs';
+
+const scenario = getScenario(process.argv[1]);
+const project = readFileSync(path.join(exampleAppDir, 'ios', 'App', 'App.xcodeproj', 'project.pbxproj'), 'utf8');
+const versionMatch = project.match(/MARKETING_VERSION = ([^;]+);/);
+
+if (!versionMatch) {
+  throw new Error('Unable to determine example-app iOS MARKETING_VERSION');
+}
+
+console.log([scenario.builtinLabel, versionMatch[1].trim(), ...scenario.releases.map((release) => release.version)].join('\t'));
+" "$scenario_id"
+
+  return 0
+}
+
+run_flow() {
+  local label="$1"
+  local flow_path="$2"
+  shift 2
+  local flow_results_dir="$RESULTS_DIR/$label"
+  local -a maestro_args=()
+  local env_arg=""
+  local status=0
+
+  rm -rf "$flow_results_dir"
+  mkdir -p "$flow_results_dir"
+
+  while [[ $# -gt 0 ]]; do
+    env_arg="$1"
+    maestro_args+=("-e" "$env_arg")
+    shift
+  done
+
+  set +e
+  if ((${#maestro_args[@]} > 0)); then
+    run_with_timeout "$MAESTRO_TIMEOUT_SECONDS" \
+      maestro test \
+        -p ios \
+        --device "$SIMULATOR_ID" \
+        "${maestro_args[@]}" \
+        "$flow_path" \
+        --format junit \
+        --output "$flow_results_dir/junit.xml" \
+        --debug-output "$flow_results_dir/debug" \
+        --flatten-debug-output \
+        --test-output-dir "$flow_results_dir/artifacts"
+  else
+    run_with_timeout "$MAESTRO_TIMEOUT_SECONDS" \
+      maestro test \
+        -p ios \
+        --device "$SIMULATOR_ID" \
+        "$flow_path" \
+        --format junit \
+        --output "$flow_results_dir/junit.xml" \
+        --debug-output "$flow_results_dir/debug" \
+        --flatten-debug-output \
+        --test-output-dir "$flow_results_dir/artifacts"
+  fi
+  status=$?
+  set -e
+
+  if [[ $status -eq 0 ]]; then
+    return 0
+  fi
+
+  if [[ $status -eq 124 ]]; then
+    echo "Maestro flow timed out after ${MAESTRO_TIMEOUT_SECONDS} seconds: ${flow_path}" >&2
+  fi
+  return "$status"
+}
+
+regex_escape_for_maestro() {
+  python3 - "$1" <<'PY'
+import re
+import sys
+
+print(re.escape(sys.argv[1]))
+PY
+}
+
+regex_contains_for_maestro() {
+  printf '.*%s.*' "$(regex_escape_for_maestro "$1")"
+}
+
+run_core_assert() {
+  local label="$1"
+  local build_label="$2"
+  local scenario_line="$3"
+  local direct_update_line="$4"
+  local auto_update_enabled_line="$5"
+  local auto_update_available_line="$6"
+  local notify_ready_line="$7"
+  local current_source_line="$8"
+  local current_version_line="$9"
+
+  run_flow \
+    "$label" \
+    "$ROOT_DIR/.maestro/ios/assert-live-update-core.yaml" \
+    "BUILD_LABEL=$(regex_contains_for_maestro "$build_label")" \
+    "SCENARIO_LINE=$(regex_contains_for_maestro "$scenario_line")" \
+    "DIRECT_UPDATE_LINE=$(regex_contains_for_maestro "$direct_update_line")" \
+    "AUTO_UPDATE_ENABLED_LINE=$(regex_contains_for_maestro "$auto_update_enabled_line")" \
+    "AUTO_UPDATE_AVAILABLE_LINE=$(regex_contains_for_maestro "$auto_update_available_line")" \
+    "NOTIFY_READY_LINE=$(regex_contains_for_maestro "$notify_ready_line")" \
+    "CURRENT_SOURCE_LINE=$(regex_contains_for_maestro "$current_source_line")" \
+    "CURRENT_VERSION_LINE=$(regex_contains_for_maestro "$current_version_line")"
+}
+
+run_download_assert() {
+  local label="$1"
+  local build_label="$2"
+  local scenario_line="$3"
+  local direct_update_line="$4"
+  local auto_update_enabled_line="$5"
+  local auto_update_available_line="$6"
+  local notify_ready_line="$7"
+  local current_source_line="$8"
+  local current_version_line="$9"
+  local next_version_line="${10}"
+  local last_download_line="${11}"
+
+  run_flow \
+    "$label" \
+    "$ROOT_DIR/.maestro/ios/assert-live-update-download.yaml" \
+    "BUILD_LABEL=$(regex_contains_for_maestro "$build_label")" \
+    "SCENARIO_LINE=$(regex_contains_for_maestro "$scenario_line")" \
+    "DIRECT_UPDATE_LINE=$(regex_contains_for_maestro "$direct_update_line")" \
+    "AUTO_UPDATE_ENABLED_LINE=$(regex_contains_for_maestro "$auto_update_enabled_line")" \
+    "AUTO_UPDATE_AVAILABLE_LINE=$(regex_contains_for_maestro "$auto_update_available_line")" \
+    "NOTIFY_READY_LINE=$(regex_contains_for_maestro "$notify_ready_line")" \
+    "CURRENT_SOURCE_LINE=$(regex_contains_for_maestro "$current_source_line")" \
+    "CURRENT_VERSION_LINE=$(regex_contains_for_maestro "$current_version_line")" \
+    "NEXT_VERSION_LINE=$(regex_contains_for_maestro "$next_version_line")" \
+    "LAST_DOWNLOAD_LINE=$(regex_contains_for_maestro "$last_download_line")"
+}
+
+build_and_install_scenario() {
+  local scenario_id="$1"
+
+  bun "$ROOT_DIR/scripts/maestro/prepare-ios-scenario.mjs" "$scenario_id"
+
+  xcodebuild \
+    -project "$EXAMPLE_DIR/ios/App/App.xcodeproj" \
+    -scheme App \
+    -configuration Debug \
+    -destination "id=$SIMULATOR_ID" \
+    -derivedDataPath "$DERIVED_DATA_PATH" \
+    build
+
+  if [[ ! -d "$APP_PATH" ]]; then
+    echo "Expected simulator app at $APP_PATH" >&2
+    return 1
+  fi
+
+  xcrun simctl uninstall "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
+  xcrun simctl install "$SIMULATOR_ID" "$APP_PATH"
+}
+
+run_scenario() {
+  local scenario_id="$1"
+  local builtin_label=""
+  local builtin_version=""
+  local first_release=""
+  local second_release=""
+
+  IFS=$'\t' read -r builtin_label builtin_version first_release second_release _ <<<"$(load_scenario_config "$scenario_id")"
+  echo "=== Running iOS Maestro scenario: $scenario_id ==="
+
+  control_server reset "$scenario_id"
+  build_and_install_scenario "$scenario_id"
+  run_flow "${scenario_id}-cold-launch" "$ROOT_DIR/.maestro/helpers/cold-launch-app.yaml"
+
+  case "$scenario_id" in
+    deferred)
+      run_download_assert \
+        "${scenario_id}-downloaded" \
+        "Build label: $builtin_label" \
+        'Scenario: deferred' \
+        'Direct update mode: false' \
+        'Auto update enabled: true' \
+        'Auto update available: true' \
+        "Notify app ready: ok ($builtin_version)" \
+        'Current bundle source: builtin' \
+        "Current bundle version: $builtin_version" \
+        "Next bundle version: $first_release" \
+        "Last completed download: $first_release"
+      run_flow "${scenario_id}-resume" "$ROOT_DIR/.maestro/helpers/relaunch-app.yaml"
+      run_core_assert \
+        "${scenario_id}-applied" \
+        "Build label: $first_release" \
+        'Scenario: deferred' \
+        'Direct update mode: false' \
+        'Auto update enabled: true' \
+        'Auto update available: true' \
+        "Notify app ready: ok ($first_release)" \
+        'Current bundle source: downloaded' \
+        "Current bundle version: $first_release"
+      ;;
+    always)
+      run_core_assert \
+        "${scenario_id}-first-release" \
+        "Build label: $first_release" \
+        'Scenario: always' \
+        'Direct update mode: always' \
+        'Auto update enabled: true' \
+        'Auto update available: true' \
+        "Notify app ready: ok ($first_release)" \
+        'Current bundle source: downloaded' \
+        "Current bundle version: $first_release"
+      control_server advance "$scenario_id"
+      run_flow "${scenario_id}-resume" "$ROOT_DIR/.maestro/helpers/relaunch-app.yaml"
+      run_core_assert \
+        "${scenario_id}-second-release" \
+        "Build label: $second_release" \
+        'Scenario: always' \
+        'Direct update mode: always' \
+        'Auto update enabled: true' \
+        'Auto update available: true' \
+        "Notify app ready: ok ($second_release)" \
+        'Current bundle source: downloaded' \
+        "Current bundle version: $second_release"
+      ;;
+    at-install)
+      run_core_assert \
+        "${scenario_id}-first-release" \
+        "Build label: $first_release" \
+        'Scenario: at-install' \
+        'Direct update mode: atInstall' \
+        'Auto update enabled: true' \
+        'Auto update available: true' \
+        "Notify app ready: ok ($first_release)" \
+        'Current bundle source: downloaded' \
+        "Current bundle version: $first_release"
+      control_server advance "$scenario_id"
+      run_flow "${scenario_id}-resume-one" "$ROOT_DIR/.maestro/helpers/relaunch-app.yaml"
+      run_download_assert \
+        "${scenario_id}-downloaded" \
+        "Build label: $first_release" \
+        'Scenario: at-install' \
+        'Direct update mode: atInstall' \
+        'Auto update enabled: true' \
+        'Auto update available: true' \
+        "Notify app ready: ok ($first_release)" \
+        'Current bundle source: downloaded' \
+        "Current bundle version: $first_release" \
+        "Next bundle version: $second_release" \
+        "Last completed download: $second_release"
+      run_flow "${scenario_id}-resume-two" "$ROOT_DIR/.maestro/helpers/relaunch-app.yaml"
+      run_core_assert \
+        "${scenario_id}-second-release" \
+        "Build label: $second_release" \
+        'Scenario: at-install' \
+        'Direct update mode: atInstall' \
+        'Auto update enabled: true' \
+        'Auto update available: true' \
+        "Notify app ready: ok ($second_release)" \
+        'Current bundle source: downloaded' \
+        "Current bundle version: $second_release"
+      ;;
+    on-launch)
+      run_core_assert \
+        "${scenario_id}-first-release" \
+        "Build label: $first_release" \
+        'Scenario: on-launch' \
+        'Direct update mode: onLaunch' \
+        'Auto update enabled: true' \
+        'Auto update available: true' \
+        "Notify app ready: ok ($first_release)" \
+        'Current bundle source: downloaded' \
+        "Current bundle version: $first_release"
+      control_server advance "$scenario_id"
+      run_flow "${scenario_id}-cold-relaunch" "$ROOT_DIR/.maestro/helpers/cold-launch-app.yaml"
+      run_core_assert \
+        "${scenario_id}-second-release" \
+        "Build label: $second_release" \
+        'Scenario: on-launch' \
+        'Direct update mode: onLaunch' \
+        'Auto update enabled: true' \
+        'Auto update available: true' \
+        "Notify app ready: ok ($second_release)" \
+        'Current bundle source: downloaded' \
+        "Current bundle version: $second_release"
+      ;;
+    *)
+      echo "Unknown Maestro scenario selection: $scenario_id" >&2
+      return 1
+      ;;
+  esac
+
+  echo "=== Completed iOS Maestro scenario: $scenario_id ==="
+  return 0
+}
+
+run_selected_scenarios() {
+  local scenario_id
+
+  if [[ "$SCENARIO_SELECTION" == "all" ]]; then
+    for scenario_id in "${SCENARIO_SEQUENCE[@]}"; do
+      run_scenario "$scenario_id"
+    done
+    return 0
+  fi
+
+  run_scenario "$SCENARIO_SELECTION"
+  return 0
+}
+
+if ! command -v maestro >/dev/null 2>&1; then
+  echo "Maestro CLI is required. Install it with https://maestro.mobile.dev/getting-started/installing-maestro." >&2
+  exit 1
+fi
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "node is required to run Capacitor CLI commands." >&2
+  exit 1
+fi
+
+if ! command -v xcodebuild >/dev/null 2>&1; then
+  echo "xcodebuild is required to build the iOS example app." >&2
+  exit 1
+fi
+
+if ! command -v xcrun >/dev/null 2>&1; then
+  echo "xcrun is required to manage the iOS simulator." >&2
+  exit 1
+fi
+
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "python3 is required to enforce iOS Maestro timeouts." >&2
+  exit 1
+fi
+
+if ! node -e "process.exit(Number(process.versions.node.split('.')[0]) >= 22 ? 0 : 1)"; then
+  echo "Node.js >=22 is required because Capacitor CLI no longer supports older versions." >&2
+  exit 1
+fi
+
+if [[ -z "${SIMULATOR_ID:-}" ]]; then
+  echo "No available iPhone simulator found. Please install one via Xcode." >&2
+  exit 1
+fi
+
+mkdir -p "$ARTIFACT_DIR"
+rm -rf "$RESULTS_DIR"
+mkdir -p "$RESULTS_DIR"
+
+echo "Using iOS device server URL: $DEVICE_SERVER_URL"
+
+export CAPGO_MAESTRO_DEVICE_BASE_URL="$DEVICE_SERVER_URL"
+
+boot_simulator
+
+cd "$ROOT_DIR"
+
+if [[ ! -d node_modules ]]; then
+  bun install
+fi
+
+bun "$ROOT_DIR/scripts/maestro/build-bundles.mjs" "$SCENARIO_SELECTION"
+
+start_fake_server
+
+run_selected_scenarios

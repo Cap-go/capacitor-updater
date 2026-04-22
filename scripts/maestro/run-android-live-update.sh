@@ -693,10 +693,17 @@ run_flow() {
     output_file="$(mktemp)"
 
     set +e
-    MAESTRO_CLI_NO_ANALYTICS="$MAESTRO_CLI_NO_ANALYTICS" \
-      MAESTRO_DRIVER_STARTUP_TIMEOUT="$MAESTRO_DRIVER_STARTUP_TIMEOUT_VALUE" \
-      "$TIMEOUT_CMD" --foreground "${MAESTRO_FLOW_TIMEOUT_SECONDS}s" \
-      maestro test "${maestro_args[@]}" "$ROOT_DIR/.maestro/$flow_file" 2>&1 | tee "$output_file"
+    if ((${#maestro_args[@]} > 0)); then
+      MAESTRO_CLI_NO_ANALYTICS="$MAESTRO_CLI_NO_ANALYTICS" \
+        MAESTRO_DRIVER_STARTUP_TIMEOUT="$MAESTRO_DRIVER_STARTUP_TIMEOUT_VALUE" \
+        "$TIMEOUT_CMD" --foreground "${MAESTRO_FLOW_TIMEOUT_SECONDS}s" \
+        maestro test "${maestro_args[@]}" "$ROOT_DIR/.maestro/$flow_file" 2>&1 | tee "$output_file"
+    else
+      MAESTRO_CLI_NO_ANALYTICS="$MAESTRO_CLI_NO_ANALYTICS" \
+        MAESTRO_DRIVER_STARTUP_TIMEOUT="$MAESTRO_DRIVER_STARTUP_TIMEOUT_VALUE" \
+        "$TIMEOUT_CMD" --foreground "${MAESTRO_FLOW_TIMEOUT_SECONDS}s" \
+        maestro test "$ROOT_DIR/.maestro/$flow_file" 2>&1 | tee "$output_file"
+    fi
     command_status=${PIPESTATUS[0]}
     set -e
 
