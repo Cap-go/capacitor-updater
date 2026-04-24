@@ -56,7 +56,10 @@ const elements = {
   currentBundle: requireElement('current-bundle'),
   currentBundleSource: requireElement('current-bundle-source'),
   debugOutput: requireElement('debug-output'),
+  downloadCompleteEventState: requireElement('download-complete-event-state'),
+  downloadCompleteEvent: requireElement('download-complete-event'),
   directUpdateMode: requireElement('direct-update-mode'),
+  downloadEventState: requireElement('download-event-state'),
   downloadEvent: requireElement('download-event'),
   downloadFailedEvent: requireElement('download-failed-event'),
   e2eSummary: requireElement('e2e-summary'),
@@ -73,6 +76,7 @@ const elements = {
   listChannelsState: requireElement('list-channels-state'),
   majorEvent: requireElement('major-event'),
   nextBundle: requireElement('next-bundle'),
+  noNeedUpdateEventState: requireElement('no-need-update-event-state'),
   noNeedUpdateEvent: requireElement('no-need-update-event'),
   notifyStatus: requireElement('notify-status'),
   output: requireElement('plugin-output'),
@@ -84,6 +88,7 @@ const elements = {
   runSmokeSequenceButton: requireElement('run-smoke-sequence'),
   scenarioId: requireElement('scenario-id'),
   sequenceStatus: requireElement('sequence-status'),
+  setNextEventState: requireElement('set-next-event-state'),
   serverActiveRelease: requireElement('server-active-release'),
   serverLastAppId: requireElement('server-last-app-id'),
   serverLastChannel: requireElement('server-last-channel'),
@@ -100,6 +105,9 @@ const elements = {
   shakeChannelSelectorState: requireElement('shake-channel-selector-state'),
   shakeMenuState: requireElement('shake-menu-state'),
   smokeActions: requireElement('smoke-actions'),
+  updateAvailableEventState: requireElement('update-available-event-state'),
+  updateAvailableEvent: requireElement('update-available-event'),
+  updateFailedEventState: requireElement('update-failed-event-state'),
   updateFailedEvent: requireElement('update-failed-event'),
 };
 
@@ -121,6 +129,7 @@ const quickActionIds = [
   'set-last-downloaded-bundle',
   'queue-last-downloaded-bundle',
   'get-next-bundle',
+  'get-latest-no-update',
   'set-multi-delay',
   'cancel-delay',
   'reload-app',
@@ -157,12 +166,14 @@ const state = {
     breakingAvailable: 'none',
     channelPrivate: 'none',
     download: 'none',
+    downloadComplete: 'none',
     downloadFailed: 'none',
     flexibleUpdate: 'none',
     majorAvailable: 'none',
     noNeedUpdate: 'none',
     set: 'none',
     setNext: 'none',
+    updateAvailable: 'none',
     updateFailed: 'none',
   },
   events: [],
@@ -281,11 +292,19 @@ function formatObservedRequestUrl(value, allowedKeys = []) {
 }
 
 function getBundleVersion(bundle) {
+  if (typeof bundle === 'string') {
+    const parsedVersion =
+      bundle.match(/versionName=([^,}]+)/)?.[1] ??
+      bundle.match(/version_name=([^,}]+)/)?.[1] ??
+      bundle.match(/version=([^,}]+)/)?.[1];
+    return parsedVersion?.trim() || bundle;
+  }
+
   if (!bundle) {
     return 'none';
   }
 
-  return bundle.versionName ?? bundle.version ?? bundle.id ?? 'unknown';
+  return bundle.versionName ?? bundle.version_name ?? bundle.version ?? bundle.id ?? 'unknown';
 }
 
 function getBundleSource(bundle) {
@@ -461,6 +480,8 @@ function createHarnessSnapshot() {
       state.serverDebug?.debug?.lastUpdateRequest?.payload?.custom_id ??
       state.serverDebug?.debug?.lastChannelRequest?.payload?.custom_id ??
       'none',
+    downloadCompleteEventVersion: state.eventMarkers.downloadComplete,
+    updateAvailableEventVersion: state.eventMarkers.updateAvailable,
     setEventVersion: state.eventMarkers.set,
     setNextEventVersion: state.eventMarkers.setNext,
   };
@@ -612,6 +633,12 @@ function renderState() {
   elements.lastActionResult.textContent = `Last action result: ${state.lastActionResult}`;
   elements.resultMarker.textContent = `M:${state.lastActionResult}`;
   elements.lastError.textContent = `Last error: ${state.lastError ?? 'none'}`;
+  elements.downloadEventState.textContent = `Download event: ${state.eventMarkers.download}`;
+  elements.downloadCompleteEventState.textContent = `Download complete event: ${state.eventMarkers.downloadComplete}`;
+  elements.updateAvailableEventState.textContent = `Update available event: ${state.eventMarkers.updateAvailable}`;
+  elements.setNextEventState.textContent = `Set next event: ${state.eventMarkers.setNext}`;
+  elements.noNeedUpdateEventState.textContent = `No need update event: ${state.eventMarkers.noNeedUpdate}`;
+  elements.updateFailedEventState.textContent = `Update failed event: ${state.eventMarkers.updateFailed}`;
   elements.actionStatus.textContent = `Status: ${state.lastPhase}`;
   elements.harnessReady.textContent = `Harness ready: ${state.harnessReady ? 'yes' : 'no'}`;
   elements.scenarioId.textContent = `Scenario: ${scenarioId}`;
@@ -653,9 +680,11 @@ function renderState() {
   elements.appReadyEvent.textContent = `appReady event: ${state.eventMarkers.appReady}`;
   elements.setEvent.textContent = `set event: ${state.eventMarkers.set}`;
   elements.setNextEvent.textContent = `setNext event: ${state.eventMarkers.setNext}`;
+  elements.updateAvailableEvent.textContent = `updateAvailable event: ${state.eventMarkers.updateAvailable}`;
   elements.updateFailedEvent.textContent = `updateFailed event: ${state.eventMarkers.updateFailed}`;
   elements.channelPrivateEvent.textContent = `channelPrivate event: ${state.eventMarkers.channelPrivate}`;
   elements.downloadEvent.textContent = `download event: ${state.eventMarkers.download}`;
+  elements.downloadCompleteEvent.textContent = `downloadComplete event: ${state.eventMarkers.downloadComplete}`;
   elements.downloadFailedEvent.textContent = `downloadFailed event: ${state.eventMarkers.downloadFailed}`;
   elements.noNeedUpdateEvent.textContent = `noNeedUpdate event: ${state.eventMarkers.noNeedUpdate}`;
   elements.breakingEvent.textContent = `breakingAvailable event: ${state.eventMarkers.breakingAvailable}`;
@@ -675,6 +704,12 @@ function renderState() {
     `Current bundle version: ${getBundleVersion(state.currentBundle)} | ` +
     `Next bundle version: ${getBundleVersion(state.nextBundle)} | ` +
     `Last completed download: ${state.lastDownload} | ` +
+    `Download event: ${state.eventMarkers.download} | ` +
+    `Download complete event: ${state.eventMarkers.downloadComplete} | ` +
+    `Update available event: ${state.eventMarkers.updateAvailable} | ` +
+    `Set next event: ${state.eventMarkers.setNext} | ` +
+    `No need update event: ${state.eventMarkers.noNeedUpdate} | ` +
+    `Update failed event: ${state.eventMarkers.updateFailed} | ` +
     `Last error: ${state.lastError ?? 'none'} | ` +
     `Result marker: ${state.lastActionResult} | ` +
     `Phase: ${state.lastPhase} | ` +
@@ -1780,6 +1815,38 @@ const actions = [
       const latest = expectGetLatestResult(await plugin.getLatest());
       state.lastLatest = latest;
       return latest;
+    },
+  },
+  {
+    id: 'get-latest-no-update',
+    label: 'Assert no OTA update available',
+    buttonLabel: 'Assert no update available',
+    quickButtonLabel: 'Quick confirm no update',
+    description: 'Call getLatest() when the current bundle already matches the server and assert the expected rejection.',
+    showWhen: () => serverUrl.startsWith('http'),
+    markerId: 'no-update',
+    run: async () => {
+      const currentVersion = getBundleVersion(state.currentBundle);
+      invariant(
+        currentVersion !== 'builtin' && currentVersion !== 'none',
+        'No downloaded bundle is active to prove the no-update getLatest() branch.',
+      );
+
+      try {
+        await plugin.getLatest();
+      } catch (error) {
+        invariant(
+          errorMatches(error, ['no new version available', 'no_new_version_available', 'no_need_update', 'no need update']),
+          `getLatest() rejected unexpectedly: ${normalizeError(error).message}`,
+        );
+        return {
+          currentVersion,
+          outcome: 'expected-no-update',
+          ...normalizeError(error),
+        };
+      }
+
+      throw new Error('getLatest() unexpectedly resolved when no update should be available.');
     },
   },
   {

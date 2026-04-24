@@ -49,12 +49,15 @@ appId: app.capgo.updater
     direction: UP
     timeout: 120000
     visibilityPercentage: 1
-- scrollUntilVisible:
-    element:
-      text: '.*download event: .*manual-zip-v1.*'
-    direction: DOWN
+- extendedWaitUntil:
+    visible: '.*Download event: .*manual-zip-v1.*'
     timeout: 30000
-    centerElement: true
+- extendedWaitUntil:
+    visible: '.*Download complete event: manual-zip-v1.*'
+    timeout: 30000
+- extendedWaitUntil:
+    visible: '.*Update available event: manual-zip-v1.*'
+    timeout: 30000
 - scrollUntilVisible:
     element:
       text: '@capgo/capacitor-updater'
@@ -116,12 +119,9 @@ appId: app.capgo.updater
     direction: UP
     timeout: 60000
     visibilityPercentage: 1
-- scrollUntilVisible:
-    element:
-      text: '.*setNext event: manual-zip-v2.*'
-    direction: DOWN
+- extendedWaitUntil:
+    visible: '.*Set next event: manual-zip-v2.*'
     timeout: 30000
-    centerElement: true
 - scrollUntilVisible:
     element:
       text: '@capgo/capacitor-updater'
@@ -191,6 +191,19 @@ appId: app.capgo.updater
 - assertVisible: '.*Current bundle version: manual-zip-v2.*'
 - scrollUntilVisible:
     element:
+      text: 'Quick confirm no update'
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- tapOn: 'Quick confirm no update'
+- scrollUntilVisible:
+    element:
+      text: '.*M:no-update:success.*'
+    direction: UP
+    timeout: 60000
+    visibilityPercentage: 1
+- scrollUntilVisible:
+    element:
       text: 'Quick advance release'
     direction: DOWN
     timeout: 30000
@@ -215,6 +228,12 @@ appId: app.capgo.updater
     direction: UP
     timeout: 120000
     visibilityPercentage: 1
+- extendedWaitUntil:
+    visible: '.*Download complete event: manual-zip-v3-broken.*'
+    timeout: 30000
+- extendedWaitUntil:
+    visible: '.*Update available event: manual-zip-v3-broken.*'
+    timeout: 30000
 - scrollUntilVisible:
     element:
       text: 'Quick apply bundle now'
@@ -256,12 +275,9 @@ appId: app.capgo.updater
     direction: UP
     timeout: 30000
     visibilityPercentage: 1
-- scrollUntilVisible:
-    element:
-      text: '.*updateFailed event: manual-zip-v3-broken.*'
-    direction: DOWN
+- extendedWaitUntil:
+    visible: '.*Update failed event: manual-zip-v3-broken.*'
     timeout: 30000
-    centerElement: true
 - scrollUntilVisible:
     element:
       text: '@capgo/capacitor-updater'
@@ -299,6 +315,12 @@ appId: app.capgo.updater
     direction: UP
     timeout: 120000
     visibilityPercentage: 1
+- extendedWaitUntil:
+    visible: '.*Download complete event: manual-zip-v4.*'
+    timeout: 30000
+- extendedWaitUntil:
+    visible: '.*Update available event: manual-zip-v4.*'
+    timeout: 30000
 - scrollUntilVisible:
     element:
       text: 'Quick mark bundle error'
