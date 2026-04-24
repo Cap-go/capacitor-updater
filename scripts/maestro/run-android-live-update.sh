@@ -380,13 +380,15 @@ import { exampleAppDir, getScenario } from '${ROOT_DIR}/scripts/maestro/scenario
 
 const scenario = getScenario(process.argv[1]);
 const buildGradle = readFileSync(path.join(exampleAppDir, 'android', 'app', 'build.gradle'), 'utf8');
-const versionMatch = buildGradle.match(/versionName\\s*=\\s*['\\\"]([^'\\\"]+)['\\\"]/);
+const versionLine = buildGradle.split(/\\r?\\n/).find((line) => line.includes('versionName'));
+const versionMatches = versionLine ? [...versionLine.matchAll(/['\\\"]([^'\\\"]+)['\\\"]/g)] : [];
+const builtinVersion = versionMatches.at(-1)?.[1];
 
-if (!versionMatch) {
+if (!builtinVersion) {
   throw new Error('Unable to determine example-app Android versionName');
 }
 
-console.log([scenario.builtinLabel, versionMatch[1], ...scenario.releases.map((release) => release.version)].join('\t'));
+console.log([scenario.builtinLabel, builtinVersion, ...scenario.releases.map((release) => release.version)].join('\t'));
 " "$scenario_id"
 
   return 0

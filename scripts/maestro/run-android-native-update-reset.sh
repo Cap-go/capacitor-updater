@@ -19,6 +19,7 @@ ANDROID_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_EMULATOR_BOOT_TIMEOUT_SECONDS:-180
 MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-300}"
 TIMEOUT_CMD="$(command -v gtimeout || command -v timeout || true)"
 SERVER_PID=""
+ANDROID_DEVICE_ID="${CAPGO_MAESTRO_ANDROID_DEVICE_ID:-}"
 
 cleanup() {
   if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
@@ -37,13 +38,21 @@ run_with_timeout() {
   "$TIMEOUT_CMD" --foreground "${timeout_seconds}s" "$@"
 }
 
+adb_cmd() {
+  if [[ -n "${ANDROID_DEVICE_ID:-}" ]]; then
+    adb -s "$ANDROID_DEVICE_ID" "$@"
+  else
+    adb "$@"
+  fi
+}
+
 wait_for_emulator_boot() {
-  run_with_timeout "$ANDROID_BOOT_TIMEOUT_SECONDS" adb wait-for-device >/dev/null
+  run_with_timeout "$ANDROID_BOOT_TIMEOUT_SECONDS" adb -s "$ANDROID_DEVICE_ID" wait-for-device >/dev/null
   local deadline=$((SECONDS + ANDROID_BOOT_TIMEOUT_SECONDS))
   local boot_completed=""
 
   while (( SECONDS < deadline )); do
-    boot_completed="$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)"
+    boot_completed="$(adb_cmd shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)"
     if [[ "$boot_completed" == "1" ]]; then
       return 0
     fi
@@ -58,7 +67,7 @@ wait_for_package_manager() {
   local deadline=$((SECONDS + ANDROID_BOOT_TIMEOUT_SECONDS))
 
   while (( SECONDS < deadline )); do
-    if adb shell cmd package list packages >/dev/null 2>&1; then
+    if adb_cmd shell cmd package list packages >/dev/null 2>&1; then
       return 0
     fi
     sleep 2
@@ -69,7 +78,7 @@ wait_for_package_manager() {
 }
 
 ensure_android_device() {
-  ANDROID_DEVICE_ID="${CAPGO_MAESTRO_ANDROID_DEVICE_ID:-$(adb get-serialno 2>/dev/null | tr -d '\r')}"
+  ANDROID_DEVICE_ID="${ANDROID_DEVICE_ID:-$(adb get-serialno 2>/dev/null | tr -d '\r')}"
   if [[ -z "$ANDROID_DEVICE_ID" || "$ANDROID_DEVICE_ID" == "unknown" ]]; then
     echo "Unable to determine the Android emulator/device ID for the native reset Maestro test." >&2
     exit 1
@@ -179,8 +188,8 @@ run_maestro_flow() {
 install_apk() {
   local apk_path="$1"
 
-  adb shell am force-stop "$APP_ID" >/dev/null 2>&1 || true
-  adb install -r "$apk_path" >/dev/null
+  adb_cmd shell am force-stop "$APP_ID" >/dev/null 2>&1 || true
+  adb_cmd install -r "$apk_path" >/dev/null
 }
 
 assert_state() {
@@ -229,9 +238,9 @@ export CAPGO_MAESTRO_DEVICE_BASE_URL="$DEVICE_SERVER_URL"
 export CAPGO_MAESTRO_HOST_BASE_URL="$HOST_SERVER_URL"
 export CAPGO_MAESTRO_PORT="$HOST_SERVER_PORT"
 
+ensure_android_device
 wait_for_emulator_boot
 wait_for_package_manager
-ensure_android_device
 
 bun "$ROOT_DIR/scripts/maestro/build-bundles.mjs" "$SCENARIO_ID"
 build_android_app "native-reset-builtin-v1" "true" "always" "1.0.0" "1"
@@ -241,7 +250,7 @@ cp "$APK_PATH" "$APK_V2"
 start_server
 control_server reset
 
-adb uninstall "$APP_ID" >/dev/null 2>&1 || true
+adb_cmd uninstall "$APP_ID" >/dev/null 2>&1 || true
 install_apk "$APK_V1"
 run_maestro_flow "$LAUNCH_FLOW"
 assert_state \

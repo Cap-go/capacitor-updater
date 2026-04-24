@@ -319,4 +319,8 @@ else
   exit "$status"
 fi
 
-"$ROOT_DIR/scripts/maestro/run-android-native-update-reset.sh"
+if [[ "$SKIP_BUILD" != "1" ]]; then
+  "$ROOT_DIR/scripts/maestro/run-android-native-update-reset.sh"
+else
+  echo "Skipping Android native reset Maestro flow because CAPGO_MAESTRO_SKIP_BUILD=1." >&2
+fi

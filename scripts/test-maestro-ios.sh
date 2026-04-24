@@ -171,4 +171,8 @@ else
   exit "$status"
 fi
 
-"$ROOT_DIR/scripts/maestro/run-ios-native-update-reset.sh"
+if [[ "$SKIP_BUILD" != "1" ]]; then
+  "$ROOT_DIR/scripts/maestro/run-ios-native-update-reset.sh"
+else
+  echo "Skipping iOS native reset Maestro flow because CAPGO_MAESTRO_SKIP_BUILD=1." >&2
+fi
