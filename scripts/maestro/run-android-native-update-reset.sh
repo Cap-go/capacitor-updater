@@ -36,6 +36,7 @@ run_with_timeout() {
   local timeout_seconds="$1"
   shift
   "$TIMEOUT_CMD" --foreground "${timeout_seconds}s" "$@"
+  return $?
 }
 
 adb_cmd() {
@@ -44,9 +45,12 @@ adb_cmd() {
   else
     adb "$@"
   fi
+  return $?
 }
 
 wait_for_emulator_boot() {
+  # Note: run_with_timeout shells out through the external timeout binary, so it
+  # must invoke adb directly instead of the adb_cmd shell helper.
   run_with_timeout "$ANDROID_BOOT_TIMEOUT_SECONDS" adb -s "$ANDROID_DEVICE_ID" wait-for-device >/dev/null
   local deadline=$((SECONDS + ANDROID_BOOT_TIMEOUT_SECONDS))
   local boot_completed=""
@@ -83,6 +87,7 @@ ensure_android_device() {
     echo "Unable to determine the Android emulator/device ID for the native reset Maestro test." >&2
     exit 1
   fi
+  return 0
 }
 
 wait_for_server() {
@@ -105,11 +110,13 @@ start_server() {
   bun "$ROOT_DIR/scripts/maestro/fake-capgo-server.mjs" >"$ARTIFACT_DIR/fake-capgo-server.log" 2>&1 &
   SERVER_PID=$!
   wait_for_server
+  return $?
 }
 
 control_server() {
   local action="$1"
   curl --silent --show-error --fail -X POST "$HOST_SERVER_URL/api/control/$action?scenario=$SCENARIO_ID" >/dev/null
+  return $?
 }
 
 build_android_app() {
@@ -153,6 +160,7 @@ build_android_app() {
     cd "$EXAMPLE_DIR/android"
     CAPGO_NATIVE_VERSION_NAME="$version_name" CAPGO_NATIVE_VERSION_CODE="$version_code" ./gradlew assembleDebug >/dev/null
   )
+  return 0
 }
 
 run_maestro_flow() {
@@ -190,6 +198,7 @@ install_apk() {
 
   adb_cmd shell am force-stop "$APP_ID" >/dev/null 2>&1 || true
   adb_cmd install -r "$apk_path" >/dev/null
+  return $?
 }
 
 assert_state() {
@@ -206,6 +215,7 @@ assert_state() {
     -e "EXPECT_3=$expect_3" \
     -e "EXPECT_4=$expect_4" \
     -e "EXPECT_5=$expect_5"
+  return $?
 }
 
 if ! command -v adb >/dev/null 2>&1; then

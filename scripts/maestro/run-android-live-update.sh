@@ -380,7 +380,9 @@ import { exampleAppDir, getScenario } from '${ROOT_DIR}/scripts/maestro/scenario
 
 const scenario = getScenario(process.argv[1]);
 const buildGradle = readFileSync(path.join(exampleAppDir, 'android', 'app', 'build.gradle'), 'utf8');
-const versionLine = buildGradle.split(/\\r?\\n/).find((line) => line.includes('versionName'));
+const versionLine = buildGradle
+  .split(/\\r?\\n/)
+  .find((line) => /^\\s*versionName\\s*=/.test(line));
 const versionMatches = versionLine ? [...versionLine.matchAll(/['\\\"]([^'\\\"]+)['\\\"]/g)] : [];
 const builtinVersion = versionMatches.at(-1)?.[1];
 

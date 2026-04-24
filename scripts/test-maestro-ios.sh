@@ -8,6 +8,7 @@ FLOW_PATH="$ROOT_DIR/.maestro/ios/example-app-smoke.yaml"
 SKIP_BUILD="${CAPGO_MAESTRO_SKIP_BUILD:-0}"
 SIMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_IOS_BOOT_TIMEOUT_SECONDS:-180}"
 MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-300}"
+NATIVE_RESET_TIMEOUT_SECONDS="${CAPGO_MAESTRO_NATIVE_RESET_TIMEOUT_SECONDS:-600}"
 APP_ID="app.capgo.updater"
 
 default_simulator_id() {
@@ -172,7 +173,15 @@ else
 fi
 
 if [[ "$SKIP_BUILD" != "1" ]]; then
-  "$ROOT_DIR/scripts/maestro/run-ios-native-update-reset.sh"
+  if run_with_timeout "$NATIVE_RESET_TIMEOUT_SECONDS" "$ROOT_DIR/scripts/maestro/run-ios-native-update-reset.sh"; then
+    :
+  else
+    status=$?
+    if [[ $status -eq 124 ]]; then
+      echo "iOS native reset flow timed out after ${NATIVE_RESET_TIMEOUT_SECONDS} seconds." >&2
+    fi
+    exit "$status"
+  fi
 else
   echo "Skipping iOS native reset Maestro flow because CAPGO_MAESTRO_SKIP_BUILD=1." >&2
 fi
