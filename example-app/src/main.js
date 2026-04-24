@@ -26,6 +26,8 @@ const lastActionResultStorageKey = '__capgo_maestro_last_action_result';
 const pendingReloadActionStorageKey = '__capgo_maestro_pending_reload_action';
 const fallbackUpdateUrl = 'https://example.com/api/auto_update';
 const maxEvents = 10;
+const runtimeSmokeAppId = 'app.capgo.updater.e2e';
+const runtimeSmokeCustomId = 'qa-user-42';
 const lastActionFromStorage = window.localStorage.getItem(lastActionStorageKey) ?? 'none';
 const lastActionResultFromStorage = window.localStorage.getItem(lastActionResultStorageKey) ?? 'idle';
 const reloadActionFromStorage = window.localStorage.getItem(pendingReloadActionStorageKey) ?? 'none';
@@ -1246,7 +1248,7 @@ const actions = [
         label: 'App ID',
         name: 'appId',
         type: 'text',
-        value: 'app.capgo.updater.e2e',
+        value: runtimeSmokeAppId,
       },
     ],
     run: async (values) => {
@@ -1275,7 +1277,7 @@ const actions = [
         label: 'Custom ID',
         name: 'customId',
         type: 'text',
-        value: 'qa-user-42',
+        value: runtimeSmokeCustomId,
       },
     ],
     run: async (values) => {
@@ -1660,10 +1662,75 @@ const actions = [
     run: async () => {
       const channels = expectListChannelsResult(await plugin.listChannels());
       const latest = expectGetLatestResult(await plugin.getLatest());
+      const appIdResult = expectStringFieldResult(await plugin.getAppId(), 'appId', 'verify persisted getAppId()');
       state.listChannelsResult = channels;
       state.lastLatest = latest;
+      await refreshServerState();
+      renderState();
+
+      const serverDebug = state.serverDebug?.debug ?? {};
+      const lastUpdateRequest = serverDebug.lastUpdateRequest ?? {};
+      const lastChannelRequest = serverDebug.lastChannelRequest ?? {};
+      const lastStatsRequest = serverDebug.lastStatsRequest ?? {};
+      const observedUpdateUrl = formatObservedRequestUrl(lastUpdateRequest.url);
+      const observedChannelUrl = formatObservedRequestUrl(lastChannelRequest.url, ['scenario', 'source']);
+      const observedStatsUrl = formatObservedRequestUrl(lastStatsRequest.url);
+      const expectedUsesRuntimeUrls = allowModifyUrl && persistModifyUrl;
+      const expectedUpdateUrl = formatObservedRequestUrl(
+        expectedUsesRuntimeUrls ? getRuntimeUpdateUrl() : getDefaultUpdateUrl(),
+      );
+      const expectedChannelUrl = formatObservedRequestUrl(
+        expectedUsesRuntimeUrls ? getRuntimeChannelUrl() : getDefaultChannelUrl(),
+        ['scenario', 'source'],
+      );
+      const expectedStatsUrl = formatObservedRequestUrl(
+        expectedUsesRuntimeUrls ? getRuntimeStatsUrl() : getDefaultStatsUrl(),
+      );
+      const observedAppId = lastUpdateRequest.payload?.app_id || lastChannelRequest.payload?.app_id || 'none';
+      const expectedCustomId = persistCustomId ? runtimeSmokeCustomId : 'none';
+      const observedUpdateCustomId = lastUpdateRequest.payload?.custom_id || 'none';
+      const observedChannelCustomId = lastChannelRequest.payload?.custom_id || 'none';
+
+      invariant(
+        observedUpdateUrl === expectedUpdateUrl,
+        `verify persisted config expected update URL ${expectedUpdateUrl}, received ${observedUpdateUrl}`,
+      );
+      invariant(
+        observedChannelUrl === expectedChannelUrl,
+        `verify persisted config expected channel URL ${expectedChannelUrl}, received ${observedChannelUrl}`,
+      );
+      invariant(
+        observedStatsUrl === expectedStatsUrl,
+        `verify persisted config expected stats URL ${expectedStatsUrl}, received ${observedStatsUrl}`,
+      );
+      invariant(
+        appIdResult.appId !== runtimeSmokeAppId,
+        `verify persisted getAppId() should not keep the runtime app ID ${runtimeSmokeAppId} after relaunch`,
+      );
+      invariant(
+        observedAppId === appIdResult.appId,
+        `verify persisted config expected server app_id ${appIdResult.appId}, received ${observedAppId}`,
+      );
+      invariant(
+        observedAppId !== runtimeSmokeAppId,
+        `verify persisted config should not keep the runtime app_id ${runtimeSmokeAppId} after relaunch`,
+      );
+      invariant(
+        observedUpdateCustomId === expectedCustomId,
+        `verify persisted config expected update custom_id ${expectedCustomId}, received ${observedUpdateCustomId}`,
+      );
+      invariant(
+        observedChannelCustomId === expectedCustomId,
+        `verify persisted config expected channel custom_id ${expectedCustomId}, received ${observedChannelCustomId}`,
+      );
+
       return {
+        appId: appIdResult.appId,
         channels: channels.channels,
+        customId: expectedCustomId,
+        channelUrl: observedChannelUrl,
+        statsUrl: observedStatsUrl,
+        updateUrl: observedUpdateUrl,
         version: latest.version,
       };
     },
