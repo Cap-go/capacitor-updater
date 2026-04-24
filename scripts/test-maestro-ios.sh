@@ -14,13 +14,14 @@ ARTIFACT_DIR="$ROOT_DIR/.maestro-artifacts"
 HOST_SERVER_PORT="${CAPGO_MAESTRO_PORT:-3192}"
 HOST_SERVER_URL="${CAPGO_MAESTRO_HOST_BASE_URL:-http://127.0.0.1:${HOST_SERVER_PORT}}"
 DEVICE_SERVER_URL="${CAPGO_MAESTRO_DEVICE_BASE_URL:-$HOST_SERVER_URL}"
-SIMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_IOS_BOOT_TIMEOUT_SECONDS:-180}"
+SIMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_IOS_BOOT_TIMEOUT_SECONDS:-300}"
 MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-600}"
 APP_ID="app.capgo.updater"
 APP_LAUNCH_RETRIES="${CAPGO_MAESTRO_IOS_APP_LAUNCH_RETRIES:-3}"
 APP_LAUNCH_WAIT_SECONDS="${CAPGO_MAESTRO_IOS_APP_LAUNCH_WAIT_SECONDS:-5}"
 SERVER_PID=""
 export MAESTRO_DRIVER_STARTUP_TIMEOUT="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-600000}"
+export MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
 MAESTRO_TEST_RETRIES="${CAPGO_MAESTRO_TEST_RETRIES:-3}"
 FLOW_RETRY_PATTERN="iOS driver not ready in time|Failed to connect to /127\\.0\\.0\\.1:[0-9]+|Connection refused|Broken pipe|Request for viewHierarchy failed, because of unknown reason|XCTestDriver request failed\\. Status code: 500, path: viewHierarchy|failed to terminate dev\\.mobile\\.maestro-driver-iosUITests\\.xctrunner|found nothing to terminate"
 
@@ -241,7 +242,12 @@ if [[ -z "${APP_PATH:-}" ]]; then
   exit 1
 fi
 
+mkdir -p "$ARTIFACT_DIR" "$RESULTS_DIR"
+printf 'scenario=%s\n' "$SCENARIO_ID" >"$RESULTS_DIR/runner-metadata.txt"
+
 export CAPGO_MAESTRO_DEVICE_BASE_URL="$DEVICE_SERVER_URL"
+
+xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
 
 cd "$ROOT_DIR"
 

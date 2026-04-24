@@ -127,6 +127,21 @@ const quickActionIds = [
   'delete-inactive-bundle',
   'reset-to-builtin',
 ];
+const smokeSequenceActionIdsByScenario = {
+  'manual-zip-config-guards': [
+    'set-custom-id',
+    'set-app-id',
+    'set-update-url',
+    'set-stats-url',
+    'set-channel-url',
+    'list-channels',
+    'set-channel-beta',
+    'get-channel',
+    'set-channel-private',
+    'unset-channel',
+    'get-latest',
+  ],
+};
 
 const state = {
   autoUpdateAvailable: 'loading',
@@ -457,7 +472,25 @@ function logHarnessState(snapshot) {
   }
 
   state.lastHarnessSnapshot = serializedSnapshot;
-  console.log(`[HarnessState] ${serializedSnapshot}`);
+  console.log({ harnessState: sanitizeLogValue(snapshot) });
+}
+
+function sanitizeLogValue(value) {
+  if (typeof value === 'string') {
+    return value.replace(/[\r\n]+/g, ' ');
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => sanitizeLogValue(entry));
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [key, sanitizeLogValue(entry)]),
+    );
+  }
+
+  return value;
 }
 
 async function refreshServerState() {
@@ -1389,6 +1422,7 @@ const actions = [
     buttonLabel: 'Run listChannels()',
     description: 'Read the channels that the device is allowed to self-assign to.',
     includeInSmokeSequence: true,
+    smokeTimeoutMs: 90000,
     showWhen: () => serverUrl.startsWith('http'),
     run: async () => {
       const result = expectListChannelsResult(await plugin.listChannels());
@@ -1402,6 +1436,7 @@ const actions = [
     buttonLabel: 'Set channel beta',
     description: 'Persist a real channel override the server can observe.',
     includeInSmokeSequence: true,
+    smokeTimeoutMs: 90000,
     showWhen: () => serverUrl.startsWith('http'),
     successMarker: (result) =>
       result?.outcome === 'expected-rejection'
@@ -1427,6 +1462,7 @@ const actions = [
     buttonLabel: 'Run getChannel()',
     description: 'Read the currently active channel override.',
     includeInSmokeSequence: true,
+    smokeTimeoutMs: 90000,
     showWhen: () => serverUrl.startsWith('http'),
     successMarker: (result) => `Action marker: get-channel:${result?.channel ?? 'none'}`,
     run: async () => {
@@ -1441,6 +1477,7 @@ const actions = [
     buttonLabel: 'Set channel private-alpha',
     description: 'Assert the private-channel event and rejection contract.',
     includeInSmokeSequence: true,
+    smokeTimeoutMs: 90000,
     showWhen: () => serverUrl.startsWith('http'),
     successMarker: (result) =>
       result?.outcome === 'expected-rejection'
@@ -1475,6 +1512,7 @@ const actions = [
     buttonLabel: 'Run unsetChannel()',
     description: 'Clear the local channel override and fall back to default behaviour.',
     includeInSmokeSequence: true,
+    smokeTimeoutMs: 90000,
     showWhen: () => serverUrl.startsWith('http'),
     run: async () => {
       await plugin.unsetChannel();
@@ -1669,6 +1707,7 @@ const actions = [
     buttonLabel: 'Run getLatest()',
     description: 'Fetch the latest bundle metadata from the fake OTA server.',
     includeInSmokeSequence: true,
+    smokeTimeoutMs: 90000,
     showWhen: () => serverUrl.startsWith('http'),
     run: async () => {
       const latest = expectGetLatestResult(await plugin.getLatest());
@@ -1972,7 +2011,7 @@ async function runSmokeSequence() {
     return smokeSequencePromise;
   }
 
-  const sequenceActions = getVisibleActions().filter((action) => action.includeInSmokeSequence);
+  const sequenceActions = getSmokeSequenceActions();
 
   smokeSequencePromise = (async () => {
     elements.sequenceStatus.textContent = 'Sequence: running';
@@ -1989,6 +2028,7 @@ async function runSmokeSequence() {
     state.lastAction = 'Smoke test sequence';
     state.lastActionMarker = 'smoke-sequence:running';
     state.lastActionResult = 'smoke-sequence:running';
+    state.lastError = null;
     state.lastPhase = 'smoke-sequence:running';
     renderState();
 
@@ -1998,7 +2038,11 @@ async function runSmokeSequence() {
         renderState();
         const card = actionCards.get(action.id);
         const values = card ? getCardValues(card, action) : {};
-        await withTimeout(`smoke action ${action.id}`, () => runAction(action, values, { skipRefresh: true }), 45000);
+        await withTimeout(
+          `smoke action ${action.id}`,
+          () => runAction(action, values, { skipRefresh: true }),
+          action.smokeTimeoutMs ?? 45000,
+        );
       }
 
       state.lastPhase = 'smoke-sequence:final-refresh';
@@ -2007,18 +2051,22 @@ async function runSmokeSequence() {
       state.lastAction = 'Smoke test sequence';
       state.lastActionMarker = 'smoke-sequence:success';
       state.lastActionResult = 'smoke-sequence:success';
+      state.lastError = null;
       state.lastPhase = 'smoke-sequence:success';
       elements.sequenceStatus.textContent = 'Sequence: success';
       elements.resultMarker.textContent = 'M:smoke-sequence:success';
       renderState();
     } catch (error) {
       const failedPhase = state.lastPhase;
+      const message = error?.message ?? String(error);
       state.lastAction = 'Smoke test sequence';
       state.lastActionMarker = 'smoke-sequence:error';
       state.lastActionResult = 'smoke-sequence:error';
+      state.lastError = message;
       state.lastPhase = `smoke-sequence:error:${failedPhase}`;
       elements.sequenceStatus.textContent = 'Sequence: error';
       elements.resultMarker.textContent = 'M:smoke-sequence:error';
+      elements.output.textContent = `Error: ${message}`;
       renderState();
       console.error('Smoke sequence failed', error);
       throw error;
@@ -2030,6 +2078,18 @@ async function runSmokeSequence() {
   })();
 
   return smokeSequencePromise;
+}
+
+function getSmokeSequenceActions() {
+  const visibleActions = getVisibleActions();
+  const overrideIds = smokeSequenceActionIdsByScenario[scenarioId];
+
+  if (!overrideIds) {
+    return visibleActions.filter((action) => action.includeInSmokeSequence);
+  }
+
+  const visibleActionsById = new Map(visibleActions.map((action) => [action.id, action]));
+  return overrideIds.map((id) => visibleActionsById.get(id)).filter(Boolean);
 }
 
 function createInputField(card, input) {
