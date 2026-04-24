@@ -10,7 +10,7 @@ LAUNCH_FLOW="$ROOT_DIR/.maestro/helpers/relaunch-app.yaml"
 SCENARIO_ID="native-reset"
 HOST_SERVER_PORT="${CAPGO_MAESTRO_PORT:-3192}"
 HOST_SERVER_URL="${CAPGO_MAESTRO_HOST_BASE_URL:-http://127.0.0.1:${HOST_SERVER_PORT}}"
-DEVICE_SERVER_URL="${CAPGO_MAESTRO_DEVICE_BASE_URL:-http://10.0.2.2:${HOST_SERVER_PORT}}"
+DEVICE_SERVER_URL="${CAPGO_MAESTRO_DEVICE_BASE_URL:-}"
 APP_ID="app.capgo.updater"
 APK_PATH="$EXAMPLE_DIR/android/app/build/outputs/apk/debug/app-debug.apk"
 APK_V1="$ARTIFACT_DIR/native-reset-v1.apk"
@@ -20,8 +20,13 @@ MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-300}"
 TIMEOUT_CMD="$(command -v gtimeout || command -v timeout || true)"
 SERVER_PID=""
 ANDROID_DEVICE_ID="${CAPGO_MAESTRO_ANDROID_DEVICE_ID:-}"
+DEVICE_SERVER_URL_IS_REVERSED="0"
 
 cleanup() {
+  if [[ "$DEVICE_SERVER_URL_IS_REVERSED" == "1" ]]; then
+    adb_cmd reverse --remove "tcp:${HOST_SERVER_PORT}" >/dev/null 2>&1 || true
+  fi
+
   if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
     kill "$SERVER_PID" >/dev/null 2>&1 || true
     wait "$SERVER_PID" 2>/dev/null || true
@@ -51,7 +56,16 @@ adb_cmd() {
 wait_for_emulator_boot() {
   # Note: run_with_timeout shells out through the external timeout binary, so it
   # must invoke adb directly instead of the adb_cmd shell helper.
-  run_with_timeout "$ANDROID_BOOT_TIMEOUT_SECONDS" adb -s "$ANDROID_DEVICE_ID" wait-for-device >/dev/null
+  if run_with_timeout "$ANDROID_BOOT_TIMEOUT_SECONDS" adb -s "$ANDROID_DEVICE_ID" wait-for-device >/dev/null; then
+    :
+  else
+    local status=$?
+    if [[ $status -eq 124 ]]; then
+      echo "Android emulator did not become available within ${ANDROID_BOOT_TIMEOUT_SECONDS} seconds for the native reset Maestro test." >&2
+    fi
+    return "$status"
+  fi
+
   local deadline=$((SECONDS + ANDROID_BOOT_TIMEOUT_SECONDS))
   local boot_completed=""
 
@@ -100,6 +114,21 @@ ensure_android_device() {
     return 1
   fi
   return 0
+}
+
+configure_device_server_url() {
+  if [[ -n "$DEVICE_SERVER_URL" ]]; then
+    return 0
+  fi
+
+  if adb_cmd reverse "tcp:${HOST_SERVER_PORT}" "tcp:${HOST_SERVER_PORT}" >/dev/null; then
+    DEVICE_SERVER_URL="http://127.0.0.1:${HOST_SERVER_PORT}"
+    DEVICE_SERVER_URL_IS_REVERSED="1"
+    return 0
+  fi
+
+  echo "Unable to configure adb reverse for the Android native reset Maestro test." >&2
+  return 1
 }
 
 wait_for_server() {
@@ -245,13 +274,14 @@ fi
 mkdir -p "$ARTIFACT_DIR" "$RESULTS_DIR"
 rm -rf -- "${RESULTS_DIR:?}/"*
 
-export CAPGO_MAESTRO_DEVICE_BASE_URL="$DEVICE_SERVER_URL"
-export CAPGO_MAESTRO_HOST_BASE_URL="$HOST_SERVER_URL"
-export CAPGO_MAESTRO_PORT="$HOST_SERVER_PORT"
-
 ensure_android_device
 wait_for_emulator_boot
 wait_for_package_manager
+configure_device_server_url
+
+export CAPGO_MAESTRO_DEVICE_BASE_URL="$DEVICE_SERVER_URL"
+export CAPGO_MAESTRO_HOST_BASE_URL="$HOST_SERVER_URL"
+export CAPGO_MAESTRO_PORT="$HOST_SERVER_PORT"
 
 bun "$ROOT_DIR/scripts/maestro/build-bundles.mjs" "$SCENARIO_ID"
 build_android_app "native-reset-builtin-v1" "true" "always" "1.0.0" "1"
