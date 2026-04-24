@@ -64,6 +64,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "isShakeMenuEnabled", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setShakeChannelSelector", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "isShakeChannelSelectorEnabled", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getAppId", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setAppId", returnType: CAPPluginReturnPromise),
         // App Store update methods
         CAPPluginMethod(name: "getAppUpdateInfo", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "openAppStore", returnType: CAPPluginReturnPromise),
@@ -233,7 +235,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         implementation.setPublicKey(getConfig().getString("publicKey") ?? "")
         implementation.notifyDownloadRaw = notifyDownload
         implementation.notifyListeners = { [weak self] eventName, data in
-            self?.notifyListeners(eventName, data: data)
+            let emit = {
+                self?.notifyListeners(eventName, data: data)
+            }
+            if Thread.isMainThread {
+                emit()
+            } else {
+                DispatchQueue.main.async {
+                    emit()
+                }
+            }
         }
         implementation.pluginVersion = self.pluginVersion
 
@@ -496,6 +507,52 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         logger.info("Cleanup finished, proceeding with download")
     }
 
+    private func resolveCall(_ call: CAPPluginCall, data: PluginCallResultData? = nil) {
+        let resolve = {
+            if let data {
+                call.resolve(data)
+            } else {
+                call.resolve()
+            }
+        }
+
+        if Thread.isMainThread {
+            resolve()
+        } else {
+            DispatchQueue.main.async {
+                resolve()
+            }
+        }
+    }
+
+    private func rejectCall(_ call: CAPPluginCall, message: String, code: String? = nil, error: Error? = nil, data: PluginCallResultData? = nil) {
+        let reject = {
+            call.reject(message, code, error, data)
+        }
+
+        if Thread.isMainThread {
+            reject()
+        } else {
+            DispatchQueue.main.async {
+                reject()
+            }
+        }
+    }
+
+    private func notifyListenersOnMain(_ eventName: String, data: JSObject) {
+        let notify = {
+            self.notifyListeners(eventName, data: data)
+        }
+
+        if Thread.isMainThread {
+            notify()
+        } else {
+            DispatchQueue.main.async {
+                notify()
+            }
+        }
+    }
+
     @objc func notifyDownload(id: String, percent: Int, ignoreMultipleOfTen: Bool = false, bundle: BundleInfo? = nil) {
         let bundleInfo = bundle ?? self.implementation.getBundleInfo(id: id)
         self.notifyListeners("download", data: ["percent": percent, "bundle": bundleInfo.toJSON()])
@@ -645,12 +702,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     self.logger.info("Good checksum \(next.getChecksum()) \(checksum)")
                 }
                 self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
-                call.resolve(next.toJSON())
+                self.resolveCall(call, data: next.toJSON())
             } catch {
                 self.logger.error("Failed to download from: \(String(describing: url)) \(error.localizedDescription)")
                 self.notifyListeners("downloadFailed", data: ["version": version])
                 self.implementation.sendStats(action: "download_fail")
-                call.reject("Failed to download from: \(url!) - \(error.localizedDescription)")
+                self.rejectCall(call, message: "Failed to download from: \(url!) - \(error.localizedDescription)")
             }
         }
     }
@@ -879,11 +936,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.global(qos: .background).async {
             let res = self.implementation.getLatest(url: URL(string: self.updateUrl)!, channel: channel)
             if res.error != nil {
-                call.reject( res.error!)
+                self.rejectCall(call, message: res.error!)
             } else if res.message != nil {
-                call.reject( res.message!)
+                self.rejectCall(call, message: res.message!)
             } else {
-                call.resolve(res.toDict())
+                self.resolveCall(call, data: res.toDict())
             }
         }
     }
@@ -894,7 +951,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             let configDefaultChannel = self.getConfig().getString("defaultChannel", "")!
             let res = self.implementation.unsetChannel(defaultChannelKey: self.defaultChannelDefaultsKey, configDefaultChannel: configDefaultChannel)
             if res.error != "" {
-                call.reject(res.error, "UNSETCHANNEL_FAILED", nil, [
+                self.rejectCall(call, message: res.error, code: "UNSETCHANNEL_FAILED", data: [
                     "message": res.error,
                     "error": res.error.contains("Channel URL") ? "missing_config" : "request_failed"
                 ])
@@ -908,7 +965,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         self.logger.info("Download already in progress, skipping duplicate download request")
                     }
                 }
-                call.resolve(res.toDict())
+                self.resolveCall(call, data: res.toDict())
             }
         }
     }
@@ -928,12 +985,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             if res.error != "" {
                 // Fire channelPrivate event if channel doesn't allow self-assignment
                 if res.error.contains("cannot_update_via_private_channel") || res.error.contains("channel_self_set_not_allowed") {
-                    self.notifyListeners("channelPrivate", data: [
+                    self.notifyListenersOnMain("channelPrivate", data: [
                         "channel": channel,
                         "message": res.error
                     ])
                 }
-                call.reject(res.error, "SETCHANNEL_FAILED", nil, [
+                self.rejectCall(call, message: res.error, code: "SETCHANNEL_FAILED", data: [
                     "message": res.error,
                     "error": res.error.contains("Channel URL") ? "missing_config" : (res.error.contains("cannot_update_via_private_channel") || res.error.contains("channel_self_set_not_allowed")) ? "channel_private" : "request_failed"
                 ])
@@ -947,7 +1004,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         self.logger.info("Download already in progress, skipping duplicate download request")
                     }
                 }
-                call.resolve(res.toDict())
+                self.resolveCall(call, data: res.toDict())
             }
         }
     }
@@ -956,12 +1013,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.global(qos: .background).async {
             let res = self.implementation.getChannel()
             if res.error != "" {
-                call.reject(res.error, "GETCHANNEL_FAILED", nil, [
+                self.rejectCall(call, message: res.error, code: "GETCHANNEL_FAILED", data: [
                     "message": res.error,
                     "error": res.error.contains("Channel URL") ? "missing_config" : "request_failed"
                 ])
             } else {
-                call.resolve(res.toDict())
+                self.resolveCall(call, data: res.toDict())
             }
         }
     }
@@ -970,12 +1027,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.global(qos: .background).async {
             let res = self.implementation.listChannels()
             if res.error != "" {
-                call.reject(res.error, "LISTCHANNELS_FAILED", nil, [
+                self.rejectCall(call, message: res.error, code: "LISTCHANNELS_FAILED", data: [
                     "message": res.error,
                     "error": res.error.contains("Channel URL") ? "missing_config" : "request_failed"
                 ])
             } else {
-                call.resolve(res.toDict())
+                self.resolveCall(call, data: res.toDict())
             }
         }
     }

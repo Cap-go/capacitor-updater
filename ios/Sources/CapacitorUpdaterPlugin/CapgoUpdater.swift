@@ -89,7 +89,16 @@ import UIKit
 
     public var notifyDownloadRaw: (String, Int, Bool, BundleInfo?) -> Void = { _, _, _, _  in }
     public func notifyDownload(id: String, percent: Int, ignoreMultipleOfTen: Bool = false, bundle: BundleInfo? = nil) {
-        notifyDownloadRaw(id, percent, ignoreMultipleOfTen, bundle)
+        let emit = {
+            self.notifyDownloadRaw(id, percent, ignoreMultipleOfTen, bundle)
+        }
+        if Thread.isMainThread {
+            emit()
+        } else {
+            DispatchQueue.main.async {
+                emit()
+            }
+        }
     }
     public var notifyDownload: (String, Int) -> Void = { _, _  in }
     public var notifyListeners: (String, [String: Any]) -> Void = { _, _ in }
@@ -224,8 +233,8 @@ import UIKit
         self.alamofireSession.request(
             self.statsUrl,
             method: .post,
-            parameters: parameters,
-            encoder: JSONParameterEncoder.default,
+            parameters: parameters.toParameters(),
+            encoding: JSONEncoding.default,
             requestModifier: { $0.timeoutInterval = self.timeout }
         ).responseData { response in
             switch response.result {
@@ -365,6 +374,19 @@ import UIKit
 
                 let destPath = destUnZip.appendingPathComponent(entry.path)
 
+                if entry.type == .directory {
+                    try FileManager.default.createDirectory(at: destPath, withIntermediateDirectories: true, attributes: nil)
+                    processedEntries += 1
+                    if notify && totalEntries > 0 {
+                        let newPercent = self.calcTotalPercent(percent: Int(Double(processedEntries) / Double(totalEntries) * 100), min: 75, max: 81)
+                        if newPercent != self.unzipPercent {
+                            self.unzipPercent = newPercent
+                            self.notifyDownload(id: id, percent: newPercent)
+                        }
+                    }
+                    continue
+                }
+
                 // Create parent directories if needed
                 let parentDir = destPath.deletingLastPathComponent()
                 if !FileManager.default.fileExists(atPath: parentDir.path) {
@@ -482,52 +504,59 @@ import UIKit
         if let channel = channel {
             parameters.defaultChannel = channel
         }
-        logger.info("Auto-update parameters: \(parameters)")
-        let request = alamofireSession.request(url, method: .post, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
+        let request = alamofireSession.request(url, method: .post, parameters: parameters.toParameters(), encoding: JSONEncoding.default, requestModifier: { $0.timeoutInterval = self.timeout })
 
-        request.validate().responseDecodable(of: AppVersionDec.self) { response in
+        request.validate().responseData(queue: DispatchQueue.global(qos: .utility)) { response in
             switch response.result {
-            case .success:
+            case let .success(data):
+                guard let responseValue = try? JSONDecoder().decode(AppVersionDec.self, from: data) else {
+                    self.logger.error("Error decoding latest version")
+                    latest.message = "Error getting Latest"
+                    latest.error = "decode_error"
+                    latest.statusCode = response.response?.statusCode ?? 0
+                    semaphore.signal()
+                    return
+                }
                 latest.statusCode = response.response?.statusCode ?? 0
-                if let url = response.value?.url {
+                if let url = responseValue.url {
                     latest.url = url
                 }
-                if let checksum = response.value?.checksum {
+                if let checksum = responseValue.checksum {
                     latest.checksum = checksum
                 }
-                if let version = response.value?.version {
+                if let version = responseValue.version {
                     latest.version = version
                 }
-                if let major = response.value?.major {
+                if let major = responseValue.major {
                     latest.major = major
                 }
-                if let breaking = response.value?.breaking {
+                if let breaking = responseValue.breaking {
                     latest.breaking = breaking
                 }
-                if let error = response.value?.error {
+                if let error = responseValue.error {
                     latest.error = error
                 }
-                if let message = response.value?.message {
+                if let message = responseValue.message {
                     latest.message = message
                 }
-                if let sessionKey = response.value?.session_key {
+                if let sessionKey = responseValue.session_key {
                     latest.sessionKey = sessionKey
                 }
-                if let data = response.value?.data {
+                if let data = responseValue.data {
                     latest.data = data
                 }
-                if let manifest = response.value?.manifest {
+                if let manifest = responseValue.manifest {
                     latest.manifest = manifest
                 }
-                if let link = response.value?.link {
+                if let link = responseValue.link {
                     latest.link = link
                 }
-                if let comment = response.value?.comment {
+                if let comment = responseValue.comment {
                     latest.comment = comment
                 }
             case let .failure(error):
                 self.logger.error("Error getting latest version")
-                self.logger.debug("Response: \(response.value.debugDescription), Error: \(error)")
+                self.logger.debug("Response: \(response.value?.debugDescription ?? "nil"), Error: \(error)")
                 latest.message = "Error getting Latest"
                 latest.error = "response_error"
                 latest.statusCode = response.response?.statusCode ?? 0
@@ -1011,10 +1040,9 @@ import UIKit
         try checkDiskSpace()
 
         var checksum = ""
-        var targetSize = -1
         var lastSentProgress = 0
-        var totalReceivedBytes: Int64 = loadDownloadProgress(for: id) // Retrieving the amount of already downloaded data if exist, defined at 0 otherwise
-        let requestHeaders: HTTPHeaders = ["Range": "bytes=\(totalReceivedBytes)-"]
+        let totalReceivedBytes: Int64 = loadDownloadProgress(for: id) // Retrieving the amount of already downloaded data if exist, defined at 0 otherwise
+        let requestHeaders: HTTPHeaders = totalReceivedBytes > 0 ? ["Range": "bytes=\(totalReceivedBytes)-"] : [:]
 
         // Send stats for zip download start
         self.sendStats(action: "download_zip_start", versionName: version)
@@ -1024,66 +1052,62 @@ import UIKit
             self.notifyDownload(id: id, percent: 0, ignoreMultipleOfTen: true)
         }
         var mainError: NSError?
-        let monitor = ClosureEventMonitor()
-        monitor.requestDidCompleteTaskWithError = { (_, _, error) in
-            if error != nil {
-                self.logger.error("Downloading failed - ClosureEventMonitor activated")
-                mainError = error as NSError?
+        let tempPath = tempDataPath(for: id)
+        let destination: DownloadRequest.Destination = { _, _ in
+            (tempPath, [.removePreviousFile, .createIntermediateDirectories])
+        }
+
+        let request = self.alamofireSession.download(url, headers: requestHeaders, to: destination)
+
+        request.downloadProgress { [weak self] progress in
+            guard let self = self else { return }
+            guard progress.totalUnitCount > 0 else { return }
+
+            let completedBytes = totalReceivedBytes + progress.completedUnitCount
+            let expectedBytes = totalReceivedBytes + progress.totalUnitCount
+            let percent = max(10, Int((Double(completedBytes) / Double(expectedBytes)) * 70.0))
+            let currentMilestone = (percent / 10) * 10
+
+            if currentMilestone > lastSentProgress && currentMilestone <= 70 {
+                for milestone in stride(from: lastSentProgress + 10, through: currentMilestone, by: 10) {
+                    self.notifyDownload(id: id, percent: milestone, ignoreMultipleOfTen: false)
+                }
+                lastSentProgress = currentMilestone
             }
         }
-        let configuration = URLSessionConfiguration.default
-        configuration.httpAdditionalHeaders = ["User-Agent": self.userAgent]
-        let session = Session(configuration: configuration, eventMonitors: [monitor])
 
-        let request = session.streamRequest(url, headers: requestHeaders).validate().onHTTPResponse(perform: { response  in
-            if let contentLength = response.headers.value(for: "Content-Length") {
-                targetSize = (Int(contentLength) ?? -1) + Int(totalReceivedBytes)
+        request.validate().response(queue: DispatchQueue.global(qos: .utility)) { [weak self] response in
+            guard let self = self else {
+                semaphore.signal()
+                return
             }
-        }).responseStream { [weak self] streamResponse in
-            guard let self = self else { return }
-            switch streamResponse.event {
-            case .stream(let result):
-                if case .success(let data) = result {
-                    self.tempData.append(data)
 
-                    self.savePartialData(startingAt: UInt64(totalReceivedBytes), for: id) // Saving the received data in the package_<id>.tmp file
-                    totalReceivedBytes += Int64(data.count)
-
-                    let percent = max(10, Int((Double(totalReceivedBytes) / Double(targetSize)) * 70.0))
-
-                    let currentMilestone = (percent / 10) * 10
-                    if currentMilestone > lastSentProgress && currentMilestone <= 70 {
-                        for milestone in stride(from: lastSentProgress + 10, through: currentMilestone, by: 10) {
-                            self.notifyDownload(id: id, percent: milestone, ignoreMultipleOfTen: false)
-                        }
-                        lastSentProgress = currentMilestone
-                    }
-
-                } else {
-                    self.logger.error("Download failed")
-                }
-
-            case .complete:
-                self.logger.info("Download complete, total received bytes: \(totalReceivedBytes)")
-                self.notifyDownload(id: id, percent: 70, ignoreMultipleOfTen: true)
+            defer {
                 semaphore.signal()
             }
+
+            if let error = response.error {
+                self.logger.error("Download failed")
+                mainError = error as NSError
+                return
+            }
+
+            guard FileManager.default.fileExists(atPath: tempPath.path) else {
+                mainError = NSError(
+                    domain: "DownloadError",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Downloaded file is missing at \(tempPath.path)"]
+                )
+                return
+            }
+
+            if lastSentProgress < 70 {
+                self.notifyDownload(id: id, percent: 70, ignoreMultipleOfTen: true)
+            }
+            self.logger.info("Download complete")
         }
         self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.DOWNLOADING, downloaded: Date(), checksum: checksum, link: link, comment: comment))
-        let reachabilityManager = NetworkReachabilityManager()
-        reachabilityManager?.startListening { status in
-            switch status {
-            case .notReachable:
-                // Stop the download request if the network is not reachable
-                request.cancel()
-                mainError = NSError(domain: NSURLErrorDomain, code: NSURLErrorNotConnectedToInternet, userInfo: nil)
-                semaphore.signal()
-            default:
-                break
-            }
-        }
         semaphore.wait()
-        reachabilityManager?.stopListening()
 
         if mainError != nil {
             logger.error("Failed to download bundle")
@@ -1092,7 +1116,6 @@ import UIKit
             throw mainError!
         }
 
-        let tempPath = tempDataPath(for: id)
         let finalPath = tempPath.deletingLastPathComponent().appendingPathComponent("\(id)")
         do {
             try CryptoCipher.decryptFile(filePath: tempPath, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
@@ -1672,9 +1695,9 @@ import UIKit
         var parameters: InfoObject = self.createInfoObject()
         parameters.channel = channel
 
-        let request = alamofireSession.request(self.channelUrl, method: .post, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
+        let request = alamofireSession.request(self.channelUrl, method: .post, parameters: parameters.toParameters(), encoding: JSONEncoding.default, requestModifier: { $0.timeoutInterval = self.timeout })
 
-        request.validate().responseDecodable(of: SetChannelDec.self) { response in
+        request.validate().responseData(queue: DispatchQueue.global(qos: .utility)) { response in
             // Check for 429 rate limit
             if self.checkAndHandleRateLimitResponse(statusCode: response.response?.statusCode) {
                 setChannel.message = "Rate limit exceeded"
@@ -1684,29 +1707,32 @@ import UIKit
             }
 
             switch response.result {
-            case .success:
-                if let responseValue = response.value {
-                    if let error = responseValue.error {
-                        setChannel.error = error
-                    } else if responseValue.unset == true {
-                        // Server requested to unset channel (public channel was requested)
-                        // Clear persisted defaultChannel and revert to config value
-                        UserDefaults.standard.removeObject(forKey: defaultChannelKey)
-                        UserDefaults.standard.synchronize()
-                        self.logger.info("Public channel requested, channel override removed")
+            case let .success(data):
+                guard let responseValue = try? JSONDecoder().decode(SetChannelDec.self, from: data) else {
+                    setChannel.error = "decode_error"
+                    semaphore.signal()
+                    return
+                }
+                if let error = responseValue.error {
+                    setChannel.error = error
+                } else if responseValue.unset == true {
+                    // Server requested to unset channel (public channel was requested)
+                    // Clear persisted defaultChannel and revert to config value
+                    UserDefaults.standard.removeObject(forKey: defaultChannelKey)
+                    UserDefaults.standard.synchronize()
+                    self.logger.info("Public channel requested, channel override removed")
 
-                        setChannel.status = responseValue.status ?? "ok"
-                        setChannel.message = responseValue.message ?? "Public channel requested, channel override removed. Device will use public channel automatically."
-                    } else {
-                        // Success - persist defaultChannel
-                        self.defaultChannel = channel
-                        UserDefaults.standard.set(channel, forKey: defaultChannelKey)
-                        UserDefaults.standard.synchronize()
-                        self.logger.info("defaultChannel persisted locally: \(channel)")
+                    setChannel.status = responseValue.status ?? "ok"
+                    setChannel.message = responseValue.message ?? "Public channel requested, channel override removed. Device will use public channel automatically."
+                } else {
+                    // Success - persist defaultChannel
+                    self.defaultChannel = channel
+                    UserDefaults.standard.set(channel, forKey: defaultChannelKey)
+                    UserDefaults.standard.synchronize()
+                    self.logger.info("defaultChannel persisted locally: \(channel)")
 
-                        setChannel.status = responseValue.status ?? ""
-                        setChannel.message = responseValue.message ?? ""
-                    }
+                    setChannel.status = responseValue.status ?? ""
+                    setChannel.message = responseValue.message ?? ""
                 }
             case let .failure(error):
                 self.logger.error("Error setting channel")
@@ -1738,9 +1764,9 @@ import UIKit
         }
         let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
         let parameters: InfoObject = self.createInfoObject()
-        let request = alamofireSession.request(self.channelUrl, method: .put, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
+        let request = alamofireSession.request(self.channelUrl, method: .put, parameters: parameters.toParameters(), encoding: JSONEncoding.default, requestModifier: { $0.timeoutInterval = self.timeout })
 
-        request.validate().responseDecodable(of: GetChannelDec.self) { response in
+        request.validate().responseData(queue: DispatchQueue.global(qos: .utility)) { response in
             defer {
                 semaphore.signal()
             }
@@ -1753,16 +1779,18 @@ import UIKit
             }
 
             switch response.result {
-            case .success:
-                if let responseValue = response.value {
-                    if let error = responseValue.error {
-                        getChannel.error = error
-                    } else {
-                        getChannel.status = responseValue.status ?? ""
-                        getChannel.message = responseValue.message ?? ""
-                        getChannel.channel = responseValue.channel ?? ""
-                        getChannel.allowSet = responseValue.allowSet ?? true
-                    }
+            case let .success(data):
+                guard let responseValue = try? JSONDecoder().decode(GetChannelDec.self, from: data) else {
+                    getChannel.error = "decode_error"
+                    return
+                }
+                if let error = responseValue.error {
+                    getChannel.error = error
+                } else {
+                    getChannel.status = responseValue.status ?? ""
+                    getChannel.message = responseValue.message ?? ""
+                    getChannel.channel = responseValue.channel ?? ""
+                    getChannel.allowSet = responseValue.allowSet ?? true
                 }
             case let .failure(error):
                 if let data = response.data, let bodyString = String(data: data, encoding: .utf8) {
@@ -1805,7 +1833,7 @@ import UIKit
 
         // Create query parameters from InfoObject
         var urlComponents = URLComponents(string: self.channelUrl)
-        var queryItems: [URLQueryItem] = []
+        var queryItems: [URLQueryItem] = urlComponents?.queryItems ?? []
 
         // Convert InfoObject to dictionary using Mirror
         let mirror = Mirror(reflecting: infoObject)
@@ -1831,7 +1859,7 @@ import UIKit
 
         let request = alamofireSession.request(url, method: .get, requestModifier: { $0.timeoutInterval = self.timeout })
 
-        request.validate().responseDecodable(of: ListChannelsDec.self) { response in
+        request.validate().responseData(queue: DispatchQueue.global(qos: .utility)) { response in
             defer {
                 semaphore.signal()
             }
@@ -1843,24 +1871,26 @@ import UIKit
             }
 
             switch response.result {
-            case .success:
-                if let responseValue = response.value {
-                    // Check for server-side errors
-                    if let error = responseValue.error {
-                        listChannels.error = error
-                        return
-                    }
+            case let .success(data):
+                guard let responseValue = try? JSONDecoder().decode(ListChannelsDec.self, from: data) else {
+                    listChannels.error = "decode_error"
+                    return
+                }
+                // Check for server-side errors
+                if let error = responseValue.error {
+                    listChannels.error = error
+                    return
+                }
 
-                    // Backend returns direct array, so channels should be populated by our custom decoder
-                    if let channels = responseValue.channels {
-                        listChannels.channels = channels.map { channel in
-                            var channelDict: [String: Any] = [:]
-                            channelDict["id"] = channel.id ?? ""
-                            channelDict["name"] = channel.name ?? ""
-                            channelDict["public"] = channel.public ?? false
-                            channelDict["allow_self_set"] = channel.allow_self_set ?? false
-                            return channelDict
-                        }
+                // Backend returns direct array, so channels should be populated by our custom decoder
+                if let channels = responseValue.channels {
+                    listChannels.channels = channels.map { channel in
+                        var channelDict: [String: Any] = [:]
+                        channelDict["id"] = channel.id ?? ""
+                        channelDict["name"] = channel.name ?? ""
+                        channelDict["public"] = channel.public ?? false
+                        channelDict["allow_self_set"] = channel.allow_self_set ?? false
+                        return channelDict
                     }
                 }
             case let .failure(error):

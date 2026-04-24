@@ -1,0 +1,50 @@
+appId: app.capgo.updater
+---
+- extendedWaitUntil:
+    visible: '@capgo/capacitor-updater'
+    timeout: 180000
+- assertVisible: '@capgo/capacitor-updater'
+- scrollUntilVisible:
+    element:
+      text: '@capgo/capacitor-updater'
+    direction: UP
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      text: 'Quick reset release'
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- tapOn: 'Quick reset release'
+- scrollUntilVisible:
+    element:
+      text: '.*M:reset:success.*'
+    direction: UP
+    timeout: 30000
+    visibilityPercentage: 1
+- scrollUntilVisible:
+    element:
+      text: 'Quick download latest bundle'
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- tapOn: 'Quick download latest bundle'
+- scrollUntilVisible:
+    element:
+      text: '.*M:download:success.*'
+    direction: UP
+    timeout: 120000
+    visibilityPercentage: 1
+- scrollUntilVisible:
+    element:
+      text: 'Quick mark bundle error'
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- tapOn: 'Quick mark bundle error'
+- scrollUntilVisible:
+    element:
+      text: '.*M:bundle:(success|expected-rejection).*'
+    direction: UP
+    timeout: 30000
+    visibilityPercentage: 1

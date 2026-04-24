@@ -45,4 +45,66 @@ enum BundleStatus: LocalizedString, Decodable, Encodable {
     init?(localizedString: String) {
         self.init(rawValue: LocalizedString(localized: localizedString))
     }
+
+    private static func fromStoredValue(_ value: String) -> BundleStatus? {
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let status = BundleStatus(localizedString: normalized) {
+            return status
+        }
+
+        switch normalized.uppercased() {
+        case "SUCCESS":
+            return .SUCCESS
+        case "ERROR":
+            return .ERROR
+        case "PENDING":
+            return .PENDING
+        case "DELETED":
+            return .DELETED
+        case "DOWNLOADING":
+            return .DOWNLOADING
+        default:
+            return nil
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        if let container = try? decoder.singleValueContainer(),
+           let value = try? container.decode(String.self),
+           let status = BundleStatus.fromStoredValue(value) {
+            self = status
+            return
+        }
+
+        if let container = try? decoder.container(keyedBy: DynamicCodingKey.self),
+           let key = container.allKeys.first,
+           let status = BundleStatus.fromStoredValue(key.stringValue) {
+            self = status
+            return
+        }
+
+        throw DecodingError.dataCorrupted(
+            DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Invalid bundle status")
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(self.localizedString)
+    }
+}
+
+private struct DynamicCodingKey: CodingKey {
+    var stringValue: String
+    var intValue: Int?
+
+    init?(stringValue: String) {
+        self.stringValue = stringValue
+        self.intValue = nil
+    }
+
+    init?(intValue: Int) {
+        self.stringValue = String(intValue)
+        self.intValue = intValue
+    }
 }

@@ -17,7 +17,7 @@ SERVER_PID=""
 FLOW_RETRY_PATTERN="TcpForwarder.waitFor|allocateForwarder|TimeoutException|Android driver did not start up in time|UNAVAILABLE: io exception|Connection refused|Broken pipe|Failure calling service package|Can.t find service: package|Can.t find service: settings|Cannot access system provider: 'settings'"
 MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
 MAESTRO_DRIVER_STARTUP_TIMEOUT_VALUE="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-300000}"
-MAESTRO_FLOW_TIMEOUT_SECONDS="${MAESTRO_FLOW_TIMEOUT_SECONDS:-360}"
+MAESTRO_FLOW_TIMEOUT_SECONDS="${MAESTRO_FLOW_TIMEOUT_SECONDS:-900}"
 APP_BACKGROUND_SETTLE_SECONDS="${CAPGO_MAESTRO_BACKGROUND_SETTLE_SECONDS:-3}"
 APP_LAUNCH_RETRIES="${CAPGO_MAESTRO_APP_LAUNCH_RETRIES:-3}"
 APP_START_TIMEOUT_SECONDS="${CAPGO_MAESTRO_APP_START_TIMEOUT_SECONDS:-20}"
@@ -28,7 +28,7 @@ DIRECT_UPDATE_BACKGROUND_SETTLE_SECONDS="${CAPGO_MAESTRO_DIRECT_UPDATE_BACKGROUN
 ADB_COMMAND_TIMEOUT_SECONDS="${CAPGO_MAESTRO_ADB_COMMAND_TIMEOUT_SECONDS:-20}"
 ADB_INSTALL_TIMEOUT_SECONDS="${CAPGO_MAESTRO_ADB_INSTALL_TIMEOUT_SECONDS:-180}"
 TIMEOUT_CMD="$(command -v gtimeout || command -v timeout || true)"
-SCENARIO_SEQUENCE=(deferred always at-install on-launch)
+SCENARIO_SEQUENCE=(deferred always legacy-true at-install on-launch manual-zip manual-zip-config-guards manual-manifest)
 
 cleanup() {
   if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
@@ -447,6 +447,27 @@ run_scenario() {
         'Current bundle source: downloaded' \
         "Current bundle version: $second_release"
       ;;
+    legacy-true)
+      control_server reset legacy-true
+      prepare_scenario legacy-true
+      run_flow initial-direct-update.yaml
+      wait_for_direct_update_ui_state \
+        "legacy true direct update applies on first launch" \
+        "Build label: $first_release" \
+        'Scenario: legacy-true' \
+        'Direct update mode: true' \
+        'Current bundle source: downloaded' \
+        "Current bundle version: $first_release"
+      control_server advance legacy-true
+      background_and_resume_app
+      wait_for_direct_update_ui_state \
+        "legacy true direct update applies a newer release after resume" \
+        "Build label: $second_release" \
+        'Scenario: legacy-true' \
+        'Direct update mode: true' \
+        'Current bundle source: downloaded' \
+        "Current bundle version: $second_release"
+      ;;
     at-install)
       control_server reset at-install
       prepare_scenario at-install
@@ -498,6 +519,69 @@ run_scenario() {
         'Direct update mode: onLaunch' \
         'Current bundle source: downloaded' \
         "Current bundle version: $second_release"
+      ;;
+    manual-zip)
+      control_server reset manual-zip
+      prepare_scenario manual-zip
+      wait_for_example_app_ui
+      run_flow manual-zip-flow.yaml
+      wait_for_example_app_ui
+      wait_for_ui_state \
+        "manual zip flow ends back on the builtin bundle" \
+        'Build label: manual-zip-builtin' \
+        'Current bundle source: builtin'
+      ;;
+    manual-zip-config-guards)
+      control_server reset manual-zip-config-guards
+      prepare_scenario manual-zip-config-guards
+      wait_for_example_app_ui
+      run_flow manual-zip-config-guards-flow.yaml
+      wait_for_example_app_ui
+      wait_for_ui_state \
+        "manual zip config guards reject setBundleError while leaving the downloaded bundle intact" \
+        'Build label: manual-zip-config-guards-builtin' \
+        'Last completed download: manual-zip-config-guards-v1' \
+        'Action marker: bundle:expected-rejection'
+      ;;
+    manual-manifest)
+      control_server reset manual-manifest
+      prepare_scenario manual-manifest
+      wait_for_example_app_ui
+      run_flow manual-manifest-flow.yaml
+      wait_for_example_app_ui
+      wait_for_ui_state \
+        "manual manifest flow applies the second manifest release" \
+        'Build label: manual-manifest-v2' \
+        'Current bundle version: manual-manifest-v2' \
+        'set event: manual-manifest-v2'
+      assert_server_debug_state manual-manifest '
+const state = JSON.parse(process.argv[1]);
+const scenarioId = process.argv[2];
+const failures = [];
+const debug = state.debug ?? {};
+const requestCounts = debug.requestCounts ?? {};
+const updateRequestUrl = debug.lastUpdateRequest?.url ?? "";
+
+function expect(condition, message) {
+  if (!condition) {
+    failures.push(message);
+  }
+}
+
+expect(state.activeRelease === "manual-manifest-v2", "fake server did not advance to the second manifest release");
+expect(updateRequestUrl.includes("/api/updates/manual-manifest"), "missing manifest update request");
+expect((requestCounts.update ?? 0) >= 2, "expected repeated manifest update checks");
+expect((requestCounts.manifestFile ?? 0) >= 2, "expected manifest file downloads");
+expect((requestCounts.stats ?? 0) >= 1, "expected manifest stats traffic");
+
+if (failures.length) {
+  console.error(`Server assertions failed for ${scenarioId}:`);
+  for (const failure of failures) {
+    console.error(`- ${failure}`);
+  }
+  process.exit(1);
+}
+'
       ;;
     *)
       echo "Unknown Maestro scenario selection: $scenario_id" >&2
@@ -667,6 +751,16 @@ control_server() {
   local action="$1"
   local scenario="$2"
   curl --silent --show-error --fail -X POST "$HOST_SERVER_URL/api/control/$action?scenario=$scenario" >/dev/null
+  return 0
+}
+
+assert_server_debug_state() {
+  local scenario="$1"
+  local assertion_script="$2"
+  local server_state=""
+
+  server_state="$(curl --silent --show-error --fail "$HOST_SERVER_URL/api/control/state?scenario=$scenario")"
+  bun --eval "$assertion_script" "$server_state" "$scenario"
   return 0
 }
 

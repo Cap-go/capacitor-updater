@@ -12,10 +12,12 @@ APP_ID="app.capgo.updater"
 SCENARIO_SELECTION="${1:-all}"
 SERVER_PID=""
 SIMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_IOS_BOOT_TIMEOUT_SECONDS:-180}"
-MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-360}"
+MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-900}"
 export MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
-export MAESTRO_DRIVER_STARTUP_TIMEOUT="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-300000}"
-SCENARIO_SEQUENCE=(deferred always at-install on-launch)
+export MAESTRO_DRIVER_STARTUP_TIMEOUT="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-600000}"
+MAESTRO_TEST_RETRIES="${CAPGO_MAESTRO_TEST_RETRIES:-3}"
+FLOW_RETRY_PATTERN="iOS driver not ready in time|Failed to connect to /127\\.0\\.0\\.1:[0-9]+|Connection refused|Broken pipe|Request for viewHierarchy failed, because of unknown reason|XCTestDriver request failed\\. Status code: 500, path: viewHierarchy|failed to terminate dev\\.mobile\\.maestro-driver-iosUITests\\.xctrunner|found nothing to terminate"
+SCENARIO_SEQUENCE=(deferred always legacy-true at-install on-launch manual-zip manual-zip-config-guards manual-manifest)
 APP_MARKETING_VERSION=""
 readonly ASSERT_AUTO_UPDATE_ENABLED='Auto update enabled: true'
 readonly ASSERT_AUTO_UPDATE_AVAILABLE='Auto update available: true'
@@ -109,7 +111,7 @@ listening_pid_for_port() {
 
 is_supported_scenario() {
   case "$1" in
-    deferred|always|at-install|on-launch)
+    deferred|always|legacy-true|at-install|on-launch|manual-zip|manual-zip-config-guards|manual-manifest)
       return 0
       ;;
   esac
@@ -193,6 +195,15 @@ control_server() {
   curl --silent --show-error --fail -X POST "$HOST_SERVER_URL/api/control/$action?scenario=$scenario" >/dev/null
 }
 
+assert_server_debug_state() {
+  local scenario="$1"
+  local assertion_script="$2"
+  local server_state=""
+
+  server_state="$(curl --silent --show-error --fail "$HOST_SERVER_URL/api/control/state?scenario=$scenario")"
+  bun --eval "$assertion_script" "$server_state" "$scenario"
+}
+
 load_scenario_config() {
   local scenario_id="$1"
   local builtin_version=""
@@ -244,11 +255,10 @@ run_flow() {
   shift 2
   local flow_results_dir="$RESULTS_DIR/$label"
   local -a maestro_args=()
+  local attempt=1
   local env_arg=""
+  local output_file=""
   local status=0
-
-  rm -rf "$flow_results_dir"
-  mkdir -p "$flow_results_dir"
 
   while [[ $# -gt 0 ]]; do
     env_arg="$1"
@@ -256,42 +266,66 @@ run_flow() {
     shift
   done
 
-  set +e
-  if ((${#maestro_args[@]} > 0)); then
-    run_with_timeout "$MAESTRO_TIMEOUT_SECONDS" \
-      maestro test \
-        -p ios \
-        --device "$SIMULATOR_ID" \
-        "${maestro_args[@]}" \
-        "$flow_path" \
-        --format junit \
-        --output "$flow_results_dir/junit.xml" \
-        --debug-output "$flow_results_dir/debug" \
-        --flatten-debug-output \
-        --test-output-dir "$flow_results_dir/artifacts"
-  else
-    run_with_timeout "$MAESTRO_TIMEOUT_SECONDS" \
-      maestro test \
-        -p ios \
-        --device "$SIMULATOR_ID" \
-        "$flow_path" \
-        --format junit \
-        --output "$flow_results_dir/junit.xml" \
-        --debug-output "$flow_results_dir/debug" \
-        --flatten-debug-output \
-        --test-output-dir "$flow_results_dir/artifacts"
-  fi
-  status=$?
-  set -e
+  while [[ $attempt -le $MAESTRO_TEST_RETRIES ]]; do
+    rm -rf "$flow_results_dir"
+    mkdir -p "$flow_results_dir"
+    output_file="$(mktemp)"
 
-  if [[ $status -eq 0 ]]; then
-    return 0
-  fi
+    echo "Running iOS Maestro flow: ${label} (attempt ${attempt}/${MAESTRO_TEST_RETRIES})"
 
-  if [[ $status -eq 124 ]]; then
-    echo "Maestro flow timed out after ${MAESTRO_TIMEOUT_SECONDS} seconds: ${flow_path}" >&2
-  fi
-  return "$status"
+    set +e
+    if ((${#maestro_args[@]} > 0)); then
+      run_with_timeout "$MAESTRO_TIMEOUT_SECONDS" \
+        maestro test \
+          -p ios \
+          --device "$SIMULATOR_ID" \
+          "${maestro_args[@]}" \
+          "$flow_path" \
+          --format junit \
+          --output "$flow_results_dir/junit.xml" \
+          --debug-output "$flow_results_dir/debug" \
+          --flatten-debug-output \
+          --test-output-dir "$flow_results_dir/artifacts" 2>&1 | tee "$output_file"
+    else
+      run_with_timeout "$MAESTRO_TIMEOUT_SECONDS" \
+        maestro test \
+          -p ios \
+          --device "$SIMULATOR_ID" \
+          "$flow_path" \
+          --format junit \
+          --output "$flow_results_dir/junit.xml" \
+          --debug-output "$flow_results_dir/debug" \
+          --flatten-debug-output \
+          --test-output-dir "$flow_results_dir/artifacts" 2>&1 | tee "$output_file"
+    fi
+    status=${PIPESTATUS[0]}
+    set -e
+
+    if [[ $status -eq 0 ]]; then
+      rm -f "$output_file"
+      return 0
+    fi
+
+    if [[ $status -eq 124 ]]; then
+      echo "Maestro flow timed out after ${MAESTRO_TIMEOUT_SECONDS} seconds: ${flow_path}" >&2
+    fi
+
+    if [[ $attempt -lt $MAESTRO_TEST_RETRIES ]] && { [[ $status -eq 124 ]] || grep -Eq "$FLOW_RETRY_PATTERN" "$output_file"; }; then
+      echo "Retrying iOS Maestro flow after simulator/XCTest instability: ${flow_path}" >&2
+      rm -f "$output_file"
+      xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
+      xcrun simctl shutdown "$SIMULATOR_ID" >/dev/null 2>&1 || true
+      boot_simulator
+      sleep 5
+      attempt=$((attempt + 1))
+      continue
+    fi
+
+    rm -f "$output_file"
+    return "$status"
+  done
+
+  return 1
 }
 
 regex_escape_for_maestro() {
@@ -452,6 +486,30 @@ run_scenario() {
         "$ASSERT_SOURCE_DOWNLOADED" \
         "Current bundle version: $second_release"
       ;;
+    legacy-true)
+      run_core_assert \
+        "${scenario_id}-first-release" \
+        "Build label: $first_release" \
+        'Scenario: legacy-true' \
+        'Direct update mode: true' \
+        "$ASSERT_AUTO_UPDATE_ENABLED" \
+        "$ASSERT_AUTO_UPDATE_AVAILABLE" \
+        "Notify app ready: ok ($first_release)" \
+        "$ASSERT_SOURCE_DOWNLOADED" \
+        "Current bundle version: $first_release"
+      control_server advance "$scenario_id"
+      run_flow "${scenario_id}-resume" "$ROOT_DIR/.maestro/helpers/relaunch-app.yaml"
+      run_core_assert \
+        "${scenario_id}-second-release" \
+        "Build label: $second_release" \
+        'Scenario: legacy-true' \
+        'Direct update mode: true' \
+        "$ASSERT_AUTO_UPDATE_ENABLED" \
+        "$ASSERT_AUTO_UPDATE_AVAILABLE" \
+        "Notify app ready: ok ($second_release)" \
+        "$ASSERT_SOURCE_DOWNLOADED" \
+        "Current bundle version: $second_release"
+      ;;
     at-install)
       run_core_assert \
         "${scenario_id}-first-release" \
@@ -512,6 +570,43 @@ run_scenario() {
         "Notify app ready: ok ($second_release)" \
         "$ASSERT_SOURCE_DOWNLOADED" \
         "Current bundle version: $second_release"
+      ;;
+    manual-zip)
+      run_flow "${scenario_id}-flow" "$ROOT_DIR/.maestro/manual-zip-flow.yaml"
+      ;;
+    manual-zip-config-guards)
+      run_flow "${scenario_id}-flow" "$ROOT_DIR/.maestro/manual-zip-config-guards-flow.yaml"
+      ;;
+    manual-manifest)
+      run_flow "${scenario_id}-flow" "$ROOT_DIR/.maestro/manual-manifest-flow.yaml"
+      assert_server_debug_state manual-manifest '
+const state = JSON.parse(process.argv[1]);
+const scenarioId = process.argv[2];
+const failures = [];
+const debug = state.debug ?? {};
+const requestCounts = debug.requestCounts ?? {};
+const updateRequestUrl = debug.lastUpdateRequest?.url ?? "";
+
+function expect(condition, message) {
+  if (!condition) {
+    failures.push(message);
+  }
+}
+
+expect(state.activeRelease === "manual-manifest-v2", "fake server did not advance to the second manifest release");
+expect(updateRequestUrl.includes("/api/updates/manual-manifest"), "missing manifest update request");
+expect((requestCounts.update ?? 0) >= 2, "expected repeated manifest update checks");
+expect((requestCounts.manifestFile ?? 0) >= 2, "expected manifest file downloads");
+expect((requestCounts.stats ?? 0) >= 1, "expected manifest stats traffic");
+
+if (failures.length) {
+  console.error(`Server assertions failed for ${scenarioId}:`);
+  for (const failure of failures) {
+    console.error(`- ${failure}`);
+  }
+  process.exit(1);
+}
+'
       ;;
   esac
 

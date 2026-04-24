@@ -36,8 +36,9 @@ const env = {
     scenarioId: scenario.id,
     directUpdate: scenario.directUpdate,
     appLabel: scenario.builtinLabel,
+    autoUpdate: scenario.autoUpdate,
+    extraEnv: scenario.env ?? {},
   }),
-  CAPGO_AUTO_UPDATE: 'true',
   CAPGO_DIRECT_UPDATE: scenario.directUpdate,
 };
 

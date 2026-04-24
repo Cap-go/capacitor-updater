@@ -319,6 +319,18 @@ public class CapacitorUpdaterUnitTest {
     private static final class ReloadBypassCapacitorUpdaterPlugin extends TestableCapacitorUpdaterPlugin {
 
         @Override
+        public Thread startNewThread(final Runnable function, Number waitTime) {
+            function.run();
+            return new Thread();
+        }
+
+        @Override
+        public Thread startNewThread(final Runnable function) {
+            function.run();
+            return new Thread();
+        }
+
+        @Override
         protected boolean _reload() {
             return true;
         }
@@ -327,6 +339,18 @@ public class CapacitorUpdaterUnitTest {
     private static final class ReloadFailureCapacitorUpdaterPlugin extends TestableCapacitorUpdaterPlugin {
 
         private int restoreLiveBundleStateAfterFailedReloadCalls = 0;
+
+        @Override
+        public Thread startNewThread(final Runnable function, Number waitTime) {
+            function.run();
+            return new Thread();
+        }
+
+        @Override
+        public Thread startNewThread(final Runnable function) {
+            function.run();
+            return new Thread();
+        }
 
         @Override
         protected boolean _reload() {
@@ -404,6 +428,21 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
+    private static final class AppReadyCheckThreadPlugin extends TestableCapacitorUpdaterPlugin {
+
+        private final Thread replacementThread = new Thread();
+
+        @Override
+        public Thread startNewThread(final Runnable function, Number waitTime) {
+            return this.startNewThread(function);
+        }
+
+        @Override
+        public Thread startNewThread(final Runnable function) {
+            return this.replacementThread;
+        }
+    }
+
     private static final class ConfigurableTimeoutCapacitorUpdaterPlugin extends TestableCapacitorUpdaterPlugin {
 
         private final long minimumPendingBundleAppReadyTimeoutMs;
@@ -477,6 +516,12 @@ public class CapacitorUpdaterUnitTest {
         final Method method = CapacitorUpdaterPlugin.class.getDeclaredMethod(methodName);
         method.setAccessible(true);
         method.invoke(plugin);
+    }
+
+    private static void invokePrivateCheckAppReadyMethod(final CapacitorUpdaterPlugin plugin, final long waitTimeMs) throws Exception {
+        final Method method = CapacitorUpdaterPlugin.class.getDeclaredMethod("checkAppReady", Long.TYPE);
+        method.setAccessible(true);
+        method.invoke(plugin, waitTimeMs);
     }
 
     private static boolean invokePrivateResetMethod(
@@ -1243,6 +1288,62 @@ public class CapacitorUpdaterUnitTest {
 
             final Phaser semaphore = (Phaser) getPrivateField(plugin, "semaphoreReady");
             assertEquals(0, semaphore.getRegisteredParties());
+        }
+    }
+
+    @Test
+    public void testCheckAppReadyDoesNotInterruptCurrentWatcherThread() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final AppReadyCheckThreadPlugin plugin = new AppReadyCheckThreadPlugin();
+            final Throwable[] failure = new Throwable[1];
+            final boolean[] interrupted = new boolean[1];
+
+            final Thread worker = new Thread(() -> {
+                try {
+                    setPrivateField(plugin, "appReadyCheck", Thread.currentThread());
+                    invokePrivateCheckAppReadyMethod(plugin, 10L);
+                    interrupted[0] = Thread.currentThread().isInterrupted();
+                    assertSame(plugin.replacementThread, getPrivateField(plugin, "appReadyCheck"));
+                } catch (Throwable throwable) {
+                    failure[0] = throwable;
+                }
+            });
+
+            worker.start();
+            worker.join(5000);
+
+            assertFalse(worker.isAlive());
+            if (failure[0] != null) {
+                throw new AssertionError(failure[0]);
+            }
+            assertFalse(interrupted[0]);
+        }
+    }
+
+    @Test
+    public void testClearAppReadyCheckIfCurrentKeepsReplacementWatcherRegistered() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final AppReadyCheckThreadPlugin plugin = new AppReadyCheckThreadPlugin();
+            final Thread originalWatcher = new Thread();
+            final Thread replacementWatcher = new Thread();
+
+            setPrivateField(plugin, "appReadyCheck", replacementWatcher);
+
+            plugin.clearAppReadyCheckIfCurrent(originalWatcher);
+            assertSame(replacementWatcher, getPrivateField(plugin, "appReadyCheck"));
+
+            plugin.clearAppReadyCheckIfCurrent(replacementWatcher);
+            assertNull(getPrivateField(plugin, "appReadyCheck"));
         }
     }
 

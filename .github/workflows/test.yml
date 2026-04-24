@@ -77,7 +77,14 @@ jobs:
   maestro_android_example_app:
     timeout-minutes: 30
     runs-on: ubuntu-latest
-    name: Android example app Maestro smoke
+    name: Android example app Maestro smoke / ${{ matrix.scenario }}
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario:
+          - manual-zip
+          - manual-zip-no-persist
+          - manual-zip-config-guards
     steps:
       - name: Check out
         uses: actions/checkout@v6
@@ -118,17 +125,24 @@ jobs:
           profile: pixel_7
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
-          script: CAPGO_MAESTRO_SKIP_BUILD=1 CAPGO_MAESTRO_TIMEOUT_SECONDS=600 MAESTRO_DRIVER_STARTUP_TIMEOUT=300000 bun run test:maestro:android
+          script: CAPGO_MAESTRO_SKIP_BUILD=1 CAPGO_MAESTRO_TIMEOUT_SECONDS=600 MAESTRO_DRIVER_STARTUP_TIMEOUT=300000 CAPGO_MAESTRO_SMOKE_SCENARIO=${{ matrix.scenario }} bun run test:maestro:android
       - name: Upload Maestro artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: maestro-results-android
+          name: maestro-results-android-${{ matrix.scenario }}
           path: maestro-results
   maestro_ios_example_app:
     timeout-minutes: 30
     runs-on: macOS-latest
-    name: iOS example app Maestro smoke
+    name: iOS example app Maestro smoke / ${{ matrix.scenario }}
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario:
+          - manual-zip
+          - manual-zip-no-persist
+          - manual-zip-config-guards
     steps:
       - name: Check out
         uses: actions/checkout@v6
@@ -148,15 +162,15 @@ jobs:
           MAESTRO_VERSION: cli-2.4.0
         run: ./scripts/ci/install-maestro.sh
       - name: Run Maestro smoke tests
-        run: bun run test:maestro:ios:smoke
+        run: CAPGO_MAESTRO_SMOKE_SCENARIO=${{ matrix.scenario }} bun run test:maestro:ios:smoke
       - name: Upload Maestro artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: maestro-results-ios
+          name: maestro-results-ios-${{ matrix.scenario }}
           path: maestro-results-ios
   maestro_ios_live_update:
-    timeout-minutes: 60
+    timeout-minutes: 90
     runs-on: macOS-latest
     name: iOS example app Maestro live update
     steps:
@@ -211,7 +225,7 @@ jobs:
         id: verify_code
         run: bun run verify:web
   maestro_android_scenarios:
-    timeout-minutes: 30
+    timeout-minutes: 45
     runs-on: ubuntu-latest
     name: maestro_android / ${{ matrix.scenario }}
     strategy:
@@ -220,8 +234,12 @@ jobs:
         scenario:
           - deferred
           - always
+          - legacy-true
           - at-install
           - on-launch
+          - manual-zip
+          - manual-zip-config-guards
+          - manual-manifest
     steps:
       - name: Check out
         uses: actions/checkout@v6

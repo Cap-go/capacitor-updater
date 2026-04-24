@@ -1,0 +1,87 @@
+appId: app.capgo.updater
+---
+- extendedWaitUntil:
+    visible: '@capgo/capacitor-updater'
+    timeout: 180000
+- assertVisible: '@capgo/capacitor-updater'
+- extendedWaitUntil:
+    visible: '.*Harness: ready.*'
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      text: 'Quick apply runtime URLs'
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- tapOn: 'Quick apply runtime URLs'
+- scrollUntilVisible:
+    element:
+      text: '@capgo/capacitor-updater'
+    direction: UP
+    timeout: 120000
+- extendedWaitUntil:
+    visible: '.*M:set-runtime-urls:success.*'
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      text: 'Quick open store page'
+    direction: DOWN
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: 'Quick run smoke test sequence'
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    text: 'Quick run smoke test sequence'
+    retryTapIfNoChange: true
+- scrollUntilVisible:
+    element:
+      text: '@capgo/capacitor-updater'
+    direction: UP
+    timeout: 120000
+- extendedWaitUntil:
+    visible: '.*M:smoke-sequence:success.*'
+    timeout: 180000
+- runFlow: helpers/cold-launch-app.yaml
+- extendedWaitUntil:
+    visible: '@capgo/capacitor-updater'
+    timeout: 120000
+- extendedWaitUntil:
+    visible: '.*Harness: ready.*'
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      text: '@capgo/capacitor-updater'
+    direction: UP
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      text: 'Quick open store page'
+    direction: DOWN
+    timeout: 30000
+- tapOn: 'Quick open store page'
+- extendedWaitUntil:
+    notVisible: '@capgo/capacitor-updater'
+    timeout: 120000
+- runFlow: helpers/relaunch-app.yaml
+- extendedWaitUntil:
+    visible: '@capgo/capacitor-updater'
+    timeout: 120000
+- extendedWaitUntil:
+    visible: '.*Harness: ready.*'
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      text: 'Quick verify persisted config'
+    direction: DOWN
+    timeout: 30000
+- tapOn: 'Quick verify persisted config'
+- scrollUntilVisible:
+    element:
+      text: '@capgo/capacitor-updater'
+    direction: UP
+    timeout: 120000
+- extendedWaitUntil:
+    visible: '.*M:persisted:success.*'
+    timeout: 120000

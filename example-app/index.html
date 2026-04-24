@@ -32,27 +32,43 @@
       <header class="hero">
         <p class="eyebrow">Capgo OTA validation</p>
         <h1>@capgo/capacitor-updater</h1>
-        <p class="lead">This screen combines the live update harness and example-app smoke actions used by Maestro.</p>
+        <p class="lead">
+          This screen exposes native updater methods, retained event markers, and fake-server state so Maestro can
+          verify real end-to-end update flows.
+        </p>
         <p id="e2e-summary" class="status-line">E2E summary: loading</p>
       </header>
 
       <section class="card result-panel">
+        <div class="quick-actions-panel">
+          <h3>Manual Flow Shortcuts</h3>
+          <p class="action-copy">
+            Stable top-level buttons for the live-update Maestro flows. They call the same JavaScript plugin methods as
+            the full action cards below.
+          </p>
+          <div id="quick-actions" class="quick-actions-grid"></div>
+          <button id="quick-run-smoke-sequence" type="button">Quick run smoke test sequence</button>
+        </div>
         <div class="panel-heading">
           <h2>Latest Result</h2>
           <div class="status-row">
             <p id="last-action" class="status-line">Last action: none</p>
+            <p id="last-action-result" class="status-line">Last action result: idle</p>
             <p id="action-status" class="status-line">Status: idle</p>
           </div>
+          <p id="last-error" class="status-line">Last error: none</p>
           <p id="sequence-status" class="status-line">Sequence: idle</p>
-          <p id="result-marker" class="status-line">Result marker: idle</p>
+          <p id="harness-ready" class="status-line">Harness ready: no</p>
+          <p id="result-marker" class="status-line">M:idle</p>
+          <p id="reload-marker" class="status-line">Reload marker: none</p>
         </div>
-        <pre id="plugin-output">Ready to run a smoke action.</pre>
+        <pre id="plugin-output">Ready to run a native updater action.</pre>
       </section>
 
       <section class="card">
         <div class="panel-heading">
-          <h2>Smoke Actions</h2>
-          <p>Each button runs one exposed example action while the live-update harness continues tracking bundle state.</p>
+          <h2>Native Actions</h2>
+          <p>Use these controls to drive the native plugin through the same JavaScript surface that real apps use.</p>
         </div>
         <button id="run-smoke-sequence" type="button">Run smoke test sequence</button>
         <div id="smoke-actions" class="actions-grid"></div>
@@ -60,24 +76,68 @@
 
       <section class="card">
         <h2>Static build data</h2>
-        <p id="app-label" class="status-line">Build label: loading</p>
-        <p id="scenario-id" class="status-line">Scenario: loading</p>
-        <p id="direct-update-mode" class="status-line">Direct update mode: loading</p>
-        <p id="server-url" class="status-line">Server URL: loading</p>
-        <p id="boot-count" class="status-line">Boot count: loading</p>
+        <div class="status-grid">
+          <p id="app-label" class="status-line">Build label: loading</p>
+          <p id="scenario-id" class="status-line">Scenario: loading</p>
+          <p id="direct-update-mode" class="status-line">Direct update mode: loading</p>
+          <p id="server-url" class="status-line">Server URL: loading</p>
+          <p id="boot-count" class="status-line">Boot count: loading</p>
+        </div>
       </section>
 
       <section class="card">
         <h2>Plugin state</h2>
-        <p id="notify-status" class="status-line">Notify app ready: pending</p>
-        <p id="auto-update-enabled" class="status-line">Auto update enabled: loading</p>
-        <p id="auto-update-available" class="status-line">Auto update available: loading</p>
-        <p id="current-bundle-source" class="status-line">Current bundle source: loading</p>
-        <p id="current-bundle" class="status-line">Current bundle version: loading</p>
-        <p id="next-bundle" class="status-line">Next bundle version: loading</p>
-        <p id="bundle-count" class="status-line">Downloaded bundle count: loading</p>
-        <p id="last-download" class="status-line">Last completed download: none</p>
+        <div class="status-grid">
+          <p id="notify-status" class="status-line">Notify app ready: pending</p>
+          <p id="auto-update-enabled" class="status-line">Auto update enabled: loading</p>
+          <p id="auto-update-available" class="status-line">Auto update available: loading</p>
+          <p id="current-bundle-source" class="status-line">Current bundle source: loading</p>
+          <p id="current-bundle" class="status-line">Current bundle version: loading</p>
+          <p id="next-bundle" class="status-line">Next bundle version: loading</p>
+          <p id="bundle-count" class="status-line">Downloaded bundle count: loading</p>
+          <p id="last-download" class="status-line">Last completed download: none</p>
+          <p id="latest-version-state" class="status-line">Latest available version: none</p>
+          <p id="failed-update-state" class="status-line">Failed update: none</p>
+          <p id="get-channel-state" class="status-line">Current channel: none</p>
+          <p id="list-channels-state" class="status-line">Available channels: none</p>
+          <p id="shake-menu-state" class="status-line">Shake menu enabled: loading</p>
+          <p id="shake-channel-selector-state" class="status-line">Shake channel selector enabled: loading</p>
+          <p id="app-id-state" class="status-line">App ID: not-yet-observed</p>
+        </div>
         <button id="refresh-state" type="button">Refresh state</button>
+      </section>
+
+      <section class="card">
+        <h2>Retained Events</h2>
+        <div class="status-grid">
+          <p id="app-ready-event" class="status-line">appReady event: none</p>
+          <p id="set-event" class="status-line">set event: none</p>
+          <p id="set-next-event" class="status-line">setNext event: none</p>
+          <p id="update-failed-event" class="status-line">updateFailed event: none</p>
+          <p id="channel-private-event" class="status-line">channelPrivate event: none</p>
+          <p id="download-event" class="status-line">download event: none</p>
+          <p id="download-failed-event" class="status-line">downloadFailed event: none</p>
+          <p id="no-need-update-event" class="status-line">noNeedUpdate event: none</p>
+          <p id="breaking-event" class="status-line">breakingAvailable event: none</p>
+          <p id="major-event" class="status-line">majorAvailable event: none</p>
+          <p id="flexible-update-event" class="status-line">flexible update event: none</p>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Fake Server State</h2>
+        <div class="status-grid">
+          <p id="server-active-release" class="status-line">Server active release: none</p>
+          <p id="server-last-version" class="status-line">Server saw version_name: none</p>
+          <p id="server-last-app-id" class="status-line">Server saw app_id: none</p>
+          <p id="server-last-custom-id" class="status-line">Server saw custom_id: none</p>
+          <p id="server-last-channel" class="status-line">Server saw channel request: none</p>
+          <p id="server-last-default-channel" class="status-line">Server saw defaultChannel: none</p>
+          <p id="server-update-url" class="status-line">Server update URL: none</p>
+          <p id="server-channel-url" class="status-line">Server channel URL: none</p>
+          <p id="server-stats-url" class="status-line">Server stats URL: none</p>
+          <p id="server-stats-actions" class="status-line">Server stats actions: none</p>
+        </div>
       </section>
 
       <section class="card">
