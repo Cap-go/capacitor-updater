@@ -2,9 +2,9 @@ appId: app.capgo.updater
 ---
 - launchApp
 - extendedWaitUntil:
-    visible: '@capgo/capacitor-updater'
+    visible: 'CAPGO OTA VALIDATION'
     timeout: 90000
-- assertVisible: '@capgo/capacitor-updater'
+- assertVisible: 'CAPGO OTA VALIDATION'
 - scrollUntilVisible:
     element:
       text: 'Run notifyAppReady'
