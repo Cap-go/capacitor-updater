@@ -770,13 +770,13 @@ import UIKit
                 userInfo: [NSLocalizedDescriptionKey: "Manifest download failed due to invalid or missing entries"]
             )
             // Update bundle status to ERROR if download failed
-            let errorBundle = bundleInfo.setStatus(status: BundleStatus.ERROR.localizedString)
+            let errorBundle = bundleInfo.setStatus(status: BundleStatus.ERROR.storedValue)
             self.saveBundleInfo(id: id, bundle: errorBundle)
             throw resolvedError
         }
 
         // Update bundle status to PENDING after successful download
-        let updatedBundle = bundleInfo.setStatus(status: BundleStatus.PENDING.localizedString)
+        let updatedBundle = bundleInfo.setStatus(status: BundleStatus.PENDING.storedValue)
         self.saveBundleInfo(id: id, bundle: updatedBundle)
 
         // Send stats for manifest download complete
@@ -1336,7 +1336,7 @@ import UIKit
         if removeInfo {
             self.removeBundleInfo(id: id)
         } else {
-            self.saveBundleInfo(id: id, bundle: deleted.setStatus(status: BundleStatus.DELETED.localizedString))
+            self.saveBundleInfo(id: id, bundle: deleted.setStatus(status: BundleStatus.DELETED.storedValue))
         }
         logger.info("Bundle deleted successfully")
         logger.debug("Version: \(deleted.getVersionName())")
@@ -2070,7 +2070,7 @@ import UIKit
     private func setBundleStatus(id: String, status: BundleStatus) {
         logger.info("Setting status for bundle [\(id)] to \(status)")
         let info = self.getBundleInfo(id: id)
-        self.saveBundleInfo(id: id, bundle: info.setStatus(status: status.localizedString))
+        self.saveBundleInfo(id: id, bundle: info.setStatus(status: status.storedValue))
     }
 
     public func getCurrentBundle() -> BundleInfo {

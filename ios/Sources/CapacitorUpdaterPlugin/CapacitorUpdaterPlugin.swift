@@ -1257,7 +1257,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         logger.info("Current bundle is: \(current.toString())")
 
-        if BundleStatus.SUCCESS.localizedString != current.getStatus() {
+        if BundleStatus.SUCCESS.storedValue != current.getStatus() {
             logger.error("notifyAppReady was not called, roll back current bundle: \(current.toString())")
             logger.error("Did you forget to call 'notifyAppReady()' in your Capacitor App code?")
             self.notifyListeners("updateFailed", data: [

@@ -31,19 +31,45 @@ func == (lhs: LocalizedString, rhs: LocalizedString) -> Bool {
     return lhs.value == rhs.value
 }
 
-enum BundleStatus: LocalizedString, Decodable, Encodable {
+enum BundleStatus: LocalizedString, CaseIterable, Decodable, Encodable {
     case SUCCESS = "success"
     case ERROR = "error"
     case PENDING  = "pending"
     case DELETED  = "deleted"
     case DOWNLOADING  = "downloading"
 
+    var storedValue: String {
+        switch self {
+        case .SUCCESS:
+            return "success"
+        case .ERROR:
+            return "error"
+        case .PENDING:
+            return "pending"
+        case .DELETED:
+            return "deleted"
+        case .DOWNLOADING:
+            return "downloading"
+        }
+    }
+
     var localizedString: String {
         return self.rawValue.value
     }
 
     init?(localizedString: String) {
-        self.init(rawValue: LocalizedString(localized: localizedString))
+        let normalized = localizedString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let status = BundleStatus.allCases.first(where: { $0.localizedString == normalized }) else {
+            return nil
+        }
+        self = status
+    }
+
+    init?(storedValue: String) {
+        guard let status = BundleStatus.fromStoredValue(storedValue) else {
+            return nil
+        }
+        self = status
     }
 
     private static func fromStoredValue(_ value: String) -> BundleStatus? {
@@ -52,20 +78,8 @@ enum BundleStatus: LocalizedString, Decodable, Encodable {
             return status
         }
 
-        switch normalized.uppercased() {
-        case "SUCCESS":
-            return .SUCCESS
-        case "ERROR":
-            return .ERROR
-        case "PENDING":
-            return .PENDING
-        case "DELETED":
-            return .DELETED
-        case "DOWNLOADING":
-            return .DOWNLOADING
-        default:
-            return nil
-        }
+        let storedValue = normalized.lowercased()
+        return BundleStatus.allCases.first(where: { $0.storedValue == storedValue })
     }
 
     init(from decoder: Decoder) throws {
@@ -90,7 +104,7 @@ enum BundleStatus: LocalizedString, Decodable, Encodable {
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
-        try container.encode(self.localizedString)
+        try container.encode(self.storedValue)
     }
 }
 

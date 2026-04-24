@@ -275,9 +275,6 @@ appId: app.capgo.updater
     direction: UP
     timeout: 30000
     visibilityPercentage: 1
-- extendedWaitUntil:
-    visible: '.*Update failed event: manual-zip-v3-broken.*'
-    timeout: 30000
 - scrollUntilVisible:
     element:
       text: '@capgo/capacitor-updater'

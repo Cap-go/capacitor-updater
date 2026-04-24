@@ -395,6 +395,14 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(BundleStatus.DOWNLOADING.localizedString, "downloading")
     }
 
+    func testBundleStatusStoredValue() {
+        XCTAssertEqual(BundleStatus.SUCCESS.storedValue, "success")
+        XCTAssertEqual(BundleStatus.ERROR.storedValue, "error")
+        XCTAssertEqual(BundleStatus.PENDING.storedValue, "pending")
+        XCTAssertEqual(BundleStatus.DELETED.storedValue, "deleted")
+        XCTAssertEqual(BundleStatus.DOWNLOADING.storedValue, "downloading")
+    }
+
     func testBundleStatusFromLocalizedString() {
         XCTAssertEqual(BundleStatus(localizedString: "success"), BundleStatus.SUCCESS)
         XCTAssertEqual(BundleStatus(localizedString: "error"), BundleStatus.ERROR)
@@ -402,6 +410,11 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(BundleStatus(localizedString: "deleted"), BundleStatus.DELETED)
         XCTAssertEqual(BundleStatus(localizedString: "downloading"), BundleStatus.DOWNLOADING)
         XCTAssertNil(BundleStatus(localizedString: "invalid"))
+    }
+
+    func testBundleStatusEncodesStableStoredValue() throws {
+        let data = try JSONEncoder().encode(BundleStatus.SUCCESS)
+        XCTAssertEqual(String(data: data, encoding: .utf8), "\"success\"")
     }
 
     // MARK: - DelayCondition Tests
@@ -682,7 +695,7 @@ class CapacitorUpdaterTests: XCTestCase {
 
         updater.finalizePendingReload(bundle: pendingBundle, previousBundleName: "1.0.0")
 
-        XCTAssertEqual(updater.bundleInfos["pending-id"]?.getStatus(), BundleStatus.SUCCESS.localizedString)
+        XCTAssertEqual(updater.bundleInfos["pending-id"]?.getStatus(), BundleStatus.SUCCESS.storedValue)
         XCTAssertEqual(updater.lastStatsAction, "set")
         XCTAssertEqual(updater.lastStatsVersionName, "2.0.0")
         XCTAssertEqual(updater.lastStatsOldVersionName, "1.0.0")

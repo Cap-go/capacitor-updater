@@ -542,50 +542,48 @@ async function refreshServerState() {
 
 async function performRefreshState() {
   try {
-    state.lastPhase = 'refresh-state:current';
+    state.lastPhase = 'refresh-state:core';
     renderState();
-    const currentResult = await withTimeout('refreshState current()', () => plugin.current());
-    state.lastPhase = 'refresh-state:get-next-bundle';
-    renderState();
-    const nextBundle = await withTimeout('refreshState getNextBundle()', () => plugin.getNextBundle());
-    state.lastPhase = 'refresh-state:list';
-    renderState();
-    const listResult = await withTimeout('refreshState list()', () => plugin.list());
-    state.lastPhase = 'refresh-state:is-auto-update-enabled';
-    renderState();
-    const autoUpdateEnabled = await withTimeout(
-      'refreshState isAutoUpdateEnabled()',
-      () => plugin.isAutoUpdateEnabled(),
-    );
-    state.lastPhase = 'refresh-state:is-auto-update-available';
-    renderState();
-    const autoUpdateAvailable = await withTimeout(
-      'refreshState isAutoUpdateAvailable()',
-      () => plugin.isAutoUpdateAvailable(),
-    );
-    state.lastPhase = 'refresh-state:is-shake-menu-enabled';
-    renderState();
-    const shakeMenu = await withTimeout('refreshState isShakeMenuEnabled()', () => plugin.isShakeMenuEnabled());
-    state.lastPhase = 'refresh-state:is-shake-channel-selector-enabled';
-    renderState();
-    const shakeChannelSelector = await withTimeout(
-      'refreshState isShakeChannelSelectorEnabled()',
-      () => plugin.isShakeChannelSelectorEnabled(),
-    );
+    const [currentResult, nextBundle, listResult] = await Promise.all([
+      withTimeout('refreshState current()', () => plugin.current()),
+      withTimeout('refreshState getNextBundle()', () => plugin.getNextBundle()),
+      withTimeout('refreshState list()', () => plugin.list()),
+    ]);
 
     state.currentBundle = currentResult?.bundle ?? currentResult;
     state.nextBundle = nextBundle?.bundle ?? nextBundle;
     state.bundles = listResult?.bundles ?? [];
-    state.autoUpdateEnabled = String(autoUpdateEnabled?.enabled ?? 'unknown');
-    state.autoUpdateAvailable = String(autoUpdateAvailable?.available ?? 'unknown');
-    state.shakeMenuEnabled = String(shakeMenu?.enabled ?? 'unknown');
-    state.shakeChannelSelectorEnabled = String(shakeChannelSelector?.enabled ?? 'unknown');
     state.lastDownload = getBundleVersion(getLastDownloadedBundle(state.bundles));
 
     const lastDownloadedBundle = getLastDownloadedBundle(state.bundles);
     if (lastDownloadedBundle) {
       state.lastDownloadedBundleId = lastDownloadedBundle.id ?? null;
       state.lastDownloadedBundleVersion = getBundleVersion(lastDownloadedBundle);
+    }
+
+    state.lastPhase = 'refresh-state:probes';
+    renderState();
+    const [autoUpdateEnabled, autoUpdateAvailable, shakeMenu, shakeChannelSelector] = await Promise.allSettled([
+      withTimeout('refreshState isAutoUpdateEnabled()', () => plugin.isAutoUpdateEnabled()),
+      withTimeout('refreshState isAutoUpdateAvailable()', () => plugin.isAutoUpdateAvailable()),
+      withTimeout('refreshState isShakeMenuEnabled()', () => plugin.isShakeMenuEnabled()),
+      withTimeout('refreshState isShakeChannelSelectorEnabled()', () => plugin.isShakeChannelSelectorEnabled()),
+    ]);
+
+    if (autoUpdateEnabled.status === 'fulfilled') {
+      state.autoUpdateEnabled = String(autoUpdateEnabled.value?.enabled ?? 'unknown');
+    }
+
+    if (autoUpdateAvailable.status === 'fulfilled') {
+      state.autoUpdateAvailable = String(autoUpdateAvailable.value?.available ?? 'unknown');
+    }
+
+    if (shakeMenu.status === 'fulfilled') {
+      state.shakeMenuEnabled = String(shakeMenu.value?.enabled ?? 'unknown');
+    }
+
+    if (shakeChannelSelector.status === 'fulfilled') {
+      state.shakeChannelSelectorEnabled = String(shakeChannelSelector.value?.enabled ?? 'unknown');
     }
 
     state.lastError = null;
@@ -1858,6 +1856,12 @@ const actions = [
     showWhen: () => serverUrl.startsWith('http'),
     markerId: 'download',
     run: async () => {
+      state.eventMarkers.download = 'none';
+      state.eventMarkers.downloadComplete = 'none';
+      state.eventMarkers.downloadFailed = 'none';
+      state.eventMarkers.updateAvailable = 'none';
+      renderState();
+
       state.lastPhase = 'download-latest-bundle:getLatest:invoke:start';
       renderState();
       const latestPromise = plugin.getLatest();
@@ -1887,6 +1891,13 @@ const actions = [
       state.lastDownloadedBundleVersion = latest.version;
       state.lastPhase = 'download-latest-bundle:list:success';
       renderState();
+
+      await waitForEventMarker('updateAvailable', latest.version, 30000);
+      await waitForEventMarker('downloadComplete', latest.version, 30000);
+      invariant(
+        state.eventMarkers.downloadFailed === 'none',
+        `download() emitted downloadFailed for ${latest.version}: ${state.eventMarkers.downloadFailed}`,
+      );
 
       return {
         downloadResult,
@@ -1921,8 +1932,13 @@ const actions = [
     showWhen: () => serverUrl.startsWith('http'),
     markerId: 'queue',
     run: async () => {
+      state.eventMarkers.setNext = 'none';
+      renderState();
+
       const bundle = await getLastDownloadedBundleOrThrow();
-      return plugin.next({ id: bundle.id });
+      const result = await plugin.next({ id: bundle.id });
+      await waitForEventMarker('setNext', getBundleVersion(bundle), 30000);
+      return result;
     },
   },
   {
