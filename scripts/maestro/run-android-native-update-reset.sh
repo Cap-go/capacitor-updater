@@ -82,10 +82,22 @@ wait_for_package_manager() {
 }
 
 ensure_android_device() {
-  ANDROID_DEVICE_ID="${ANDROID_DEVICE_ID:-$(adb get-serialno 2>/dev/null | tr -d '\r')}"
+  if [[ -n "$ANDROID_DEVICE_ID" && "$ANDROID_DEVICE_ID" != "unknown" ]]; then
+    return 0
+  fi
+
+  if run_with_timeout "$ANDROID_BOOT_TIMEOUT_SECONDS" adb wait-for-device >/dev/null; then
+    ANDROID_DEVICE_ID="$(adb get-serialno 2>/dev/null | tr -d '\r')"
+  else
+    local status=$?
+    if [[ $status -eq 124 ]]; then
+      echo "Android emulator did not become available within ${ANDROID_BOOT_TIMEOUT_SECONDS} seconds for the native reset Maestro test." >&2
+    fi
+    return "$status"
+  fi
   if [[ -z "$ANDROID_DEVICE_ID" || "$ANDROID_DEVICE_ID" == "unknown" ]]; then
     echo "Unable to determine the Android emulator/device ID for the native reset Maestro test." >&2
-    exit 1
+    return 1
   fi
   return 0
 }
@@ -129,31 +141,20 @@ build_android_app() {
 
   (
     cd "$EXAMPLE_DIR"
-    VITE_CAPGO_APP_LABEL="$app_label" \
-      VITE_CAPGO_SCENARIO="$SCENARIO_ID" \
-      VITE_CAPGO_DIRECT_UPDATE="$direct_update" \
-      VITE_CAPGO_SERVER_URL="$update_url" \
-      CAPGO_AUTO_UPDATE="$auto_update" \
-      CAPGO_DIRECT_UPDATE="$direct_update" \
-      CAPGO_UPDATE_URL="$update_url" \
-      CAPGO_STATS_URL="$DEVICE_SERVER_URL/api/stats" \
-      CAPGO_CHANNEL_URL="$DEVICE_SERVER_URL/api/channel" \
-      CAPGO_NATIVE_VERSION_NAME="$version_name" \
-      CAPGO_NATIVE_VERSION_CODE="$version_code" \
-      bun run build
+    export VITE_CAPGO_APP_LABEL="$app_label"
+    export VITE_CAPGO_SCENARIO="$SCENARIO_ID"
+    export VITE_CAPGO_DIRECT_UPDATE="$direct_update"
+    export VITE_CAPGO_SERVER_URL="$update_url"
+    export CAPGO_AUTO_UPDATE="$auto_update"
+    export CAPGO_DIRECT_UPDATE="$direct_update"
+    export CAPGO_UPDATE_URL="$update_url"
+    export CAPGO_STATS_URL="$DEVICE_SERVER_URL/api/stats"
+    export CAPGO_CHANNEL_URL="$DEVICE_SERVER_URL/api/channel"
+    export CAPGO_NATIVE_VERSION_NAME="$version_name"
+    export CAPGO_NATIVE_VERSION_CODE="$version_code"
 
-    VITE_CAPGO_APP_LABEL="$app_label" \
-      VITE_CAPGO_SCENARIO="$SCENARIO_ID" \
-      VITE_CAPGO_DIRECT_UPDATE="$direct_update" \
-      VITE_CAPGO_SERVER_URL="$update_url" \
-      CAPGO_AUTO_UPDATE="$auto_update" \
-      CAPGO_DIRECT_UPDATE="$direct_update" \
-      CAPGO_UPDATE_URL="$update_url" \
-      CAPGO_STATS_URL="$DEVICE_SERVER_URL/api/stats" \
-      CAPGO_CHANNEL_URL="$DEVICE_SERVER_URL/api/channel" \
-      CAPGO_NATIVE_VERSION_NAME="$version_name" \
-      CAPGO_NATIVE_VERSION_CODE="$version_code" \
-      bunx cap sync android
+    bun run build
+    bunx cap sync android
   )
 
   (
