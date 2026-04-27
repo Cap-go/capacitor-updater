@@ -144,6 +144,18 @@ const quickActionIds = [
   'delete-inactive-bundle',
   'reset-to-builtin',
 ];
+const smokeSequenceDefaultDelayMs = 150;
+const smokeSequenceMutationDelayMs = 300;
+const smokeSequenceExtendedSettleActionIds = new Set([
+  'set-app-id',
+  'set-custom-id',
+  'set-update-url',
+  'set-stats-url',
+  'set-channel-url',
+  'set-channel-beta',
+  'unset-channel',
+  'remove-all-listeners',
+]);
 const smokeSequenceActionIdsByScenario = {
   'manual-zip-no-persist': [
     'set-custom-id',
@@ -243,6 +255,18 @@ function getServerBaseUrl() {
   } catch {
     return null;
   }
+}
+
+function pause(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function getSmokeSequenceDelayMs(actionId) {
+  if (smokeSequenceExtendedSettleActionIds.has(actionId)) {
+    return smokeSequenceMutationDelayMs;
+  }
+
+  return smokeSequenceDefaultDelayMs;
 }
 
 function createServerEndpoint(pathname) {
@@ -2239,6 +2263,7 @@ async function runSmokeSequence() {
           () => runAction(action, values, { skipRefresh: true }),
           action.smokeTimeoutMs ?? 45000,
         );
+        await pause(getSmokeSequenceDelayMs(action.id));
       }
 
       state.lastAction = 'Smoke test sequence';
