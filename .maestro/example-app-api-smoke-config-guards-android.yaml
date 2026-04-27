@@ -15,12 +15,12 @@ appId: app.capgo.updater
     visibilityPercentage: 1
 - scrollUntilVisible:
     element:
-      text: 'Run smoke test sequence'
+      text: 'Quick run smoke test sequence'
     direction: DOWN
     timeout: 30000
     visibilityPercentage: 1
 - tapOn:
-    text: 'Run smoke test sequence'
+    text: 'Quick run smoke test sequence'
     retryTapIfNoChange: true
 - scrollUntilVisible:
     element:

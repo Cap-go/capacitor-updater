@@ -9,165 +9,27 @@ appId: app.capgo.updater
     timeout: 120000
 - scrollUntilVisible:
     element:
-      text: 'Apply app ID'
-    direction: DOWN
+      text: '@capgo/capacitor-updater'
+    direction: UP
     timeout: 120000
-    centerElement: true
-    visibilityPercentage: 1
-    speed: 80
-- tapOn:
-    text: 'Apply app ID'
-    retryTapIfNoChange: true
 - scrollUntilVisible:
     element:
-      text: 'Action marker: set-app-id:expected-rejection'
-    direction: DOWN
-    timeout: 120000
-    visibilityPercentage: 1
-- scrollUntilVisible:
-    element:
-      text: 'Apply custom ID'
+      text: 'Quick run smoke test sequence'
     direction: DOWN
     timeout: 30000
-    centerElement: true
+    centerElement: false
     visibilityPercentage: 1
 - tapOn:
-    text: 'Apply custom ID'
+    text: 'Quick run smoke test sequence'
     retryTapIfNoChange: true
 - scrollUntilVisible:
     element:
-      text: 'Action marker: set-custom-id:success'
-    direction: DOWN
+      text: '@capgo/capacitor-updater'
+    direction: UP
     timeout: 120000
-    visibilityPercentage: 1
-- scrollUntilVisible:
-    element:
-      text: 'Apply update URL'
-    direction: DOWN
-    timeout: 30000
-    centerElement: true
-    visibilityPercentage: 1
-- tapOn:
-    text: 'Apply update URL'
-    retryTapIfNoChange: true
-- scrollUntilVisible:
-    element:
-      text: 'Action marker: set-update-url:expected-rejection'
-    direction: DOWN
-    timeout: 120000
-    visibilityPercentage: 1
-- scrollUntilVisible:
-    element:
-      text: 'Apply stats URL'
-    direction: DOWN
-    timeout: 30000
-    centerElement: true
-    visibilityPercentage: 1
-- tapOn:
-    text: 'Apply stats URL'
-    retryTapIfNoChange: true
-- scrollUntilVisible:
-    element:
-      text: 'Action marker: set-stats-url:expected-rejection'
-    direction: DOWN
-    timeout: 120000
-    visibilityPercentage: 1
-- scrollUntilVisible:
-    element:
-      text: 'Apply channel URL'
-    direction: DOWN
-    timeout: 30000
-    centerElement: true
-    visibilityPercentage: 1
-- tapOn:
-    text: 'Apply channel URL'
-    retryTapIfNoChange: true
-- scrollUntilVisible:
-    element:
-      text: 'Action marker: set-channel-url:expected-rejection'
-    direction: DOWN
-    timeout: 120000
-    visibilityPercentage: 1
-- scrollUntilVisible:
-    element:
-      text: 'Set channel beta'
-    direction: DOWN
-    timeout: 30000
-    centerElement: true
-    visibilityPercentage: 1
-- tapOn:
-    text: 'Set channel beta'
-    retryTapIfNoChange: true
-- scrollUntilVisible:
-    element:
-      text: 'Run getChannel()'
-    direction: DOWN
-    timeout: 30000
-    centerElement: true
-    visibilityPercentage: 1
-- tapOn:
-    text: 'Run getChannel()'
-    retryTapIfNoChange: true
-- scrollUntilVisible:
-    element:
-      text: 'Set channel private-alpha'
-    direction: DOWN
-    timeout: 30000
-    centerElement: true
-    visibilityPercentage: 1
-- tapOn:
-    text: 'Set channel private-alpha'
-    retryTapIfNoChange: true
-- scrollUntilVisible:
-    element:
-      text: 'Run unsetChannel()'
-    direction: DOWN
-    timeout: 30000
-    centerElement: true
-    visibilityPercentage: 1
-- tapOn:
-    text: 'Run unsetChannel()'
-    retryTapIfNoChange: true
-- scrollUntilVisible:
-    element:
-      text: 'Run getLatest()'
-    direction: DOWN
-    timeout: 120000
-    centerElement: true
-    visibilityPercentage: 1
-- tapOn:
-    text: 'Run getLatest()'
-    retryTapIfNoChange: true
-- scrollUntilVisible:
-    element:
-      text: 'Latest available version: manual-zip-config-guards-v1'
-    direction: DOWN
-    timeout: 120000
-    visibilityPercentage: 1
-- scrollUntilVisible:
-    element:
-      text: 'Last setChannel beta check: expected-rejection'
-    direction: DOWN
-    timeout: 120000
-    visibilityPercentage: 1
-- scrollUntilVisible:
-    element:
-      text: 'Last getChannel check: none'
-    direction: DOWN
-    timeout: 120000
-    visibilityPercentage: 1
-- scrollUntilVisible:
-    element:
-      text: 'Last private channel check: expected-rejection'
-    direction: DOWN
-    timeout: 120000
-    visibilityPercentage: 1
-- scrollUntilVisible:
-    element:
-      text: 'Last unsetChannel check: success'
-    direction: DOWN
-    timeout: 120000
-    visibilityPercentage: 1
+- extendedWaitUntil:
+    visible: '.*M:smoke-sequence:success.*'
+    timeout: 180000
 - runFlow: helpers/cold-launch-app.yaml
 - extendedWaitUntil:
     visible: '@capgo/capacitor-updater'
