@@ -10,6 +10,8 @@ SCENARIO_ID="${CAPGO_MAESTRO_SMOKE_SCENARIO:-manual-zip}"
 FLOW_PATH="$ROOT_DIR/.maestro/android/example-app-smoke.yaml"
 if [[ "$SCENARIO_ID" == "manual-zip-config-guards" ]]; then
   FLOW_PATH="$ROOT_DIR/.maestro/android/example-app-smoke-config-guards.yaml"
+elif [[ "$SCENARIO_ID" == "manual-zip-no-persist" ]]; then
+  FLOW_PATH="$ROOT_DIR/.maestro/android/example-app-smoke-no-persist.yaml"
 fi
 ARTIFACT_DIR="$ROOT_DIR/.maestro-artifacts"
 HOST_SERVER_PORT="${CAPGO_MAESTRO_PORT:-3192}"
@@ -19,6 +21,7 @@ EMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_EMULATOR_BOOT_TIMEOUT_SECONDS:-18
 MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-600}"
 MAESTRO_DRIVER_STARTUP_TIMEOUT="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-180000}"
 MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
+MAESTRO_JAVA_TOOL_OPTIONS="${CAPGO_MAESTRO_JAVA_TOOL_OPTIONS:--Djava.net.preferIPv4Stack=true}"
 MAESTRO_TEST_RETRIES="${CAPGO_MAESTRO_TEST_RETRIES:-3}"
 APK_INSTALL_RETRIES="${CAPGO_MAESTRO_APK_INSTALL_RETRIES:-3}"
 PACKAGE_SERVICE_TIMEOUT_SECONDS="${CAPGO_MAESTRO_ANDROID_PACKAGE_TIMEOUT_SECONDS:-120}"
@@ -32,6 +35,12 @@ APP_ID="app.capgo.updater"
 FLOW_RETRY_PATTERN="TcpForwarder.waitFor|allocateForwarder|TimeoutException|Android driver did not start up in time|Maestro Android driver did not start up in time|UNAVAILABLE: io exception|Connection refused|Broken pipe|Failure calling service package|Can.t find service: package|Can.t find service: settings|Cannot access system provider: 'settings'"
 TIMEOUT_CMD="$(command -v gtimeout || command -v timeout || true)"
 SERVER_PID=""
+
+if [[ -n "${JAVA_TOOL_OPTIONS:-}" ]]; then
+  export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS} ${MAESTRO_JAVA_TOOL_OPTIONS}"
+else
+  export JAVA_TOOL_OPTIONS="${MAESTRO_JAVA_TOOL_OPTIONS}"
+fi
 
 cleanup() {
   if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then

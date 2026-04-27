@@ -13,6 +13,7 @@ appId: app.capgo.updater
     direction: DOWN
     timeout: 30000
     centerElement: true
+    visibilityPercentage: 1
 - tapOn: 'Quick apply runtime URLs'
 - scrollUntilVisible:
     element:
@@ -24,12 +25,12 @@ appId: app.capgo.updater
     timeout: 120000
 - scrollUntilVisible:
     element:
-      text: 'Quick run smoke test sequence'
+      text: 'Run smoke test sequence'
     direction: DOWN
     timeout: 30000
     centerElement: true
     visibilityPercentage: 1
-- tapOn: 'Quick run smoke test sequence'
+- tapOn: 'Run smoke test sequence'
 - scrollUntilVisible:
     element:
       text: '@capgo/capacitor-updater'
@@ -55,6 +56,7 @@ appId: app.capgo.updater
       text: 'Quick open store page'
     direction: DOWN
     timeout: 30000
+    visibilityPercentage: 1
 - tapOn: 'Quick open store page'
 - extendedWaitUntil:
     notVisible: '@capgo/capacitor-updater'
@@ -72,6 +74,7 @@ appId: app.capgo.updater
     direction: DOWN
     timeout: 30000
     centerElement: true
+    visibilityPercentage: 1
 - tapOn: 'Quick verify persisted config'
 - scrollUntilVisible:
     element:

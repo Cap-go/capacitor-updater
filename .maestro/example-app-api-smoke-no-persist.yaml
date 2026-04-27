@@ -19,7 +19,7 @@ appId: app.capgo.updater
     text: 'Apply app ID'
     retryTapIfNoChange: true
 - extendedWaitUntil:
-    visible: 'Action marker: set-app-id:expected-rejection'
+    visible: 'Action marker: set-app-id:success'
     timeout: 120000
 - scrollUntilVisible:
     element:
@@ -45,7 +45,7 @@ appId: app.capgo.updater
     text: 'Apply update URL'
     retryTapIfNoChange: true
 - extendedWaitUntil:
-    visible: 'Action marker: set-update-url:expected-rejection'
+    visible: 'Action marker: set-update-url:success'
     timeout: 120000
 - scrollUntilVisible:
     element:
@@ -58,7 +58,7 @@ appId: app.capgo.updater
     text: 'Apply stats URL'
     retryTapIfNoChange: true
 - extendedWaitUntil:
-    visible: 'Action marker: set-stats-url:expected-rejection'
+    visible: 'Action marker: set-stats-url:success'
     timeout: 120000
 - scrollUntilVisible:
     element:
@@ -71,7 +71,20 @@ appId: app.capgo.updater
     text: 'Apply channel URL'
     retryTapIfNoChange: true
 - extendedWaitUntil:
-    visible: 'Action marker: set-channel-url:expected-rejection'
+    visible: 'Action marker: set-channel-url:success'
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      text: 'Run listChannels()'
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+    visibilityPercentage: 1
+- tapOn:
+    text: 'Run listChannels()'
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible: 'Action marker: list-channels:success'
     timeout: 120000
 - scrollUntilVisible:
     element:
@@ -84,7 +97,7 @@ appId: app.capgo.updater
     text: 'Set channel beta'
     retryTapIfNoChange: true
 - extendedWaitUntil:
-    visible: 'Action marker: set-channel-beta:expected-rejection'
+    visible: 'Action marker: set-channel-beta:success'
     timeout: 120000
 - scrollUntilVisible:
     element:
@@ -97,7 +110,7 @@ appId: app.capgo.updater
     text: 'Run getChannel()'
     retryTapIfNoChange: true
 - extendedWaitUntil:
-    visible: 'Action marker: get-channel:'
+    visible: 'Action marker: get-channel:beta'
     timeout: 120000
 - scrollUntilVisible:
     element:

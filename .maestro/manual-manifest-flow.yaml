@@ -14,7 +14,8 @@ appId: app.capgo.updater
       text: 'Quick apply runtime URLs'
     direction: DOWN
     timeout: 30000
-    centerElement: true
+    centerElement: false
+    visibilityPercentage: 1
 - tapOn: 'Quick apply runtime URLs'
 - scrollUntilVisible:
     element:
@@ -27,7 +28,8 @@ appId: app.capgo.updater
       text: 'Quick reset release'
     direction: DOWN
     timeout: 30000
-    centerElement: true
+    centerElement: false
+    visibilityPercentage: 1
 - tapOn: 'Quick reset release'
 - scrollUntilVisible:
     element:
@@ -40,7 +42,8 @@ appId: app.capgo.updater
       text: 'Quick download latest bundle'
     direction: DOWN
     timeout: 30000
-    centerElement: true
+    centerElement: false
+    visibilityPercentage: 1
 - tapOn: 'Quick download latest bundle'
 - scrollUntilVisible:
     element:
@@ -67,7 +70,8 @@ appId: app.capgo.updater
       text: 'Quick queue bundle'
     direction: DOWN
     timeout: 30000
-    centerElement: true
+    centerElement: false
+    visibilityPercentage: 1
 - tapOn: 'Quick queue bundle'
 - scrollUntilVisible:
     element:
@@ -88,7 +92,8 @@ appId: app.capgo.updater
       text: 'Quick reload app'
     direction: DOWN
     timeout: 30000
-    centerElement: true
+    centerElement: false
+    visibilityPercentage: 1
 - tapOn: 'Quick reload app'
 - extendedWaitUntil:
     visible: '@capgo/capacitor-updater'
@@ -105,7 +110,8 @@ appId: app.capgo.updater
       text: 'Quick advance release'
     direction: DOWN
     timeout: 30000
-    centerElement: true
+    centerElement: false
+    visibilityPercentage: 1
 - tapOn: 'Quick advance release'
 - scrollUntilVisible:
     element:
@@ -118,7 +124,8 @@ appId: app.capgo.updater
       text: 'Quick download latest bundle'
     direction: DOWN
     timeout: 30000
-    centerElement: true
+    centerElement: false
+    visibilityPercentage: 1
 - tapOn: 'Quick download latest bundle'
 - scrollUntilVisible:
     element:
@@ -145,7 +152,8 @@ appId: app.capgo.updater
       text: 'Quick queue bundle'
     direction: DOWN
     timeout: 30000
-    centerElement: true
+    centerElement: false
+    visibilityPercentage: 1
 - tapOn: 'Quick queue bundle'
 - scrollUntilVisible:
     element:
@@ -166,7 +174,8 @@ appId: app.capgo.updater
       text: 'Quick reload app'
     direction: DOWN
     timeout: 30000
-    centerElement: true
+    centerElement: false
+    visibilityPercentage: 1
 - tapOn: 'Quick reload app'
 - extendedWaitUntil:
     visible: '@capgo/capacitor-updater'
@@ -183,7 +192,8 @@ appId: app.capgo.updater
       text: 'Quick confirm no update'
     direction: DOWN
     timeout: 30000
-    centerElement: true
+    centerElement: false
+    visibilityPercentage: 1
 - tapOn: 'Quick confirm no update'
 - scrollUntilVisible:
     element:

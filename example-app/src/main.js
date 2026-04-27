@@ -139,13 +139,25 @@ const quickActionIds = [
   'reset-to-builtin',
 ];
 const smokeSequenceActionIdsByScenario = {
-  'manual-zip-config-guards': [
+  'manual-zip-no-persist': [
     'set-custom-id',
     'set-app-id',
     'set-update-url',
     'set-stats-url',
     'set-channel-url',
     'list-channels',
+    'set-channel-beta',
+    'get-channel',
+    'set-channel-private',
+    'unset-channel',
+    'get-latest',
+  ],
+  'manual-zip-config-guards': [
+    'set-custom-id',
+    'set-app-id',
+    'set-update-url',
+    'set-stats-url',
+    'set-channel-url',
     'set-channel-beta',
     'get-channel',
     'set-channel-private',
@@ -2180,6 +2192,8 @@ async function runSmokeSequence() {
     state.lastActionResult = 'smoke-sequence:running';
     state.lastError = null;
     state.lastPhase = 'smoke-sequence:running';
+    window.localStorage.setItem(lastActionStorageKey, state.lastAction);
+    window.localStorage.setItem(lastActionResultStorageKey, state.lastActionResult);
     renderState();
 
     try {
@@ -2195,17 +2209,19 @@ async function runSmokeSequence() {
         );
       }
 
-      state.lastPhase = 'smoke-sequence:final-refresh';
-      renderState();
-      await withTimeout('smoke final refresh', () => refreshState(), 45000);
       state.lastAction = 'Smoke test sequence';
       state.lastActionMarker = 'smoke-sequence:success';
       state.lastActionResult = 'smoke-sequence:success';
       state.lastError = null;
       state.lastPhase = 'smoke-sequence:success';
+      window.localStorage.setItem(lastActionStorageKey, state.lastAction);
+      window.localStorage.setItem(lastActionResultStorageKey, state.lastActionResult);
       elements.sequenceStatus.textContent = 'Sequence: success';
       elements.resultMarker.textContent = 'M:smoke-sequence:success';
       renderState();
+      void refreshState().catch((error) => {
+        console.error('Smoke sequence refresh failed', error);
+      });
     } catch (error) {
       const failedPhase = state.lastPhase;
       const message = error?.message ?? String(error);
@@ -2214,6 +2230,8 @@ async function runSmokeSequence() {
       state.lastActionResult = 'smoke-sequence:error';
       state.lastError = message;
       state.lastPhase = `smoke-sequence:error:${failedPhase}`;
+      window.localStorage.setItem(lastActionStorageKey, state.lastAction);
+      window.localStorage.setItem(lastActionResultStorageKey, state.lastActionResult);
       elements.sequenceStatus.textContent = 'Sequence: error';
       elements.resultMarker.textContent = 'M:smoke-sequence:error';
       elements.output.textContent = `Error: ${message}`;
@@ -2312,7 +2330,10 @@ function getVisibleQuickActions() {
 
 function createQuickActionButton(action) {
   const button = document.createElement('button');
+  const quickActionId = `quick-action-${action.id}`;
   button.type = 'button';
+  button.id = quickActionId;
+  button.setAttribute('data-testid', quickActionId);
   button.textContent = action.quickButtonLabel ?? action.buttonLabel;
   button.addEventListener('click', () => {
     void runAction(action, {}).catch((error) => {

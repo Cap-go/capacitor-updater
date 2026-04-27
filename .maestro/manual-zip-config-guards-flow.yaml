@@ -11,10 +11,18 @@ appId: app.capgo.updater
     timeout: 120000
 - scrollUntilVisible:
     element:
+      text: 'Quick open store page'
+    direction: DOWN
+    timeout: 60000
+    centerElement: false
+    visibilityPercentage: 1
+- scrollUntilVisible:
+    element:
       text: 'Quick reset release'
     direction: DOWN
     timeout: 30000
-    centerElement: true
+    centerElement: false
+    visibilityPercentage: 1
 - tapOn: 'Quick reset release'
 - scrollUntilVisible:
     element:
@@ -27,7 +35,8 @@ appId: app.capgo.updater
       text: 'Quick download latest bundle'
     direction: DOWN
     timeout: 30000
-    centerElement: true
+    centerElement: false
+    visibilityPercentage: 1
 - tapOn: 'Quick download latest bundle'
 - scrollUntilVisible:
     element:
@@ -40,7 +49,8 @@ appId: app.capgo.updater
       text: 'Quick mark bundle error'
     direction: DOWN
     timeout: 30000
-    centerElement: true
+    centerElement: false
+    visibilityPercentage: 1
 - tapOn: 'Quick mark bundle error'
 - scrollUntilVisible:
     element:

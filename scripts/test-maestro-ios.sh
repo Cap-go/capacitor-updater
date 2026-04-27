@@ -9,11 +9,13 @@ SCENARIO_ID="${CAPGO_MAESTRO_SMOKE_SCENARIO:-manual-zip}"
 FLOW_PATH="$ROOT_DIR/.maestro/ios/example-app-smoke.yaml"
 if [[ "$SCENARIO_ID" == "manual-zip-config-guards" ]]; then
   FLOW_PATH="$ROOT_DIR/.maestro/ios/example-app-smoke-config-guards.yaml"
+elif [[ "$SCENARIO_ID" == "manual-zip-no-persist" ]]; then
+  FLOW_PATH="$ROOT_DIR/.maestro/ios/example-app-smoke-no-persist.yaml"
 fi
 ARTIFACT_DIR="$ROOT_DIR/.maestro-artifacts"
 HOST_SERVER_PORT="${CAPGO_MAESTRO_PORT:-3192}"
 HOST_SERVER_URL="${CAPGO_MAESTRO_HOST_BASE_URL:-http://127.0.0.1:${HOST_SERVER_PORT}}"
-DEVICE_SERVER_URL="${CAPGO_MAESTRO_DEVICE_BASE_URL:-$HOST_SERVER_URL}"
+DEVICE_SERVER_URL="${CAPGO_MAESTRO_DEVICE_BASE_URL:-http://localhost:${HOST_SERVER_PORT}}"
 SIMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_IOS_BOOT_TIMEOUT_SECONDS:-300}"
 MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-600}"
 APP_ID="app.capgo.updater"

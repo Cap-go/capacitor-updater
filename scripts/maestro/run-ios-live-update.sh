@@ -33,9 +33,10 @@ if [[ -n "${CAPGO_MAESTRO_DEVICE_BASE_URL:-}" ]]; then
 elif [[ -n "${CAPGO_MAESTRO_DEVICE_HOST_IP:-}" ]]; then
   DEVICE_SERVER_URL="http://${CAPGO_MAESTRO_DEVICE_HOST_IP}:${HOST_SERVER_PORT}"
 else
-  # This runner targets an iOS simulator via simctl, so loopback is the stable default.
+  # This runner targets an iOS simulator via simctl, and localhost keeps native URLSession
+  # traffic routable to the host fake server more reliably than 127.0.0.1 in this setup.
   # Physical device runs can still override the base URL or host IP through env vars.
-  DEVICE_SERVER_URL="$HOST_SERVER_URL"
+  DEVICE_SERVER_URL="http://localhost:${HOST_SERVER_PORT}"
 fi
 
 if [[ -n "${CAPGO_MAESTRO_IOS_DERIVED_DATA_PATH:-}" ]]; then
