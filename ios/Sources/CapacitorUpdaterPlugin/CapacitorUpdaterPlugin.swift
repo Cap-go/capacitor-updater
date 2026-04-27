@@ -509,10 +509,17 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func resolveCall(_ call: CAPPluginCall, data: PluginCallResultData? = nil) {
         let resolve = {
+            let savedCall = self.bridge?.savedCall(withID: call.callbackId)
+            let targetCall = savedCall ?? call
+
             if let data {
-                call.resolve(data)
+                targetCall.resolve(data)
             } else {
-                call.resolve()
+                targetCall.resolve()
+            }
+
+            if savedCall != nil {
+                self.bridge?.releaseCall(withID: call.callbackId)
             }
         }
 
@@ -527,7 +534,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func rejectCall(_ call: CAPPluginCall, message: String, code: String? = nil, error: Error? = nil, data: PluginCallResultData? = nil) {
         let reject = {
-            call.reject(message, code, error, data)
+            let savedCall = self.bridge?.savedCall(withID: call.callbackId)
+            let targetCall = savedCall ?? call
+
+            targetCall.reject(message, code, error, data)
+
+            if savedCall != nil {
+                self.bridge?.releaseCall(withID: call.callbackId)
+            }
         }
 
         if Thread.isMainThread {
@@ -537,6 +551,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 reject()
             }
         }
+    }
+
+    private func saveCallForAsyncHandling(_ call: CAPPluginCall) {
+        bridge?.saveCall(call)
     }
 
     private func notifyListenersOnMain(_ eventName: String, data: JSObject) {
@@ -654,6 +672,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         let manifestArray = call.getArray("manifest")
         let url = URL(string: urlString)
         logger.info("Downloading \(String(describing: url))")
+        self.saveCallForAsyncHandling(call)
         DispatchQueue.global(qos: .background).async {
             do {
                 let next: BundleInfo
@@ -933,6 +952,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func getLatest(_ call: CAPPluginCall) {
         let channel = call.getString("channel")
+        self.saveCallForAsyncHandling(call)
         DispatchQueue.global(qos: .background).async {
             let res = self.implementation.getLatest(url: URL(string: self.updateUrl)!, channel: channel)
             if res.error != nil {
@@ -947,6 +967,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func unsetChannel(_ call: CAPPluginCall) {
         let triggerAutoUpdate = call.getBool("triggerAutoUpdate", false)
+        self.saveCallForAsyncHandling(call)
         DispatchQueue.global(qos: .background).async {
             let configDefaultChannel = self.getConfig().getString("defaultChannel", "")!
             let res = self.implementation.unsetChannel(defaultChannelKey: self.defaultChannelDefaultsKey, configDefaultChannel: configDefaultChannel)
@@ -980,6 +1001,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         let triggerAutoUpdate = call.getBool("triggerAutoUpdate") ?? false
+        self.saveCallForAsyncHandling(call)
         DispatchQueue.global(qos: .background).async {
             let res = self.implementation.setChannel(channel: channel, defaultChannelKey: self.defaultChannelDefaultsKey, allowSetDefaultChannel: self.allowSetDefaultChannel)
             if res.error != "" {
@@ -1010,6 +1032,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func getChannel(_ call: CAPPluginCall) {
+        self.saveCallForAsyncHandling(call)
         DispatchQueue.global(qos: .background).async {
             let res = self.implementation.getChannel()
             if res.error != "" {
@@ -1024,6 +1047,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func listChannels(_ call: CAPPluginCall) {
+        self.saveCallForAsyncHandling(call)
         DispatchQueue.global(qos: .background).async {
             let res = self.implementation.listChannels()
             if res.error != "" {
@@ -2218,29 +2242,30 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         logger.info("Getting App Store update info for \(bundleId) in country \(country)")
 
+        self.saveCallForAsyncHandling(call)
         DispatchQueue.global(qos: .background).async {
             let urlString = "https://itunes.apple.com/lookup?bundleId=\(bundleId)&country=\(country)"
             guard let url = URL(string: urlString) else {
-                call.reject("Invalid URL for App Store lookup")
+                self.rejectCall(call, message: "Invalid URL for App Store lookup")
                 return
             }
 
             let task = URLSession.shared.dataTask(with: url) { data, _, error in
                 if let error = error {
                     self.logger.error("App Store lookup failed: \(error.localizedDescription)")
-                    call.reject("App Store lookup failed: \(error.localizedDescription)")
+                    self.rejectCall(call, message: "App Store lookup failed: \(error.localizedDescription)")
                     return
                 }
 
                 guard let data = data else {
-                    call.reject("No data received from App Store")
+                    self.rejectCall(call, message: "No data received from App Store")
                     return
                 }
 
                 do {
                     guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                           let resultCount = json["resultCount"] as? Int else {
-                        call.reject("Invalid response from App Store")
+                        self.rejectCall(call, message: "Invalid response from App Store")
                         return
                     }
 
@@ -2297,10 +2322,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         self.logger.info("App not found in App Store for bundleId: \(bundleId)")
                     }
 
-                    call.resolve(result)
+                    self.resolveCall(call, data: result)
                 } catch {
                     self.logger.error("Failed to parse App Store response: \(error.localizedDescription)")
-                    call.reject("Failed to parse App Store response: \(error.localizedDescription)")
+                    self.rejectCall(call, message: "Failed to parse App Store response: \(error.localizedDescription)")
                 }
             }
             task.resume()
@@ -2309,20 +2334,21 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func openAppStore(_ call: CAPPluginCall) {
         let appId = call.getString("appId")
+        self.saveCallForAsyncHandling(call)
 
         if let appId = appId {
             // Open App Store with provided app ID
             let urlString = "https://apps.apple.com/app/id\(appId)"
             guard let url = URL(string: urlString) else {
-                call.reject("Invalid App Store URL")
+                self.rejectCall(call, message: "Invalid App Store URL")
                 return
             }
             DispatchQueue.main.async {
                 UIApplication.shared.open(url) { success in
                     if success {
-                        call.resolve()
+                        self.resolveCall(call)
                     } else {
-                        call.reject("Failed to open App Store")
+                        self.rejectCall(call, message: "Failed to open App Store")
                     }
                 }
             }
@@ -2333,13 +2359,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
             DispatchQueue.global(qos: .background).async {
                 guard let url = URL(string: lookupUrl) else {
-                    call.reject("Invalid lookup URL")
+                    self.rejectCall(call, message: "Invalid lookup URL")
                     return
                 }
 
                 let task = URLSession.shared.dataTask(with: url) { data, _, error in
                     if let error = error {
-                        call.reject("Failed to lookup app: \(error.localizedDescription)")
+                        self.rejectCall(call, message: "Failed to lookup app: \(error.localizedDescription)")
                         return
                     }
 
@@ -2351,15 +2377,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         // If lookup fails, try opening the generic App Store app page using bundle ID
                         let fallbackUrlString = "https://apps.apple.com/app/\(bundleId)"
                         guard let fallbackUrl = URL(string: fallbackUrlString) else {
-                            call.reject("Failed to find app in App Store and fallback URL is invalid")
+                            self.rejectCall(call, message: "Failed to find app in App Store and fallback URL is invalid")
                             return
                         }
                         DispatchQueue.main.async {
                             UIApplication.shared.open(fallbackUrl) { success in
                                 if success {
-                                    call.resolve()
+                                    self.resolveCall(call)
                                 } else {
-                                    call.reject("Failed to open App Store")
+                                    self.rejectCall(call, message: "Failed to open App Store")
                                 }
                             }
                         }
@@ -2368,16 +2394,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
                     let appStoreUrl = "https://apps.apple.com/app/id\(trackId)"
                     guard let url = URL(string: appStoreUrl) else {
-                        call.reject("Invalid App Store URL")
+                        self.rejectCall(call, message: "Invalid App Store URL")
                         return
                     }
 
                     DispatchQueue.main.async {
                         UIApplication.shared.open(url) { success in
                             if success {
-                                call.resolve()
+                                self.resolveCall(call)
                             } else {
-                                call.reject("Failed to open App Store")
+                                self.rejectCall(call, message: "Failed to open App Store")
                             }
                         }
                     }

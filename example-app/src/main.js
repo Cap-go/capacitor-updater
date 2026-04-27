@@ -163,7 +163,6 @@ const smokeSequenceActionIdsByScenario = {
     'set-update-url',
     'set-stats-url',
     'set-channel-url',
-    'list-channels',
     'set-channel-beta',
     'get-channel',
     'set-channel-private',
