@@ -117,6 +117,30 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
+    private static final class ReloadDispatchPlugin extends TestableCapacitorUpdaterPlugin {
+
+        private boolean startNewThreadCalled = false;
+        private boolean reloadCalled = false;
+
+        @Override
+        public Thread startNewThread(final Runnable function, Number waitTime) {
+            return this.startNewThread(function);
+        }
+
+        @Override
+        public Thread startNewThread(final Runnable function) {
+            this.startNewThreadCalled = true;
+            function.run();
+            return new Thread();
+        }
+
+        @Override
+        protected boolean _reload() {
+            this.reloadCalled = true;
+            return true;
+        }
+    }
+
     private static final class InstallNextCapgoUpdater extends CapgoUpdater {
 
         private BundleInfo currentBundle = new BundleInfo(
@@ -156,6 +180,25 @@ public class CapacitorUpdaterUnitTest {
             this.lastSetNextBundleId = next;
             this.nextBundle = next == null ? null : this.nextBundle;
             return true;
+        }
+    }
+
+    private static final class ReloadCapgoUpdater extends CapgoUpdater {
+
+        private final BundleInfo currentBundle = new BundleInfo("current-id", "1.0.0", BundleStatus.SUCCESS, new Date(), "abc123");
+
+        ReloadCapgoUpdater() {
+            super(null);
+        }
+
+        @Override
+        public BundleInfo getCurrentBundle() {
+            return this.currentBundle;
+        }
+
+        @Override
+        public BundleInfo getNextBundle() {
+            return null;
         }
     }
 
@@ -319,6 +362,17 @@ public class CapacitorUpdaterUnitTest {
     private static final class ReloadBypassCapacitorUpdaterPlugin extends TestableCapacitorUpdaterPlugin {
 
         @Override
+        public Thread startNewThread(final Runnable function, Number waitTime) {
+            return this.startNewThread(function);
+        }
+
+        @Override
+        public Thread startNewThread(final Runnable function) {
+            function.run();
+            return new Thread();
+        }
+
+        @Override
         protected boolean _reload() {
             return true;
         }
@@ -327,6 +381,17 @@ public class CapacitorUpdaterUnitTest {
     private static final class ReloadFailureCapacitorUpdaterPlugin extends TestableCapacitorUpdaterPlugin {
 
         private int restoreLiveBundleStateAfterFailedReloadCalls = 0;
+
+        @Override
+        public Thread startNewThread(final Runnable function, Number waitTime) {
+            return this.startNewThread(function);
+        }
+
+        @Override
+        public Thread startNewThread(final Runnable function) {
+            function.run();
+            return new Thread();
+        }
 
         @Override
         protected boolean _reload() {
@@ -1463,6 +1528,29 @@ public class CapacitorUpdaterUnitTest {
             assertTrue(plugin.reloadCalled);
             assertEquals(1, updater.setCalls);
             assertSame(plugin.activity, updater.activity);
+        }
+    }
+
+    @Test
+    public void testReloadUsesBackgroundDispatchPath() {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ReloadDispatchPlugin plugin = new ReloadDispatchPlugin();
+            final ReloadCapgoUpdater updater = new ReloadCapgoUpdater();
+            final PluginCall call = mock(PluginCall.class);
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            plugin.reload(call);
+
+            assertTrue(plugin.startNewThreadCalled);
+            assertTrue(plugin.reloadCalled);
+            verify(call).resolve();
         }
     }
 
