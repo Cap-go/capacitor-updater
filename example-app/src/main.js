@@ -67,7 +67,13 @@ const elements = {
   failedUpdateState: requireElement('failed-update-state'),
   flexibleUpdateEvent: requireElement('flexible-update-event'),
   getChannelState: requireElement('get-channel-state'),
+  getChannelReadState: requireElement('get-channel-read-state'),
   harnessReady: requireElement('harness-ready'),
+  lastGetLatestCheckState: requireElement('last-get-latest-check-state'),
+  lastListChannelsCheckState: requireElement('last-list-channels-check-state'),
+  lastPrivateChannelCheckState: requireElement('last-private-channel-check-state'),
+  lastSetChannelBetaCheckState: requireElement('last-set-channel-beta-check-state'),
+  lastUnsetChannelCheckState: requireElement('last-unset-channel-check-state'),
   lastAction: requireElement('last-action'),
   lastActionResult: requireElement('last-action-result'),
   lastDownload: requireElement('last-download'),
@@ -191,7 +197,13 @@ const state = {
   events: [],
   failedUpdate: null,
   getChannelResult: null,
+  getChannelReadMarker: 'not-run',
   harnessReady: false,
+  lastGetLatestCheck: 'not-run',
+  lastListChannelsCheck: 'not-run',
+  lastPrivateChannelCheck: 'not-run',
+  lastSetChannelBetaCheck: 'not-run',
+  lastUnsetChannelCheck: 'not-run',
   listChannelsResult: null,
   lastAction: lastActionFromStorage,
   lastActionMarker: 'none',
@@ -664,8 +676,14 @@ function renderState() {
   elements.bundleCount.textContent = `Downloaded bundle count: ${state.bundles.length}`;
   elements.lastDownload.textContent = `Last completed download: ${state.lastDownload}`;
   elements.latestVersionState.textContent = `Latest available version: ${state.lastLatest?.version ?? 'none'}`;
+  elements.lastGetLatestCheckState.textContent = `Last getLatest check: ${state.lastGetLatestCheck}`;
   elements.failedUpdateState.textContent = `Failed update: ${getBundleVersion(state.failedUpdate?.bundle ?? state.failedUpdate)}`;
   elements.getChannelState.textContent = `Current channel: ${state.getChannelResult?.channel ?? 'none'}`;
+  elements.lastListChannelsCheckState.textContent = `Last listChannels check: ${state.lastListChannelsCheck}`;
+  elements.lastSetChannelBetaCheckState.textContent = `Last setChannel beta check: ${state.lastSetChannelBetaCheck}`;
+  elements.getChannelReadState.textContent = `Last getChannel check: ${state.getChannelReadMarker}`;
+  elements.lastPrivateChannelCheckState.textContent = `Last private channel check: ${state.lastPrivateChannelCheck}`;
+  elements.lastUnsetChannelCheckState.textContent = `Last unsetChannel check: ${state.lastUnsetChannelCheck}`;
   elements.listChannelsState.textContent = `Available channels: ${formatAvailableChannels(state.listChannelsResult)}`;
   elements.shakeMenuState.textContent = `Shake menu enabled: ${state.shakeMenuEnabled}`;
   elements.shakeChannelSelectorState.textContent = `Shake channel selector enabled: ${state.shakeChannelSelectorEnabled}`;
@@ -1474,6 +1492,7 @@ const actions = [
     run: async () => {
       const result = expectListChannelsResult(await plugin.listChannels());
       state.listChannelsResult = result;
+      state.lastListChannelsCheck = formatAvailableChannels(result);
       return result;
     },
   },
@@ -1491,15 +1510,18 @@ const actions = [
         : 'Action marker: set-channel-beta:success',
     run: async () => {
       if (!allowSetDefaultChannel) {
-        return expectConfiguredRejection('setChannel(beta)', () => plugin.setChannel({ channel: 'beta' }), [
+        const result = await expectConfiguredRejection('setChannel(beta)', () => plugin.setChannel({ channel: 'beta' }), [
           'disabled_by_config',
           'configuration',
         ]);
+        state.lastSetChannelBetaCheck = 'expected-rejection';
+        return result;
       }
 
       await plugin.setChannel({ channel: 'beta' });
       const result = expectChannel(await plugin.getChannel(), 'beta', 'setChannel(beta)');
       state.getChannelResult = result;
+      state.lastSetChannelBetaCheck = 'success';
       return result;
     },
   },
@@ -1511,10 +1533,11 @@ const actions = [
     includeInSmokeSequence: true,
     smokeTimeoutMs: 90000,
     showWhen: () => serverUrl.startsWith('http'),
-    successMarker: (result) => `Action marker: get-channel:${result?.channel ?? 'none'}`,
+    successMarker: (result) => `Action marker: get-channel:${result?.channel || 'none'}`,
     run: async () => {
       const result = expectChannel(await plugin.getChannel(), allowSetDefaultChannel ? 'beta' : '', 'getChannel()');
       state.getChannelResult = result;
+      state.getChannelReadMarker = result?.channel || 'none';
       return result;
     },
   },
@@ -1535,10 +1558,16 @@ const actions = [
       renderState();
 
       if (!allowSetDefaultChannel) {
-        return expectConfiguredRejection('setChannel(private-alpha)', () => plugin.setChannel({ channel: 'private-alpha' }), [
+        const result = await expectConfiguredRejection(
+          'setChannel(private-alpha)',
+          () => plugin.setChannel({ channel: 'private-alpha' }),
+          [
           'disabled_by_config',
           'configuration',
-        ]);
+          ],
+        );
+        state.lastPrivateChannelCheck = 'expected-rejection';
+        return result;
       }
 
       try {
@@ -1546,6 +1575,7 @@ const actions = [
         throw new Error('setChannel(private-alpha) unexpectedly resolved');
       } catch (error) {
         await waitForEventMarker('channelPrivate', 'private-alpha');
+        state.lastPrivateChannelCheck = 'expected-rejection';
         return {
           outcome: 'expected-rejection',
           ...normalizeError(error),
@@ -1565,6 +1595,7 @@ const actions = [
       await plugin.unsetChannel();
       const result = expectChannel(await plugin.getChannel(), '', 'unsetChannel()');
       state.getChannelResult = result;
+      state.lastUnsetChannelCheck = 'success';
       return result;
     },
   },
@@ -1824,6 +1855,7 @@ const actions = [
     run: async () => {
       const latest = expectGetLatestResult(await plugin.getLatest());
       state.lastLatest = latest;
+      state.lastGetLatestCheck = latest.version ?? 'none';
       return latest;
     },
   },
