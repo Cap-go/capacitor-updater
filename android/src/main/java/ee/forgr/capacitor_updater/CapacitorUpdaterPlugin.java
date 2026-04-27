@@ -1505,49 +1505,51 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     @PluginMethod
     public void reload(final PluginCall call) {
-        try {
-            final BundleInfo current = this.implementation.getCurrentBundle();
-            final BundleInfo next = this.implementation.getNextBundle();
+        startNewThread(() -> {
+            try {
+                final BundleInfo current = this.implementation.getCurrentBundle();
+                final BundleInfo next = this.implementation.getNextBundle();
 
-            if (next != null && !next.isErrorStatus() && !next.getId().equals(current.getId())) {
-                final CapgoUpdater.ResetState previousState = this.implementation.captureResetState();
-                final String previousBundleName = this.implementation.getCurrentBundle().getVersionName();
-                logger.info("Applying pending bundle before reload: " + next.getVersionName());
-                final boolean didApplyPendingBundle;
-                if (next.isBuiltin()) {
-                    this.implementation.prepareResetStateForTransition();
-                    didApplyPendingBundle = true;
-                } else {
-                    didApplyPendingBundle = this.implementation.stagePendingReload(next);
-                }
-                if (didApplyPendingBundle && this._reload()) {
+                if (next != null && !next.isErrorStatus() && !next.getId().equals(current.getId())) {
+                    final CapgoUpdater.ResetState previousState = this.implementation.captureResetState();
+                    final String previousBundleName = this.implementation.getCurrentBundle().getVersionName();
+                    logger.info("Applying pending bundle before reload: " + next.getVersionName());
+                    final boolean didApplyPendingBundle;
                     if (next.isBuiltin()) {
-                        this.implementation.finalizeResetTransition(previousBundleName, false);
+                        this.implementation.prepareResetStateForTransition();
+                        didApplyPendingBundle = true;
                     } else {
-                        this.implementation.finalizePendingReload(next, previousBundleName);
+                        didApplyPendingBundle = this.implementation.stagePendingReload(next);
                     }
-                    this.notifyBundleSet(next);
-                    this.implementation.setNextBundle(null);
-                    call.resolve();
+                    if (didApplyPendingBundle && this._reload()) {
+                        if (next.isBuiltin()) {
+                            this.implementation.finalizeResetTransition(previousBundleName, false);
+                        } else {
+                            this.implementation.finalizePendingReload(next, previousBundleName);
+                        }
+                        this.notifyBundleSet(next);
+                        this.implementation.setNextBundle(null);
+                        call.resolve();
+                        return;
+                    }
+                    this.implementation.restoreResetState(previousState);
+                    this.restoreLiveBundleStateAfterFailedReload();
+                    logger.error("Reload failed after applying pending bundle: " + next.getVersionName());
+                    call.reject("Reload failed after applying pending bundle: " + next.getVersionName());
                     return;
                 }
-                this.implementation.restoreResetState(previousState);
-                this.restoreLiveBundleStateAfterFailedReload();
-                logger.error("Reload failed after applying pending bundle: " + next.getVersionName());
-                call.reject("Reload failed after applying pending bundle: " + next.getVersionName());
-                return;
-            }
 
-            if (this._reload()) {
-                call.resolve();
-            } else {
-                logger.error("Reload failed");
-                call.reject("Reload failed");
+                if (this._reload()) {
+                    call.resolve();
+                } else {
+                    logger.error("Reload failed");
+                    call.reject("Reload failed");
+                }
+            } catch (final Exception e) {
+                logger.error("Could not reload " + e.getMessage());
+                call.reject("Could not reload", e);
             }
-        } catch (final Exception e) {
-            logger.error("Could not reload " + e.getMessage());
-            call.reject("Could not reload", e);
-        }
+        });
     }
 
     @PluginMethod
