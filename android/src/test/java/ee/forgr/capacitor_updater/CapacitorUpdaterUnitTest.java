@@ -362,6 +362,17 @@ public class CapacitorUpdaterUnitTest {
     private static final class ReloadBypassCapacitorUpdaterPlugin extends TestableCapacitorUpdaterPlugin {
 
         @Override
+        public Thread startNewThread(final Runnable function, Number waitTime) {
+            return this.startNewThread(function);
+        }
+
+        @Override
+        public Thread startNewThread(final Runnable function) {
+            function.run();
+            return new Thread();
+        }
+
+        @Override
         protected boolean _reload() {
             return true;
         }
@@ -370,6 +381,17 @@ public class CapacitorUpdaterUnitTest {
     private static final class ReloadFailureCapacitorUpdaterPlugin extends TestableCapacitorUpdaterPlugin {
 
         private int restoreLiveBundleStateAfterFailedReloadCalls = 0;
+
+        @Override
+        public Thread startNewThread(final Runnable function, Number waitTime) {
+            return this.startNewThread(function);
+        }
+
+        @Override
+        public Thread startNewThread(final Runnable function) {
+            function.run();
+            return new Thread();
+        }
 
         @Override
         protected boolean _reload() {
