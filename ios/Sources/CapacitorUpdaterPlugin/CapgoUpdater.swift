@@ -95,6 +95,14 @@ import UIKit
         let timedOut: Bool
     }
 
+    private func isTimedOutError(_ error: Error?) -> Bool {
+        guard let nsError = error as NSError? else {
+            return false
+        }
+
+        return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorTimedOut
+    }
+
     private lazy var alamofireSession: Session = {
         let configuration = URLSessionConfiguration.default
         configuration.httpAdditionalHeaders = ["User-Agent": self.userAgent]
@@ -182,12 +190,10 @@ import UIKit
     }
 
     private func performDownloadRequest(_ request: URLRequest, label: String) -> DownloadRequestResult {
-        let waitTimeout = max(self.timeout + 5, 10)
         let semaphore = DispatchSemaphore(value: 0)
         let configuration = URLSessionConfiguration.default
         configuration.httpAdditionalHeaders = ["User-Agent": self.userAgent]
         configuration.timeoutIntervalForRequest = self.timeout
-        configuration.timeoutIntervalForResource = waitTimeout
         let session = URLSession(configuration: configuration)
         var tempFileURL: URL?
         var httpResponse: HTTPURLResponse?
@@ -205,13 +211,18 @@ import UIKit
 
         task.resume()
 
-        if semaphore.wait(timeout: .now() + waitTimeout) == .timedOut {
-            task.cancel()
-            logger.error("\(label) timed out after \(Int(waitTimeout))s")
-            return DownloadRequestResult(fileURL: tempFileURL, response: httpResponse, error: requestError, timedOut: true)
+        semaphore.wait()
+
+        if isTimedOutError(requestError) {
+            logger.error("\(label) timed out after \(Int(self.timeout))s")
         }
 
-        return DownloadRequestResult(fileURL: tempFileURL, response: httpResponse, error: requestError, timedOut: false)
+        return DownloadRequestResult(
+            fileURL: tempFileURL,
+            response: httpResponse,
+            error: requestError,
+            timedOut: isTimedOutError(requestError)
+        )
     }
 
     deinit {
@@ -1840,9 +1851,15 @@ import UIKit
             setChannel.error = "missing_config"
             return setChannel
         }
+        guard let channelURL = URL(string: self.channelUrl) else {
+            logger.error("Invalid channel URL")
+            setChannel.message = "Channel URL is invalid"
+            setChannel.error = "invalid_config"
+            return setChannel
+        }
         var parameters: InfoObject = self.createInfoObject()
         parameters.channel = channel
-        guard let request = createRequest(url: URL(string: self.channelUrl)!, method: "POST", parameters: parameters.toParameters()) else {
+        guard let request = createRequest(url: channelURL, method: "POST", parameters: parameters.toParameters()) else {
             setChannel.error = "Request failed: invalid request"
             return setChannel
         }
@@ -1915,8 +1932,14 @@ import UIKit
             getChannel.error = "missing_config"
             return getChannel
         }
+        guard let channelURL = URL(string: self.channelUrl) else {
+            logger.error("Invalid channel URL")
+            getChannel.message = "Channel URL is invalid"
+            getChannel.error = "invalid_config"
+            return getChannel
+        }
         let parameters: InfoObject = self.createInfoObject()
-        guard let request = createRequest(url: URL(string: self.channelUrl)!, method: "PUT", parameters: parameters.toParameters()) else {
+        guard let request = createRequest(url: channelURL, method: "PUT", parameters: parameters.toParameters()) else {
             getChannel.error = "Request failed: invalid request"
             return getChannel
         }

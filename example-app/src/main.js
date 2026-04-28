@@ -745,26 +745,17 @@ function renderState() {
     `M:${state.lastActionMarker} | ` +
     `Harness: ${state.harnessReady ? 'ready' : 'pending'} | ` +
     `Build label: ${buildLabel} | ` +
-    `Scenario: ${scenarioId} | ` +
-    `Platform: ${platform} | ` +
-    `Direct update mode: ${directUpdateMode} | ` +
-    `Auto update enabled: ${state.autoUpdateEnabled} | ` +
-    `Auto update available: ${state.autoUpdateAvailable} | ` +
-    `Notify app ready: ${state.notifyStatus} | ` +
     `Current bundle source: ${getBundleSource(state.currentBundle)} | ` +
     `Current bundle version: ${getBundleVersion(state.currentBundle)} | ` +
     `Next bundle version: ${getBundleVersion(state.nextBundle)} | ` +
-    `Last completed download: ${state.lastDownload} | ` +
     `Download event: ${state.eventMarkers.download} | ` +
     `Download complete event: ${state.eventMarkers.downloadComplete} | ` +
     `Update available event: ${state.eventMarkers.updateAvailable} | ` +
     `Set next event: ${state.eventMarkers.setNext} | ` +
     `No need update event: ${state.eventMarkers.noNeedUpdate} | ` +
     `Update failed event: ${state.eventMarkers.updateFailed} | ` +
-    `Last error: ${state.lastError ?? 'none'} | ` +
-    `Result marker: ${state.lastActionResult} | ` +
-    `Phase: ${state.lastPhase} | ` +
-    `Failed update: ${getBundleVersion(state.failedUpdate?.bundle ?? state.failedUpdate)}`;
+    `Failed update: ${getBundleVersion(state.failedUpdate?.bundle ?? state.failedUpdate)} | ` +
+    `Last error: ${state.lastError ?? 'none'}`;
   elements.debugOutput.textContent = JSON.stringify(
     {
       ...harnessSnapshot,
