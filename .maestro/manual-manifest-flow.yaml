@@ -189,6 +189,13 @@ appId: app.capgo.updater
 - assertVisible: '.*Current bundle version: manual-manifest-v2.*'
 - scrollUntilVisible:
     element:
+      text: 'Quick read next bundle'
+    direction: DOWN
+    timeout: 30000
+    centerElement: false
+    visibilityPercentage: 1
+- scrollUntilVisible:
+    element:
       text: 'Quick confirm no update'
     direction: DOWN
     timeout: 30000

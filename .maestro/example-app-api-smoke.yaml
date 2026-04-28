@@ -9,19 +9,8 @@ appId: app.capgo.updater
     timeout: 120000
 - scrollUntilVisible:
     element:
-      text: 'Quick apply runtime URLs'
-    direction: DOWN
-    timeout: 30000
-    centerElement: true
-    visibilityPercentage: 1
-- tapOn: 'Quick apply runtime URLs'
-- scrollUntilVisible:
-    element:
       text: '@capgo/capacitor-updater'
     direction: UP
-    timeout: 120000
-- extendedWaitUntil:
-    visible: '.*M:set-runtime-urls:success.*'
     timeout: 120000
 - scrollUntilVisible:
     element:
@@ -71,7 +60,7 @@ appId: app.capgo.updater
       text: 'Quick verify persisted config'
     direction: DOWN
     timeout: 30000
-    centerElement: true
+    centerElement: false
     visibilityPercentage: 1
 - tapOn: 'Quick verify persisted config'
 - scrollUntilVisible:

@@ -1056,7 +1056,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     "error": res.error.contains("Channel URL") ? "missing_config" : "request_failed"
                 ])
             } else {
-                self.resolveCall(call, data: res.toDict())
+                var payload: JSObject = [:]
+                payload["channels"] = res.channels
+                self.resolveCall(call, data: payload)
             }
         }
     }

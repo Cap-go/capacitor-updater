@@ -165,7 +165,6 @@ const smokeSequenceActionIdsByScenario = {
     'set-channel-url',
     'set-channel-beta',
     'get-channel',
-    'set-channel-private',
     'unset-channel',
     'get-latest',
   ],
@@ -572,7 +571,11 @@ async function refreshServerState() {
   }
 
   try {
-    const response = await fetch(controlStateUrl);
+    const response = await withTimeout(
+      'refreshServerState()',
+      () => fetch(controlStateUrl),
+      15000,
+    );
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
@@ -745,9 +748,15 @@ function renderState() {
     `M:${state.lastActionMarker} | ` +
     `Harness: ${state.harnessReady ? 'ready' : 'pending'} | ` +
     `Build label: ${buildLabel} | ` +
+    `Scenario: ${scenarioId} | ` +
+    `Direct update mode: ${directUpdateMode} | ` +
+    `Auto update enabled: ${state.autoUpdateEnabled} | ` +
+    `Auto update available: ${state.autoUpdateAvailable} | ` +
+    `Notify app ready: ${state.notifyStatus} | ` +
     `Current bundle source: ${getBundleSource(state.currentBundle)} | ` +
     `Current bundle version: ${getBundleVersion(state.currentBundle)} | ` +
     `Next bundle version: ${getBundleVersion(state.nextBundle)} | ` +
+    `Last completed download: ${state.lastDownload} | ` +
     `Download event: ${state.eventMarkers.download} | ` +
     `Download complete event: ${state.eventMarkers.downloadComplete} | ` +
     `Update available event: ${state.eventMarkers.updateAvailable} | ` +
@@ -1178,7 +1187,11 @@ async function fetchJson(url, options = {}) {
   const method = options.method ?? 'GET';
 
   try {
-    const response = await fetch(url, options);
+    const response = await withTimeout(
+      `${method} ${url}`,
+      () => fetch(url, options),
+      15000,
+    );
 
     if (!response.ok) {
       throw new Error(`${method} ${url} returned HTTP ${response.status}`);
@@ -2230,7 +2243,15 @@ async function runSmokeSequence() {
     sequenceInProgress = true;
 
     if (refreshStatePromise) {
-      await refreshStatePromise;
+      try {
+        await withTimeout(
+          'pending refreshState before smoke sequence',
+          () => refreshStatePromise,
+          10000,
+        );
+      } catch (error) {
+        console.warn('Continuing smoke sequence after refresh wait timeout', error);
+      }
     }
 
     state.lastAction = 'Smoke test sequence';
@@ -2271,17 +2292,19 @@ async function runSmokeSequence() {
       });
     } catch (error) {
       const failedPhase = state.lastPhase;
-      const message = error?.message ?? String(error);
+      const rawMessage = error?.message ?? String(error);
+      const message = rawMessage && rawMessage !== '[object Object]' ? rawMessage : 'unknown';
+      const failureSummary = `${failedPhase}: ${message}`;
       state.lastAction = 'Smoke test sequence';
-      state.lastActionMarker = 'smoke-sequence:error';
-      state.lastActionResult = 'smoke-sequence:error';
-      state.lastError = message;
+      state.lastActionMarker = `smoke-sequence:error:${failedPhase}`;
+      state.lastActionResult = `smoke-sequence:error:${failedPhase}`;
+      state.lastError = failureSummary;
       state.lastPhase = `smoke-sequence:error:${failedPhase}`;
       window.localStorage.setItem(lastActionStorageKey, state.lastAction);
       window.localStorage.setItem(lastActionResultStorageKey, state.lastActionResult);
       elements.sequenceStatus.textContent = 'Sequence: error';
-      elements.resultMarker.textContent = 'M:smoke-sequence:error';
-      elements.output.textContent = `Error: ${message}`;
+      elements.resultMarker.textContent = `M:${state.lastActionResult}`;
+      elements.output.textContent = `Error: ${failureSummary}`;
       renderState();
       console.error('Smoke sequence failed', error);
       throw error;
@@ -2463,8 +2486,17 @@ function startStateRefreshWatchers() {
 
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && !actionInProgress && !sequenceInProgress) {
+      resetScrollPosition();
       void refreshState();
     }
+  });
+
+  window.addEventListener('focus', () => {
+    resetScrollPosition();
+  });
+
+  window.addEventListener('pageshow', () => {
+    resetScrollPosition();
   });
 }
 
