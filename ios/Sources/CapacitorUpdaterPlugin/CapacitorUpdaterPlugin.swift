@@ -968,7 +968,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func unsetChannel(_ call: CAPPluginCall) {
         let triggerAutoUpdate = call.getBool("triggerAutoUpdate", false)
         self.saveCallForAsyncHandling(call)
-        DispatchQueue.global(qos: .background).async {
+        DispatchQueue.global(qos: .utility).async {
             let configDefaultChannel = self.getConfig().getString("defaultChannel", "")!
             let res = self.implementation.unsetChannel(defaultChannelKey: self.defaultChannelDefaultsKey, configDefaultChannel: configDefaultChannel)
             if res.error != "" {
@@ -1002,7 +1002,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         let triggerAutoUpdate = call.getBool("triggerAutoUpdate") ?? false
         self.saveCallForAsyncHandling(call)
-        DispatchQueue.global(qos: .background).async {
+        DispatchQueue.global(qos: .utility).async {
             let res = self.implementation.setChannel(channel: channel, defaultChannelKey: self.defaultChannelDefaultsKey, allowSetDefaultChannel: self.allowSetDefaultChannel)
             if res.error != "" {
                 // Fire channelPrivate event if channel doesn't allow self-assignment
@@ -1033,7 +1033,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func getChannel(_ call: CAPPluginCall) {
         self.saveCallForAsyncHandling(call)
-        DispatchQueue.global(qos: .background).async {
+        DispatchQueue.global(qos: .utility).async {
             let res = self.implementation.getChannel()
             if res.error != "" {
                 self.rejectCall(call, message: res.error, code: "GETCHANNEL_FAILED", data: [
@@ -1048,7 +1048,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func listChannels(_ call: CAPPluginCall) {
         self.saveCallForAsyncHandling(call)
-        DispatchQueue.global(qos: .background).async {
+        DispatchQueue.global(qos: .utility).async {
             let res = self.implementation.listChannels()
             if res.error != "" {
                 self.rejectCall(call, message: res.error, code: "LISTCHANNELS_FAILED", data: [

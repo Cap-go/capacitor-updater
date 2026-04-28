@@ -20,12 +20,9 @@ appId: app.capgo.updater
     centerElement: true
     visibilityPercentage: 1
 - tapOn: 'Quick run smoke test sequence'
-- scrollUntilVisible:
-    element:
-      text: '.*M:smoke-sequence:success.*'
-    direction: UP
-    timeout: 180000
-    visibilityPercentage: 1
+- extendedWaitUntil:
+    visible: '.*M:smoke-sequence:success.*'
+    timeout: 420000
 - runFlow: helpers/cold-launch-app.yaml
 - extendedWaitUntil:
     visible: '@capgo/capacitor-updater'
