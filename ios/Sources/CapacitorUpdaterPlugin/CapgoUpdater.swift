@@ -129,12 +129,14 @@ import UIKit
         self.logger = logger
     }
 
-    private func createRequest(url: URL, method: String, parameters: [String: Any]? = nil) -> URLRequest? {
+    private func createRequest(url: URL, method: String, parameters: [String: Any]? = nil, expectsJSONResponse: Bool = false) -> URLRequest? {
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.timeoutInterval = self.timeout
         request.setValue(self.userAgent, forHTTPHeaderField: "User-Agent")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if expectsJSONResponse || parameters != nil {
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+        }
 
         guard let parameters else {
             return request
@@ -651,10 +653,22 @@ import UIKit
             return latest
         }
 
+        if self.checkAndHandleRateLimitResponse(statusCode: latest.statusCode) {
+            latest.message = "Rate limit exceeded"
+            latest.error = "rate_limit_exceeded"
+            return latest
+        }
+
         guard let responseValue = try? JSONDecoder().decode(AppVersionDec.self, from: data) else {
             self.logger.error("Error decoding latest version")
             latest.message = "Error getting Latest"
             latest.error = "decode_error"
+            return latest
+        }
+
+        if latest.statusCode < 200 || latest.statusCode >= 300 {
+            latest.message = responseValue.message ?? "Server error: \(latest.statusCode)"
+            latest.error = responseValue.error ?? "response_error"
             return latest
         }
 
@@ -2043,7 +2057,7 @@ import UIKit
             return listChannels
         }
 
-        guard let request = createRequest(url: url, method: "GET") else {
+        guard let request = createRequest(url: url, method: "GET", expectsJSONResponse: true) else {
             listChannels.error = "Invalid channel URL"
             return listChannels
         }
