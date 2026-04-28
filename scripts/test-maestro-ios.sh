@@ -15,7 +15,7 @@ fi
 ARTIFACT_DIR="$ROOT_DIR/.maestro-artifacts"
 HOST_SERVER_PORT="${CAPGO_MAESTRO_PORT:-3192}"
 HOST_SERVER_URL="${CAPGO_MAESTRO_HOST_BASE_URL:-http://127.0.0.1:${HOST_SERVER_PORT}}"
-DEVICE_SERVER_URL="${CAPGO_MAESTRO_DEVICE_BASE_URL:-http://localhost:${HOST_SERVER_PORT}}"
+DEVICE_SERVER_URL="${CAPGO_MAESTRO_DEVICE_BASE_URL:-${HOST_SERVER_URL}}"
 SIMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_IOS_BOOT_TIMEOUT_SECONDS:-300}"
 MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-600}"
 APP_ID="app.capgo.updater"
@@ -187,7 +187,7 @@ if (failures.length) {
 
   case "$SCENARIO_ID" in
     manual-zip|manual-zip-no-persist)
-      if ! grep -Eq "GET /api/channel\\?scenario=${SCENARIO_ID}.*app_id=app\\.capgo\\.updater\\.e2e" \
+      if ! grep -Eq "/api/channel\\?scenario=${SCENARIO_ID}.*app_id=app\\.capgo\\.updater\\.e2e" \
         "$ARTIFACT_DIR/fake-capgo-server-ios-smoke.log"; then
         echo "Smoke server assertions failed:" >&2
         echo "- missing runtime app ID override in channel request log" >&2
@@ -195,7 +195,7 @@ if (failures.length) {
       fi
       ;;
     manual-zip-config-guards)
-      if grep -Eq "GET /api/channel\\?scenario=${SCENARIO_ID}.*app_id=app\\.capgo\\.updater\\.e2e" \
+      if grep -Eq "/api/channel\\?scenario=${SCENARIO_ID}.*app_id=app\\.capgo\\.updater\\.e2e" \
         "$ARTIFACT_DIR/fake-capgo-server-ios-smoke.log"; then
         echo "Smoke server assertions failed:" >&2
         echo "- guarded config unexpectedly accepted the runtime app ID override" >&2

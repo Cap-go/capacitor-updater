@@ -471,12 +471,20 @@ async function handleChannel(request, requestUrl, method) {
   rememberRequest(scenario.id, 'channel', requestUrl, payload);
 
   if (method === 'PUT') {
-    logRequest(requestUrl, method, `scenario=${scenario.id} default=${payload.defaultChannel ?? ''}`);
+    logRequest(
+      requestUrl,
+      method,
+      `scenario=${scenario.id} default=${payload.defaultChannel ?? ''} app_id=${payload.app_id ?? ''} custom_id=${payload.custom_id ?? ''}`,
+    );
     return jsonResponse(createChannelResponse(payload.defaultChannel ?? ''));
   }
 
   if (method === 'POST') {
-    logRequest(requestUrl, method, `scenario=${scenario.id} channel=${payload.channel ?? ''}`);
+    logRequest(
+      requestUrl,
+      method,
+      `scenario=${scenario.id} channel=${payload.channel ?? ''} app_id=${payload.app_id ?? ''} custom_id=${payload.custom_id ?? ''}`,
+    );
 
     if (payload.channel === 'private-alpha') {
       return jsonResponse({

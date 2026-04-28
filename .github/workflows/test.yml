@@ -108,15 +108,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           MAESTRO_VERSION: cli-2.4.0
         run: ./scripts/ci/install-maestro.sh
-      - name: Build plugin and example app
-        run: |
-          bun run build
-          cd example-app
-          bun install
-          bun run build
-          bunx cap sync android
-      - name: Assemble Android example app
-        run: cd example-app/android && ./gradlew assembleDebug
       - name: Run Maestro smoke tests
         uses: reactivecircus/android-emulator-runner@e89f39f1abbbd05b1113a29cf4db69e7540cae5a # v2
         with:
@@ -125,7 +116,7 @@ jobs:
           profile: pixel_7
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
-          script: CAPGO_MAESTRO_SKIP_BUILD=1 CAPGO_MAESTRO_TIMEOUT_SECONDS=600 MAESTRO_DRIVER_STARTUP_TIMEOUT=300000 CAPGO_MAESTRO_SMOKE_SCENARIO=${{ matrix.scenario }} bun run test:maestro:android
+          script: CAPGO_MAESTRO_TIMEOUT_SECONDS=600 MAESTRO_DRIVER_STARTUP_TIMEOUT=300000 CAPGO_MAESTRO_SMOKE_SCENARIO=${{ matrix.scenario }} bun run test:maestro:android
       - name: Upload Maestro artifacts
         if: always()
         uses: actions/upload-artifact@v4

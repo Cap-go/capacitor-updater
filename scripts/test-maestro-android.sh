@@ -192,7 +192,7 @@ if (failures.length) {
 
   case "$SCENARIO_ID" in
     manual-zip|manual-zip-no-persist)
-      if ! grep -Eq "GET /api/channel\\?scenario=${SCENARIO_ID}.*app_id=app\\.capgo\\.updater\\.e2e" \
+      if ! grep -Eq "/api/channel\\?scenario=${SCENARIO_ID}.*app_id=app\\.capgo\\.updater\\.e2e" \
         "$ARTIFACT_DIR/fake-capgo-server-android-smoke.log"; then
         echo "Smoke server assertions failed:" >&2
         echo "- missing runtime app ID override in channel request log" >&2
@@ -200,7 +200,7 @@ if (failures.length) {
       fi
       ;;
     manual-zip-config-guards)
-      if grep -Eq "GET /api/channel\\?scenario=${SCENARIO_ID}.*app_id=app\\.capgo\\.updater\\.e2e" \
+      if grep -Eq "/api/channel\\?scenario=${SCENARIO_ID}.*app_id=app\\.capgo\\.updater\\.e2e" \
         "$ARTIFACT_DIR/fake-capgo-server-android-smoke.log"; then
         echo "Smoke server assertions failed:" >&2
         echo "- guarded config unexpectedly accepted the runtime app ID override" >&2
