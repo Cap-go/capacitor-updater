@@ -1,0 +1,125 @@
+appId: app.capgo.updater
+---
+- extendedWaitUntil:
+    visible: '@capgo/capacitor-updater'
+    timeout: 180000
+- assertVisible: '@capgo/capacitor-updater'
+- extendedWaitUntil:
+    visible: '.*Harness: ready.*'
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      text: '@capgo/capacitor-updater'
+    direction: UP
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      text: 'Quick run smoke test sequence'
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+    visibilityPercentage: 1
+- tapOn:
+    text: 'Quick run smoke test sequence'
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible: '.*M:smoke-sequence:success.*'
+    timeout: 240000
+- scrollUntilVisible:
+    element:
+      text: '@capgo/capacitor-updater'
+    direction: UP
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      text: 'Quick get store info'
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 1
+- tapOn: 'Quick get store info'
+- extendedWaitUntil:
+    visible: '.*M:get-app-update-info:success.*'
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      text: 'Quick immediate update'
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 1
+- tapOn: 'Quick immediate update'
+- extendedWaitUntil:
+    visible: '.*M:perform-immediate-update:success.*'
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      text: 'Quick flexible update'
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 1
+- tapOn: 'Quick flexible update'
+- extendedWaitUntil:
+    visible: '.*M:start-flexible-update:success.*'
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      text: 'Quick complete update'
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 1
+- tapOn: 'Quick complete update'
+- extendedWaitUntil:
+    visible: '.*M:complete-flexible-update:success.*'
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      text: 'Quick get latest'
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 1
+- tapOn: 'Quick get latest'
+- extendedWaitUntil:
+    visible: '.*M:get-latest:success.*'
+    timeout: 120000
+- runFlow: helpers/cold-launch-app.yaml
+- extendedWaitUntil:
+    visible: '@capgo/capacitor-updater'
+    timeout: 120000
+- extendedWaitUntil:
+    visible: '.*Harness: ready.*'
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      text: 'Quick get latest'
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 1
+- tapOn: 'Quick get latest'
+- extendedWaitUntil:
+    visible: '.*M:get-latest:success.*'
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      text: 'Quick verify persisted config'
+    direction: DOWN
+    timeout: 30000
+    centerElement: false
+    visibilityPercentage: 1
+- tapOn: 'Quick verify persisted config'
+- extendedWaitUntil:
+    visible: '.*M:persisted:success.*'
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      text: '@capgo/capacitor-updater'
+    direction: UP
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: 'Quick open store page'
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 1
+- tapOn: 'Quick open store page'
+- extendedWaitUntil:
+    notVisible: '@capgo/capacitor-updater'
+    timeout: 120000

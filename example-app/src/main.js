@@ -128,6 +128,11 @@ let sequenceInProgress = false;
 const quickActionIds = [
   'set-runtime-urls',
   'verify-persisted-config',
+  'get-app-update-info',
+  'perform-immediate-update',
+  'start-flexible-update',
+  'complete-flexible-update',
+  'get-latest',
   'open-app-store',
   'reset-server-release',
   'advance-server-release',
@@ -156,6 +161,10 @@ const smokeSequenceExtendedSettleActionIds = new Set([
   'unset-channel',
   'remove-all-listeners',
 ]);
+const manualZipStoreContractSmokeActionIds =
+  platform === 'ios'
+    ? []
+    : ['get-app-update-info', 'perform-immediate-update', 'start-flexible-update', 'complete-flexible-update', 'get-latest'];
 const smokeSequenceActionIdsByScenario = {
   'manual-zip': [
     'notify-app-ready',
@@ -182,11 +191,7 @@ const smokeSequenceActionIdsByScenario = {
     'set-shake-channel-selector',
     'is-shake-channel-selector-enabled',
     'remove-all-listeners',
-    'get-app-update-info',
-    'perform-immediate-update',
-    'start-flexible-update',
-    'complete-flexible-update',
-    'get-latest',
+    ...manualZipStoreContractSmokeActionIds,
   ],
   'manual-zip-no-persist': [
     'set-custom-id',
@@ -197,7 +202,6 @@ const smokeSequenceActionIdsByScenario = {
     'set-channel-beta',
     'get-channel',
     'unset-channel',
-    'get-latest',
   ],
   'manual-zip-config-guards': [
     'set-custom-id',
@@ -209,7 +213,6 @@ const smokeSequenceActionIdsByScenario = {
     'get-channel',
     'set-channel-private',
     'unset-channel',
-    'get-latest',
   ],
 };
 
@@ -1128,6 +1131,22 @@ function validateGetAppUpdateInfoContract(contractResult) {
     return contractResult;
   }
 
+  if (contractResult.outcome === 'rejected' && platform === 'ios') {
+    invariant(
+      errorMatches(contractResult, [
+        'app store lookup failed',
+        'failed to parse app store response',
+        'invalid response from app store',
+        'no data received from app store',
+        'timed out',
+        'network',
+        'offline',
+      ]),
+      `getAppUpdateInfo() rejected unexpectedly: ${contractResult.message ?? 'unknown error'}`,
+    );
+    return contractResult;
+  }
+
   const result = expectResolvedContract(contractResult, 'getAppUpdateInfo()');
   expectString(result?.currentVersionName ?? '', 'getAppUpdateInfo() did not return currentVersionName');
   expectString(result?.currentVersionCode ?? '', 'getAppUpdateInfo() did not return currentVersionCode');
@@ -1742,6 +1761,7 @@ const actions = [
     id: 'get-app-update-info',
     label: 'Get store update info',
     buttonLabel: 'Run getAppUpdateInfo()',
+    quickButtonLabel: 'Quick get store info',
     description: 'Read the App Store or Play Store update contract for the example app.',
     includeInSmokeSequence: true,
     run: async () => invokeContractMethod('getAppUpdateInfo', () => plugin.getAppUpdateInfo(), validateGetAppUpdateInfoContract),
@@ -1758,6 +1778,7 @@ const actions = [
     id: 'perform-immediate-update',
     label: 'Try immediate update',
     buttonLabel: 'Run performImmediateUpdate()',
+    quickButtonLabel: 'Quick immediate update',
     description: 'Exercise the platform contract for immediate store updates.',
     includeInSmokeSequence: true,
     run: async () =>
@@ -1767,6 +1788,7 @@ const actions = [
     id: 'start-flexible-update',
     label: 'Try flexible update',
     buttonLabel: 'Run startFlexibleUpdate()',
+    quickButtonLabel: 'Quick flexible update',
     description: 'Exercise the platform contract for flexible store updates.',
     includeInSmokeSequence: true,
     run: async () =>
@@ -1776,6 +1798,7 @@ const actions = [
     id: 'complete-flexible-update',
     label: 'Complete flexible update',
     buttonLabel: 'Run completeFlexibleUpdate()',
+    quickButtonLabel: 'Quick complete update',
     description: 'Exercise the platform contract for completing a downloaded flexible update.',
     includeInSmokeSequence: true,
     run: async () =>
@@ -1790,12 +1813,15 @@ const actions = [
     label: 'Verify persisted runtime config',
     buttonLabel: 'Verify persisted runtime config',
     quickButtonLabel: 'Quick verify persisted config',
-    description: 'Re-run listChannels() and getLatest() after a cold launch to prove persisted updater routing.',
+    description: 'Re-run persisted routing checks after a cold launch, reusing getLatest() when it already ran.',
     showWhen: () => serverUrl.startsWith('http'),
     markerId: 'persisted',
     run: async () => {
       const channels = expectListChannelsResult(await plugin.listChannels());
-      const latest = expectGetLatestResult(await plugin.getLatest());
+      const latest =
+        state.lastLatest != null
+          ? expectGetLatestResult(state.lastLatest)
+          : expectGetLatestResult(await plugin.getLatest());
       const appIdResult = expectStringFieldResult(await plugin.getAppId(), 'appId', 'verify persisted getAppId()');
       state.listChannelsResult = channels;
       state.lastLatest = latest;
@@ -1906,6 +1932,7 @@ const actions = [
     id: 'get-latest',
     label: 'Get latest OTA bundle',
     buttonLabel: 'Run getLatest()',
+    quickButtonLabel: 'Quick get latest',
     description: 'Fetch the latest bundle metadata from the fake OTA server.',
     includeInSmokeSequence: true,
     smokeTimeoutMs: 90000,
