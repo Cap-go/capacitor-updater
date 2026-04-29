@@ -425,6 +425,29 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(String(data: data, encoding: .utf8), "\"success\"")
     }
 
+    func testBundleStatusDecodesLegacyCaseKeyObject() throws {
+        let data = try XCTUnwrap("""
+        {"SUCCESS":{}}
+        """.data(using: .utf8))
+
+        let decoded = try JSONDecoder().decode(BundleStatus.self, from: data)
+
+        XCTAssertEqual(decoded, .SUCCESS)
+    }
+
+    func testBundleInfoDecodesLegacyBundleStatusObject() throws {
+        let data = try XCTUnwrap("""
+        {"downloaded":"1970-01-01T00:00:00.000Z","id":"test-id","version":"1.0.0","checksum":"abc123","status":{"SUCCESS":{}}}
+        """.data(using: .utf8))
+
+        let decodedBundle = try JSONDecoder().decode(BundleInfo.self, from: data)
+
+        XCTAssertEqual(decodedBundle.getId(), "test-id")
+        XCTAssertEqual(decodedBundle.getVersionName(), "1.0.0")
+        XCTAssertEqual(decodedBundle.getChecksum(), "abc123")
+        XCTAssertEqual(decodedBundle.getStatus(), BundleStatus.SUCCESS.storedValue)
+    }
+
     func testSetChannelRejectsNonSuccessStatusWithoutPersistingDefaultChannel() throws {
         let updater = ChannelRequestCapgoUpdater()
         updater.setLogger(Logger(withTag: "TestLogger"))
