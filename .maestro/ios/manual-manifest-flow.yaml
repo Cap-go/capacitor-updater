@@ -11,55 +11,46 @@ appId: app.capgo.updater
     timeout: 120000
 - scrollUntilVisible:
     element:
-      id: 'quick-action-set-runtime-urls'
+      text: 'Quick apply runtime URLs'
     direction: DOWN
     timeout: 30000
     centerElement: true
     visibilityPercentage: 1
     waitToSettleTimeoutMs: 500
 - tapOn:
-    id: 'quick-action-set-runtime-urls'
+    text: 'Quick apply runtime URLs'
     retryTapIfNoChange: true
-- scrollUntilVisible:
-    element:
-      text: '.*Marker: set-runtime-urls:success.*'
-    direction: UP
+- extendedWaitUntil:
+    visible: '.*(Marker: set-runtime-urls:success|M:set-runtime-urls:success).*'
     timeout: 30000
-    visibilityPercentage: 1
 - scrollUntilVisible:
     element:
-      id: 'quick-action-reset-server-release'
+      text: 'Quick reset release'
     direction: DOWN
     timeout: 30000
     centerElement: true
     visibilityPercentage: 1
     waitToSettleTimeoutMs: 500
 - tapOn:
-    id: 'quick-action-reset-server-release'
+    text: 'Quick reset release'
     retryTapIfNoChange: true
-- scrollUntilVisible:
-    element:
-      text: '.*Marker: reset:success.*'
-    direction: UP
+- extendedWaitUntil:
+    visible: '.*(Marker: reset:success|M:reset:success).*'
     timeout: 30000
-    visibilityPercentage: 1
 - scrollUntilVisible:
     element:
-      id: 'quick-action-download-latest-bundle'
+      text: 'Quick download latest bundle'
     direction: DOWN
     timeout: 30000
     centerElement: true
     visibilityPercentage: 1
     waitToSettleTimeoutMs: 500
 - tapOn:
-    id: 'quick-action-download-latest-bundle'
+    text: 'Quick download latest bundle'
     retryTapIfNoChange: true
-- scrollUntilVisible:
-    element:
-      text: '.*Marker: download:success.*'
-    direction: UP
+- extendedWaitUntil:
+    visible: '.*(Marker: download:success|M:download:success).*'
     timeout: 120000
-    visibilityPercentage: 1
 - extendedWaitUntil:
     visible: '.*Download event: .*manual-manifest-v1.*'
     timeout: 30000
@@ -76,19 +67,15 @@ appId: app.capgo.updater
     timeout: 120000
 - scrollUntilVisible:
     element:
-      id: 'quick-action-queue-last-downloaded-bundle'
+      text: 'Quick queue bundle'
     direction: DOWN
     timeout: 30000
     centerElement: false
     visibilityPercentage: 1
-- tapOn:
-    id: 'quick-action-queue-last-downloaded-bundle'
-- scrollUntilVisible:
-    element:
-      text: '.*Marker: queue:success.*'
-    direction: UP
+- tapOn: 'Quick queue bundle'
+- extendedWaitUntil:
+    visible: '.*(Marker: queue:success|M:queue:success).*'
     timeout: 30000
-    visibilityPercentage: 1
 - extendedWaitUntil:
     visible: '.*Set next event: manual-manifest-v1.*'
     timeout: 30000
@@ -99,13 +86,12 @@ appId: app.capgo.updater
     timeout: 120000
 - scrollUntilVisible:
     element:
-      id: 'quick-action-reload-app'
+      text: 'Quick reload app'
     direction: DOWN
     timeout: 30000
     centerElement: false
     visibilityPercentage: 1
-- tapOn:
-    id: 'quick-action-reload-app'
+- tapOn: 'Quick reload app'
 - extendedWaitUntil:
     visible: '@capgo/capacitor-updater'
     timeout: 180000
@@ -118,34 +104,26 @@ appId: app.capgo.updater
 - assertVisible: '.*Current bundle version: manual-manifest-v1.*'
 - scrollUntilVisible:
     element:
-      id: 'quick-action-advance-server-release'
+      text: 'Quick advance release'
     direction: DOWN
     timeout: 30000
     centerElement: false
     visibilityPercentage: 1
-- tapOn:
-    id: 'quick-action-advance-server-release'
-- scrollUntilVisible:
-    element:
-      text: '.*Marker: advance:success.*'
-    direction: UP
+- tapOn: 'Quick advance release'
+- extendedWaitUntil:
+    visible: '.*(Marker: advance:success|M:advance:success).*'
     timeout: 30000
-    visibilityPercentage: 1
 - scrollUntilVisible:
     element:
-      id: 'quick-action-download-latest-bundle'
+      text: 'Quick download latest bundle'
     direction: DOWN
     timeout: 30000
     centerElement: false
     visibilityPercentage: 1
-- tapOn:
-    id: 'quick-action-download-latest-bundle'
-- scrollUntilVisible:
-    element:
-      text: '.*Marker: download:success.*'
-    direction: UP
+- tapOn: 'Quick download latest bundle'
+- extendedWaitUntil:
+    visible: '.*(Marker: download:success|M:download:success).*'
     timeout: 120000
-    visibilityPercentage: 1
 - extendedWaitUntil:
     visible: '.*Download event: .*manual-manifest-v2.*'
     timeout: 30000
@@ -162,19 +140,15 @@ appId: app.capgo.updater
     timeout: 120000
 - scrollUntilVisible:
     element:
-      id: 'quick-action-queue-last-downloaded-bundle'
+      text: 'Quick queue bundle'
     direction: DOWN
     timeout: 30000
     centerElement: false
     visibilityPercentage: 1
-- tapOn:
-    id: 'quick-action-queue-last-downloaded-bundle'
-- scrollUntilVisible:
-    element:
-      text: '.*Marker: queue:success.*'
-    direction: UP
+- tapOn: 'Quick queue bundle'
+- extendedWaitUntil:
+    visible: '.*(Marker: queue:success|M:queue:success).*'
     timeout: 30000
-    visibilityPercentage: 1
 - extendedWaitUntil:
     visible: '.*Set next event: manual-manifest-v2.*'
     timeout: 30000
@@ -185,13 +159,12 @@ appId: app.capgo.updater
     timeout: 120000
 - scrollUntilVisible:
     element:
-      id: 'quick-action-reload-app'
+      text: 'Quick reload app'
     direction: DOWN
     timeout: 30000
     centerElement: false
     visibilityPercentage: 1
-- tapOn:
-    id: 'quick-action-reload-app'
+- tapOn: 'Quick reload app'
 - extendedWaitUntil:
     visible: '@capgo/capacitor-updater'
     timeout: 180000
@@ -204,23 +177,19 @@ appId: app.capgo.updater
 - assertVisible: '.*Current bundle version: manual-manifest-v2.*'
 - scrollUntilVisible:
     element:
-      id: 'quick-action-get-next-bundle'
+      text: 'Quick read next bundle'
     direction: DOWN
     timeout: 30000
     centerElement: false
     visibilityPercentage: 1
 - scrollUntilVisible:
     element:
-      id: 'quick-action-get-latest-no-update'
+      text: 'Quick confirm no update'
     direction: DOWN
     timeout: 30000
     centerElement: false
     visibilityPercentage: 1
-- tapOn:
-    id: 'quick-action-get-latest-no-update'
-- scrollUntilVisible:
-    element:
-      text: '.*Marker: no-update:success.*'
-    direction: UP
+- tapOn: 'Quick confirm no update'
+- extendedWaitUntil:
+    visible: '.*(Marker: no-update:success|M:no-update:success).*'
     timeout: 60000
-    visibilityPercentage: 1

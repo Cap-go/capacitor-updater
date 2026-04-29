@@ -39,7 +39,7 @@ async function buildBundle({ scenarioId, directUpdate, release }) {
     env,
   });
 
-  await runCommand('zip', ['-qr', getBundleZipPath(release.version), '.'], {
+  await runCommand('zip', ['-0', '-q', '-r', getBundleZipPath(release.version), '.'], {
     cwd: path.join(exampleAppDir, 'dist'),
   });
 

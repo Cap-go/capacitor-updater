@@ -28,15 +28,49 @@ default_simulator_id() {
   xcrun simctl list devices available | sed -nE 's/^[[:space:]]*iPhone.*\(([0-9A-F-]{36})\) \([^)]*\)[[:space:]]*$/\1/p' | head -n 1
 }
 
+detect_host_ipv4() {
+  local default_interface=""
+  local host_ip=""
+
+  default_interface="$(
+    route -n get default 2>/dev/null |
+      sed -n 's/^[[:space:]]*interface: //p' |
+      head -n 1
+  )"
+
+  if [[ -n "$default_interface" ]]; then
+    host_ip="$(ipconfig getifaddr "$default_interface" 2>/dev/null || true)"
+  fi
+
+  if [[ -z "$host_ip" ]]; then
+    host_ip="$(
+      ifconfig 2>/dev/null |
+        awk '
+          /^[a-z0-9]+: / { iface = $1; sub(/:$/, "", iface) }
+          iface !~ /^(lo|bridge|utun|awdl)/ && /inet / && $2 != "127.0.0.1" { print $2; exit }
+        '
+    )"
+  fi
+
+  if [[ -n "$host_ip" ]]; then
+    printf '%s\n' "$host_ip"
+    return 0
+  fi
+
+  return 1
+}
+
 if [[ -n "${CAPGO_MAESTRO_DEVICE_BASE_URL:-}" ]]; then
   DEVICE_SERVER_URL="$CAPGO_MAESTRO_DEVICE_BASE_URL"
 elif [[ -n "${CAPGO_MAESTRO_DEVICE_HOST_IP:-}" ]]; then
   DEVICE_SERVER_URL="http://${CAPGO_MAESTRO_DEVICE_HOST_IP}:${HOST_SERVER_PORT}"
 else
-  # The simulator shares the host loopback stack, so use the same IPv4 loopback base
-  # URL as the fake server to avoid localhost resolving to ::1 when the server is
-  # listening on IPv4 only. Physical device runs can still override this through env vars.
-  DEVICE_SERVER_URL="$HOST_SERVER_URL"
+  DETECTED_HOST_IP="$(detect_host_ipv4 || true)"
+  if [[ -n "$DETECTED_HOST_IP" ]]; then
+    DEVICE_SERVER_URL="http://${DETECTED_HOST_IP}:${HOST_SERVER_PORT}"
+  else
+    DEVICE_SERVER_URL="$HOST_SERVER_URL"
+  fi
 fi
 
 export CAPGO_MAESTRO_DEVICE_BASE_URL="$DEVICE_SERVER_URL"
@@ -575,13 +609,13 @@ run_scenario() {
         "Current bundle version: $second_release"
       ;;
     manual-zip)
-      run_flow "${scenario_id}-flow" "$ROOT_DIR/.maestro/manual-zip-flow.yaml"
+      run_flow "${scenario_id}-flow" "$ROOT_DIR/.maestro/ios/manual-zip-flow.yaml"
       ;;
     manual-zip-config-guards)
-      run_flow "${scenario_id}-flow" "$ROOT_DIR/.maestro/manual-zip-config-guards-flow.yaml"
+      run_flow "${scenario_id}-flow" "$ROOT_DIR/.maestro/ios/manual-zip-config-guards-flow.yaml"
       ;;
     manual-manifest)
-      run_flow "${scenario_id}-flow" "$ROOT_DIR/.maestro/manual-manifest-flow.yaml"
+      run_flow "${scenario_id}-flow" "$ROOT_DIR/.maestro/ios/manual-manifest-flow.yaml"
       assert_server_debug_state manual-manifest '
 const state = JSON.parse(process.argv[1]);
 const scenarioId = process.argv[2];

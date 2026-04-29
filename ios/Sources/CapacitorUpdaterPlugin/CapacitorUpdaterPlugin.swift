@@ -571,11 +571,24 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    private func bundlePayload(_ bundleInfo: BundleInfo) -> JSObject {
+        var payload: JSObject = [:]
+        for (key, value) in bundleInfo.toJSON() {
+            payload[key] = value
+        }
+        return payload
+    }
+
     @objc func notifyDownload(id: String, percent: Int, ignoreMultipleOfTen: Bool = false, bundle: BundleInfo? = nil) {
         let bundleInfo = bundle ?? self.implementation.getBundleInfo(id: id)
-        self.notifyListeners("download", data: ["percent": percent, "bundle": bundleInfo.toJSON()])
+        var downloadPayload: JSObject = [:]
+        downloadPayload["percent"] = percent
+        downloadPayload["bundle"] = bundlePayload(bundleInfo)
+        self.notifyListenersOnMain("download", data: downloadPayload)
         if percent == 100 {
-            self.notifyListeners("downloadComplete", data: ["bundle": bundleInfo.toJSON()])
+            var downloadCompletePayload: JSObject = [:]
+            downloadCompletePayload["bundle"] = bundlePayload(bundleInfo)
+            self.notifyListenersOnMain("downloadComplete", data: downloadCompletePayload)
             self.implementation.sendStats(action: "download_complete", versionName: bundleInfo.getVersionName())
         } else if percent.isMultiple(of: 10) || ignoreMultipleOfTen {
             self.implementation.sendStats(action: "download_\(percent)", versionName: bundleInfo.getVersionName())
@@ -720,11 +733,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 } else {
                     self.logger.info("Good checksum \(next.getChecksum()) \(checksum)")
                 }
-                self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
+                var updateAvailablePayload: JSObject = [:]
+                updateAvailablePayload["bundle"] = self.bundlePayload(next)
+                self.notifyListenersOnMain("updateAvailable", data: updateAvailablePayload)
                 self.resolveCall(call, data: next.toJSON())
             } catch {
                 self.logger.error("Failed to download from: \(String(describing: url)) \(error.localizedDescription)")
-                self.notifyListeners("downloadFailed", data: ["version": version])
+                var downloadFailedPayload: JSObject = [:]
+                downloadFailedPayload["version"] = version
+                self.notifyListenersOnMain("downloadFailed", data: downloadFailedPayload)
                 self.implementation.sendStats(action: "download_fail")
                 self.rejectCall(call, message: "Failed to download from: \(url!) - \(error.localizedDescription)")
             }
@@ -2338,8 +2355,44 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         let appId = call.getString("appId")
         self.saveCallForAsyncHandling(call)
 
+        #if targetEnvironment(simulator)
         if let appId = appId {
-            // Open App Store with provided app ID
+            let lookupUrl = "https://itunes.apple.com/lookup?id=\(appId)"
+            guard let url = URL(string: lookupUrl) else {
+                self.rejectCall(call, message: "Invalid App Store lookup URL")
+                return
+            }
+            DispatchQueue.main.async {
+                UIApplication.shared.open(url) { success in
+                    if success {
+                        self.resolveCall(call)
+                    } else {
+                        self.rejectCall(call, message: "Failed to open App Store lookup")
+                    }
+                }
+            }
+            return
+        }
+
+        let bundleId = implementation.appId
+        let lookupUrl = "https://itunes.apple.com/lookup?bundleId=\(bundleId)"
+        guard let url = URL(string: lookupUrl) else {
+            self.rejectCall(call, message: "Invalid App Store lookup URL")
+            return
+        }
+        DispatchQueue.main.async {
+            UIApplication.shared.open(url) { success in
+                if success {
+                    self.resolveCall(call)
+                } else {
+                    self.rejectCall(call, message: "Failed to open App Store lookup")
+                }
+            }
+        }
+        return
+        #endif
+
+        if let appId = appId {
             let urlString = "https://apps.apple.com/app/id\(appId)"
             guard let url = URL(string: urlString) else {
                 self.rejectCall(call, message: "Invalid App Store URL")
@@ -2355,7 +2408,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
             }
         } else {
-            // Look up app ID using bundle identifier
             let bundleId = implementation.appId
             let lookupUrl = "https://itunes.apple.com/lookup?bundleId=\(bundleId)"
 
@@ -2376,21 +2428,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                           let results = json["results"] as? [[String: Any]],
                           let appInfo = results.first,
                           let trackId = appInfo["trackId"] as? Int else {
-                        // If lookup fails, try opening the generic App Store app page using bundle ID
-                        let fallbackUrlString = "https://apps.apple.com/app/\(bundleId)"
-                        guard let fallbackUrl = URL(string: fallbackUrlString) else {
-                            self.rejectCall(call, message: "Failed to find app in App Store and fallback URL is invalid")
-                            return
-                        }
-                        DispatchQueue.main.async {
-                            UIApplication.shared.open(fallbackUrl) { success in
-                                if success {
-                                    self.resolveCall(call)
-                                } else {
-                                    self.rejectCall(call, message: "Failed to open App Store")
-                                }
-                            }
-                        }
+                        self.rejectCall(
+                            call,
+                            message: "Failed to find app in App Store for bundle identifier \(bundleId). Pass appId to openAppStore() when automatic lookup is unavailable."
+                        )
                         return
                     }
 

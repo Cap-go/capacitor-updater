@@ -11,52 +11,52 @@ appId: app.capgo.updater
     timeout: 120000
 - scrollUntilVisible:
     element:
-      text: 'Quick reset release'
+      id: 'quick-action-reset-server-release'
     direction: DOWN
     timeout: 30000
     centerElement: true
     visibilityPercentage: 1
     waitToSettleTimeoutMs: 500
 - tapOn:
-    text: 'Quick reset release'
+    id: 'quick-action-reset-server-release'
     retryTapIfNoChange: true
 - scrollUntilVisible:
     element:
-      text: '.*M:reset:success.*'
+      text: '.*Marker: reset:success.*'
     direction: UP
     timeout: 30000
     visibilityPercentage: 1
 - scrollUntilVisible:
     element:
-      text: 'Quick download latest bundle'
+      id: 'quick-action-download-latest-bundle'
     direction: DOWN
     timeout: 30000
     centerElement: true
     visibilityPercentage: 1
     waitToSettleTimeoutMs: 500
 - tapOn:
-    text: 'Quick download latest bundle'
+    id: 'quick-action-download-latest-bundle'
     retryTapIfNoChange: true
 - scrollUntilVisible:
     element:
-      text: '.*M:download:success.*'
+      text: '.*Marker: download:success.*'
     direction: UP
     timeout: 120000
     visibilityPercentage: 1
 - scrollUntilVisible:
     element:
-      text: 'Quick mark bundle error'
+      id: 'quick-action-set-bundle-error'
     direction: DOWN
     timeout: 30000
     centerElement: true
     visibilityPercentage: 1
     waitToSettleTimeoutMs: 500
 - tapOn:
-    text: 'Quick mark bundle error'
+    id: 'quick-action-set-bundle-error'
     retryTapIfNoChange: true
 - scrollUntilVisible:
     element:
-      text: '.*M:bundle:(success|expected-rejection).*'
+      text: '.*Marker: bundle:(success|expected-rejection).*'
     direction: UP
     timeout: 30000
     visibilityPercentage: 1

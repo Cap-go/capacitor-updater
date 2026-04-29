@@ -104,10 +104,15 @@ import UIKit
     }
 
     private lazy var alamofireSession: Session = {
-        let configuration = URLSessionConfiguration.default
+        let configuration = URLSessionConfiguration.ephemeral
         configuration.httpAdditionalHeaders = ["User-Agent": self.userAgent]
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.urlCache = nil
         return Session(configuration: configuration)
     }()
+    private let networkResponseQueue = DispatchQueue(label: "ee.forgr.capacitor-updater.network-response", qos: .utility)
 
     public var notifyDownloadRaw: (String, Int, Bool, BundleInfo?) -> Void = { _, _, _, _  in }
     public func notifyDownload(id: String, percent: Int, ignoreMultipleOfTen: Bool = false, bundle: BundleInfo? = nil) {
@@ -161,29 +166,19 @@ import UIKit
     func performRequest(_ request: URLRequest, label: String) -> RequestResult {
         let waitTimeout = max(self.timeout + 5, 10)
         let semaphore = DispatchSemaphore(value: 0)
-        let configuration = URLSessionConfiguration.default
-        configuration.httpAdditionalHeaders = ["User-Agent": self.userAgent]
-        configuration.timeoutIntervalForRequest = self.timeout
-        configuration.timeoutIntervalForResource = waitTimeout
-        let session = URLSession(configuration: configuration)
         var responseData: Data?
         var httpResponse: HTTPURLResponse?
         var requestError: Error?
-        let task = session.dataTask(with: request) { data, response, error in
-            responseData = data
-            httpResponse = response as? HTTPURLResponse
-            requestError = error
+        let dataRequest = self.alamofireSession.request(request).responseData(queue: self.networkResponseQueue) { response in
+            responseData = response.data
+            httpResponse = response.response
+            requestError = response.error
             semaphore.signal()
         }
-
-        defer {
-            session.finishTasksAndInvalidate()
-        }
-
-        task.resume()
+        dataRequest.resume()
 
         if semaphore.wait(timeout: .now() + waitTimeout) == .timedOut {
-            task.cancel()
+            dataRequest.cancel()
             logger.error("\(label) timed out after \(Int(waitTimeout))s")
             return RequestResult(data: responseData, response: httpResponse, error: requestError, timedOut: true)
         }
@@ -192,31 +187,36 @@ import UIKit
     }
 
     private func performDownloadRequest(_ request: URLRequest, label: String) -> DownloadRequestResult {
+        let waitTimeout = max(self.timeout + 5, 10)
         let semaphore = DispatchSemaphore(value: 0)
-        let configuration = URLSessionConfiguration.default
-        configuration.httpAdditionalHeaders = ["User-Agent": self.userAgent]
-        configuration.timeoutIntervalForRequest = self.timeout
-        let session = URLSession(configuration: configuration)
         var tempFileURL: URL?
         var httpResponse: HTTPURLResponse?
         var requestError: Error?
-        let task = session.downloadTask(with: request) { location, response, error in
-            tempFileURL = location
-            httpResponse = response as? HTTPURLResponse
-            requestError = error
+        let temporaryDownloadURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let destination: DownloadRequest.Destination = { _, _ in
+            (temporaryDownloadURL, [.removePreviousFile, .createIntermediateDirectories])
+        }
+        let downloadRequest = self.alamofireSession.download(request, to: destination).response(queue: self.networkResponseQueue) { response in
+            tempFileURL = response.fileURL
+            httpResponse = response.response
+            requestError = response.error
             semaphore.signal()
         }
+        downloadRequest.resume()
 
-        defer {
-            session.finishTasksAndInvalidate()
+        if semaphore.wait(timeout: .now() + waitTimeout) == .timedOut {
+            downloadRequest.cancel()
+            logger.error("\(label) timed out after \(Int(waitTimeout))s")
+            return DownloadRequestResult(
+                fileURL: tempFileURL,
+                response: httpResponse,
+                error: requestError,
+                timedOut: true
+            )
         }
 
-        task.resume()
-
-        semaphore.wait()
-
         if isTimedOutError(requestError) {
-            logger.error("\(label) timed out after \(Int(self.timeout))s")
+            logger.error("\(label) timed out after \(Int(waitTimeout))s")
         }
 
         return DownloadRequestResult(
@@ -463,6 +463,65 @@ import UIKit
         }
     }
 
+    private func extractZipEntry(_ archive: Archive, entry: Entry, to destPath: URL) throws {
+        let fileManager = FileManager.default
+
+        switch entry.type {
+        case .directory:
+            try fileManager.createDirectory(at: destPath, withIntermediateDirectories: true, attributes: nil)
+        case .file:
+            let parentDir = destPath.deletingLastPathComponent()
+            try fileManager.createDirectory(at: parentDir, withIntermediateDirectories: true, attributes: nil)
+
+            if fileManager.fileExists(atPath: destPath.path) {
+                try fileManager.removeItem(at: destPath)
+            }
+
+            guard fileManager.createFile(atPath: destPath.path, contents: nil) else {
+                throw CustomError.cannotUnzip
+            }
+
+            let fileHandle = try FileHandle(forWritingTo: destPath)
+            defer {
+                fileHandle.closeFile()
+            }
+
+            _ = try archive.extract(entry, bufferSize: 16 * 1024, skipCRC32: true) { data in
+                if !data.isEmpty {
+                    fileHandle.write(data)
+                }
+            }
+        case .symlink:
+            var linkData = Data()
+            _ = try archive.extract(entry, bufferSize: 16 * 1024, skipCRC32: true) { data in
+                linkData.append(data)
+            }
+
+            guard let linkPath = String(data: linkData, encoding: .utf8) else {
+                throw CustomError.cannotUnzip
+            }
+
+            let parentDir = destPath.deletingLastPathComponent()
+            try fileManager.createDirectory(at: parentDir, withIntermediateDirectories: true, attributes: nil)
+
+            let isAbsolutePath = (linkPath as NSString).isAbsolutePath
+            let linkURL = URL(fileURLWithPath: linkPath, relativeTo: isAbsolutePath ? nil : parentDir)
+            let canonicalPath = linkURL.standardizedFileURL.path
+            let canonicalDir = parentDir.standardizedFileURL.path
+            let normalizedDir = canonicalDir.hasSuffix("/") ? canonicalDir : "\(canonicalDir)/"
+
+            if canonicalPath != canonicalDir && !canonicalPath.hasPrefix(normalizedDir) {
+                throw CustomError.cannotUnzip
+            }
+
+            if fileManager.fileExists(atPath: destPath.path) {
+                try fileManager.removeItem(at: destPath)
+            }
+
+            try fileManager.createSymbolicLink(atPath: destPath.path, withDestinationPath: linkPath)
+        }
+    }
+
     private func saveDownloaded(sourceZip: URL, id: String, base: URL, notify: Bool) throws {
         try prepareFolder(source: base)
         let destPersist: URL = base.appendingPathComponent(id)
@@ -513,8 +572,7 @@ import UIKit
                     try FileManager.default.createDirectory(at: parentDir, withIntermediateDirectories: true, attributes: nil)
                 }
 
-                // Extract the entry
-                _ = try archive.extract(entry, to: destPath, skipCRC32: true)
+                try self.extractZipEntry(archive, entry: entry, to: destPath)
 
                 // Update progress
                 processedEntries += 1
@@ -2278,7 +2336,6 @@ import UIKit
                 logger.debug("Bundle ID: \(id), Error: \(error.localizedDescription)")
             }
         }
-        UserDefaults.standard.synchronize()
     }
 
     private func setBundleStatus(id: String, status: BundleStatus) {

@@ -28,7 +28,7 @@ appId: app.capgo.updater
     direction: UP
     timeout: 120000
 - extendedWaitUntil:
-    visible: '.*M:smoke-sequence:success.*'
+    visible: '.*(Marker: smoke-sequence:success|M:smoke-sequence:success).*'
     timeout: 180000
 - runFlow: helpers/cold-launch-app.yaml
 - extendedWaitUntil:
@@ -72,5 +72,5 @@ appId: app.capgo.updater
     direction: UP
     timeout: 120000
 - extendedWaitUntil:
-    visible: '.*M:persisted:success.*'
+    visible: '.*(Marker: persisted:success|M:persisted:success).*'
     timeout: 120000

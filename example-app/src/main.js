@@ -22,16 +22,27 @@ const persistModifyUrl = import.meta.env.VITE_CAPGO_PERSIST_MODIFY_URL === 'true
 const skipNotifyAppReady = import.meta.env.VITE_CAPGO_SKIP_NOTIFY_APP_READY === 'true';
 const bootStorageKey = '__capgo_maestro_boot_count';
 const lastActionStorageKey = '__capgo_maestro_last_action';
+const lastActionMarkerStorageKey = '__capgo_maestro_last_action_marker';
 const lastActionResultStorageKey = '__capgo_maestro_last_action_result';
+const lastErrorStorageKey = '__capgo_maestro_last_error';
+const lastPhaseStorageKey = '__capgo_maestro_last_phase';
+const pendingBootActionStorageKey = '__capgo_maestro_pending_boot_action';
 const pendingReloadActionStorageKey = '__capgo_maestro_pending_reload_action';
 const fallbackUpdateUrl = 'https://example.com/api/auto_update';
 const maxEvents = 10;
 const runtimeSmokeAppId = 'app.capgo.updater.e2e';
 const runtimeSmokeCustomId = 'qa-user-42';
+const runtimeStoreAppId = '361309726';
 const lastActionFromStorage = window.localStorage.getItem(lastActionStorageKey) ?? 'none';
+const lastActionMarkerFromStorage =
+  window.localStorage.getItem(lastActionMarkerStorageKey) ??
+  window.localStorage.getItem(lastActionResultStorageKey) ??
+  'none';
 const lastActionResultFromStorage = window.localStorage.getItem(lastActionResultStorageKey) ?? 'idle';
+const bootActionFromStorage = window.localStorage.getItem(pendingBootActionStorageKey) ?? 'none';
 const reloadActionFromStorage = window.localStorage.getItem(pendingReloadActionStorageKey) ?? 'none';
 
+window.localStorage.removeItem(pendingBootActionStorageKey);
 window.localStorage.removeItem(pendingReloadActionStorageKey);
 
 function requireElement(id) {
@@ -69,6 +80,8 @@ const elements = {
   getChannelState: requireElement('get-channel-state'),
   getChannelReadState: requireElement('get-channel-read-state'),
   harnessReady: requireElement('harness-ready'),
+  heroBootProbe: requireElement('hero-boot-probe'),
+  heroResultMarker: requireElement('hero-result-marker'),
   lastGetLatestCheckState: requireElement('last-get-latest-check-state'),
   lastListChannelsCheckState: requireElement('last-list-channels-check-state'),
   lastPrivateChannelCheckState: requireElement('last-private-channel-check-state'),
@@ -125,6 +138,10 @@ let refreshStatePromise = null;
 let refreshStateQueued = false;
 let actionInProgress = false;
 let sequenceInProgress = false;
+let lastTouchLikeActionAt = 0;
+let lastGlobalActionTriggerAt = 0;
+let suppressNonSequenceActionsUntil = 0;
+let suppressActionTriggersUntil = 0;
 const quickActionIds = [
   'set-runtime-urls',
   'verify-persisted-config',
@@ -133,10 +150,12 @@ const quickActionIds = [
   'start-flexible-update',
   'complete-flexible-update',
   'get-latest',
+  'queue-boot-get-latest',
   'open-app-store',
   'reset-server-release',
   'advance-server-release',
   'download-latest-bundle',
+  'download-latest-bundle-observe-store',
   'set-last-downloaded-bundle',
   'queue-last-downloaded-bundle',
   'get-next-bundle',
@@ -151,6 +170,8 @@ const quickActionIds = [
 ];
 const smokeSequenceDefaultDelayMs = 150;
 const smokeSequenceMutationDelayMs = 300;
+const actionTriggerCooldownMs = 1500;
+const reloadActionTriggerCooldownMs = 8000;
 const smokeSequenceExtendedSettleActionIds = new Set([
   'set-app-id',
   'set-custom-id',
@@ -220,6 +241,7 @@ const state = {
   autoUpdateAvailable: 'loading',
   autoUpdateEnabled: 'loading',
   bootCount: incrementBootCount(),
+  bootProbe: 'not-needed',
   bundles: [],
   currentBundle: null,
   eventMarkers: {
@@ -250,7 +272,7 @@ const state = {
   lastUnsetChannelCheck: 'not-run',
   listChannelsResult: null,
   lastAction: lastActionFromStorage,
-  lastActionMarker: 'none',
+  lastActionMarker: lastActionMarkerFromStorage,
   lastActionResult: lastActionResultFromStorage,
   lastDownload: 'none',
   lastDownloadedBundleId: null,
@@ -713,7 +735,9 @@ function renderState() {
   elements.appLabel.textContent = `Build label: ${buildLabel}`;
   elements.lastAction.textContent = `Last action: ${state.lastAction}`;
   elements.lastActionResult.textContent = `Last action result: ${state.lastActionResult}`;
-  elements.resultMarker.textContent = `M:${state.lastActionResult}`;
+  elements.heroBootProbe.textContent = `Probe: ${state.bootProbe}`;
+  elements.heroResultMarker.textContent = `Marker: ${state.lastActionMarker}`;
+  elements.resultMarker.textContent = `M:${state.lastActionMarker}`;
   elements.lastError.textContent = `Last error: ${state.lastError ?? 'none'}`;
   elements.downloadEventState.textContent = `Download event: ${state.eventMarkers.download}`;
   elements.downloadCompleteEventState.textContent = `Download complete event: ${state.eventMarkers.downloadComplete}`;
@@ -817,6 +841,8 @@ function renderState() {
     null,
     2,
   );
+  window.localStorage.setItem(lastErrorStorageKey, state.lastError ?? 'none');
+  window.localStorage.setItem(lastPhaseStorageKey, state.lastPhase);
 
   logHarnessState(harnessSnapshot);
 }
@@ -923,6 +949,16 @@ async function getLastDownloadedBundleOrThrow() {
   return bundle;
 }
 
+async function runBootProbe() {
+  const channels = expectListChannelsResult(await plugin.listChannels());
+  const latest = expectGetLatestResult(await plugin.getLatest());
+  state.listChannelsResult = channels;
+  state.lastListChannelsCheck = formatAvailableChannels(channels);
+  state.lastLatest = latest;
+  state.lastGetLatestCheck = latest.version ?? 'none';
+  state.bootProbe = 'success';
+}
+
 async function getLatestInactiveBundleOrThrow() {
   const candidate = getLatestInactiveBundle(state.bundles);
 
@@ -959,6 +995,10 @@ function formatResult(result) {
 
 function markPendingReloadAction(actionId) {
   window.localStorage.setItem(pendingReloadActionStorageKey, actionId);
+}
+
+function markPendingBootAction(actionId) {
+  window.localStorage.setItem(pendingBootActionStorageKey, actionId);
 }
 
 async function performNotifyAppReady() {
@@ -1772,7 +1812,13 @@ const actions = [
     buttonLabel: 'Run openAppStore()',
     quickButtonLabel: 'Quick open store page',
     description: 'Exercise the store-opening contract used as the fallback for native app updates.',
-    run: async () => invokeContractMethod('openAppStore', () => plugin.openAppStore(), validateOpenAppStoreContract),
+    skipRefresh: true,
+    run: async () =>
+      invokeContractMethod(
+        'openAppStore',
+        () => (platform === 'ios' ? plugin.openAppStore({ appId: runtimeStoreAppId }) : plugin.openAppStore()),
+        validateOpenAppStoreContract,
+      ),
   },
   {
     id: 'perform-immediate-update',
@@ -1827,6 +1873,16 @@ const actions = [
       state.lastLatest = latest;
       await refreshServerState();
       renderState();
+
+      if (platform === 'android' && !state.serverDebug?.debug) {
+        return {
+          appId: appIdResult.appId,
+          channels: channels.channels,
+          customId: persistCustomId ? runtimeSmokeCustomId : 'none',
+          note: 'server debug unavailable in Android WebView',
+          version: latest.version,
+        };
+      }
 
       const serverDebug = state.serverDebug?.debug ?? {};
       const lastUpdateRequest = serverDebug.lastUpdateRequest ?? {};
@@ -1945,6 +2001,21 @@ const actions = [
     },
   },
   {
+    id: 'queue-boot-get-latest',
+    label: 'Queue boot getLatest',
+    buttonLabel: 'Queue getLatest() on next boot',
+    quickButtonLabel: 'Quick queue boot get latest',
+    description: 'Persist a getLatest() check that runs automatically on the next cold launch.',
+    showWhen: () => serverUrl.startsWith('http'),
+    markerId: 'boot-get-latest',
+    run: async () => {
+      markPendingBootAction('get-latest');
+      return {
+        message: 'Queued getLatest() for the next boot.',
+      };
+    },
+  },
+  {
     id: 'get-latest-no-update',
     label: 'Assert no OTA update available',
     buttonLabel: 'Assert no update available',
@@ -2030,6 +2101,83 @@ const actions = [
 
       return {
         downloadResult,
+        storedBundle,
+      };
+    },
+  },
+  {
+    id: 'download-latest-bundle-observe-store',
+    label: 'Observe downloaded OTA bundle',
+    buttonLabel: 'Observe downloaded bundle',
+    quickButtonLabel: 'Quick observe downloaded bundle',
+    description: 'Start a download, then confirm that the native bundle store lands the bundle without waiting on JS event delivery.',
+    showWhen: () => serverUrl.startsWith('http'),
+    markerId: 'download-store',
+    run: async () => {
+      state.eventMarkers.download = 'none';
+      state.eventMarkers.downloadComplete = 'none';
+      state.eventMarkers.downloadFailed = 'none';
+      state.eventMarkers.updateAvailable = 'none';
+      renderState();
+
+      state.lastPhase = 'download-latest-bundle-observe-store:getLatest:start';
+      renderState();
+      const latest = expectGetLatestResult(await plugin.getLatest());
+      state.lastLatest = latest;
+      state.lastPhase = 'download-latest-bundle-observe-store:getLatest:success';
+      renderState();
+
+      let downloadFailure = null;
+      const downloadPromise = plugin
+        .download({
+          checksum: latest.checksum,
+          manifest: latest.manifest,
+          sessionKey: latest.sessionKey,
+          url: latest.url,
+          version: latest.version,
+        })
+        .catch((error) => {
+          downloadFailure = normalizeError(error);
+          state.lastError = downloadFailure.message;
+          renderState();
+          return null;
+        });
+
+      state.lastPhase = 'download-latest-bundle-observe-store:download:started';
+      renderState();
+
+      const storedBundle = await waitForCondition(async () => {
+        if (downloadFailure) {
+          throw new Error(downloadFailure.message);
+        }
+
+        const result = await plugin.list();
+        const bundle = (result?.bundles ?? []).find(
+          (candidate) => getBundleVersion(candidate) === latest.version && getBundleStatus(candidate) !== 'downloading',
+        );
+
+        if (!bundle) {
+          return null;
+        }
+
+        state.bundles = result?.bundles ?? [];
+        state.lastDownloadedBundleId = bundle.id ?? null;
+        state.lastDownloadedBundleVersion = latest.version;
+        renderState();
+        return bundle;
+      }, 120000);
+
+      await Promise.race([downloadPromise, pause(1000)]);
+
+      if (downloadFailure) {
+        throw new Error(downloadFailure.message);
+      }
+
+      state.lastPhase = 'download-latest-bundle-observe-store:store:success';
+      renderState();
+
+      return {
+        observedDownloadEvent: state.eventMarkers.download,
         storedBundle,
       };
     },
@@ -2211,16 +2359,31 @@ function getActionMarkerId(action) {
   return action.markerId ?? action.id;
 }
 
+function shouldIgnoreNonSequenceActionTrigger() {
+  return sequenceInProgress || Boolean(smokeSequencePromise) || Date.now() < suppressNonSequenceActionsUntil;
+}
+
+function shouldIgnoreActionTrigger() {
+  return actionInProgress || sequenceInProgress || Boolean(smokeSequencePromise) || Date.now() < suppressActionTriggersUntil;
+}
+
+function getActionTriggerCooldown(action) {
+  return action.reloadsApp ? reloadActionTriggerCooldownMs : actionTriggerCooldownMs;
+}
+
 async function runAction(action, values, options = {}) {
-  const { skipRefresh = false } = options;
+  const skipRefresh = options.skipRefresh ?? action.skipRefresh ?? false;
   const actionMarker = actionMarkers.get(action.id);
   const actionMarkerId = getActionMarkerId(action);
+  const actionTriggerCooldown = getActionTriggerCooldown(action);
   actionInProgress = true;
+  suppressActionTriggersUntil = Date.now() + actionTriggerCooldown;
   state.lastAction = action.label;
   state.lastActionMarker = `${actionMarkerId}:${action.reloadsApp ? 'reloading' : 'running'}`;
   state.lastActionResult = `${action.id}:running`;
   state.lastPhase = `${action.id}:start`;
   window.localStorage.setItem(lastActionStorageKey, action.label);
+  window.localStorage.setItem(lastActionMarkerStorageKey, state.lastActionMarker);
   window.localStorage.setItem(lastActionResultStorageKey, state.lastActionResult);
   elements.lastAction.textContent = `Last action: ${state.lastAction}`;
   elements.lastActionResult.textContent = `Last action result: ${state.lastActionResult}`;
@@ -2233,12 +2396,14 @@ async function runAction(action, values, options = {}) {
 
   try {
     const result = await action.run(values ?? {});
+    const actionOutcome = result?.outcome === 'expected-rejection' ? 'expected-rejection' : 'success';
     elements.output.textContent = formatResult(result);
 
     if (action.reloadsApp) {
       state.lastActionMarker = `${actionMarkerId}:reloading`;
       state.lastActionResult = `${action.id}:reloading`;
       state.lastPhase = `${action.id}:reloading`;
+      window.localStorage.setItem(lastActionMarkerStorageKey, state.lastActionMarker);
       window.localStorage.setItem(lastActionResultStorageKey, state.lastActionResult);
       elements.lastActionResult.textContent = `Last action result: ${state.lastActionResult}`;
       elements.resultMarker.textContent = `M:${action.id}:reloading`;
@@ -2249,17 +2414,18 @@ async function runAction(action, values, options = {}) {
       return result;
     }
 
-    state.lastActionMarker = `${actionMarkerId}:success`;
-    state.lastActionResult = `${action.id}:success`;
-    state.lastPhase = `${action.id}:success`;
+    state.lastActionMarker = `${actionMarkerId}:${actionOutcome}`;
+    state.lastActionResult = `${action.id}:${actionOutcome}`;
+    state.lastPhase = `${action.id}:${actionOutcome}`;
+    window.localStorage.setItem(lastActionMarkerStorageKey, state.lastActionMarker);
     window.localStorage.setItem(lastActionResultStorageKey, state.lastActionResult);
     elements.lastActionResult.textContent = `Last action result: ${state.lastActionResult}`;
-    elements.resultMarker.textContent = `M:${action.id}:success`;
+    elements.resultMarker.textContent = `M:${state.lastActionMarker}`;
     if (actionMarker) {
       actionMarker.textContent =
         typeof action.successMarker === 'function'
           ? action.successMarker(result)
-          : `Action marker: ${actionMarkerId}:success`;
+          : `Action marker: ${actionMarkerId}:${actionOutcome}`;
     }
     if (!skipRefresh) {
       await refreshState();
@@ -2271,6 +2437,7 @@ async function runAction(action, values, options = {}) {
     state.lastActionMarker = `${actionMarkerId}:error`;
     state.lastActionResult = `${action.id}:error`;
     state.lastPhase = `${action.id}:error`;
+    window.localStorage.setItem(lastActionMarkerStorageKey, state.lastActionMarker);
     window.localStorage.setItem(lastActionResultStorageKey, state.lastActionResult);
     elements.lastActionResult.textContent = `Last action result: ${state.lastActionResult}`;
     elements.resultMarker.textContent = `M:${action.id}:error`;
@@ -2282,6 +2449,7 @@ async function runAction(action, values, options = {}) {
     throw error;
   } finally {
     actionInProgress = false;
+    suppressActionTriggersUntil = Date.now() + actionTriggerCooldown;
   }
 }
 
@@ -2291,12 +2459,14 @@ async function runSmokeSequence() {
   }
 
   const sequenceActions = getSmokeSequenceActions();
+  suppressNonSequenceActionsUntil = Date.now() + 1500;
 
   smokeSequencePromise = (async () => {
     elements.sequenceStatus.textContent = 'Sequence: running';
     elements.resultMarker.textContent = 'M:smoke-sequence:running';
     elements.output.textContent = 'Running smoke test sequence...';
     elements.runSmokeSequenceButton.disabled = true;
+    elements.quickRunSmokeSequenceButton.disabled = true;
     state.sequenceRuns += 1;
     sequenceInProgress = true;
 
@@ -2318,6 +2488,7 @@ async function runSmokeSequence() {
     state.lastError = null;
     state.lastPhase = 'smoke-sequence:running';
     window.localStorage.setItem(lastActionStorageKey, state.lastAction);
+    window.localStorage.setItem(lastActionMarkerStorageKey, state.lastActionMarker);
     window.localStorage.setItem(lastActionResultStorageKey, state.lastActionResult);
     renderState();
 
@@ -2341,6 +2512,7 @@ async function runSmokeSequence() {
       state.lastError = null;
       state.lastPhase = 'smoke-sequence:success';
       window.localStorage.setItem(lastActionStorageKey, state.lastAction);
+      window.localStorage.setItem(lastActionMarkerStorageKey, state.lastActionMarker);
       window.localStorage.setItem(lastActionResultStorageKey, state.lastActionResult);
       elements.sequenceStatus.textContent = 'Sequence: success';
       elements.resultMarker.textContent = 'M:smoke-sequence:success';
@@ -2359,6 +2531,7 @@ async function runSmokeSequence() {
       state.lastError = failureSummary;
       state.lastPhase = `smoke-sequence:error:${failedPhase}`;
       window.localStorage.setItem(lastActionStorageKey, state.lastAction);
+      window.localStorage.setItem(lastActionMarkerStorageKey, state.lastActionMarker);
       window.localStorage.setItem(lastActionResultStorageKey, state.lastActionResult);
       elements.sequenceStatus.textContent = 'Sequence: error';
       elements.resultMarker.textContent = `M:${state.lastActionResult}`;
@@ -2368,7 +2541,9 @@ async function runSmokeSequence() {
       throw error;
     } finally {
       sequenceInProgress = false;
+      suppressNonSequenceActionsUntil = Date.now() + 1500;
       elements.runSmokeSequenceButton.disabled = false;
+      elements.quickRunSmokeSequenceButton.disabled = false;
       smokeSequencePromise = null;
     }
   })();
@@ -2423,9 +2598,18 @@ function createActionCard(action) {
   });
 
   const button = document.createElement('button');
+  const buttonId = `action-button-${action.id}`;
   button.type = 'button';
+  button.id = buttonId;
+  button.setAttribute('data-testid', buttonId);
   button.textContent = action.buttonLabel;
-  button.addEventListener('click', () => {
+  bindActionButton(button, () => {
+    if (shouldIgnoreActionTrigger()) {
+      return;
+    }
+    if (shouldIgnoreNonSequenceActionTrigger()) {
+      return;
+    }
     const values = getCardValues(card, action);
     void runAction(action, values).catch(() => {});
   });
@@ -2456,6 +2640,65 @@ function getVisibleQuickActions() {
   return quickActionIds.map((id) => getActionById(id)).filter((action) => !action.showWhen || action.showWhen());
 }
 
+function bindActionButton(button, handler) {
+  const minTriggerGapMs = 700;
+  const syntheticClickGapMs = 1200;
+
+  const trigger = (event) => {
+    if (
+      (event.type === 'pointerup' || event.type === 'touchend') &&
+      'cancelable' in event &&
+      event.cancelable === false
+    ) {
+      return;
+    }
+
+    if (event.type === 'pointerup') {
+      if (typeof event.button === 'number' && event.button !== 0) {
+        return;
+      }
+
+      if ('isPrimary' in event && event.isPrimary === false) {
+        return;
+      }
+    }
+
+    if (event.type === 'keydown' && event.key !== 'Enter' && event.key !== ' ') {
+      return;
+    }
+
+    const now = Date.now();
+
+    if ((event.type === 'pointerup' || event.type === 'touchend') && now - lastTouchLikeActionAt < minTriggerGapMs) {
+      event.preventDefault();
+      return;
+    }
+
+    if (event.type === 'click' && now - lastTouchLikeActionAt < syntheticClickGapMs) {
+      event.preventDefault();
+      return;
+    }
+
+    if (now - lastGlobalActionTriggerAt < minTriggerGapMs) {
+      event.preventDefault();
+      return;
+    }
+
+    if (event.type === 'pointerup' || event.type === 'touchend') {
+      lastTouchLikeActionAt = now;
+    }
+
+    lastGlobalActionTriggerAt = now;
+    event.preventDefault();
+    handler();
+  };
+
+  button.addEventListener('pointerup', trigger);
+  button.addEventListener('touchend', trigger, { passive: false });
+  button.addEventListener('click', trigger);
+  button.addEventListener('keydown', trigger);
+}
+
 function createQuickActionButton(action) {
   const button = document.createElement('button');
   const quickActionId = `quick-action-${action.id}`;
@@ -2463,7 +2706,13 @@ function createQuickActionButton(action) {
   button.id = quickActionId;
   button.setAttribute('data-testid', quickActionId);
   button.textContent = action.quickButtonLabel ?? action.buttonLabel;
-  button.addEventListener('click', () => {
+  bindActionButton(button, () => {
+    if (shouldIgnoreActionTrigger()) {
+      return;
+    }
+    if (shouldIgnoreNonSequenceActionTrigger()) {
+      return;
+    }
     void runAction(action, {}).catch((error) => {
       console.error(`Quick action ${action.id} failed`, error);
     });
@@ -2579,22 +2828,61 @@ async function bootstrap() {
     }
 
   await refreshState();
+  const shouldRunAndroidBootProbe =
+    platform === 'android' && scenarioId.startsWith('manual-zip') && buildLabel.endsWith('-builtin') && state.bootCount > 1;
+  if (shouldRunAndroidBootProbe) {
+    state.bootProbe = 'running';
+    renderState();
+    try {
+      await runBootProbe();
+    } catch (error) {
+      state.bootProbe = `error:${error?.message ?? String(error)}`;
+    }
+    renderState();
+  }
+  const bootActionIds =
+    bootActionFromStorage !== 'none'
+      ? [bootActionFromStorage]
+      : platform === 'ios' &&
+          scenarioId.startsWith('manual-zip') &&
+          persistModifyUrl &&
+          buildLabel.endsWith('-builtin') &&
+          state.bootCount > 1
+        ? ['get-latest', 'verify-persisted-config']
+        : [];
+  for (const bootActionId of bootActionIds) {
+    try {
+      await runAction(getActionById(bootActionId), {}, { skipRefresh: false });
+    } catch (error) {
+      console.error(`Boot action ${bootActionId} failed`, error);
+      break;
+    }
+  }
   startStateRefreshWatchers();
   state.harnessReady = true;
   renderState();
 }
 
-elements.refreshButton.addEventListener('click', () => {
+bindActionButton(elements.refreshButton, () => {
+  if (shouldIgnoreActionTrigger()) {
+    return;
+  }
   void refreshState();
 });
 
-elements.runSmokeSequenceButton.addEventListener('click', () => {
+bindActionButton(elements.runSmokeSequenceButton, () => {
+  if (shouldIgnoreActionTrigger()) {
+    return;
+  }
   void runSmokeSequence().catch((error) => {
     console.error('Smoke sequence failed', error);
   });
 });
 
-elements.quickRunSmokeSequenceButton.addEventListener('click', () => {
+bindActionButton(elements.quickRunSmokeSequenceButton, () => {
+  if (shouldIgnoreActionTrigger()) {
+    return;
+  }
   void runSmokeSequence().catch((error) => {
     console.error('Quick smoke sequence failed', error);
   });
