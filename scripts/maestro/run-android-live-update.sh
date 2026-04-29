@@ -560,7 +560,7 @@ run_scenario() {
         "manual manifest flow applies the second manifest release" \
         'Build label: manual-manifest-v2' \
         'Current bundle version: manual-manifest-v2' \
-        'set event: manual-manifest-v2'
+        'Last completed download: manual-manifest-v2'
       assert_server_debug_state manual-manifest '
 const state = JSON.parse(process.argv[1]);
 const scenarioId = process.argv[2];

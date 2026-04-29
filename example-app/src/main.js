@@ -2005,6 +2005,7 @@ const actions = [
     label: 'Boot verify persisted runtime config',
     showWhen: () => false,
     markerId: 'persisted',
+    skipRefresh: true,
     run: async () => verifyPersistedRuntimeConfig({ includePluginAppId: false }),
   },
   {
@@ -2012,6 +2013,7 @@ const actions = [
     label: 'Boot getLatest then verify persisted runtime config',
     showWhen: () => false,
     markerId: 'persisted',
+    skipRefresh: true,
     run: async () => {
       await runGetLatestCheck();
       return verifyPersistedRuntimeConfig({ includePluginAppId: false });
@@ -2025,6 +2027,7 @@ const actions = [
     description: 'Re-run persisted routing checks after a cold launch, reusing getLatest() when it already ran.',
     showWhen: () => serverUrl.startsWith('http'),
     markerId: 'persisted',
+    skipRefresh: true,
     run: async () => verifyPersistedRuntimeConfig(),
   },
   {
