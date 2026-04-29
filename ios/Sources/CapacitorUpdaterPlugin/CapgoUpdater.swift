@@ -81,7 +81,7 @@ import UIKit
         CapgoUpdater.buildUserAgent(appId: appId, pluginVersion: pluginVersion, versionOs: versionOs)
     }
 
-    private struct RequestResult {
+    struct RequestResult {
         let data: Data?
         let response: HTTPURLResponse?
         let error: Error?
@@ -158,7 +158,7 @@ import UIKit
         }
     }
 
-    private func performRequest(_ request: URLRequest, label: String) -> RequestResult {
+    func performRequest(_ request: URLRequest, label: String) -> RequestResult {
         let waitTimeout = max(self.timeout + 5, 10)
         let semaphore = DispatchSemaphore(value: 0)
         let configuration = URLSessionConfiguration.default
@@ -1905,6 +1905,13 @@ import UIKit
 
         guard let responseValue = try? JSONDecoder().decode(SetChannelDec.self, from: data) else {
             setChannel.error = "decode_error"
+            return setChannel
+        }
+
+        let statusCode = result.response?.statusCode ?? 0
+        if statusCode < 200 || statusCode >= 300 {
+            setChannel.message = responseValue.message ?? "Server error: \(statusCode)"
+            setChannel.error = responseValue.error ?? "response_error"
             return setChannel
         }
 

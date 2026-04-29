@@ -44,6 +44,14 @@ private final class FreshDownloadCapgoUpdater: CapgoUpdater {
     }
 }
 
+private final class ChannelRequestCapgoUpdater: CapgoUpdater {
+    var requestResult: CapgoUpdater.RequestResult!
+
+    override func performRequest(_ request: URLRequest, label: String) -> CapgoUpdater.RequestResult {
+        requestResult
+    }
+}
+
 private final class ResetTrackingCapgoUpdater: CapgoUpdater {
     var currentBundleValue = BundleInfo(
         id: "current-id",
@@ -415,6 +423,32 @@ class CapacitorUpdaterTests: XCTestCase {
     func testBundleStatusEncodesStableStoredValue() throws {
         let data = try JSONEncoder().encode(BundleStatus.SUCCESS)
         XCTAssertEqual(String(data: data, encoding: .utf8), "\"success\"")
+    }
+
+    func testSetChannelRejectsNonSuccessStatusWithoutPersistingDefaultChannel() throws {
+        let updater = ChannelRequestCapgoUpdater()
+        updater.setLogger(Logger(withTag: "TestLogger"))
+        updater.channelUrl = "https://example.com/channel"
+        updater.defaultChannel = "stable"
+
+        let channelURL = try XCTUnwrap(URL(string: "https://example.com/channel"))
+        let response = try XCTUnwrap(HTTPURLResponse(url: channelURL, statusCode: 401, httpVersion: nil, headerFields: nil))
+        let responseData = try XCTUnwrap("""
+        {"status":"error","message":"Unauthorized"}
+        """.data(using: .utf8))
+        updater.requestResult = CapgoUpdater.RequestResult(data: responseData, response: response, error: nil, timedOut: false)
+
+        let defaultsKey = "CapacitorUpdaterTests.defaultChannel.\(UUID().uuidString)"
+        defer {
+            UserDefaults.standard.removeObject(forKey: defaultsKey)
+        }
+
+        let result = updater.setChannel(channel: "beta", defaultChannelKey: defaultsKey, allowSetDefaultChannel: true)
+
+        XCTAssertEqual(result.error, "response_error")
+        XCTAssertEqual(result.message, "Unauthorized")
+        XCTAssertEqual(updater.defaultChannel, "stable")
+        XCTAssertNil(UserDefaults.standard.string(forKey: defaultsKey))
     }
 
     // MARK: - DelayCondition Tests
