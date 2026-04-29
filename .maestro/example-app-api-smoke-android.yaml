@@ -14,12 +14,14 @@ appId: app.capgo.updater
     timeout: 120000
 - scrollUntilVisible:
     element:
-      text: 'Quick run smoke test sequence'
+      id: 'quick-run-smoke-sequence'
     direction: DOWN
     timeout: 30000
+    centerElement: true
     visibilityPercentage: 1
+    waitToSettleTimeoutMs: 500
 - tapOn:
-    text: 'Quick run smoke test sequence'
+    id: 'quick-run-smoke-sequence'
     retryTapIfNoChange: true
 - scrollUntilVisible:
     element:
@@ -43,11 +45,14 @@ appId: app.capgo.updater
     timeout: 120000
 - scrollUntilVisible:
     element:
-      text: 'Quick open store page'
+      id: 'quick-action-open-app-store'
     direction: DOWN
     timeout: 30000
+    centerElement: true
     visibilityPercentage: 1
-- tapOn: 'Quick open store page'
+- tapOn:
+    id: 'quick-action-open-app-store'
+    retryTapIfNoChange: true
 - extendedWaitUntil:
     notVisible: '@capgo/capacitor-updater'
     timeout: 120000
@@ -60,11 +65,14 @@ appId: app.capgo.updater
     timeout: 120000
 - scrollUntilVisible:
     element:
-      text: 'Quick verify persisted config'
+      id: 'quick-action-verify-persisted-config'
     direction: DOWN
     timeout: 30000
+    centerElement: true
     visibilityPercentage: 1
-- tapOn: 'Quick verify persisted config'
+- tapOn:
+    id: 'quick-action-verify-persisted-config'
+    retryTapIfNoChange: true
 - scrollUntilVisible:
     element:
       text: '@capgo/capacitor-updater'

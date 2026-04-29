@@ -14,9 +14,12 @@ appId: app.capgo.updater
       text: 'Quick apply runtime URLs'
     direction: DOWN
     timeout: 30000
-    centerElement: false
+    centerElement: true
     visibilityPercentage: 1
-- tapOn: 'Quick apply runtime URLs'
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    text: 'Quick apply runtime URLs'
+    retryTapIfNoChange: true
 - scrollUntilVisible:
     element:
       text: '.*M:set-runtime-urls:success.*'
@@ -28,9 +31,12 @@ appId: app.capgo.updater
       text: 'Quick reset release'
     direction: DOWN
     timeout: 30000
-    centerElement: false
+    centerElement: true
     visibilityPercentage: 1
-- tapOn: 'Quick reset release'
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    text: 'Quick reset release'
+    retryTapIfNoChange: true
 - scrollUntilVisible:
     element:
       text: '.*M:reset:success.*'
@@ -42,9 +48,12 @@ appId: app.capgo.updater
       text: 'Quick download latest bundle'
     direction: DOWN
     timeout: 30000
-    centerElement: false
+    centerElement: true
     visibilityPercentage: 1
-- tapOn: 'Quick download latest bundle'
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    text: 'Quick download latest bundle'
+    retryTapIfNoChange: true
 - scrollUntilVisible:
     element:
       text: '.*M:download:success.*'
