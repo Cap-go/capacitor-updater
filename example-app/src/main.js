@@ -2844,16 +2844,10 @@ async function bootstrap() {
     state.harnessReady = true;
     renderState();
   }
-  const shouldRunIosPersistedBootCheck =
-    platform === 'ios' && scenarioId.startsWith('manual-zip') && buildLabel.endsWith('-builtin') && state.bootCount > 1;
   const bootActionIds =
     bootActionFromStorage !== 'none'
       ? [bootActionFromStorage]
-      : shouldRunIosPersistedBootCheck
-        ? persistModifyUrl
-          ? ['get-latest', 'verify-persisted-config']
-          : ['verify-persisted-config']
-        : [];
+      : [];
   for (const bootActionId of bootActionIds) {
     try {
       await runAction(getActionById(bootActionId), {}, { skipRefresh: false });

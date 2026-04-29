@@ -2061,13 +2061,21 @@ import UIKit
             return getChannel
         }
 
+        let statusCode = result.response?.statusCode ?? 0
         if let error = responseValue.error {
-            if error == "channel_not_found", result.response?.statusCode == 400, !self.defaultChannel.isEmpty {
+            if error == "channel_not_found", statusCode == 400, !self.defaultChannel.isEmpty {
                 getChannel.channel = self.defaultChannel
                 getChannel.status = "default"
                 return getChannel
             }
             getChannel.error = error
+            getChannel.message = responseValue.message ?? ""
+            return getChannel
+        }
+
+        if statusCode < 200 || statusCode >= 300 {
+            getChannel.message = responseValue.message ?? "Server error: \(statusCode)"
+            getChannel.error = "response_error"
         } else {
             getChannel.status = responseValue.status ?? ""
             getChannel.message = responseValue.message ?? ""
@@ -2156,8 +2164,14 @@ import UIKit
             return listChannels
         }
 
+        let statusCode = result.response?.statusCode ?? 0
         if let error = responseValue.error {
             listChannels.error = error
+            return listChannels
+        }
+
+        if statusCode < 200 || statusCode >= 300 {
+            listChannels.error = "response_error"
             return listChannels
         }
 

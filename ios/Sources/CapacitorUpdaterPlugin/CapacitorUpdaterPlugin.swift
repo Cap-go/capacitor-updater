@@ -2353,49 +2353,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func openAppStore(_ call: CAPPluginCall) {
         let appId = call.getString("appId")
+        let bundleId = implementation.appId
         self.saveCallForAsyncHandling(call)
 
-        #if targetEnvironment(simulator)
-        if let appId = appId {
-            let lookupUrl = "https://itunes.apple.com/lookup?id=\(appId)"
-            guard let url = URL(string: lookupUrl) else {
-                self.rejectCall(call, message: "Invalid App Store lookup URL")
-                return
-            }
-            DispatchQueue.main.async {
-                UIApplication.shared.open(url) { success in
-                    if success {
-                        self.resolveCall(call)
-                    } else {
-                        self.rejectCall(call, message: "Failed to open App Store lookup")
-                    }
-                }
-            }
-            return
-        }
-
-        let bundleId = implementation.appId
-        let lookupUrl = "https://itunes.apple.com/lookup?bundleId=\(bundleId)"
-        guard let url = URL(string: lookupUrl) else {
-            self.rejectCall(call, message: "Invalid App Store lookup URL")
-            return
-        }
-        DispatchQueue.main.async {
-            UIApplication.shared.open(url) { success in
-                if success {
-                    self.resolveCall(call)
-                } else {
-                    self.rejectCall(call, message: "Failed to open App Store lookup")
-                }
-            }
-        }
-        return
-        #endif
-
-        if let appId = appId {
-            let urlString = "https://apps.apple.com/app/id\(appId)"
+        func openAppStorePage(urlString: String, invalidMessage: String = "Invalid App Store URL", failureMessage: String = "Failed to open App Store") {
             guard let url = URL(string: urlString) else {
-                self.rejectCall(call, message: "Invalid App Store URL")
+                self.rejectCall(call, message: invalidMessage)
                 return
             }
             DispatchQueue.main.async {
@@ -2403,23 +2366,35 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     if success {
                         self.resolveCall(call)
                     } else {
-                        self.rejectCall(call, message: "Failed to open App Store")
+                        self.rejectCall(call, message: failureMessage)
                     }
                 }
             }
+        }
+
+        func openFallbackAppStorePage() {
+            guard let encodedBundleId = bundleId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+                self.rejectCall(call, message: "Failed to build App Store fallback URL")
+                return
+            }
+            openAppStorePage(urlString: "https://apps.apple.com/app/\(encodedBundleId)")
+        }
+
+        if let appId = appId {
+            openAppStorePage(urlString: "https://apps.apple.com/app/id\(appId)")
         } else {
-            let bundleId = implementation.appId
             let lookupUrl = "https://itunes.apple.com/lookup?bundleId=\(bundleId)"
 
             DispatchQueue.global(qos: .background).async {
                 guard let url = URL(string: lookupUrl) else {
-                    self.rejectCall(call, message: "Invalid lookup URL")
+                    openFallbackAppStorePage()
                     return
                 }
 
                 let task = URLSession.shared.dataTask(with: url) { data, _, error in
                     if let error = error {
-                        self.rejectCall(call, message: "Failed to lookup app: \(error.localizedDescription)")
+                        self.logger.error("App Store lookup failed: \(error.localizedDescription)")
+                        openFallbackAppStorePage()
                         return
                     }
 
@@ -2428,28 +2403,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                           let results = json["results"] as? [[String: Any]],
                           let appInfo = results.first,
                           let trackId = appInfo["trackId"] as? Int else {
-                        self.rejectCall(
-                            call,
-                            message: "Failed to find app in App Store for bundle identifier \(bundleId). Pass appId to openAppStore() when automatic lookup is unavailable."
-                        )
+                        openFallbackAppStorePage()
                         return
                     }
 
-                    let appStoreUrl = "https://apps.apple.com/app/id\(trackId)"
-                    guard let url = URL(string: appStoreUrl) else {
-                        self.rejectCall(call, message: "Invalid App Store URL")
-                        return
-                    }
-
-                    DispatchQueue.main.async {
-                        UIApplication.shared.open(url) { success in
-                            if success {
-                                self.resolveCall(call)
-                            } else {
-                                self.rejectCall(call, message: "Failed to open App Store")
-                            }
-                        }
-                    }
+                    openAppStorePage(urlString: "https://apps.apple.com/app/id\(trackId)")
                 }
                 task.resume()
             }
