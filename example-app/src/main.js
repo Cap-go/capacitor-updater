@@ -1213,12 +1213,12 @@ function validateCompleteFlexibleUpdateContract(contractResult) {
   return contractResult;
 }
 
-async function invokeContractMethod(methodName, runner, validator) {
+async function invokeContractMethod(methodName, runner, validator, timeoutMs = 45000) {
   try {
     const contractResult = {
       method: methodName,
       outcome: 'resolved',
-      result: await runner(),
+      result: await withTimeout(`${methodName}()`, () => runner(), timeoutMs),
     };
     validator?.(contractResult);
     return contractResult;
