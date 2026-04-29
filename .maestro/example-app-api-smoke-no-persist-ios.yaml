@@ -54,6 +54,9 @@ appId: app.capgo.updater
 - tapOn:
     text: 'Quick verify persisted config'
     retryTapIfNoChange: true
+- tapOn:
+    text: 'Quick verify persisted config'
+    retryTapIfNoChange: true
 - extendedWaitUntil:
     visible: '.*(Marker: persisted:success|M:persisted:success).*'
     timeout: 120000
