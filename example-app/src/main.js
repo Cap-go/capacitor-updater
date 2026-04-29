@@ -170,7 +170,7 @@ const quickActionIds = [
 ];
 const smokeSequenceDefaultDelayMs = 150;
 const smokeSequenceMutationDelayMs = 300;
-const actionTriggerCooldownMs = 1500;
+const actionTriggerCooldownMs = 250;
 const reloadActionTriggerCooldownMs = 8000;
 const smokeSequenceExtendedSettleActionIds = new Set([
   'set-app-id',
@@ -2641,8 +2641,8 @@ function getVisibleQuickActions() {
 }
 
 function bindActionButton(button, handler) {
-  const minTriggerGapMs = 700;
-  const syntheticClickGapMs = 1200;
+  const minTriggerGapMs = 200;
+  const syntheticClickGapMs = 450;
 
   const trigger = (event) => {
     if (
@@ -2840,6 +2840,10 @@ async function bootstrap() {
     }
     renderState();
   }
+  if (platform === 'ios') {
+    state.harnessReady = true;
+    renderState();
+  }
   const shouldRunIosPersistedBootCheck =
     platform === 'ios' && scenarioId.startsWith('manual-zip') && buildLabel.endsWith('-builtin') && state.bootCount > 1;
   const bootActionIds =
@@ -2859,8 +2863,10 @@ async function bootstrap() {
     }
   }
   startStateRefreshWatchers();
-  state.harnessReady = true;
-  renderState();
+  if (!state.harnessReady) {
+    state.harnessReady = true;
+    renderState();
+  }
 }
 
 bindActionButton(elements.refreshButton, () => {
