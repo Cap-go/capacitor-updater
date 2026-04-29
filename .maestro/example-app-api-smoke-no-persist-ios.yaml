@@ -1,5 +1,8 @@
 appId: app.capgo.updater
 ---
+- stopApp
+- launchApp:
+    clearState: true
 - extendedWaitUntil:
     visible: '@capgo/capacitor-updater'
     timeout: 180000
@@ -40,9 +43,18 @@ appId: app.capgo.updater
     timeout: 120000
 - scrollUntilVisible:
     element:
-      text: '@capgo/capacitor-updater'
-    direction: UP
+      text: 'Quick get latest'
+    direction: DOWN
     timeout: 30000
+    centerElement: true
+    visibilityPercentage: 1
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    text: 'Quick get latest'
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible: '.*(Marker: get-latest:success|M:get-latest:success).*'
+    timeout: 120000
 - scrollUntilVisible:
     element:
       text: 'Quick verify persisted config'
@@ -54,16 +66,8 @@ appId: app.capgo.updater
 - tapOn:
     text: 'Quick verify persisted config'
     retryTapIfNoChange: true
-- tapOn:
-    text: 'Quick verify persisted config'
-    retryTapIfNoChange: true
 - extendedWaitUntil:
     visible: '.*(Marker: persisted:success|M:persisted:success).*'
-    timeout: 120000
-- scrollUntilVisible:
-    element:
-      text: '@capgo/capacitor-updater'
-    direction: UP
     timeout: 120000
 - scrollUntilVisible:
     element:

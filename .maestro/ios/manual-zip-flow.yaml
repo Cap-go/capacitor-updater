@@ -72,7 +72,9 @@ appId: app.capgo.updater
     timeout: 30000
     centerElement: false
     visibilityPercentage: 1
-- tapOn: 'Quick apply bundle now'
+- tapOn:
+    text: 'Quick apply bundle now'
+    retryTapIfNoChange: true
 - extendedWaitUntil:
     visible: '@capgo/capacitor-updater'
     timeout: 180000
@@ -90,7 +92,9 @@ appId: app.capgo.updater
     timeout: 30000
     centerElement: false
     visibilityPercentage: 1
-- tapOn: 'Quick advance release'
+- tapOn:
+    text: 'Quick advance release'
+    retryTapIfNoChange: true
 - extendedWaitUntil:
     visible: '.*(Marker: advance:success|M:advance:success).*'
     timeout: 30000
@@ -101,7 +105,9 @@ appId: app.capgo.updater
     timeout: 30000
     centerElement: false
     visibilityPercentage: 1
-- tapOn: 'Quick download latest bundle'
+- tapOn:
+    text: 'Quick download latest bundle'
+    retryTapIfNoChange: true
 - extendedWaitUntil:
     visible: '.*(Marker: download:success|M:download:success).*'
     timeout: 120000
@@ -112,7 +118,9 @@ appId: app.capgo.updater
     timeout: 30000
     centerElement: false
     visibilityPercentage: 1
-- tapOn: 'Quick queue bundle'
+- tapOn:
+    text: 'Quick queue bundle'
+    retryTapIfNoChange: true
 - extendedWaitUntil:
     visible: '.*(Marker: queue:success|M:queue:success).*'
     timeout: 60000
@@ -131,7 +139,9 @@ appId: app.capgo.updater
     timeout: 30000
     centerElement: false
     visibilityPercentage: 1
-- tapOn: 'Quick read next bundle'
+- tapOn:
+    text: 'Quick read next bundle'
+    retryTapIfNoChange: true
 - extendedWaitUntil:
     visible: '.*(Marker: next:success|M:next:success).*'
     timeout: 30000
@@ -148,7 +158,9 @@ appId: app.capgo.updater
     timeout: 30000
     centerElement: false
     visibilityPercentage: 1
-- tapOn: 'Quick set delay'
+- tapOn:
+    text: 'Quick set delay'
+    retryTapIfNoChange: true
 - extendedWaitUntil:
     visible: '.*(Marker: delay:success|M:delay:success).*'
     timeout: 30000
@@ -159,7 +171,9 @@ appId: app.capgo.updater
     timeout: 30000
     centerElement: false
     visibilityPercentage: 1
-- tapOn: 'Quick cancel delay'
+- tapOn:
+    text: 'Quick cancel delay'
+    retryTapIfNoChange: true
 - extendedWaitUntil:
     visible: '.*(Marker: cancel:success|M:cancel:success).*'
     timeout: 30000
@@ -170,7 +184,9 @@ appId: app.capgo.updater
     timeout: 30000
     centerElement: false
     visibilityPercentage: 1
-- tapOn: 'Quick reload app'
+- tapOn:
+    text: 'Quick reload app'
+    retryTapIfNoChange: true
 - extendedWaitUntil:
     visible: '@capgo/capacitor-updater'
     timeout: 180000
@@ -188,7 +204,9 @@ appId: app.capgo.updater
     timeout: 30000
     centerElement: false
     visibilityPercentage: 1
-- tapOn: 'Quick confirm no update'
+- tapOn:
+    text: 'Quick confirm no update'
+    retryTapIfNoChange: true
 - extendedWaitUntil:
     visible: '.*(Marker: no-update:success|M:no-update:success).*'
     timeout: 60000
@@ -199,7 +217,9 @@ appId: app.capgo.updater
     timeout: 30000
     centerElement: false
     visibilityPercentage: 1
-- tapOn: 'Quick advance release'
+- tapOn:
+    text: 'Quick advance release'
+    retryTapIfNoChange: true
 - extendedWaitUntil:
     visible: '.*(Marker: advance:success|M:advance:success).*'
     timeout: 30000
@@ -210,7 +230,9 @@ appId: app.capgo.updater
     timeout: 30000
     centerElement: false
     visibilityPercentage: 1
-- tapOn: 'Quick download latest bundle'
+- tapOn:
+    text: 'Quick download latest bundle'
+    retryTapIfNoChange: true
 - extendedWaitUntil:
     visible: '.*(Marker: download:success|M:download:success).*'
     timeout: 120000
@@ -227,7 +249,9 @@ appId: app.capgo.updater
     timeout: 30000
     centerElement: false
     visibilityPercentage: 1
-- tapOn: 'Quick apply bundle now'
+- tapOn:
+    text: 'Quick apply bundle now'
+    retryTapIfNoChange: true
 - extendedWaitUntil:
     visible: '@capgo/capacitor-updater'
     timeout: 180000

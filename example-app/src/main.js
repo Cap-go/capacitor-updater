@@ -30,20 +30,30 @@ const pendingBootActionStorageKey = '__capgo_maestro_pending_boot_action';
 const pendingReloadActionStorageKey = '__capgo_maestro_pending_reload_action';
 const fallbackUpdateUrl = 'https://example.com/api/auto_update';
 const maxEvents = 10;
+const defaultSmokeAppId = 'app.capgo.updater';
 const runtimeSmokeAppId = 'app.capgo.updater.e2e';
 const runtimeSmokeCustomId = 'qa-user-42';
 const runtimeStoreAppId = '361309726';
+const bootActionFromStorage = window.localStorage.getItem(pendingBootActionStorageKey) ?? 'none';
+const reloadActionFromStorage = window.localStorage.getItem(pendingReloadActionStorageKey) ?? 'none';
+
+if (bootActionFromStorage === 'none' && reloadActionFromStorage === 'none') {
+  window.localStorage.removeItem(lastActionStorageKey);
+  window.localStorage.removeItem(lastActionMarkerStorageKey);
+  window.localStorage.removeItem(lastActionResultStorageKey);
+  window.localStorage.removeItem(lastErrorStorageKey);
+  window.localStorage.removeItem(lastPhaseStorageKey);
+}
+
+window.localStorage.removeItem(pendingBootActionStorageKey);
+window.localStorage.removeItem(pendingReloadActionStorageKey);
+
 const lastActionFromStorage = window.localStorage.getItem(lastActionStorageKey) ?? 'none';
 const lastActionMarkerFromStorage =
   window.localStorage.getItem(lastActionMarkerStorageKey) ??
   window.localStorage.getItem(lastActionResultStorageKey) ??
   'none';
 const lastActionResultFromStorage = window.localStorage.getItem(lastActionResultStorageKey) ?? 'idle';
-const bootActionFromStorage = window.localStorage.getItem(pendingBootActionStorageKey) ?? 'none';
-const reloadActionFromStorage = window.localStorage.getItem(pendingReloadActionStorageKey) ?? 'none';
-
-window.localStorage.removeItem(pendingBootActionStorageKey);
-window.localStorage.removeItem(pendingReloadActionStorageKey);
 
 function requireElement(id) {
   const element = document.getElementById(id);
@@ -144,14 +154,6 @@ let suppressNonSequenceActionsUntil = 0;
 let suppressActionTriggersUntil = 0;
 const quickActionIds = [
   'set-runtime-urls',
-  'verify-persisted-config',
-  'get-app-update-info',
-  'perform-immediate-update',
-  'start-flexible-update',
-  'complete-flexible-update',
-  'get-latest',
-  'queue-boot-get-latest',
-  'open-app-store',
   'reset-server-release',
   'advance-server-release',
   'download-latest-bundle',
@@ -159,6 +161,8 @@ const quickActionIds = [
   'set-last-downloaded-bundle',
   'queue-last-downloaded-bundle',
   'get-next-bundle',
+  'get-latest',
+  'queue-boot-get-latest',
   'get-latest-no-update',
   'set-multi-delay',
   'cancel-delay',
@@ -167,6 +171,13 @@ const quickActionIds = [
   'set-bundle-error',
   'delete-inactive-bundle',
   'reset-to-builtin',
+  'queue-boot-verify-persisted-config',
+  'verify-persisted-config',
+  'get-app-update-info',
+  'perform-immediate-update',
+  'start-flexible-update',
+  'complete-flexible-update',
+  'open-app-store',
 ];
 const smokeSequenceDefaultDelayMs = 150;
 const smokeSequenceMutationDelayMs = 300;
@@ -1335,6 +1346,117 @@ async function advanceServerRelease() {
   }
 }
 
+async function verifyPersistedRuntimeConfig(options = {}) {
+  const includePluginAppId = options.includePluginAppId !== false;
+  const latest =
+    state.lastLatest != null
+      ? expectGetLatestResult(state.lastLatest)
+      : expectGetLatestResult(await plugin.getLatest());
+  const channels = expectListChannelsResult(await plugin.listChannels());
+  const appIdResult = includePluginAppId
+    ? expectStringFieldResult(await plugin.getAppId(), 'appId', 'verify persisted getAppId()')
+    : null;
+
+  state.listChannelsResult = channels;
+  state.lastLatest = latest;
+  await refreshServerState();
+  renderState();
+
+  if (platform === 'android' && !state.serverDebug?.debug) {
+    return {
+      appId: appIdResult?.appId ?? defaultSmokeAppId,
+      channels: channels.channels,
+      customId: persistCustomId ? runtimeSmokeCustomId : 'none',
+      note: 'server debug unavailable in Android WebView',
+      version: latest.version,
+    };
+  }
+
+  const serverDebug = state.serverDebug?.debug ?? {};
+  const lastUpdateRequest = serverDebug.lastUpdateRequest ?? {};
+  const lastChannelRequest = serverDebug.lastChannelRequest ?? {};
+  const lastStatsRequest = serverDebug.lastStatsRequest ?? {};
+  const observedUpdateUrl = formatObservedRequestUrl(lastUpdateRequest.url);
+  const observedChannelUrl = formatObservedRequestUrl(lastChannelRequest.url, ['scenario', 'source']);
+  const observedStatsUrl = formatObservedRequestUrl(lastStatsRequest.url);
+  const expectedUsesRuntimeUrls = allowModifyUrl && persistModifyUrl;
+  const expectedUpdateUrl = formatObservedRequestUrl(
+    expectedUsesRuntimeUrls ? getRuntimeUpdateUrl() : getDefaultUpdateUrl(),
+  );
+  const expectedChannelUrl = formatObservedRequestUrl(
+    expectedUsesRuntimeUrls ? getRuntimeChannelUrl() : getDefaultChannelUrl(),
+    ['scenario', 'source'],
+  );
+  const expectedStatsUrl = formatObservedRequestUrl(
+    expectedUsesRuntimeUrls ? getRuntimeStatsUrl() : getDefaultStatsUrl(),
+  );
+  const observedAppId = lastUpdateRequest.payload?.app_id || lastChannelRequest.payload?.app_id || 'none';
+  const expectedCustomId = persistCustomId ? runtimeSmokeCustomId : 'none';
+  const observedUpdateCustomId = lastUpdateRequest.payload?.custom_id || 'none';
+  const observedChannelCustomId = lastChannelRequest.payload?.custom_id || 'none';
+
+  invariant(
+    observedUpdateUrl === expectedUpdateUrl,
+    `verify persisted config expected update URL ${expectedUpdateUrl}, received ${observedUpdateUrl}`,
+  );
+  invariant(
+    observedChannelUrl === expectedChannelUrl,
+    `verify persisted config expected channel URL ${expectedChannelUrl}, received ${observedChannelUrl}`,
+  );
+  invariant(
+    observedStatsUrl === expectedStatsUrl,
+    `verify persisted config expected stats URL ${expectedStatsUrl}, received ${observedStatsUrl}`,
+  );
+  invariant(
+    observedAppId === defaultSmokeAppId,
+    `verify persisted config expected server app_id ${defaultSmokeAppId}, received ${observedAppId}`,
+  );
+  invariant(
+    observedAppId !== runtimeSmokeAppId,
+    `verify persisted config should not keep the runtime app_id ${runtimeSmokeAppId} after relaunch`,
+  );
+  invariant(
+    observedUpdateCustomId === expectedCustomId,
+    `verify persisted config expected update custom_id ${expectedCustomId}, received ${observedUpdateCustomId}`,
+  );
+  invariant(
+    observedChannelCustomId === expectedCustomId,
+    `verify persisted config expected channel custom_id ${expectedCustomId}, received ${observedChannelCustomId}`,
+  );
+
+  if (appIdResult) {
+    invariant(
+      appIdResult.appId === defaultSmokeAppId,
+      `verify persisted getAppId() expected ${defaultSmokeAppId}, received ${appIdResult.appId}`,
+    );
+    invariant(
+      appIdResult.appId === observedAppId,
+      `verify persisted config expected server app_id ${appIdResult.appId}, received ${observedAppId}`,
+    );
+    invariant(
+      appIdResult.appId !== runtimeSmokeAppId,
+      `verify persisted getAppId() should not keep the runtime app ID ${runtimeSmokeAppId} after relaunch`,
+    );
+  }
+
+  return {
+    appId: appIdResult?.appId ?? observedAppId,
+    channels: channels.channels,
+    customId: expectedCustomId,
+    channelUrl: observedChannelUrl,
+    statsUrl: observedStatsUrl,
+    updateUrl: observedUpdateUrl,
+    version: latest.version,
+  };
+}
+
+async function runGetLatestCheck() {
+  const latest = expectGetLatestResult(await plugin.getLatest());
+  state.lastLatest = latest;
+  state.lastGetLatestCheck = latest.version ?? 'none';
+  return latest;
+}
+
 const actions = [
   {
     id: 'notify-app-ready',
@@ -1855,6 +1977,47 @@ const actions = [
       ),
   },
   {
+    id: 'queue-boot-verify-persisted-config',
+    label: 'Queue boot persisted config check',
+    buttonLabel: 'Queue persisted config check on next boot',
+    quickButtonLabel: 'Quick queue persisted check',
+    description: 'Persist a verify-persisted-config check that runs automatically on the next cold launch.',
+    showWhen: () => serverUrl.startsWith('http'),
+    markerId: 'boot-persisted',
+    run: async () => {
+      if (scenarioId === 'manual-zip') {
+        const latest = await runGetLatestCheck();
+        markPendingBootAction('verify-persisted-config-after-get-latest-boot');
+        return {
+          message: 'Queued persisted-config verification for the next boot after getLatest().',
+          version: latest.version,
+        };
+      }
+
+      markPendingBootAction('verify-persisted-config-boot');
+      return {
+        message: 'Queued persisted-config verification for the next boot.',
+      };
+    },
+  },
+  {
+    id: 'verify-persisted-config-boot',
+    label: 'Boot verify persisted runtime config',
+    showWhen: () => false,
+    markerId: 'persisted',
+    run: async () => verifyPersistedRuntimeConfig({ includePluginAppId: false }),
+  },
+  {
+    id: 'verify-persisted-config-after-get-latest-boot',
+    label: 'Boot getLatest then verify persisted runtime config',
+    showWhen: () => false,
+    markerId: 'persisted',
+    run: async () => {
+      await runGetLatestCheck();
+      return verifyPersistedRuntimeConfig({ includePluginAppId: false });
+    },
+  },
+  {
     id: 'verify-persisted-config',
     label: 'Verify persisted runtime config',
     buttonLabel: 'Verify persisted runtime config',
@@ -1862,94 +2025,7 @@ const actions = [
     description: 'Re-run persisted routing checks after a cold launch, reusing getLatest() when it already ran.',
     showWhen: () => serverUrl.startsWith('http'),
     markerId: 'persisted',
-    run: async () => {
-      const channels = expectListChannelsResult(await plugin.listChannels());
-      const latest =
-        state.lastLatest != null
-          ? expectGetLatestResult(state.lastLatest)
-          : expectGetLatestResult(await plugin.getLatest());
-      const appIdResult = expectStringFieldResult(await plugin.getAppId(), 'appId', 'verify persisted getAppId()');
-      state.listChannelsResult = channels;
-      state.lastLatest = latest;
-      await refreshServerState();
-      renderState();
-
-      if (platform === 'android' && !state.serverDebug?.debug) {
-        return {
-          appId: appIdResult.appId,
-          channels: channels.channels,
-          customId: persistCustomId ? runtimeSmokeCustomId : 'none',
-          note: 'server debug unavailable in Android WebView',
-          version: latest.version,
-        };
-      }
-
-      const serverDebug = state.serverDebug?.debug ?? {};
-      const lastUpdateRequest = serverDebug.lastUpdateRequest ?? {};
-      const lastChannelRequest = serverDebug.lastChannelRequest ?? {};
-      const lastStatsRequest = serverDebug.lastStatsRequest ?? {};
-      const observedUpdateUrl = formatObservedRequestUrl(lastUpdateRequest.url);
-      const observedChannelUrl = formatObservedRequestUrl(lastChannelRequest.url, ['scenario', 'source']);
-      const observedStatsUrl = formatObservedRequestUrl(lastStatsRequest.url);
-      const expectedUsesRuntimeUrls = allowModifyUrl && persistModifyUrl;
-      const expectedUpdateUrl = formatObservedRequestUrl(
-        expectedUsesRuntimeUrls ? getRuntimeUpdateUrl() : getDefaultUpdateUrl(),
-      );
-      const expectedChannelUrl = formatObservedRequestUrl(
-        expectedUsesRuntimeUrls ? getRuntimeChannelUrl() : getDefaultChannelUrl(),
-        ['scenario', 'source'],
-      );
-      const expectedStatsUrl = formatObservedRequestUrl(
-        expectedUsesRuntimeUrls ? getRuntimeStatsUrl() : getDefaultStatsUrl(),
-      );
-      const observedAppId = lastUpdateRequest.payload?.app_id || lastChannelRequest.payload?.app_id || 'none';
-      const expectedCustomId = persistCustomId ? runtimeSmokeCustomId : 'none';
-      const observedUpdateCustomId = lastUpdateRequest.payload?.custom_id || 'none';
-      const observedChannelCustomId = lastChannelRequest.payload?.custom_id || 'none';
-
-      invariant(
-        observedUpdateUrl === expectedUpdateUrl,
-        `verify persisted config expected update URL ${expectedUpdateUrl}, received ${observedUpdateUrl}`,
-      );
-      invariant(
-        observedChannelUrl === expectedChannelUrl,
-        `verify persisted config expected channel URL ${expectedChannelUrl}, received ${observedChannelUrl}`,
-      );
-      invariant(
-        observedStatsUrl === expectedStatsUrl,
-        `verify persisted config expected stats URL ${expectedStatsUrl}, received ${observedStatsUrl}`,
-      );
-      invariant(
-        appIdResult.appId !== runtimeSmokeAppId,
-        `verify persisted getAppId() should not keep the runtime app ID ${runtimeSmokeAppId} after relaunch`,
-      );
-      invariant(
-        observedAppId === appIdResult.appId,
-        `verify persisted config expected server app_id ${appIdResult.appId}, received ${observedAppId}`,
-      );
-      invariant(
-        observedAppId !== runtimeSmokeAppId,
-        `verify persisted config should not keep the runtime app_id ${runtimeSmokeAppId} after relaunch`,
-      );
-      invariant(
-        observedUpdateCustomId === expectedCustomId,
-        `verify persisted config expected update custom_id ${expectedCustomId}, received ${observedUpdateCustomId}`,
-      );
-      invariant(
-        observedChannelCustomId === expectedCustomId,
-        `verify persisted config expected channel custom_id ${expectedCustomId}, received ${observedChannelCustomId}`,
-      );
-
-      return {
-        appId: appIdResult.appId,
-        channels: channels.channels,
-        customId: expectedCustomId,
-        channelUrl: observedChannelUrl,
-        statsUrl: observedStatsUrl,
-        updateUrl: observedUpdateUrl,
-        version: latest.version,
-      };
-    },
+    run: async () => verifyPersistedRuntimeConfig(),
   },
   {
     id: 'refresh-server-state',
@@ -1992,13 +2068,9 @@ const actions = [
     description: 'Fetch the latest bundle metadata from the fake OTA server.',
     includeInSmokeSequence: true,
     smokeTimeoutMs: 90000,
+    skipRefresh: true,
     showWhen: () => serverUrl.startsWith('http'),
-    run: async () => {
-      const latest = expectGetLatestResult(await plugin.getLatest());
-      state.lastLatest = latest;
-      state.lastGetLatestCheck = latest.version ?? 'none';
-      return latest;
-    },
+    run: async () => runGetLatestCheck(),
   },
   {
     id: 'queue-boot-get-latest',
@@ -2414,6 +2486,9 @@ async function runAction(action, values, options = {}) {
       return result;
     }
 
+    if (!skipRefresh) {
+      await refreshState();
+    }
     state.lastActionMarker = `${actionMarkerId}:${actionOutcome}`;
     state.lastActionResult = `${action.id}:${actionOutcome}`;
     state.lastPhase = `${action.id}:${actionOutcome}`;
@@ -2427,9 +2502,7 @@ async function runAction(action, values, options = {}) {
           ? action.successMarker(result)
           : `Action marker: ${actionMarkerId}:${actionOutcome}`;
     }
-    if (!skipRefresh) {
-      await refreshState();
-    }
+    renderState();
     return result;
   } catch (error) {
     const message = error?.message ?? String(error);
@@ -2646,14 +2719,17 @@ function bindActionButton(button, handler) {
 
   const trigger = (event) => {
     if (
-      (event.type === 'pointerup' || event.type === 'touchend') &&
+      (event.type === 'pointerdown' ||
+        event.type === 'pointerup' ||
+        event.type === 'touchstart' ||
+        event.type === 'touchend') &&
       'cancelable' in event &&
       event.cancelable === false
     ) {
       return;
     }
 
-    if (event.type === 'pointerup') {
+    if (event.type === 'pointerdown' || event.type === 'pointerup') {
       if (typeof event.button === 'number' && event.button !== 0) {
         return;
       }
@@ -2663,13 +2739,23 @@ function bindActionButton(button, handler) {
       }
     }
 
+    if (event.type === 'mousedown' && typeof event.button === 'number' && event.button !== 0) {
+      return;
+    }
+
     if (event.type === 'keydown' && event.key !== 'Enter' && event.key !== ' ') {
       return;
     }
 
     const now = Date.now();
 
-    if ((event.type === 'pointerup' || event.type === 'touchend') && now - lastTouchLikeActionAt < minTriggerGapMs) {
+    if (
+      (event.type === 'pointerdown' ||
+        event.type === 'pointerup' ||
+        event.type === 'touchstart' ||
+        event.type === 'touchend') &&
+      now - lastTouchLikeActionAt < minTriggerGapMs
+    ) {
       event.preventDefault();
       return;
     }
@@ -2684,7 +2770,12 @@ function bindActionButton(button, handler) {
       return;
     }
 
-    if (event.type === 'pointerup' || event.type === 'touchend') {
+    if (
+      event.type === 'pointerdown' ||
+      event.type === 'pointerup' ||
+      event.type === 'touchstart' ||
+      event.type === 'touchend'
+    ) {
       lastTouchLikeActionAt = now;
     }
 
@@ -2693,7 +2784,10 @@ function bindActionButton(button, handler) {
     handler();
   };
 
+  button.addEventListener('pointerdown', trigger);
   button.addEventListener('pointerup', trigger);
+  button.addEventListener('mousedown', trigger);
+  button.addEventListener('touchstart', trigger, { passive: false });
   button.addEventListener('touchend', trigger, { passive: false });
   button.addEventListener('click', trigger);
   button.addEventListener('keydown', trigger);
@@ -2848,6 +2942,10 @@ async function bootstrap() {
     bootActionFromStorage !== 'none'
       ? [bootActionFromStorage]
       : [];
+  startStateRefreshWatchers();
+  if (bootActionIds.length) {
+    await pause(platform === 'ios' ? 500 : 100);
+  }
   for (const bootActionId of bootActionIds) {
     try {
       await runAction(getActionById(bootActionId), {}, { skipRefresh: false });
@@ -2856,7 +2954,6 @@ async function bootstrap() {
       break;
     }
   }
-  startStateRefreshWatchers();
   if (!state.harnessReady) {
     state.harnessReady = true;
     renderState();

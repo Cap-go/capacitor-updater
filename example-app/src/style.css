@@ -199,8 +199,15 @@ button:disabled {
 
 .quick-actions-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+
+.quick-actions-grid button {
+  min-height: 64px;
+  padding: 10px 12px;
+  font-size: 0.88rem;
+  line-height: 1.2;
 }
 
 .event-log {
@@ -258,5 +265,15 @@ button:disabled {
 
   h1 {
     font-size: 1.8rem;
+  }
+
+  .quick-actions-grid {
+    gap: 8px;
+  }
+
+  .quick-actions-grid button {
+    min-height: 58px;
+    padding: 10px;
+    font-size: 0.82rem;
   }
 }

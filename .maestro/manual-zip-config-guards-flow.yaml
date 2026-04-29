@@ -23,12 +23,9 @@ appId: app.capgo.updater
 - tapOn:
     id: 'quick-action-reset-server-release'
     retryTapIfNoChange: true
-- scrollUntilVisible:
-    element:
-      text: '.*Marker: reset:success.*'
-    direction: UP
+- extendedWaitUntil:
+    visible: '.*(Marker: reset:success|M:reset:success).*'
     timeout: 30000
-    visibilityPercentage: 1
 - scrollUntilVisible:
     element:
       id: 'quick-action-download-latest-bundle'
@@ -40,12 +37,9 @@ appId: app.capgo.updater
 - tapOn:
     id: 'quick-action-download-latest-bundle'
     retryTapIfNoChange: true
-- scrollUntilVisible:
-    element:
-      text: '.*Marker: download:success.*'
-    direction: UP
+- extendedWaitUntil:
+    visible: '.*(Marker: download:success|M:download:success).*'
     timeout: 120000
-    visibilityPercentage: 1
 - scrollUntilVisible:
     element:
       id: 'quick-action-set-bundle-error'
@@ -57,9 +51,6 @@ appId: app.capgo.updater
 - tapOn:
     id: 'quick-action-set-bundle-error'
     retryTapIfNoChange: true
-- scrollUntilVisible:
-    element:
-      text: '.*Marker: bundle:(success|expected-rejection).*'
-    direction: UP
+- extendedWaitUntil:
+    visible: '.*(Marker: bundle:(success|expected-rejection)|M:bundle:(success|expected-rejection)).*'
     timeout: 30000
-    visibilityPercentage: 1

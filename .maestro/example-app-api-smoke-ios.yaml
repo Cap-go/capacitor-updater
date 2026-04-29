@@ -1,5 +1,8 @@
 appId: app.capgo.updater
 ---
+- stopApp
+- launchApp:
+    clearState: true
 - extendedWaitUntil:
     visible: '@capgo/capacitor-updater'
     timeout: 180000
@@ -26,11 +29,6 @@ appId: app.capgo.updater
 - extendedWaitUntil:
     visible: '.*(Marker: smoke-sequence:success|M:smoke-sequence:success).*'
     timeout: 240000
-- scrollUntilVisible:
-    element:
-      text: '@capgo/capacitor-updater'
-    direction: UP
-    timeout: 120000
 - scrollUntilVisible:
     element:
       text: 'Quick get store info'
@@ -85,18 +83,18 @@ appId: app.capgo.updater
     timeout: 120000
 - scrollUntilVisible:
     element:
-      text: 'Quick get latest'
+      text: 'Quick queue persisted check'
     direction: DOWN
     timeout: 30000
     centerElement: true
     visibilityPercentage: 1
     waitToSettleTimeoutMs: 500
 - tapOn:
-    text: 'Quick get latest'
+    text: 'Quick queue persisted check'
     retryTapIfNoChange: true
 - extendedWaitUntil:
-    visible: '.*(Marker: get-latest:success|M:get-latest:success).*'
-    timeout: 120000
+    visible: '.*(Marker: boot-persisted:success|M:boot-persisted:success).*'
+    timeout: 30000
 - runFlow: helpers/cold-launch-app.yaml
 - extendedWaitUntil:
     visible: '@capgo/capacitor-updater'
@@ -104,30 +102,9 @@ appId: app.capgo.updater
 - extendedWaitUntil:
     visible: '.*Harness: ready.*'
     timeout: 120000
-- scrollUntilVisible:
-    element:
-      text: '@capgo/capacitor-updater'
-    direction: UP
-    timeout: 30000
-- scrollUntilVisible:
-    element:
-      text: 'Quick verify persisted config'
-    direction: DOWN
-    timeout: 30000
-    centerElement: true
-    visibilityPercentage: 1
-    waitToSettleTimeoutMs: 500
-- tapOn:
-    text: 'Quick verify persisted config'
-    retryTapIfNoChange: true
 - extendedWaitUntil:
     visible: '.*(Marker: persisted:success|M:persisted:success).*'
     timeout: 120000
-- scrollUntilVisible:
-    element:
-      text: '@capgo/capacitor-updater'
-    direction: UP
-    timeout: 30000
 - scrollUntilVisible:
     element:
       text: 'Quick open store page'

@@ -23,12 +23,9 @@ appId: app.capgo.updater
 - tapOn:
     id: 'quick-action-set-runtime-urls'
     retryTapIfNoChange: true
-- scrollUntilVisible:
-    element:
-      text: '.*Marker: set-runtime-urls:success.*'
-    direction: UP
+- extendedWaitUntil:
+    visible: '.*(Marker: set-runtime-urls:success|M:set-runtime-urls:success).*'
     timeout: 30000
-    visibilityPercentage: 1
 - scrollUntilVisible:
     element:
       id: 'quick-action-reset-server-release'
@@ -40,12 +37,9 @@ appId: app.capgo.updater
 - tapOn:
     id: 'quick-action-reset-server-release'
     retryTapIfNoChange: true
-- scrollUntilVisible:
-    element:
-      text: '.*Marker: reset:success.*'
-    direction: UP
+- extendedWaitUntil:
+    visible: '.*(Marker: reset:success|M:reset:success).*'
     timeout: 30000
-    visibilityPercentage: 1
 - scrollUntilVisible:
     element:
       id: 'quick-action-download-latest-bundle'
@@ -57,12 +51,9 @@ appId: app.capgo.updater
 - tapOn:
     id: 'quick-action-download-latest-bundle'
     retryTapIfNoChange: true
-- scrollUntilVisible:
-    element:
-      text: '.*Marker: download:success.*'
-    direction: UP
+- extendedWaitUntil:
+    visible: '.*(Marker: download:success|M:download:success).*'
     timeout: 120000
-    visibilityPercentage: 1
 - extendedWaitUntil:
     visible: '.*Download event: .*manual-zip-v1.*'
     timeout: 30000
@@ -105,12 +96,9 @@ appId: app.capgo.updater
     visibilityPercentage: 1
 - tapOn:
     id: 'quick-action-advance-server-release'
-- scrollUntilVisible:
-    element:
-      text: '.*Marker: advance:success.*'
-    direction: UP
+- extendedWaitUntil:
+    visible: '.*(Marker: advance:success|M:advance:success).*'
     timeout: 30000
-    visibilityPercentage: 1
 - scrollUntilVisible:
     element:
       id: 'quick-action-download-latest-bundle'
@@ -120,12 +108,9 @@ appId: app.capgo.updater
     visibilityPercentage: 1
 - tapOn:
     id: 'quick-action-download-latest-bundle'
-- scrollUntilVisible:
-    element:
-      text: '.*Marker: download:success.*'
-    direction: UP
+- extendedWaitUntil:
+    visible: '.*(Marker: download:success|M:download:success).*'
     timeout: 120000
-    visibilityPercentage: 1
 - scrollUntilVisible:
     element:
       id: 'quick-action-queue-last-downloaded-bundle'
@@ -135,12 +120,9 @@ appId: app.capgo.updater
     visibilityPercentage: 1
 - tapOn:
     id: 'quick-action-queue-last-downloaded-bundle'
-- scrollUntilVisible:
-    element:
-      text: '.*Marker: queue:success.*'
-    direction: UP
+- extendedWaitUntil:
+    visible: '.*(Marker: queue:success|M:queue:success).*'
     timeout: 60000
-    visibilityPercentage: 1
 - extendedWaitUntil:
     visible: '.*Set next event: manual-zip-v2.*'
     timeout: 30000
@@ -158,12 +140,9 @@ appId: app.capgo.updater
     visibilityPercentage: 1
 - tapOn:
     id: 'quick-action-get-next-bundle'
-- scrollUntilVisible:
-    element:
-      text: '.*Marker: next:success.*'
-    direction: UP
+- extendedWaitUntil:
+    visible: '.*(Marker: next:success|M:next:success).*'
     timeout: 30000
-    visibilityPercentage: 1
 - scrollUntilVisible:
     element:
       text: '@capgo/capacitor-updater'
@@ -179,12 +158,9 @@ appId: app.capgo.updater
     visibilityPercentage: 1
 - tapOn:
     id: 'quick-action-set-multi-delay'
-- scrollUntilVisible:
-    element:
-      text: '.*Marker: delay:success.*'
-    direction: UP
+- extendedWaitUntil:
+    visible: '.*(Marker: delay:success|M:delay:success).*'
     timeout: 30000
-    visibilityPercentage: 1
 - scrollUntilVisible:
     element:
       id: 'quick-action-cancel-delay'
@@ -194,12 +170,9 @@ appId: app.capgo.updater
     visibilityPercentage: 1
 - tapOn:
     id: 'quick-action-cancel-delay'
-- scrollUntilVisible:
-    element:
-      text: '.*Marker: cancel:success.*'
-    direction: UP
+- extendedWaitUntil:
+    visible: '.*(Marker: cancel:success|M:cancel:success).*'
     timeout: 30000
-    visibilityPercentage: 1
 - scrollUntilVisible:
     element:
       id: 'quick-action-reload-app'
@@ -228,12 +201,9 @@ appId: app.capgo.updater
     visibilityPercentage: 1
 - tapOn:
     id: 'quick-action-get-latest-no-update'
-- scrollUntilVisible:
-    element:
-      text: '.*Marker: no-update:success.*'
-    direction: UP
+- extendedWaitUntil:
+    visible: '.*(Marker: no-update:success|M:no-update:success).*'
     timeout: 60000
-    visibilityPercentage: 1
 - scrollUntilVisible:
     element:
       id: 'quick-action-advance-server-release'
@@ -243,12 +213,9 @@ appId: app.capgo.updater
     visibilityPercentage: 1
 - tapOn:
     id: 'quick-action-advance-server-release'
-- scrollUntilVisible:
-    element:
-      text: '.*Marker: advance:success.*'
-    direction: UP
+- extendedWaitUntil:
+    visible: '.*(Marker: advance:success|M:advance:success).*'
     timeout: 30000
-    visibilityPercentage: 1
 - scrollUntilVisible:
     element:
       id: 'quick-action-download-latest-bundle'
@@ -258,12 +225,9 @@ appId: app.capgo.updater
     visibilityPercentage: 1
 - tapOn:
     id: 'quick-action-download-latest-bundle'
-- scrollUntilVisible:
-    element:
-      text: '.*Marker: download:success.*'
-    direction: UP
+- extendedWaitUntil:
+    visible: '.*(Marker: download:success|M:download:success).*'
     timeout: 120000
-    visibilityPercentage: 1
 - extendedWaitUntil:
     visible: '.*Download complete event: manual-zip-v3-broken.*'
     timeout: 30000
@@ -308,12 +272,9 @@ appId: app.capgo.updater
     visibilityPercentage: 1
 - tapOn:
     id: 'quick-action-get-failed-update'
-- scrollUntilVisible:
-    element:
-      text: '.*Marker: failed:success.*'
-    direction: UP
+- extendedWaitUntil:
+    visible: '.*(Marker: failed:success|M:failed:success).*'
     timeout: 30000
-    visibilityPercentage: 1
 - scrollUntilVisible:
     element:
       text: '@capgo/capacitor-updater'
@@ -334,12 +295,9 @@ appId: app.capgo.updater
     visibilityPercentage: 1
 - tapOn:
     id: 'quick-action-advance-server-release'
-- scrollUntilVisible:
-    element:
-      text: '.*Marker: advance:success.*'
-    direction: UP
+- extendedWaitUntil:
+    visible: '.*(Marker: advance:success|M:advance:success).*'
     timeout: 30000
-    visibilityPercentage: 1
 - scrollUntilVisible:
     element:
       id: 'quick-action-download-latest-bundle'
@@ -349,12 +307,9 @@ appId: app.capgo.updater
     visibilityPercentage: 1
 - tapOn:
     id: 'quick-action-download-latest-bundle'
-- scrollUntilVisible:
-    element:
-      text: '.*Marker: download:success.*'
-    direction: UP
+- extendedWaitUntil:
+    visible: '.*(Marker: download:success|M:download:success).*'
     timeout: 120000
-    visibilityPercentage: 1
 - extendedWaitUntil:
     visible: '.*Download complete event: manual-zip-v4.*'
     timeout: 30000
@@ -370,12 +325,9 @@ appId: app.capgo.updater
     visibilityPercentage: 1
 - tapOn:
     id: 'quick-action-set-bundle-error'
-- scrollUntilVisible:
-    element:
-      text: '.*Marker: bundle:success.*'
-    direction: UP
+- extendedWaitUntil:
+    visible: '.*(Marker: bundle:success|M:bundle:success).*'
     timeout: 30000
-    visibilityPercentage: 1
 - scrollUntilVisible:
     element:
       id: 'quick-action-delete-inactive-bundle'
@@ -385,12 +337,9 @@ appId: app.capgo.updater
     visibilityPercentage: 1
 - tapOn:
     id: 'quick-action-delete-inactive-bundle'
-- scrollUntilVisible:
-    element:
-      text: '.*Marker: delete:success.*'
-    direction: UP
+- extendedWaitUntil:
+    visible: '.*(Marker: delete:success|M:delete:success).*'
     timeout: 30000
-    visibilityPercentage: 1
 - scrollUntilVisible:
     element:
       id: 'quick-action-reset-to-builtin'
