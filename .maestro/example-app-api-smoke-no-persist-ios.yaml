@@ -38,22 +38,6 @@ appId: app.capgo.updater
 - extendedWaitUntil:
     visible: '.*Harness: ready.*'
     timeout: 120000
-- scrollUntilVisible:
-    element:
-      text: '@capgo/capacitor-updater'
-    direction: UP
-    timeout: 120000
-- scrollUntilVisible:
-    element:
-      text: 'Quick verify persisted config'
-    direction: DOWN
-    timeout: 30000
-    centerElement: true
-    visibilityPercentage: 1
-    waitToSettleTimeoutMs: 500
-- tapOn:
-    text: 'Quick verify persisted config'
-    retryTapIfNoChange: true
 - extendedWaitUntil:
     visible: '.*(Marker: persisted:success|M:persisted:success).*'
     timeout: 120000

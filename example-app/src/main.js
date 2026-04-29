@@ -2840,15 +2840,15 @@ async function bootstrap() {
     }
     renderState();
   }
+  const shouldRunIosPersistedBootCheck =
+    platform === 'ios' && scenarioId.startsWith('manual-zip') && buildLabel.endsWith('-builtin') && state.bootCount > 1;
   const bootActionIds =
     bootActionFromStorage !== 'none'
       ? [bootActionFromStorage]
-      : platform === 'ios' &&
-          scenarioId.startsWith('manual-zip') &&
-          persistModifyUrl &&
-          buildLabel.endsWith('-builtin') &&
-          state.bootCount > 1
-        ? ['get-latest', 'verify-persisted-config']
+      : shouldRunIosPersistedBootCheck
+        ? persistModifyUrl
+          ? ['get-latest', 'verify-persisted-config']
+          : ['verify-persisted-config']
         : [];
   for (const bootActionId of bootActionIds) {
     try {
