@@ -223,6 +223,7 @@ const smokeSequenceActionIdsByScenario = {
     'set-shake-channel-selector',
     'is-shake-channel-selector-enabled',
     'remove-all-listeners',
+    'get-latest',
     ...manualZipStoreContractSmokeActionIds,
   ],
   'manual-zip-no-persist': [
@@ -234,6 +235,7 @@ const smokeSequenceActionIdsByScenario = {
     'set-channel-beta',
     'get-channel',
     'unset-channel',
+    'get-latest',
   ],
   'manual-zip-config-guards': [
     'set-custom-id',
@@ -245,6 +247,7 @@ const smokeSequenceActionIdsByScenario = {
     'get-channel',
     'set-channel-private',
     'unset-channel',
+    'get-latest',
   ],
 };
 
@@ -2013,6 +2016,19 @@ const actions = [
       }),
   },
   {
+    id: 'verify-persisted-runtime-traffic-boot',
+    label: 'Boot verify persisted runtime traffic',
+    showWhen: () => false,
+    markerId: 'persisted',
+    skipRefresh: true,
+    run: async () => {
+      await runBootProbe();
+      return {
+        message: 'Verified persisted runtime traffic after boot.',
+      };
+    },
+  },
+  {
     id: 'verify-persisted-config-after-get-latest-boot',
     label: 'Boot getLatest then verify persisted runtime config',
     showWhen: () => false,
@@ -2931,6 +2947,8 @@ async function bootstrap() {
   await refreshState();
   const shouldRunAndroidBootProbe =
     platform === 'android' && scenarioId.startsWith('manual-zip') && buildLabel.endsWith('-builtin') && state.bootCount > 1;
+  const shouldRunIosPersistedProbe =
+    platform === 'ios' && scenarioId.startsWith('manual-zip') && buildLabel.endsWith('-builtin') && state.bootCount > 1;
   if (shouldRunAndroidBootProbe) {
     state.bootProbe = 'running';
     renderState();
@@ -2952,6 +2970,15 @@ async function bootstrap() {
   startStateRefreshWatchers();
   if (bootActionIds.length) {
     await pause(platform === 'ios' ? 500 : 100);
+  }
+  if (shouldRunIosPersistedProbe) {
+    const iosPersistedProbeActionId =
+      scenarioId === 'manual-zip' ? 'verify-persisted-runtime-traffic-boot' : 'verify-persisted-config';
+    try {
+      await runAction(getActionById(iosPersistedProbeActionId), {}, { skipRefresh: false });
+    } catch (error) {
+      console.error('iOS persisted config boot probe failed', error);
+    }
   }
   for (const bootActionId of bootActionIds) {
     try {
