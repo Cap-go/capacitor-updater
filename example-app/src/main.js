@@ -223,6 +223,7 @@ const smokeSequenceActionIdsByScenario = {
     'set-shake-channel-selector',
     'is-shake-channel-selector-enabled',
     'get-latest',
+    'queue-boot-verify-persisted-config',
     'remove-all-listeners',
     ...manualZipStoreContractSmokeActionIds,
   ],
@@ -247,6 +248,7 @@ const smokeSequenceActionIdsByScenario = {
     'get-channel',
     'set-channel-private',
     'unset-channel',
+    'queue-boot-verify-persisted-config',
   ],
 };
 
@@ -1993,7 +1995,7 @@ const actions = [
     markerId: 'boot-persisted',
     run: async () => {
       if (scenarioId === 'manual-zip') {
-        const latest = await runGetLatestCheck();
+        const latest = state.lastLatest?.version ? state.lastLatest : await runGetLatestCheck();
         markPendingBootAction('verify-persisted-config-after-get-latest-boot');
         return {
           message: 'Queued persisted-config verification for the next boot after getLatest().',
@@ -2951,8 +2953,6 @@ async function bootstrap() {
   await refreshState();
   const shouldRunAndroidBootProbe =
     platform === 'android' && scenarioId.startsWith('manual-zip') && buildLabel.endsWith('-builtin') && state.bootCount > 1;
-  const shouldRunIosPersistedProbe =
-    platform === 'ios' && scenarioId.startsWith('manual-zip') && buildLabel.endsWith('-builtin') && state.bootCount > 1;
   if (shouldRunAndroidBootProbe) {
     state.bootProbe = 'running';
     renderState();
@@ -2970,15 +2970,6 @@ async function bootstrap() {
   startStateRefreshWatchers();
   if (bootActionIds.length) {
     await pause(platform === 'ios' ? 500 : 100);
-  }
-  if (shouldRunIosPersistedProbe) {
-    const iosPersistedProbeActionId =
-      scenarioId === 'manual-zip' ? 'verify-persisted-runtime-traffic-boot' : 'verify-persisted-config';
-    try {
-      await runAction(getActionById(iosPersistedProbeActionId), {}, { skipRefresh: false });
-    } catch (error) {
-      console.error('iOS persisted config boot probe failed', error);
-    }
   }
   for (const bootActionId of bootActionIds) {
     try {
