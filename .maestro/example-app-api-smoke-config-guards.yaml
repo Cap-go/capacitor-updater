@@ -29,6 +29,20 @@ appId: app.capgo.updater
 - extendedWaitUntil:
     visible: '.*(Marker: smoke-sequence:success|M:smoke-sequence:success).*'
     timeout: 180000
+- scrollUntilVisible:
+    element:
+      id: 'quick-action-get-latest'
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+    visibilityPercentage: 1
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    id: 'quick-action-get-latest'
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible: '.*(Marker: get-latest:success|M:get-latest:success).*'
+    timeout: 120000
 - runFlow: helpers/cold-launch-app.yaml
 - extendedWaitUntil:
     visible: '@capgo/capacitor-updater'

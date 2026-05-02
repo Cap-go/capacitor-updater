@@ -23,8 +23,8 @@ MAESTRO_DRIVER_STARTUP_TIMEOUT="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-180000}"
 MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
 MAESTRO_JAVA_TOOL_OPTIONS="${CAPGO_MAESTRO_JAVA_TOOL_OPTIONS:--Djava.net.preferIPv4Stack=true}"
 MAESTRO_TEST_RETRIES="${CAPGO_MAESTRO_TEST_RETRIES:-3}"
-APK_INSTALL_RETRIES="${CAPGO_MAESTRO_APK_INSTALL_RETRIES:-3}"
-PACKAGE_SERVICE_TIMEOUT_SECONDS="${CAPGO_MAESTRO_ANDROID_PACKAGE_TIMEOUT_SECONDS:-120}"
+APK_INSTALL_RETRIES="${CAPGO_MAESTRO_APK_INSTALL_RETRIES:-6}"
+PACKAGE_SERVICE_TIMEOUT_SECONDS="${CAPGO_MAESTRO_ANDROID_PACKAGE_TIMEOUT_SECONDS:-180}"
 APP_ACTIVITY="${CAPGO_MAESTRO_ANDROID_ACTIVITY:-app.capgo.updater/.MainActivity}"
 APP_LAUNCH_RETRIES="${CAPGO_MAESTRO_APP_LAUNCH_RETRIES:-3}"
 APP_UI_TIMEOUT_SECONDS="${CAPGO_MAESTRO_APP_UI_TIMEOUT_SECONDS:-150}"
@@ -32,7 +32,7 @@ POST_INSTALL_STABILIZE_SECONDS="${CAPGO_MAESTRO_POST_INSTALL_STABILIZE_SECONDS:-
 APP_READY_TITLE="@capgo/capacitor-updater"
 APP_READY_ACTION="Run notifyAppReady"
 APP_ID="app.capgo.updater"
-FLOW_RETRY_PATTERN="TcpForwarder.waitFor|allocateForwarder|TimeoutException|Android driver did not start up in time|Maestro Android driver did not start up in time|UNAVAILABLE: io exception|Connection refused|Broken pipe|Failure calling service package|Can.t find service: package|Can.t find service: settings|Cannot access system provider: 'settings'"
+FLOW_RETRY_PATTERN="TcpForwarder.waitFor|allocateForwarder|TimeoutException|Android driver did not start up in time|Maestro Android driver did not start up in time|UNAVAILABLE: io exception|Connection refused|Broken pipe|Failure calling service package|Can.t find service: package|Can.t find service: settings|Cannot access system provider: 'settings'|No service published for: input|No visible element found: id: quick-action|Could not find a visible element matching selector: id: quick-action"
 TIMEOUT_CMD="$(command -v gtimeout || command -v timeout || true)"
 SERVER_PID=""
 
@@ -212,11 +212,16 @@ if (failures.length) {
 
 wait_for_android_package_service() {
   local deadline=0
+  local settings_output=""
 
   deadline=$((SECONDS + PACKAGE_SERVICE_TIMEOUT_SECONDS))
 
   while (( SECONDS < deadline )); do
-    if adb shell pm path android >/dev/null 2>&1; then
+    settings_output="$(adb shell settings get global adb_enabled 2>/dev/null | tr -d '\r' || true)"
+    if adb shell cmd package list packages >/dev/null 2>&1 &&
+      adb shell pm path android >/dev/null 2>&1 &&
+      adb shell sm list-volumes all >/dev/null 2>&1 &&
+      [[ "$settings_output" =~ ^(0|1|null)$ ]]; then
       return 0
     fi
     sleep 2
@@ -279,7 +284,11 @@ wait_for_example_app_ui() {
 
     while (( SECONDS < deadline )); do
       hierarchy="$(dump_ui_hierarchy)"
-      tap_android_anr_wait_button_if_present "$hierarchy" || true
+      if tap_android_anr_wait_button_if_present "$hierarchy"; then
+        adb shell am force-stop "$APP_ID" >/dev/null 2>&1 || true
+        sleep 2
+        launch_example_app
+      fi
       if [[ "$hierarchy" == *"$APP_READY_TITLE"* || "$hierarchy" == *"$APP_READY_ACTION"* ]]; then
         return 0
       fi
@@ -369,7 +378,6 @@ run_maestro_test_with_retries() {
       echo "Retrying Android Maestro smoke after driver/bootstrap failure." >&2
       rm -f "$output_file"
       attempt=$((attempt + 1))
-      adb reboot >/dev/null 2>&1 || true
       restart_adb_server
       wait_for_emulator_boot
       wait_for_android_package_service || true

@@ -160,24 +160,24 @@ const quickActionIds = [
   'download-latest-bundle-observe-store',
   'set-last-downloaded-bundle',
   'queue-last-downloaded-bundle',
+  'reload-app',
   'get-next-bundle',
+  'set-multi-delay',
+  'cancel-delay',
   'get-latest',
   'queue-boot-get-latest',
   'get-latest-no-update',
-  'set-multi-delay',
-  'cancel-delay',
-  'reload-app',
   'get-failed-update',
   'set-bundle-error',
   'delete-inactive-bundle',
   'reset-to-builtin',
-  'queue-boot-verify-persisted-config',
   'verify-persisted-config',
   'get-app-update-info',
   'perform-immediate-update',
   'start-flexible-update',
   'complete-flexible-update',
   'open-app-store',
+  'queue-boot-verify-persisted-config',
 ];
 const smokeSequenceDefaultDelayMs = 150;
 const smokeSequenceMutationDelayMs = 300;
@@ -1348,17 +1348,17 @@ async function advanceServerRelease() {
 
 async function verifyPersistedRuntimeConfig(options = {}) {
   const includePluginAppId = options.includePluginAppId !== false;
-  const latest =
-    state.lastLatest != null
-      ? expectGetLatestResult(state.lastLatest)
-      : expectGetLatestResult(await plugin.getLatest());
+  const shouldProbeLatest = options.probeLatest !== false;
+  const latest = shouldProbeLatest ? expectGetLatestResult(await plugin.getLatest()) : null;
   const channels = expectListChannelsResult(await plugin.listChannels());
   const appIdResult = includePluginAppId
     ? expectStringFieldResult(await plugin.getAppId(), 'appId', 'verify persisted getAppId()')
     : null;
 
   state.listChannelsResult = channels;
-  state.lastLatest = latest;
+  if (latest) {
+    state.lastLatest = latest;
+  }
   await refreshServerState();
   renderState();
 
@@ -1368,7 +1368,7 @@ async function verifyPersistedRuntimeConfig(options = {}) {
       channels: channels.channels,
       customId: persistCustomId ? runtimeSmokeCustomId : 'none',
       note: 'server debug unavailable in Android WebView',
-      version: latest.version,
+      version: latest?.version ?? 'not-probed',
     };
   }
 
@@ -1446,7 +1446,7 @@ async function verifyPersistedRuntimeConfig(options = {}) {
     channelUrl: observedChannelUrl,
     statsUrl: observedStatsUrl,
     updateUrl: observedUpdateUrl,
-    version: latest.version,
+    version: latest?.version ?? state.serverDebug?.activeRelease ?? 'not-probed',
   };
 }
 
@@ -2006,7 +2006,11 @@ const actions = [
     showWhen: () => false,
     markerId: 'persisted',
     skipRefresh: true,
-    run: async () => verifyPersistedRuntimeConfig({ includePluginAppId: false }),
+    run: async () =>
+      verifyPersistedRuntimeConfig({
+        includePluginAppId: false,
+        probeLatest: scenarioId !== 'manual-zip-config-guards',
+      }),
   },
   {
     id: 'verify-persisted-config-after-get-latest-boot',
@@ -2024,11 +2028,11 @@ const actions = [
     label: 'Verify persisted runtime config',
     buttonLabel: 'Verify persisted runtime config',
     quickButtonLabel: 'Quick verify persisted config',
-    description: 'Re-run persisted routing checks after a cold launch, reusing getLatest() when it already ran.',
+    description: 'Re-run persisted routing checks after a cold launch.',
     showWhen: () => serverUrl.startsWith('http'),
     markerId: 'persisted',
     skipRefresh: true,
-    run: async () => verifyPersistedRuntimeConfig(),
+    run: async () => verifyPersistedRuntimeConfig({ probeLatest: scenarioId !== 'manual-zip-config-guards' }),
   },
   {
     id: 'refresh-server-state',

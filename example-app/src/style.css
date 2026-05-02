@@ -34,7 +34,9 @@ body {
 }
 
 .hero {
-  padding: 24px;
+  display: grid;
+  gap: 12px;
+  padding: 18px;
 }
 
 .card {
@@ -55,7 +57,7 @@ body {
 }
 
 .eyebrow {
-  margin: 0 0 8px;
+  margin: 0;
   font-size: 0.78rem;
   letter-spacing: 0.24em;
   text-transform: uppercase;
@@ -82,7 +84,7 @@ h3 {
 }
 
 .lead {
-  margin: 12px 0 0;
+  margin: 0;
   color: rgba(245, 240, 230, 0.76);
   line-height: 1.45;
 }
@@ -199,14 +201,14 @@ button:disabled {
 
 .quick-actions-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .quick-actions-grid button {
-  min-height: 64px;
-  padding: 10px 12px;
-  font-size: 0.88rem;
+  min-height: 46px;
+  padding: 8px 10px;
+  font-size: 0.78rem;
   line-height: 1.2;
 }
 
@@ -256,24 +258,24 @@ button:disabled {
   .hero,
   .card,
   .action-card {
-    padding: 18px;
+    padding: 14px;
   }
 
   .container {
-    padding-top: 100px;
+    padding-top: 76px;
   }
 
   h1 {
-    font-size: 1.8rem;
+    font-size: 1.55rem;
   }
 
   .quick-actions-grid {
-    gap: 8px;
+    gap: 6px;
   }
 
   .quick-actions-grid button {
-    min-height: 58px;
-    padding: 10px;
-    font-size: 0.82rem;
+    min-height: 40px;
+    padding: 6px;
+    font-size: 0.68rem;
   }
 }

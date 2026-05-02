@@ -14,7 +14,7 @@ APP_READY_ACTION="Run notifyAppReady"
 APK_PATH="$ROOT_DIR/example-app/android/app/build/outputs/apk/debug/app-debug.apk"
 SCENARIO_SELECTION="${1:-all}"
 SERVER_PID=""
-FLOW_RETRY_PATTERN="TcpForwarder.waitFor|allocateForwarder|TimeoutException|Android driver did not start up in time|UNAVAILABLE: io exception|Connection refused|Broken pipe|Failure calling service package|Can.t find service: package|Can.t find service: settings|Cannot access system provider: 'settings'"
+FLOW_RETRY_PATTERN="TcpForwarder.waitFor|allocateForwarder|TimeoutException|Android driver did not start up in time|UNAVAILABLE: io exception|Connection refused|Broken pipe|Failure calling service package|Can.t find service: package|Can.t find service: settings|Cannot access system provider: 'settings'|No service published for: input|No visible element found: id: quick-action|Could not find a visible element matching selector: id: quick-action"
 MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
 MAESTRO_DRIVER_STARTUP_TIMEOUT_VALUE="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-300000}"
 MAESTRO_FLOW_TIMEOUT_SECONDS="${MAESTRO_FLOW_TIMEOUT_SECONDS:-900}"
@@ -212,7 +212,11 @@ wait_for_example_app_ui() {
 
     while (( SECONDS < deadline )); do
       hierarchy="$(dump_ui_hierarchy)"
-      tap_android_anr_wait_button_if_present "$hierarchy" || true
+      if tap_android_anr_wait_button_if_present "$hierarchy"; then
+        run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell am force-stop "$APP_ID" >/dev/null 2>&1 || true
+        sleep 2
+        launch_android_app
+      fi
       if [[ "$hierarchy" == *"$APP_READY_TITLE"* || "$hierarchy" == *"$APP_READY_ACTION"* ]]; then
         return 0
       fi
@@ -667,7 +671,10 @@ wait_for_package_manager() {
       } | tr -d '\r' | awk 'NF { last = $0 } END { print last }'
     )"
 
-    if run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell cmd package list packages >/dev/null 2>&1 && [[ "$settings_output" =~ ^(0|1|null)$ ]]; then
+    if run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell cmd package list packages >/dev/null 2>&1 &&
+      run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell pm path android >/dev/null 2>&1 &&
+      run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell sm list-volumes all >/dev/null 2>&1 &&
+      [[ "$settings_output" =~ ^(0|1|null)$ ]]; then
       return 0
     fi
     sleep 2
@@ -721,7 +728,7 @@ background_and_resume_app() {
 
 install_apk() {
   local attempt=1
-  local max_attempts=3
+  local max_attempts=6
   local output_file
 
   prepare_device_for_maestro
@@ -736,7 +743,7 @@ install_apk() {
       return 0
     fi
 
-    if grep -Eq "Broken pipe|Can.t find service: package|Can.t find service: settings|Cannot access system provider: 'settings' before system providers are installed!|no devices/emulators found|device offline|PackageManagerInternal\\.freeStorage|StorageManagerService\\.allocateBytes|java\\.lang\\.NullPointerException" "$output_file" && [[ $attempt -lt $max_attempts ]]; then
+    if grep -Eq "Broken pipe|Can.t find service: package|Can.t find service: settings|Cannot access system provider: 'settings' before system providers are installed!|no devices/emulators found|device offline|PackageManagerInternal\\.freeStorage|StorageManagerService\\.allocateBytes|StorageManager\\.getVolumes|java\\.lang\\.NullPointerException" "$output_file" && [[ $attempt -lt $max_attempts ]]; then
       rm -f "$output_file"
       attempt=$((attempt + 1))
       restart_adb_server

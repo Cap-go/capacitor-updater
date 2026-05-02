@@ -32,6 +32,11 @@
       <header class="hero">
         <p class="eyebrow">Capgo OTA validation</p>
         <h1>@capgo/capacitor-updater</h1>
+        <div class="quick-actions-panel">
+          <h3>Manual Flow Shortcuts</h3>
+          <button id="quick-run-smoke-sequence" type="button">Quick run smoke test sequence</button>
+          <div id="quick-actions" class="quick-actions-grid"></div>
+        </div>
         <p class="lead">
           This screen exposes native updater methods, retained event markers, and fake-server state so Maestro can
           verify real end-to-end update flows.
@@ -42,15 +47,6 @@
       </header>
 
       <section class="card result-panel">
-        <div class="quick-actions-panel">
-          <h3>Manual Flow Shortcuts</h3>
-          <p class="action-copy">
-            Stable top-level buttons for the live-update Maestro flows. They call the same JavaScript plugin methods as
-            the full action cards below.
-          </p>
-          <button id="quick-run-smoke-sequence" type="button">Quick run smoke test sequence</button>
-          <div id="quick-actions" class="quick-actions-grid"></div>
-        </div>
         <div class="panel-heading">
           <h2>Latest Result</h2>
           <div class="status-row">
