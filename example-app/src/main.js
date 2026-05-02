@@ -235,6 +235,7 @@ const smokeSequenceActionIdsByScenario = {
     'set-channel-beta',
     'get-channel',
     'unset-channel',
+    'queue-boot-verify-persisted-config',
   ],
   'manual-zip-config-guards': [
     'set-custom-id',
@@ -2960,10 +2961,6 @@ async function bootstrap() {
     } catch (error) {
       state.bootProbe = `error:${error?.message ?? String(error)}`;
     }
-    renderState();
-  }
-  if (platform === 'ios') {
-    state.harnessReady = true;
     renderState();
   }
   const bootActionIds =
