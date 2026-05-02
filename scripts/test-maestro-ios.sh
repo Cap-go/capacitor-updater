@@ -19,8 +19,6 @@ DEVICE_SERVER_URL="${CAPGO_MAESTRO_DEVICE_BASE_URL:-${HOST_SERVER_URL}}"
 SIMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_IOS_BOOT_TIMEOUT_SECONDS:-300}"
 MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-600}"
 APP_ID="app.capgo.updater"
-APP_LAUNCH_RETRIES="${CAPGO_MAESTRO_IOS_APP_LAUNCH_RETRIES:-3}"
-APP_LAUNCH_WAIT_SECONDS="${CAPGO_MAESTRO_IOS_APP_LAUNCH_WAIT_SECONDS:-5}"
 SERVER_PID=""
 export MAESTRO_DRIVER_STARTUP_TIMEOUT="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-600000}"
 export MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
@@ -88,30 +86,10 @@ PY
   return $?
 }
 
-launch_example_app() {
-  xcrun simctl launch "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1
-}
-
-install_and_launch_example_app() {
+install_example_app() {
   xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
   xcrun simctl uninstall "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
   xcrun simctl install "$SIMULATOR_ID" "$APP_PATH"
-
-  local launch_attempt=1
-  while (( launch_attempt <= APP_LAUNCH_RETRIES )); do
-    if launch_example_app; then
-      sleep "$APP_LAUNCH_WAIT_SECONDS"
-      return 0
-    fi
-
-    if (( launch_attempt == APP_LAUNCH_RETRIES )); then
-      echo "Unable to launch the iOS example app after ${APP_LAUNCH_RETRIES} attempts." >&2
-      return 1
-    fi
-
-    sleep 2
-    ((launch_attempt += 1))
-  done
 }
 
 wait_for_server() {
@@ -309,7 +287,7 @@ else
   exit "$status"
 fi
 
-install_and_launch_example_app
+install_example_app
 
 attempt=1
 while (( attempt <= MAESTRO_TEST_RETRIES )); do
@@ -349,7 +327,7 @@ while (( attempt <= MAESTRO_TEST_RETRIES )); do
     xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
     run_with_timeout "$SIMULATOR_BOOT_TIMEOUT_SECONDS" xcrun simctl bootstatus "$SIMULATOR_ID" -b || true
     reset_fake_server
-    install_and_launch_example_app
+    install_example_app
     attempt=$((attempt + 1))
     continue
   fi
