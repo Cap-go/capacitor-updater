@@ -222,8 +222,8 @@ const smokeSequenceActionIdsByScenario = {
     'is-shake-menu-enabled',
     'set-shake-channel-selector',
     'is-shake-channel-selector-enabled',
-    'remove-all-listeners',
     'get-latest',
+    'remove-all-listeners',
     ...manualZipStoreContractSmokeActionIds,
   ],
   'manual-zip-no-persist': [
