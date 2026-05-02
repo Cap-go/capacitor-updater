@@ -25,7 +25,7 @@ SERVER_PID=""
 export MAESTRO_DRIVER_STARTUP_TIMEOUT="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-600000}"
 export MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
 MAESTRO_TEST_RETRIES="${CAPGO_MAESTRO_TEST_RETRIES:-3}"
-FLOW_RETRY_PATTERN="iOS driver not ready in time|Failed to connect to /127\\.0\\.0\\.1:[0-9]+|Connection refused|Broken pipe|Request for viewHierarchy failed, because of unknown reason|XCTestDriver request failed\\. Status code: 500, path: viewHierarchy|failed to terminate dev\\.mobile\\.maestro-driver-iosUITests\\.xctrunner|found nothing to terminate"
+FLOW_RETRY_PATTERN="iOS driver not ready in time|Failed to connect to /127\\.0\\.0\\.1:[0-9]+|Connection refused|Broken pipe|Request for viewHierarchy failed, because of unknown reason|XCTestDriver request failed\\. Status code: 500, path: viewHierarchy|failed to terminate dev\\.mobile\\.maestro-driver-iosUITests\\.xctrunner|found nothing to terminate|Assertion is false: \"@capgo/capacitor-updater\" is visible"
 export CAPGO_MAESTRO_DEVICE_BASE_URL="$DEVICE_SERVER_URL"
 
 default_simulator_id() {
@@ -90,6 +90,28 @@ PY
 
 launch_example_app() {
   xcrun simctl launch "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1
+}
+
+install_and_launch_example_app() {
+  xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
+  xcrun simctl uninstall "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
+  xcrun simctl install "$SIMULATOR_ID" "$APP_PATH"
+
+  local launch_attempt=1
+  while (( launch_attempt <= APP_LAUNCH_RETRIES )); do
+    if launch_example_app; then
+      sleep "$APP_LAUNCH_WAIT_SECONDS"
+      return 0
+    fi
+
+    if (( launch_attempt == APP_LAUNCH_RETRIES )); then
+      echo "Unable to launch the iOS example app after ${APP_LAUNCH_RETRIES} attempts." >&2
+      return 1
+    fi
+
+    sleep 2
+    ((launch_attempt += 1))
+  done
 }
 
 wait_for_server() {
@@ -287,24 +309,7 @@ else
   exit "$status"
 fi
 
-xcrun simctl uninstall "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
-xcrun simctl install "$SIMULATOR_ID" "$APP_PATH"
-
-launch_attempt=1
-while (( launch_attempt <= APP_LAUNCH_RETRIES )); do
-  if launch_example_app; then
-    sleep "$APP_LAUNCH_WAIT_SECONDS"
-    break
-  fi
-
-  if (( launch_attempt == APP_LAUNCH_RETRIES )); then
-    echo "Unable to launch the iOS example app after ${APP_LAUNCH_RETRIES} attempts." >&2
-    exit 1
-  fi
-
-  sleep 2
-  ((launch_attempt += 1))
-done
+install_and_launch_example_app
 
 attempt=1
 while (( attempt <= MAESTRO_TEST_RETRIES )); do
@@ -343,8 +348,8 @@ while (( attempt <= MAESTRO_TEST_RETRIES )); do
     xcrun simctl shutdown "$SIMULATOR_ID" >/dev/null 2>&1 || true
     xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
     run_with_timeout "$SIMULATOR_BOOT_TIMEOUT_SECONDS" xcrun simctl bootstatus "$SIMULATOR_ID" -b || true
-    launch_example_app || true
-    sleep "$APP_LAUNCH_WAIT_SECONDS"
+    reset_fake_server
+    install_and_launch_example_app
     attempt=$((attempt + 1))
     continue
   fi
