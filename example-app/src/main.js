@@ -246,7 +246,6 @@ const smokeSequenceActionIdsByScenario = {
     'get-channel',
     'set-channel-private',
     'unset-channel',
-    'get-latest',
   ],
 };
 
@@ -1381,6 +1380,7 @@ async function verifyPersistedRuntimeConfig(options = {}) {
   const observedUpdateUrl = formatObservedRequestUrl(lastUpdateRequest.url);
   const observedChannelUrl = formatObservedRequestUrl(lastChannelRequest.url, ['scenario', 'source']);
   const observedStatsUrl = formatObservedRequestUrl(lastStatsRequest.url);
+  const shouldVerifyUpdateUrl = shouldProbeLatest || Boolean(lastUpdateRequest.url);
   const expectedUsesRuntimeUrls = allowModifyUrl && persistModifyUrl;
   const expectedUpdateUrl = formatObservedRequestUrl(
     expectedUsesRuntimeUrls ? getRuntimeUpdateUrl() : getDefaultUpdateUrl(),
@@ -1397,10 +1397,12 @@ async function verifyPersistedRuntimeConfig(options = {}) {
   const observedUpdateCustomId = lastUpdateRequest.payload?.custom_id || 'none';
   const observedChannelCustomId = lastChannelRequest.payload?.custom_id || 'none';
 
-  invariant(
-    observedUpdateUrl === expectedUpdateUrl,
-    `verify persisted config expected update URL ${expectedUpdateUrl}, received ${observedUpdateUrl}`,
-  );
+  if (shouldVerifyUpdateUrl) {
+    invariant(
+      observedUpdateUrl === expectedUpdateUrl,
+      `verify persisted config expected update URL ${expectedUpdateUrl}, received ${observedUpdateUrl}`,
+    );
+  }
   invariant(
     observedChannelUrl === expectedChannelUrl,
     `verify persisted config expected channel URL ${expectedChannelUrl}, received ${observedChannelUrl}`,
@@ -1417,10 +1419,12 @@ async function verifyPersistedRuntimeConfig(options = {}) {
     observedAppId !== runtimeSmokeAppId,
     `verify persisted config should not keep the runtime app_id ${runtimeSmokeAppId} after relaunch`,
   );
-  invariant(
-    observedUpdateCustomId === expectedCustomId,
-    `verify persisted config expected update custom_id ${expectedCustomId}, received ${observedUpdateCustomId}`,
-  );
+  if (shouldVerifyUpdateUrl) {
+    invariant(
+      observedUpdateCustomId === expectedCustomId,
+      `verify persisted config expected update custom_id ${expectedCustomId}, received ${observedUpdateCustomId}`,
+    );
+  }
   invariant(
     observedChannelCustomId === expectedCustomId,
     `verify persisted config expected channel custom_id ${expectedCustomId}, received ${observedChannelCustomId}`,

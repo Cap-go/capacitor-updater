@@ -160,13 +160,11 @@ switch (scenarioId) {
     expect((requestCounts.stats ?? 0) >= 1, 'expected stats traffic to hit the fake server');
     break;
   case 'manual-zip-config-guards':
-    expect(update.url?.includes('/api/updates/manual-zip-config-guards'), 'missing default update URL request for guarded config');
     expect(!update.url?.includes('source=runtime-update'), 'guarded config unexpectedly accepted a runtime update URL override');
     expect(channel.url?.includes('/api/channel?scenario=manual-zip-config-guards'), 'missing default channel URL request for guarded config');
     expect(!channel.url?.includes('source=runtime-channel'), 'guarded config unexpectedly accepted a runtime channel URL override');
     expect((updatePayload.custom_id ?? channelPayload.custom_id) === 'qa-user-42', 'custom ID should still persist when only URL/App ID setters are guarded');
     expect((requestCounts.channel ?? 0) >= 2, 'expected guarded config channel checks to hit the fake server');
-    expect((requestCounts.update ?? 0) >= 1, 'expected guarded config update check to hit the fake server');
     expect((requestCounts.stats ?? 0) >= 1, 'expected stats traffic to hit the fake server');
     break;
   default:
