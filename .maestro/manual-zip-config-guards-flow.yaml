@@ -23,6 +23,7 @@ appId: app.capgo.updater
 - tapOn:
     id: 'quick-action-reset-server-release'
     retryTapIfNoChange: true
+    waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: reset:success|M:reset:success).*'
     timeout: 30000
@@ -37,6 +38,7 @@ appId: app.capgo.updater
 - tapOn:
     id: 'quick-action-download-latest-bundle'
     retryTapIfNoChange: true
+    waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: download:success|M:download:success).*'
     timeout: 120000
@@ -50,6 +52,7 @@ appId: app.capgo.updater
     waitToSettleTimeoutMs: 500
 - tapOn:
     id: 'quick-action-set-bundle-error'
+    waitToSettleTimeoutMs: 500
     retryTapIfNoChange: true
 - extendedWaitUntil:
     visible: '.*(Marker: bundle:(success|expected-rejection)|M:bundle:(success|expected-rejection)).*'

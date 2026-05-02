@@ -23,6 +23,7 @@ appId: app.capgo.updater
 - tapOn:
     id: 'quick-action-set-runtime-urls'
     retryTapIfNoChange: true
+    waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: set-runtime-urls:success|M:set-runtime-urls:success).*'
     timeout: 30000
@@ -37,6 +38,7 @@ appId: app.capgo.updater
 - tapOn:
     id: 'quick-action-reset-server-release'
     retryTapIfNoChange: true
+    waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: reset:success|M:reset:success).*'
     timeout: 30000
@@ -51,6 +53,7 @@ appId: app.capgo.updater
 - tapOn:
     id: 'quick-action-download-latest-bundle-observe-store'
     retryTapIfNoChange: true
+    waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: download-store:success|M:download-store:success).*'
     timeout: 120000
@@ -68,6 +71,7 @@ appId: app.capgo.updater
     visibilityPercentage: 1
 - tapOn:
     id: 'quick-action-queue-last-downloaded-bundle'
+    waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: queue:success|M:queue:success).*'
     timeout: 30000
@@ -88,6 +92,7 @@ appId: app.capgo.updater
     visibilityPercentage: 1
 - tapOn:
     id: 'quick-action-reload-app'
+    waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '@capgo/capacitor-updater'
     timeout: 180000
@@ -107,6 +112,7 @@ appId: app.capgo.updater
     visibilityPercentage: 1
 - tapOn:
     id: 'quick-action-advance-server-release'
+    waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: advance:success|M:advance:success).*'
     timeout: 30000
@@ -119,6 +125,7 @@ appId: app.capgo.updater
     visibilityPercentage: 1
 - tapOn:
     id: 'quick-action-download-latest-bundle-observe-store'
+    waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: download-store:success|M:download-store:success).*'
     timeout: 120000
@@ -136,6 +143,7 @@ appId: app.capgo.updater
     visibilityPercentage: 1
 - tapOn:
     id: 'quick-action-queue-last-downloaded-bundle'
+    waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: queue:success|M:queue:success).*'
     timeout: 30000
@@ -156,6 +164,7 @@ appId: app.capgo.updater
     visibilityPercentage: 1
 - tapOn:
     id: 'quick-action-reload-app'
+    waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '@capgo/capacitor-updater'
     timeout: 180000
@@ -182,6 +191,7 @@ appId: app.capgo.updater
     visibilityPercentage: 1
 - tapOn:
     id: 'quick-action-get-latest-no-update'
+    waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: no-update:success|M:no-update:success).*'
     timeout: 60000
