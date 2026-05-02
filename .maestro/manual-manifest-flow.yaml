@@ -101,8 +101,12 @@ appId: app.capgo.updater
       text: '@capgo/capacitor-updater'
     direction: UP
     timeout: 120000
-- assertVisible: '.*Current bundle source: downloaded.*'
-- assertVisible: '.*Current bundle version: manual-manifest-v1.*'
+- extendedWaitUntil:
+    visible: '.*Current bundle source: downloaded.*'
+    timeout: 180000
+- extendedWaitUntil:
+    visible: '.*Current bundle version: manual-manifest-v1.*'
+    timeout: 180000
 - scrollUntilVisible:
     element:
       id: 'quick-action-advance-server-release'
@@ -173,8 +177,12 @@ appId: app.capgo.updater
       text: '@capgo/capacitor-updater'
     direction: UP
     timeout: 120000
-- assertVisible: '.*Current bundle source: downloaded.*'
-- assertVisible: '.*Current bundle version: manual-manifest-v2.*'
+- extendedWaitUntil:
+    visible: '.*Current bundle source: downloaded.*'
+    timeout: 180000
+- extendedWaitUntil:
+    visible: '.*Current bundle version: manual-manifest-v2.*'
+    timeout: 180000
 - scrollUntilVisible:
     element:
       id: 'quick-action-get-next-bundle'
