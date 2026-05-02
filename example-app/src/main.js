@@ -235,7 +235,6 @@ const smokeSequenceActionIdsByScenario = {
     'set-channel-beta',
     'get-channel',
     'unset-channel',
-    'get-latest',
   ],
   'manual-zip-config-guards': [
     'set-custom-id',
