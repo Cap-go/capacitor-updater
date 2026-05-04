@@ -1628,6 +1628,10 @@ public class CapacitorUpdaterUnitTest {
      * Regression test for: NoSuchMethodError crash on Android 8.0/8.1 (API 26/27).
      * getLongVersionCode() was introduced in API 28; the plugin must use
      * PackageInfoCompat.getLongVersionCode() to support API 24-27.
+     *
+     * <p>The @SuppressWarnings("deprecation") is intentional: we set PackageInfo.versionCode
+     * (deprecated since API 28) directly to simulate a pre-API-28 device and verify
+     * that PackageInfoCompat falls back to it correctly on older Android versions.
      */
     @Test
     @SuppressWarnings("deprecation")
