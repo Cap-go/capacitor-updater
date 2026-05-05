@@ -448,9 +448,10 @@ public class ShakeMenu implements ShakeDetector.Listener {
                                 }
 
                                 String latestError = getString(latestRes, "error");
+                                String latestKind = getString(latestRes, "kind");
 
                                 // Handle update errors first (before "no new version" check)
-                                if (latestError != null && !latestError.isEmpty() && !"no_new_version_available".equals(latestError)) {
+                                if (latestError != null && !latestError.isEmpty() && !"up_to_date".equals(latestKind)) {
                                     activity.runOnUiThread(() -> {
                                         progressDialog.dismiss();
                                         showError("Channel set to " + channelName + ". Update check failed: " + latestError);
@@ -461,7 +462,7 @@ public class ShakeMenu implements ShakeDetector.Listener {
                                 String latestUrl = getString(latestRes, "url");
 
                                 // Check if there's an actual update available
-                                if ("no_new_version_available".equals(latestError) || latestUrl == null || latestUrl.isEmpty()) {
+                                if ("up_to_date".equals(latestKind) || latestUrl == null || latestUrl.isEmpty()) {
                                     activity.runOnUiThread(() -> {
                                         progressDialog.dismiss();
                                         showSuccess("Channel set to " + channelName + ". Already on latest version.");

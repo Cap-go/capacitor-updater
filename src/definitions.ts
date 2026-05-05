@@ -757,7 +757,7 @@ export interface CapacitorUpdaterPlugin {
    * When the device's current version matches the latest version on the server (i.e., the device is already
    * up-to-date), the server returns a 200 response with `error: "no_new_version_available"` and
    * `message: "No new version available"`. This is a normal, expected condition and resolves with
-   * `kind: "up_to_date"` when the native updater can classify it.
+   * `kind: "up_to_date"` when the backend provides that classification.
    *
    * You should check `kind` and `error` before attempting to download:
    *
@@ -1534,7 +1534,7 @@ export interface NoNeedEvent {
 
 export interface UpdateCheckResultEvent {
   /**
-   * Classification for the update check result, provided by the backend or inferred from known error codes.
+   * Classification for the update check result, provided by the backend.
    *
    * @since 8.45.11
    */
@@ -1768,14 +1768,11 @@ export interface LatestVersion {
   message?: string;
   sessionKey?: string;
   /**
-   * Error code from the server, if any.
-   * Common values:
-   * - `"no_new_version_available"`: Device is already on the latest version (not a failure)
-   * - Other error codes can be classified with `kind`
+   * Error code from the server, if any. Use `kind` for classification instead of parsing this value.
    */
   error?: string;
   /**
-   * Classification for this response, provided by the backend or inferred from known error codes.
+   * Classification for this response, provided by the backend.
    *
    * @since 8.45.11
    */

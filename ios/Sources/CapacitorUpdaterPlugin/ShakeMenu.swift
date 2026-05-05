@@ -308,9 +308,10 @@ extension UIWindow {
                         }
 
                         let latest = updater.getLatest(url: updateUrl, channel: name)
+                        let latestKind = latest.kind
 
                         // Handle update errors first (before "no new version" check)
-                        if let error = latest.error, !error.isEmpty && error != "no_new_version_available" {
+                        if let error = latest.error, !error.isEmpty && latestKind != "up_to_date" {
                             DispatchQueue.main.async {
                                 progressAlert.dismiss(animated: true) {
                                     self.showError(message: "Channel set to \(name). Update check failed: \(error)", plugin: plugin)
@@ -320,7 +321,7 @@ extension UIWindow {
                         }
 
                         // Check if there's an actual update available
-                        if latest.error == "no_new_version_available" || latest.url.isEmpty {
+                        if latestKind == "up_to_date" || latest.url.isEmpty {
                             DispatchQueue.main.async {
                                 progressAlert.dismiss(animated: true) {
                                     self.showSuccess(message: "Channel set to \(name). Already on latest version.", plugin: plugin)

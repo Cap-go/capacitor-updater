@@ -262,15 +262,24 @@ public class CapacitorUpdaterUnitTest {
 
         private final BundleInfo currentBundle = new BundleInfo("current-id", "1.0.0", BundleStatus.SUCCESS, new Date(), "abc123");
         private boolean sendStatsCalled = false;
+        private final boolean includeKind;
 
         NoNewVersionCapgoUpdater() {
+            this(true);
+        }
+
+        NoNewVersionCapgoUpdater(final boolean includeKind) {
             super(null);
+            this.includeKind = includeKind;
         }
 
         @Override
         public void getLatest(final String updateUrl, final String channel, final Callback callback) {
             final Map<String, Object> response = new HashMap<>();
             response.put("error", "no_new_version_available");
+            if (this.includeKind) {
+                response.put("kind", "up_to_date");
+            }
             response.put("message", "No new version available");
             response.put("statusCode", 200);
             callback.callback(response);
@@ -1544,7 +1553,7 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
-    public void testGetLatestIncludesInferredKindForLegacyErrorResponse() {
+    public void testGetLatestRejectsLegacyErrorWithoutBackendKind() {
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);
             MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
@@ -1554,16 +1563,13 @@ public class CapacitorUpdaterUnitTest {
             ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
             PluginCall call = mock(PluginCall.class);
 
-            plugin.implementation = new NoNewVersionCapgoUpdater();
+            plugin.implementation = new NoNewVersionCapgoUpdater(false);
             plugin.setLoggerForTesting(mock(Logger.class));
 
             plugin.getLatest(call);
 
-            final ArgumentCaptor<JSObject> resultCaptor = ArgumentCaptor.forClass(JSObject.class);
-            verify(call).resolve(resultCaptor.capture());
-            verify(call, never()).reject(anyString());
-            assertEquals("up_to_date", resultCaptor.getValue().getString("kind"));
-            assertEquals("1.0.0", resultCaptor.getValue().getString("version"));
+            verify(call, never()).resolve(any(JSObject.class));
+            verify(call).reject("no_new_version_available");
         }
     }
 

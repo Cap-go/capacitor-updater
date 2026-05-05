@@ -879,7 +879,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         runGetLatestWork {
             let res = self.implementation.getLatest(url: URL(string: self.updateUrl)!, channel: channel)
             if let error = res.error, !error.isEmpty {
-                let responseKind = self.updateResponseKind(error: error, kind: res.kind)
+                let responseKind = self.updateResponseKind(kind: res.kind)
                 res.kind = responseKind
                 if responseKind == "failed" {
                     let message = res.message ?? ""
@@ -891,7 +891,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     call.resolve(res.toDict())
                 }
             } else if let kind = res.kind, !kind.isEmpty {
-                let responseKind = self.updateResponseKind(error: "", kind: kind)
+                let responseKind = self.updateResponseKind(kind: kind)
                 res.kind = responseKind
                 if responseKind != "failed" {
                     if res.version.isEmpty {
@@ -1639,36 +1639,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.notifyListeners("majorAvailable", data: payload)
     }
 
-    private static let updateUpToDateResponseCodes: Set<String> = [
-        "no_new_version_available",
-        "already_on_builtin"
-    ]
-    private static let updateBlockedResponseCodes: Set<String> = [
-        "cannot_update_via_private_channel",
-        "disabled_platform_ios",
-        "disabled_platform_android",
-        "disabled_platform_electron",
-        "disable_auto_update_to_major",
-        "disable_auto_update_to_minor",
-        "disable_auto_update_to_patch",
-        "disable_auto_update_to_metadata",
-        "disable_auto_update_under_native",
-        "disable_prod_build",
-        "disable_dev_build",
-        "disable_device",
-        "disable_emulator",
-        "key_id_mismatch"
-    ]
-
-    private func updateResponseKind(error: String, kind: String?) -> String {
+    private func updateResponseKind(kind: String?) -> String {
         if let kind, ["up_to_date", "blocked", "failed"].contains(kind) {
             return kind
-        }
-        if Self.updateUpToDateResponseCodes.contains(error) {
-            return "up_to_date"
-        }
-        if Self.updateBlockedResponseCodes.contains(error) {
-            return "blocked"
         }
         return "failed"
     }
@@ -1680,7 +1653,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         plannedDirectUpdate: Bool
     ) {
         let statusCode = res.statusCode
-        let responseKind = self.updateResponseKind(error: backendError, kind: res.kind)
+        let responseKind = self.updateResponseKind(kind: res.kind)
         let message = res.message ?? backendError
         let latestVersionName = res.version.isEmpty ? current.getVersionName() : res.version
         self.notifyListeners("updateCheckResult", data: [

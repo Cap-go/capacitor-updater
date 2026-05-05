@@ -883,6 +883,7 @@ class CapacitorUpdaterTests: XCTestCase {
         )
         let latest = AppVersion()
         latest.error = "no_new_version_available"
+        latest.kind = "up_to_date"
         latest.message = "No new version available"
         latest.statusCode = 200
 
@@ -902,46 +903,34 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertFalse(noUpdateImplementation.sentStatsActions.contains("download_fail"))
     }
 
-    func testGetLatestIncludesInferredKindForLegacyErrorResponse() throws {
-        let current = BundleInfo(
-            id: "test-id",
-            version: "1.0.0",
-            status: .SUCCESS,
-            downloaded: Date(),
-            checksum: "abc123"
-        )
+    func testGetLatestRejectsLegacyErrorWithoutBackendKind() throws {
         let latest = AppVersion()
         latest.error = "no_new_version_available"
         latest.message = "No new version available"
         latest.statusCode = 200
 
         let noUpdateImplementation = FreshDownloadCapgoUpdater()
-        noUpdateImplementation.currentBundleValue = current
         noUpdateImplementation.latestResponse = latest
 
         let testPlugin = TestableCapacitorUpdaterPlugin()
         testPlugin.implementation = noUpdateImplementation
         testPlugin.setUpdateUrlForTesting("https://example.com/channel")
 
-        let resolved = expectation(description: "getLatest resolves")
-        var resolvedData: [String: Any]?
+        let rejected = expectation(description: "getLatest rejects legacy response without kind")
         let call = try XCTUnwrap(CAPPluginCall(
             callbackId: "get-latest-legacy-error-test",
             options: [:],
-            success: { result, _ in
-                resolvedData = result?.data
-                resolved.fulfill()
+            success: { _, _ in
+                XCTFail("getLatest should reject legacy error responses without backend kind")
             },
             error: { error in
-                XCTFail("getLatest should resolve, rejected with \(error?.message ?? "unknown error")")
+                XCTAssertEqual(error?.message, "No new version available")
+                rejected.fulfill()
             }
         ))
 
         testPlugin.getLatest(call)
-        wait(for: [resolved], timeout: 10)
-
-        XCTAssertEqual(resolvedData?["kind"] as? String, "up_to_date")
-        XCTAssertEqual(resolvedData?["version"] as? String, "1.0.0")
+        wait(for: [rejected], timeout: 10)
     }
 
     func testGetLatestRejectsFailedKindWithoutErrorMessage() throws {

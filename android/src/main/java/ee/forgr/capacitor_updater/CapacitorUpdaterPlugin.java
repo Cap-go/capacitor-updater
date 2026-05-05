@@ -50,7 +50,6 @@ import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
@@ -84,27 +83,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final String CHANNEL_URL_PREF_KEY = "CapacitorUpdater.channelUrl";
     private static final String DEFAULT_CHANNEL_PREF_KEY = "CapacitorUpdater.defaultChannel";
     private static final String[] BREAKING_EVENT_NAMES = { "breakingAvailable", "majorAvailable" };
-    private static final Set<String> UPDATE_UP_TO_DATE_RESPONSE_CODES = new HashSet<>(
-        Arrays.asList("no_new_version_available", "already_on_builtin")
-    );
-    private static final Set<String> UPDATE_BLOCKED_RESPONSE_CODES = new HashSet<>(
-        Arrays.asList(
-            "cannot_update_via_private_channel",
-            "disabled_platform_ios",
-            "disabled_platform_android",
-            "disabled_platform_electron",
-            "disable_auto_update_to_major",
-            "disable_auto_update_to_minor",
-            "disable_auto_update_to_patch",
-            "disable_auto_update_to_metadata",
-            "disable_auto_update_under_native",
-            "disable_prod_build",
-            "disable_dev_build",
-            "disable_device",
-            "disable_emulator",
-            "key_id_mismatch"
-        )
-    );
     private static final String LAST_FAILED_BUNDLE_PREF_KEY = "CapacitorUpdater.lastFailedBundle";
     private static final String SPLASH_SCREEN_PLUGIN_ID = "SplashScreen";
     private static final int SPLASH_SCREEN_RETRY_DELAY_MS = 100;
@@ -1709,10 +1687,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 if (jsRes.has("error") || jsRes.has("kind")) {
                     String error = jsRes.has("error") ? jsRes.getString("error") : "";
                     String errorMessage = jsRes.has("message") ? jsRes.getString("message") : "server did not provide a message";
-                    String kind = CapacitorUpdaterPlugin.this.getUpdateResponseKind(
-                        error,
-                        jsRes.has("kind") ? jsRes.getString("kind") : null
-                    );
+                    String kind = CapacitorUpdaterPlugin.this.getUpdateResponseKind(jsRes.has("kind") ? jsRes.getString("kind") : null);
                     jsRes.put("kind", kind);
                     if ("failed".equals(kind)) {
                         logger.error("getLatest failed with error: " + error + ", message: " + errorMessage);
@@ -2036,15 +2011,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
-    private String getUpdateResponseKind(final String error, final String kind) {
+    private String getUpdateResponseKind(final String kind) {
         if ("up_to_date".equals(kind) || "blocked".equals(kind) || "failed".equals(kind)) {
             return kind;
-        }
-        if (UPDATE_UP_TO_DATE_RESPONSE_CODES.contains(error)) {
-            return "up_to_date";
-        }
-        if (UPDATE_BLOCKED_RESPONSE_CODES.contains(error)) {
-            return "blocked";
         }
         return "failed";
     }
@@ -2180,10 +2149,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         String error = jsRes.has("error") ? jsRes.getString("error") : "";
                         String errorMessage = jsRes.has("message") ? jsRes.getString("message") : "server did not provide a message";
                         int statusCode = jsRes.has("statusCode") ? jsRes.optInt("statusCode", 0) : 0;
-                        String kind = CapacitorUpdaterPlugin.this.getUpdateResponseKind(
-                            error,
-                            jsRes.has("kind") ? jsRes.getString("kind") : null
-                        );
+                        String kind = CapacitorUpdaterPlugin.this.getUpdateResponseKind(jsRes.has("kind") ? jsRes.getString("kind") : null);
                         String latestVersion = jsRes.has("version") ? jsRes.getString("version") : current.getVersionName();
                         CapacitorUpdaterPlugin.this.notifyUpdateCheckResult(kind, error, errorMessage, statusCode, latestVersion, current);
 
@@ -2210,7 +2176,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         );
                         return;
                     }
-
                     try {
                         final String latestVersionName = jsRes.getString("version");
 

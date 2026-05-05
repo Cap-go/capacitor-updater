@@ -711,7 +711,7 @@ After receiving the latest version info, you can:
 When the device's current version matches the latest version on the server (i.e., the device is already
 up-to-date), the server returns a 200 response with `error: "no_new_version_available"` and
 `message: "No new version available"`. This is a normal, expected condition and resolves with
-`kind: "up_to_date"` when the native updater can classify it.
+`kind: "up_to_date"` when the backend provides that classification.
 
 You should check `kind` and `error` before attempting to download:
 
