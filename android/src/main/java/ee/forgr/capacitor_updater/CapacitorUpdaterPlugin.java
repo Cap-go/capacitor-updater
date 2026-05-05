@@ -2002,6 +2002,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
+    private boolean isNoNewVersionAvailable(final String error, final int statusCode) {
+        return "no_new_version_available".equals(error) && statusCode >= 200 && statusCode < 300;
+    }
+
     private void ensureBridgeSet() {
         if (this.bridge != null && this.bridge.getWebView() != null) {
             logger.setBridge(this.bridge);
@@ -2116,6 +2120,22 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         String errorMessage = jsRes.has("message") ? jsRes.getString("message") : "server did not provide a message";
                         int statusCode = jsRes.has("statusCode") ? jsRes.optInt("statusCode", 0) : 0;
                         boolean responseIsOk = statusCode >= 200 && statusCode < 300;
+
+                        if (CapacitorUpdaterPlugin.this.isNoNewVersionAvailable(error, statusCode)) {
+                            logger.info("No new version available");
+                            String latestVersion = jsRes.has("version") ? jsRes.getString("version") : current.getVersionName();
+                            CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                                errorMessage,
+                                latestVersion,
+                                current,
+                                false,
+                                plannedDirectUpdate,
+                                "download_fail",
+                                "downloadFailed",
+                                false
+                            );
+                            return;
+                        }
 
                         logger.error(
                             "getLatest failed with error: " + error + ", message: " + errorMessage + ", statusCode: " + statusCode

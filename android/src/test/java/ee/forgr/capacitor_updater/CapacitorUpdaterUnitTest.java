@@ -32,11 +32,21 @@ public class CapacitorUpdaterUnitTest {
 
     private static class TestableCapacitorUpdaterPlugin extends CapacitorUpdaterPlugin {
 
-        @Override
-        public void notifyListeners(String eventName, JSObject data) {}
+        private final ArrayList<String> notifiedEventNames = new ArrayList<>();
 
         @Override
-        public void notifyListeners(String eventName, JSObject data, boolean retainUntilConsumed) {}
+        public void notifyListeners(String eventName, JSObject data) {
+            this.notifiedEventNames.add(eventName);
+        }
+
+        @Override
+        public void notifyListeners(String eventName, JSObject data, boolean retainUntilConsumed) {
+            this.notifiedEventNames.add(eventName);
+        }
+
+        boolean hasNotifiedEvent(final String eventName) {
+            return this.notifiedEventNames.contains(eventName);
+        }
     }
 
     private static final class ImmediateThreadCapacitorUpdaterPlugin extends TestableCapacitorUpdaterPlugin {
@@ -245,6 +255,35 @@ public class CapacitorUpdaterUnitTest {
             this.downloadBackgroundCalled = true;
             this.consumedWhenDownloadStarted = this.consumedStateSupplier.getAsBoolean();
             this.directUpdateWhenDownloadStarted = this.directUpdateStateSupplier.getAsBoolean();
+        }
+    }
+
+    private static final class NoNewVersionCapgoUpdater extends CapgoUpdater {
+
+        private final BundleInfo currentBundle = new BundleInfo("current-id", "1.0.0", BundleStatus.SUCCESS, new Date(), "abc123");
+        private boolean sendStatsCalled = false;
+
+        NoNewVersionCapgoUpdater() {
+            super(null);
+        }
+
+        @Override
+        public void getLatest(final String updateUrl, final String channel, final Callback callback) {
+            final Map<String, Object> response = new HashMap<>();
+            response.put("error", "no_new_version_available");
+            response.put("message", "No new version available");
+            response.put("statusCode", 200);
+            callback.callback(response);
+        }
+
+        @Override
+        public BundleInfo getCurrentBundle() {
+            return this.currentBundle;
+        }
+
+        @Override
+        public void sendStats(final String action, final String versionName, final String oldVersionName) {
+            this.sendStatsCalled = true;
         }
     }
 
@@ -1418,6 +1457,28 @@ public class CapacitorUpdaterUnitTest {
             assertTrue(plugin.hasConsumedOnLaunchDirectUpdateForTesting());
             assertFalse(plugin.shouldUseDirectUpdateForTesting());
             assertTrue(plugin.implementation.directUpdate);
+        }
+    }
+
+    @Test
+    public void testNoNewVersionAvailableDoesNotNotifyDownloadFailed() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
+            NoNewVersionCapgoUpdater updater = new NoNewVersionCapgoUpdater();
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            invokeBackgroundDownload(plugin);
+
+            assertTrue(plugin.hasNotifiedEvent("noNeedUpdate"));
+            assertFalse(plugin.hasNotifiedEvent("downloadFailed"));
+            assertFalse(updater.sendStatsCalled);
         }
     }
 

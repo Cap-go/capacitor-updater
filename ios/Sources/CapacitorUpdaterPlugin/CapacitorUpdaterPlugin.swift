@@ -1618,6 +1618,42 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.notifyListeners("majorAvailable", data: payload)
     }
 
+    private func isNoNewVersionAvailable(error: String, statusCode: Int) -> Bool {
+        error == "no_new_version_available" && statusCode >= 200 && statusCode < 300
+    }
+
+    private func endBackgroundDownloadAfterLatestError(
+        backendError: String,
+        res: AppVersion,
+        current: BundleInfo,
+        plannedDirectUpdate: Bool
+    ) {
+        let statusCode = res.statusCode
+        let responseIsOk = statusCode >= 200 && statusCode < 300
+        if self.isNoNewVersionAvailable(error: backendError, statusCode: statusCode) {
+            self.logger.info("No new version available")
+            self.endBackGroundTaskWithNotif(
+                msg: res.message ?? backendError,
+                latestVersionName: res.version,
+                current: current,
+                error: false,
+                plannedDirectUpdate: plannedDirectUpdate,
+                sendStats: false
+            )
+            return
+        }
+
+        self.logger.error("getLatest failed with error: \(backendError)")
+        self.endBackGroundTaskWithNotif(
+            msg: res.message ?? backendError,
+            latestVersionName: res.version,
+            current: current,
+            error: true,
+            plannedDirectUpdate: plannedDirectUpdate,
+            sendStats: !responseIsOk
+        )
+    }
+
     func endBackGroundTaskWithNotif(
         msg: String,
         latestVersionName: String,
@@ -1707,16 +1743,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
             // Handle network errors and other failures first
             if let backendError = res.error, !backendError.isEmpty {
-                self.logger.error("getLatest failed with error: \(backendError)")
-                let statusCode = res.statusCode
-                let responseIsOk = statusCode >= 200 && statusCode < 300
-                self.endBackGroundTaskWithNotif(
-                    msg: res.message ?? backendError,
-                    latestVersionName: res.version,
+                self.endBackgroundDownloadAfterLatestError(
+                    backendError: backendError,
+                    res: res,
                     current: current,
-                    error: true,
-                    plannedDirectUpdate: plannedDirectUpdate,
-                    sendStats: !responseIsOk
+                    plannedDirectUpdate: plannedDirectUpdate
                 )
                 return
             }

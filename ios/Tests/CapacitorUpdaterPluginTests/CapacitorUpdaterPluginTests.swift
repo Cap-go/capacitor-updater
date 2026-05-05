@@ -4,6 +4,12 @@ import Capacitor
 import Version
 
 private class TestableCapacitorUpdaterPlugin: CapacitorUpdaterPlugin {
+    private(set) var notifiedEventNames: [String] = []
+
+    override func notifyListeners(_ eventName: String, data: [String: Any]?, retainUntilConsumed retain: Bool) {
+        notifiedEventNames.append(eventName)
+    }
+
     override func endBackGroundTask() {
         // Intentionally blank: tests avoid touching UIApplication background-task APIs.
     }
@@ -21,6 +27,7 @@ private final class FreshDownloadCapgoUpdater: CapgoUpdater {
     var currentBundleValue: BundleInfo!
     var latestResponse = AppVersion()
     var onDownloadStart: (() -> Void)?
+    var sentStatsActions: [String] = []
 
     override func getLatest(url: URL, channel: String?) -> AppVersion {
         latestResponse
@@ -40,7 +47,7 @@ private final class FreshDownloadCapgoUpdater: CapgoUpdater {
     }
 
     override func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {
-        // Intentionally blank: test doubles should not emit network-backed stats.
+        sentStatsActions.append(action)
     }
 }
 
@@ -860,6 +867,34 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertTrue(consumedWhenDownloadStarted)
         XCTAssertTrue(plugin.hasConsumedOnLaunchDirectUpdateForTesting)
         XCTAssertFalse(plugin.shouldUseDirectUpdateForTesting())
+    }
+
+    func testNoNewVersionAvailableDoesNotNotifyDownloadFailed() {
+        let current = BundleInfo(
+            id: "test-id",
+            version: "1.0.0",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "abc123"
+        )
+        let latest = AppVersion()
+        latest.error = "no_new_version_available"
+        latest.message = "No new version available"
+        latest.statusCode = 200
+
+        let noUpdateImplementation = FreshDownloadCapgoUpdater()
+        noUpdateImplementation.currentBundleValue = current
+        noUpdateImplementation.latestResponse = latest
+
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.implementation = noUpdateImplementation
+        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
+
+        testPlugin.backgroundDownload()
+
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("noNeedUpdate"))
+        XCTAssertFalse(testPlugin.notifiedEventNames.contains("downloadFailed"))
+        XCTAssertFalse(noUpdateImplementation.sentStatsActions.contains("download_fail"))
     }
 
     func testShowSplashscreenOptionsDisableAutoHide() {
