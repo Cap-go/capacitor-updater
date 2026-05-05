@@ -87,6 +87,7 @@ CapacitorUpdater can be configured with these options:
 - [`removeAllListeners`](#removealllisteners)
 - [`addListener('download')`](#addlistenerdownload-)
 - [`addListener('noNeedUpdate')`](#addlistenernoneedupdate-)
+- [`addListener('updateCheckResult')`](#addlistenerupdatecheckresult-)
 - [`addListener('updateAvailable')`](#addlistenerupdateavailable-)
 - [`addListener('downloadComplete')`](#addlistenerdownloadcomplete-)
 - [`addListener('breakingAvailable')`](#addlistenerbreakingavailable-)
@@ -1087,6 +1088,7 @@ Remove all event listeners registered for this plugin.
 This unregisters all listeners added via {@link addListener} for all event types:
 - `download`
 - `noNeedUpdate`
+- `updateCheckResult`
 - `updateAvailable`
 - `downloadComplete`
 - `downloadFailed`
@@ -1154,6 +1156,32 @@ Listen for no need to update event, useful when you want force check every time 
 `Promise<PluginListenerHandle>`
 
 **Since:** 4.0.0
+
+
+--------------------
+
+
+### addListener('updateCheckResult')
+
+```typescript
+addListener(eventName: 'updateCheckResult', listenerFunc: (state: UpdateCheckResultEvent) => void) => Promise<PluginListenerHandle>
+```
+
+Listen for update check results that do not start a bundle download.
+The backend can classify the result as `up_to_date`, `blocked`, or `failed`.
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `eventName` | `'updateCheckResult'` |  |
+| `listenerFunc` | `(state: UpdateCheckResultEvent) => void` |  |
+
+**Returns**
+
+`Promise<PluginListenerHandle>`
+
+**Since:** 8.45.11
 
 
 --------------------

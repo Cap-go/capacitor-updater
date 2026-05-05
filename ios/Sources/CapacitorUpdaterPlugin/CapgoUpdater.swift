@@ -478,6 +478,47 @@ import UIKit
     public func getLatest(url: URL, channel: String?) -> AppVersion {
         let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
         let latest: AppVersion = AppVersion()
+        func applyLatestResponse(_ value: AppVersionDec?) {
+            if let url = value?.url {
+                latest.url = url
+            }
+            if let checksum = value?.checksum {
+                latest.checksum = checksum
+            }
+            if let version = value?.version {
+                latest.version = version
+            }
+            if let major = value?.major {
+                latest.major = major
+            }
+            if let breaking = value?.breaking {
+                latest.breaking = breaking
+            }
+            if let error = value?.error {
+                latest.error = error
+            }
+            if let kind = value?.kind {
+                latest.kind = kind
+            }
+            if let message = value?.message {
+                latest.message = message
+            }
+            if let sessionKey = value?.session_key {
+                latest.sessionKey = sessionKey
+            }
+            if let data = value?.data {
+                latest.data = data
+            }
+            if let manifest = value?.manifest {
+                latest.manifest = manifest
+            }
+            if let link = value?.link {
+                latest.link = link
+            }
+            if let comment = value?.comment {
+                latest.comment = comment
+            }
+        }
         var parameters: InfoObject = self.createInfoObject()
         if let channel = channel {
             parameters.defaultChannel = channel
@@ -489,48 +530,20 @@ import UIKit
             switch response.result {
             case .success:
                 latest.statusCode = response.response?.statusCode ?? 0
-                if let url = response.value?.url {
-                    latest.url = url
-                }
-                if let checksum = response.value?.checksum {
-                    latest.checksum = checksum
-                }
-                if let version = response.value?.version {
-                    latest.version = version
-                }
-                if let major = response.value?.major {
-                    latest.major = major
-                }
-                if let breaking = response.value?.breaking {
-                    latest.breaking = breaking
-                }
-                if let error = response.value?.error {
-                    latest.error = error
-                }
-                if let message = response.value?.message {
-                    latest.message = message
-                }
-                if let sessionKey = response.value?.session_key {
-                    latest.sessionKey = sessionKey
-                }
-                if let data = response.value?.data {
-                    latest.data = data
-                }
-                if let manifest = response.value?.manifest {
-                    latest.manifest = manifest
-                }
-                if let link = response.value?.link {
-                    latest.link = link
-                }
-                if let comment = response.value?.comment {
-                    latest.comment = comment
-                }
+                applyLatestResponse(response.value)
             case let .failure(error):
                 self.logger.error("Error getting latest version")
                 self.logger.debug("Response: \(response.value.debugDescription), Error: \(error)")
-                latest.message = "Error getting Latest"
-                latest.error = "response_error"
                 latest.statusCode = response.response?.statusCode ?? 0
+                if let data = response.data,
+                   let decoded = try? JSONDecoder().decode(AppVersionDec.self, from: data),
+                   decoded.error != nil {
+                    applyLatestResponse(decoded)
+                } else {
+                    latest.message = "Error getting Latest"
+                    latest.error = "response_error"
+                    latest.kind = "failed"
+                }
             }
             semaphore.signal()
         }

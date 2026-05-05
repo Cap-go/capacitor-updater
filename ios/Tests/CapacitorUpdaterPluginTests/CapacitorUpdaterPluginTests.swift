@@ -893,8 +893,39 @@ class CapacitorUpdaterTests: XCTestCase {
         testPlugin.backgroundDownload()
 
         XCTAssertTrue(testPlugin.notifiedEventNames.contains("noNeedUpdate"))
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("updateCheckResult"))
         XCTAssertFalse(testPlugin.notifiedEventNames.contains("downloadFailed"))
         XCTAssertFalse(noUpdateImplementation.sentStatsActions.contains("download_fail"))
+    }
+
+    func testBlockedUpdateCheckDoesNotNotifyDownloadFailed() {
+        let current = BundleInfo(
+            id: "test-id",
+            version: "1.0.0",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "abc123"
+        )
+        let latest = AppVersion()
+        latest.error = "disable_auto_update_to_major"
+        latest.kind = "blocked"
+        latest.message = "Cannot upgrade major version"
+        latest.statusCode = 200
+
+        let blockedImplementation = FreshDownloadCapgoUpdater()
+        blockedImplementation.currentBundleValue = current
+        blockedImplementation.latestResponse = latest
+
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.implementation = blockedImplementation
+        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
+
+        testPlugin.backgroundDownload()
+
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("noNeedUpdate"))
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("updateCheckResult"))
+        XCTAssertFalse(testPlugin.notifiedEventNames.contains("downloadFailed"))
+        XCTAssertFalse(blockedImplementation.sentStatsActions.contains("download_fail"))
     }
 
     func testShowSplashscreenOptionsDisableAutoHide() {

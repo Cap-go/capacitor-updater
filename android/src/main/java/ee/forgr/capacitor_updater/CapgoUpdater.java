@@ -1229,6 +1229,7 @@ public class CapgoUpdater {
                         Map<String, Object> retError = new HashMap<>();
                         retError.put("message", "Request failed: " + e.getMessage());
                         retError.put("error", "network_error");
+                        retError.put("kind", "failed");
                         callback.callback(retError);
                     }
 
@@ -1236,11 +1237,44 @@ public class CapgoUpdater {
                     public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
                         try (ResponseBody responseBody = response.body()) {
                             final int statusCode = response.code();
+                            final String responseData = responseBody != null ? responseBody.string() : "";
+                            JSONObject jsonResponse = null;
+                            if (!responseData.isEmpty()) {
+                                try {
+                                    jsonResponse = new JSONObject(responseData);
+                                } catch (JSONException ignored) {
+                                    // Non-JSON responses are handled as response or parse errors below.
+                                }
+                            }
+
+                            if (jsonResponse != null && jsonResponse.has("error")) {
+                                if (statusCode == 429) {
+                                    checkAndHandleRateLimitResponse(response);
+                                }
+                                Map<String, Object> retError = new HashMap<>();
+                                retError.put("error", jsonResponse.getString("error"));
+                                if (jsonResponse.has("kind")) {
+                                    retError.put("kind", jsonResponse.getString("kind"));
+                                }
+                                if (jsonResponse.has("message")) {
+                                    retError.put("message", jsonResponse.getString("message"));
+                                } else {
+                                    retError.put("message", "server did not provide a message");
+                                }
+                                if (jsonResponse.has("version")) {
+                                    retError.put("version", jsonResponse.getString("version"));
+                                }
+                                retError.put("statusCode", statusCode);
+                                callback.callback(retError);
+                                return;
+                            }
+
                             // Check for 429 rate limit
                             if (checkAndHandleRateLimitResponse(response)) {
                                 Map<String, Object> retError = new HashMap<>();
                                 retError.put("message", "Rate limit exceeded");
                                 retError.put("error", "rate_limit_exceeded");
+                                retError.put("kind", "failed");
                                 retError.put("statusCode", statusCode);
                                 callback.callback(retError);
                                 return;
@@ -1250,27 +1284,14 @@ public class CapgoUpdater {
                                 Map<String, Object> retError = new HashMap<>();
                                 retError.put("message", "Server error: " + response.code());
                                 retError.put("error", "response_error");
+                                retError.put("kind", "failed");
                                 retError.put("statusCode", statusCode);
                                 callback.callback(retError);
                                 return;
                             }
 
-                            assert responseBody != null;
-                            String responseData = responseBody.string();
-                            JSONObject jsonResponse = new JSONObject(responseData);
-
-                            // Check for server-side errors first
-                            if (jsonResponse.has("error")) {
-                                Map<String, Object> retError = new HashMap<>();
-                                retError.put("error", jsonResponse.getString("error"));
-                                if (jsonResponse.has("message")) {
-                                    retError.put("message", jsonResponse.getString("message"));
-                                } else {
-                                    retError.put("message", "server did not provide a message");
-                                }
-                                retError.put("statusCode", statusCode);
-                                callback.callback(retError);
-                                return;
+                            if (jsonResponse == null) {
+                                throw new JSONException("Response is not a JSON object");
                             }
 
                             Map<String, Object> ret = new HashMap<>();
@@ -1292,6 +1313,7 @@ public class CapgoUpdater {
                             Map<String, Object> retError = new HashMap<>();
                             retError.put("message", "JSON parse error: " + e.getMessage());
                             retError.put("error", "parse_error");
+                            retError.put("kind", "failed");
                             callback.callback(retError);
                         }
                     }

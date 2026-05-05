@@ -1618,8 +1618,38 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.notifyListeners("majorAvailable", data: payload)
     }
 
-    private func isNoNewVersionAvailable(error: String, statusCode: Int) -> Bool {
-        error == "no_new_version_available" && statusCode >= 200 && statusCode < 300
+    private static let updateUpToDateResponseCodes: Set<String> = [
+        "no_new_version_available",
+        "already_on_builtin"
+    ]
+    private static let updateBlockedResponseCodes: Set<String> = [
+        "cannot_update_via_private_channel",
+        "disabled_platform_ios",
+        "disabled_platform_android",
+        "disabled_platform_electron",
+        "disable_auto_update_to_major",
+        "disable_auto_update_to_minor",
+        "disable_auto_update_to_patch",
+        "disable_auto_update_to_metadata",
+        "disable_auto_update_under_native",
+        "disable_prod_build",
+        "disable_dev_build",
+        "disable_device",
+        "disable_emulator",
+        "key_id_mismatch"
+    ]
+
+    private func updateResponseKind(error: String, kind: String?) -> String {
+        if let kind, ["up_to_date", "blocked", "failed"].contains(kind) {
+            return kind
+        }
+        if Self.updateUpToDateResponseCodes.contains(error) {
+            return "up_to_date"
+        }
+        if Self.updateBlockedResponseCodes.contains(error) {
+            return "blocked"
+        }
+        return "failed"
     }
 
     private func endBackgroundDownloadAfterLatestError(
@@ -1629,28 +1659,33 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         plannedDirectUpdate: Bool
     ) {
         let statusCode = res.statusCode
-        let responseIsOk = statusCode >= 200 && statusCode < 300
-        if self.isNoNewVersionAvailable(error: backendError, statusCode: statusCode) {
+        let responseKind = self.updateResponseKind(error: backendError, kind: res.kind)
+        let message = res.message ?? backendError
+        let latestVersionName = res.version.isEmpty ? current.getVersionName() : res.version
+        self.notifyListeners("updateCheckResult", data: [
+            "kind": responseKind,
+            "error": backendError,
+            "message": message,
+            "statusCode": statusCode,
+            "version": latestVersionName,
+            "bundle": current.toJSON()
+        ])
+
+        if responseKind == "up_to_date" {
             self.logger.info("No new version available")
-            self.endBackGroundTaskWithNotif(
-                msg: res.message ?? backendError,
-                latestVersionName: res.version,
-                current: current,
-                error: false,
-                plannedDirectUpdate: plannedDirectUpdate,
-                sendStats: false
-            )
-            return
+        } else if responseKind == "blocked" {
+            self.logger.info("Update check blocked with error: \(backendError)")
+        } else {
+            self.logger.error("getLatest failed with error: \(backendError)")
         }
 
-        self.logger.error("getLatest failed with error: \(backendError)")
         self.endBackGroundTaskWithNotif(
-            msg: res.message ?? backendError,
-            latestVersionName: res.version,
+            msg: message,
+            latestVersionName: latestVersionName,
             current: current,
-            error: true,
+            error: false,
             plannedDirectUpdate: plannedDirectUpdate,
-            sendStats: !responseIsOk
+            sendStats: false
         )
     }
 

@@ -287,6 +287,36 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
+    private static final class BlockedUpdateCapgoUpdater extends CapgoUpdater {
+
+        private final BundleInfo currentBundle = new BundleInfo("current-id", "1.0.0", BundleStatus.SUCCESS, new Date(), "abc123");
+        private boolean sendStatsCalled = false;
+
+        BlockedUpdateCapgoUpdater() {
+            super(null);
+        }
+
+        @Override
+        public void getLatest(final String updateUrl, final String channel, final Callback callback) {
+            final Map<String, Object> response = new HashMap<>();
+            response.put("error", "disable_auto_update_to_major");
+            response.put("kind", "blocked");
+            response.put("message", "Cannot upgrade major version");
+            response.put("statusCode", 200);
+            callback.callback(response);
+        }
+
+        @Override
+        public BundleInfo getCurrentBundle() {
+            return this.currentBundle;
+        }
+
+        @Override
+        public void sendStats(final String action, final String versionName, final String oldVersionName) {
+            this.sendStatsCalled = true;
+        }
+    }
+
     private static final class ResetTrackingCapgoUpdater extends CapgoUpdater {
 
         private BundleInfo currentBundle = new BundleInfo("current-id", "1.0.0", BundleStatus.SUCCESS, new Date(), "abc123");
@@ -1477,6 +1507,30 @@ public class CapacitorUpdaterUnitTest {
             invokeBackgroundDownload(plugin);
 
             assertTrue(plugin.hasNotifiedEvent("noNeedUpdate"));
+            assertTrue(plugin.hasNotifiedEvent("updateCheckResult"));
+            assertFalse(plugin.hasNotifiedEvent("downloadFailed"));
+            assertFalse(updater.sendStatsCalled);
+        }
+    }
+
+    @Test
+    public void testBlockedUpdateCheckDoesNotNotifyDownloadFailed() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
+            BlockedUpdateCapgoUpdater updater = new BlockedUpdateCapgoUpdater();
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            invokeBackgroundDownload(plugin);
+
+            assertTrue(plugin.hasNotifiedEvent("noNeedUpdate"));
+            assertTrue(plugin.hasNotifiedEvent("updateCheckResult"));
             assertFalse(plugin.hasNotifiedEvent("downloadFailed"));
             assertFalse(updater.sendStatsCalled);
         }

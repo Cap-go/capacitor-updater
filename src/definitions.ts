@@ -1008,6 +1008,7 @@ export interface CapacitorUpdaterPlugin {
    * This unregisters all listeners added via {@link addListener} for all event types:
    * - `download`
    * - `noNeedUpdate`
+   * - `updateCheckResult`
    * - `updateAvailable`
    * - `downloadComplete`
    * - `downloadFailed`
@@ -1038,6 +1039,17 @@ export interface CapacitorUpdaterPlugin {
    * @since 4.0.0
    */
   addListener(eventName: 'noNeedUpdate', listenerFunc: (state: NoNeedEvent) => void): Promise<PluginListenerHandle>;
+
+  /**
+   * Listen for update check results that do not start a bundle download.
+   * The backend can classify the result as `up_to_date`, `blocked`, or `failed`.
+   *
+   * @since 8.45.11
+   */
+  addListener(
+    eventName: 'updateCheckResult',
+    listenerFunc: (state: UpdateCheckResultEvent) => void,
+  ): Promise<PluginListenerHandle>;
 
   /**
    * Listen for available update event, useful when you want to force check every time the app is launched
@@ -1502,11 +1514,57 @@ export type BundleStatus = 'success' | 'error' | 'pending' | 'downloading';
 
 export type DelayUntilNext = 'background' | 'kill' | 'nativeVersion' | 'date';
 
+/**
+ * Classification returned by the update backend for responses that do not provide a downloadable bundle.
+ *
+ * @since 8.45.11
+ */
+export type UpdateResponseKind = 'up_to_date' | 'blocked' | 'failed';
+
 export interface NoNeedEvent {
   /**
    * Current status of download, between 0 and 100.
    *
    * @since  4.0.0
+   */
+  bundle: BundleInfo;
+}
+
+export interface UpdateCheckResultEvent {
+  /**
+   * Backend classification for the update check result.
+   *
+   * @since 8.45.11
+   */
+  kind: UpdateResponseKind;
+  /**
+   * Backend error code, when provided.
+   *
+   * @since 8.45.11
+   */
+  error?: string;
+  /**
+   * Backend message, when provided.
+   *
+   * @since 8.45.11
+   */
+  message?: string;
+  /**
+   * HTTP status code returned by the update endpoint.
+   *
+   * @since 8.45.11
+   */
+  statusCode?: number;
+  /**
+   * Version referenced by the update check result.
+   *
+   * @since 8.45.11
+   */
+  version?: string;
+  /**
+   * Current bundle on the device.
+   *
+   * @since 8.45.11
    */
   bundle: BundleInfo;
 }
@@ -1711,9 +1769,15 @@ export interface LatestVersion {
    * Error code from the server, if any.
    * Common values:
    * - `"no_new_version_available"`: Device is already on the latest version (not a failure)
-   * - Other error codes indicate actual failures in the update process
+   * - Other error codes can be classified with `kind`
    */
   error?: string;
+  /**
+   * Backend classification for this response, when the update server provides it.
+   *
+   * @since 8.45.11
+   */
+  kind?: UpdateResponseKind;
   /**
    * The previous/current version name (provided for reference).
    */

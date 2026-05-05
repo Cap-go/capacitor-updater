@@ -462,6 +462,7 @@ export default config;
 * [`removeAllListeners()`](#removealllisteners)
 * [`addListener('download', ...)`](#addlistenerdownload-)
 * [`addListener('noNeedUpdate', ...)`](#addlistenernoneedupdate-)
+* [`addListener('updateCheckResult', ...)`](#addlistenerupdatecheckresult-)
 * [`addListener('updateAvailable', ...)`](#addlistenerupdateavailable-)
 * [`addListener('downloadComplete', ...)`](#addlistenerdownloadcomplete-)
 * [`addListener('breakingAvailable', ...)`](#addlistenerbreakingavailable-)
@@ -1251,6 +1252,7 @@ Remove all event listeners registered for this plugin.
 This unregisters all listeners added via {@link addListener} for all event types:
 - `download`
 - `noNeedUpdate`
+- `updateCheckResult`
 - `updateAvailable`
 - `downloadComplete`
 - `downloadFailed`
@@ -1304,6 +1306,27 @@ Listen for no need to update event, useful when you want force check every time 
 **Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
 
 **Since:** 4.0.0
+
+--------------------
+
+
+#### addListener('updateCheckResult', ...)
+
+```typescript
+addListener(eventName: 'updateCheckResult', listenerFunc: (state: UpdateCheckResultEvent) => void) => Promise<PluginListenerHandle>
+```
+
+Listen for update check results that do not start a bundle download.
+The backend can classify the result as `up_to_date`, `blocked`, or `failed`.
+
+| Param              | Type                                                                                          |
+| ------------------ | --------------------------------------------------------------------------------------------- |
+| **`eventName`**    | <code>'updateCheckResult'</code>                                                              |
+| **`listenerFunc`** | <code>(state: <a href="#updatecheckresultevent">UpdateCheckResultEvent</a>) =&gt; void</code> |
+
+**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
+
+**Since:** 8.45.11
 
 --------------------
 
@@ -2094,20 +2117,21 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 
 ##### LatestVersion
 
-| Prop             | Type                         | Description                                                                                                                                                                                                   | Since  |
-| ---------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| **`version`**    | <code>string</code>          | Result of getLatest method                                                                                                                                                                                    | 4.0.0  |
-| **`checksum`**   | <code>string</code>          |                                                                                                                                                                                                               | 6      |
-| **`breaking`**   | <code>boolean</code>         | Indicates whether the update was flagged as breaking by the backend.                                                                                                                                          | 7.22.0 |
-| **`major`**      | <code>boolean</code>         |                                                                                                                                                                                                               |        |
-| **`message`**    | <code>string</code>          | Optional message from the server. When no new version is available, this will be "No new version available".                                                                                                  |        |
-| **`sessionKey`** | <code>string</code>          |                                                                                                                                                                                                               |        |
-| **`error`**      | <code>string</code>          | Error code from the server, if any. Common values: - `"no_new_version_available"`: Device is already on the latest version (not a failure) - Other error codes indicate actual failures in the update process |        |
-| **`old`**        | <code>string</code>          | The previous/current version name (provided for reference).                                                                                                                                                   |        |
-| **`url`**        | <code>string</code>          | Download URL for the bundle (when a new version is available).                                                                                                                                                |        |
-| **`manifest`**   | <code>ManifestEntry[]</code> | File list for delta updates (when using multi-file downloads).                                                                                                                                                | 6.1    |
-| **`link`**       | <code>string</code>          | Optional link associated with this bundle version (e.g., release notes URL, changelog, GitHub release).                                                                                                       | 7.35.0 |
-| **`comment`**    | <code>string</code>          | Optional comment or description for this bundle version.                                                                                                                                                      | 7.35.0 |
+| Prop             | Type                                                              | Description                                                                                                                                                                                  | Since   |
+| ---------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| **`version`**    | <code>string</code>                                               | Result of getLatest method                                                                                                                                                                   | 4.0.0   |
+| **`checksum`**   | <code>string</code>                                               |                                                                                                                                                                                              | 6       |
+| **`breaking`**   | <code>boolean</code>                                              | Indicates whether the update was flagged as breaking by the backend.                                                                                                                         | 7.22.0  |
+| **`major`**      | <code>boolean</code>                                              |                                                                                                                                                                                              |         |
+| **`message`**    | <code>string</code>                                               | Optional message from the server. When no new version is available, this will be "No new version available".                                                                                 |         |
+| **`sessionKey`** | <code>string</code>                                               |                                                                                                                                                                                              |         |
+| **`error`**      | <code>string</code>                                               | Error code from the server, if any. Common values: - `"no_new_version_available"`: Device is already on the latest version (not a failure) - Other error codes can be classified with `kind` |         |
+| **`kind`**       | <code><a href="#updateresponsekind">UpdateResponseKind</a></code> | Backend classification for this response, when the update server provides it.                                                                                                                | 8.45.11 |
+| **`old`**        | <code>string</code>                                               | The previous/current version name (provided for reference).                                                                                                                                  |         |
+| **`url`**        | <code>string</code>                                               | Download URL for the bundle (when a new version is available).                                                                                                                               |         |
+| **`manifest`**   | <code>ManifestEntry[]</code>                                      | File list for delta updates (when using multi-file downloads).                                                                                                                               | 6.1     |
+| **`link`**       | <code>string</code>                                               | Optional link associated with this bundle version (e.g., release notes URL, changelog, GitHub release).                                                                                      | 7.35.0  |
+| **`comment`**    | <code>string</code>                                               | Optional comment or description for this bundle version.                                                                                                                                     | 7.35.0  |
 
 
 ##### GetLatestOptions
@@ -2224,6 +2248,18 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 | Prop         | Type                                              | Description                                    | Since |
 | ------------ | ------------------------------------------------- | ---------------------------------------------- | ----- |
 | **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Current status of download, between 0 and 100. | 4.0.0 |
+
+
+##### UpdateCheckResultEvent
+
+| Prop             | Type                                                              | Description                                         | Since   |
+| ---------------- | ----------------------------------------------------------------- | --------------------------------------------------- | ------- |
+| **`kind`**       | <code><a href="#updateresponsekind">UpdateResponseKind</a></code> | Backend classification for the update check result. | 8.45.11 |
+| **`error`**      | <code>string</code>                                               | Backend error code, when provided.                  | 8.45.11 |
+| **`message`**    | <code>string</code>                                               | Backend message, when provided.                     | 8.45.11 |
+| **`statusCode`** | <code>number</code>                                               | HTTP status code returned by the update endpoint.   | 8.45.11 |
+| **`version`**    | <code>string</code>                                               | Version referenced by the update check result.      | 8.45.11 |
+| **`bundle`**     | <code><a href="#bundleinfo">BundleInfo</a></code>                 | Current bundle on the device.                       | 8.45.11 |
 
 
 ##### UpdateAvailableEvent
@@ -2415,6 +2451,13 @@ error: The bundle has failed to download.
 ##### DelayUntilNext
 
 <code>'background' | 'kill' | 'nativeVersion' | 'date'</code>
+
+
+##### UpdateResponseKind
+
+Classification returned by the update backend for responses that do not provide a downloadable bundle.
+
+<code>'up_to_date' | 'blocked' | 'failed'</code>
 
 
 ##### BreakingAvailableEvent

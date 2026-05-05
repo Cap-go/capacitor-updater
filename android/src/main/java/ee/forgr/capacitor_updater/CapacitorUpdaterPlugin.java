@@ -84,6 +84,27 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final String CHANNEL_URL_PREF_KEY = "CapacitorUpdater.channelUrl";
     private static final String DEFAULT_CHANNEL_PREF_KEY = "CapacitorUpdater.defaultChannel";
     private static final String[] BREAKING_EVENT_NAMES = { "breakingAvailable", "majorAvailable" };
+    private static final Set<String> UPDATE_UP_TO_DATE_RESPONSE_CODES = new HashSet<>(
+        Arrays.asList("no_new_version_available", "already_on_builtin")
+    );
+    private static final Set<String> UPDATE_BLOCKED_RESPONSE_CODES = new HashSet<>(
+        Arrays.asList(
+            "cannot_update_via_private_channel",
+            "disabled_platform_ios",
+            "disabled_platform_android",
+            "disabled_platform_electron",
+            "disable_auto_update_to_major",
+            "disable_auto_update_to_minor",
+            "disable_auto_update_to_patch",
+            "disable_auto_update_to_metadata",
+            "disable_auto_update_under_native",
+            "disable_prod_build",
+            "disable_dev_build",
+            "disable_device",
+            "disable_emulator",
+            "key_id_mismatch"
+        )
+    );
     private static final String LAST_FAILED_BUNDLE_PREF_KEY = "CapacitorUpdater.lastFailedBundle";
     private static final String SPLASH_SCREEN_PLUGIN_ID = "SplashScreen";
     private static final int SPLASH_SCREEN_RETRY_DELAY_MS = 100;
@@ -2002,8 +2023,35 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
-    private boolean isNoNewVersionAvailable(final String error, final int statusCode) {
-        return "no_new_version_available".equals(error) && statusCode >= 200 && statusCode < 300;
+    private String getUpdateResponseKind(final String error, final String kind) {
+        if ("up_to_date".equals(kind) || "blocked".equals(kind) || "failed".equals(kind)) {
+            return kind;
+        }
+        if (UPDATE_UP_TO_DATE_RESPONSE_CODES.contains(error)) {
+            return "up_to_date";
+        }
+        if (UPDATE_BLOCKED_RESPONSE_CODES.contains(error)) {
+            return "blocked";
+        }
+        return "failed";
+    }
+
+    private void notifyUpdateCheckResult(
+        final String kind,
+        final String error,
+        final String message,
+        final int statusCode,
+        final String version,
+        final BundleInfo current
+    ) {
+        JSObject ret = new JSObject();
+        ret.put("kind", kind);
+        ret.put("error", error);
+        ret.put("message", message);
+        ret.put("statusCode", statusCode);
+        ret.put("version", version);
+        ret.put("bundle", InternalUtils.mapToJSObject(current.toJSONMap()));
+        this.notifyListeners("updateCheckResult", ret);
     }
 
     private void ensureBridgeSet() {
@@ -2119,38 +2167,32 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         String error = jsRes.getString("error");
                         String errorMessage = jsRes.has("message") ? jsRes.getString("message") : "server did not provide a message";
                         int statusCode = jsRes.has("statusCode") ? jsRes.optInt("statusCode", 0) : 0;
-                        boolean responseIsOk = statusCode >= 200 && statusCode < 300;
-
-                        if (CapacitorUpdaterPlugin.this.isNoNewVersionAvailable(error, statusCode)) {
-                            logger.info("No new version available");
-                            String latestVersion = jsRes.has("version") ? jsRes.getString("version") : current.getVersionName();
-                            CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                                errorMessage,
-                                latestVersion,
-                                current,
-                                false,
-                                plannedDirectUpdate,
-                                "download_fail",
-                                "downloadFailed",
-                                false
-                            );
-                            return;
-                        }
-
-                        logger.error(
-                            "getLatest failed with error: " + error + ", message: " + errorMessage + ", statusCode: " + statusCode
+                        String kind = CapacitorUpdaterPlugin.this.getUpdateResponseKind(
+                            error,
+                            jsRes.has("kind") ? jsRes.getString("kind") : null
                         );
                         String latestVersion = jsRes.has("version") ? jsRes.getString("version") : current.getVersionName();
+                        CapacitorUpdaterPlugin.this.notifyUpdateCheckResult(kind, error, errorMessage, statusCode, latestVersion, current);
+
+                        if ("up_to_date".equals(kind)) {
+                            logger.info("No new version available");
+                        } else if ("blocked".equals(kind)) {
+                            logger.info("Update check blocked with error: " + error);
+                        } else {
+                            logger.error(
+                                "getLatest failed with error: " + error + ", message: " + errorMessage + ", statusCode: " + statusCode
+                            );
+                        }
 
                         CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
                             errorMessage,
                             latestVersion,
                             current,
-                            true,
+                            false,
                             plannedDirectUpdate,
                             "download_fail",
                             "downloadFailed",
-                            !responseIsOk
+                            false
                         );
                         return;
                     }
