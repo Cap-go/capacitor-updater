@@ -1,0 +1,100 @@
+appId: app.capgo.updater
+---
+- extendedWaitUntil:
+    visible: '@capgo/capacitor-updater'
+    timeout: 180000
+- extendedWaitUntil:
+    visible: '.*Harness: ready.*'
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      id: 'quick-action-advance-server-release'
+    direction: DOWN
+    timeout: 30000
+    centerElement: false
+    visibilityPercentage: 1
+- tapOn:
+    id: 'quick-action-advance-server-release'
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: '.*(Marker: advance:success|M:advance:success).*'
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: 'quick-action-download-latest-bundle'
+    direction: DOWN
+    timeout: 30000
+    centerElement: false
+    visibilityPercentage: 1
+- tapOn:
+    id: 'quick-action-download-latest-bundle'
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: '.*(Marker: download:success|M:download:success).*'
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      id: 'quick-action-queue-last-downloaded-bundle'
+    direction: DOWN
+    timeout: 30000
+    centerElement: false
+    visibilityPercentage: 1
+- tapOn:
+    id: 'quick-action-queue-last-downloaded-bundle'
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: '.*(Marker: queue:success|M:queue:success).*'
+    timeout: 60000
+- extendedWaitUntil:
+    visible: '.*Set next event: manual-zip-v2.*'
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: '@capgo/capacitor-updater'
+    direction: UP
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      id: 'quick-action-get-next-bundle'
+    direction: DOWN
+    timeout: 30000
+    centerElement: false
+    visibilityPercentage: 1
+- tapOn:
+    id: 'quick-action-get-next-bundle'
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: '.*(Marker: next:success|M:next:success).*'
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: '@capgo/capacitor-updater'
+    direction: UP
+    timeout: 120000
+- assertVisible: '.*Next bundle version: manual-zip-v2.*'
+- scrollUntilVisible:
+    element:
+      id: 'quick-action-set-multi-delay'
+    direction: DOWN
+    timeout: 30000
+    centerElement: false
+    visibilityPercentage: 1
+- tapOn:
+    id: 'quick-action-set-multi-delay'
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: '.*(Marker: delay:success|M:delay:success).*'
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: 'quick-action-cancel-delay'
+    direction: DOWN
+    timeout: 30000
+    centerElement: false
+    visibilityPercentage: 1
+- tapOn:
+    id: 'quick-action-cancel-delay'
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: '.*(Marker: cancel:success|M:cancel:success).*'
+    timeout: 30000

@@ -19,6 +19,7 @@ FLOW_RETRY_PATTERN="TcpForwarder.waitFor|allocateForwarder|TimeoutException|Andr
 MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
 MAESTRO_DRIVER_STARTUP_TIMEOUT_VALUE="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-300000}"
 MAESTRO_FLOW_TIMEOUT_SECONDS="${MAESTRO_FLOW_TIMEOUT_SECONDS:-900}"
+MAESTRO_FLOW_RETRIES="${CAPGO_MAESTRO_FLOW_RETRIES:-3}"
 MAESTRO_JAVA_TOOL_OPTIONS="${CAPGO_MAESTRO_JAVA_TOOL_OPTIONS:--Djava.net.preferIPv4Stack=true}"
 APP_BACKGROUND_SETTLE_SECONDS="${CAPGO_MAESTRO_BACKGROUND_SETTLE_SECONDS:-3}"
 APP_LAUNCH_RETRIES="${CAPGO_MAESTRO_APP_LAUNCH_RETRIES:-3}"
@@ -309,7 +310,6 @@ wait_for_ui_state() {
   shift
 
   wait_for_ui_state_with_timeout "$description" "$UI_STATE_TIMEOUT_SECONDS" "$@"
-  return 0
 }
 
 wait_for_direct_update_ui_state() {
@@ -437,6 +437,103 @@ recover_scenario_for_flow_retry() {
       reset_adb_forwarding
       ;;
   esac
+
+  return 0
+}
+
+run_flow_once() {
+  local previous_retries="$MAESTRO_FLOW_RETRIES"
+  local status=0
+
+  MAESTRO_FLOW_RETRIES=1
+  run_flow "$@" || status=$?
+  MAESTRO_FLOW_RETRIES="$previous_retries"
+  return "$status"
+}
+
+run_split_manual_scenario() {
+  local scenario_id="$1"
+  local runner="$2"
+  local attempt=1
+  local max_attempts=2
+
+  while [[ $attempt -le $max_attempts ]]; do
+    echo "Running split Maestro scenario: ${scenario_id} (attempt ${attempt}/${max_attempts})"
+    control_server reset "$scenario_id"
+    prepare_scenario "$scenario_id"
+    wait_for_example_app_ui
+
+    if "$runner"; then
+      return 0
+    fi
+
+    if [[ $attempt -lt $max_attempts ]]; then
+      echo "Retrying split Maestro scenario ${scenario_id} from a clean install after driver failure." >&2
+      restart_adb_server
+      prepare_device_for_maestro || true
+      reset_adb_forwarding || true
+      sleep 5
+    fi
+
+    attempt=$((attempt + 1))
+  done
+
+  return 1
+}
+
+run_manual_zip_split_once() {
+  run_flow_once manual-zip-v1-flow.yaml || return 1
+  wait_for_example_app_ui || return 1
+  wait_for_ui_state \
+    "manual zip applies the first release" \
+    'Build label: manual-zip-v1' \
+    'Current bundle source: downloaded' \
+    'Current bundle version: manual-zip-v1' || return 1
+
+  run_flow_once manual-zip-v2-queue-flow.yaml || return 1
+  wait_for_example_app_ui || return 1
+  wait_for_ui_state \
+    "manual zip queues the second release" \
+    'Build label: manual-zip-v1' \
+    'Current bundle source: downloaded' \
+    'Current bundle version: manual-zip-v1' \
+    'Next bundle version: manual-zip-v2' || return 1
+
+  run_flow_once manual-zip-v2-reload-and-failed-flow.yaml || return 1
+  wait_for_example_app_ui || return 1
+  wait_for_ui_state \
+    "manual zip keeps v2 active and records the failed broken release" \
+    'Build label: manual-zip-v2' \
+    'Current bundle source: downloaded' \
+    'Current bundle version: manual-zip-v2' \
+    'Failed update: manual-zip-v3-broken' || return 1
+
+  run_flow_once manual-zip-cleanup-flow.yaml || return 1
+  wait_for_example_app_ui || return 1
+  wait_for_ui_state \
+    "manual zip flow ends back on the builtin bundle" \
+    'Build label: manual-zip-builtin' \
+    'Current bundle source: builtin' || return 1
+
+  return 0
+}
+
+run_manual_manifest_split_once() {
+  run_flow_once manual-manifest-v1-flow.yaml || return 1
+  wait_for_example_app_ui || return 1
+  wait_for_ui_state \
+    "manual manifest applies the first manifest release" \
+    'Build label: manual-manifest-v1' \
+    'Current bundle source: downloaded' \
+    'Current bundle version: manual-manifest-v1' || return 1
+
+  run_flow_once manual-manifest-v2-flow.yaml || return 1
+  wait_for_example_app_ui || return 1
+  wait_for_ui_state \
+    "manual manifest flow applies the second manifest release" \
+    'Build label: manual-manifest-v2' \
+    'Current bundle version: manual-manifest-v2' \
+    'Last completed download: manual-manifest-v2' || return 1
 
   return 0
 }
@@ -571,15 +668,7 @@ run_scenario() {
         "Current bundle version: $second_release"
       ;;
     manual-zip)
-      control_server reset manual-zip
-      prepare_scenario manual-zip
-      wait_for_example_app_ui
-      run_flow manual-zip-flow.yaml
-      wait_for_example_app_ui
-      wait_for_ui_state \
-        "manual zip flow ends back on the builtin bundle" \
-        'Build label: manual-zip-builtin' \
-        'Current bundle source: builtin'
+      run_split_manual_scenario manual-zip run_manual_zip_split_once
       ;;
     manual-zip-config-guards)
       control_server reset manual-zip-config-guards
@@ -594,16 +683,7 @@ run_scenario() {
         'Action marker: bundle:expected-rejection'
       ;;
     manual-manifest)
-      control_server reset manual-manifest
-      prepare_scenario manual-manifest
-      wait_for_example_app_ui
-      run_flow manual-manifest-flow.yaml
-      wait_for_example_app_ui
-      wait_for_ui_state \
-        "manual manifest flow applies the second manifest release" \
-        'Build label: manual-manifest-v2' \
-        'Current bundle version: manual-manifest-v2' \
-        'Last completed download: manual-manifest-v2'
+      run_split_manual_scenario manual-manifest run_manual_manifest_split_once
       assert_server_debug_state manual-manifest '
 const state = JSON.parse(process.argv[1]);
 const scenarioId = process.argv[2];
@@ -688,6 +768,14 @@ unlock_android_device() {
 restart_adb_server() {
   run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" kill-server >/dev/null 2>&1 || true
   run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" start-server >/dev/null 2>&1 || true
+  return 0
+}
+
+reset_maestro_driver_packages() {
+  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell am force-stop dev.mobile.maestro >/dev/null 2>&1 || true
+  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell am force-stop dev.mobile.maestro.test >/dev/null 2>&1 || true
+  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" uninstall dev.mobile.maestro >/dev/null 2>&1 || true
+  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" uninstall dev.mobile.maestro.test >/dev/null 2>&1 || true
   return 0
 }
 
@@ -822,7 +910,7 @@ run_flow() {
   shift
   local -a maestro_args=()
   local attempt=1
-  local max_attempts=3
+  local max_attempts="$MAESTRO_FLOW_RETRIES"
   local command_status=0
   local output_file
   local env_arg
@@ -836,6 +924,7 @@ run_flow() {
   while [[ $attempt -le $max_attempts ]]; do
     echo "Running Maestro flow: $flow_file (attempt $attempt/$max_attempts)"
     prepare_device_for_maestro
+    reset_maestro_driver_packages
     reset_adb_forwarding
     output_file="$(mktemp)"
 

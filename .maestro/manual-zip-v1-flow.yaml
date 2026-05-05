@@ -1,0 +1,93 @@
+appId: app.capgo.updater
+---
+- extendedWaitUntil:
+    visible: '@capgo/capacitor-updater'
+    timeout: 180000
+- assertVisible: '@capgo/capacitor-updater'
+- extendedWaitUntil:
+    visible: '.*Harness: ready.*'
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      text: '@capgo/capacitor-updater'
+    direction: UP
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      id: 'quick-action-set-runtime-urls'
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+    visibilityPercentage: 1
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    id: 'quick-action-set-runtime-urls'
+    retryTapIfNoChange: true
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: '.*(Marker: set-runtime-urls:success|M:set-runtime-urls:success).*'
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: 'quick-action-reset-server-release'
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+    visibilityPercentage: 1
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    id: 'quick-action-reset-server-release'
+    retryTapIfNoChange: true
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: '.*(Marker: reset:success|M:reset:success).*'
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: 'quick-action-download-latest-bundle'
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+    visibilityPercentage: 1
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    id: 'quick-action-download-latest-bundle'
+    retryTapIfNoChange: true
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: '.*(Marker: download:success|M:download:success).*'
+    timeout: 120000
+- extendedWaitUntil:
+    visible: '.*Download event: .*manual-zip-v1.*'
+    timeout: 30000
+- extendedWaitUntil:
+    visible: '.*Download complete event: manual-zip-v1.*'
+    timeout: 30000
+- extendedWaitUntil:
+    visible: '.*Update available event: manual-zip-v1.*'
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: '@capgo/capacitor-updater'
+    direction: UP
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      id: 'quick-action-set-last-downloaded-bundle'
+    direction: DOWN
+    timeout: 30000
+    centerElement: false
+    visibilityPercentage: 1
+- tapOn:
+    id: 'quick-action-set-last-downloaded-bundle'
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: '@capgo/capacitor-updater'
+    timeout: 180000
+- scrollUntilVisible:
+    element:
+      text: '@capgo/capacitor-updater'
+    direction: UP
+    timeout: 120000
+- assertVisible: '.*Current bundle source: downloaded.*'
+- assertVisible: '.*Current bundle version: manual-zip-v1.*'
