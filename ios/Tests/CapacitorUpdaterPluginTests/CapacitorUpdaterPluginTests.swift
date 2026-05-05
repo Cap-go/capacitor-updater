@@ -18,6 +18,10 @@ private class TestableCapacitorUpdaterPlugin: CapacitorUpdaterPlugin {
         work()
     }
 
+    override func runGetLatestWork(_ work: @escaping () -> Void) {
+        work()
+    }
+
     override func sendReadyToJs(current: BundleInfo, msg: String) {
         // Intentionally blank: tests assert native state transitions without JS bridge side effects.
     }

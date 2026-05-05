@@ -876,7 +876,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func getLatest(_ call: CAPPluginCall) {
         let channel = call.getString("channel")
-        DispatchQueue.global(qos: .background).async {
+        runGetLatestWork {
             let res = self.implementation.getLatest(url: URL(string: self.updateUrl)!, channel: channel)
             if let error = res.error, !error.isEmpty {
                 let responseKind = self.updateResponseKind(error: error, kind: res.kind)
@@ -1764,6 +1764,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     func runBackgroundDownloadWork(_ work: @escaping () -> Void) {
+        DispatchQueue.global(qos: .background).async(execute: work)
+    }
+
+    func runGetLatestWork(_ work: @escaping () -> Void) {
         DispatchQueue.global(qos: .background).async(execute: work)
     }
 
