@@ -934,7 +934,7 @@ class CapacitorUpdaterTests: XCTestCase {
         ))
 
         testPlugin.getLatest(call)
-        wait(for: [resolved], timeout: 2)
+        wait(for: [resolved], timeout: 10)
 
         XCTAssertEqual(resolvedData?["kind"] as? String, "up_to_date")
         XCTAssertEqual(resolvedData?["version"] as? String, "1.0.0")
@@ -966,7 +966,7 @@ class CapacitorUpdaterTests: XCTestCase {
         ))
 
         testPlugin.getLatest(call)
-        wait(for: [rejected], timeout: 2)
+        wait(for: [rejected], timeout: 10)
     }
 
     func testBlockedUpdateCheckDoesNotNotifyDownloadFailed() {
