@@ -6,6 +6,7 @@ EXAMPLE_DIR="$ROOT_DIR/example-app"
 APK_PATH="$EXAMPLE_DIR/android/app/build/outputs/apk/debug/app-debug.apk"
 RESULTS_DIR="$ROOT_DIR/maestro-results"
 SKIP_BUILD="${CAPGO_MAESTRO_SKIP_BUILD:-0}"
+RUN_NATIVE_RESET="${CAPGO_MAESTRO_RUN_NATIVE_RESET:-0}"
 SCENARIO_ID="${CAPGO_MAESTRO_SMOKE_SCENARIO:-manual-zip}"
 FLOW_PATH="$ROOT_DIR/.maestro/android/example-app-smoke.yaml"
 if [[ "$SCENARIO_ID" == "manual-zip-config-guards" ]]; then
@@ -509,8 +510,10 @@ if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
   SERVER_PID=""
 fi
 
-if [[ "$SKIP_BUILD" != "1" ]]; then
+if [[ "$RUN_NATIVE_RESET" == "1" && "$SKIP_BUILD" != "1" ]]; then
   "$ROOT_DIR/scripts/maestro/run-android-native-update-reset.sh"
-else
+elif [[ "$RUN_NATIVE_RESET" == "1" ]]; then
   echo "Skipping Android native reset Maestro flow because CAPGO_MAESTRO_SKIP_BUILD=1." >&2
+else
+  echo "Skipping Android native reset Maestro flow because CAPGO_MAESTRO_RUN_NATIVE_RESET is not enabled." >&2
 fi

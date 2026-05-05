@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 EXAMPLE_DIR="$ROOT_DIR/example-app"
 RESULTS_DIR="${CAPGO_MAESTRO_RESULTS_DIR:-$ROOT_DIR/maestro-results-ios}"
 SKIP_BUILD="${CAPGO_MAESTRO_SKIP_BUILD:-0}"
+RUN_NATIVE_RESET="${CAPGO_MAESTRO_RUN_NATIVE_RESET:-0}"
 SCENARIO_ID="${CAPGO_MAESTRO_SMOKE_SCENARIO:-manual-zip}"
 FLOW_PATH="$ROOT_DIR/.maestro/ios/example-app-smoke.yaml"
 if [[ "$SCENARIO_ID" == "manual-zip-config-guards" ]]; then
@@ -345,7 +346,7 @@ if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
   SERVER_PID=""
 fi
 
-if [[ "$SKIP_BUILD" != "1" ]]; then
+if [[ "$RUN_NATIVE_RESET" == "1" && "$SKIP_BUILD" != "1" ]]; then
   if run_with_timeout "$NATIVE_RESET_TIMEOUT_SECONDS" "$ROOT_DIR/scripts/maestro/run-ios-native-update-reset.sh"; then
     :
   else
@@ -355,6 +356,8 @@ if [[ "$SKIP_BUILD" != "1" ]]; then
     fi
     exit "$status"
   fi
-else
+elif [[ "$RUN_NATIVE_RESET" == "1" ]]; then
   echo "Skipping iOS native reset Maestro flow because CAPGO_MAESTRO_SKIP_BUILD=1." >&2
+else
+  echo "Skipping iOS native reset Maestro flow because CAPGO_MAESTRO_RUN_NATIVE_RESET is not enabled." >&2
 fi
