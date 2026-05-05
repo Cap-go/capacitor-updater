@@ -24,6 +24,7 @@ MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
 MAESTRO_JAVA_TOOL_OPTIONS="${CAPGO_MAESTRO_JAVA_TOOL_OPTIONS:--Djava.net.preferIPv4Stack=true}"
 MAESTRO_TEST_RETRIES="${CAPGO_MAESTRO_TEST_RETRIES:-3}"
 APK_INSTALL_RETRIES="${CAPGO_MAESTRO_APK_INSTALL_RETRIES:-6}"
+APP_PREP_RETRIES="${CAPGO_MAESTRO_APP_PREP_RETRIES:-2}"
 PACKAGE_SERVICE_TIMEOUT_SECONDS="${CAPGO_MAESTRO_ANDROID_PACKAGE_TIMEOUT_SECONDS:-180}"
 APP_ACTIVITY="${CAPGO_MAESTRO_ANDROID_ACTIVITY:-app.capgo.updater/.MainActivity}"
 APP_LAUNCH_RETRIES="${CAPGO_MAESTRO_APP_LAUNCH_RETRIES:-3}"
@@ -343,6 +344,35 @@ install_apk_with_retries() {
   return "$status"
 }
 
+prepare_example_app_for_maestro() {
+  local attempt=1
+
+  while (( attempt <= APP_PREP_RETRIES )); do
+    if (( attempt > 1 )); then
+      echo "Example app did not become ready after install attempt $((attempt - 1)); reinstalling." >&2
+      restart_adb_server
+      wait_for_emulator_boot
+      wait_for_android_package_service || true
+      reset_fake_server
+      configure_server_routing
+      reset_maestro_driver_packages
+    fi
+
+    install_apk_with_retries
+    stabilize_android_after_install
+    configure_server_routing
+
+    if wait_for_example_app_ui; then
+      return 0
+    fi
+
+    ((attempt += 1))
+  done
+
+  echo "Example app never became ready after ${APP_PREP_RETRIES} install attempts." >&2
+  return 1
+}
+
 run_maestro_test_with_retries() {
   local attempt=1
   local output_file=""
@@ -450,15 +480,13 @@ if [[ -z "$ANDROID_DEVICE_ID" || "$ANDROID_DEVICE_ID" == "unknown" ]]; then
   exit 1
 fi
 
+wait_for_android_package_service || true
 adb shell settings put global window_animation_scale 0 || true
 adb shell settings put global transition_animation_scale 0 || true
 adb shell settings put global animator_duration_scale 0 || true
 adb shell input keyevent 82 || true
 configure_server_routing
-install_apk_with_retries
-stabilize_android_after_install
-configure_server_routing
-wait_for_example_app_ui
+prepare_example_app_for_maestro
 
 rm -rf "$RESULTS_DIR"
 mkdir -p "$RESULTS_DIR"
