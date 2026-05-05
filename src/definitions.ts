@@ -1515,7 +1515,9 @@ export type BundleStatus = 'success' | 'error' | 'pending' | 'downloading';
 export type DelayUntilNext = 'background' | 'kill' | 'nativeVersion' | 'date';
 
 /**
- * Classification returned by the update backend for responses that do not provide a downloadable bundle.
+ * Classification for update-check responses that do not provide a downloadable bundle.
+ * The update backend can provide this field directly. When it is omitted, native/client code
+ * may infer it from known backend error codes for older or self-hosted update endpoints.
  *
  * @since 8.45.11
  */
@@ -1532,7 +1534,7 @@ export interface NoNeedEvent {
 
 export interface UpdateCheckResultEvent {
   /**
-   * Backend classification for the update check result.
+   * Classification for the update check result, provided by the backend or inferred from known error codes.
    *
    * @since 8.45.11
    */
@@ -1773,7 +1775,7 @@ export interface LatestVersion {
    */
   error?: string;
   /**
-   * Backend classification for this response, when the update server provides it.
+   * Classification for this response, provided by the backend or inferred from known error codes.
    *
    * @since 8.45.11
    */

@@ -2126,7 +2126,7 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 | **`message`**    | <code>string</code>                                               | Optional message from the server. When no new version is available, this will be "No new version available".                                                                                 |         |
 | **`sessionKey`** | <code>string</code>                                               |                                                                                                                                                                                              |         |
 | **`error`**      | <code>string</code>                                               | Error code from the server, if any. Common values: - `"no_new_version_available"`: Device is already on the latest version (not a failure) - Other error codes can be classified with `kind` |         |
-| **`kind`**       | <code><a href="#updateresponsekind">UpdateResponseKind</a></code> | Backend classification for this response, when the update server provides it.                                                                                                                | 8.45.11 |
+| **`kind`**       | <code><a href="#updateresponsekind">UpdateResponseKind</a></code> | Classification for this response, provided by the backend or inferred from known error codes.                                                                                                | 8.45.11 |
 | **`statusCode`** | <code>number</code>                                               | HTTP status code returned by the update server for classified update-check responses.                                                                                                        | 8.45.11 |
 | **`old`**        | <code>string</code>                                               | The previous/current version name (provided for reference).                                                                                                                                  |         |
 | **`url`**        | <code>string</code>                                               | Download URL for the bundle (when a new version is available).                                                                                                                               |         |
@@ -2253,14 +2253,14 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 
 ##### UpdateCheckResultEvent
 
-| Prop             | Type                                                              | Description                                         | Since   |
-| ---------------- | ----------------------------------------------------------------- | --------------------------------------------------- | ------- |
-| **`kind`**       | <code><a href="#updateresponsekind">UpdateResponseKind</a></code> | Backend classification for the update check result. | 8.45.11 |
-| **`error`**      | <code>string</code>                                               | Backend error code, when provided.                  | 8.45.11 |
-| **`message`**    | <code>string</code>                                               | Backend message, when provided.                     | 8.45.11 |
-| **`statusCode`** | <code>number</code>                                               | HTTP status code returned by the update endpoint.   | 8.45.11 |
-| **`version`**    | <code>string</code>                                               | Version referenced by the update check result.      | 8.45.11 |
-| **`bundle`**     | <code><a href="#bundleinfo">BundleInfo</a></code>                 | Current bundle on the device.                       | 8.45.11 |
+| Prop             | Type                                                              | Description                                                                                             | Since   |
+| ---------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------- |
+| **`kind`**       | <code><a href="#updateresponsekind">UpdateResponseKind</a></code> | Classification for the update check result, provided by the backend or inferred from known error codes. | 8.45.11 |
+| **`error`**      | <code>string</code>                                               | Backend error code, when provided.                                                                      | 8.45.11 |
+| **`message`**    | <code>string</code>                                               | Backend message, when provided.                                                                         | 8.45.11 |
+| **`statusCode`** | <code>number</code>                                               | HTTP status code returned by the update endpoint.                                                       | 8.45.11 |
+| **`version`**    | <code>string</code>                                               | Version referenced by the update check result.                                                          | 8.45.11 |
+| **`bundle`**     | <code><a href="#bundleinfo">BundleInfo</a></code>                 | Current bundle on the device.                                                                           | 8.45.11 |
 
 
 ##### UpdateAvailableEvent
@@ -2456,7 +2456,9 @@ error: The bundle has failed to download.
 
 ##### UpdateResponseKind
 
-Classification returned by the update backend for responses that do not provide a downloadable bundle.
+Classification for update-check responses that do not provide a downloadable bundle.
+The update backend can provide this field directly. When it is omitted, native/client code
+may infer it from known backend error codes for older or self-hosted update endpoints.
 
 <code>'up_to_date' | 'blocked' | 'failed'</code>
 

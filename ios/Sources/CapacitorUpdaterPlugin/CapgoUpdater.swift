@@ -538,6 +538,19 @@ import UIKit
                 if let data = response.data,
                    let decoded = try? JSONDecoder().decode(AppVersionDec.self, from: data) {
                     applyLatestResponse(decoded)
+                    let decodedError = decoded.error ?? ""
+                    let decodedKind = decoded.kind ?? ""
+                    if decodedError.isEmpty && decodedKind.isEmpty {
+                        if latest.message == nil || latest.message?.isEmpty == true {
+                            latest.message = "Error getting Latest"
+                        }
+                        if latest.error == nil || latest.error?.isEmpty == true {
+                            latest.error = "response_error"
+                        }
+                        if latest.kind == nil || latest.kind?.isEmpty == true {
+                            latest.kind = "failed"
+                        }
+                    }
                 } else {
                     latest.message = "Error getting Latest"
                     latest.error = "response_error"
