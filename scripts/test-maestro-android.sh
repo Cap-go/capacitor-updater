@@ -18,7 +18,7 @@ APP_ACTIVITY="${CAPGO_MAESTRO_ANDROID_ACTIVITY:-app.capgo.updater/.MainActivity}
 APP_LAUNCH_RETRIES="${CAPGO_MAESTRO_APP_LAUNCH_RETRIES:-3}"
 APP_UI_TIMEOUT_SECONDS="${CAPGO_MAESTRO_APP_UI_TIMEOUT_SECONDS:-150}"
 POST_INSTALL_STABILIZE_SECONDS="${CAPGO_MAESTRO_POST_INSTALL_STABILIZE_SECONDS:-8}"
-APP_READY_TITLE="@capgo/capacitor-updater"
+APP_READY_TITLE="CAPGO OTA VALIDATION"
 APP_READY_ACTION="Run notifyAppReady"
 APP_ID="app.capgo.updater"
 FLOW_RETRY_PATTERN="TcpForwarder.waitFor|allocateForwarder|TimeoutException|Android driver did not start up in time|Maestro Android driver did not start up in time|UNAVAILABLE: io exception|Connection refused|Broken pipe|Failure calling service package|Can.t find service: package|Can.t find service: settings|Cannot access system provider: 'settings'"
@@ -317,4 +317,10 @@ else
     echo "Maestro test timed out after ${MAESTRO_TIMEOUT_SECONDS} seconds." >&2
   fi
   exit "$status"
+fi
+
+if [[ "$SKIP_BUILD" != "1" ]]; then
+  "$ROOT_DIR/scripts/maestro/run-android-native-update-reset.sh"
+else
+  echo "Skipping Android native reset Maestro flow because CAPGO_MAESTRO_SKIP_BUILD=1." >&2
 fi

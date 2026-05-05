@@ -9,7 +9,7 @@ HOST_SERVER_URL="${CAPGO_MAESTRO_HOST_BASE_URL:-http://127.0.0.1:${HOST_SERVER_P
 DEVICE_SERVER_URL="${CAPGO_MAESTRO_DEVICE_BASE_URL:-http://127.0.0.1:${HOST_SERVER_PORT}}"
 APP_ID="app.capgo.updater"
 APP_ACTIVITY="${CAPGO_MAESTRO_ANDROID_ACTIVITY:-app.capgo.updater/.MainActivity}"
-APP_READY_TITLE="@capgo/capacitor-updater"
+APP_READY_TITLE="CAPGO OTA VALIDATION"
 APP_READY_ACTION="Run notifyAppReady"
 APK_PATH="$ROOT_DIR/example-app/android/app/build/outputs/apk/debug/app-debug.apk"
 SCENARIO_SELECTION="${1:-all}"
@@ -380,13 +380,17 @@ import { exampleAppDir, getScenario } from '${ROOT_DIR}/scripts/maestro/scenario
 
 const scenario = getScenario(process.argv[1]);
 const buildGradle = readFileSync(path.join(exampleAppDir, 'android', 'app', 'build.gradle'), 'utf8');
-const versionMatch = buildGradle.match(/versionName\\s*=\\s*['\\\"]([^'\\\"]+)['\\\"]/);
+const versionLine = buildGradle
+  .split(/\\r?\\n/)
+  .find((line) => /^\\s*versionName\\s*=/.test(line));
+const versionMatches = versionLine ? [...versionLine.matchAll(/['\\\"]([^'\\\"]+)['\\\"]/g)] : [];
+const builtinVersion = versionMatches.at(-1)?.[1];
 
-if (!versionMatch) {
+if (!builtinVersion) {
   throw new Error('Unable to determine example-app Android versionName');
 }
 
-console.log([scenario.builtinLabel, versionMatch[1], ...scenario.releases.map((release) => release.version)].join('\t'));
+console.log([scenario.builtinLabel, builtinVersion, ...scenario.releases.map((release) => release.version)].join('\t'));
 " "$scenario_id"
 
   return 0

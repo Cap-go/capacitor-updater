@@ -1861,12 +1861,33 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     try {
                         CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.updateUrl, null, (res) -> {
                             JSObject jsRes = InternalUtils.mapToJSObject(res);
-                            if (jsRes.has("error")) {
-                                String error = jsRes.getString("error");
+                            if (jsRes.has("error") || jsRes.has("kind")) {
+                                final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
+                                String error = jsRes.has("error") ? jsRes.getString("error") : "";
                                 String errorMessage = jsRes.has("message")
                                     ? jsRes.getString("message")
                                     : "server did not provide a message";
-                                logger.error("getLatest failed with error: " + error + ", message: " + errorMessage);
+                                int statusCode = jsRes.has("statusCode") ? jsRes.optInt("statusCode", 0) : 0;
+                                String kind = CapacitorUpdaterPlugin.this.getUpdateResponseKind(
+                                    jsRes.has("kind") ? jsRes.getString("kind") : null
+                                );
+                                String latestVersion = jsRes.has("version") ? jsRes.getString("version") : current.getVersionName();
+                                CapacitorUpdaterPlugin.this.notifyUpdateCheckResult(
+                                    kind,
+                                    error,
+                                    errorMessage,
+                                    statusCode,
+                                    latestVersion,
+                                    current
+                                );
+
+                                if ("failed".equals(kind)) {
+                                    logger.error("getLatest failed with error: " + error + ", message: " + errorMessage);
+                                } else if ("blocked".equals(kind)) {
+                                    logger.info("Update check blocked with error: " + error);
+                                } else {
+                                    logger.info("No new version available");
+                                }
                             } else if (jsRes.has("version")) {
                                 String newVersion = jsRes.getString("version");
                                 String currentVersion = String.valueOf(CapacitorUpdaterPlugin.this.implementation.getCurrentBundle());

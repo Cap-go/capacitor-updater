@@ -4,6 +4,7 @@ import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
 import android.content.SharedPreferences;
+import android.content.pm.PackageInfo;
 import android.os.Handler;
 import android.os.Looper;
 import android.webkit.WebView;
@@ -33,19 +34,26 @@ public class CapacitorUpdaterUnitTest {
     private static class TestableCapacitorUpdaterPlugin extends CapacitorUpdaterPlugin {
 
         private final ArrayList<String> notifiedEventNames = new ArrayList<>();
+        private final Map<String, JSObject> notifiedEventPayloads = new HashMap<>();
 
         @Override
         public void notifyListeners(String eventName, JSObject data) {
             this.notifiedEventNames.add(eventName);
+            this.notifiedEventPayloads.put(eventName, data);
         }
 
         @Override
         public void notifyListeners(String eventName, JSObject data, boolean retainUntilConsumed) {
             this.notifiedEventNames.add(eventName);
+            this.notifiedEventPayloads.put(eventName, data);
         }
 
         boolean hasNotifiedEvent(final String eventName) {
             return this.notifiedEventNames.contains(eventName);
+        }
+
+        JSObject getNotifiedEventPayload(final String eventName) {
+            return this.notifiedEventPayloads.get(eventName);
         }
     }
 
@@ -1547,6 +1555,11 @@ public class CapacitorUpdaterUnitTest {
 
             assertTrue(plugin.hasNotifiedEvent("noNeedUpdate"));
             assertTrue(plugin.hasNotifiedEvent("updateCheckResult"));
+            JSObject payload = plugin.getNotifiedEventPayload("updateCheckResult");
+            assertNotNull(payload);
+            assertEquals("up_to_date", payload.getString("kind"));
+            assertEquals(200, payload.getInt("statusCode"));
+            assertEquals("1.0.0", payload.getString("version"));
             assertFalse(plugin.hasNotifiedEvent("downloadFailed"));
             assertFalse(updater.sendStatsCalled);
         }
@@ -1591,6 +1604,11 @@ public class CapacitorUpdaterUnitTest {
 
             assertTrue(plugin.hasNotifiedEvent("noNeedUpdate"));
             assertTrue(plugin.hasNotifiedEvent("updateCheckResult"));
+            JSObject payload = plugin.getNotifiedEventPayload("updateCheckResult");
+            assertNotNull(payload);
+            assertEquals("blocked", payload.getString("kind"));
+            assertEquals(200, payload.getInt("statusCode"));
+            assertEquals("1.0.0", payload.getString("version"));
             assertFalse(plugin.hasNotifiedEvent("downloadFailed"));
             assertFalse(updater.sendStatsCalled);
         }
@@ -1613,6 +1631,11 @@ public class CapacitorUpdaterUnitTest {
             invokeBackgroundDownload(plugin);
 
             assertTrue(plugin.hasNotifiedEvent("updateCheckResult"));
+            JSObject payload = plugin.getNotifiedEventPayload("updateCheckResult");
+            assertNotNull(payload);
+            assertEquals("failed", payload.getString("kind"));
+            assertEquals(500, payload.getInt("statusCode"));
+            assertEquals("1.0.0", payload.getString("version"));
             assertTrue(plugin.hasNotifiedEvent("downloadFailed"));
             assertTrue(updater.downloadFailStatsCalled);
         }
@@ -1818,5 +1841,36 @@ public class CapacitorUpdaterUnitTest {
     public void buildUserAgentFallsBackToUnknown() {
         String ua = DownloadService.buildUserAgent("", "", "");
         assertEquals("CapacitorUpdater/unknown (unknown) android/unknown", ua);
+    }
+
+    /**
+     * Regression test for: NoSuchMethodError crash on Android 8.0/8.1 (API 26/27).
+     * getLongVersionCode() was introduced in API 28; the plugin must use
+     * PackageInfoCompat.getLongVersionCode() to support API 24-27.
+     *
+     * <p>The @SuppressWarnings("deprecation") is intentional: we set PackageInfo.versionCode
+     * (deprecated since API 28) directly to simulate a pre-API-28 device and verify
+     * that PackageInfoCompat falls back to it correctly on older Android versions.
+     */
+    @Test
+    @SuppressWarnings("deprecation")
+    public void getVersionCodeReturnsStringVersionCodeViaPackageInfoCompat() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+            looperMock.when(Looper::myLooper).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            final PackageInfo packageInfo = new PackageInfo();
+            packageInfo.versionCode = 42;
+
+            final Method getVersionCode = CapacitorUpdaterPlugin.class.getDeclaredMethod("getVersionCode", PackageInfo.class);
+            getVersionCode.setAccessible(true);
+            final String result = (String) getVersionCode.invoke(plugin, packageInfo);
+
+            assertEquals("42", result);
+        }
     }
 }

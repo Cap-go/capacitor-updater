@@ -8,9 +8,8 @@ FLOW_PATH="$ROOT_DIR/.maestro/ios/example-app-smoke.yaml"
 SKIP_BUILD="${CAPGO_MAESTRO_SKIP_BUILD:-0}"
 SIMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_IOS_BOOT_TIMEOUT_SECONDS:-180}"
 MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-300}"
+NATIVE_RESET_TIMEOUT_SECONDS="${CAPGO_MAESTRO_NATIVE_RESET_TIMEOUT_SECONDS:-600}"
 APP_ID="app.capgo.updater"
-APP_LAUNCH_RETRIES="${CAPGO_MAESTRO_IOS_APP_LAUNCH_RETRIES:-3}"
-APP_LAUNCH_WAIT_SECONDS="${CAPGO_MAESTRO_IOS_APP_LAUNCH_WAIT_SECONDS:-5}"
 
 default_simulator_id() {
   xcrun simctl list devices available | sed -nE 's/^[[:space:]]*iPhone.*\(([0-9A-F-]{36})\) \([^)]*\)[[:space:]]*$/\1/p' | head -n 1
@@ -67,9 +66,6 @@ PY
   return $?
 }
 
-launch_example_app() {
-  xcrun simctl launch "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1
-}
 if ! command -v maestro >/dev/null 2>&1; then
   echo "maestro is required to run iOS Maestro tests." >&2
   exit 1
@@ -153,22 +149,7 @@ fi
 
 xcrun simctl uninstall "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
 xcrun simctl install "$SIMULATOR_ID" "$APP_PATH"
-
-launch_attempt=1
-while (( launch_attempt <= APP_LAUNCH_RETRIES )); do
-  if launch_example_app; then
-    sleep "$APP_LAUNCH_WAIT_SECONDS"
-    break
-  fi
-
-  if (( launch_attempt == APP_LAUNCH_RETRIES )); then
-    echo "Unable to launch the iOS example app after ${APP_LAUNCH_RETRIES} attempts." >&2
-    exit 1
-  fi
-
-  sleep 2
-  ((launch_attempt += 1))
-done
+xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
 
 rm -rf "$RESULTS_DIR"
 mkdir -p "$RESULTS_DIR"
@@ -189,4 +170,18 @@ else
     echo "Maestro test timed out after ${MAESTRO_TIMEOUT_SECONDS} seconds." >&2
   fi
   exit "$status"
+fi
+
+if [[ "$SKIP_BUILD" != "1" ]]; then
+  if run_with_timeout "$NATIVE_RESET_TIMEOUT_SECONDS" "$ROOT_DIR/scripts/maestro/run-ios-native-update-reset.sh"; then
+    :
+  else
+    status=$?
+    if [[ $status -eq 124 ]]; then
+      echo "iOS native reset flow timed out after ${NATIVE_RESET_TIMEOUT_SECONDS} seconds." >&2
+    fi
+    exit "$status"
+  fi
+else
+  echo "Skipping iOS native reset Maestro flow because CAPGO_MAESTRO_SKIP_BUILD=1." >&2
 fi

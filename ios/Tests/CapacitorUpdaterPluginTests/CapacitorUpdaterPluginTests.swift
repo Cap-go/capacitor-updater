@@ -72,6 +72,7 @@ private final class ResetTrackingCapgoUpdater: CapgoUpdater {
     )
     var nextBundleValue: BundleInfo?
     var resetCalled = false
+    var resetIsInternal = false
     var prepareResetStateForTransitionCalled = false
     var prepareResetStateForTransitionCalls = 0
     var finalizeResetTransitionCalled = false
@@ -143,6 +144,7 @@ private final class ResetTrackingCapgoUpdater: CapgoUpdater {
 
     override func reset(isInternal: Bool) {
         resetCalled = true
+        resetIsInternal = isInternal
     }
 
     override func prepareResetStateForTransition() {
@@ -962,10 +964,11 @@ class CapacitorUpdaterTests: XCTestCase {
         wait(for: [rejected], timeout: 10)
     }
 
-    func testGetLatestRejectsFailedErrorWithBackendMessage() throws {
+    func testGetLatestRejectsFailedErrorUsingBackendErrorCode() throws {
         let latest = AppVersion()
         latest.error = "response_error"
         latest.message = "Server returned an invalid response"
+        latest.kind = "failed"
         latest.statusCode = 500
 
         let failedImplementation = FreshDownloadCapgoUpdater()
@@ -975,15 +978,15 @@ class CapacitorUpdaterTests: XCTestCase {
         testPlugin.implementation = failedImplementation
         testPlugin.setUpdateUrlForTesting("https://example.com/channel")
 
-        let rejected = expectation(description: "getLatest rejects failed error with message")
+        let rejected = expectation(description: "getLatest rejects failed error")
         let call = try XCTUnwrap(CAPPluginCall(
-            callbackId: "get-latest-failed-error-message-test",
+            callbackId: "get-latest-failed-error-test",
             options: [:],
             success: { _, _ in
                 XCTFail("getLatest should reject failed error responses")
             },
             error: { error in
-                XCTAssertEqual(error?.message, "Server returned an invalid response")
+                XCTAssertEqual(error?.message, "response_error")
                 rejected.fulfill()
             }
         ))
@@ -1049,6 +1052,38 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertTrue(testPlugin.notifiedEventNames.contains("updateCheckResult"))
         XCTAssertTrue(testPlugin.notifiedEventNames.contains("downloadFailed"))
         XCTAssertTrue(failedImplementation.sentStatsActions.contains("download_fail"))
+    }
+
+    func testHasNativeBuildVersionChangedFallsBackToLegacyStoredKey() {
+        let nativeBuildKey = "LatestNativeBuildVersion"
+        let legacyBuildKey = "LatestVersionNative"
+        UserDefaults.standard.removeObject(forKey: nativeBuildKey)
+        UserDefaults.standard.set("1", forKey: legacyBuildKey)
+        defer {
+            UserDefaults.standard.removeObject(forKey: nativeBuildKey)
+            UserDefaults.standard.removeObject(forKey: legacyBuildKey)
+        }
+
+        plugin.setCurrentBuildVersionForTesting("2")
+
+        XCTAssertTrue(plugin.hasNativeBuildVersionChanged())
+    }
+
+    func testResetCurrentBundleForNativeBuildChangeIfNeededResetsSynchronously() {
+        let nativeBuildKey = "LatestNativeBuildVersion"
+        let resetPlugin = TestableCapacitorUpdaterPlugin()
+        let resetImplementation = ResetTrackingCapgoUpdater()
+        resetPlugin.implementation = resetImplementation
+        UserDefaults.standard.set("1", forKey: nativeBuildKey)
+        defer {
+            UserDefaults.standard.removeObject(forKey: nativeBuildKey)
+        }
+
+        resetPlugin.setCurrentBuildVersionForTesting("2")
+
+        XCTAssertTrue(resetPlugin.resetCurrentBundleForNativeBuildChangeIfNeeded())
+        XCTAssertTrue(resetImplementation.resetCalled)
+        XCTAssertTrue(resetImplementation.resetIsInternal)
     }
 
     func testShowSplashscreenOptionsDisableAutoHide() {
