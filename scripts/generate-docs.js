@@ -106,6 +106,15 @@ function escapeMd(s = '') {
   return String(s).replace(/\|/g, '\\|');
 }
 
+function slugForHeading(s = '') {
+  return String(s)
+    .trim()
+    .toLowerCase()
+    .replace(/<[^>]*>/g, '')
+    .replace(/[^\w\s-]/g, '')
+    .replace(/\s+/g, '-');
+}
+
 function renderConfig(pluginConfigs) {
   if (!pluginConfigs || !pluginConfigs.length) return '';
   const cfg = pluginConfigs[0];
@@ -147,7 +156,8 @@ function renderMethods(api) {
         } else if (!m.signature?.includes('(')) {
           label = `${m.name}()`;
         }
-        return `- [\`${label}\`](#${m.slug})`;
+        const slug = m.name === 'addListener' ? slugForHeading(label) : m.slug;
+        return `- [\`${label}\`](#${slug})`;
       })
       .join('\n') + '\n\n';
   out += '</docgen-index>\n\n';

@@ -878,10 +878,25 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         let channel = call.getString("channel")
         DispatchQueue.global(qos: .background).async {
             let res = self.implementation.getLatest(url: URL(string: self.updateUrl)!, channel: channel)
-            if res.error != nil {
-                call.reject( res.error!)
-            } else if res.message != nil {
-                call.reject( res.message!)
+            if let error = res.error, !error.isEmpty {
+                let responseKind = self.updateResponseKind(error: error, kind: res.kind)
+                if responseKind == "failed" {
+                    call.reject(error)
+                } else {
+                    if res.version.isEmpty {
+                        res.version = self.implementation.getCurrentBundle().getVersionName()
+                    }
+                    call.resolve(res.toDict())
+                }
+            } else if let message = res.message, !message.isEmpty {
+                if let kind = res.kind, self.updateResponseKind(error: "", kind: kind) != "failed" {
+                    if res.version.isEmpty {
+                        res.version = self.implementation.getCurrentBundle().getVersionName()
+                    }
+                    call.resolve(res.toDict())
+                } else {
+                    call.reject(message)
+                }
             } else {
                 call.resolve(res.toDict())
             }
@@ -1679,13 +1694,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             self.logger.error("getLatest failed with error: \(backendError)")
         }
 
+        let isFailure = responseKind == "failed"
         self.endBackGroundTaskWithNotif(
             msg: message,
             latestVersionName: latestVersionName,
             current: current,
-            error: false,
+            error: isFailure,
             plannedDirectUpdate: plannedDirectUpdate,
-            sendStats: false
+            sendStats: isFailure
         )
     }
 
@@ -1777,7 +1793,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             let current = self.implementation.getCurrentBundle()
 
             // Handle network errors and other failures first
-            if let backendError = res.error, !backendError.isEmpty {
+            let backendError = res.error ?? ""
+            let backendKind = res.kind ?? ""
+            if !backendError.isEmpty || !backendKind.isEmpty {
                 self.endBackgroundDownloadAfterLatestError(
                     backendError: backendError,
                     res: res,

@@ -928,6 +928,35 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertFalse(blockedImplementation.sentStatsActions.contains("download_fail"))
     }
 
+    func testFailedUpdateCheckNotifiesDownloadFailed() {
+        let current = BundleInfo(
+            id: "test-id",
+            version: "1.0.0",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "abc123"
+        )
+        let latest = AppVersion()
+        latest.error = "response_error"
+        latest.kind = "failed"
+        latest.message = "Error getting Latest"
+        latest.statusCode = 500
+
+        let failedImplementation = FreshDownloadCapgoUpdater()
+        failedImplementation.currentBundleValue = current
+        failedImplementation.latestResponse = latest
+
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.implementation = failedImplementation
+        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
+
+        testPlugin.backgroundDownload()
+
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("updateCheckResult"))
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("downloadFailed"))
+        XCTAssertTrue(failedImplementation.sentStatsActions.contains("download_fail"))
+    }
+
     func testShowSplashscreenOptionsDisableAutoHide() {
         let options = plugin.splashscreenOptionsForTesting(methodName: "show")
 

@@ -930,27 +930,23 @@ After receiving the latest version info, you can:
 2. Download it using {@link download}
 3. Apply it using {@link next} or {@link set}
 
-**Important: Error handling for "no new version available"**
+**Important: Handling "no new version available"**
 
 When the device's current version matches the latest version on the server (i.e., the device is already
 up-to-date), the server returns a 200 response with `error: "no_new_version_available"` and
-`message: "No new version available"`. **This causes `getLatest()` to throw an error**, even though
-this is a normal, expected condition.
+`message: "No new version available"`. This is a normal, expected condition and resolves with
+`kind: "up_to_date"` when the native updater can classify it.
 
-You should catch this specific error to handle it gracefully:
+You should check `kind` and `error` before attempting to download:
 
 ```typescript
-try {
-  const latest = await CapacitorUpdater.getLatest();
+const latest = await CapacitorUpdater.getLatest();
+if (latest.kind === 'up_to_date') {
+  console.log('Already up to date');
+} else if (latest.kind === 'blocked') {
+  console.log('Update is blocked:', latest.error);
+} else if (latest.url) {
   // New version is available, proceed with download
-} catch (error) {
-  if (error.message === 'No new version available') {
-    // Device is already on the latest version - this is normal
-    console.log('Already up to date');
-  } else {
-    // Actual error occurred
-    console.error('Failed to check for updates:', error);
-  }
 }
 ```
 
@@ -1316,8 +1312,12 @@ Listen for no need to update event, useful when you want force check every time 
 addListener(eventName: 'updateCheckResult', listenerFunc: (state: UpdateCheckResultEvent) => void) => Promise<PluginListenerHandle>
 ```
 
-Listen for update check results that do not start a bundle download.
-The backend can classify the result as `up_to_date`, `blocked`, or `failed`.
+Listen for update check results before the updater decides whether to download.
+The backend can classify the <a href="#updatecheckresultevent">UpdateCheckResultEvent</a> payload as `up_to_date`, `blocked`, or `failed`.
+
+This event is emitted alongside legacy events. For `up_to_date` and `blocked`, it is emitted before
+`noNeedUpdate` and does not emit `downloadFailed`. For `failed`, it is emitted before the legacy
+`downloadFailed` event and keeps the existing failure stats behavior.
 
 | Param              | Type                                                                                          |
 | ------------------ | --------------------------------------------------------------------------------------------- |
@@ -2127,6 +2127,7 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 | **`sessionKey`** | <code>string</code>                                               |                                                                                                                                                                                              |         |
 | **`error`**      | <code>string</code>                                               | Error code from the server, if any. Common values: - `"no_new_version_available"`: Device is already on the latest version (not a failure) - Other error codes can be classified with `kind` |         |
 | **`kind`**       | <code><a href="#updateresponsekind">UpdateResponseKind</a></code> | Backend classification for this response, when the update server provides it.                                                                                                                | 8.45.11 |
+| **`statusCode`** | <code>number</code>                                               | HTTP status code returned by the update server for classified update-check responses.                                                                                                        | 8.45.11 |
 | **`old`**        | <code>string</code>                                               | The previous/current version name (provided for reference).                                                                                                                                  |         |
 | **`url`**        | <code>string</code>                                               | Download URL for the bundle (when a new version is available).                                                                                                                               |         |
 | **`manifest`**   | <code>ManifestEntry[]</code>                                      | File list for delta updates (when using multi-file downloads).                                                                                                                               | 6.1     |

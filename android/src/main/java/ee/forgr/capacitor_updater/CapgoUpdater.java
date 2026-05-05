@@ -1247,13 +1247,15 @@ public class CapgoUpdater {
                                 }
                             }
 
-                            if (jsonResponse != null && jsonResponse.has("error")) {
+                            if (jsonResponse != null && (jsonResponse.has("error") || jsonResponse.has("kind"))) {
                                 if (statusCode == 429) {
                                     checkAndHandleRateLimitResponse(response);
                                 }
                                 Map<String, Object> retError = new HashMap<>();
-                                retError.put("error", jsonResponse.getString("error"));
-                                if (jsonResponse.has("kind")) {
+                                if (jsonResponse.has("error") && !jsonResponse.isNull("error")) {
+                                    retError.put("error", jsonResponse.getString("error"));
+                                }
+                                if (jsonResponse.has("kind") && !jsonResponse.isNull("kind")) {
                                     retError.put("kind", jsonResponse.getString("kind"));
                                 }
                                 if (jsonResponse.has("message")) {

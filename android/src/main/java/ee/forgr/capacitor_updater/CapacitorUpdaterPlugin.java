@@ -1706,11 +1706,23 @@ public class CapacitorUpdaterPlugin extends Plugin {
         startNewThread(() ->
             CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.updateUrl, channel, (res) -> {
                 JSObject jsRes = InternalUtils.mapToJSObject(res);
-                if (jsRes.has("error")) {
-                    String error = jsRes.getString("error");
+                if (jsRes.has("error") || jsRes.has("kind")) {
+                    String error = jsRes.has("error") ? jsRes.getString("error") : "";
                     String errorMessage = jsRes.has("message") ? jsRes.getString("message") : "server did not provide a message";
-                    logger.error("getLatest failed with error: " + error + ", message: " + errorMessage);
-                    call.reject(jsRes.getString("error"));
+                    String kind = CapacitorUpdaterPlugin.this.getUpdateResponseKind(
+                        error,
+                        jsRes.has("kind") ? jsRes.getString("kind") : null
+                    );
+                    if ("failed".equals(kind)) {
+                        logger.error("getLatest failed with error: " + error + ", message: " + errorMessage);
+                        call.reject(error.isEmpty() ? errorMessage : error);
+                    } else {
+                        if (!jsRes.has("version") || jsRes.getString("version").isEmpty()) {
+                            jsRes.put("version", CapacitorUpdaterPlugin.this.implementation.getCurrentBundle().getVersionName());
+                        }
+                        logger.info("getLatest returned " + kind + ": " + errorMessage);
+                        call.resolve(jsRes);
+                    }
                     return;
                 } else if (jsRes.has("message")) {
                     call.reject(jsRes.getString("message"));
@@ -2163,8 +2175,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
 
                     // Handle network errors and other failures first
-                    if (jsRes.has("error")) {
-                        String error = jsRes.getString("error");
+                    if (jsRes.has("error") || jsRes.has("kind")) {
+                        String error = jsRes.has("error") ? jsRes.getString("error") : "";
                         String errorMessage = jsRes.has("message") ? jsRes.getString("message") : "server did not provide a message";
                         int statusCode = jsRes.has("statusCode") ? jsRes.optInt("statusCode", 0) : 0;
                         String kind = CapacitorUpdaterPlugin.this.getUpdateResponseKind(
@@ -2184,15 +2196,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
                             );
                         }
 
+                        boolean isFailure = "failed".equals(kind);
                         CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
                             errorMessage,
                             latestVersion,
                             current,
-                            false,
+                            isFailure,
                             plannedDirectUpdate,
                             "download_fail",
                             "downloadFailed",
-                            false
+                            isFailure
                         );
                         return;
                     }

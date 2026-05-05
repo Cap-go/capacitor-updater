@@ -536,8 +536,7 @@ import UIKit
                 self.logger.debug("Response: \(response.value.debugDescription), Error: \(error)")
                 latest.statusCode = response.response?.statusCode ?? 0
                 if let data = response.data,
-                   let decoded = try? JSONDecoder().decode(AppVersionDec.self, from: data),
-                   decoded.error != nil {
+                   let decoded = try? JSONDecoder().decode(AppVersionDec.self, from: data) {
                     applyLatestResponse(decoded)
                 } else {
                     latest.message = "Error getting Latest"

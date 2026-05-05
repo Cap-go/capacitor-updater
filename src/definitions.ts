@@ -752,27 +752,23 @@ export interface CapacitorUpdaterPlugin {
    * 2. Download it using {@link download}
    * 3. Apply it using {@link next} or {@link set}
    *
-   * **Important: Error handling for "no new version available"**
+   * **Important: Handling "no new version available"**
    *
    * When the device's current version matches the latest version on the server (i.e., the device is already
    * up-to-date), the server returns a 200 response with `error: "no_new_version_available"` and
-   * `message: "No new version available"`. **This causes `getLatest()` to throw an error**, even though
-   * this is a normal, expected condition.
+   * `message: "No new version available"`. This is a normal, expected condition and resolves with
+   * `kind: "up_to_date"` when the native updater can classify it.
    *
-   * You should catch this specific error to handle it gracefully:
+   * You should check `kind` and `error` before attempting to download:
    *
    * ```typescript
-   * try {
-   *   const latest = await CapacitorUpdater.getLatest();
+   * const latest = await CapacitorUpdater.getLatest();
+   * if (latest.kind === 'up_to_date') {
+   *   console.log('Already up to date');
+   * } else if (latest.kind === 'blocked') {
+   *   console.log('Update is blocked:', latest.error);
+   * } else if (latest.url) {
    *   // New version is available, proceed with download
-   * } catch (error) {
-   *   if (error.message === 'No new version available') {
-   *     // Device is already on the latest version - this is normal
-   *     console.log('Already up to date');
-   *   } else {
-   *     // Actual error occurred
-   *     console.error('Failed to check for updates:', error);
-   *   }
    * }
    * ```
    *
@@ -782,7 +778,7 @@ export interface CapacitorUpdaterPlugin {
    *
    * @param options Optional {@link GetLatestOptions} to specify which channel to check.
    * @returns {Promise<LatestVersion>} Information about the latest available bundle version.
-   * @throws {Error} Always throws when no new version is available (`error: "no_new_version_available"`), or when the request fails.
+   * @throws {Error} Throws for failed update checks or transport/request failures.
    * @since 4.0.0
    */
   getLatest(options?: GetLatestOptions): Promise<LatestVersion>;
@@ -1041,8 +1037,12 @@ export interface CapacitorUpdaterPlugin {
   addListener(eventName: 'noNeedUpdate', listenerFunc: (state: NoNeedEvent) => void): Promise<PluginListenerHandle>;
 
   /**
-   * Listen for update check results that do not start a bundle download.
-   * The backend can classify the result as `up_to_date`, `blocked`, or `failed`.
+   * Listen for update check results before the updater decides whether to download.
+   * The backend can classify the UpdateCheckResultEvent payload as `up_to_date`, `blocked`, or `failed`.
+   *
+   * This event is emitted alongside legacy events. For `up_to_date` and `blocked`, it is emitted before
+   * `noNeedUpdate` and does not emit `downloadFailed`. For `failed`, it is emitted before the legacy
+   * `downloadFailed` event and keeps the existing failure stats behavior.
    *
    * @since 8.45.11
    */
@@ -1778,6 +1778,12 @@ export interface LatestVersion {
    * @since 8.45.11
    */
   kind?: UpdateResponseKind;
+  /**
+   * HTTP status code returned by the update server for classified update-check responses.
+   *
+   * @since 8.45.11
+   */
+  statusCode?: number;
   /**
    * The previous/current version name (provided for reference).
    */
