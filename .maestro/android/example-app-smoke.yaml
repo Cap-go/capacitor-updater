@@ -1,9 +1,10 @@
 appId: app.capgo.updater
 ---
+- launchApp
 - extendedWaitUntil:
-    visible: '@capgo/capacitor-updater'
+    visible: 'CAPGO OTA VALIDATION'
     timeout: 180000
-- assertVisible: '@capgo/capacitor-updater'
+- assertVisible: 'CAPGO OTA VALIDATION'
 - extendedWaitUntil:
     visible: 'Result marker: smoke-sequence:success'
     timeout: 300000

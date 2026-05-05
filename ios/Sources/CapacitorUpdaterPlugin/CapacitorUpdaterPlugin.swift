@@ -279,11 +279,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         self.implementation.autoReset()
 
-        // Check if app was recently installed/updated BEFORE cleanupObsoleteVersions updates LatestVersionNative
+        // Check if app was recently installed/updated BEFORE cleanup updates the stored native build version.
         self.wasRecentlyInstalledOrUpdated = self.checkIfRecentlyInstalledOrUpdated()
 
         if resetWhenUpdate {
-            self.cleanupObsoleteVersions()
+            let didResetCurrentBundle = self.resetCurrentBundleForNativeBuildChangeIfNeeded()
+            self.cleanupObsoleteVersions(didResetCurrentBundle: didResetCurrentBundle)
         }
 
         // Load the server
@@ -399,7 +400,29 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         semaphoreReady.signal()
     }
 
-    private func cleanupObsoleteVersions() {
+    func storedNativeBuildVersion() -> String {
+        UserDefaults.standard.string(forKey: "LatestNativeBuildVersion") ?? UserDefaults.standard.string(forKey: "LatestVersionNative") ?? "0"
+    }
+
+    func hasNativeBuildVersionChanged() -> Bool {
+        let previous = self.storedNativeBuildVersion()
+        return previous != "0" && self.currentBuildVersion != previous
+    }
+
+    @discardableResult
+    func resetCurrentBundleForNativeBuildChangeIfNeeded() -> Bool {
+        let previous = self.storedNativeBuildVersion()
+        guard previous != "0" && self.currentBuildVersion != previous else {
+            return false
+        }
+
+        // Reset startup state synchronously so initialLoad() boots from the builtin bundle.
+        self.logger.info("Native build version changed from \(previous) to \(self.currentBuildVersion). Resetting startup bundle to builtin.")
+        self.implementation.reset(isInternal: true)
+        return true
+    }
+
+    private func cleanupObsoleteVersions(didResetCurrentBundle: Bool = false) {
         cleanupThread = Thread {
             self.cleanupLock.lock()
             defer {
@@ -434,9 +457,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             // 1. Write "LatestVersionNative" - this fixes the part 1 of this bug
             // 2. Compare both keys. If any is not equal to "currentBuildVersion", then revert to builtin version. This fixes the part 2 of this bug
 
-            let previous = UserDefaults.standard.string(forKey: "LatestNativeBuildVersion") ?? UserDefaults.standard.string(forKey: "LatestVersionNative") ?? "0"
+            let previous = self.storedNativeBuildVersion()
             if previous != "0" && self.currentBuildVersion != previous {
-                _ = self._reset(toLastSuccessful: false, usePendingBundle: false)
+                if !didResetCurrentBundle {
+                    self.logger.info("Native build version changed from \(previous) to \(self.currentBuildVersion). Resetting current bundle to builtin.")
+                    self.implementation.reset(isInternal: true)
+                }
                 let res = self.implementation.list()
                 for version in res {
                     // Check if thread was cancelled
@@ -1599,6 +1625,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     func setUpdateUrlForTesting(_ updateUrl: String) {
         self.updateUrl = updateUrl
+    }
+
+    func setCurrentBuildVersionForTesting(_ currentBuildVersion: String) {
+        self.currentBuildVersion = currentBuildVersion
     }
 
     func shouldUseDirectUpdateForTesting() -> Bool {
