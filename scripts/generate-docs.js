@@ -107,12 +107,36 @@ function escapeMd(s = '') {
 }
 
 function slugForHeading(s = '') {
-  return String(s)
-    .trim()
-    .toLowerCase()
-    .replace(/<[^>]*>/g, '')
-    .replace(/[^\w\s-]/g, '')
-    .replace(/\s+/g, '-');
+  let slug = '';
+  let inTag = false;
+  let needsDash = false;
+
+  for (const char of String(s).trim().toLowerCase()) {
+    if (char === '<') {
+      inTag = true;
+      continue;
+    }
+    if (char === '>') {
+      inTag = false;
+      continue;
+    }
+    if (inTag) continue;
+
+    const isAsciiLetter = char >= 'a' && char <= 'z';
+    const isDigit = char >= '0' && char <= '9';
+    const isWordChar = isAsciiLetter || isDigit || char === '_' || char === '-';
+    const isWhitespace = char === ' ' || char === '\n' || char === '\t' || char === '\r';
+
+    if (isWordChar) {
+      if (needsDash && slug && !slug.endsWith('-')) slug += '-';
+      slug += char;
+      needsDash = false;
+    } else if (isWhitespace) {
+      needsDash = true;
+    }
+  }
+
+  return slug.endsWith('-') ? slug.slice(0, -1) : slug;
 }
 
 function renderConfig(pluginConfigs) {
