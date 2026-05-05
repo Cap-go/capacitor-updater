@@ -216,7 +216,7 @@ jobs:
         id: verify_code
         run: bun run verify:web
   maestro_android_scenarios:
-    timeout-minutes: 45
+    timeout-minutes: 60
     runs-on: ubuntu-latest
     name: maestro_android / ${{ matrix.scenario }}
     strategy:

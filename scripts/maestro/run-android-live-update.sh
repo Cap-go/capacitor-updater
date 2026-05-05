@@ -13,6 +13,7 @@ APP_READY_TITLE="@capgo/capacitor-updater"
 APP_READY_ACTION="Run notifyAppReady"
 APK_PATH="$ROOT_DIR/example-app/android/app/build/outputs/apk/debug/app-debug.apk"
 SCENARIO_SELECTION="${1:-all}"
+ACTIVE_SCENARIO_ID=""
 SERVER_PID=""
 FLOW_RETRY_PATTERN="TcpForwarder.waitFor|allocateForwarder|TimeoutException|Android driver did not start up in time|UNAVAILABLE: io exception|UNAVAILABLE: Network closed|DEADLINE_EXCEEDED|waiting_for_connection|device offline|device .* not found|host:transport:emulator|Connection refused|Broken pipe|Failure calling service package|Can.t find service: package|Can.t find service: settings|Cannot access system provider: 'settings'|No service published for: input|UiAutomation not connected|INTERNAL: UiAutomation|No visible element found: id: quick-action|Could not find a visible element matching selector: id: quick-action"
 MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
@@ -207,7 +208,24 @@ wait_for_example_app_ui() {
   local deadline=0
 
   while (( attempt <= APP_LAUNCH_RETRIES )); do
-    launch_android_app
+    hierarchy="$(dump_ui_hierarchy)"
+    if [[ "$hierarchy" == *"$APP_READY_TITLE"* || "$hierarchy" == *"$APP_READY_ACTION"* ]]; then
+      return 0
+    fi
+
+    if ! launch_android_app; then
+      hierarchy="$(dump_ui_hierarchy)"
+      if [[ "$hierarchy" == *"$APP_READY_TITLE"* || "$hierarchy" == *"$APP_READY_ACTION"* ]]; then
+        return 0
+      fi
+
+      echo "Android app launch attempt ${attempt} failed before the UI became visible." >&2
+      wait_for_package_manager || true
+      sleep 2
+      ((attempt += 1))
+      continue
+    fi
+
     deadline=$((SECONDS + APP_UI_TIMEOUT_SECONDS))
 
     while (( SECONDS < deadline )); do
@@ -403,6 +421,26 @@ console.log([scenario.builtinLabel, versionMatch[1], ...scenario.releases.map((r
   return 0
 }
 
+recover_scenario_for_flow_retry() {
+  local flow_file="$1"
+
+  case "${ACTIVE_SCENARIO_ID}:${flow_file}" in
+    manual-zip:manual-zip-flow.yaml|manual-zip-config-guards:manual-zip-config-guards-flow.yaml|manual-manifest:manual-manifest-flow.yaml)
+      echo "Resetting ${ACTIVE_SCENARIO_ID} before retrying ${flow_file} after driver failure." >&2
+      control_server reset "$ACTIVE_SCENARIO_ID"
+      prepare_scenario "$ACTIVE_SCENARIO_ID"
+      wait_for_example_app_ui
+      ;;
+    *)
+      restart_adb_server
+      prepare_device_for_maestro
+      reset_adb_forwarding
+      ;;
+  esac
+
+  return 0
+}
+
 run_scenario() {
   local scenario_id="$1"
   local builtin_label=""
@@ -410,6 +448,7 @@ run_scenario() {
   local first_release=""
   local second_release=""
 
+  ACTIVE_SCENARIO_ID="$scenario_id"
   IFS=$'\t' read -r builtin_label builtin_version first_release second_release _ <<<"$(load_scenario_config "$scenario_id")"
   echo "=== Running Maestro scenario: $scenario_id ==="
 
@@ -824,9 +863,7 @@ run_flow() {
       echo "Retrying $flow_file after Maestro flow timeout (${MAESTRO_FLOW_TIMEOUT_SECONDS}s)..." >&2
       rm -f "$output_file"
       attempt=$((attempt + 1))
-      restart_adb_server
-      prepare_device_for_maestro
-      reset_adb_forwarding
+      recover_scenario_for_flow_retry "$flow_file"
       sleep 5
       continue
     fi
@@ -835,9 +872,7 @@ run_flow() {
       echo "Retrying $flow_file after Maestro ADB forwarding timeout..." >&2
       rm -f "$output_file"
       attempt=$((attempt + 1))
-      restart_adb_server
-      prepare_device_for_maestro
-      reset_adb_forwarding
+      recover_scenario_for_flow_retry "$flow_file"
       sleep 5
       continue
     fi
