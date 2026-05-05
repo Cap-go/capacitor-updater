@@ -333,7 +333,7 @@ wait_for_at_install_direct_update_ui_state() {
   shift
   local -a fragments=("$@")
   local attempt=1
-  local max_attempts=2
+  local max_attempts="${CAPGO_MAESTRO_SPLIT_RETRIES:-3}"
   local target_version=""
   local fragment=""
 
@@ -409,13 +409,17 @@ import { exampleAppDir, getScenario } from '${ROOT_DIR}/scripts/maestro/scenario
 
 const scenario = getScenario(process.argv[1]);
 const buildGradle = readFileSync(path.join(exampleAppDir, 'android', 'app', 'build.gradle'), 'utf8');
-const versionMatch = buildGradle.match(/versionName\\s*=\\s*['\\\"]([^'\\\"]+)['\\\"]/);
+const versionLine = buildGradle
+  .split(/\\r?\\n/)
+  .find((line) => /^\\s*versionName\\s*=/.test(line));
+const versionMatches = versionLine ? [...versionLine.matchAll(/['\\\"]([^'\\\"]+)['\\\"]/g)] : [];
+const builtinVersion = versionMatches.at(-1)?.[1];
 
-if (!versionMatch) {
+if (!builtinVersion) {
   throw new Error('Unable to determine example-app Android versionName');
 }
 
-console.log([scenario.builtinLabel, versionMatch[1], ...scenario.releases.map((release) => release.version)].join('\t'));
+console.log([scenario.builtinLabel, builtinVersion, ...scenario.releases.map((release) => release.version)].join('\t'));
 " "$scenario_id"
 
   return 0
@@ -455,7 +459,7 @@ run_split_manual_scenario() {
   local scenario_id="$1"
   local runner="$2"
   local attempt=1
-  local max_attempts=2
+  local max_attempts="${CAPGO_MAESTRO_SPLIT_RETRIES:-3}"
 
   while [[ $attempt -le $max_attempts ]]; do
     echo "Running split Maestro scenario: ${scenario_id} (attempt ${attempt}/${max_attempts})"

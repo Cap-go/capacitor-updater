@@ -18,6 +18,7 @@ HOST_SERVER_URL="${CAPGO_MAESTRO_HOST_BASE_URL:-http://127.0.0.1:${HOST_SERVER_P
 DEVICE_SERVER_URL="${CAPGO_MAESTRO_DEVICE_BASE_URL:-${HOST_SERVER_URL}}"
 SIMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_IOS_BOOT_TIMEOUT_SECONDS:-300}"
 MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-600}"
+NATIVE_RESET_TIMEOUT_SECONDS="${CAPGO_MAESTRO_NATIVE_RESET_TIMEOUT_SECONDS:-600}"
 APP_ID="app.capgo.updater"
 SERVER_PID=""
 export MAESTRO_DRIVER_STARTUP_TIMEOUT="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-600000}"
@@ -337,3 +338,23 @@ while (( attempt <= MAESTRO_TEST_RETRIES )); do
 done
 
 assert_smoke_server_state
+
+if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
+  kill "$SERVER_PID" >/dev/null 2>&1 || true
+  wait "$SERVER_PID" 2>/dev/null || true
+  SERVER_PID=""
+fi
+
+if [[ "$SKIP_BUILD" != "1" ]]; then
+  if run_with_timeout "$NATIVE_RESET_TIMEOUT_SECONDS" "$ROOT_DIR/scripts/maestro/run-ios-native-update-reset.sh"; then
+    :
+  else
+    status=$?
+    if [[ $status -eq 124 ]]; then
+      echo "iOS native reset flow timed out after ${NATIVE_RESET_TIMEOUT_SECONDS} seconds." >&2
+    fi
+    exit "$status"
+  fi
+else
+  echo "Skipping iOS native reset Maestro flow because CAPGO_MAESTRO_SKIP_BUILD=1." >&2
+fi

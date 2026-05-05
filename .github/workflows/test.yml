@@ -95,7 +95,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
       - name: Install root dependencies
         run: bun i
       - name: Setup java
@@ -144,7 +144,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
       - name: Install root dependencies
         run: bun i
       - name: Install Maestro
@@ -241,7 +241,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
       - name: Install dependencies
         run: bun i
       - name: Setup java

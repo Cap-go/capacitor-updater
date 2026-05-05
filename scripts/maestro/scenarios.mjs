@@ -167,6 +167,15 @@ export const scenarios = {
     },
     releases: [{ version: 'manual-zip-config-guards-v1', label: 'manual-zip-config-guards-v1' }],
   },
+  'native-reset': {
+    id: 'native-reset',
+    mode: 'auto',
+    delivery: 'zip',
+    autoUpdate: true,
+    directUpdate: 'always',
+    builtinLabel: 'native-reset-builtin-v1',
+    releases: [{ version: 'native-reset-live', label: 'native-reset-live' }],
+  },
 };
 
 export function findScenario(id) {

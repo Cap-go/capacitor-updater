@@ -69,6 +69,7 @@ private final class ResetTrackingCapgoUpdater: CapgoUpdater {
     )
     var nextBundleValue: BundleInfo?
     var resetCalled = false
+    var resetIsInternal = false
     var prepareResetStateForTransitionCalled = false
     var prepareResetStateForTransitionCalls = 0
     var finalizeResetTransitionCalled = false
@@ -140,6 +141,7 @@ private final class ResetTrackingCapgoUpdater: CapgoUpdater {
 
     override func reset(isInternal: Bool) {
         resetCalled = true
+        resetIsInternal = isInternal
     }
 
     override func prepareResetStateForTransition() {
@@ -930,6 +932,38 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertTrue(consumedWhenDownloadStarted)
         XCTAssertTrue(plugin.hasConsumedOnLaunchDirectUpdateForTesting)
         XCTAssertFalse(plugin.shouldUseDirectUpdateForTesting())
+    }
+
+    func testHasNativeBuildVersionChangedFallsBackToLegacyStoredKey() {
+        let nativeBuildKey = "LatestNativeBuildVersion"
+        let legacyBuildKey = "LatestVersionNative"
+        UserDefaults.standard.removeObject(forKey: nativeBuildKey)
+        UserDefaults.standard.set("1", forKey: legacyBuildKey)
+        defer {
+            UserDefaults.standard.removeObject(forKey: nativeBuildKey)
+            UserDefaults.standard.removeObject(forKey: legacyBuildKey)
+        }
+
+        plugin.setCurrentBuildVersionForTesting("2")
+
+        XCTAssertTrue(plugin.hasNativeBuildVersionChanged())
+    }
+
+    func testResetCurrentBundleForNativeBuildChangeIfNeededResetsSynchronously() {
+        let nativeBuildKey = "LatestNativeBuildVersion"
+        let resetPlugin = TestableCapacitorUpdaterPlugin()
+        let resetImplementation = ResetTrackingCapgoUpdater()
+        resetPlugin.implementation = resetImplementation
+        UserDefaults.standard.set("1", forKey: nativeBuildKey)
+        defer {
+            UserDefaults.standard.removeObject(forKey: nativeBuildKey)
+        }
+
+        resetPlugin.setCurrentBuildVersionForTesting("2")
+
+        XCTAssertTrue(resetPlugin.resetCurrentBundleForNativeBuildChangeIfNeeded())
+        XCTAssertTrue(resetImplementation.resetCalled)
+        XCTAssertTrue(resetImplementation.resetIsInternal)
     }
 
     func testShowSplashscreenOptionsDisableAutoHide() {

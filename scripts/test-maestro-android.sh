@@ -33,7 +33,7 @@ POST_INSTALL_STABILIZE_SECONDS="${CAPGO_MAESTRO_POST_INSTALL_STABILIZE_SECONDS:-
 APP_READY_TITLE="@capgo/capacitor-updater"
 APP_READY_ACTION="Run notifyAppReady"
 APP_ID="app.capgo.updater"
-FLOW_RETRY_PATTERN="TcpForwarder.waitFor|allocateForwarder|TimeoutException|Android driver did not start up in time|Maestro Android driver did not start up in time|UNAVAILABLE: io exception|UNAVAILABLE: Network closed|DEADLINE_EXCEEDED|waiting_for_connection|device offline|device .* not found|host:transport:emulator|Connection refused|Broken pipe|Failure calling service package|Can.t find service: package|Can.t find service: settings|Cannot access system provider: 'settings'|No service published for: input|No visible element found: id: quick-action|Could not find a visible element matching selector: id: quick-action"
+FLOW_RETRY_PATTERN="TcpForwarder.waitFor|allocateForwarder|TimeoutException|Android driver did not start up in time|Maestro Android driver did not start up in time|UNAVAILABLE: io exception|UNAVAILABLE: Network closed|DEADLINE_EXCEEDED|waiting_for_connection|device offline|device .* not found|host:transport:emulator|Connection refused|Broken pipe|Failure calling service package|Can.t find service: package|Can.t find service: settings|Cannot access system provider: 'settings'|No service published for: input|No visible element found: id: quick-action|Could not find a visible element matching selector: id: quick-action|UiAutomation not connected|INTERNAL: UiAutomation"
 TIMEOUT_CMD="$(command -v gtimeout || command -v timeout || true)"
 SERVER_PID=""
 
@@ -502,3 +502,15 @@ else
 fi
 
 assert_smoke_server_state
+
+if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
+  kill "$SERVER_PID" >/dev/null 2>&1 || true
+  wait "$SERVER_PID" 2>/dev/null || true
+  SERVER_PID=""
+fi
+
+if [[ "$SKIP_BUILD" != "1" ]]; then
+  "$ROOT_DIR/scripts/maestro/run-android-native-update-reset.sh"
+else
+  echo "Skipping Android native reset Maestro flow because CAPGO_MAESTRO_SKIP_BUILD=1." >&2
+fi
