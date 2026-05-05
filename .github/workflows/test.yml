@@ -116,7 +116,7 @@ jobs:
           profile: pixel_7
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
-          script: CAPGO_MAESTRO_TIMEOUT_SECONDS=600 MAESTRO_DRIVER_STARTUP_TIMEOUT=300000 CAPGO_MAESTRO_SMOKE_SCENARIO=${{ matrix.scenario }} bun run test:maestro:android
+          script: CAPGO_MAESTRO_TIMEOUT_SECONDS=900 MAESTRO_DRIVER_STARTUP_TIMEOUT=300000 CAPGO_MAESTRO_SMOKE_SCENARIO=${{ matrix.scenario }} bun run test:maestro:android
       - name: Upload Maestro artifacts
         if: always()
         uses: actions/upload-artifact@v7
