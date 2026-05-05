@@ -926,7 +926,7 @@ class CapacitorUpdaterTests: XCTestCase {
                 XCTFail("getLatest should reject legacy error responses without backend kind")
             },
             error: { error in
-                XCTAssertEqual(error?.message, "No new version available")
+                XCTAssertEqual(error?.message, "no_new_version_available")
                 rejected.fulfill()
             }
         ))
