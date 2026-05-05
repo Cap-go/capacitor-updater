@@ -973,6 +973,36 @@ class CapacitorUpdaterTests: XCTestCase {
         wait(for: [rejected], timeout: 10)
     }
 
+    func testGetLatestRejectsFailedErrorWithBackendMessage() throws {
+        let latest = AppVersion()
+        latest.error = "response_error"
+        latest.message = "Server returned an invalid response"
+        latest.statusCode = 500
+
+        let failedImplementation = FreshDownloadCapgoUpdater()
+        failedImplementation.latestResponse = latest
+
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.implementation = failedImplementation
+        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
+
+        let rejected = expectation(description: "getLatest rejects failed error with message")
+        let call = try XCTUnwrap(CAPPluginCall(
+            callbackId: "get-latest-failed-error-message-test",
+            options: [:],
+            success: { _, _ in
+                XCTFail("getLatest should reject failed error responses")
+            },
+            error: { error in
+                XCTAssertEqual(error?.message, "Server returned an invalid response")
+                rejected.fulfill()
+            }
+        ))
+
+        testPlugin.getLatest(call)
+        wait(for: [rejected], timeout: 10)
+    }
+
     func testBlockedUpdateCheckDoesNotNotifyDownloadFailed() {
         let current = BundleInfo(
             id: "test-id",

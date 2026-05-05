@@ -882,7 +882,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 let responseKind = self.updateResponseKind(error: error, kind: res.kind)
                 res.kind = responseKind
                 if responseKind == "failed" {
-                    call.reject(error)
+                    let message = res.message ?? ""
+                    call.reject(message.isEmpty ? error : message)
                 } else {
                     if res.version.isEmpty {
                         res.version = self.implementation.getCurrentBundle().getVersionName()
