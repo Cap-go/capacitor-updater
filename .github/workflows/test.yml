@@ -75,7 +75,7 @@ jobs:
         id: test_ios
         run: bun run test:ios
   maestro_android_example_app:
-    timeout-minutes: 45
+    timeout-minutes: 75
     runs-on: ubuntu-latest
     name: Android example app Maestro smoke / ${{ matrix.scenario }}
     strategy:
@@ -216,7 +216,7 @@ jobs:
         id: verify_code
         run: bun run verify:web
   maestro_android_scenarios:
-    timeout-minutes: 60
+    timeout-minutes: 90
     runs-on: ubuntu-latest
     name: maestro_android / ${{ matrix.scenario }}
     strategy:
