@@ -1713,6 +1713,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         error,
                         jsRes.has("kind") ? jsRes.getString("kind") : null
                     );
+                    jsRes.put("kind", kind);
                     if ("failed".equals(kind)) {
                         logger.error("getLatest failed with error: " + error + ", message: " + errorMessage);
                         call.reject(error.isEmpty() ? errorMessage : error);

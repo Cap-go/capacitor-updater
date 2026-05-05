@@ -880,6 +880,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             let res = self.implementation.getLatest(url: URL(string: self.updateUrl)!, channel: channel)
             if let error = res.error, !error.isEmpty {
                 let responseKind = self.updateResponseKind(error: error, kind: res.kind)
+                res.kind = responseKind
                 if responseKind == "failed" {
                     call.reject(error)
                 } else {
@@ -888,15 +889,19 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     }
                     call.resolve(res.toDict())
                 }
-            } else if let message = res.message, !message.isEmpty {
-                if let kind = res.kind, self.updateResponseKind(error: "", kind: kind) != "failed" {
+            } else if let kind = res.kind, !kind.isEmpty {
+                let responseKind = self.updateResponseKind(error: "", kind: kind)
+                res.kind = responseKind
+                if responseKind != "failed" {
                     if res.version.isEmpty {
                         res.version = self.implementation.getCurrentBundle().getVersionName()
                     }
                     call.resolve(res.toDict())
                 } else {
-                    call.reject(message)
+                    call.reject(res.message ?? "server did not provide a message")
                 }
+            } else if let message = res.message, !message.isEmpty {
+                call.reject(message)
             } else {
                 call.resolve(res.toDict())
             }

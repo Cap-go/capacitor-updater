@@ -898,6 +898,77 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertFalse(noUpdateImplementation.sentStatsActions.contains("download_fail"))
     }
 
+    func testGetLatestIncludesInferredKindForLegacyErrorResponse() throws {
+        let current = BundleInfo(
+            id: "test-id",
+            version: "1.0.0",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "abc123"
+        )
+        let latest = AppVersion()
+        latest.error = "no_new_version_available"
+        latest.message = "No new version available"
+        latest.statusCode = 200
+
+        let noUpdateImplementation = FreshDownloadCapgoUpdater()
+        noUpdateImplementation.currentBundleValue = current
+        noUpdateImplementation.latestResponse = latest
+
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.implementation = noUpdateImplementation
+        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
+
+        let resolved = expectation(description: "getLatest resolves")
+        var resolvedData: [String: Any]?
+        let call = try XCTUnwrap(CAPPluginCall(
+            callbackId: "get-latest-legacy-error-test",
+            options: [:],
+            success: { result, _ in
+                resolvedData = result?.data
+                resolved.fulfill()
+            },
+            error: { error in
+                XCTFail("getLatest should resolve, rejected with \(error?.message ?? "unknown error")")
+            }
+        ))
+
+        testPlugin.getLatest(call)
+        wait(for: [resolved], timeout: 2)
+
+        XCTAssertEqual(resolvedData?["kind"] as? String, "up_to_date")
+        XCTAssertEqual(resolvedData?["version"] as? String, "1.0.0")
+    }
+
+    func testGetLatestRejectsFailedKindWithoutErrorMessage() throws {
+        let latest = AppVersion()
+        latest.kind = "failed"
+        latest.statusCode = 500
+
+        let failedImplementation = FreshDownloadCapgoUpdater()
+        failedImplementation.latestResponse = latest
+
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.implementation = failedImplementation
+        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
+
+        let rejected = expectation(description: "getLatest rejects failed kind")
+        let call = try XCTUnwrap(CAPPluginCall(
+            callbackId: "get-latest-failed-kind-test",
+            options: [:],
+            success: { _, _ in
+                XCTFail("getLatest should reject failed kind responses")
+            },
+            error: { error in
+                XCTAssertEqual(error?.message, "server did not provide a message")
+                rejected.fulfill()
+            }
+        ))
+
+        testPlugin.getLatest(call)
+        wait(for: [rejected], timeout: 2)
+    }
+
     func testBlockedUpdateCheckDoesNotNotifyDownloadFailed() {
         let current = BundleInfo(
             id: "test-id",

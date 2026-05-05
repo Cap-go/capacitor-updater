@@ -1544,6 +1544,30 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testGetLatestIncludesInferredKindForLegacyErrorResponse() {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
+            PluginCall call = mock(PluginCall.class);
+
+            plugin.implementation = new NoNewVersionCapgoUpdater();
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            plugin.getLatest(call);
+
+            final ArgumentCaptor<JSObject> resultCaptor = ArgumentCaptor.forClass(JSObject.class);
+            verify(call).resolve(resultCaptor.capture());
+            verify(call, never()).reject(anyString());
+            assertEquals("up_to_date", resultCaptor.getValue().getString("kind"));
+            assertEquals("1.0.0", resultCaptor.getValue().getString("version"));
+        }
+    }
+
+    @Test
     public void testBlockedUpdateCheckDoesNotNotifyDownloadFailed() throws Exception {
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);
