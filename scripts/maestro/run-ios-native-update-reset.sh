@@ -7,7 +7,6 @@ ARTIFACT_DIR="$ROOT_DIR/.maestro-artifacts/ios-native-reset"
 RESULTS_DIR="$ROOT_DIR/maestro-results-ios/native-reset"
 ASSERT_FLOW="$ROOT_DIR/.maestro/assert-state.yaml"
 LAUNCH_FLOW="$ROOT_DIR/.maestro/helpers/relaunch-app.yaml"
-LIVE_ASSERT_FLOW="$ROOT_DIR/.maestro/ios/native-reset-live.yaml"
 SCENARIO_ID="native-reset"
 LIVE_BUNDLE_VERSION="native-reset-live"
 HOST_SERVER_PORT="${CAPGO_MAESTRO_PORT:-3192}"
@@ -166,11 +165,10 @@ run_live_update_flow() {
     xcrun simctl launch "$SIMULATOR_ID" "$APP_ID" >/dev/null
 
     if wait_for_bundle_download "$previous_count"; then
-      echo "iOS native reset bundle download observed; restarting app before UI assertions."
+      echo "iOS native reset bundle download observed; continuing to native upgrade assertions."
       sleep 10
       xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
-      run_maestro_flow "$LIVE_ASSERT_FLOW"
-      return $?
+      return 0
     fi
 
     echo "No iOS native reset bundle download observed within ${LIVE_UPDATE_REQUEST_TIMEOUT_SECONDS}s on attempt ${attempt}." >&2
@@ -302,7 +300,7 @@ if ! run_with_timeout "$SIMULATOR_BOOT_TIMEOUT_SECONDS" xcrun simctl bootstatus 
 fi
 
 bun "$ROOT_DIR/scripts/maestro/build-bundles.mjs" "$SCENARIO_ID"
-build_ios_app "native-reset-builtin-v1" "true" "false" "1.0.0" "1" "$DERIVED_DATA_V1"
+build_ios_app "native-reset-builtin-v1" "true" "always" "1.0.0" "1" "$DERIVED_DATA_V1"
 build_ios_app "native-reset-builtin-v2" "false" "false" "2.0.0" "2" "$DERIVED_DATA_V2"
 start_server
 control_server reset
