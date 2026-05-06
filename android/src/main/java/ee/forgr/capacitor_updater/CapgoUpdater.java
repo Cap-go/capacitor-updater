@@ -1258,12 +1258,12 @@ public class CapgoUpdater {
                                 if (jsonResponse.has("kind") && !jsonResponse.isNull("kind")) {
                                     retError.put("kind", jsonResponse.getString("kind"));
                                 }
-                                if (jsonResponse.has("message")) {
+                                if (jsonResponse.has("message") && !jsonResponse.isNull("message")) {
                                     retError.put("message", jsonResponse.getString("message"));
                                 } else {
                                     retError.put("message", "server did not provide a message");
                                 }
-                                if (jsonResponse.has("version")) {
+                                if (jsonResponse.has("version") && !jsonResponse.isNull("version")) {
                                     retError.put("version", jsonResponse.getString("version"));
                                 }
                                 retError.put("statusCode", statusCode);

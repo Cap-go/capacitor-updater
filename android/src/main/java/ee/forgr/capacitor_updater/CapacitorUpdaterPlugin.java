@@ -1691,7 +1691,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     jsRes.put("kind", kind);
                     if ("failed".equals(kind)) {
                         logger.error("getLatest failed with error: " + error + ", message: " + errorMessage);
-                        call.reject(errorMessage.isEmpty() ? error : errorMessage);
+                        call.reject(error.isEmpty() ? errorMessage : error);
                     } else {
                         if (!jsRes.has("version") || jsRes.getString("version").isEmpty()) {
                             jsRes.put("version", CapacitorUpdaterPlugin.this.implementation.getCurrentBundle().getVersionName());
