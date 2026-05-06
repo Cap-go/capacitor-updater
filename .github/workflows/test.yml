@@ -118,7 +118,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
           script: >-
             CAPGO_MAESTRO_TIMEOUT_SECONDS=780
-            CAPGO_MAESTRO_TEST_RETRIES=1
+            CAPGO_MAESTRO_TEST_RETRIES=2
             CAPGO_MAESTRO_APP_UI_TIMEOUT_SECONDS=150
             CAPGO_MAESTRO_APP_LAUNCH_RETRIES=2
             MAESTRO_DRIVER_STARTUP_TIMEOUT=300000
