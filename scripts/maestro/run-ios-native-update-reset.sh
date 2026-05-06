@@ -166,8 +166,9 @@ run_live_update_flow() {
     xcrun simctl launch "$SIMULATOR_ID" "$APP_ID" >/dev/null
 
     if wait_for_bundle_download "$previous_count"; then
-      echo "iOS native reset bundle download observed; running UI assertions."
-      sleep 5
+      echo "iOS native reset bundle download observed; restarting app before UI assertions."
+      sleep 10
+      xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
       run_maestro_flow "$LIVE_ASSERT_FLOW"
       return $?
     fi
