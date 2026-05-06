@@ -15,6 +15,7 @@ DEVICE_SERVER_URL="${CAPGO_MAESTRO_DEVICE_BASE_URL:-http://127.0.0.1:${HOST_SERV
 SIMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_IOS_BOOT_TIMEOUT_SECONDS:-180}"
 MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-600}"
 LIVE_UPDATE_MAX_ATTEMPTS="${CAPGO_MAESTRO_NATIVE_RESET_LIVE_ATTEMPTS:-3}"
+LIVE_UPDATE_REQUEST_TIMEOUT_SECONDS="${CAPGO_MAESTRO_NATIVE_RESET_REQUEST_TIMEOUT_SECONDS:-60}"
 APP_ID="app.capgo.updater"
 DERIVED_DATA_V1="$(mktemp -d "${TMPDIR:-/tmp}/capgo-ios-native-reset-v1.XXXXXX")"
 DERIVED_DATA_V2="$(mktemp -d "${TMPDIR:-/tmp}/capgo-ios-native-reset-v2.XXXXXX")"
@@ -122,23 +123,57 @@ run_maestro_flow() {
   fi
 }
 
-run_live_update_flow() {
-  local attempt
+update_request_count() {
+  python3 - "$ARTIFACT_DIR/fake-capgo-server.log" "$SCENARIO_ID" <<'PY'
+from pathlib import Path
+import sys
 
-  for attempt in $(seq 1 "$LIVE_UPDATE_MAX_ATTEMPTS"); do
-    echo "Running iOS native reset live update attempt ${attempt}/${LIVE_UPDATE_MAX_ATTEMPTS}."
-    if run_maestro_flow "$LIVE_ASSERT_FLOW"; then
+log_path = Path(sys.argv[1])
+scenario_id = sys.argv[2]
+if not log_path.exists():
+    print(0)
+    raise SystemExit(0)
+
+needle = f"[fake-capgo] scenario={scenario_id} "
+print(sum(1 for line in log_path.read_text(errors="replace").splitlines() if needle in line))
+PY
+}
+
+wait_for_update_request() {
+  local previous_count="$1"
+  local current_count
+
+  for _ in $(seq 1 "$LIVE_UPDATE_REQUEST_TIMEOUT_SECONDS"); do
+    current_count="$(update_request_count)"
+    if (( current_count > previous_count )); then
       return 0
     fi
+    sleep 1
+  done
 
-    if [[ "$attempt" == "$LIVE_UPDATE_MAX_ATTEMPTS" ]]; then
-      return 1
+  return 1
+}
+
+run_live_update_flow() {
+  local attempt
+  local previous_count
+
+  for attempt in $(seq 1 "$LIVE_UPDATE_MAX_ATTEMPTS"); do
+    previous_count="$(update_request_count)"
+    echo "Launching iOS native reset live update attempt ${attempt}/${LIVE_UPDATE_MAX_ATTEMPTS}."
+    xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
+    xcrun simctl launch "$SIMULATOR_ID" "$APP_ID" >/dev/null
+
+    if wait_for_update_request "$previous_count"; then
+      echo "iOS native reset update request observed; running UI assertions."
+      run_maestro_flow "$LIVE_ASSERT_FLOW"
+      return $?
     fi
 
-    echo "iOS native reset live update attempt ${attempt} failed; relaunching before retry." >&2
-    xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
-    sleep 2
+    echo "No iOS native reset update request observed within ${LIVE_UPDATE_REQUEST_TIMEOUT_SECONDS}s on attempt ${attempt}." >&2
   done
+
+  return 1
 }
 
 build_ios_app() {
