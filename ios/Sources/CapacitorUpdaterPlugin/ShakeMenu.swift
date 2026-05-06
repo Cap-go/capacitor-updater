@@ -311,10 +311,16 @@ extension UIWindow {
                         let latestKind = latest.kind
 
                         // Handle update errors first (before "no new version" check)
-                        if let error = latest.error, !error.isEmpty && latestKind != "up_to_date" {
+                        if latestKind == "failed" || latestKind == "blocked" || (latest.error?.isEmpty == false && latestKind != "up_to_date") {
+                            let detail = [latest.message, latest.error, latestKind]
+                                .compactMap { value in
+                                    guard let value, !value.isEmpty else { return nil }
+                                    return value
+                                }
+                                .first ?? "server did not provide a message"
                             DispatchQueue.main.async {
                                 progressAlert.dismiss(animated: true) {
-                                    self.showError(message: "Channel set to \(name). Update check failed: \(error)", plugin: plugin)
+                                    self.showError(message: "Channel set to \(name). Update check failed: \(detail)", plugin: plugin)
                                 }
                             }
                             return

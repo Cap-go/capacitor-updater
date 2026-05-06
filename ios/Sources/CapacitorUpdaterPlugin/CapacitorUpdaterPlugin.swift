@@ -1683,7 +1683,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     ) {
         let statusCode = res.statusCode
         let responseKind = self.updateResponseKind(kind: res.kind)
-        let message = res.message ?? backendError
+        let responseMessage = res.message?.isEmpty == false ? res.message : nil
+        let message = responseMessage ?? (backendError.isEmpty ? "server did not provide a message" : backendError)
         let latestVersionName = res.version.isEmpty ? current.getVersionName() : res.version
         self.notifyListeners("updateCheckResult", data: [
             "kind": responseKind,

@@ -1516,8 +1516,8 @@ export type DelayUntilNext = 'background' | 'kill' | 'nativeVersion' | 'date';
 
 /**
  * Classification for update-check responses that do not provide a downloadable bundle.
- * The update backend can provide this field directly. When it is omitted, native/client code
- * may infer it from known backend error codes for older or self-hosted update endpoints.
+ * The update backend provides this field directly. Missing or unknown values are treated as
+ * failed by native clients.
  *
  * @since 8.45.11
  */
