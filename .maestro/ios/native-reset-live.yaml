@@ -1,0 +1,41 @@
+appId: app.capgo.updater
+---
+- launchApp
+- extendedWaitUntil:
+    visible: 'CAPGO OTA VALIDATION'
+    timeout: 180000
+- pressKey: home
+- launchApp
+- extendedWaitUntil:
+    visible: 'CAPGO OTA VALIDATION'
+    timeout: 180000
+- scrollUntilVisible:
+    element:
+      text: "${EXPECT_1}"
+    direction: DOWN
+    timeout: 180000
+- assertVisible: "${EXPECT_1}"
+- scrollUntilVisible:
+    element:
+      text: "${EXPECT_2}"
+    direction: DOWN
+    timeout: 180000
+- assertVisible: "${EXPECT_2}"
+- scrollUntilVisible:
+    element:
+      text: "${EXPECT_3}"
+    direction: DOWN
+    timeout: 180000
+- assertVisible: "${EXPECT_3}"
+- scrollUntilVisible:
+    element:
+      text: "${EXPECT_4}"
+    direction: DOWN
+    timeout: 180000
+- assertVisible: "${EXPECT_4}"
+- scrollUntilVisible:
+    element:
+      text: "${EXPECT_5}"
+    direction: DOWN
+    timeout: 180000
+- assertVisible: "${EXPECT_5}"

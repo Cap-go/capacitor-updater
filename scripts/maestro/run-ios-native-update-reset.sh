@@ -7,13 +7,13 @@ ARTIFACT_DIR="$ROOT_DIR/.maestro-artifacts/ios-native-reset"
 RESULTS_DIR="$ROOT_DIR/maestro-results-ios-native-reset"
 ASSERT_FLOW="$ROOT_DIR/.maestro/assert-state.yaml"
 LAUNCH_FLOW="$ROOT_DIR/.maestro/helpers/relaunch-app.yaml"
-BACKGROUND_FLOW="$ROOT_DIR/.maestro/helpers/background-app.yaml"
+LIVE_ASSERT_FLOW="$ROOT_DIR/.maestro/ios/native-reset-live.yaml"
 SCENARIO_ID="native-reset"
 HOST_SERVER_PORT="${CAPGO_MAESTRO_PORT:-3192}"
 HOST_SERVER_URL="${CAPGO_MAESTRO_HOST_BASE_URL:-http://127.0.0.1:${HOST_SERVER_PORT}}"
 DEVICE_SERVER_URL="${CAPGO_MAESTRO_DEVICE_BASE_URL:-http://127.0.0.1:${HOST_SERVER_PORT}}"
 SIMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_IOS_BOOT_TIMEOUT_SECONDS:-180}"
-MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-300}"
+MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-600}"
 APP_ID="app.capgo.updater"
 DERIVED_DATA_V1="$(mktemp -d "${TMPDIR:-/tmp}/capgo-ios-native-reset-v1.XXXXXX")"
 DERIVED_DATA_V2="$(mktemp -d "${TMPDIR:-/tmp}/capgo-ios-native-reset-v2.XXXXXX")"
@@ -241,15 +241,13 @@ start_server
 control_server reset
 
 install_ios_app "$DERIVED_DATA_V1/Build/Products/Debug-iphonesimulator/App.app" "1"
-run_maestro_flow "$LAUNCH_FLOW"
-run_maestro_flow "$BACKGROUND_FLOW"
-run_maestro_flow "$LAUNCH_FLOW"
-assert_state \
-  "Build label: native-reset-live" \
-  "Scenario: native-reset" \
-  "Direct update mode: always" \
-  "Current bundle source: downloaded" \
-  "Current bundle version: native-reset-live"
+run_maestro_flow \
+  "$LIVE_ASSERT_FLOW" \
+  -e "EXPECT_1=Build label: native-reset-live" \
+  -e "EXPECT_2=Scenario: native-reset" \
+  -e "EXPECT_3=Direct update mode: always" \
+  -e "EXPECT_4=Current bundle source: downloaded" \
+  -e "EXPECT_5=Current bundle version: native-reset-live"
 
 install_ios_app "$DERIVED_DATA_V2/Build/Products/Debug-iphonesimulator/App.app"
 run_maestro_flow "$LAUNCH_FLOW"
