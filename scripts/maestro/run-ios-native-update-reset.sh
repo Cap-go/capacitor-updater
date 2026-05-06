@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 EXAMPLE_DIR="$ROOT_DIR/example-app"
 ARTIFACT_DIR="$ROOT_DIR/.maestro-artifacts/ios-native-reset"
-RESULTS_DIR="$ROOT_DIR/maestro-results-ios-native-reset"
+RESULTS_DIR="$ROOT_DIR/maestro-results-ios/native-reset"
 ASSERT_FLOW="$ROOT_DIR/.maestro/assert-state.yaml"
 LAUNCH_FLOW="$ROOT_DIR/.maestro/helpers/relaunch-app.yaml"
 LIVE_ASSERT_FLOW="$ROOT_DIR/.maestro/ios/native-reset-live.yaml"
@@ -14,6 +14,7 @@ HOST_SERVER_URL="${CAPGO_MAESTRO_HOST_BASE_URL:-http://127.0.0.1:${HOST_SERVER_P
 DEVICE_SERVER_URL="${CAPGO_MAESTRO_DEVICE_BASE_URL:-http://127.0.0.1:${HOST_SERVER_PORT}}"
 SIMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_IOS_BOOT_TIMEOUT_SECONDS:-180}"
 MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-600}"
+LIVE_UPDATE_MAX_ATTEMPTS="${CAPGO_MAESTRO_NATIVE_RESET_LIVE_ATTEMPTS:-3}"
 APP_ID="app.capgo.updater"
 DERIVED_DATA_V1="$(mktemp -d "${TMPDIR:-/tmp}/capgo-ios-native-reset-v1.XXXXXX")"
 DERIVED_DATA_V2="$(mktemp -d "${TMPDIR:-/tmp}/capgo-ios-native-reset-v2.XXXXXX")"
@@ -27,6 +28,8 @@ cleanup() {
   local status=$?
 
   if [[ -f "$ARTIFACT_DIR/fake-capgo-server.log" ]]; then
+    mkdir -p "$RESULTS_DIR"
+    cp "$ARTIFACT_DIR/fake-capgo-server.log" "$RESULTS_DIR/fake-capgo-server.log" 2>/dev/null || true
     echo "iOS native reset fake Capgo server log:"
     cat "$ARTIFACT_DIR/fake-capgo-server.log"
   fi
@@ -117,6 +120,25 @@ run_maestro_flow() {
     fi
     return "$status"
   fi
+}
+
+run_live_update_flow() {
+  local attempt
+
+  for attempt in $(seq 1 "$LIVE_UPDATE_MAX_ATTEMPTS"); do
+    echo "Running iOS native reset live update attempt ${attempt}/${LIVE_UPDATE_MAX_ATTEMPTS}."
+    if run_maestro_flow "$LIVE_ASSERT_FLOW"; then
+      return 0
+    fi
+
+    if [[ "$attempt" == "$LIVE_UPDATE_MAX_ATTEMPTS" ]]; then
+      return 1
+    fi
+
+    echo "iOS native reset live update attempt ${attempt} failed; relaunching before retry." >&2
+    xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
+    sleep 2
+  done
 }
 
 build_ios_app() {
@@ -248,7 +270,7 @@ start_server
 control_server reset
 
 install_ios_app "$DERIVED_DATA_V1/Build/Products/Debug-iphonesimulator/App.app" "1"
-run_maestro_flow "$LIVE_ASSERT_FLOW"
+run_live_update_flow
 
 install_ios_app "$DERIVED_DATA_V2/Build/Products/Debug-iphonesimulator/App.app"
 run_maestro_flow "$LAUNCH_FLOW"
