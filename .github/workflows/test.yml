@@ -203,7 +203,7 @@ jobs:
         run: ./scripts/ci/install-maestro.sh
       - name: Run live update Maestro flows
         run: >-
-          CAPGO_MAESTRO_RESULTS_DIR=maestro-results-ios-live-update-${{ matrix.scenario }}
+          CAPGO_MAESTRO_RESULTS_DIR=maestro-results-ios-live-update/${{ matrix.scenario }}
           CAPGO_MAESTRO_TIMEOUT_SECONDS=480
           CAPGO_MAESTRO_TEST_RETRIES=2
           ./scripts/maestro/run-ios-live-update.sh "${{ matrix.scenario }}"
@@ -212,7 +212,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: maestro-results-ios-live-update-${{ matrix.scenario }}
-          path: maestro-results-ios-live-update-${{ matrix.scenario }}
+          path: maestro-results-ios-live-update/${{ matrix.scenario }}
   web:
     timeout-minutes: 30
     runs-on: ubuntu-latest
