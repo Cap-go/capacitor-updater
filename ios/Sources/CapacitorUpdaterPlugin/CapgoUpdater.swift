@@ -723,6 +723,48 @@ import UIKit
 
     public func getLatest(url: URL, channel: String?) -> AppVersion {
         let latest: AppVersion = AppVersion()
+        func applyLatestResponse(_ value: AppVersionDec?) {
+            if let url = value?.url {
+                latest.url = url
+            }
+            if let checksum = value?.checksum {
+                latest.checksum = checksum
+            }
+            if let version = value?.version {
+                latest.version = version
+            }
+            if let major = value?.major {
+                latest.major = major
+            }
+            if let breaking = value?.breaking {
+                latest.breaking = breaking
+            }
+            if let error = value?.error {
+                latest.error = error
+            }
+            if let kind = value?.kind {
+                latest.kind = kind
+            }
+            if let message = value?.message {
+                latest.message = message
+            }
+            if let sessionKey = value?.session_key {
+                latest.sessionKey = sessionKey
+            }
+            if let data = value?.data {
+                latest.data = data
+            }
+            if let manifest = value?.manifest {
+                latest.manifest = manifest
+            }
+            if let link = value?.link {
+                latest.link = link
+            }
+            if let comment = value?.comment {
+                latest.comment = comment
+            }
+        }
+
         var parameters: InfoObject = self.createInfoObject()
         if let channel = channel {
             parameters.defaultChannel = channel
@@ -730,6 +772,7 @@ import UIKit
         guard let request = createRequest(url: url, method: "POST", parameters: parameters.toParameters()) else {
             latest.message = "Error getting Latest"
             latest.error = "request_error"
+            latest.kind = "failed"
             return latest
         }
 
@@ -739,6 +782,7 @@ import UIKit
         if result.timedOut {
             latest.message = "Error getting Latest"
             latest.error = "timeout_error"
+            latest.kind = "failed"
             return latest
         }
 
@@ -747,6 +791,7 @@ import UIKit
             self.logger.debug("Error: \(error.localizedDescription)")
             latest.message = "Error getting Latest"
             latest.error = "response_error"
+            latest.kind = "failed"
             return latest
         }
 
@@ -754,12 +799,14 @@ import UIKit
             self.logger.error("Missing latest version response data")
             latest.message = "Error getting Latest"
             latest.error = "response_error"
+            latest.kind = "failed"
             return latest
         }
 
         if self.checkAndHandleRateLimitResponse(statusCode: latest.statusCode) {
             latest.message = "Rate limit exceeded"
             latest.error = "rate_limit_exceeded"
+            latest.kind = "failed"
             return latest
         }
 
@@ -767,51 +814,25 @@ import UIKit
             self.logger.error("Error decoding latest version")
             latest.message = "Error getting Latest"
             latest.error = "decode_error"
+            latest.kind = "failed"
             return latest
         }
+
+        applyLatestResponse(responseValue)
 
         if latest.statusCode < 200 || latest.statusCode >= 300 {
-            latest.message = responseValue.message ?? "Server error: \(latest.statusCode)"
-            latest.error = responseValue.error ?? "response_error"
+            if latest.message == nil || latest.message?.isEmpty == true {
+                latest.message = responseValue.message ?? "Server error: \(latest.statusCode)"
+            }
+            if latest.error == nil || latest.error?.isEmpty == true {
+                latest.error = responseValue.error ?? "response_error"
+            }
+            if latest.kind == nil || latest.kind?.isEmpty == true {
+                latest.kind = responseValue.kind ?? "failed"
+            }
             return latest
         }
 
-        if let url = responseValue.url {
-            latest.url = url
-        }
-        if let checksum = responseValue.checksum {
-            latest.checksum = checksum
-        }
-        if let version = responseValue.version {
-            latest.version = version
-        }
-        if let major = responseValue.major {
-            latest.major = major
-        }
-        if let breaking = responseValue.breaking {
-            latest.breaking = breaking
-        }
-        if let error = responseValue.error {
-            latest.error = error
-        }
-        if let message = responseValue.message {
-            latest.message = message
-        }
-        if let sessionKey = responseValue.session_key {
-            latest.sessionKey = sessionKey
-        }
-        if let data = responseValue.data {
-            latest.data = data
-        }
-        if let manifest = responseValue.manifest {
-            latest.manifest = manifest
-        }
-        if let link = responseValue.link {
-            latest.link = link
-        }
-        if let comment = responseValue.comment {
-            latest.comment = comment
-        }
         return latest
     }
 

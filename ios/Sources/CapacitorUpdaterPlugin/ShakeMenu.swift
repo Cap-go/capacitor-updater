@@ -308,19 +308,36 @@ extension UIWindow {
                         }
 
                         let latest = updater.getLatest(url: updateUrl, channel: name)
+                        let latestKind = latest.kind
+
+                        let detail = [latest.message, latest.error, latestKind]
+                            .compactMap { value in
+                                guard let value, !value.isEmpty else { return nil }
+                                return value
+                            }
+                            .first ?? "server did not provide a message"
 
                         // Handle update errors first (before "no new version" check)
-                        if let error = latest.error, !error.isEmpty && error != "no_new_version_available" {
+                        if latestKind == "failed" || (latest.error?.isEmpty == false && latestKind != "up_to_date" && latestKind != "blocked") {
                             DispatchQueue.main.async {
                                 progressAlert.dismiss(animated: true) {
-                                    self.showError(message: "Channel set to \(name). Update check failed: \(error)", plugin: plugin)
+                                    self.showError(message: "Channel set to \(name). Update check failed: \(detail)", plugin: plugin)
+                                }
+                            }
+                            return
+                        }
+
+                        if latestKind == "blocked" {
+                            DispatchQueue.main.async {
+                                progressAlert.dismiss(animated: true) {
+                                    self.showError(message: "Channel set to \(name). Update check blocked: \(detail)", plugin: plugin)
                                 }
                             }
                             return
                         }
 
                         // Check if there's an actual update available
-                        if latest.error == "no_new_version_available" || latest.url.isEmpty {
+                        if latestKind == "up_to_date" || latest.url.isEmpty {
                             DispatchQueue.main.async {
                                 progressAlert.dismiss(animated: true) {
                                     self.showSuccess(message: "Channel set to \(name). Already on latest version.", plugin: plugin)

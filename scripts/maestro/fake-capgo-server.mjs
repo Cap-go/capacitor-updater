@@ -356,6 +356,8 @@ function handleBundle(method, version) {
     return new Response('bundle not found', { status: 404, headers: baseHeaders });
   }
 
+  console.log(`[fake-capgo] bundle=${version} served`);
+
   if (method === 'HEAD') {
     return fileResponse(null, {
       headers: {

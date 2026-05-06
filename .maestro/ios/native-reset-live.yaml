@@ -1,0 +1,23 @@
+appId: app.capgo.updater
+---
+- launchApp
+- extendedWaitUntil:
+    visible: 'CAPGO OTA VALIDATION'
+    timeout: 180000
+- pressKey: home
+- launchApp
+- extendedWaitUntil:
+    visible: 'CAPGO OTA VALIDATION'
+    timeout: 180000
+- scrollUntilVisible:
+    element:
+      text: 'Current bundle source: downloaded'
+    direction: DOWN
+    timeout: 180000
+- assertVisible: 'Current bundle source: downloaded'
+- scrollUntilVisible:
+    element:
+      text: 'Current bundle version: native-reset-live'
+    direction: DOWN
+    timeout: 180000
+- assertVisible: 'Current bundle version: native-reset-live'

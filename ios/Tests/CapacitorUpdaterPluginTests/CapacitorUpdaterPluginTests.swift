@@ -4,11 +4,21 @@ import Capacitor
 import Version
 
 private class TestableCapacitorUpdaterPlugin: CapacitorUpdaterPlugin {
+    private(set) var notifiedEventNames: [String] = []
+
+    override func notifyListeners(_ eventName: String, data: [String: Any]?, retainUntilConsumed retain: Bool) {
+        notifiedEventNames.append(eventName)
+    }
+
     override func endBackGroundTask() {
         // Intentionally blank: tests avoid touching UIApplication background-task APIs.
     }
 
     override func runBackgroundDownloadWork(_ work: @escaping () -> Void) {
+        work()
+    }
+
+    override func runGetLatestWork(_ work: @escaping () -> Void) {
         work()
     }
 
@@ -21,6 +31,7 @@ private final class FreshDownloadCapgoUpdater: CapgoUpdater {
     var currentBundleValue: BundleInfo!
     var latestResponse = AppVersion()
     var onDownloadStart: (() -> Void)?
+    var sentStatsActions: [String] = []
 
     override func getLatest(url: URL, channel: String?) -> AppVersion {
         latestResponse
@@ -40,7 +51,7 @@ private final class FreshDownloadCapgoUpdater: CapgoUpdater {
     }
 
     override func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {
-        // Intentionally blank: test doubles should not emit network-backed stats.
+        sentStatsActions.append(action)
     }
 }
 
@@ -932,6 +943,185 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertTrue(consumedWhenDownloadStarted)
         XCTAssertTrue(plugin.hasConsumedOnLaunchDirectUpdateForTesting)
         XCTAssertFalse(plugin.shouldUseDirectUpdateForTesting())
+    }
+
+    func testNoNewVersionAvailableDoesNotNotifyDownloadFailed() {
+        let current = BundleInfo(
+            id: "test-id",
+            version: "1.0.0",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "abc123"
+        )
+        let latest = AppVersion()
+        latest.error = "no_new_version_available"
+        latest.kind = "up_to_date"
+        latest.message = "No new version available"
+        latest.statusCode = 200
+
+        let noUpdateImplementation = FreshDownloadCapgoUpdater()
+        noUpdateImplementation.currentBundleValue = current
+        noUpdateImplementation.latestResponse = latest
+
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.implementation = noUpdateImplementation
+        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
+
+        testPlugin.backgroundDownload()
+
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("noNeedUpdate"))
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("updateCheckResult"))
+        XCTAssertFalse(testPlugin.notifiedEventNames.contains("downloadFailed"))
+        XCTAssertFalse(noUpdateImplementation.sentStatsActions.contains("download_fail"))
+    }
+
+    func testGetLatestRejectsLegacyErrorWithoutBackendKind() throws {
+        let latest = AppVersion()
+        latest.error = "no_new_version_available"
+        latest.message = "No new version available"
+        latest.statusCode = 200
+
+        let noUpdateImplementation = FreshDownloadCapgoUpdater()
+        noUpdateImplementation.latestResponse = latest
+
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.implementation = noUpdateImplementation
+        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
+
+        let rejected = expectation(description: "getLatest rejects legacy response without kind")
+        let call = try XCTUnwrap(CAPPluginCall(
+            callbackId: "get-latest-legacy-error-test",
+            options: [:],
+            success: { _, _ in
+                XCTFail("getLatest should reject legacy error responses without backend kind")
+            },
+            error: { error in
+                XCTAssertEqual(error?.message, "no_new_version_available")
+                rejected.fulfill()
+            }
+        ))
+
+        testPlugin.getLatest(call)
+        wait(for: [rejected], timeout: 10)
+    }
+
+    func testGetLatestRejectsFailedKindWithoutErrorMessage() throws {
+        let latest = AppVersion()
+        latest.kind = "failed"
+        latest.statusCode = 500
+
+        let failedImplementation = FreshDownloadCapgoUpdater()
+        failedImplementation.latestResponse = latest
+
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.implementation = failedImplementation
+        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
+
+        let rejected = expectation(description: "getLatest rejects failed kind")
+        let call = try XCTUnwrap(CAPPluginCall(
+            callbackId: "get-latest-failed-kind-test",
+            options: [:],
+            success: { _, _ in
+                XCTFail("getLatest should reject failed kind responses")
+            },
+            error: { error in
+                XCTAssertEqual(error?.message, "server did not provide a message")
+                rejected.fulfill()
+            }
+        ))
+
+        testPlugin.getLatest(call)
+        wait(for: [rejected], timeout: 10)
+    }
+
+    func testGetLatestRejectsFailedErrorUsingBackendErrorCode() throws {
+        let latest = AppVersion()
+        latest.error = "response_error"
+        latest.message = "Server returned an invalid response"
+        latest.kind = "failed"
+        latest.statusCode = 500
+
+        let failedImplementation = FreshDownloadCapgoUpdater()
+        failedImplementation.latestResponse = latest
+
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.implementation = failedImplementation
+        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
+
+        let rejected = expectation(description: "getLatest rejects failed error")
+        let call = try XCTUnwrap(CAPPluginCall(
+            callbackId: "get-latest-failed-error-test",
+            options: [:],
+            success: { _, _ in
+                XCTFail("getLatest should reject failed error responses")
+            },
+            error: { error in
+                XCTAssertEqual(error?.message, "response_error")
+                rejected.fulfill()
+            }
+        ))
+
+        testPlugin.getLatest(call)
+        wait(for: [rejected], timeout: 10)
+    }
+
+    func testBlockedUpdateCheckDoesNotNotifyDownloadFailed() {
+        let current = BundleInfo(
+            id: "test-id",
+            version: "1.0.0",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "abc123"
+        )
+        let latest = AppVersion()
+        latest.error = "disable_auto_update_to_major"
+        latest.kind = "blocked"
+        latest.message = "Cannot upgrade major version"
+        latest.statusCode = 200
+
+        let blockedImplementation = FreshDownloadCapgoUpdater()
+        blockedImplementation.currentBundleValue = current
+        blockedImplementation.latestResponse = latest
+
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.implementation = blockedImplementation
+        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
+
+        testPlugin.backgroundDownload()
+
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("noNeedUpdate"))
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("updateCheckResult"))
+        XCTAssertFalse(testPlugin.notifiedEventNames.contains("downloadFailed"))
+        XCTAssertFalse(blockedImplementation.sentStatsActions.contains("download_fail"))
+    }
+
+    func testFailedUpdateCheckNotifiesDownloadFailed() {
+        let current = BundleInfo(
+            id: "test-id",
+            version: "1.0.0",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "abc123"
+        )
+        let latest = AppVersion()
+        latest.error = "response_error"
+        latest.kind = "failed"
+        latest.message = "Error getting Latest"
+        latest.statusCode = 500
+
+        let failedImplementation = FreshDownloadCapgoUpdater()
+        failedImplementation.currentBundleValue = current
+        failedImplementation.latestResponse = latest
+
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.implementation = failedImplementation
+        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
+
+        testPlugin.backgroundDownload()
+
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("updateCheckResult"))
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("downloadFailed"))
+        XCTAssertTrue(failedImplementation.sentStatsActions.contains("download_fail"))
     }
 
     func testHasNativeBuildVersionChangedFallsBackToLegacyStoredKey() {

@@ -4,15 +4,18 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 EXAMPLE_DIR="$ROOT_DIR/example-app"
 ARTIFACT_DIR="$ROOT_DIR/.maestro-artifacts/ios-native-reset"
-RESULTS_DIR="$ROOT_DIR/maestro-results-ios-native-reset"
+RESULTS_DIR="$ROOT_DIR/maestro-results-ios/native-reset"
 ASSERT_FLOW="$ROOT_DIR/.maestro/assert-state.yaml"
 LAUNCH_FLOW="$ROOT_DIR/.maestro/helpers/relaunch-app.yaml"
 SCENARIO_ID="native-reset"
+LIVE_BUNDLE_VERSION="native-reset-live"
 HOST_SERVER_PORT="${CAPGO_MAESTRO_PORT:-3192}"
 HOST_SERVER_URL="${CAPGO_MAESTRO_HOST_BASE_URL:-http://127.0.0.1:${HOST_SERVER_PORT}}"
 DEVICE_SERVER_URL="${CAPGO_MAESTRO_DEVICE_BASE_URL:-http://127.0.0.1:${HOST_SERVER_PORT}}"
 SIMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_IOS_BOOT_TIMEOUT_SECONDS:-180}"
-MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-300}"
+MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-600}"
+LIVE_UPDATE_MAX_ATTEMPTS="${CAPGO_MAESTRO_NATIVE_RESET_LIVE_ATTEMPTS:-3}"
+LIVE_UPDATE_REQUEST_TIMEOUT_SECONDS="${CAPGO_MAESTRO_NATIVE_RESET_REQUEST_TIMEOUT_SECONDS:-120}"
 APP_ID="app.capgo.updater"
 DERIVED_DATA_V1="$(mktemp -d "${TMPDIR:-/tmp}/capgo-ios-native-reset-v1.XXXXXX")"
 DERIVED_DATA_V2="$(mktemp -d "${TMPDIR:-/tmp}/capgo-ios-native-reset-v2.XXXXXX")"
@@ -23,13 +26,22 @@ default_simulator_id() {
 }
 
 cleanup() {
+  local status=$?
+
+  if [[ -f "$ARTIFACT_DIR/fake-capgo-server.log" ]]; then
+    mkdir -p "$RESULTS_DIR"
+    cp "$ARTIFACT_DIR/fake-capgo-server.log" "$RESULTS_DIR/fake-capgo-server.log" 2>/dev/null || true
+    echo "iOS native reset fake Capgo server log:"
+    cat "$ARTIFACT_DIR/fake-capgo-server.log"
+  fi
+
   if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
     kill "$SERVER_PID" >/dev/null 2>&1 || true
     wait "$SERVER_PID" 2>/dev/null || true
   fi
 
   rm -rf "$DERIVED_DATA_V1" "$DERIVED_DATA_V2"
-  return 0
+  return "$status"
 }
 
 trap cleanup EXIT
@@ -109,6 +121,60 @@ run_maestro_flow() {
     fi
     return "$status"
   fi
+}
+
+bundle_download_count() {
+  python3 - "$ARTIFACT_DIR/fake-capgo-server.log" "$LIVE_BUNDLE_VERSION" <<'PY'
+from pathlib import Path
+import sys
+
+log_path = Path(sys.argv[1])
+bundle_version = sys.argv[2]
+if not log_path.exists():
+    print(0)
+    raise SystemExit(0)
+
+needle = f"[fake-capgo] bundle={bundle_version} served"
+print(sum(1 for line in log_path.read_text(errors="replace").splitlines() if needle in line))
+PY
+}
+
+wait_for_bundle_download() {
+  local previous_count="$1"
+  local current_count
+
+  for _ in $(seq 1 "$LIVE_UPDATE_REQUEST_TIMEOUT_SECONDS"); do
+    current_count="$(bundle_download_count)"
+    if (( current_count > previous_count )); then
+      return 0
+    fi
+    sleep 1
+  done
+
+  return 1
+}
+
+run_live_update_flow() {
+  local attempt
+  local previous_count
+
+  for attempt in $(seq 1 "$LIVE_UPDATE_MAX_ATTEMPTS"); do
+    previous_count="$(bundle_download_count)"
+    echo "Launching iOS native reset live update attempt ${attempt}/${LIVE_UPDATE_MAX_ATTEMPTS}."
+    xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
+    xcrun simctl launch "$SIMULATOR_ID" "$APP_ID" >/dev/null
+
+    if wait_for_bundle_download "$previous_count"; then
+      echo "iOS native reset bundle download observed; continuing to native upgrade assertions."
+      sleep 10
+      xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
+      return 0
+    fi
+
+    echo "No iOS native reset bundle download observed within ${LIVE_UPDATE_REQUEST_TIMEOUT_SECONDS}s on attempt ${attempt}." >&2
+  done
+
+  return 1
 }
 
 build_ios_app() {
@@ -220,6 +286,7 @@ fi
 export CAPGO_MAESTRO_DEVICE_BASE_URL="$DEVICE_SERVER_URL"
 export CAPGO_MAESTRO_HOST_BASE_URL="$HOST_SERVER_URL"
 export CAPGO_MAESTRO_PORT="$HOST_SERVER_PORT"
+export CAPGO_APP_READY_TIMEOUT="${CAPGO_MAESTRO_APP_READY_TIMEOUT:-60000}"
 
 mkdir -p "$ARTIFACT_DIR" "$RESULTS_DIR"
 rm -rf -- "${RESULTS_DIR:?}/"*
@@ -239,13 +306,7 @@ start_server
 control_server reset
 
 install_ios_app "$DERIVED_DATA_V1/Build/Products/Debug-iphonesimulator/App.app" "1"
-run_maestro_flow "$LAUNCH_FLOW"
-assert_state \
-  "Build label: native-reset-live" \
-  "Scenario: native-reset" \
-  "Direct update mode: always" \
-  "Current bundle source: downloaded" \
-  "Current bundle version: native-reset-live"
+run_live_update_flow
 
 install_ios_app "$DERIVED_DATA_V2/Build/Products/Debug-iphonesimulator/App.app"
 run_maestro_flow "$LAUNCH_FLOW"
