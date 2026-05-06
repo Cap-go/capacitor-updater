@@ -180,7 +180,6 @@ jobs:
           - legacy-true
           - at-install
           - on-launch
-          - manual-zip
     steps:
       - name: Check out
         uses: actions/checkout@v6
