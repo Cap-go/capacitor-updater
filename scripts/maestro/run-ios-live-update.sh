@@ -261,6 +261,11 @@ console.log([scenario.builtinLabel, builtinVersion.trim(), ...scenario.releases.
 " "$scenario_id" "$builtin_version"
 }
 
+clear_swiftpm_capacitor_artifact_cache() {
+  rm -rf "$HOME/Library/Caches/org.swift.swiftpm/artifacts/https___github_com_ionic_team_capacitor_swift_pm_releases_download_8_0_0_Capacitor_xcframework_zip"
+  return 0
+}
+
 read_app_marketing_version() {
   if [[ -n "$APP_MARKETING_VERSION" ]]; then
     printf '%s\n' "$APP_MARKETING_VERSION"
@@ -434,6 +439,7 @@ build_and_install_scenario() {
   local scenario_id="$1"
 
   bun "$ROOT_DIR/scripts/maestro/prepare-ios-scenario.mjs" "$scenario_id"
+  clear_swiftpm_capacitor_artifact_cache
 
   xcodebuild \
     -project "$EXAMPLE_DIR/ios/App/App.xcodeproj" \

@@ -273,6 +273,7 @@ if [[ "$SKIP_BUILD" != "1" ]]; then
   start_fake_server
   reset_fake_server
   bun "$ROOT_DIR/scripts/maestro/prepare-ios-scenario.mjs" "$SCENARIO_ID"
+  rm -rf "$HOME/Library/Caches/org.swift.swiftpm/artifacts/https___github_com_ionic_team_capacitor_swift_pm_releases_download_8_0_0_Capacitor_xcframework_zip"
   xcodebuild \
     -project "$EXAMPLE_DIR/ios/App/App.xcodeproj" \
     -scheme App \
