@@ -464,8 +464,19 @@ run_split_manual_scenario() {
   while [[ $attempt -le $max_attempts ]]; do
     echo "Running split Maestro scenario: ${scenario_id} (attempt ${attempt}/${max_attempts})"
     control_server reset "$scenario_id"
-    prepare_scenario "$scenario_id"
-    wait_for_example_app_ui
+    if ! prepare_scenario "$scenario_id" || ! wait_for_example_app_ui; then
+      if [[ $attempt -lt $max_attempts ]]; then
+        echo "Retrying split Maestro scenario ${scenario_id} from a clean install after launch failure." >&2
+        restart_adb_server
+        prepare_device_for_maestro || true
+        reset_adb_forwarding || true
+        sleep 5
+        attempt=$((attempt + 1))
+        continue
+      fi
+
+      return 1
+    fi
 
     if "$runner"; then
       return 0
