@@ -1229,14 +1229,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.implementation.setSuccess(bundle: bundle, autoDeletePrevious: self.autoDeletePrevious)
         logger.info("Current bundle loaded successfully. [notifyAppReady was called] \(bundle.toString())")
 
-        // On iOS cold start the initial foreground autoupdate pass can happen
-        // before the bridge is fully ready. If the builtin bundle is still active
-        // once JS confirms readiness, trigger the queued download from here.
-        if bundle.isBuiltin() && self._isAutoUpdateEnabled() && !self.isDownloadStuckOrTimedOut() {
-            logger.info("notifyAppReady triggering builtin autoupdate")
-            self.backgroundDownload()
-        }
-
         call.resolve(["bundle": bundle.toJSON()])
     }
 
