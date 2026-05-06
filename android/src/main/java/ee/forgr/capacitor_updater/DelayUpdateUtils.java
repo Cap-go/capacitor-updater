@@ -2,9 +2,12 @@ package ee.forgr.capacitor_updater;
 
 import android.content.SharedPreferences;
 import io.github.g00fy2.versioncompare.Version;
+import java.text.ParsePosition;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.Locale;
+import java.util.TimeZone;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -98,25 +101,16 @@ public class DelayUpdateUtils {
                     break;
                 case DelayUntilNext.date:
                     if (!"".equals(value)) {
-                        try {
-                            final SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS");
-                            Date date = sdf.parse(value);
-                            assert date != null;
+                        Date date = parseDateCondition(value);
+                        if (date != null) {
                             if (new Date().compareTo(date) > 0) {
                                 logger.info("Date delay (value: " + value + ") condition removed due to expired date at index " + index);
                             } else {
                                 delayConditionListToKeep.add(condition);
                                 logger.info("Date delay (value: " + value + ") condition kept at index " + index);
                             }
-                        } catch (final Exception e) {
-                            logger.error(
-                                "Date delay (value: " +
-                                    value +
-                                    ") condition removed due to parsing issue at index " +
-                                    index +
-                                    " " +
-                                    e.getMessage()
-                            );
+                        } else {
+                            logger.error("Date delay (value: " + value + ") condition removed due to parsing issue at index " + index);
                         }
                     } else {
                         logger.debug("Date delay (value: " + value + ") condition removed due to empty value at index " + index);
@@ -188,6 +182,48 @@ public class DelayUpdateUtils {
             logger.error("Failed to parse delay conditions: " + e.getMessage());
         }
         return conditions;
+    }
+
+    private Date parseDateCondition(String value) {
+        String[] patterns = {
+            "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
+            "yyyy-MM-dd'T'HH:mm:ssXXX",
+            "yyyy-MM-dd'T'HH:mm:ss.SSSXX",
+            "yyyy-MM-dd'T'HH:mm:ssXX",
+            "yyyy-MM-dd'T'HH:mm:ss.SSSX",
+            "yyyy-MM-dd'T'HH:mm:ssX",
+            "yyyy-MM-dd'T'HH:mm:ss.SSS",
+            "yyyy-MM-dd'T'HH:mm:ss"
+        };
+
+        for (String pattern : patterns) {
+            Date parsed = parseDateWithPattern(value, pattern);
+            if (parsed != null) {
+                return parsed;
+            }
+        }
+
+        return null;
+    }
+
+    private Date parseDateWithPattern(String value, String pattern) {
+        try {
+            SimpleDateFormat sdf = new SimpleDateFormat(pattern, Locale.US);
+            sdf.setLenient(false);
+
+            // If no timezone is provided, keep historical behavior and interpret as local time.
+            if (!pattern.contains("X")) {
+                sdf.setTimeZone(TimeZone.getDefault());
+            }
+
+            ParsePosition position = new ParsePosition(0);
+            Date parsed = sdf.parse(value, position);
+            if (parsed != null && position.getIndex() == value.length()) {
+                return parsed;
+            }
+        } catch (Exception ignored) {}
+
+        return null;
     }
 
     private String convertDelayConditionsToJson(ArrayList<DelayCondition> conditions) {

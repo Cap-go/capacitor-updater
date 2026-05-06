@@ -18,7 +18,6 @@ import type {
   ChannelRes,
   ChannelUrl,
   CurrentBundleResult,
-  DelayCondition,
   DeviceId,
   DownloadOptions,
   GetAppUpdateInfoOptions,
@@ -179,11 +178,6 @@ export class CapacitorUpdaterWeb extends WebPlugin implements CapacitorUpdaterPl
 
   async setMultiDelay(options: MultiDelayConditions): Promise<void> {
     console.warn('Cannot setMultiDelay in web', options?.delayConditions);
-    return;
-  }
-
-  async setDelay(option: DelayCondition): Promise<void> {
-    console.warn('Cannot setDelay in web', option);
     return;
   }
 

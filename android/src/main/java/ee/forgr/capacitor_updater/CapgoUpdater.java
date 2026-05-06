@@ -345,7 +345,7 @@ public class CapgoUpdater {
         }
     }
 
-    private void observeWorkProgress(Context context, String id) {
+    private void observeWorkProgress(Context context, String id, boolean setNext) {
         if (!(context instanceof LifecycleOwner)) {
             logger.error("Context is not a LifecycleOwner, cannot observe work progress");
             return;
@@ -375,7 +375,7 @@ public class CapgoUpdater {
                             boolean isManifest = outputData.getBoolean(DownloadService.IS_MANIFEST, false);
 
                             io.execute(() -> {
-                                boolean success = finishDownload(id, dest, version, sessionKey, checksum, true, isManifest);
+                                boolean success = finishDownload(id, dest, version, sessionKey, checksum, setNext, isManifest);
                                 BundleInfo resultBundle;
                                 if (!success) {
                                     logger.error("Finish download failed");
@@ -454,13 +454,14 @@ public class CapgoUpdater {
         final String version,
         final String sessionKey,
         final String checksum,
-        final JSONArray manifest
+        final JSONArray manifest,
+        final boolean setNext
     ) {
         if (this.activity == null) {
             logger.error("Activity is null, cannot observe work progress");
             return;
         }
-        observeWorkProgress(this.activity, id);
+        observeWorkProgress(this.activity, id, setNext);
 
         DownloadWorkerManager.enqueueDownload(
             this.activity,
@@ -757,12 +758,37 @@ public class CapgoUpdater {
         this.editor.commit();
     }
 
+    static boolean shouldResetForForeignBundle(final String bundlePath, final boolean isBuiltin, final boolean hasStoredBundleInfo) {
+        return bundlePath != null && !bundlePath.trim().isEmpty() && !isBuiltin && !hasStoredBundleInfo;
+    }
+
+    private boolean hasStoredBundleInfo(final String id) {
+        return (
+            id != null &&
+            !id.isEmpty() &&
+            !BundleInfo.ID_BUILTIN.equals(id) &&
+            !BundleInfo.VERSION_UNKNOWN.equals(id) &&
+            this.prefs.contains(id + INFO_SUFFIX)
+        );
+    }
+
     public void downloadBackground(
         final String url,
         final String version,
         final String sessionKey,
         final String checksum,
         final JSONArray manifest
+    ) {
+        downloadBackground(url, version, sessionKey, checksum, manifest, true);
+    }
+
+    public void downloadBackground(
+        final String url,
+        final String version,
+        final String sessionKey,
+        final String checksum,
+        final JSONArray manifest,
+        final boolean setNext
     ) {
         final String id = this.randomString();
 
@@ -784,7 +810,7 @@ public class CapgoUpdater {
         this.notifyDownload(id, 0);
         this.notifyDownload(id, 5);
 
-        this.download(id, url, this.randomString(), version, sessionKey, checksum, manifest);
+        this.download(id, url, this.randomString(), version, sessionKey, checksum, manifest, setNext);
     }
 
     public BundleInfo download(final String url, final String version, final String sessionKey, final String checksum) throws IOException {
@@ -806,7 +832,7 @@ public class CapgoUpdater {
         downloadFutures.put(id, downloadFuture);
 
         // Start the download
-        this.download(id, url, dest, version, sessionKey, checksum, null);
+        this.download(id, url, dest, version, sessionKey, checksum, null, false);
 
         // Wait for completion without timeout
         try {
@@ -858,7 +884,7 @@ public class CapgoUpdater {
         downloadFutures.put(id, downloadFuture);
 
         // Start the download
-        this.download(id, url, dest, version, sessionKey, checksum, manifest);
+        this.download(id, url, dest, version, sessionKey, checksum, manifest, false);
 
         // Wait for completion without timeout
         try {
@@ -965,6 +991,64 @@ public class CapgoUpdater {
         return (bundle.isDirectory() && bundle.exists() && new File(bundle.getPath(), "/index.html").exists() && !bundleInfo.isDeleted());
     }
 
+    static final class ResetState {
+
+        final String currentBundlePath;
+        final String fallbackBundleId;
+        final String nextBundleId;
+
+        ResetState(final String currentBundlePath, final String fallbackBundleId, final String nextBundleId) {
+            this.currentBundlePath = currentBundlePath;
+            this.fallbackBundleId = fallbackBundleId;
+            this.nextBundleId = nextBundleId;
+        }
+    }
+
+    ResetState captureResetState() {
+        return new ResetState(
+            this.getCurrentBundlePath(),
+            this.prefs.getString(FALLBACK_VERSION, BundleInfo.ID_BUILTIN),
+            this.prefs.getString(NEXT_VERSION, null)
+        );
+    }
+
+    void restoreResetState(final ResetState state) {
+        final String currentBundlePath = state.currentBundlePath == null || state.currentBundlePath.trim().isEmpty()
+            ? "public"
+            : state.currentBundlePath;
+        final String fallbackBundleId = state.fallbackBundleId == null || state.fallbackBundleId.isEmpty()
+            ? BundleInfo.ID_BUILTIN
+            : state.fallbackBundleId;
+
+        this.editor.putString(this.CAP_SERVER_PATH, currentBundlePath);
+        this.editor.putString(FALLBACK_VERSION, fallbackBundleId);
+        if (state.nextBundleId == null || state.nextBundleId.isEmpty()) {
+            this.editor.remove(NEXT_VERSION);
+        } else {
+            this.editor.putString(NEXT_VERSION, state.nextBundleId);
+        }
+        this.editor.commit();
+    }
+
+    void prepareResetStateForTransition() {
+        this.setCurrentBundle(new File("public"));
+        this.setFallbackBundle(null);
+        this.setNextBundle(null);
+    }
+
+    void finalizeResetTransition(final String previousBundleName, final boolean internal) {
+        if (this.activity != null) {
+            DownloadWorkerManager.cancelAllDownloads(this.activity);
+        }
+        if (!internal) {
+            this.sendStats("reset", this.getCurrentBundle().getVersionName(), previousBundleName);
+        }
+    }
+
+    boolean canSet(final BundleInfo bundle) {
+        return bundle != null && (bundle.isBuiltin() || this.bundleExists(bundle.getId()));
+    }
+
     public Boolean set(final BundleInfo bundle) {
         return this.set(bundle.getId());
     }
@@ -989,10 +1073,31 @@ public class CapgoUpdater {
         return false;
     }
 
+    boolean stagePendingReload(final BundleInfo bundle) {
+        if (bundle == null || bundle.isBuiltin() || !this.bundleExists(bundle.getId())) {
+            return false;
+        }
+        this.setCurrentBundle(this.getBundleDirectory(bundle.getId()));
+        return true;
+    }
+
+    void finalizePendingReload(final BundleInfo bundle, final String previousBundleName) {
+        if (bundle == null || bundle.isBuiltin()) {
+            return;
+        }
+        this.sendStats("set", bundle.getVersionName(), previousBundleName);
+    }
+
     public void autoReset() {
         final BundleInfo currentBundle = this.getCurrentBundle();
         if (!currentBundle.isBuiltin() && !this.bundleExists(currentBundle.getId())) {
             logger.info("Folder at bundle path does not exist. Triggering reset.");
+            this.reset();
+            return;
+        }
+        String bundlePath = this.prefs.getString(this.CAP_SERVER_PATH, null);
+        if (shouldResetForForeignBundle(bundlePath, currentBundle.isBuiltin(), this.hasStoredBundleInfo(currentBundle.getId()))) {
+            logger.info("Current bundle id is not one of the bundle ids stored by this plugin. Triggering reset.");
             this.reset();
         }
     }
@@ -1026,17 +1131,9 @@ public class CapgoUpdater {
 
     public void reset(final boolean internal) {
         logger.debug("reset: " + internal);
-        var currentBundleName = this.getCurrentBundle().getVersionName();
-        this.setCurrentBundle(new File("public"));
-        this.setFallbackBundle(null);
-        this.setNextBundle(null);
-        // Cancel any ongoing downloads
-        if (this.activity != null) {
-            DownloadWorkerManager.cancelAllDownloads(this.activity);
-        }
-        if (!internal) {
-            this.sendStats("reset", this.getCurrentBundle().getVersionName(), currentBundleName);
-        }
+        final String currentBundleName = this.getCurrentBundle().getVersionName();
+        this.prepareResetStateForTransition();
+        this.finalizeResetTransition(currentBundleName, internal);
     }
 
     private JSONObject createInfoObject() throws JSONException {
@@ -1132,6 +1229,7 @@ public class CapgoUpdater {
                         Map<String, Object> retError = new HashMap<>();
                         retError.put("message", "Request failed: " + e.getMessage());
                         retError.put("error", "network_error");
+                        retError.put("kind", "failed");
                         callback.callback(retError);
                     }
 
@@ -1139,11 +1237,46 @@ public class CapgoUpdater {
                     public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
                         try (ResponseBody responseBody = response.body()) {
                             final int statusCode = response.code();
+                            final String responseData = responseBody != null ? responseBody.string() : "";
+                            JSONObject jsonResponse = null;
+                            if (!responseData.isEmpty()) {
+                                try {
+                                    jsonResponse = new JSONObject(responseData);
+                                } catch (JSONException ignored) {
+                                    // Non-JSON responses are handled as response or parse errors below.
+                                }
+                            }
+
+                            if (jsonResponse != null && (jsonResponse.has("error") || jsonResponse.has("kind"))) {
+                                if (statusCode == 429) {
+                                    checkAndHandleRateLimitResponse(response);
+                                }
+                                Map<String, Object> retError = new HashMap<>();
+                                if (jsonResponse.has("error") && !jsonResponse.isNull("error")) {
+                                    retError.put("error", jsonResponse.getString("error"));
+                                }
+                                if (jsonResponse.has("kind") && !jsonResponse.isNull("kind")) {
+                                    retError.put("kind", jsonResponse.getString("kind"));
+                                }
+                                if (jsonResponse.has("message") && !jsonResponse.isNull("message")) {
+                                    retError.put("message", jsonResponse.getString("message"));
+                                } else {
+                                    retError.put("message", "server did not provide a message");
+                                }
+                                if (jsonResponse.has("version") && !jsonResponse.isNull("version")) {
+                                    retError.put("version", jsonResponse.getString("version"));
+                                }
+                                retError.put("statusCode", statusCode);
+                                callback.callback(retError);
+                                return;
+                            }
+
                             // Check for 429 rate limit
                             if (checkAndHandleRateLimitResponse(response)) {
                                 Map<String, Object> retError = new HashMap<>();
                                 retError.put("message", "Rate limit exceeded");
                                 retError.put("error", "rate_limit_exceeded");
+                                retError.put("kind", "failed");
                                 retError.put("statusCode", statusCode);
                                 callback.callback(retError);
                                 return;
@@ -1153,27 +1286,14 @@ public class CapgoUpdater {
                                 Map<String, Object> retError = new HashMap<>();
                                 retError.put("message", "Server error: " + response.code());
                                 retError.put("error", "response_error");
+                                retError.put("kind", "failed");
                                 retError.put("statusCode", statusCode);
                                 callback.callback(retError);
                                 return;
                             }
 
-                            assert responseBody != null;
-                            String responseData = responseBody.string();
-                            JSONObject jsonResponse = new JSONObject(responseData);
-
-                            // Check for server-side errors first
-                            if (jsonResponse.has("error")) {
-                                Map<String, Object> retError = new HashMap<>();
-                                retError.put("error", jsonResponse.getString("error"));
-                                if (jsonResponse.has("message")) {
-                                    retError.put("message", jsonResponse.getString("message"));
-                                } else {
-                                    retError.put("message", "server did not provide a message");
-                                }
-                                retError.put("statusCode", statusCode);
-                                callback.callback(retError);
-                                return;
+                            if (jsonResponse == null) {
+                                throw new JSONException("Response is not a JSON object");
                             }
 
                             Map<String, Object> ret = new HashMap<>();
@@ -1195,6 +1315,7 @@ public class CapgoUpdater {
                             Map<String, Object> retError = new HashMap<>();
                             retError.put("message", "JSON parse error: " + e.getMessage());
                             retError.put("error", "parse_error");
+                            retError.put("kind", "failed");
                             callback.callback(retError);
                         }
                     }
@@ -1695,7 +1816,13 @@ public class CapgoUpdater {
         }
         BundleInfo result;
         if (BundleInfo.ID_BUILTIN.equals(trueId)) {
-            result = new BundleInfo(trueId, null, BundleStatus.SUCCESS, "", "");
+            result = new BundleInfo(
+                trueId,
+                this.versionBuild == null || this.versionBuild.isEmpty() ? null : this.versionBuild,
+                BundleStatus.SUCCESS,
+                "",
+                ""
+            );
         } else if (BundleInfo.VERSION_UNKNOWN.equals(trueId)) {
             result = new BundleInfo(trueId, null, BundleStatus.ERROR, "", "");
         } else {
@@ -1800,6 +1927,7 @@ public class CapgoUpdater {
     }
 
     public boolean setNextBundle(final String next) {
+        BundleInfo bundleToNotify = null;
         if (next == null) {
             this.editor.remove(NEXT_VERSION);
         } else {
@@ -1809,8 +1937,15 @@ public class CapgoUpdater {
             }
             this.editor.putString(NEXT_VERSION, next);
             this.setBundleStatus(next, BundleStatus.PENDING);
+            bundleToNotify = newBundle;
         }
         this.editor.commit();
+        if (bundleToNotify != null) {
+            this.sendStats("set_next", bundleToNotify.getVersionName(), this.getCurrentBundle().getVersionName());
+            final Map<String, Object> payload = new HashMap<>();
+            payload.put("bundle", bundleToNotify.toJSONMap());
+            this.notifyListeners("setNext", payload);
+        }
         return true;
     }
 
