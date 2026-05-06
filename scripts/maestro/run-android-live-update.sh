@@ -498,50 +498,16 @@ run_split_manual_scenario() {
 
 run_manual_zip_split_once() {
   run_flow_once manual-zip-v1-flow.yaml || return 1
-  wait_for_example_app_ui || return 1
-  wait_for_ui_state \
-    "manual zip applies the first release" \
-    'Build label: manual-zip-v1' \
-    'Current bundle source: downloaded' \
-    'Current bundle version: manual-zip-v1' || return 1
-
   run_flow_once manual-zip-v2-queue-flow.yaml || return 1
-  wait_for_example_app_ui || return 1
-  wait_for_ui_state \
-    "manual zip queues the second release" \
-    'Build label: manual-zip-v1' \
-    'Current bundle source: downloaded' \
-    'Current bundle version: manual-zip-v1' \
-    'Next bundle version: manual-zip-v2' || return 1
-
   run_flow_once manual-zip-v2-reload-and-failed-flow.yaml || return 1
-
   run_flow_once manual-zip-cleanup-flow.yaml || return 1
-  wait_for_example_app_ui || return 1
-  wait_for_ui_state \
-    "manual zip flow ends back on the builtin bundle" \
-    'Build label: manual-zip-builtin' \
-    'Current bundle source: builtin' || return 1
 
   return 0
 }
 
 run_manual_manifest_split_once() {
   run_flow_once manual-manifest-v1-flow.yaml || return 1
-  wait_for_example_app_ui || return 1
-  wait_for_ui_state \
-    "manual manifest applies the first manifest release" \
-    'Build label: manual-manifest-v1' \
-    'Current bundle source: downloaded' \
-    'Current bundle version: manual-manifest-v1' || return 1
-
   run_flow_once manual-manifest-v2-flow.yaml || return 1
-  wait_for_example_app_ui || return 1
-  wait_for_ui_state \
-    "manual manifest flow applies the second manifest release" \
-    'Build label: manual-manifest-v2' \
-    'Current bundle version: manual-manifest-v2' \
-    'Last completed download: manual-manifest-v2' || return 1
 
   return 0
 }

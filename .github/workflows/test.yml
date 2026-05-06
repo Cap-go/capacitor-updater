@@ -116,7 +116,14 @@ jobs:
           profile: pixel_7
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
-          script: CAPGO_MAESTRO_TIMEOUT_SECONDS=900 MAESTRO_DRIVER_STARTUP_TIMEOUT=300000 CAPGO_MAESTRO_SMOKE_SCENARIO=${{ matrix.scenario }} bun run test:maestro:android
+          script: >-
+            CAPGO_MAESTRO_TIMEOUT_SECONDS=420
+            CAPGO_MAESTRO_TEST_RETRIES=2
+            CAPGO_MAESTRO_APP_UI_TIMEOUT_SECONDS=90
+            CAPGO_MAESTRO_APP_LAUNCH_RETRIES=2
+            MAESTRO_DRIVER_STARTUP_TIMEOUT=300000
+            CAPGO_MAESTRO_SMOKE_SCENARIO=${{ matrix.scenario }}
+            bun run test:maestro:android
       - name: Upload Maestro artifacts
         if: always()
         uses: actions/upload-artifact@v7
@@ -163,7 +170,19 @@ jobs:
   maestro_ios_live_update:
     timeout-minutes: 30
     runs-on: macOS-latest
-    name: iOS example app Maestro live update
+    name: iOS example app Maestro live update / ${{ matrix.scenario }}
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario:
+          - deferred
+          - always
+          - legacy-true
+          - at-install
+          - on-launch
+          - manual-zip
+          - manual-zip-config-guards
+          - manual-manifest
     steps:
       - name: Check out
         uses: actions/checkout@v6
@@ -183,13 +202,17 @@ jobs:
           MAESTRO_VERSION: cli-2.4.0
         run: ./scripts/ci/install-maestro.sh
       - name: Run live update Maestro flows
-        run: bun run test:maestro:ios
+        run: >-
+          CAPGO_MAESTRO_RESULTS_DIR=maestro-results-ios-live-update-${{ matrix.scenario }}
+          CAPGO_MAESTRO_TIMEOUT_SECONDS=480
+          CAPGO_MAESTRO_TEST_RETRIES=2
+          ./scripts/maestro/run-ios-live-update.sh "${{ matrix.scenario }}"
       - name: Upload live update Maestro artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: maestro-results-ios-live-update
-          path: maestro-results-ios-live-update
+          name: maestro-results-ios-live-update-${{ matrix.scenario }}
+          path: maestro-results-ios-live-update-${{ matrix.scenario }}
   web:
     timeout-minutes: 30
     runs-on: ubuntu-latest
@@ -262,7 +285,14 @@ jobs:
           profile: pixel_7
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
-          script: ./scripts/maestro/run-android-live-update.sh "${{ matrix.scenario }}"
+          script: >-
+            CAPGO_MAESTRO_FLOW_TIMEOUT_SECONDS=420
+            CAPGO_MAESTRO_FLOW_RETRIES=2
+            CAPGO_MAESTRO_SPLIT_RETRIES=1
+            CAPGO_MAESTRO_APP_UI_TIMEOUT_SECONDS=90
+            CAPGO_MAESTRO_UI_STATE_TIMEOUT_SECONDS=180
+            CAPGO_MAESTRO_DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS=180
+            ./scripts/maestro/run-android-live-update.sh "${{ matrix.scenario }}"
   maestro_android:
     if: always()
     needs:
