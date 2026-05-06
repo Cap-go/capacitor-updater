@@ -262,7 +262,7 @@ console.log([scenario.builtinLabel, builtinVersion.trim(), ...scenario.releases.
 }
 
 clear_swiftpm_capacitor_artifact_cache() {
-  rm -rf "$HOME/Library/Caches/org.swift.swiftpm/artifacts/https___github_com_ionic_team_capacitor_swift_pm_releases_download_8_0_0_Capacitor_xcframework_zip"
+  rm -rf "$HOME/Library/Caches/org.swift.swiftpm/artifacts"/https___github_com_ionic_team_capacitor_swift_pm_releases_download_8_0_0_*
   return 0
 }
 
