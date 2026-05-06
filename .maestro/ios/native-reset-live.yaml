@@ -4,6 +4,12 @@ appId: app.capgo.updater
 - extendedWaitUntil:
     visible: 'CAPGO OTA VALIDATION'
     timeout: 180000
+- scrollUntilVisible:
+    element:
+      text: 'Last completed download: native-reset-live'
+    direction: DOWN
+    timeout: 180000
+- assertVisible: 'Last completed download: native-reset-live'
 - pressKey: home
 - launchApp
 - extendedWaitUntil:
@@ -12,19 +18,19 @@ appId: app.capgo.updater
 - scrollUntilVisible:
     element:
       text: "${EXPECT_1}"
-    direction: DOWN
+    direction: UP
     timeout: 180000
 - assertVisible: "${EXPECT_1}"
 - scrollUntilVisible:
     element:
       text: "${EXPECT_2}"
-    direction: DOWN
+    direction: UP
     timeout: 180000
 - assertVisible: "${EXPECT_2}"
 - scrollUntilVisible:
     element:
       text: "${EXPECT_3}"
-    direction: DOWN
+    direction: UP
     timeout: 180000
 - assertVisible: "${EXPECT_3}"
 - scrollUntilVisible:
