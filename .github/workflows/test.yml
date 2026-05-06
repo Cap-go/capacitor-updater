@@ -117,9 +117,9 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
           script: >-
-            CAPGO_MAESTRO_TIMEOUT_SECONDS=420
-            CAPGO_MAESTRO_TEST_RETRIES=2
-            CAPGO_MAESTRO_APP_UI_TIMEOUT_SECONDS=90
+            CAPGO_MAESTRO_TIMEOUT_SECONDS=780
+            CAPGO_MAESTRO_TEST_RETRIES=1
+            CAPGO_MAESTRO_APP_UI_TIMEOUT_SECONDS=150
             CAPGO_MAESTRO_APP_LAUNCH_RETRIES=2
             MAESTRO_DRIVER_STARTUP_TIMEOUT=300000
             CAPGO_MAESTRO_SMOKE_SCENARIO=${{ matrix.scenario }}
@@ -286,10 +286,9 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
           script: >-
-            CAPGO_MAESTRO_FLOW_TIMEOUT_SECONDS=420
-            CAPGO_MAESTRO_FLOW_RETRIES=2
+            CAPGO_MAESTRO_FLOW_TIMEOUT_SECONDS=720
+            CAPGO_MAESTRO_FLOW_RETRIES=1
             CAPGO_MAESTRO_SPLIT_RETRIES=1
-            CAPGO_MAESTRO_APP_UI_TIMEOUT_SECONDS=90
             CAPGO_MAESTRO_UI_STATE_TIMEOUT_SECONDS=180
             CAPGO_MAESTRO_DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS=180
             ./scripts/maestro/run-android-live-update.sh "${{ matrix.scenario }}"

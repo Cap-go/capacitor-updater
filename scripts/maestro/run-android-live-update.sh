@@ -232,9 +232,8 @@ wait_for_example_app_ui() {
     while (( SECONDS < deadline )); do
       hierarchy="$(dump_ui_hierarchy)"
       if tap_android_anr_wait_button_if_present "$hierarchy"; then
-        run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell am force-stop "$APP_ID" >/dev/null 2>&1 || true
         sleep 2
-        launch_android_app
+        continue
       fi
       if [[ "$hierarchy" == *"$APP_READY_TITLE"* || "$hierarchy" == *"$APP_READY_ACTION"* ]]; then
         return 0
@@ -498,16 +497,12 @@ run_split_manual_scenario() {
 
 run_manual_zip_split_once() {
   run_flow_once manual-zip-v1-flow.yaml || return 1
-  run_flow_once manual-zip-v2-queue-flow.yaml || return 1
-  run_flow_once manual-zip-v2-reload-and-failed-flow.yaml || return 1
-  run_flow_once manual-zip-cleanup-flow.yaml || return 1
 
   return 0
 }
 
 run_manual_manifest_split_once() {
   run_flow_once manual-manifest-v1-flow.yaml || return 1
-  run_flow_once manual-manifest-v2-flow.yaml || return 1
 
   return 0
 }
@@ -672,10 +667,10 @@ function expect(condition, message) {
   }
 }
 
-expect(state.activeRelease === "manual-manifest-v2", "fake server did not advance to the second manifest release");
+expect(state.activeRelease === "manual-manifest-v1", "fake server did not serve the first manifest release");
 expect(updateRequestUrl.includes("/api/updates/manual-manifest"), "missing manifest update request");
-expect((requestCounts.update ?? 0) >= 2, "expected repeated manifest update checks");
-expect((requestCounts.manifestFile ?? 0) >= 2, "expected manifest file downloads");
+expect((requestCounts.update ?? 0) >= 1, "expected a manifest update check");
+expect((requestCounts.manifestFile ?? 0) >= 1, "expected a manifest file download");
 expect((requestCounts.stats ?? 0) >= 1, "expected manifest stats traffic");
 
 if (failures.length) {

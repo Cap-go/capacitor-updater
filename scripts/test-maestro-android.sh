@@ -299,9 +299,8 @@ wait_for_example_app_ui() {
     while (( SECONDS < deadline )); do
       hierarchy="$(dump_ui_hierarchy)"
       if tap_android_anr_wait_button_if_present "$hierarchy"; then
-        adb shell am force-stop "$APP_ID" >/dev/null 2>&1 || true
         sleep 2
-        launch_example_app
+        continue
       fi
       if [[ "$hierarchy" == *"$APP_READY_TITLE"* || "$hierarchy" == *"$APP_READY_ACTION"* ]]; then
         return 0
