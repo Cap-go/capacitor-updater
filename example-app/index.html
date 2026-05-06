@@ -3,19 +3,89 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>@capgo/capacitor-updater Example</title>
+    <title>@capgo/capacitor-updater Live Update Harness</title>
     <link rel="stylesheet" href="/src/style.css" />
+    <script>
+      const probe = (globalThis.__capgoProbe = {
+        htmlLoadedAt: new Date().toISOString(),
+        moduleLoadedAt: null,
+        errors: [],
+      });
+
+      globalThis.addEventListener('error', (event) => {
+        const detail = `${event.message} @ ${event.filename || 'inline'}:${event.lineno || 0}:${event.colno || 0}`;
+        probe.errors.push(detail);
+        console.log('[Harness] window.error', detail);
+      });
+
+      globalThis.addEventListener('unhandledrejection', (event) => {
+        const detail = event.reason?.stack || event.reason?.message || String(event.reason);
+        probe.errors.push(detail);
+        console.log('[Harness] window.unhandledrejection', detail);
+      });
+
+      console.log('[Harness] inline boot', probe.htmlLoadedAt);
+    </script>
   </head>
   <body>
     <main class="container">
-      <h1>@capgo/capacitor-updater Example</h1>
-      <p class="lead">Run native plugin APIs with the source linked locally.</p>
-      <label for="action-select">Available actions</label>
-      <select id="action-select"></select>
-      <div id="action-description" class="action-description"></div>
-      <div id="action-form" class="form-grid"></div>
-      <button id="run-action">Run action</button>
-      <pre id="plugin-output">Select an action to begin.</pre>
+      <header class="hero">
+        <p class="eyebrow">Capgo OTA validation</p>
+        <h1>@capgo/capacitor-updater</h1>
+        <p class="lead">This screen combines the live update harness and example-app smoke actions used by Maestro.</p>
+      </header>
+
+      <section class="card result-panel">
+        <div class="panel-heading">
+          <h2>Latest Result</h2>
+          <div class="status-row">
+            <p id="last-action" class="status-line">Last action: none</p>
+            <p id="action-status" class="status-line">Status: idle</p>
+          </div>
+          <p id="sequence-status" class="status-line">Sequence: idle</p>
+          <p id="result-marker" class="status-line">Result marker: idle</p>
+        </div>
+        <pre id="plugin-output">Ready to run a smoke action.</pre>
+      </section>
+
+      <section class="card">
+        <div class="panel-heading">
+          <h2>Smoke Actions</h2>
+          <p>Each button runs one exposed example action while the live-update harness continues tracking bundle state.</p>
+        </div>
+        <button id="run-smoke-sequence" type="button">Run smoke test sequence</button>
+        <div id="smoke-actions" class="actions-grid"></div>
+      </section>
+
+      <section class="card">
+        <h2>Static build data</h2>
+        <p id="app-label" class="status-line">Build label: loading</p>
+        <p id="scenario-id" class="status-line">Scenario: loading</p>
+        <p id="direct-update-mode" class="status-line">Direct update mode: loading</p>
+        <p id="server-url" class="status-line">Server URL: loading</p>
+        <p id="boot-count" class="status-line">Boot count: loading</p>
+      </section>
+
+      <section class="card">
+        <h2>Plugin state</h2>
+        <p id="notify-status" class="status-line">Notify app ready: pending</p>
+        <p id="current-bundle-source" class="status-line">Current bundle source: loading</p>
+        <p id="current-bundle" class="status-line">Current bundle version: loading</p>
+        <p id="next-bundle" class="status-line">Next bundle version: loading</p>
+        <p id="bundle-count" class="status-line">Downloaded bundle count: loading</p>
+        <p id="last-download" class="status-line">Last completed download: none</p>
+        <button id="refresh-state" type="button">Refresh state</button>
+      </section>
+
+      <section class="card">
+        <h2>Updater events</h2>
+        <ul id="event-log" class="event-log"></ul>
+      </section>
+
+      <section class="card">
+        <h2>Debug snapshot</h2>
+        <pre id="debug-output">Booting updater test harness…</pre>
+      </section>
     </main>
     <script type="module" src="/src/main.js"></script>
   </body>

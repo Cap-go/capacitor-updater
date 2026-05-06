@@ -1,14 +1,248 @@
 import XCTest
 @testable import CapacitorUpdaterPlugin
+import Capacitor
+import Version
+
+private class TestableCapacitorUpdaterPlugin: CapacitorUpdaterPlugin {
+    private(set) var notifiedEventNames: [String] = []
+
+    override func notifyListeners(_ eventName: String, data: [String: Any]?, retainUntilConsumed retain: Bool) {
+        notifiedEventNames.append(eventName)
+    }
+
+    override func endBackGroundTask() {
+        // Intentionally blank: tests avoid touching UIApplication background-task APIs.
+    }
+
+    override func runBackgroundDownloadWork(_ work: @escaping () -> Void) {
+        work()
+    }
+
+    override func runGetLatestWork(_ work: @escaping () -> Void) {
+        work()
+    }
+
+    override func sendReadyToJs(current: BundleInfo, msg: String) {
+        // Intentionally blank: tests assert native state transitions without JS bridge side effects.
+    }
+}
+
+private final class FreshDownloadCapgoUpdater: CapgoUpdater {
+    var currentBundleValue: BundleInfo!
+    var latestResponse = AppVersion()
+    var onDownloadStart: (() -> Void)?
+    var sentStatsActions: [String] = []
+
+    override func getLatest(url: URL, channel: String?) -> AppVersion {
+        latestResponse
+    }
+
+    override func getCurrentBundle() -> BundleInfo {
+        currentBundleValue
+    }
+
+    override func getBundleInfoByVersionName(version: String) -> BundleInfo? {
+        nil
+    }
+
+    override func download(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
+        onDownloadStart?()
+        throw NSError(domain: "CapacitorUpdaterPluginTests", code: 1)
+    }
+
+    override func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {
+        sentStatsActions.append(action)
+    }
+}
+
+private final class ResetTrackingCapgoUpdater: CapgoUpdater {
+    var currentBundleValue = BundleInfo(
+        id: "current-id",
+        version: "1.0.0",
+        status: .SUCCESS,
+        downloaded: Date(),
+        checksum: "abc123"
+    )
+    var fallbackBundleValue = BundleInfo(
+        id: BundleInfo.ID_BUILTIN,
+        version: "builtin",
+        status: .SUCCESS,
+        downloaded: BundleInfo.DOWNLOADED_BUILTIN,
+        checksum: "builtin"
+    )
+    var nextBundleValue: BundleInfo?
+    var resetCalled = false
+    var resetIsInternal = false
+    var prepareResetStateForTransitionCalled = false
+    var prepareResetStateForTransitionCalls = 0
+    var finalizeResetTransitionCalled = false
+    var finalizeResetTransitionCalls = 0
+    var finalizeResetTransitionPreviousBundleName: String?
+    var finalizeResetTransitionIsInternal = true
+    var canSetResult = true
+    var setResult = true
+    var canSetCalls = 0
+    var setCalls = 0
+    var stagePendingReloadResult = true
+    var stagePendingReloadCalls = 0
+    var finalizePendingReloadCalls = 0
+    var finalizedPendingReloadBundle: BundleInfo?
+    var finalizePendingReloadPreviousBundleName: String?
+    var restoreResetStateCalls = 0
+    let capturedState = ResetState(
+        currentBundlePath: "/stored/current",
+        fallbackBundleId: "fallback-id",
+        nextBundleId: "next-id"
+    )
+    var restoredState: ResetState?
+
+    override func getCurrentBundle() -> BundleInfo {
+        currentBundleValue
+    }
+
+    override func getFallbackBundle() -> BundleInfo {
+        fallbackBundleValue
+    }
+
+    override func getNextBundle() -> BundleInfo? {
+        nextBundleValue
+    }
+
+    override func canSet(bundle: BundleInfo) -> Bool {
+        canSetCalls += 1
+        return canSetResult
+    }
+
+    override func captureResetState() -> ResetState {
+        capturedState
+    }
+
+    override func restoreResetState(_ state: ResetState) {
+        restoreResetStateCalls += 1
+        restoredState = state
+    }
+
+    override func set(bundle: BundleInfo) -> Bool {
+        setCalls += 1
+        return setResult
+    }
+
+    override func setNextBundle(next: String?) -> Bool {
+        true
+    }
+
+    override func stagePendingReload(bundle: BundleInfo) -> Bool {
+        stagePendingReloadCalls += 1
+        return stagePendingReloadResult
+    }
+
+    override func finalizePendingReload(bundle: BundleInfo, previousBundleName: String) {
+        finalizePendingReloadCalls += 1
+        finalizedPendingReloadBundle = bundle
+        finalizePendingReloadPreviousBundleName = previousBundleName
+    }
+
+    override func reset(isInternal: Bool) {
+        resetCalled = true
+        resetIsInternal = isInternal
+    }
+
+    override func prepareResetStateForTransition() {
+        prepareResetStateForTransitionCalled = true
+        prepareResetStateForTransitionCalls += 1
+    }
+
+    override func finalizeResetTransition(previousBundleName: String, isInternal: Bool) {
+        finalizeResetTransitionCalled = true
+        finalizeResetTransitionCalls += 1
+        finalizeResetTransitionPreviousBundleName = previousBundleName
+        finalizeResetTransitionIsInternal = isInternal
+    }
+}
+
+private final class ResetTestableCapacitorUpdaterPlugin: TestableCapacitorUpdaterPlugin {
+    override func canPerformResetTransition() -> Bool {
+        true
+    }
+
+    override func _reload() -> Bool {
+        true
+    }
+}
+
+private final class ReloadBypassCapacitorUpdaterPlugin: TestableCapacitorUpdaterPlugin {
+    override func _reload() -> Bool {
+        true
+    }
+}
+
+private final class ReloadFailureCapacitorUpdaterPlugin: TestableCapacitorUpdaterPlugin {
+    var restoreLiveBundleStateAfterFailedReloadCalls = 0
+
+    override func canPerformResetTransition() -> Bool {
+        true
+    }
+
+    override func _reload() -> Bool {
+        false
+    }
+
+    override func restoreLiveBundleStateAfterFailedReload() {
+        restoreLiveBundleStateAfterFailedReloadCalls += 1
+    }
+}
+
+private final class SequenceReloadCapacitorUpdaterPlugin: TestableCapacitorUpdaterPlugin {
+    var reloadResults = [false]
+    private var reloadCallCount = 0
+    var restoreLiveBundleStateAfterFailedReloadCalls = 0
+
+    override func canPerformResetTransition() -> Bool {
+        true
+    }
+
+    override func _reload() -> Bool {
+        let resultIndex = min(reloadCallCount, reloadResults.count - 1)
+        reloadCallCount += 1
+        return reloadResults[resultIndex]
+    }
+
+    override func restoreLiveBundleStateAfterFailedReload() {
+        restoreLiveBundleStateAfterFailedReloadCalls += 1
+    }
+}
+
+private final class PendingReloadFinalizeCapgoUpdater: CapgoUpdater {
+    var bundleInfos: [String: BundleInfo] = [:]
+    var lastStatsAction: String?
+    var lastStatsVersionName: String?
+    var lastStatsOldVersionName: String?
+
+    override func getBundleInfo(id: String?) -> BundleInfo {
+        bundleInfos[id!]!
+    }
+
+    override func saveBundleInfo(id: String, bundle: BundleInfo?) {
+        bundleInfos[id] = bundle
+    }
+
+    override func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {
+        lastStatsAction = action
+        lastStatsVersionName = versionName
+        lastStatsOldVersionName = oldVersionName
+    }
+}
 
 class CapacitorUpdaterTests: XCTestCase {
 
     var plugin: CapacitorUpdaterPlugin!
     var implementation: CapgoUpdater!
+    private let delayPreferencesKey = DelayUpdateUtils.DELAY_CONDITION_PREFERENCES
+    private let backgroundTimestampKey = DelayUpdateUtils.BACKGROUND_TIMESTAMP_KEY
 
     override func setUp() {
         super.setUp()
-        plugin = CapacitorUpdaterPlugin()
+        plugin = TestableCapacitorUpdaterPlugin()
         implementation = CapgoUpdater()
     }
 
@@ -16,6 +250,26 @@ class CapacitorUpdaterTests: XCTestCase {
         plugin = nil
         implementation = nil
         super.tearDown()
+    }
+
+    private func makeDelayUpdateUtils() throws -> DelayUpdateUtils {
+        let logger = Logger(withTag: "TestLogger")
+        let version = try Version("1.0.0")
+        return DelayUpdateUtils(currentVersionNative: version, logger: logger)
+    }
+
+    private func clearDelayStorage() {
+        UserDefaults.standard.removeObject(forKey: delayPreferencesKey)
+        UserDefaults.standard.removeObject(forKey: backgroundTimestampKey)
+    }
+
+    private func makeDelayConditionsJSON() throws -> String {
+        let conditions = [
+            ["kind": "kill", "value": ""],
+            ["kind": "background", "value": "5000"]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: conditions)
+        return try XCTUnwrap(String(data: data, encoding: .utf8))
     }
 
     // MARK: - BundleInfo Tests
@@ -87,6 +341,16 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertFalse(bundleInfo.isErrorStatus())
     }
 
+    func testBuildUserAgentStripsNonIsoCharacters() {
+        let ua = CapgoUpdater.buildUserAgent(appId: "com.example.Тест", pluginVersion: "1.2.3🔥", versionOs: "18 😊")
+        XCTAssertEqual(ua, "CapacitorUpdater/1.2.3 (com.example.) ios/18")
+    }
+
+    func testBuildUserAgentFallsBackToUnknown() {
+        let ua = CapgoUpdater.buildUserAgent(appId: "", pluginVersion: "", versionOs: "")
+        XCTAssertEqual(ua, "CapacitorUpdater/unknown (unknown) ios/unknown")
+    }
+
     func testBundleInfoEncodeDecode() throws {
         let originalBundle = BundleInfo(
             id: "test-id",
@@ -108,6 +372,30 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(decodedBundle.getVersionName(), originalBundle.getVersionName())
         XCTAssertEqual(decodedBundle.getStatus(), originalBundle.getStatus())
         XCTAssertEqual(decodedBundle.getChecksum(), originalBundle.getChecksum())
+    }
+
+    func testShouldResetForForeignBundleWhenPathIsSetButBundleIsNotStored() {
+        XCTAssertTrue(CapgoUpdater.shouldResetForForeignBundle(
+            bundlePath: "/data/user/0/app/files/versions/abc123",
+            isBuiltin: false,
+            hasStoredBundleInfo: false
+        ))
+    }
+
+    func testShouldNotResetForForeignBundleWhenBundleIsBuiltin() {
+        XCTAssertFalse(CapgoUpdater.shouldResetForForeignBundle(
+            bundlePath: "public",
+            isBuiltin: true,
+            hasStoredBundleInfo: false
+        ))
+    }
+
+    func testShouldNotResetForForeignBundleWhenBundleIsStored() {
+        XCTAssertFalse(CapgoUpdater.shouldResetForForeignBundle(
+            bundlePath: "/data/user/0/app/files/versions/abc123",
+            isBuiltin: false,
+            hasStoredBundleInfo: true
+        ))
     }
 
     // MARK: - BundleStatus Tests
@@ -160,6 +448,690 @@ class CapacitorUpdaterTests: XCTestCase {
 
         XCTAssertTrue(condition1 == condition2)
         XCTAssertFalse(condition1 == condition3)
+    }
+
+    func testShouldConsumeOnLaunchDirectUpdateForOnLaunchAttempt() {
+        XCTAssertTrue(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate(directUpdateMode: "onLaunch", plannedDirectUpdate: true))
+    }
+
+    func testShouldNotConsumeOnLaunchDirectUpdateForNonLaunchAttempt() {
+        XCTAssertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate(directUpdateMode: "onLaunch", plannedDirectUpdate: false))
+    }
+
+    func testShouldNotConsumeOnLaunchDirectUpdateForOtherModes() {
+        XCTAssertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate(directUpdateMode: "always", plannedDirectUpdate: true))
+        XCTAssertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate(directUpdateMode: "atInstall", plannedDirectUpdate: true))
+        XCTAssertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate(directUpdateMode: "false", plannedDirectUpdate: true))
+    }
+
+    func testResetToPendingWithoutInstallablePendingBundleDoesNotResetState() {
+        let resetPlugin = ResetTestableCapacitorUpdaterPlugin()
+        let resetImplementation = ResetTrackingCapgoUpdater()
+        resetImplementation.nextBundleValue = BundleInfo(
+            id: "pending-id",
+            version: "2.0.0",
+            status: .PENDING,
+            downloaded: Date(),
+            checksum: "pending"
+        )
+        resetImplementation.canSetResult = false
+
+        resetPlugin.implementation = resetImplementation
+
+        XCTAssertFalse(resetPlugin._reset(toLastSuccessful: false, usePendingBundle: true))
+        XCTAssertEqual(resetImplementation.canSetCalls, 1)
+        XCTAssertEqual(resetImplementation.setCalls, 0)
+        XCTAssertFalse(resetImplementation.resetCalled)
+        XCTAssertEqual(resetImplementation.restoreResetStateCalls, 0)
+    }
+
+    func testResetToPendingRestoresStateWhenSwitchFails() {
+        let resetPlugin = ResetTestableCapacitorUpdaterPlugin()
+        let resetImplementation = ResetTrackingCapgoUpdater()
+        resetImplementation.nextBundleValue = BundleInfo(
+            id: "pending-id",
+            version: "2.0.0",
+            status: .PENDING,
+            downloaded: Date(),
+            checksum: "pending"
+        )
+        resetImplementation.setResult = false
+
+        resetPlugin.implementation = resetImplementation
+
+        XCTAssertFalse(resetPlugin._reset(toLastSuccessful: false, usePendingBundle: true))
+        XCTAssertFalse(resetImplementation.resetCalled)
+        XCTAssertTrue(resetImplementation.prepareResetStateForTransitionCalled)
+        XCTAssertFalse(resetImplementation.finalizeResetTransitionCalled)
+        XCTAssertEqual(resetImplementation.canSetCalls, 1)
+        XCTAssertEqual(resetImplementation.setCalls, 1)
+        XCTAssertEqual(resetImplementation.restoreResetStateCalls, 1)
+        XCTAssertEqual(resetImplementation.restoredState?.currentBundlePath, resetImplementation.capturedState.currentBundlePath)
+        XCTAssertEqual(resetImplementation.restoredState?.fallbackBundleId, resetImplementation.capturedState.fallbackBundleId)
+        XCTAssertEqual(resetImplementation.restoredState?.nextBundleId, resetImplementation.capturedState.nextBundleId)
+    }
+
+    func testResetToPendingRestoresLiveStateWhenReloadFails() {
+        let resetPlugin = ReloadFailureCapacitorUpdaterPlugin()
+        let resetImplementation = ResetTrackingCapgoUpdater()
+        resetImplementation.nextBundleValue = BundleInfo(
+            id: "pending-id",
+            version: "2.0.0",
+            status: .PENDING,
+            downloaded: Date(),
+            checksum: "pending"
+        )
+
+        resetPlugin.implementation = resetImplementation
+
+        XCTAssertFalse(resetPlugin._reset(toLastSuccessful: false, usePendingBundle: true))
+        XCTAssertFalse(resetImplementation.resetCalled)
+        XCTAssertTrue(resetImplementation.prepareResetStateForTransitionCalled)
+        XCTAssertFalse(resetImplementation.finalizeResetTransitionCalled)
+        XCTAssertEqual(resetImplementation.canSetCalls, 1)
+        XCTAssertEqual(resetImplementation.setCalls, 1)
+        XCTAssertEqual(resetImplementation.restoreResetStateCalls, 1)
+        XCTAssertEqual(resetPlugin.restoreLiveBundleStateAfterFailedReloadCalls, 1)
+        XCTAssertEqual(resetImplementation.restoredState?.currentBundlePath, resetImplementation.capturedState.currentBundlePath)
+        XCTAssertEqual(resetImplementation.restoredState?.fallbackBundleId, resetImplementation.capturedState.fallbackBundleId)
+        XCTAssertEqual(resetImplementation.restoredState?.nextBundleId, resetImplementation.capturedState.nextBundleId)
+    }
+
+    func testResetToPendingRestoresStateWhenBuiltinPendingReloadFails() {
+        let resetPlugin = ReloadFailureCapacitorUpdaterPlugin()
+        let resetImplementation = ResetTrackingCapgoUpdater()
+        resetImplementation.nextBundleValue = BundleInfo(
+            id: BundleInfo.ID_BUILTIN,
+            version: "builtin",
+            status: .SUCCESS,
+            downloaded: BundleInfo.DOWNLOADED_BUILTIN,
+            checksum: "builtin"
+        )
+
+        resetPlugin.implementation = resetImplementation
+
+        XCTAssertFalse(resetPlugin._reset(toLastSuccessful: false, usePendingBundle: true))
+        XCTAssertFalse(resetImplementation.resetCalled)
+        XCTAssertTrue(resetImplementation.prepareResetStateForTransitionCalled)
+        XCTAssertFalse(resetImplementation.finalizeResetTransitionCalled)
+        XCTAssertEqual(resetImplementation.canSetCalls, 1)
+        XCTAssertEqual(resetImplementation.setCalls, 0)
+        XCTAssertEqual(resetImplementation.restoreResetStateCalls, 1)
+        XCTAssertEqual(resetPlugin.restoreLiveBundleStateAfterFailedReloadCalls, 1)
+        XCTAssertEqual(resetImplementation.restoredState?.currentBundlePath, resetImplementation.capturedState.currentBundlePath)
+        XCTAssertEqual(resetImplementation.restoredState?.fallbackBundleId, resetImplementation.capturedState.fallbackBundleId)
+        XCTAssertEqual(resetImplementation.restoredState?.nextBundleId, resetImplementation.capturedState.nextBundleId)
+    }
+
+    func testResetToLastSuccessfulWithoutInstallableFallbackFallsBackToBuiltin() {
+        let resetPlugin = ResetTestableCapacitorUpdaterPlugin()
+        let resetImplementation = ResetTrackingCapgoUpdater()
+        resetImplementation.fallbackBundleValue = BundleInfo(
+            id: "fallback-id",
+            version: "1.5.0",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "fallback"
+        )
+        resetImplementation.canSetResult = false
+
+        resetPlugin.implementation = resetImplementation
+
+        XCTAssertTrue(resetPlugin._reset(toLastSuccessful: true, usePendingBundle: false))
+        XCTAssertEqual(resetImplementation.canSetCalls, 1)
+        XCTAssertEqual(resetImplementation.setCalls, 0)
+        XCTAssertFalse(resetImplementation.resetCalled)
+        XCTAssertTrue(resetImplementation.prepareResetStateForTransitionCalled)
+        XCTAssertTrue(resetImplementation.finalizeResetTransitionCalled)
+        XCTAssertEqual(resetImplementation.finalizeResetTransitionPreviousBundleName, "1.0.0")
+        XCTAssertFalse(resetImplementation.finalizeResetTransitionIsInternal)
+        XCTAssertEqual(resetImplementation.restoreResetStateCalls, 0)
+    }
+
+    func testResetToLastSuccessfulRestoresStateWhenSwitchFails() {
+        let resetPlugin = ResetTestableCapacitorUpdaterPlugin()
+        let resetImplementation = ResetTrackingCapgoUpdater()
+        resetImplementation.fallbackBundleValue = BundleInfo(
+            id: "fallback-id",
+            version: "1.5.0",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "fallback"
+        )
+        resetImplementation.setResult = false
+
+        resetPlugin.implementation = resetImplementation
+
+        XCTAssertFalse(resetPlugin._reset(toLastSuccessful: true, usePendingBundle: false))
+        XCTAssertFalse(resetImplementation.resetCalled)
+        XCTAssertTrue(resetImplementation.prepareResetStateForTransitionCalled)
+        XCTAssertFalse(resetImplementation.finalizeResetTransitionCalled)
+        XCTAssertEqual(resetImplementation.canSetCalls, 1)
+        XCTAssertEqual(resetImplementation.setCalls, 1)
+        XCTAssertEqual(resetImplementation.restoreResetStateCalls, 1)
+        XCTAssertEqual(resetImplementation.restoredState?.currentBundlePath, resetImplementation.capturedState.currentBundlePath)
+        XCTAssertEqual(resetImplementation.restoredState?.fallbackBundleId, resetImplementation.capturedState.fallbackBundleId)
+        XCTAssertEqual(resetImplementation.restoredState?.nextBundleId, resetImplementation.capturedState.nextBundleId)
+    }
+
+    func testResetToLastSuccessfulRestoresStateWhenFallbackReloadFails() {
+        let resetPlugin = SequenceReloadCapacitorUpdaterPlugin()
+        let resetImplementation = ResetTrackingCapgoUpdater()
+        resetPlugin.reloadResults = [false]
+        resetImplementation.fallbackBundleValue = BundleInfo(
+            id: "fallback-id",
+            version: "1.5.0",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "fallback"
+        )
+
+        resetPlugin.implementation = resetImplementation
+
+        XCTAssertFalse(resetPlugin._reset(toLastSuccessful: true, usePendingBundle: false))
+        XCTAssertTrue(resetImplementation.prepareResetStateForTransitionCalled)
+        XCTAssertEqual(resetImplementation.prepareResetStateForTransitionCalls, 1)
+        XCTAssertFalse(resetImplementation.finalizeResetTransitionCalled)
+        XCTAssertEqual(resetImplementation.canSetCalls, 1)
+        XCTAssertEqual(resetImplementation.setCalls, 1)
+        XCTAssertEqual(resetImplementation.restoreResetStateCalls, 1)
+        XCTAssertEqual(resetPlugin.restoreLiveBundleStateAfterFailedReloadCalls, 1)
+        XCTAssertEqual(resetImplementation.restoredState?.currentBundlePath, resetImplementation.capturedState.currentBundlePath)
+        XCTAssertEqual(resetImplementation.restoredState?.fallbackBundleId, resetImplementation.capturedState.fallbackBundleId)
+        XCTAssertEqual(resetImplementation.restoredState?.nextBundleId, resetImplementation.capturedState.nextBundleId)
+    }
+
+    func testInternalResetToLastSuccessfulFallsBackToBuiltinWhenFallbackReloadFails() {
+        let resetPlugin = SequenceReloadCapacitorUpdaterPlugin()
+        let resetImplementation = ResetTrackingCapgoUpdater()
+        resetPlugin.reloadResults = [false, true]
+        resetImplementation.currentBundleValue = BundleInfo(
+            id: "current-id",
+            version: "2.0.0",
+            status: .ERROR,
+            downloaded: Date(),
+            checksum: "abc123"
+        )
+        resetImplementation.fallbackBundleValue = BundleInfo(
+            id: "fallback-id",
+            version: "1.5.0",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "fallback"
+        )
+
+        resetPlugin.implementation = resetImplementation
+
+        XCTAssertTrue(resetPlugin.performReset(toLastSuccessful: true, usePendingBundle: false, isInternal: true))
+        XCTAssertTrue(resetImplementation.prepareResetStateForTransitionCalled)
+        XCTAssertEqual(resetImplementation.prepareResetStateForTransitionCalls, 2)
+        XCTAssertTrue(resetImplementation.finalizeResetTransitionCalled)
+        XCTAssertEqual(resetImplementation.finalizeResetTransitionCalls, 1)
+        XCTAssertEqual(resetImplementation.finalizeResetTransitionPreviousBundleName, "2.0.0")
+        XCTAssertTrue(resetImplementation.finalizeResetTransitionIsInternal)
+        XCTAssertEqual(resetImplementation.canSetCalls, 1)
+        XCTAssertEqual(resetImplementation.setCalls, 1)
+        XCTAssertEqual(resetImplementation.restoreResetStateCalls, 0)
+        XCTAssertEqual(resetPlugin.restoreLiveBundleStateAfterFailedReloadCalls, 0)
+    }
+
+    func testFinalizePendingReloadPreservesSuccessfulBundleStatus() {
+        let updater = PendingReloadFinalizeCapgoUpdater()
+        let successfulBundle = BundleInfo(
+            id: "pending-id",
+            version: "2.0.0",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "pending"
+        )
+        let pendingBundle = BundleInfo(
+            id: "pending-id",
+            version: "2.0.0",
+            status: .PENDING,
+            downloaded: Date(),
+            checksum: "pending"
+        )
+        updater.bundleInfos["pending-id"] = successfulBundle
+
+        updater.finalizePendingReload(bundle: pendingBundle, previousBundleName: "1.0.0")
+
+        XCTAssertEqual(updater.bundleInfos["pending-id"]?.getStatus(), BundleStatus.SUCCESS.localizedString)
+        XCTAssertEqual(updater.lastStatsAction, "set")
+        XCTAssertEqual(updater.lastStatsVersionName, "2.0.0")
+        XCTAssertEqual(updater.lastStatsOldVersionName, "1.0.0")
+    }
+
+    func testReloadRestoresStateWhenPendingApplyReloadFails() throws {
+        let reloadPlugin = ReloadFailureCapacitorUpdaterPlugin()
+        let reloadImplementation = ResetTrackingCapgoUpdater()
+        var rejected = false
+
+        reloadImplementation.nextBundleValue = BundleInfo(
+            id: "pending-id",
+            version: "2.0.0",
+            status: .PENDING,
+            downloaded: Date(),
+            checksum: "pending"
+        )
+        reloadPlugin.implementation = reloadImplementation
+
+        let call = try XCTUnwrap(CAPPluginCall(
+            callbackId: "reload-test",
+            options: [:],
+            success: { _, _ in
+                XCTFail("reload should reject when the pending apply reload fails")
+            },
+            error: { _ in
+                rejected = true
+            }
+        ))
+
+        reloadPlugin.reload(call)
+
+        XCTAssertTrue(rejected)
+        XCTAssertEqual(reloadImplementation.setCalls, 0)
+        XCTAssertEqual(reloadImplementation.stagePendingReloadCalls, 1)
+        XCTAssertEqual(reloadImplementation.finalizePendingReloadCalls, 0)
+        XCTAssertEqual(reloadImplementation.restoreResetStateCalls, 1)
+        XCTAssertEqual(reloadPlugin.restoreLiveBundleStateAfterFailedReloadCalls, 1)
+        XCTAssertEqual(reloadImplementation.restoredState?.currentBundlePath, reloadImplementation.capturedState.currentBundlePath)
+        XCTAssertEqual(reloadImplementation.restoredState?.fallbackBundleId, reloadImplementation.capturedState.fallbackBundleId)
+        XCTAssertEqual(reloadImplementation.restoredState?.nextBundleId, reloadImplementation.capturedState.nextBundleId)
+    }
+
+    func testReloadFinalizesPendingBundleSideEffectsAfterSuccess() throws {
+        let reloadPlugin = ReloadBypassCapacitorUpdaterPlugin()
+        let reloadImplementation = ResetTrackingCapgoUpdater()
+
+        reloadImplementation.nextBundleValue = BundleInfo(
+            id: "pending-id",
+            version: "2.0.0",
+            status: .PENDING,
+            downloaded: Date(),
+            checksum: "pending"
+        )
+        reloadPlugin.implementation = reloadImplementation
+
+        let call = try XCTUnwrap(CAPPluginCall(
+            callbackId: "reload-success-test",
+            options: [:],
+            success: { _, _ in },
+            error: { _ in
+                XCTFail("reload should resolve when the pending bundle reload succeeds")
+            }
+        ))
+
+        reloadPlugin.reload(call)
+
+        XCTAssertEqual(reloadImplementation.setCalls, 0)
+        XCTAssertEqual(reloadImplementation.stagePendingReloadCalls, 1)
+        XCTAssertEqual(reloadImplementation.finalizePendingReloadCalls, 1)
+        XCTAssertEqual(reloadImplementation.finalizePendingReloadPreviousBundleName, "1.0.0")
+        XCTAssertEqual(reloadImplementation.finalizedPendingReloadBundle?.getId(), "pending-id")
+    }
+
+    func testReloadRestoresStateWhenBuiltinPendingReloadFails() throws {
+        let reloadPlugin = ReloadFailureCapacitorUpdaterPlugin()
+        let reloadImplementation = ResetTrackingCapgoUpdater()
+        var rejected = false
+
+        reloadImplementation.nextBundleValue = BundleInfo(
+            id: BundleInfo.ID_BUILTIN,
+            version: "builtin",
+            status: .SUCCESS,
+            downloaded: BundleInfo.DOWNLOADED_BUILTIN,
+            checksum: "builtin"
+        )
+        reloadPlugin.implementation = reloadImplementation
+
+        let call = try XCTUnwrap(CAPPluginCall(
+            callbackId: "reload-builtin-test",
+            options: [:],
+            success: { _, _ in
+                XCTFail("reload should reject when the builtin pending reload fails")
+            },
+            error: { _ in
+                rejected = true
+            }
+        ))
+
+        reloadPlugin.reload(call)
+
+        XCTAssertTrue(rejected)
+        XCTAssertEqual(reloadImplementation.setCalls, 0)
+        XCTAssertEqual(reloadImplementation.stagePendingReloadCalls, 0)
+        XCTAssertEqual(reloadImplementation.finalizePendingReloadCalls, 0)
+        XCTAssertTrue(reloadImplementation.prepareResetStateForTransitionCalled)
+        XCTAssertFalse(reloadImplementation.finalizeResetTransitionCalled)
+        XCTAssertEqual(reloadImplementation.restoreResetStateCalls, 1)
+        XCTAssertEqual(reloadPlugin.restoreLiveBundleStateAfterFailedReloadCalls, 1)
+        XCTAssertEqual(reloadImplementation.restoredState?.currentBundlePath, reloadImplementation.capturedState.currentBundlePath)
+        XCTAssertEqual(reloadImplementation.restoredState?.fallbackBundleId, reloadImplementation.capturedState.fallbackBundleId)
+        XCTAssertEqual(reloadImplementation.restoredState?.nextBundleId, reloadImplementation.capturedState.nextBundleId)
+    }
+
+    func testOnLaunchCompletionConsumesWindowAfterFirstCycle() {
+        let current = BundleInfo(
+            id: "test-id",
+            version: "1.0.0",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "abc123"
+        )
+
+        plugin.configureDirectUpdateModeForTesting("onLaunch")
+
+        XCTAssertTrue(plugin.shouldUseDirectUpdateForTesting())
+        XCTAssertFalse(plugin.hasConsumedOnLaunchDirectUpdateForTesting)
+
+        plugin.endBackGroundTaskWithNotif(
+            msg: "No need to update",
+            latestVersionName: current.getVersionName(),
+            current: current,
+            error: false,
+            plannedDirectUpdate: true
+        )
+
+        XCTAssertTrue(plugin.hasConsumedOnLaunchDirectUpdateForTesting)
+        XCTAssertFalse(plugin.shouldUseDirectUpdateForTesting())
+    }
+
+    func testOnLaunchFreshDownloadConsumesWindowBeforeDownloadStarts() {
+        let downloadStarted = expectation(description: "fresh download started")
+        let current = BundleInfo(
+            id: "test-id",
+            version: "1.0.0",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "abc123"
+        )
+        let latest = AppVersion()
+        latest.version = "2.0.0"
+        latest.url = "https://example.com/update.zip"
+
+        let freshDownloadImplementation = FreshDownloadCapgoUpdater()
+        freshDownloadImplementation.currentBundleValue = current
+        freshDownloadImplementation.latestResponse = latest
+
+        plugin = TestableCapacitorUpdaterPlugin()
+        plugin.implementation = freshDownloadImplementation
+        plugin.configureDirectUpdateModeForTesting("onLaunch")
+        plugin.setUpdateUrlForTesting("https://example.com/channel")
+
+        XCTAssertTrue(plugin.shouldUseDirectUpdateForTesting())
+        XCTAssertFalse(plugin.hasConsumedOnLaunchDirectUpdateForTesting)
+
+        var consumedWhenDownloadStarted = false
+        freshDownloadImplementation.onDownloadStart = {
+            consumedWhenDownloadStarted = self.plugin.hasConsumedOnLaunchDirectUpdateForTesting
+            downloadStarted.fulfill()
+        }
+
+        plugin.backgroundDownload()
+
+        wait(for: [downloadStarted], timeout: 5.0)
+        XCTAssertTrue(consumedWhenDownloadStarted)
+        XCTAssertTrue(plugin.hasConsumedOnLaunchDirectUpdateForTesting)
+        XCTAssertFalse(plugin.shouldUseDirectUpdateForTesting())
+    }
+
+    func testNoNewVersionAvailableDoesNotNotifyDownloadFailed() {
+        let current = BundleInfo(
+            id: "test-id",
+            version: "1.0.0",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "abc123"
+        )
+        let latest = AppVersion()
+        latest.error = "no_new_version_available"
+        latest.kind = "up_to_date"
+        latest.message = "No new version available"
+        latest.statusCode = 200
+
+        let noUpdateImplementation = FreshDownloadCapgoUpdater()
+        noUpdateImplementation.currentBundleValue = current
+        noUpdateImplementation.latestResponse = latest
+
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.implementation = noUpdateImplementation
+        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
+
+        testPlugin.backgroundDownload()
+
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("noNeedUpdate"))
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("updateCheckResult"))
+        XCTAssertFalse(testPlugin.notifiedEventNames.contains("downloadFailed"))
+        XCTAssertFalse(noUpdateImplementation.sentStatsActions.contains("download_fail"))
+    }
+
+    func testGetLatestRejectsLegacyErrorWithoutBackendKind() throws {
+        let latest = AppVersion()
+        latest.error = "no_new_version_available"
+        latest.message = "No new version available"
+        latest.statusCode = 200
+
+        let noUpdateImplementation = FreshDownloadCapgoUpdater()
+        noUpdateImplementation.latestResponse = latest
+
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.implementation = noUpdateImplementation
+        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
+
+        let rejected = expectation(description: "getLatest rejects legacy response without kind")
+        let call = try XCTUnwrap(CAPPluginCall(
+            callbackId: "get-latest-legacy-error-test",
+            options: [:],
+            success: { _, _ in
+                XCTFail("getLatest should reject legacy error responses without backend kind")
+            },
+            error: { error in
+                XCTAssertEqual(error?.message, "no_new_version_available")
+                rejected.fulfill()
+            }
+        ))
+
+        testPlugin.getLatest(call)
+        wait(for: [rejected], timeout: 10)
+    }
+
+    func testGetLatestRejectsFailedKindWithoutErrorMessage() throws {
+        let latest = AppVersion()
+        latest.kind = "failed"
+        latest.statusCode = 500
+
+        let failedImplementation = FreshDownloadCapgoUpdater()
+        failedImplementation.latestResponse = latest
+
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.implementation = failedImplementation
+        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
+
+        let rejected = expectation(description: "getLatest rejects failed kind")
+        let call = try XCTUnwrap(CAPPluginCall(
+            callbackId: "get-latest-failed-kind-test",
+            options: [:],
+            success: { _, _ in
+                XCTFail("getLatest should reject failed kind responses")
+            },
+            error: { error in
+                XCTAssertEqual(error?.message, "server did not provide a message")
+                rejected.fulfill()
+            }
+        ))
+
+        testPlugin.getLatest(call)
+        wait(for: [rejected], timeout: 10)
+    }
+
+    func testGetLatestRejectsFailedErrorUsingBackendErrorCode() throws {
+        let latest = AppVersion()
+        latest.error = "response_error"
+        latest.message = "Server returned an invalid response"
+        latest.kind = "failed"
+        latest.statusCode = 500
+
+        let failedImplementation = FreshDownloadCapgoUpdater()
+        failedImplementation.latestResponse = latest
+
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.implementation = failedImplementation
+        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
+
+        let rejected = expectation(description: "getLatest rejects failed error")
+        let call = try XCTUnwrap(CAPPluginCall(
+            callbackId: "get-latest-failed-error-test",
+            options: [:],
+            success: { _, _ in
+                XCTFail("getLatest should reject failed error responses")
+            },
+            error: { error in
+                XCTAssertEqual(error?.message, "response_error")
+                rejected.fulfill()
+            }
+        ))
+
+        testPlugin.getLatest(call)
+        wait(for: [rejected], timeout: 10)
+    }
+
+    func testBlockedUpdateCheckDoesNotNotifyDownloadFailed() {
+        let current = BundleInfo(
+            id: "test-id",
+            version: "1.0.0",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "abc123"
+        )
+        let latest = AppVersion()
+        latest.error = "disable_auto_update_to_major"
+        latest.kind = "blocked"
+        latest.message = "Cannot upgrade major version"
+        latest.statusCode = 200
+
+        let blockedImplementation = FreshDownloadCapgoUpdater()
+        blockedImplementation.currentBundleValue = current
+        blockedImplementation.latestResponse = latest
+
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.implementation = blockedImplementation
+        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
+
+        testPlugin.backgroundDownload()
+
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("noNeedUpdate"))
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("updateCheckResult"))
+        XCTAssertFalse(testPlugin.notifiedEventNames.contains("downloadFailed"))
+        XCTAssertFalse(blockedImplementation.sentStatsActions.contains("download_fail"))
+    }
+
+    func testFailedUpdateCheckNotifiesDownloadFailed() {
+        let current = BundleInfo(
+            id: "test-id",
+            version: "1.0.0",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "abc123"
+        )
+        let latest = AppVersion()
+        latest.error = "response_error"
+        latest.kind = "failed"
+        latest.message = "Error getting Latest"
+        latest.statusCode = 500
+
+        let failedImplementation = FreshDownloadCapgoUpdater()
+        failedImplementation.currentBundleValue = current
+        failedImplementation.latestResponse = latest
+
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.implementation = failedImplementation
+        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
+
+        testPlugin.backgroundDownload()
+
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("updateCheckResult"))
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("downloadFailed"))
+        XCTAssertTrue(failedImplementation.sentStatsActions.contains("download_fail"))
+    }
+
+    func testHasNativeBuildVersionChangedFallsBackToLegacyStoredKey() {
+        let nativeBuildKey = "LatestNativeBuildVersion"
+        let legacyBuildKey = "LatestVersionNative"
+        UserDefaults.standard.removeObject(forKey: nativeBuildKey)
+        UserDefaults.standard.set("1", forKey: legacyBuildKey)
+        defer {
+            UserDefaults.standard.removeObject(forKey: nativeBuildKey)
+            UserDefaults.standard.removeObject(forKey: legacyBuildKey)
+        }
+
+        plugin.setCurrentBuildVersionForTesting("2")
+
+        XCTAssertTrue(plugin.hasNativeBuildVersionChanged())
+    }
+
+    func testResetCurrentBundleForNativeBuildChangeIfNeededResetsSynchronously() {
+        let nativeBuildKey = "LatestNativeBuildVersion"
+        let resetPlugin = TestableCapacitorUpdaterPlugin()
+        let resetImplementation = ResetTrackingCapgoUpdater()
+        resetPlugin.implementation = resetImplementation
+        UserDefaults.standard.set("1", forKey: nativeBuildKey)
+        defer {
+            UserDefaults.standard.removeObject(forKey: nativeBuildKey)
+        }
+
+        resetPlugin.setCurrentBuildVersionForTesting("2")
+
+        XCTAssertTrue(resetPlugin.resetCurrentBundleForNativeBuildChangeIfNeeded())
+        XCTAssertTrue(resetImplementation.resetCalled)
+        XCTAssertTrue(resetImplementation.resetIsInternal)
+    }
+
+    func testShowSplashscreenOptionsDisableAutoHide() {
+        let options = plugin.splashscreenOptionsForTesting(methodName: "show")
+
+        XCTAssertEqual(options["autoHide"] as? Bool, false)
+    }
+
+    func testHideSplashscreenOptionsStayEmpty() {
+        let options = plugin.splashscreenOptionsForTesting(methodName: "hide")
+
+        XCTAssertTrue(options.isEmpty)
+    }
+
+    func testSplashscreenInvocationTokenRejectsStaleRequests() {
+        XCTAssertTrue(plugin.isCurrentSplashscreenInvocationTokenForTesting(0))
+
+        plugin.advanceSplashscreenInvocationTokenForTesting()
+
+        XCTAssertFalse(plugin.isCurrentSplashscreenInvocationTokenForTesting(0))
+    }
+
+    func testDelayUpdateUtilsSetMultiDelayStoresMultipleConditions() throws {
+        let utils = try makeDelayUpdateUtils()
+        clearDelayStorage()
+        defer { clearDelayStorage() }
+        let json = try makeDelayConditionsJSON()
+
+        XCTAssertTrue(utils.setMultiDelay(delayConditions: json))
+        XCTAssertEqual(UserDefaults.standard.string(forKey: delayPreferencesKey), json)
+    }
+
+    func testDelayUpdateUtilsCheckCancelDelayKilledKeepsOtherConditions() throws {
+        let utils = try makeDelayUpdateUtils()
+        clearDelayStorage()
+        defer { clearDelayStorage() }
+        let json = try makeDelayConditionsJSON()
+        XCTAssertTrue(utils.setMultiDelay(delayConditions: json))
+
+        utils.checkCancelDelay(source: .killed)
+
+        let stored = try XCTUnwrap(UserDefaults.standard.string(forKey: delayPreferencesKey))
+        let storedData = try XCTUnwrap(stored.data(using: .utf8))
+        let parsed = try XCTUnwrap(JSONSerialization.jsonObject(with: storedData) as? [[String: String]])
+
+        XCTAssertEqual(parsed.count, 1)
+        XCTAssertEqual(parsed.first?["kind"], "background")
+        XCTAssertEqual(parsed.first?["value"], "5000")
     }
 
     // MARK: - DelayUntilNext Tests

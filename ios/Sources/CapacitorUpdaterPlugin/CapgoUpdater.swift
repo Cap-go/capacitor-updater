@@ -54,10 +54,31 @@ import UIKit
     private var statsFlushTimer: Timer?
     private static let statsFlushInterval: TimeInterval = 1.0
 
+    private static func sanitizeHeaderValue(_ value: String) -> String {
+        if value.isEmpty {
+            return "unknown"
+        }
+
+        let filteredScalars = value.unicodeScalars.filter { scalar in
+            let cp = scalar.value
+            let isVisibleAscii = (0x20...0x7E).contains(cp)
+            let isIso88591 = (0xA0...0xFF).contains(cp)
+            return isVisibleAscii || isIso88591
+        }
+
+        let sanitized = String(String.UnicodeScalarView(filteredScalars)).trimmingCharacters(in: .whitespacesAndNewlines)
+        return sanitized.isEmpty ? "unknown" : sanitized
+    }
+
+    static func buildUserAgent(appId: String, pluginVersion: String, versionOs: String) -> String {
+        let safePluginVersion = sanitizeHeaderValue(pluginVersion)
+        let safeAppId = sanitizeHeaderValue(appId)
+        let safeVersionOs = sanitizeHeaderValue(versionOs)
+        return "CapacitorUpdater/\(safePluginVersion) (\(safeAppId)) ios/\(safeVersionOs)"
+    }
+
     private var userAgent: String {
-        let safePluginVersion = pluginVersion.isEmpty ? "unknown" : pluginVersion
-        let safeAppId = appId.isEmpty ? "unknown" : appId
-        return "CapacitorUpdater/\(safePluginVersion) (\(safeAppId)) ios/\(versionOs)"
+        CapgoUpdater.buildUserAgent(appId: appId, pluginVersion: pluginVersion, versionOs: versionOs)
     }
 
     private lazy var alamofireSession: Session = {
@@ -71,6 +92,7 @@ import UIKit
         notifyDownloadRaw(id, percent, ignoreMultipleOfTen, bundle)
     }
     public var notifyDownload: (String, Int) -> Void = { _, _  in }
+    public var notifyListeners: (String, [String: Any]) -> Void = { _, _ in }
 
     public func setLogger(_ logger: Logger) {
         self.logger = logger
@@ -456,6 +478,47 @@ import UIKit
     public func getLatest(url: URL, channel: String?) -> AppVersion {
         let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
         let latest: AppVersion = AppVersion()
+        func applyLatestResponse(_ value: AppVersionDec?) {
+            if let url = value?.url {
+                latest.url = url
+            }
+            if let checksum = value?.checksum {
+                latest.checksum = checksum
+            }
+            if let version = value?.version {
+                latest.version = version
+            }
+            if let major = value?.major {
+                latest.major = major
+            }
+            if let breaking = value?.breaking {
+                latest.breaking = breaking
+            }
+            if let error = value?.error {
+                latest.error = error
+            }
+            if let kind = value?.kind {
+                latest.kind = kind
+            }
+            if let message = value?.message {
+                latest.message = message
+            }
+            if let sessionKey = value?.session_key {
+                latest.sessionKey = sessionKey
+            }
+            if let data = value?.data {
+                latest.data = data
+            }
+            if let manifest = value?.manifest {
+                latest.manifest = manifest
+            }
+            if let link = value?.link {
+                latest.link = link
+            }
+            if let comment = value?.comment {
+                latest.comment = comment
+            }
+        }
         var parameters: InfoObject = self.createInfoObject()
         if let channel = channel {
             parameters.defaultChannel = channel
@@ -467,48 +530,32 @@ import UIKit
             switch response.result {
             case .success:
                 latest.statusCode = response.response?.statusCode ?? 0
-                if let url = response.value?.url {
-                    latest.url = url
-                }
-                if let checksum = response.value?.checksum {
-                    latest.checksum = checksum
-                }
-                if let version = response.value?.version {
-                    latest.version = version
-                }
-                if let major = response.value?.major {
-                    latest.major = major
-                }
-                if let breaking = response.value?.breaking {
-                    latest.breaking = breaking
-                }
-                if let error = response.value?.error {
-                    latest.error = error
-                }
-                if let message = response.value?.message {
-                    latest.message = message
-                }
-                if let sessionKey = response.value?.session_key {
-                    latest.sessionKey = sessionKey
-                }
-                if let data = response.value?.data {
-                    latest.data = data
-                }
-                if let manifest = response.value?.manifest {
-                    latest.manifest = manifest
-                }
-                if let link = response.value?.link {
-                    latest.link = link
-                }
-                if let comment = response.value?.comment {
-                    latest.comment = comment
-                }
+                applyLatestResponse(response.value)
             case let .failure(error):
                 self.logger.error("Error getting latest version")
                 self.logger.debug("Response: \(response.value.debugDescription), Error: \(error)")
-                latest.message = "Error getting Latest"
-                latest.error = "response_error"
                 latest.statusCode = response.response?.statusCode ?? 0
+                if let data = response.data,
+                   let decoded = try? JSONDecoder().decode(AppVersionDec.self, from: data) {
+                    applyLatestResponse(decoded)
+                    let decodedError = decoded.error ?? ""
+                    let decodedKind = decoded.kind ?? ""
+                    if decodedError.isEmpty && decodedKind.isEmpty {
+                        if latest.message == nil || latest.message?.isEmpty == true {
+                            latest.message = "Error getting Latest"
+                        }
+                        if latest.error == nil || latest.error?.isEmpty == true {
+                            latest.error = "response_error"
+                        }
+                        if latest.kind == nil || latest.kind?.isEmpty == true {
+                            latest.kind = "failed"
+                        }
+                    }
+                } else {
+                    latest.message = "Error getting Latest"
+                    latest.error = "response_error"
+                    latest.kind = "failed"
+                }
             }
             semaphore.signal()
         }
@@ -520,6 +567,22 @@ import UIKit
         UserDefaults.standard.set(bundle, forKey: self.CAP_SERVER_PATH)
         UserDefaults.standard.synchronize()
         logger.info("Current bundle set to: \((bundle ).isEmpty ? BundleInfo.ID_BUILTIN : bundle)")
+    }
+
+    static func shouldResetForForeignBundle(bundlePath: String?, isBuiltin: Bool, hasStoredBundleInfo: Bool) -> Bool {
+        guard let bundlePath, !bundlePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+        return !isBuiltin && !hasStoredBundleInfo
+    }
+
+    private func hasStoredBundleInfo(id: String) -> Bool {
+        guard !id.isEmpty,
+              id != BundleInfo.ID_BUILTIN,
+              id != BundleInfo.VERSION_UNKNOWN else {
+            return false
+        }
+        return UserDefaults.standard.object(forKey: "\(id)\(self.INFO_SUFFIX)") != nil
     }
 
     // Per-download temp file paths to prevent collisions when multiple downloads run concurrently
@@ -578,10 +641,36 @@ import UIKit
         for entry in manifest {
             guard let fileName = entry.file_name,
                   let downloadUrl = entry.download_url else {
+                let error = NSError(
+                    domain: "ManifestEntryError",
+                    code: 1,
+                    userInfo: [
+                        NSLocalizedDescriptionKey: "Manifest entry is missing file_name or download_url"
+                    ]
+                )
+                errorLock.lock()
+                if downloadError == nil {
+                    downloadError = error
+                }
+                errorLock.unlock()
+                hasError.value = true
+                logger.error("Manifest entry is missing file_name or download_url")
                 continue
             }
             guard let entryFileHash = entry.file_hash, !entryFileHash.isEmpty else {
                 logger.error("Missing file_hash for manifest entry: \(entry.file_name ?? "unknown")")
+                let error = NSError(
+                    domain: "ManifestEntryError",
+                    code: 2,
+                    userInfo: [
+                        NSLocalizedDescriptionKey: "Manifest entry is missing file_hash for \(entry.file_name ?? "unknown")"
+                    ]
+                )
+                errorLock.lock()
+                if downloadError == nil {
+                    downloadError = error
+                }
+                errorLock.unlock()
                 hasError.value = true
                 continue
             }
@@ -670,11 +759,16 @@ import UIKit
         // Execute all operations concurrently and wait for completion
         manifestDownloadQueue.addOperations(operations, waitUntilFinished: true)
 
-        if hasError.value, let error = downloadError {
+        if hasError.value {
+            let resolvedError = downloadError ?? NSError(
+                domain: "ManifestDownloadError",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Manifest download failed due to invalid or missing entries"]
+            )
             // Update bundle status to ERROR if download failed
             let errorBundle = bundleInfo.setStatus(status: BundleStatus.ERROR.localizedString)
             self.saveBundleInfo(id: id, bundle: errorBundle)
-            throw error
+            throw resolvedError
         }
 
         // Update bundle status to PENDING after successful download
@@ -1411,6 +1505,52 @@ import UIKit
         return libraryDir.appendingPathComponent(self.bundleDirectory).appendingPathComponent(id)
     }
 
+    struct ResetState {
+        let currentBundlePath: String
+        let fallbackBundleId: String
+        let nextBundleId: String?
+    }
+
+    func captureResetState() -> ResetState {
+        ResetState(
+            currentBundlePath: UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH) ?? self.DEFAULT_FOLDER,
+            fallbackBundleId: UserDefaults.standard.string(forKey: self.FALLBACK_VERSION) ?? BundleInfo.ID_BUILTIN,
+            nextBundleId: UserDefaults.standard.string(forKey: self.NEXT_VERSION)
+        )
+    }
+
+    func restoreResetState(_ state: ResetState) {
+        let currentBundlePath = state.currentBundlePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? self.DEFAULT_FOLDER
+            : state.currentBundlePath
+        let fallbackBundleId = state.fallbackBundleId.isEmpty ? BundleInfo.ID_BUILTIN : state.fallbackBundleId
+
+        self.setCurrentBundle(bundle: currentBundlePath)
+        UserDefaults.standard.set(fallbackBundleId, forKey: self.FALLBACK_VERSION)
+        if let nextBundleId = state.nextBundleId, !nextBundleId.isEmpty {
+            UserDefaults.standard.set(nextBundleId, forKey: self.NEXT_VERSION)
+        } else {
+            UserDefaults.standard.removeObject(forKey: self.NEXT_VERSION)
+        }
+        UserDefaults.standard.synchronize()
+    }
+
+    func prepareResetStateForTransition() {
+        self.setCurrentBundle(bundle: "")
+        self.setFallbackBundle(fallback: Optional<BundleInfo>.none)
+        _ = self.setNextBundle(next: Optional<String>.none)
+    }
+
+    func finalizeResetTransition(previousBundleName: String, isInternal: Bool) {
+        if !isInternal {
+            self.sendStats(action: "reset", versionName: self.getCurrentBundle().getVersionName(), oldVersionName: previousBundleName)
+        }
+    }
+
+    func canSet(bundle: BundleInfo) -> Bool {
+        bundle.isBuiltin() || self.bundleExists(id: bundle.getId())
+    }
+
     public func set(bundle: BundleInfo) -> Bool {
         return self.set(id: bundle.getId())
     }
@@ -1448,10 +1588,35 @@ import UIKit
         return false
     }
 
+    func stagePendingReload(bundle: BundleInfo) -> Bool {
+        guard !bundle.isBuiltin(), bundleExists(id: bundle.getId()) else {
+            return false
+        }
+        self.setCurrentBundle(bundle: self.getBundleDirectory(id: bundle.getId()).path)
+        return true
+    }
+
+    func finalizePendingReload(bundle: BundleInfo, previousBundleName: String) {
+        guard !bundle.isBuiltin() else {
+            return
+        }
+        self.sendStats(action: "set", versionName: bundle.getVersionName(), oldVersionName: previousBundleName)
+    }
+
     public func autoReset() {
         let currentBundle: BundleInfo = self.getCurrentBundle()
         if !currentBundle.isBuiltin() && !self.bundleExists(id: currentBundle.getId()) {
             logger.info("Folder at bundle path does not exist. Triggering reset.")
+            self.reset()
+            return
+        }
+        let bundlePath = UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH)
+        if Self.shouldResetForForeignBundle(
+            bundlePath: bundlePath,
+            isBuiltin: currentBundle.isBuiltin(),
+            hasStoredBundleInfo: self.hasStoredBundleInfo(id: currentBundle.getId())
+        ) {
+            logger.info("Current bundle id is not one of the bundle ids stored by this plugin. Triggering reset.")
             self.reset()
         }
     }
@@ -1463,12 +1628,8 @@ import UIKit
     public func reset(isInternal: Bool) {
         logger.info("reset: \(isInternal)")
         let currentBundleName = self.getCurrentBundle().getVersionName()
-        self.setCurrentBundle(bundle: "")
-        self.setFallbackBundle(fallback: Optional<BundleInfo>.none)
-        _ = self.setNextBundle(next: Optional<String>.none)
-        if !isInternal {
-            self.sendStats(action: "reset", versionName: self.getCurrentBundle().getVersionName(), oldVersionName: currentBundleName)
-        }
+        self.prepareResetStateForTransition()
+        self.finalizeResetTransition(previousBundleName: currentBundleName, isInternal: isInternal)
     }
 
     public func setSuccess(bundle: BundleInfo, autoDeletePrevious: Bool) {
@@ -1851,7 +2012,7 @@ import UIKit
         }
         let result: BundleInfo
         if BundleInfo.ID_BUILTIN == trueId {
-            result = BundleInfo(id: trueId, version: "", status: BundleStatus.SUCCESS, checksum: "")
+            result = BundleInfo(id: trueId, version: self.versionBuild, status: BundleStatus.SUCCESS, checksum: "")
         } else if BundleInfo.VERSION_UNKNOWN == trueId {
             result = BundleInfo(id: trueId, version: "", status: BundleStatus.ERROR, checksum: "")
         } else {
@@ -1954,6 +2115,8 @@ import UIKit
         UserDefaults.standard.set(nextId, forKey: self.NEXT_VERSION)
         UserDefaults.standard.synchronize()
         self.setBundleStatus(id: nextId, status: BundleStatus.PENDING)
+        self.sendStats(action: "set_next", versionName: newBundle.getVersionName(), oldVersionName: self.getCurrentBundle().getVersionName())
+        self.notifyListeners("setNext", ["bundle": newBundle.toJSON()])
         return true
     }
 }

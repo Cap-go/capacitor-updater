@@ -50,7 +50,7 @@ Perfect for fixing bugs immediately, A/B testing features, and maintaining contr
 - ⚔️ **Battle-Tested**: Used in more than 3000 projects.
 - 📊 View your deployment statistics
 - 🔋 Supports Android and iOS
-- ⚡️ Capacitor 6/7 support
+- ⚡️ Capacitor 4/5/6/7/8 support
 - 🌐 **Open Source**: Licensed under the Mozilla Public License 2.0
 - 🌐 **Open Source Backend**: Self install [our backend](https://github.com/Cap-go/capgo) in your infra
 
@@ -96,11 +96,11 @@ Starting from v8, the plugin uses [ZIPFoundation](https://github.com/weichsel/ZI
 | v7.\*.\*       | v7.\*.\*                | ✅                 |
 | v6.\*.\*       | v6.\*.\*                | ✅                 |
 | v5.\*.\*       | v5.\*.\*                | ✅ |
-| v4.\*.\*       | v4.\*.\*                | ⚠️ Deprecated |
+| v4.\*.\*       | v4.\*.\*                | ✅                 |
 | v3.\*.\*       | v3.\*.\*                | ⚠️ Deprecated     |
 | > 7            | v4.\*.\*                | ⚠️ Deprecated, our CI got crazy and bumped too much version     |
 
-> **Note:** Versions 5, 6, 7, and 8 all share the same features. The major version simply follows your Capacitor version. You can safely use any of these versions that matches your Capacitor installation.
+> **Note:** Versions 4, 5, 6, 7, and 8 all share the same features. The major version simply follows your Capacitor version. You can safely use any of these versions that matches your Capacitor installation.
 
 ### iOS
 
@@ -158,6 +158,9 @@ npm install @capgo/capacitor-updater@lts-v6
 
 # For Capacitor 5
 npm install @capgo/capacitor-updater@lts-v5
+
+# For Capacitor 4
+npm install @capgo/capacitor-updater@lts-v4
 ```
 
 ## Auto-update setup
@@ -459,11 +462,14 @@ export default config;
 * [`removeAllListeners()`](#removealllisteners)
 * [`addListener('download', ...)`](#addlistenerdownload-)
 * [`addListener('noNeedUpdate', ...)`](#addlistenernoneedupdate-)
+* [`addListener('updateCheckResult', ...)`](#addlistenerupdatecheckresult-)
 * [`addListener('updateAvailable', ...)`](#addlistenerupdateavailable-)
 * [`addListener('downloadComplete', ...)`](#addlistenerdownloadcomplete-)
 * [`addListener('breakingAvailable', ...)`](#addlistenerbreakingavailable-)
 * [`addListener('majorAvailable', ...)`](#addlistenermajoravailable-)
 * [`addListener('updateFailed', ...)`](#addlistenerupdatefailed-)
+* [`addListener('set', ...)`](#addlistenerset-)
+* [`addListener('setNext', ...)`](#addlistenersetnext-)
 * [`addListener('downloadFailed', ...)`](#addlistenerdownloadfailed-)
 * [`addListener('appReloaded', ...)`](#addlistenerappreloaded-)
 * [`addListener('appReady', ...)`](#addlistenerappready-)
@@ -924,27 +930,23 @@ After receiving the latest version info, you can:
 2. Download it using {@link download}
 3. Apply it using {@link next} or {@link set}
 
-**Important: Error handling for "no new version available"**
+**Important: Handling "no new version available"**
 
 When the device's current version matches the latest version on the server (i.e., the device is already
 up-to-date), the server returns a 200 response with `error: "no_new_version_available"` and
-`message: "No new version available"`. **This causes `getLatest()` to throw an error**, even though
-this is a normal, expected condition.
+`message: "No new version available"`. This is a normal, expected condition and resolves with
+`kind: "up_to_date"` when the backend provides that classification.
 
-You should catch this specific error to handle it gracefully:
+You should check `kind` and `error` before attempting to download:
 
 ```typescript
-try {
-  const latest = await CapacitorUpdater.getLatest();
+const latest = await CapacitorUpdater.getLatest();
+if (latest.kind === 'up_to_date') {
+  console.log('Already up to date');
+} else if (latest.kind === 'blocked') {
+  console.log('Update is blocked:', latest.error);
+} else if (latest.url) {
   // New version is available, proceed with download
-} catch (error) {
-  if (error.message === 'No new version available') {
-    // Device is already on the latest version - this is normal
-    console.log('Already up to date');
-  } else {
-    // Actual error occurred
-    console.error('Failed to check for updates:', error);
-  }
 }
 ```
 
@@ -1246,6 +1248,7 @@ Remove all event listeners registered for this plugin.
 This unregisters all listeners added via {@link addListener} for all event types:
 - `download`
 - `noNeedUpdate`
+- `updateCheckResult`
 - `updateAvailable`
 - `downloadComplete`
 - `downloadFailed`
@@ -1299,6 +1302,31 @@ Listen for no need to update event, useful when you want force check every time 
 **Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
 
 **Since:** 4.0.0
+
+--------------------
+
+
+#### addListener('updateCheckResult', ...)
+
+```typescript
+addListener(eventName: 'updateCheckResult', listenerFunc: (state: UpdateCheckResultEvent) => void) => Promise<PluginListenerHandle>
+```
+
+Listen for update check results before the updater decides whether to download.
+The backend can classify the <a href="#updatecheckresultevent">UpdateCheckResultEvent</a> payload as `up_to_date`, `blocked`, or `failed`.
+
+This event is emitted alongside legacy events. For `up_to_date` and `blocked`, it is emitted before
+`noNeedUpdate` and does not emit `downloadFailed`. For `failed`, it is emitted before the legacy
+`downloadFailed` event and keeps the existing failure stats behavior.
+
+| Param              | Type                                                                                          |
+| ------------------ | --------------------------------------------------------------------------------------------- |
+| **`eventName`**    | <code>'updateCheckResult'</code>                                                              |
+| **`listenerFunc`** | <code>(state: <a href="#updatecheckresultevent">UpdateCheckResultEvent</a>) =&gt; void</code> |
+
+**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
+
+**Since:** 8.45.11
 
 --------------------
 
@@ -1404,6 +1432,48 @@ Listen for update fail event in the App, let you know when update has fail to in
 --------------------
 
 
+#### addListener('set', ...)
+
+```typescript
+addListener(eventName: 'set', listenerFunc: (state: SetEvent) => void) => Promise<PluginListenerHandle>
+```
+
+Listen for set event in the App, let you know when a bundle has been applied successfully.
+This event is retained natively until JavaScript consumes it, so if the app reloads before your
+listener is attached, the last pending `set` event is delivered once the listener subscribes.
+
+| Param              | Type                                                              |
+| ------------------ | ----------------------------------------------------------------- |
+| **`eventName`**    | <code>'set'</code>                                                |
+| **`listenerFunc`** | <code>(state: <a href="#setevent">SetEvent</a>) =&gt; void</code> |
+
+**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
+
+**Since:** 8.43.12
+
+--------------------
+
+
+#### addListener('setNext', ...)
+
+```typescript
+addListener(eventName: 'setNext', listenerFunc: (state: SetNextEvent) => void) => Promise<PluginListenerHandle>
+```
+
+Listen for set next event in the App, let you know when a bundle is queued as the next bundle to install.
+
+| Param              | Type                                                                      |
+| ------------------ | ------------------------------------------------------------------------- |
+| **`eventName`**    | <code>'setNext'</code>                                                    |
+| **`listenerFunc`** | <code>(state: <a href="#setnextevent">SetNextEvent</a>) =&gt; void</code> |
+
+**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
+
+**Since:** 6.14.0
+
+--------------------
+
+
 #### addListener('downloadFailed', ...)
 
 ```typescript
@@ -1450,7 +1520,9 @@ Listen for reload event in the App, let you know when reload has happened
 addListener(eventName: 'appReady', listenerFunc: (state: AppReadyEvent) => void) => Promise<PluginListenerHandle>
 ```
 
-Listen for app ready event in the App, let you know when app is ready to use, this event is retain till consumed.
+Listen for app ready event in the App, let you know when app is ready to use.
+This event is retained natively until JavaScript consumes it, so it can still be delivered after
+a reload even if the listener is attached later in app startup.
 
 | Param              | Type                                                                        |
 | ------------------ | --------------------------------------------------------------------------- |
@@ -2014,9 +2086,10 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 
 ##### ResetOptions
 
-| Prop                   | Type                 |
-| ---------------------- | -------------------- |
-| **`toLastSuccessful`** | <code>boolean</code> |
+| Prop                   | Type                 | Description                                                                                                                                                                                                        | Default            |
+| ---------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------ |
+| **`toLastSuccessful`** | <code>boolean</code> | Reset to the last successfully loaded bundle instead of the builtin one.                                                                                                                                           | <code>false</code> |
+| **`usePendingBundle`** | <code>boolean</code> | Apply the pending bundle set via {@link next} while resetting. When `true`, the plugin will switch to the pending bundle immediately and clear the pending flag. If no pending bundle exists, the reset will fail. | <code>false</code> |
 
 
 ##### CurrentBundleResult
@@ -2044,20 +2117,22 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 
 ##### LatestVersion
 
-| Prop             | Type                         | Description                                                                                                                                                                                                   | Since  |
-| ---------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| **`version`**    | <code>string</code>          | Result of getLatest method                                                                                                                                                                                    | 4.0.0  |
-| **`checksum`**   | <code>string</code>          |                                                                                                                                                                                                               | 6      |
-| **`breaking`**   | <code>boolean</code>         | Indicates whether the update was flagged as breaking by the backend.                                                                                                                                          | 7.22.0 |
-| **`major`**      | <code>boolean</code>         |                                                                                                                                                                                                               |        |
-| **`message`**    | <code>string</code>          | Optional message from the server. When no new version is available, this will be "No new version available".                                                                                                  |        |
-| **`sessionKey`** | <code>string</code>          |                                                                                                                                                                                                               |        |
-| **`error`**      | <code>string</code>          | Error code from the server, if any. Common values: - `"no_new_version_available"`: Device is already on the latest version (not a failure) - Other error codes indicate actual failures in the update process |        |
-| **`old`**        | <code>string</code>          | The previous/current version name (provided for reference).                                                                                                                                                   |        |
-| **`url`**        | <code>string</code>          | Download URL for the bundle (when a new version is available).                                                                                                                                                |        |
-| **`manifest`**   | <code>ManifestEntry[]</code> | File list for delta updates (when using multi-file downloads).                                                                                                                                                | 6.1    |
-| **`link`**       | <code>string</code>          | Optional link associated with this bundle version (e.g., release notes URL, changelog, GitHub release).                                                                                                       | 7.35.0 |
-| **`comment`**    | <code>string</code>          | Optional comment or description for this bundle version.                                                                                                                                                      | 7.35.0 |
+| Prop             | Type                                                              | Description                                                                                                  | Since   |
+| ---------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------- |
+| **`version`**    | <code>string</code>                                               | Result of getLatest method                                                                                   | 4.0.0   |
+| **`checksum`**   | <code>string</code>                                               |                                                                                                              | 6       |
+| **`breaking`**   | <code>boolean</code>                                              | Indicates whether the update was flagged as breaking by the backend.                                         | 7.22.0  |
+| **`major`**      | <code>boolean</code>                                              |                                                                                                              |         |
+| **`message`**    | <code>string</code>                                               | Optional message from the server. When no new version is available, this will be "No new version available". |         |
+| **`sessionKey`** | <code>string</code>                                               |                                                                                                              |         |
+| **`error`**      | <code>string</code>                                               | Error code from the server, if any. Use `kind` for classification instead of parsing this value.             |         |
+| **`kind`**       | <code><a href="#updateresponsekind">UpdateResponseKind</a></code> | Classification for this response, provided by the backend.                                                   | 8.45.11 |
+| **`statusCode`** | <code>number</code>                                               | HTTP status code returned by the update server for classified update-check responses.                        | 8.45.11 |
+| **`old`**        | <code>string</code>                                               | The previous/current version name (provided for reference).                                                  |         |
+| **`url`**        | <code>string</code>                                               | Download URL for the bundle (when a new version is available).                                               |         |
+| **`manifest`**   | <code>ManifestEntry[]</code>                                      | File list for delta updates (when using multi-file downloads).                                               | 6.1     |
+| **`link`**       | <code>string</code>                                               | Optional link associated with this bundle version (e.g., release notes URL, changelog, GitHub release).      | 7.35.0  |
+| **`comment`**    | <code>string</code>                                               | Optional comment or description for this bundle version.                                                     | 7.35.0  |
 
 
 ##### GetLatestOptions
@@ -2176,6 +2251,18 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 | **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Current status of download, between 0 and 100. | 4.0.0 |
 
 
+##### UpdateCheckResultEvent
+
+| Prop             | Type                                                              | Description                                                          | Since   |
+| ---------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------- | ------- |
+| **`kind`**       | <code><a href="#updateresponsekind">UpdateResponseKind</a></code> | Classification for the update check result, provided by the backend. | 8.45.11 |
+| **`error`**      | <code>string</code>                                               | Backend error code, when provided.                                   | 8.45.11 |
+| **`message`**    | <code>string</code>                                               | Backend message, when provided.                                      | 8.45.11 |
+| **`statusCode`** | <code>number</code>                                               | HTTP status code returned by the update endpoint.                    | 8.45.11 |
+| **`version`**    | <code>string</code>                                               | Version referenced by the update check result.                       | 8.45.11 |
+| **`bundle`**     | <code><a href="#bundleinfo">BundleInfo</a></code>                 | Current bundle on the device.                                        | 8.45.11 |
+
+
 ##### UpdateAvailableEvent
 
 | Prop         | Type                                              | Description                                    | Since |
@@ -2204,6 +2291,20 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 | **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emit when a update failed to install. | 4.0.0 |
 
 
+##### SetEvent
+
+| Prop         | Type                                              | Description                                                                                              | Since   |
+| ------------ | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------- |
+| **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emit when a bundle has been applied successfully. This event uses native `retainUntilConsumed` behavior. | 8.43.12 |
+
+
+##### SetNextEvent
+
+| Prop         | Type                                              | Description                                                 | Since  |
+| ------------ | ------------------------------------------------- | ----------------------------------------------------------- | ------ |
+| **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emit when a bundle is queued as the next bundle to install. | 6.14.0 |
+
+
 ##### DownloadFailedEvent
 
 | Prop          | Type                | Description                | Since |
@@ -2213,10 +2314,10 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 
 ##### AppReadyEvent
 
-| Prop         | Type                                              | Description                           | Since |
-| ------------ | ------------------------------------------------- | ------------------------------------- | ----- |
-| **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emitted when the app is ready to use. | 5.2.0 |
-| **`status`** | <code>string</code>                               |                                       |       |
+| Prop         | Type                                              | Description                                                                                  | Since |
+| ------------ | ------------------------------------------------- | -------------------------------------------------------------------------------------------- | ----- |
+| **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emitted when the app is ready to use. This event uses native `retainUntilConsumed` behavior. | 5.2.0 |
+| **`status`** | <code>string</code>                               |                                                                                              |       |
 
 
 ##### ChannelPrivateEvent
@@ -2351,6 +2452,15 @@ error: The bundle has failed to download.
 ##### DelayUntilNext
 
 <code>'background' | 'kill' | 'nativeVersion' | 'date'</code>
+
+
+##### UpdateResponseKind
+
+Classification for update-check responses that do not provide a downloadable bundle.
+The update backend provides this field directly. Missing or unknown values are treated as
+failed by native clients.
+
+<code>'up_to_date' | 'blocked' | 'failed'</code>
 
 
 ##### BreakingAvailableEvent

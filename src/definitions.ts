@@ -619,7 +619,10 @@ export interface CapacitorUpdaterPlugin {
    * - Testing rollback functionality
    * - Providing users a "reset to factory" option
    *
-   * @param options {@link ResetOptions} to control reset behavior. If `toLastSuccessful` is `false` (or omitted), resets to builtin. If `true`, resets to last successful bundle.
+   * @param options {@link ResetOptions} to control reset behavior.
+   * If `toLastSuccessful` is `false` (or omitted), resets to builtin.
+   * If `true`, resets to last successful bundle.
+   * If `usePendingBundle` is `true`, applies the pending bundle set via {@link next} and clears it.
    * @returns {Promise<void>} A promise that may never resolve because the app will be reloaded.
    * @throws {Error} If the reset operation fails.
    */
@@ -748,27 +751,23 @@ export interface CapacitorUpdaterPlugin {
    * 2. Download it using {@link download}
    * 3. Apply it using {@link next} or {@link set}
    *
-   * **Important: Error handling for "no new version available"**
+   * **Important: Handling "no new version available"**
    *
    * When the device's current version matches the latest version on the server (i.e., the device is already
    * up-to-date), the server returns a 200 response with `error: "no_new_version_available"` and
-   * `message: "No new version available"`. **This causes `getLatest()` to throw an error**, even though
-   * this is a normal, expected condition.
+   * `message: "No new version available"`. This is a normal, expected condition and resolves with
+   * `kind: "up_to_date"` when the backend provides that classification.
    *
-   * You should catch this specific error to handle it gracefully:
+   * You should check `kind` and `error` before attempting to download:
    *
    * ```typescript
-   * try {
-   *   const latest = await CapacitorUpdater.getLatest();
+   * const latest = await CapacitorUpdater.getLatest();
+   * if (latest.kind === 'up_to_date') {
+   *   console.log('Already up to date');
+   * } else if (latest.kind === 'blocked') {
+   *   console.log('Update is blocked:', latest.error);
+   * } else if (latest.url) {
    *   // New version is available, proceed with download
-   * } catch (error) {
-   *   if (error.message === 'No new version available') {
-   *     // Device is already on the latest version - this is normal
-   *     console.log('Already up to date');
-   *   } else {
-   *     // Actual error occurred
-   *     console.error('Failed to check for updates:', error);
-   *   }
    * }
    * ```
    *
@@ -778,7 +777,7 @@ export interface CapacitorUpdaterPlugin {
    *
    * @param options Optional {@link GetLatestOptions} to specify which channel to check.
    * @returns {Promise<LatestVersion>} Information about the latest available bundle version.
-   * @throws {Error} Always throws when no new version is available (`error: "no_new_version_available"`), or when the request fails.
+   * @throws {Error} Throws for failed update checks or transport/request failures.
    * @since 4.0.0
    */
   getLatest(options?: GetLatestOptions): Promise<LatestVersion>;
@@ -1004,6 +1003,7 @@ export interface CapacitorUpdaterPlugin {
    * This unregisters all listeners added via {@link addListener} for all event types:
    * - `download`
    * - `noNeedUpdate`
+   * - `updateCheckResult`
    * - `updateAvailable`
    * - `downloadComplete`
    * - `downloadFailed`
@@ -1034,6 +1034,21 @@ export interface CapacitorUpdaterPlugin {
    * @since 4.0.0
    */
   addListener(eventName: 'noNeedUpdate', listenerFunc: (state: NoNeedEvent) => void): Promise<PluginListenerHandle>;
+
+  /**
+   * Listen for update check results before the updater decides whether to download.
+   * The backend can classify the UpdateCheckResultEvent payload as `up_to_date`, `blocked`, or `failed`.
+   *
+   * This event is emitted alongside legacy events. For `up_to_date` and `blocked`, it is emitted before
+   * `noNeedUpdate` and does not emit `downloadFailed`. For `failed`, it is emitted before the legacy
+   * `downloadFailed` event and keeps the existing failure stats behavior.
+   *
+   * @since 8.45.11
+   */
+  addListener(
+    eventName: 'updateCheckResult',
+    listenerFunc: (state: UpdateCheckResultEvent) => void,
+  ): Promise<PluginListenerHandle>;
 
   /**
    * Listen for available update event, useful when you want to force check every time the app is launched
@@ -1088,6 +1103,22 @@ export interface CapacitorUpdaterPlugin {
   ): Promise<PluginListenerHandle>;
 
   /**
+   * Listen for set event in the App, let you know when a bundle has been applied successfully.
+   * This event is retained natively until JavaScript consumes it, so if the app reloads before your
+   * listener is attached, the last pending `set` event is delivered once the listener subscribes.
+   *
+   * @since 8.43.12
+   */
+  addListener(eventName: 'set', listenerFunc: (state: SetEvent) => void): Promise<PluginListenerHandle>;
+
+  /**
+   * Listen for set next event in the App, let you know when a bundle is queued as the next bundle to install.
+   *
+   * @since 6.14.0
+   */
+  addListener(eventName: 'setNext', listenerFunc: (state: SetNextEvent) => void): Promise<PluginListenerHandle>;
+
+  /**
    * Listen for download fail event in the App, let you know when a bundle download has failed
    *
    * @since 4.0.0
@@ -1105,7 +1136,9 @@ export interface CapacitorUpdaterPlugin {
   addListener(eventName: 'appReloaded', listenerFunc: () => void): Promise<PluginListenerHandle>;
 
   /**
-   * Listen for app ready event in the App, let you know when app is ready to use, this event is retain till consumed.
+   * Listen for app ready event in the App, let you know when app is ready to use.
+   * This event is retained natively until JavaScript consumes it, so it can still be delivered after
+   * a reload even if the listener is attached later in app startup.
    *
    * @since 5.1.0
    */
@@ -1480,11 +1513,59 @@ export type BundleStatus = 'success' | 'error' | 'pending' | 'downloading';
 
 export type DelayUntilNext = 'background' | 'kill' | 'nativeVersion' | 'date';
 
+/**
+ * Classification for update-check responses that do not provide a downloadable bundle.
+ * The update backend provides this field directly. Missing or unknown values are treated as
+ * failed by native clients.
+ *
+ * @since 8.45.11
+ */
+export type UpdateResponseKind = 'up_to_date' | 'blocked' | 'failed';
+
 export interface NoNeedEvent {
   /**
    * Current status of download, between 0 and 100.
    *
    * @since  4.0.0
+   */
+  bundle: BundleInfo;
+}
+
+export interface UpdateCheckResultEvent {
+  /**
+   * Classification for the update check result, provided by the backend.
+   *
+   * @since 8.45.11
+   */
+  kind: UpdateResponseKind;
+  /**
+   * Backend error code, when provided.
+   *
+   * @since 8.45.11
+   */
+  error?: string;
+  /**
+   * Backend message, when provided.
+   *
+   * @since 8.45.11
+   */
+  message?: string;
+  /**
+   * HTTP status code returned by the update endpoint.
+   *
+   * @since 8.45.11
+   */
+  statusCode?: number;
+  /**
+   * Version referenced by the update check result.
+   *
+   * @since 8.45.11
+   */
+  version?: string;
+  /**
+   * Current bundle on the device.
+   *
+   * @since 8.45.11
    */
   bundle: BundleInfo;
 }
@@ -1612,9 +1693,29 @@ export interface UpdateFailedEvent {
   bundle: BundleInfo;
 }
 
+export interface SetEvent {
+  /**
+   * Emit when a bundle has been applied successfully.
+   * This event uses native `retainUntilConsumed` behavior.
+   *
+   * @since 8.43.12
+   */
+  bundle: BundleInfo;
+}
+
+export interface SetNextEvent {
+  /**
+   * Emit when a bundle is queued as the next bundle to install.
+   *
+   * @since 6.14.0
+   */
+  bundle: BundleInfo;
+}
+
 export interface AppReadyEvent {
   /**
    * Emitted when the app is ready to use.
+   * This event uses native `retainUntilConsumed` behavior.
    *
    * @since  5.2.0
    */
@@ -1666,12 +1767,21 @@ export interface LatestVersion {
   message?: string;
   sessionKey?: string;
   /**
-   * Error code from the server, if any.
-   * Common values:
-   * - `"no_new_version_available"`: Device is already on the latest version (not a failure)
-   * - Other error codes indicate actual failures in the update process
+   * Error code from the server, if any. Use `kind` for classification instead of parsing this value.
    */
   error?: string;
+  /**
+   * Classification for this response, provided by the backend.
+   *
+   * @since 8.45.11
+   */
+  kind?: UpdateResponseKind;
+  /**
+   * HTTP status code returned by the update server for classified update-check responses.
+   *
+   * @since 8.45.11
+   */
+  statusCode?: number;
   /**
    * The previous/current version name (provided for reference).
    */
@@ -1798,7 +1908,19 @@ export interface BundleListResult {
 }
 
 export interface ResetOptions {
-  toLastSuccessful: boolean;
+  /**
+   * Reset to the last successfully loaded bundle instead of the builtin one.
+   * @default false
+   */
+  toLastSuccessful?: boolean;
+  /**
+   * Apply the pending bundle set via {@link next} while resetting.
+   *
+   * When `true`, the plugin will switch to the pending bundle immediately and clear the pending flag.
+   * If no pending bundle exists, the reset will fail.
+   * @default false
+   */
+  usePendingBundle?: boolean;
 }
 
 export interface ListOptions {

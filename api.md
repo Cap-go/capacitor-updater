@@ -85,18 +85,21 @@ CapacitorUpdater can be configured with these options:
 - [`getPluginVersion`](#getpluginversion)
 - [`isAutoUpdateEnabled`](#isautoupdateenabled)
 - [`removeAllListeners`](#removealllisteners)
-- [`addListener('download')`](#addlistenerdownload-)
-- [`addListener('noNeedUpdate')`](#addlistenernoneedupdate-)
-- [`addListener('updateAvailable')`](#addlistenerupdateavailable-)
-- [`addListener('downloadComplete')`](#addlistenerdownloadcomplete-)
-- [`addListener('breakingAvailable')`](#addlistenerbreakingavailable-)
-- [`addListener('majorAvailable')`](#addlistenermajoravailable-)
-- [`addListener('updateFailed')`](#addlistenerupdatefailed-)
-- [`addListener('downloadFailed')`](#addlistenerdownloadfailed-)
-- [`addListener('appReloaded')`](#addlistenerappreloaded-)
-- [`addListener('appReady')`](#addlistenerappready-)
-- [`addListener('channelPrivate')`](#addlistenerchannelprivate-)
-- [`addListener('onFlexibleUpdateStateChange')`](#addlisteneronflexibleupdatestatechange-)
+- [`addListener('download')`](#addlistenerdownload)
+- [`addListener('noNeedUpdate')`](#addlistenernoneedupdate)
+- [`addListener('updateCheckResult')`](#addlistenerupdatecheckresult)
+- [`addListener('updateAvailable')`](#addlistenerupdateavailable)
+- [`addListener('downloadComplete')`](#addlistenerdownloadcomplete)
+- [`addListener('breakingAvailable')`](#addlistenerbreakingavailable)
+- [`addListener('majorAvailable')`](#addlistenermajoravailable)
+- [`addListener('updateFailed')`](#addlistenerupdatefailed)
+- [`addListener('set')`](#addlistenerset)
+- [`addListener('setNext')`](#addlistenersetnext)
+- [`addListener('downloadFailed')`](#addlistenerdownloadfailed)
+- [`addListener('appReloaded')`](#addlistenerappreloaded)
+- [`addListener('appReady')`](#addlistenerappready)
+- [`addListener('channelPrivate')`](#addlistenerchannelprivate)
+- [`addListener('onFlexibleUpdateStateChange')`](#addlisteneronflexibleupdatestatechange)
 - [`isAutoUpdateAvailable`](#isautoupdateavailable)
 - [`getNextBundle`](#getnextbundle)
 - [`getFailedUpdate`](#getfailedupdate)
@@ -703,27 +706,23 @@ After receiving the latest version info, you can:
 2. Download it using {@link download}
 3. Apply it using {@link next} or {@link set}
 
-**Important: Error handling for "no new version available"**
+**Important: Handling "no new version available"**
 
 When the device's current version matches the latest version on the server (i.e., the device is already
 up-to-date), the server returns a 200 response with `error: "no_new_version_available"` and
-`message: "No new version available"`. **This causes `getLatest()` to throw an error**, even though
-this is a normal, expected condition.
+`message: "No new version available"`. This is a normal, expected condition and resolves with
+`kind: "up_to_date"` when the backend provides that classification.
 
-You should catch this specific error to handle it gracefully:
+You should check `kind` and `error` before attempting to download:
 
 ```typescript
-try {
-  const latest = await CapacitorUpdater.getLatest();
+const latest = await CapacitorUpdater.getLatest();
+if (latest.kind === 'up_to_date') {
+  console.log('Already up to date');
+} else if (latest.kind === 'blocked') {
+  console.log('Update is blocked:', latest.error);
+} else if (latest.url) {
   // New version is available, proceed with download
-} catch (error) {
-  if (error.message === 'No new version available') {
-    // Device is already on the latest version - this is normal
-    console.log('Already up to date');
-  } else {
-    // Actual error occurred
-    console.error('Failed to check for updates:', error);
-  }
 }
 ```
 
@@ -743,7 +742,7 @@ In this scenario, the server:
 
 **Since:** 4.0.0
 
-**Throws:** {Error} Always throws when no new version is available (`error: "no_new_version_available"`), or when the request fails.
+**Throws:** {Error} Throws for failed update checks or transport/request failures.
 
 
 --------------------
@@ -1085,6 +1084,7 @@ Remove all event listeners registered for this plugin.
 This unregisters all listeners added via {@link addListener} for all event types:
 - `download`
 - `noNeedUpdate`
+- `updateCheckResult`
 - `updateAvailable`
 - `downloadComplete`
 - `downloadFailed`
@@ -1152,6 +1152,36 @@ Listen for no need to update event, useful when you want force check every time 
 `Promise<PluginListenerHandle>`
 
 **Since:** 4.0.0
+
+
+--------------------
+
+
+### addListener('updateCheckResult')
+
+```typescript
+addListener(eventName: 'updateCheckResult', listenerFunc: (state: UpdateCheckResultEvent) => void) => Promise<PluginListenerHandle>
+```
+
+Listen for update check results before the updater decides whether to download.
+The backend can classify the UpdateCheckResultEvent payload as `up_to_date`, `blocked`, or `failed`.
+
+This event is emitted alongside legacy events. For `up_to_date` and `blocked`, it is emitted before
+`noNeedUpdate` and does not emit `downloadFailed`. For `failed`, it is emitted before the legacy
+`downloadFailed` event and keeps the existing failure stats behavior.
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `eventName` | `'updateCheckResult'` |  |
+| `listenerFunc` | `(state: UpdateCheckResultEvent) => void` |  |
+
+**Returns**
+
+`Promise<PluginListenerHandle>`
+
+**Since:** 8.45.11
 
 
 --------------------
@@ -1283,6 +1313,58 @@ Listen for update fail event in the App, let you know when update has fail to in
 --------------------
 
 
+### addListener('set')
+
+```typescript
+addListener(eventName: 'set', listenerFunc: (state: SetEvent) => void) => Promise<PluginListenerHandle>
+```
+
+Listen for set event in the App, let you know when a bundle has been applied successfully.
+This event is retained natively until JavaScript consumes it, so if the app reloads before your
+listener is attached, the last pending `set` event is delivered once the listener subscribes.
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `eventName` | `'set'` |  |
+| `listenerFunc` | `(state: SetEvent) => void` |  |
+
+**Returns**
+
+`Promise<PluginListenerHandle>`
+
+**Since:** 8.43.12
+
+
+--------------------
+
+
+### addListener('setNext')
+
+```typescript
+addListener(eventName: 'setNext', listenerFunc: (state: SetNextEvent) => void) => Promise<PluginListenerHandle>
+```
+
+Listen for set next event in the App, let you know when a bundle is queued as the next bundle to install.
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `eventName` | `'setNext'` |  |
+| `listenerFunc` | `(state: SetNextEvent) => void` |  |
+
+**Returns**
+
+`Promise<PluginListenerHandle>`
+
+**Since:** 6.14.0
+
+
+--------------------
+
+
 ### addListener('downloadFailed')
 
 ```typescript
@@ -1339,7 +1421,9 @@ Listen for reload event in the App, let you know when reload has happened
 addListener(eventName: 'appReady', listenerFunc: (state: AppReadyEvent) => void) => Promise<PluginListenerHandle>
 ```
 
-Listen for app ready event in the App, let you know when app is ready to use, this event is retain till consumed.
+Listen for app ready event in the App, let you know when app is ready to use.
+This event is retained natively until JavaScript consumes it, so it can still be delivered after
+a reload even if the listener is attached later in app startup.
 
 **Parameters**
 
