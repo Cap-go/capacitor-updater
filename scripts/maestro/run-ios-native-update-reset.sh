@@ -302,7 +302,7 @@ if ! run_with_timeout "$SIMULATOR_BOOT_TIMEOUT_SECONDS" xcrun simctl bootstatus 
 fi
 
 bun "$ROOT_DIR/scripts/maestro/build-bundles.mjs" "$SCENARIO_ID"
-build_ios_app "native-reset-builtin-v1" "true" "always" "1.0.0" "1" "$DERIVED_DATA_V1"
+build_ios_app "native-reset-builtin-v1" "true" "false" "1.0.0" "1" "$DERIVED_DATA_V1"
 build_ios_app "native-reset-builtin-v2" "false" "false" "2.0.0" "2" "$DERIVED_DATA_V2"
 start_server
 control_server reset
