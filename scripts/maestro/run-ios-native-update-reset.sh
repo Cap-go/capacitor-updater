@@ -7,6 +7,7 @@ ARTIFACT_DIR="$ROOT_DIR/.maestro-artifacts/ios-native-reset"
 RESULTS_DIR="$ROOT_DIR/maestro-results-ios-native-reset"
 ASSERT_FLOW="$ROOT_DIR/.maestro/assert-state.yaml"
 LAUNCH_FLOW="$ROOT_DIR/.maestro/helpers/relaunch-app.yaml"
+BACKGROUND_FLOW="$ROOT_DIR/.maestro/helpers/background-app.yaml"
 SCENARIO_ID="native-reset"
 HOST_SERVER_PORT="${CAPGO_MAESTRO_PORT:-3192}"
 HOST_SERVER_URL="${CAPGO_MAESTRO_HOST_BASE_URL:-http://127.0.0.1:${HOST_SERVER_PORT}}"
@@ -220,6 +221,7 @@ fi
 export CAPGO_MAESTRO_DEVICE_BASE_URL="$DEVICE_SERVER_URL"
 export CAPGO_MAESTRO_HOST_BASE_URL="$HOST_SERVER_URL"
 export CAPGO_MAESTRO_PORT="$HOST_SERVER_PORT"
+export CAPGO_APP_READY_TIMEOUT="${CAPGO_MAESTRO_APP_READY_TIMEOUT:-60000}"
 
 mkdir -p "$ARTIFACT_DIR" "$RESULTS_DIR"
 rm -rf -- "${RESULTS_DIR:?}/"*
@@ -239,6 +241,8 @@ start_server
 control_server reset
 
 install_ios_app "$DERIVED_DATA_V1/Build/Products/Debug-iphonesimulator/App.app" "1"
+run_maestro_flow "$LAUNCH_FLOW"
+run_maestro_flow "$BACKGROUND_FLOW"
 run_maestro_flow "$LAUNCH_FLOW"
 assert_state \
   "Build label: native-reset-live" \
