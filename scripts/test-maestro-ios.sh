@@ -106,12 +106,24 @@ wait_for_server() {
   return 1
 }
 
+assert_fake_server_process_alive() {
+  if [[ -z "$SERVER_PID" ]] || ! kill -0 "$SERVER_PID" >/dev/null 2>&1; then
+    echo "Fake Capgo server process exited before readiness completed." >&2
+    wait "$SERVER_PID" 2>/dev/null || true
+    return 1
+  fi
+
+  return 0
+}
+
 start_fake_server() {
   mkdir -p "$ARTIFACT_DIR"
   bun "$ROOT_DIR/scripts/maestro/fake-capgo-server.mjs" >"$ARTIFACT_DIR/fake-capgo-server-ios-smoke.log" 2>&1 &
   SERVER_PID=$!
 
   wait_for_server
+  sleep 1
+  assert_fake_server_process_alive
 }
 
 reset_fake_server() {

@@ -208,7 +208,7 @@ import UIKit
             downloadRequest.cancel()
             logger.error("\(label) timed out after \(Int(waitTimeout))s")
             return DownloadRequestResult(
-                fileURL: tempFileURL,
+                fileURL: existingDownloadFileURL(tempFileURL, fallback: temporaryDownloadURL),
                 response: httpResponse,
                 error: requestError,
                 timedOut: true
@@ -220,11 +220,57 @@ import UIKit
         }
 
         return DownloadRequestResult(
-            fileURL: tempFileURL,
+            fileURL: existingDownloadFileURL(tempFileURL, fallback: temporaryDownloadURL),
             response: httpResponse,
             error: requestError,
             timedOut: isTimedOutError(requestError)
         )
+    }
+
+    private func existingDownloadFileURL(_ fileURL: URL?, fallback: URL) -> URL? {
+        let fileManager = FileManager.default
+        if let fileURL, fileManager.fileExists(atPath: fileURL.path) {
+            return fileURL
+        }
+        return fileManager.fileExists(atPath: fallback.path) ? fallback : nil
+    }
+
+    private func storeDownloadedFile(_ downloadedFileURL: URL, at tempPath: URL, existingBytes: Int64, response: HTTPURLResponse?) throws {
+        let fileManager = FileManager.default
+        if existingBytes > 0 && (response?.statusCode == 206 || response == nil) {
+            let resumedData = try Data(contentsOf: downloadedFileURL)
+            let fileHandle = try FileHandle(forWritingTo: tempPath)
+            fileHandle.seek(toFileOffset: UInt64(existingBytes))
+            fileHandle.write(resumedData)
+            try fileHandle.close()
+            try? fileManager.removeItem(at: downloadedFileURL)
+            return
+        }
+
+        if fileManager.fileExists(atPath: tempPath.path) {
+            try fileManager.removeItem(at: tempPath)
+        }
+        try fileManager.moveItem(at: downloadedFileURL, to: tempPath)
+    }
+
+    private func persistPartialDownload(_ downloadResult: DownloadRequestResult, id: String, tempPath: URL, existingBytes: Int64) {
+        guard let downloadedFileURL = downloadResult.fileURL else {
+            return
+        }
+        guard FileManager.default.fileExists(atPath: downloadedFileURL.path) else {
+            return
+        }
+        if let statusCode = downloadResult.response?.statusCode, statusCode < 200 || statusCode >= 300 {
+            return
+        }
+
+        do {
+            try storeDownloadedFile(downloadedFileURL, at: tempPath, existingBytes: existingBytes, response: downloadResult.response)
+            logger.info("Stored partial download for retry")
+        } catch {
+            logger.error("Failed to store partial download")
+            logger.debug("Path: \(downloadedFileURL.path), Error: \(error)")
+        }
     }
 
     deinit {
@@ -1292,6 +1338,7 @@ import UIKit
         let downloadResult = performDownloadRequest(request, label: "download \(version)")
 
         if downloadResult.timedOut {
+            persistPartialDownload(downloadResult, id: id, tempPath: tempPath, existingBytes: totalReceivedBytes)
             mainError = NSError(
                 domain: NSURLErrorDomain,
                 code: NSURLErrorTimedOut,
@@ -1299,6 +1346,7 @@ import UIKit
             )
         } else if let error = downloadResult.error {
             logger.error("Download failed")
+            persistPartialDownload(downloadResult, id: id, tempPath: tempPath, existingBytes: totalReceivedBytes)
             mainError = error as NSError
         } else if let statusCode = downloadResult.response?.statusCode, statusCode < 200 || statusCode >= 300 {
             logger.error("Download failed")
@@ -1309,19 +1357,7 @@ import UIKit
             )
         } else if let downloadedFileURL = downloadResult.fileURL {
             do {
-                if totalReceivedBytes > 0 && downloadResult.response?.statusCode == 206 {
-                    let resumedData = try Data(contentsOf: downloadedFileURL)
-                    let fileHandle = try FileHandle(forWritingTo: tempPath)
-                    fileHandle.seek(toFileOffset: UInt64(totalReceivedBytes))
-                    fileHandle.write(resumedData)
-                    try fileHandle.close()
-                    try? FileManager.default.removeItem(at: downloadedFileURL)
-                } else {
-                    if FileManager.default.fileExists(atPath: tempPath.path) {
-                        try FileManager.default.removeItem(at: tempPath)
-                    }
-                    try FileManager.default.moveItem(at: downloadedFileURL, to: tempPath)
-                }
+                try storeDownloadedFile(downloadedFileURL, at: tempPath, existingBytes: totalReceivedBytes, response: downloadResult.response)
 
                 if lastSentProgress < 70 {
                     self.notifyDownload(id: id, percent: 70, ignoreMultipleOfTen: true)
