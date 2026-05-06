@@ -144,6 +144,8 @@ function handleBundle(version) {
     return new Response('bundle not found', { status: 404 });
   }
 
+  console.log(`[fake-capgo] bundle=${version} served`);
+
   return new Response(Bun.file(zipPath), {
     headers: {
       'content-type': 'application/zip',

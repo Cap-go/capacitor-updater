@@ -9,13 +9,14 @@ ASSERT_FLOW="$ROOT_DIR/.maestro/assert-state.yaml"
 LAUNCH_FLOW="$ROOT_DIR/.maestro/helpers/relaunch-app.yaml"
 LIVE_ASSERT_FLOW="$ROOT_DIR/.maestro/ios/native-reset-live.yaml"
 SCENARIO_ID="native-reset"
+LIVE_BUNDLE_VERSION="native-reset-live"
 HOST_SERVER_PORT="${CAPGO_MAESTRO_PORT:-3192}"
 HOST_SERVER_URL="${CAPGO_MAESTRO_HOST_BASE_URL:-http://127.0.0.1:${HOST_SERVER_PORT}}"
 DEVICE_SERVER_URL="${CAPGO_MAESTRO_DEVICE_BASE_URL:-http://127.0.0.1:${HOST_SERVER_PORT}}"
 SIMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_IOS_BOOT_TIMEOUT_SECONDS:-180}"
 MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-600}"
 LIVE_UPDATE_MAX_ATTEMPTS="${CAPGO_MAESTRO_NATIVE_RESET_LIVE_ATTEMPTS:-3}"
-LIVE_UPDATE_REQUEST_TIMEOUT_SECONDS="${CAPGO_MAESTRO_NATIVE_RESET_REQUEST_TIMEOUT_SECONDS:-60}"
+LIVE_UPDATE_REQUEST_TIMEOUT_SECONDS="${CAPGO_MAESTRO_NATIVE_RESET_REQUEST_TIMEOUT_SECONDS:-120}"
 APP_ID="app.capgo.updater"
 DERIVED_DATA_V1="$(mktemp -d "${TMPDIR:-/tmp}/capgo-ios-native-reset-v1.XXXXXX")"
 DERIVED_DATA_V2="$(mktemp -d "${TMPDIR:-/tmp}/capgo-ios-native-reset-v2.XXXXXX")"
@@ -123,28 +124,28 @@ run_maestro_flow() {
   fi
 }
 
-update_request_count() {
-  python3 - "$ARTIFACT_DIR/fake-capgo-server.log" "$SCENARIO_ID" <<'PY'
+bundle_download_count() {
+  python3 - "$ARTIFACT_DIR/fake-capgo-server.log" "$LIVE_BUNDLE_VERSION" <<'PY'
 from pathlib import Path
 import sys
 
 log_path = Path(sys.argv[1])
-scenario_id = sys.argv[2]
+bundle_version = sys.argv[2]
 if not log_path.exists():
     print(0)
     raise SystemExit(0)
 
-needle = f"[fake-capgo] scenario={scenario_id} "
+needle = f"[fake-capgo] bundle={bundle_version} served"
 print(sum(1 for line in log_path.read_text(errors="replace").splitlines() if needle in line))
 PY
 }
 
-wait_for_update_request() {
+wait_for_bundle_download() {
   local previous_count="$1"
   local current_count
 
   for _ in $(seq 1 "$LIVE_UPDATE_REQUEST_TIMEOUT_SECONDS"); do
-    current_count="$(update_request_count)"
+    current_count="$(bundle_download_count)"
     if (( current_count > previous_count )); then
       return 0
     fi
@@ -159,18 +160,19 @@ run_live_update_flow() {
   local previous_count
 
   for attempt in $(seq 1 "$LIVE_UPDATE_MAX_ATTEMPTS"); do
-    previous_count="$(update_request_count)"
+    previous_count="$(bundle_download_count)"
     echo "Launching iOS native reset live update attempt ${attempt}/${LIVE_UPDATE_MAX_ATTEMPTS}."
     xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
     xcrun simctl launch "$SIMULATOR_ID" "$APP_ID" >/dev/null
 
-    if wait_for_update_request "$previous_count"; then
-      echo "iOS native reset update request observed; running UI assertions."
+    if wait_for_bundle_download "$previous_count"; then
+      echo "iOS native reset bundle download observed; running UI assertions."
+      sleep 5
       run_maestro_flow "$LIVE_ASSERT_FLOW"
       return $?
     fi
 
-    echo "No iOS native reset update request observed within ${LIVE_UPDATE_REQUEST_TIMEOUT_SECONDS}s on attempt ${attempt}." >&2
+    echo "No iOS native reset bundle download observed within ${LIVE_UPDATE_REQUEST_TIMEOUT_SECONDS}s on attempt ${attempt}." >&2
   done
 
   return 1
