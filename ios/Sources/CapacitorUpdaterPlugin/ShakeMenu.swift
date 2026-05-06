@@ -310,17 +310,27 @@ extension UIWindow {
                         let latest = updater.getLatest(url: updateUrl, channel: name)
                         let latestKind = latest.kind
 
+                        let detail = [latest.message, latest.error, latestKind]
+                            .compactMap { value in
+                                guard let value, !value.isEmpty else { return nil }
+                                return value
+                            }
+                            .first ?? "server did not provide a message"
+
                         // Handle update errors first (before "no new version" check)
-                        if latestKind == "failed" || latestKind == "blocked" || (latest.error?.isEmpty == false && latestKind != "up_to_date") {
-                            let detail = [latest.message, latest.error, latestKind]
-                                .compactMap { value in
-                                    guard let value, !value.isEmpty else { return nil }
-                                    return value
-                                }
-                                .first ?? "server did not provide a message"
+                        if latestKind == "failed" || (latest.error?.isEmpty == false && latestKind != "up_to_date" && latestKind != "blocked") {
                             DispatchQueue.main.async {
                                 progressAlert.dismiss(animated: true) {
                                     self.showError(message: "Channel set to \(name). Update check failed: \(detail)", plugin: plugin)
+                                }
+                            }
+                            return
+                        }
+
+                        if latestKind == "blocked" {
+                            DispatchQueue.main.async {
+                                progressAlert.dismiss(animated: true) {
+                                    self.showError(message: "Channel set to \(name). Update check blocked: \(detail)", plugin: plugin)
                                 }
                             }
                             return

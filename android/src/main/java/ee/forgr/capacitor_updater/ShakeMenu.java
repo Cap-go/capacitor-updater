@@ -451,22 +451,33 @@ public class ShakeMenu implements ShakeDetector.Listener {
                                 String latestKind = getString(latestRes, "kind");
                                 String latestMessage = getString(latestRes, "message");
 
+                                String detail = latestMessage != null && !latestMessage.isEmpty()
+                                    ? latestMessage
+                                    : latestError != null && !latestError.isEmpty()
+                                        ? latestError
+                                        : latestKind != null && !latestKind.isEmpty()
+                                            ? latestKind
+                                            : "server did not provide a message";
+
                                 // Handle update errors first (before "no new version" check)
                                 if (
                                     "failed".equals(latestKind) ||
-                                    "blocked".equals(latestKind) ||
-                                    (latestError != null && !latestError.isEmpty() && !"up_to_date".equals(latestKind))
+                                    (latestError != null &&
+                                        !latestError.isEmpty() &&
+                                        !"up_to_date".equals(latestKind) &&
+                                        !"blocked".equals(latestKind))
                                 ) {
-                                    String detail = latestMessage != null && !latestMessage.isEmpty()
-                                        ? latestMessage
-                                        : latestError != null && !latestError.isEmpty()
-                                            ? latestError
-                                            : latestKind != null && !latestKind.isEmpty()
-                                                ? latestKind
-                                                : "server did not provide a message";
                                     activity.runOnUiThread(() -> {
                                         progressDialog.dismiss();
                                         showError("Channel set to " + channelName + ". Update check failed: " + detail);
+                                    });
+                                    return;
+                                }
+
+                                if ("blocked".equals(latestKind)) {
+                                    activity.runOnUiThread(() -> {
+                                        progressDialog.dismiss();
+                                        showError("Channel set to " + channelName + ". Update check blocked: " + detail);
                                     });
                                     return;
                                 }

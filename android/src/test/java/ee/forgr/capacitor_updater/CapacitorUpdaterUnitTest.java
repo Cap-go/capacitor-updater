@@ -1582,7 +1582,7 @@ public class CapacitorUpdaterUnitTest {
             plugin.getLatest(call);
 
             verify(call, never()).resolve(any(JSObject.class));
-            verify(call).reject("no_new_version_available");
+            verify(call).reject("No new version available");
         }
     }
 
