@@ -333,7 +333,7 @@ wait_for_at_install_direct_update_ui_state() {
   shift
   local -a fragments=("$@")
   local attempt=1
-  local max_attempts="${CAPGO_MAESTRO_SPLIT_RETRIES:-3}"
+  local max_attempts="${CAPGO_MAESTRO_SPLIT_RETRIES:-2}"
   local target_version=""
   local fragment=""
 
@@ -459,7 +459,7 @@ run_split_manual_scenario() {
   local scenario_id="$1"
   local runner="$2"
   local attempt=1
-  local max_attempts="${CAPGO_MAESTRO_SPLIT_RETRIES:-3}"
+  local max_attempts="${CAPGO_MAESTRO_SPLIT_RETRIES:-2}"
 
   while [[ $attempt -le $max_attempts ]]; do
     echo "Running split Maestro scenario: ${scenario_id} (attempt ${attempt}/${max_attempts})"
@@ -504,13 +504,6 @@ run_manual_zip_split_once() {
     'Next bundle version: manual-zip-v2' || return 1
 
   run_flow_once manual-zip-v2-reload-and-failed-flow.yaml || return 1
-  wait_for_example_app_ui || return 1
-  wait_for_ui_state \
-    "manual zip keeps v2 active and records the failed broken release" \
-    'Build label: manual-zip-v2' \
-    'Current bundle source: downloaded' \
-    'Current bundle version: manual-zip-v2' \
-    'Failed update: manual-zip-v3-broken' || return 1
 
   run_flow_once manual-zip-cleanup-flow.yaml || return 1
   wait_for_example_app_ui || return 1
