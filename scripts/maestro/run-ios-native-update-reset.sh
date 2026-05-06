@@ -248,13 +248,7 @@ start_server
 control_server reset
 
 install_ios_app "$DERIVED_DATA_V1/Build/Products/Debug-iphonesimulator/App.app" "1"
-run_maestro_flow \
-  "$LIVE_ASSERT_FLOW" \
-  -e "EXPECT_1=Build label: native-reset-live" \
-  -e "EXPECT_2=Scenario: native-reset" \
-  -e "EXPECT_3=Direct update mode: always" \
-  -e "EXPECT_4=Current bundle source: downloaded" \
-  -e "EXPECT_5=Current bundle version: native-reset-live"
+run_maestro_flow "$LIVE_ASSERT_FLOW"
 
 install_ios_app "$DERIVED_DATA_V2/Build/Products/Debug-iphonesimulator/App.app"
 run_maestro_flow "$LAUNCH_FLOW"

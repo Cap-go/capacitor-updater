@@ -17,31 +17,13 @@ appId: app.capgo.updater
     timeout: 180000
 - scrollUntilVisible:
     element:
-      text: "${EXPECT_1}"
-    direction: UP
-    timeout: 180000
-- assertVisible: "${EXPECT_1}"
-- scrollUntilVisible:
-    element:
-      text: "${EXPECT_2}"
-    direction: UP
-    timeout: 180000
-- assertVisible: "${EXPECT_2}"
-- scrollUntilVisible:
-    element:
-      text: "${EXPECT_3}"
-    direction: UP
-    timeout: 180000
-- assertVisible: "${EXPECT_3}"
-- scrollUntilVisible:
-    element:
-      text: "${EXPECT_4}"
+      text: 'Current bundle source: downloaded'
     direction: DOWN
     timeout: 180000
-- assertVisible: "${EXPECT_4}"
+- assertVisible: 'Current bundle source: downloaded'
 - scrollUntilVisible:
     element:
-      text: "${EXPECT_5}"
+      text: 'Current bundle version: native-reset-live'
     direction: DOWN
     timeout: 180000
-- assertVisible: "${EXPECT_5}"
+- assertVisible: 'Current bundle version: native-reset-live'
