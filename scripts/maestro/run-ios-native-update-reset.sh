@@ -24,13 +24,20 @@ default_simulator_id() {
 }
 
 cleanup() {
+  local status=$?
+
+  if [[ -f "$ARTIFACT_DIR/fake-capgo-server.log" ]]; then
+    echo "iOS native reset fake Capgo server log:"
+    cat "$ARTIFACT_DIR/fake-capgo-server.log"
+  fi
+
   if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
     kill "$SERVER_PID" >/dev/null 2>&1 || true
     wait "$SERVER_PID" 2>/dev/null || true
   fi
 
   rm -rf "$DERIVED_DATA_V1" "$DERIVED_DATA_V2"
-  return 0
+  return "$status"
 }
 
 trap cleanup EXIT
