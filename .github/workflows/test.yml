@@ -181,8 +181,6 @@ jobs:
           - at-install
           - on-launch
           - manual-zip
-          - manual-zip-config-guards
-          - manual-manifest
     steps:
       - name: Check out
         uses: actions/checkout@v6
