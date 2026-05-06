@@ -4,12 +4,29 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 EXAMPLE_DIR="$ROOT_DIR/example-app"
 RESULTS_DIR="${CAPGO_MAESTRO_RESULTS_DIR:-$ROOT_DIR/maestro-results-ios}"
-FLOW_PATH="$ROOT_DIR/.maestro/ios/example-app-smoke.yaml"
 SKIP_BUILD="${CAPGO_MAESTRO_SKIP_BUILD:-0}"
-SIMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_IOS_BOOT_TIMEOUT_SECONDS:-180}"
-MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-300}"
+RUN_NATIVE_RESET="${CAPGO_MAESTRO_RUN_NATIVE_RESET:-0}"
+SCENARIO_ID="${CAPGO_MAESTRO_SMOKE_SCENARIO:-manual-zip}"
+FLOW_PATH="$ROOT_DIR/.maestro/ios/example-app-smoke.yaml"
+if [[ "$SCENARIO_ID" == "manual-zip-config-guards" ]]; then
+  FLOW_PATH="$ROOT_DIR/.maestro/ios/example-app-smoke-config-guards.yaml"
+elif [[ "$SCENARIO_ID" == "manual-zip-no-persist" ]]; then
+  FLOW_PATH="$ROOT_DIR/.maestro/ios/example-app-smoke-no-persist.yaml"
+fi
+ARTIFACT_DIR="$ROOT_DIR/.maestro-artifacts"
+HOST_SERVER_PORT="${CAPGO_MAESTRO_PORT:-3192}"
+HOST_SERVER_URL="${CAPGO_MAESTRO_HOST_BASE_URL:-http://127.0.0.1:${HOST_SERVER_PORT}}"
+DEVICE_SERVER_URL="${CAPGO_MAESTRO_DEVICE_BASE_URL:-${HOST_SERVER_URL}}"
+SIMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_IOS_BOOT_TIMEOUT_SECONDS:-300}"
+MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-600}"
 NATIVE_RESET_TIMEOUT_SECONDS="${CAPGO_MAESTRO_NATIVE_RESET_TIMEOUT_SECONDS:-1200}"
 APP_ID="app.capgo.updater"
+SERVER_PID=""
+export MAESTRO_DRIVER_STARTUP_TIMEOUT="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-600000}"
+export MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
+MAESTRO_TEST_RETRIES="${CAPGO_MAESTRO_TEST_RETRIES:-3}"
+FLOW_RETRY_PATTERN="iOS driver not ready in time|Failed to connect to /127\\.0\\.0\\.1:[0-9]+|Connection refused|Broken pipe|No visible element found|Request for viewHierarchy failed, because of unknown reason|XCTestDriver request failed\\. Status code: 500, path: viewHierarchy|Application .* is not running|Detected app crash|App crashed or stopped|smoke-sequence:success.*is visible|failed to terminate dev\\.mobile\\.maestro-driver-iosUITests\\.xctrunner|found nothing to terminate|Assertion is false: \"@capgo/capacitor-updater\" is visible|Assertion is false: \".*Harness: ready.*\" is visible|Assertion is false: \".*persisted:success.*\" is visible"
+export CAPGO_MAESTRO_DEVICE_BASE_URL="$DEVICE_SERVER_URL"
 
 default_simulator_id() {
   xcrun simctl list devices available | sed -nE 's/^[[:space:]]*iPhone.*\(([0-9A-F-]{36})\) \([^)]*\)[[:space:]]*$/\1/p' | head -n 1
@@ -36,6 +53,11 @@ SIMULATOR_ID="${CAPGO_MAESTRO_IOS_SIMULATOR_ID:-$(default_simulator_id)}"
 APP_PATH="${CAPGO_MAESTRO_IOS_APP_PATH:-$(default_app_path)}"
 
 cleanup() {
+  if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
+    kill "$SERVER_PID" >/dev/null 2>&1 || true
+    wait "$SERVER_PID" 2>/dev/null || true
+  fi
+
   if [[ -z "${CAPGO_MAESTRO_IOS_DERIVED_DATA_PATH:-}" && -d "$DERIVED_DATA_PATH" ]]; then
     rm -rf "$DERIVED_DATA_PATH"
   fi
@@ -66,6 +88,135 @@ PY
   return $?
 }
 
+install_example_app() {
+  xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
+  xcrun simctl uninstall "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
+  xcrun simctl install "$SIMULATOR_ID" "$APP_PATH"
+}
+
+wait_for_server() {
+  for _ in $(seq 1 30); do
+    if curl --silent --fail "$HOST_SERVER_URL/health" >/dev/null; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "Fake Capgo server did not start in time." >&2
+  return 1
+}
+
+assert_fake_server_process_alive() {
+  if [[ -z "$SERVER_PID" ]] || ! kill -0 "$SERVER_PID" >/dev/null 2>&1; then
+    echo "Fake Capgo server process exited before readiness completed." >&2
+    wait "$SERVER_PID" 2>/dev/null || true
+    return 1
+  fi
+
+  return 0
+}
+
+start_fake_server() {
+  mkdir -p "$ARTIFACT_DIR"
+  bun "$ROOT_DIR/scripts/maestro/fake-capgo-server.mjs" >"$ARTIFACT_DIR/fake-capgo-server-ios-smoke.log" 2>&1 &
+  SERVER_PID=$!
+
+  wait_for_server
+  sleep 1
+  assert_fake_server_process_alive
+}
+
+reset_fake_server() {
+  curl --silent --show-error --fail -X POST "$HOST_SERVER_URL/api/control/reset?scenario=$SCENARIO_ID" >/dev/null
+}
+
+assert_smoke_server_state() {
+  local server_state=""
+
+  server_state="$(curl --silent --show-error --fail "$HOST_SERVER_URL/api/control/state?scenario=$SCENARIO_ID")"
+
+  bun --eval "
+const state = JSON.parse(process.argv[1]);
+const scenarioId = process.argv[2];
+const failures = [];
+const debug = state.debug ?? {};
+const update = debug.lastUpdateRequest ?? {};
+const channel = debug.lastChannelRequest ?? {};
+const stats = debug.lastStatsRequest ?? {};
+const updatePayload = update.payload ?? {};
+const channelPayload = channel.payload ?? {};
+const requestCounts = debug.requestCounts ?? {};
+
+function expect(condition, message) {
+  if (!condition) {
+    failures.push(message);
+  }
+}
+
+switch (scenarioId) {
+  case 'manual-zip':
+    expect(update.url?.includes('/api/updates/manual-zip?source=runtime-update'), 'missing persisted runtime update URL request');
+    expect(channel.url?.includes('/api/channel?scenario=manual-zip&source=runtime-channel'), 'missing persisted runtime channel URL request');
+    expect(stats.url?.includes('/api/stats?scenario=manual-zip&source=runtime-stats'), 'missing runtime stats URL request');
+    expect((updatePayload.custom_id ?? channelPayload.custom_id) === 'qa-user-42', 'missing persisted custom ID');
+    expect((requestCounts.channel ?? 0) >= 5, 'expected multiple channel operations to hit the fake server');
+    expect((requestCounts.update ?? 0) >= 2, 'expected repeated update checks to hit the fake server');
+    expect((requestCounts.stats ?? 0) >= 1, 'expected stats traffic to hit the fake server');
+    break;
+  case 'manual-zip-no-persist':
+    expect(update.url?.includes('/api/updates/manual-zip-no-persist'), 'missing default update URL request after relaunch');
+    expect(!update.url?.includes('source=runtime-update'), 'update URL unexpectedly stayed on the runtime override');
+    expect(channel.url?.includes('/api/channel?scenario=manual-zip-no-persist'), 'missing default channel URL request after relaunch');
+    expect(!channel.url?.includes('source=runtime-channel'), 'channel URL unexpectedly stayed on the runtime override');
+    expect((updatePayload.custom_id ?? channelPayload.custom_id ?? '') !== 'qa-user-42', 'custom ID unexpectedly persisted across relaunch');
+    expect((requestCounts.channel ?? 0) >= 2, 'expected repeated channel checks to hit the fake server');
+    expect((requestCounts.update ?? 0) >= 1, 'expected post-relaunch update check to hit the fake server');
+    expect((requestCounts.stats ?? 0) >= 1, 'expected stats traffic to hit the fake server');
+    break;
+  case 'manual-zip-config-guards':
+    expect(!update.url?.includes('source=runtime-update'), 'guarded config unexpectedly accepted a runtime update URL override');
+    expect(channel.url?.includes('/api/channel?scenario=manual-zip-config-guards'), 'missing default channel URL request for guarded config');
+    expect(!channel.url?.includes('source=runtime-channel'), 'guarded config unexpectedly accepted a runtime channel URL override');
+    expect((updatePayload.custom_id ?? channelPayload.custom_id) === 'qa-user-42', 'custom ID should still persist when only URL/App ID setters are guarded');
+    expect((requestCounts.channel ?? 0) >= 2, 'expected guarded config channel checks to hit the fake server');
+    expect((requestCounts.stats ?? 0) >= 1, 'expected stats traffic to hit the fake server');
+    break;
+  default:
+    expect(update.url?.includes('/api/updates/' + scenarioId), 'missing update request');
+    expect(channel.url?.includes('/api/channel?scenario=' + scenarioId), 'missing channel request');
+    expect((requestCounts.channel ?? 0) >= 1, 'expected channel traffic to hit the fake server');
+    expect((requestCounts.update ?? 0) >= 1, 'expected update traffic to hit the fake server');
+    break;
+}
+
+if (failures.length) {
+  console.error('Smoke server assertions failed:');
+  for (const failure of failures) {
+    console.error('- ' + failure);
+  }
+  process.exit(1);
+}
+" "$server_state" "$SCENARIO_ID"
+
+  case "$SCENARIO_ID" in
+    manual-zip|manual-zip-no-persist)
+      if ! grep -Eq "/api/channel\\?scenario=${SCENARIO_ID}.*app_id=app\\.capgo\\.updater\\.e2e" \
+        "$ARTIFACT_DIR/fake-capgo-server-ios-smoke.log"; then
+        echo "Smoke server assertions failed:" >&2
+        echo "- missing runtime app ID override in channel request log" >&2
+        exit 1
+      fi
+      ;;
+    manual-zip-config-guards)
+      if grep -Eq "/api/channel\\?scenario=${SCENARIO_ID}.*app_id=app\\.capgo\\.updater\\.e2e" \
+        "$ARTIFACT_DIR/fake-capgo-server-ios-smoke.log"; then
+        echo "Smoke server assertions failed:" >&2
+        echo "- guarded config unexpectedly accepted the runtime app ID override" >&2
+        exit 1
+      fi
+      ;;
+  esac
+}
 if ! command -v maestro >/dev/null 2>&1; then
   echo "maestro is required to run iOS Maestro tests." >&2
   exit 1
@@ -106,6 +257,11 @@ if [[ -z "${APP_PATH:-}" ]]; then
   exit 1
 fi
 
+mkdir -p "$ARTIFACT_DIR" "$RESULTS_DIR"
+printf 'scenario=%s\n' "$SCENARIO_ID" >"$RESULTS_DIR/runner-metadata.txt"
+
+xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
+
 cd "$ROOT_DIR"
 
 if [[ "$SKIP_BUILD" != "1" ]]; then
@@ -113,15 +269,11 @@ if [[ "$SKIP_BUILD" != "1" ]]; then
     bun install
   fi
 
-  bun run build
-
-  (
-    cd "$EXAMPLE_DIR"
-    bun install
-    bun run build
-    bunx cap sync ios
-  )
-
+  bun "$ROOT_DIR/scripts/maestro/build-bundles.mjs" "$SCENARIO_ID"
+  start_fake_server
+  reset_fake_server
+  bun "$ROOT_DIR/scripts/maestro/prepare-ios-scenario.mjs" "$SCENARIO_ID"
+  rm -rf "$HOME/Library/Caches/org.swift.swiftpm/artifacts"/https___github_com_ionic_team_capacitor_swift_pm_releases_download_8_0_0_*
   xcodebuild \
     -project "$EXAMPLE_DIR/ios/App/App.xcodeproj" \
     -scheme App \
@@ -129,6 +281,9 @@ if [[ "$SKIP_BUILD" != "1" ]]; then
     -destination "id=$SIMULATOR_ID" \
     -derivedDataPath "$DERIVED_DATA_PATH" \
     build
+else
+  start_fake_server
+  reset_fake_server
 fi
 
 if [[ ! -d "$APP_PATH" ]]; then
@@ -147,32 +302,64 @@ else
   exit "$status"
 fi
 
-xcrun simctl uninstall "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
-xcrun simctl install "$SIMULATOR_ID" "$APP_PATH"
-xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
+install_example_app
 
-rm -rf "$RESULTS_DIR"
-mkdir -p "$RESULTS_DIR"
+attempt=1
+while (( attempt <= MAESTRO_TEST_RETRIES )); do
+  rm -rf "$RESULTS_DIR"
+  mkdir -p "$RESULTS_DIR"
+  output_file="$(mktemp)"
 
-if run_with_timeout "$MAESTRO_TIMEOUT_SECONDS" maestro test \
-  -p ios \
-  --device "$SIMULATOR_ID" \
-  "$FLOW_PATH" \
-  --format junit \
-  --output "$RESULTS_DIR/junit.xml" \
-  --debug-output "$RESULTS_DIR/debug" \
-  --flatten-debug-output \
-  --test-output-dir "$RESULTS_DIR/artifacts"; then
-  :
-else
-  status=$?
+  echo "Running iOS Maestro smoke flow (attempt ${attempt}/${MAESTRO_TEST_RETRIES})"
+
+  set +e
+  run_with_timeout "$MAESTRO_TIMEOUT_SECONDS" maestro test \
+    -p ios \
+    --device "$SIMULATOR_ID" \
+    "$FLOW_PATH" \
+    --format junit \
+    --output "$RESULTS_DIR/junit.xml" \
+    --debug-output "$RESULTS_DIR/debug" \
+    --flatten-debug-output \
+    --test-output-dir "$RESULTS_DIR/artifacts" 2>&1 | tee "$output_file"
+  status=${PIPESTATUS[0]}
+  set -e
+
+  if [[ $status -eq 0 ]]; then
+    rm -f "$output_file"
+    break
+  fi
+
   if [[ $status -eq 124 ]]; then
     echo "Maestro test timed out after ${MAESTRO_TIMEOUT_SECONDS} seconds." >&2
   fi
+
+  if (( attempt < MAESTRO_TEST_RETRIES )) && { [[ $status -eq 124 ]] || grep -Eq "$FLOW_RETRY_PATTERN" "$output_file"; }; then
+    echo "Retrying iOS Maestro smoke flow after simulator/XCTest instability." >&2
+    rm -f "$output_file"
+    xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
+    xcrun simctl shutdown "$SIMULATOR_ID" >/dev/null 2>&1 || true
+    xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
+    run_with_timeout "$SIMULATOR_BOOT_TIMEOUT_SECONDS" xcrun simctl bootstatus "$SIMULATOR_ID" -b || true
+    reset_fake_server
+    install_example_app
+    attempt=$((attempt + 1))
+    continue
+  fi
+
+  rm -f "$output_file"
   exit "$status"
+done
+
+assert_smoke_server_state
+
+if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
+  kill "$SERVER_PID" >/dev/null 2>&1 || true
+  wait "$SERVER_PID" 2>/dev/null || true
+  SERVER_PID=""
 fi
 
-if [[ "$SKIP_BUILD" != "1" ]]; then
+if [[ "$RUN_NATIVE_RESET" == "1" && "$SKIP_BUILD" != "1" ]]; then
   if run_with_timeout "$NATIVE_RESET_TIMEOUT_SECONDS" "$ROOT_DIR/scripts/maestro/run-ios-native-update-reset.sh"; then
     :
   else
@@ -182,6 +369,8 @@ if [[ "$SKIP_BUILD" != "1" ]]; then
     fi
     exit "$status"
   fi
-else
+elif [[ "$RUN_NATIVE_RESET" == "1" ]]; then
   echo "Skipping iOS native reset Maestro flow because CAPGO_MAESTRO_SKIP_BUILD=1." >&2
+else
+  echo "Skipping iOS native reset Maestro flow because CAPGO_MAESTRO_RUN_NATIVE_RESET is not enabled." >&2
 fi

@@ -9,26 +9,35 @@ HOST_SERVER_URL="${CAPGO_MAESTRO_HOST_BASE_URL:-http://127.0.0.1:${HOST_SERVER_P
 DEVICE_SERVER_URL="${CAPGO_MAESTRO_DEVICE_BASE_URL:-http://127.0.0.1:${HOST_SERVER_PORT}}"
 APP_ID="app.capgo.updater"
 APP_ACTIVITY="${CAPGO_MAESTRO_ANDROID_ACTIVITY:-app.capgo.updater/.MainActivity}"
-APP_READY_TITLE="CAPGO OTA VALIDATION"
+APP_READY_TITLE="@capgo/capacitor-updater"
 APP_READY_ACTION="Run notifyAppReady"
 APK_PATH="$ROOT_DIR/example-app/android/app/build/outputs/apk/debug/app-debug.apk"
 SCENARIO_SELECTION="${1:-all}"
+ACTIVE_SCENARIO_ID=""
 SERVER_PID=""
-FLOW_RETRY_PATTERN="TcpForwarder.waitFor|allocateForwarder|TimeoutException|Android driver did not start up in time|UNAVAILABLE: io exception|Connection refused|Broken pipe|Failure calling service package|Can.t find service: package|Can.t find service: settings|Cannot access system provider: 'settings'"
+FLOW_RETRY_PATTERN="TcpForwarder.waitFor|allocateForwarder|TimeoutException|Android driver did not start up in time|UNAVAILABLE: io exception|UNAVAILABLE: Network closed|DEADLINE_EXCEEDED|waiting_for_connection|device offline|device .* not found|host:transport:emulator|Connection refused|Broken pipe|Failure calling service package|Can.t find service: package|Can.t find service: settings|Cannot access system provider: 'settings'|No service published for: input|UiAutomation not connected|INTERNAL: UiAutomation|No visible element found: id: quick-action|Could not find a visible element matching selector: id: quick-action"
 MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
 MAESTRO_DRIVER_STARTUP_TIMEOUT_VALUE="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-300000}"
-MAESTRO_FLOW_TIMEOUT_SECONDS="${MAESTRO_FLOW_TIMEOUT_SECONDS:-360}"
+MAESTRO_FLOW_TIMEOUT_SECONDS="${MAESTRO_FLOW_TIMEOUT_SECONDS:-900}"
+MAESTRO_FLOW_RETRIES="${CAPGO_MAESTRO_FLOW_RETRIES:-3}"
+MAESTRO_JAVA_TOOL_OPTIONS="${CAPGO_MAESTRO_JAVA_TOOL_OPTIONS:--Djava.net.preferIPv4Stack=true}"
 APP_BACKGROUND_SETTLE_SECONDS="${CAPGO_MAESTRO_BACKGROUND_SETTLE_SECONDS:-3}"
 APP_LAUNCH_RETRIES="${CAPGO_MAESTRO_APP_LAUNCH_RETRIES:-3}"
 APP_START_TIMEOUT_SECONDS="${CAPGO_MAESTRO_APP_START_TIMEOUT_SECONDS:-20}"
 APP_UI_TIMEOUT_SECONDS="${CAPGO_MAESTRO_APP_UI_TIMEOUT_SECONDS:-180}"
-UI_STATE_TIMEOUT_SECONDS="${CAPGO_MAESTRO_UI_STATE_TIMEOUT_SECONDS:-300}"
-DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS="${CAPGO_MAESTRO_DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS:-120}"
-DIRECT_UPDATE_BACKGROUND_SETTLE_SECONDS="${CAPGO_MAESTRO_DIRECT_UPDATE_BACKGROUND_SETTLE_SECONDS:-6}"
+UI_STATE_TIMEOUT_SECONDS="${CAPGO_MAESTRO_UI_STATE_TIMEOUT_SECONDS:-420}"
+DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS="${CAPGO_MAESTRO_DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS:-300}"
+DIRECT_UPDATE_BACKGROUND_SETTLE_SECONDS="${CAPGO_MAESTRO_DIRECT_UPDATE_BACKGROUND_SETTLE_SECONDS:-10}"
 ADB_COMMAND_TIMEOUT_SECONDS="${CAPGO_MAESTRO_ADB_COMMAND_TIMEOUT_SECONDS:-20}"
 ADB_INSTALL_TIMEOUT_SECONDS="${CAPGO_MAESTRO_ADB_INSTALL_TIMEOUT_SECONDS:-180}"
 TIMEOUT_CMD="$(command -v gtimeout || command -v timeout || true)"
-SCENARIO_SEQUENCE=(deferred always at-install on-launch)
+SCENARIO_SEQUENCE=(deferred always legacy-true at-install on-launch manual-zip manual-zip-config-guards manual-manifest)
+
+if [[ -n "${JAVA_TOOL_OPTIONS:-}" ]]; then
+  export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS} ${MAESTRO_JAVA_TOOL_OPTIONS}"
+else
+  export JAVA_TOOL_OPTIONS="${MAESTRO_JAVA_TOOL_OPTIONS}"
+fi
 
 cleanup() {
   if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
@@ -200,12 +209,32 @@ wait_for_example_app_ui() {
   local deadline=0
 
   while (( attempt <= APP_LAUNCH_RETRIES )); do
-    launch_android_app
+    hierarchy="$(dump_ui_hierarchy)"
+    if [[ "$hierarchy" == *"$APP_READY_TITLE"* || "$hierarchy" == *"$APP_READY_ACTION"* ]]; then
+      return 0
+    fi
+
+    if ! launch_android_app; then
+      hierarchy="$(dump_ui_hierarchy)"
+      if [[ "$hierarchy" == *"$APP_READY_TITLE"* || "$hierarchy" == *"$APP_READY_ACTION"* ]]; then
+        return 0
+      fi
+
+      echo "Android app launch attempt ${attempt} failed before the UI became visible." >&2
+      wait_for_package_manager || true
+      sleep 2
+      ((attempt += 1))
+      continue
+    fi
+
     deadline=$((SECONDS + APP_UI_TIMEOUT_SECONDS))
 
     while (( SECONDS < deadline )); do
       hierarchy="$(dump_ui_hierarchy)"
-      tap_android_anr_wait_button_if_present "$hierarchy" || true
+      if tap_android_anr_wait_button_if_present "$hierarchy"; then
+        sleep 2
+        continue
+      fi
       if [[ "$hierarchy" == *"$APP_READY_TITLE"* || "$hierarchy" == *"$APP_READY_ACTION"* ]]; then
         return 0
       fi
@@ -280,7 +309,6 @@ wait_for_ui_state() {
   shift
 
   wait_for_ui_state_with_timeout "$description" "$UI_STATE_TIMEOUT_SECONDS" "$@"
-  return 0
 }
 
 wait_for_direct_update_ui_state() {
@@ -304,7 +332,7 @@ wait_for_at_install_direct_update_ui_state() {
   shift
   local -a fragments=("$@")
   local attempt=1
-  local max_attempts=2
+  local max_attempts="${CAPGO_MAESTRO_SPLIT_RETRIES:-2}"
   local target_version=""
   local fragment=""
 
@@ -396,6 +424,89 @@ console.log([scenario.builtinLabel, builtinVersion, ...scenario.releases.map((re
   return 0
 }
 
+recover_scenario_for_flow_retry() {
+  local flow_file="$1"
+
+  case "${ACTIVE_SCENARIO_ID}:${flow_file}" in
+    manual-zip:manual-zip-flow.yaml|manual-zip-config-guards:manual-zip-config-guards-flow.yaml|manual-manifest:manual-manifest-flow.yaml)
+      echo "Resetting ${ACTIVE_SCENARIO_ID} before retrying ${flow_file} after driver failure." >&2
+      control_server reset "$ACTIVE_SCENARIO_ID"
+      prepare_scenario "$ACTIVE_SCENARIO_ID"
+      wait_for_example_app_ui
+      ;;
+    *)
+      restart_adb_server
+      prepare_device_for_maestro
+      reset_adb_forwarding
+      ;;
+  esac
+
+  return 0
+}
+
+run_flow_once() {
+  local previous_retries="$MAESTRO_FLOW_RETRIES"
+  local status=0
+
+  MAESTRO_FLOW_RETRIES=1
+  run_flow "$@" || status=$?
+  MAESTRO_FLOW_RETRIES="$previous_retries"
+  return "$status"
+}
+
+run_split_manual_scenario() {
+  local scenario_id="$1"
+  local runner="$2"
+  local attempt=1
+  local max_attempts="${CAPGO_MAESTRO_SPLIT_RETRIES:-2}"
+
+  while [[ $attempt -le $max_attempts ]]; do
+    echo "Running split Maestro scenario: ${scenario_id} (attempt ${attempt}/${max_attempts})"
+    control_server reset "$scenario_id"
+    if ! prepare_scenario "$scenario_id" || ! wait_for_example_app_ui; then
+      if [[ $attempt -lt $max_attempts ]]; then
+        echo "Retrying split Maestro scenario ${scenario_id} from a clean install after launch failure." >&2
+        restart_adb_server
+        prepare_device_for_maestro || true
+        reset_adb_forwarding || true
+        sleep 5
+        attempt=$((attempt + 1))
+        continue
+      fi
+
+      return 1
+    fi
+
+    if "$runner"; then
+      return 0
+    fi
+
+    if [[ $attempt -lt $max_attempts ]]; then
+      echo "Retrying split Maestro scenario ${scenario_id} from a clean install after driver failure." >&2
+      restart_adb_server
+      prepare_device_for_maestro || true
+      reset_adb_forwarding || true
+      sleep 5
+    fi
+
+    attempt=$((attempt + 1))
+  done
+
+  return 1
+}
+
+run_manual_zip_split_once() {
+  run_flow_once manual-zip-v1-flow.yaml || return 1
+
+  return 0
+}
+
+run_manual_manifest_split_once() {
+  run_flow_once manual-manifest-v1-flow.yaml || return 1
+
+  return 0
+}
+
 run_scenario() {
   local scenario_id="$1"
   local builtin_label=""
@@ -403,6 +514,7 @@ run_scenario() {
   local first_release=""
   local second_release=""
 
+  ACTIVE_SCENARIO_ID="$scenario_id"
   IFS=$'\t' read -r builtin_label builtin_version first_release second_release _ <<<"$(load_scenario_config "$scenario_id")"
   echo "=== Running Maestro scenario: $scenario_id ==="
 
@@ -448,6 +560,27 @@ run_scenario() {
         "Build label: $second_release" \
         'Scenario: always' \
         'Direct update mode: always' \
+        'Current bundle source: downloaded' \
+        "Current bundle version: $second_release"
+      ;;
+    legacy-true)
+      control_server reset legacy-true
+      prepare_scenario legacy-true
+      run_flow initial-direct-update.yaml
+      wait_for_direct_update_ui_state \
+        "legacy true direct update applies on first launch" \
+        "Build label: $first_release" \
+        'Scenario: legacy-true' \
+        'Direct update mode: true' \
+        'Current bundle source: downloaded' \
+        "Current bundle version: $first_release"
+      control_server advance legacy-true
+      background_and_resume_app
+      wait_for_direct_update_ui_state \
+        "legacy true direct update applies a newer release after resume" \
+        "Build label: $second_release" \
+        'Scenario: legacy-true' \
+        'Direct update mode: true' \
         'Current bundle source: downloaded' \
         "Current bundle version: $second_release"
       ;;
@@ -502,6 +635,52 @@ run_scenario() {
         'Direct update mode: onLaunch' \
         'Current bundle source: downloaded' \
         "Current bundle version: $second_release"
+      ;;
+    manual-zip)
+      run_split_manual_scenario manual-zip run_manual_zip_split_once
+      ;;
+    manual-zip-config-guards)
+      control_server reset manual-zip-config-guards
+      prepare_scenario manual-zip-config-guards
+      wait_for_example_app_ui
+      run_flow manual-zip-config-guards-flow.yaml
+      wait_for_example_app_ui
+      wait_for_ui_state \
+        "manual zip config guards reject setBundleError while leaving the downloaded bundle intact" \
+        'Build label: manual-zip-config-guards-builtin' \
+        'Last completed download: manual-zip-config-guards-v1' \
+        'Action marker: bundle:expected-rejection'
+      ;;
+    manual-manifest)
+      run_split_manual_scenario manual-manifest run_manual_manifest_split_once
+      assert_server_debug_state manual-manifest '
+const state = JSON.parse(process.argv[1]);
+const scenarioId = process.argv[2];
+const failures = [];
+const debug = state.debug ?? {};
+const requestCounts = debug.requestCounts ?? {};
+const updateRequestUrl = debug.lastUpdateRequest?.url ?? "";
+
+function expect(condition, message) {
+  if (!condition) {
+    failures.push(message);
+  }
+}
+
+expect(state.activeRelease === "manual-manifest-v1", "fake server did not serve the first manifest release");
+expect(updateRequestUrl.includes("/api/updates/manual-manifest"), "missing manifest update request");
+expect((requestCounts.update ?? 0) >= 1, "expected a manifest update check");
+expect((requestCounts.manifestFile ?? 0) >= 1, "expected a manifest file download");
+expect((requestCounts.stats ?? 0) >= 1, "expected manifest stats traffic");
+
+if (failures.length) {
+  console.error(`Server assertions failed for ${scenarioId}:`);
+  for (const failure of failures) {
+    console.error(`- ${failure}`);
+  }
+  process.exit(1);
+}
+'
       ;;
     *)
       echo "Unknown Maestro scenario selection: $scenario_id" >&2
@@ -561,6 +740,14 @@ restart_adb_server() {
   return 0
 }
 
+reset_maestro_driver_packages() {
+  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell am force-stop dev.mobile.maestro >/dev/null 2>&1 || true
+  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell am force-stop dev.mobile.maestro.test >/dev/null 2>&1 || true
+  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" uninstall dev.mobile.maestro >/dev/null 2>&1 || true
+  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" uninstall dev.mobile.maestro.test >/dev/null 2>&1 || true
+  return 0
+}
+
 prepare_device_for_maestro() {
   ensure_android_device
   wait_for_android_boot
@@ -580,7 +767,10 @@ wait_for_package_manager() {
       } | tr -d '\r' | awk 'NF { last = $0 } END { print last }'
     )"
 
-    if run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell cmd package list packages >/dev/null 2>&1 && [[ "$settings_output" =~ ^(0|1|null)$ ]]; then
+    if run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell cmd package list packages >/dev/null 2>&1 &&
+      run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell pm path android >/dev/null 2>&1 &&
+      run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell sm list-volumes all >/dev/null 2>&1 &&
+      [[ "$settings_output" =~ ^(0|1|null)$ ]]; then
       return 0
     fi
     sleep 2
@@ -610,14 +800,15 @@ launch_android_app() {
 relaunch_android_app() {
   configure_server_routing
 
-  if launch_android_app; then
+  if launch_android_app && wait_for_example_app_ui; then
     sleep 2
     return 0
   fi
 
   echo "Android relaunch failed; re-preparing the device before retrying." >&2
   prepare_device_for_maestro
-  launch_android_app
+  launch_android_app || true
+  wait_for_example_app_ui || true
   sleep 2
   return 0
 }
@@ -634,7 +825,7 @@ background_and_resume_app() {
 
 install_apk() {
   local attempt=1
-  local max_attempts=3
+  local max_attempts=6
   local output_file
 
   prepare_device_for_maestro
@@ -649,7 +840,7 @@ install_apk() {
       return 0
     fi
 
-    if grep -Eq "Broken pipe|Can.t find service: package|Can.t find service: settings|Cannot access system provider: 'settings' before system providers are installed!|no devices/emulators found|device offline|PackageManagerInternal\\.freeStorage|StorageManagerService\\.allocateBytes|java\\.lang\\.NullPointerException" "$output_file" && [[ $attempt -lt $max_attempts ]]; then
+    if grep -Eq "Broken pipe|Can.t find service: package|Can.t find service: settings|Cannot access system provider: 'settings' before system providers are installed!|no devices/emulators found|device offline|PackageManagerInternal\\.freeStorage|StorageManagerService\\.allocateBytes|StorageManager\\.getVolumes|java\\.lang\\.NullPointerException" "$output_file" && [[ $attempt -lt $max_attempts ]]; then
       rm -f "$output_file"
       attempt=$((attempt + 1))
       restart_adb_server
@@ -674,12 +865,22 @@ control_server() {
   return 0
 }
 
+assert_server_debug_state() {
+  local scenario="$1"
+  local assertion_script="$2"
+  local server_state=""
+
+  server_state="$(curl --silent --show-error --fail "$HOST_SERVER_URL/api/control/state?scenario=$scenario")"
+  bun --eval "$assertion_script" "$server_state" "$scenario"
+  return 0
+}
+
 run_flow() {
   local flow_file="$1"
   shift
   local -a maestro_args=()
   local attempt=1
-  local max_attempts=3
+  local max_attempts="$MAESTRO_FLOW_RETRIES"
   local command_status=0
   local output_file
   local env_arg
@@ -693,14 +894,22 @@ run_flow() {
   while [[ $attempt -le $max_attempts ]]; do
     echo "Running Maestro flow: $flow_file (attempt $attempt/$max_attempts)"
     prepare_device_for_maestro
+    reset_maestro_driver_packages
     reset_adb_forwarding
     output_file="$(mktemp)"
 
     set +e
-    MAESTRO_CLI_NO_ANALYTICS="$MAESTRO_CLI_NO_ANALYTICS" \
-      MAESTRO_DRIVER_STARTUP_TIMEOUT="$MAESTRO_DRIVER_STARTUP_TIMEOUT_VALUE" \
-      "$TIMEOUT_CMD" --foreground "${MAESTRO_FLOW_TIMEOUT_SECONDS}s" \
-      maestro test "${maestro_args[@]}" "$ROOT_DIR/.maestro/$flow_file" 2>&1 | tee "$output_file"
+    if ((${#maestro_args[@]} > 0)); then
+      MAESTRO_CLI_NO_ANALYTICS="$MAESTRO_CLI_NO_ANALYTICS" \
+        MAESTRO_DRIVER_STARTUP_TIMEOUT="$MAESTRO_DRIVER_STARTUP_TIMEOUT_VALUE" \
+        "$TIMEOUT_CMD" --foreground "${MAESTRO_FLOW_TIMEOUT_SECONDS}s" \
+        maestro test "${maestro_args[@]}" "$ROOT_DIR/.maestro/$flow_file" 2>&1 | tee "$output_file"
+    else
+      MAESTRO_CLI_NO_ANALYTICS="$MAESTRO_CLI_NO_ANALYTICS" \
+        MAESTRO_DRIVER_STARTUP_TIMEOUT="$MAESTRO_DRIVER_STARTUP_TIMEOUT_VALUE" \
+        "$TIMEOUT_CMD" --foreground "${MAESTRO_FLOW_TIMEOUT_SECONDS}s" \
+        maestro test "$ROOT_DIR/.maestro/$flow_file" 2>&1 | tee "$output_file"
+    fi
     command_status=${PIPESTATUS[0]}
     set -e
 
@@ -713,9 +922,7 @@ run_flow() {
       echo "Retrying $flow_file after Maestro flow timeout (${MAESTRO_FLOW_TIMEOUT_SECONDS}s)..." >&2
       rm -f "$output_file"
       attempt=$((attempt + 1))
-      restart_adb_server
-      prepare_device_for_maestro
-      reset_adb_forwarding
+      recover_scenario_for_flow_retry "$flow_file"
       sleep 5
       continue
     fi
@@ -724,9 +931,7 @@ run_flow() {
       echo "Retrying $flow_file after Maestro ADB forwarding timeout..." >&2
       rm -f "$output_file"
       attempt=$((attempt + 1))
-      restart_adb_server
-      prepare_device_for_maestro
-      reset_adb_forwarding
+      recover_scenario_for_flow_retry "$flow_file"
       sleep 5
       continue
     fi

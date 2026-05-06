@@ -1,12 +1,3 @@
 appId: app.capgo.updater
 ---
-- launchApp
-- extendedWaitUntil:
-    visible: 'CAPGO OTA VALIDATION'
-    timeout: 180000
-- assertVisible: 'CAPGO OTA VALIDATION'
-- extendedWaitUntil:
-    visible: 'Result marker: smoke-sequence:success'
-    timeout: 300000
-- assertVisible: 'Sequence: success'
-- assertVisible: 'Result marker: smoke-sequence:success'
+- runFlow: ../example-app-api-smoke-android.yaml

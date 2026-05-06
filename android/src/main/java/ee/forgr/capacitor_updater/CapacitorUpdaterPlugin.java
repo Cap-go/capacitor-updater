@@ -1292,6 +1292,23 @@ public class CapacitorUpdaterPlugin extends Plugin {
             startNewThread(() ->
                 CapacitorUpdaterPlugin.this.implementation.listChannels((res) -> {
                     JSObject jsRes = InternalUtils.mapToJSObject(res);
+                    Object channels = res.get("channels");
+                    if (channels instanceof List<?> channelsList) {
+                        JSArray channelsArray = new JSArray();
+                        for (Object channel : channelsList) {
+                            if (channel instanceof Map<?, ?> channelMap) {
+                                JSObject channelObject = new JSObject();
+                                for (Map.Entry<?, ?> entry : channelMap.entrySet()) {
+                                    Object key = entry.getKey();
+                                    if (key != null) {
+                                        channelObject.put(key.toString(), entry.getValue());
+                                    }
+                                }
+                                channelsArray.put(channelObject);
+                            }
+                        }
+                        jsRes.put("channels", channelsArray);
+                    }
                     if (jsRes.has("error")) {
                         String errorMessage = jsRes.has("message") ? jsRes.getString("message") : jsRes.getString("error");
                         String errorCode = jsRes.getString("error");
@@ -1581,23 +1598,25 @@ public class CapacitorUpdaterPlugin extends Plugin {
             call.reject("Set called without id");
             return;
         }
-        try {
-            logger.info("Setting active bundle " + id);
-            if (!this.implementation.set(id)) {
-                logger.info("No such bundle " + id);
-                call.reject("Update failed, id " + id + " does not exist.");
-            } else if (!this._reload()) {
-                logger.error("Reload failed after setting bundle " + id);
-                call.reject("Reload failed after setting bundle " + id);
-            } else {
-                logger.info("Bundle successfully set to " + id);
-                this.notifyBundleSet(this.implementation.getBundleInfo(id));
-                call.resolve();
+        startNewThread(() -> {
+            try {
+                logger.info("Setting active bundle " + id);
+                if (!this.implementation.set(id)) {
+                    logger.info("No such bundle " + id);
+                    call.reject("Update failed, id " + id + " does not exist.");
+                } else if (!this._reload()) {
+                    logger.error("Reload failed after setting bundle " + id);
+                    call.reject("Reload failed after setting bundle " + id);
+                } else {
+                    logger.info("Bundle successfully set to " + id);
+                    this.notifyBundleSet(this.implementation.getBundleInfo(id));
+                    call.resolve();
+                }
+            } catch (final Exception e) {
+                logger.error("Could not set id " + id + " " + e.getMessage());
+                call.reject("Could not set id " + id, e);
             }
-        } catch (final Exception e) {
-            logger.error("Could not set id " + id + " " + e.getMessage());
-            call.reject("Could not set id " + id, e);
-        }
+        });
     }
 
     @PluginMethod
@@ -1783,19 +1802,21 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     @PluginMethod
     public void reset(final PluginCall call) {
-        try {
-            final Boolean toLastSuccessful = call.getBoolean("toLastSuccessful", false);
-            final Boolean usePendingBundle = call.getBoolean("usePendingBundle", false);
-            if (this._reset(toLastSuccessful, usePendingBundle)) {
-                call.resolve();
-                return;
+        startNewThread(() -> {
+            try {
+                final Boolean toLastSuccessful = call.getBoolean("toLastSuccessful", false);
+                final Boolean usePendingBundle = call.getBoolean("usePendingBundle", false);
+                if (this._reset(toLastSuccessful, usePendingBundle)) {
+                    call.resolve();
+                    return;
+                }
+                logger.error("Reset failed");
+                call.reject("Reset failed");
+            } catch (final Exception e) {
+                logger.error("Reset failed " + e.getMessage());
+                call.reject("Reset failed", e);
             }
-            logger.error("Reset failed");
-            call.reject("Reset failed");
-        } catch (final Exception e) {
-            logger.error("Reset failed " + e.getMessage());
-            call.reject("Reset failed", e);
-        }
+        });
     }
 
     @PluginMethod
@@ -2012,10 +2033,22 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.checkAppReady(this.resolveAppReadyCheckTimeoutMs());
     }
 
+    synchronized boolean shouldInterruptAppReadyCheck(final Thread existingCheck, final Thread currentThread) {
+        return existingCheck != null && existingCheck != currentThread;
+    }
+
+    synchronized void clearAppReadyCheckIfCurrent(final Thread expectedThread) {
+        if (this.appReadyCheck == expectedThread) {
+            this.appReadyCheck = null;
+        }
+    }
+
     private void checkAppReady(final long waitTimeMs) {
         try {
-            if (this.appReadyCheck != null) {
-                this.appReadyCheck.interrupt();
+            final Thread currentThread = Thread.currentThread();
+            final Thread existingCheck = this.appReadyCheck;
+            if (this.shouldInterruptAppReadyCheck(existingCheck, currentThread)) {
+                existingCheck.interrupt();
             }
             this.appReadyCheck = startNewThread(new DeferredNotifyAppReadyCheck(waitTimeMs));
         } catch (final Exception e) {
@@ -2502,12 +2535,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
         @Override
         public void run() {
+            final Thread currentThread = Thread.currentThread();
             try {
                 logger.info("Wait for " + this.waitTimeMs + "ms, then check for notifyAppReady");
                 Thread.sleep(this.waitTimeMs);
                 CapacitorUpdaterPlugin.this.checkRevert();
-                CapacitorUpdaterPlugin.this.appReadyCheck = null;
+                CapacitorUpdaterPlugin.this.clearAppReadyCheckIfCurrent(currentThread);
             } catch (final InterruptedException e) {
+                CapacitorUpdaterPlugin.this.clearAppReadyCheckIfCurrent(currentThread);
                 logger.info(DeferredNotifyAppReadyCheck.class.getName() + " was interrupted.");
             }
         }

@@ -134,6 +134,35 @@ struct InfoObject: Codable {
     var defaultChannel: String?
     var key_id: String?
 }
+
+extension InfoObject {
+    func toParameters() -> [String: Any] {
+        var parameters: [String: Any] = [:]
+        func set(_ key: String, _ value: Any?) {
+            guard let value = value else {
+                return
+            }
+            parameters[key] = value
+        }
+        set("platform", platform)
+        set("device_id", device_id)
+        set("app_id", app_id)
+        set("custom_id", custom_id)
+        set("version_build", version_build)
+        set("version_code", version_code)
+        set("version_os", version_os)
+        set("version_name", version_name)
+        set("old_version_name", old_version_name)
+        set("plugin_version", plugin_version)
+        set("is_emulator", is_emulator)
+        set("is_prod", is_prod)
+        set("action", action)
+        set("channel", channel)
+        set("defaultChannel", defaultChannel)
+        set("key_id", key_id)
+        return parameters
+    }
+}
 // swiftlint:enable identifier_name
 
 // swiftlint:disable identifier_name

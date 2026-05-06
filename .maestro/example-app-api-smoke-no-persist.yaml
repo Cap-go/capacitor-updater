@@ -1,0 +1,55 @@
+appId: app.capgo.updater
+---
+- stopApp
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: '@capgo/capacitor-updater'
+    timeout: 180000
+- assertVisible: '@capgo/capacitor-updater'
+- extendedWaitUntil:
+    visible: '.*Harness: ready.*'
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      text: '@capgo/capacitor-updater'
+    direction: UP
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      id: 'quick-run-smoke-sequence'
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+    visibilityPercentage: 1
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    id: 'quick-run-smoke-sequence'
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible: '.*(Marker: smoke-sequence:success|M:smoke-sequence:success).*'
+    timeout: 180000
+- runFlow: helpers/cold-launch-app.yaml
+- extendedWaitUntil:
+    visible: '@capgo/capacitor-updater'
+    timeout: 120000
+- extendedWaitUntil:
+    visible: '.*Harness: ready.*'
+    timeout: 120000
+- extendedWaitUntil:
+    visible: '.*Probe: success.*'
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      id: 'quick-action-open-app-store'
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+    visibilityPercentage: 1
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    id: 'quick-action-open-app-store'
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    notVisible: '@capgo/capacitor-updater'
+    timeout: 120000

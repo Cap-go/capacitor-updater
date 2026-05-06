@@ -1,0 +1,199 @@
+appId: app.capgo.updater
+---
+- extendedWaitUntil:
+    visible: '@capgo/capacitor-updater'
+    timeout: 180000
+- assertVisible: '@capgo/capacitor-updater'
+- scrollUntilVisible:
+    element:
+      text: '@capgo/capacitor-updater'
+    direction: UP
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      text: 'Quick apply runtime URLs'
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+    visibilityPercentage: 1
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    text: 'Quick apply runtime URLs'
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible: '.*(Marker: set-runtime-urls:success|M:set-runtime-urls:success).*'
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: 'Quick reset release'
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+    visibilityPercentage: 1
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    text: 'Quick reset release'
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible: '.*(Marker: reset:success|M:reset:success).*'
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: 'Quick observe downloaded bundle'
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+    visibilityPercentage: 1
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    text: 'Quick observe downloaded bundle'
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible: '.*(Marker: download-store:success|M:download-store:success).*'
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      text: '@capgo/capacitor-updater'
+    direction: UP
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      text: 'Quick queue bundle'
+    direction: DOWN
+    timeout: 30000
+    centerElement: false
+    visibilityPercentage: 1
+- tapOn:
+    text: 'Quick queue bundle'
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible: '.*(Marker: queue:success|M:queue:success).*'
+    timeout: 30000
+- extendedWaitUntil:
+    visible: '.*Set next event: manual-manifest-v1.*'
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: '@capgo/capacitor-updater'
+    direction: UP
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      text: 'Quick reload app'
+    direction: DOWN
+    timeout: 30000
+    centerElement: false
+    visibilityPercentage: 1
+- tapOn:
+    text: 'Quick reload app'
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible: '@capgo/capacitor-updater'
+    timeout: 180000
+- scrollUntilVisible:
+    element:
+      text: '@capgo/capacitor-updater'
+    direction: UP
+    timeout: 120000
+- extendedWaitUntil:
+    visible: '.*Current bundle source: downloaded.*'
+    timeout: 180000
+- extendedWaitUntil:
+    visible: '.*Current bundle version: manual-manifest-v1.*'
+    timeout: 180000
+- scrollUntilVisible:
+    element:
+      text: 'Quick advance release'
+    direction: DOWN
+    timeout: 30000
+    centerElement: false
+    visibilityPercentage: 1
+- tapOn:
+    text: 'Quick advance release'
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible: '.*(Marker: advance:success|M:advance:success).*'
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: 'Quick observe downloaded bundle'
+    direction: DOWN
+    timeout: 30000
+    centerElement: false
+    visibilityPercentage: 1
+- tapOn:
+    text: 'Quick observe downloaded bundle'
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible: '.*(Marker: download-store:success|M:download-store:success).*'
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      text: '@capgo/capacitor-updater'
+    direction: UP
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      text: 'Quick queue bundle'
+    direction: DOWN
+    timeout: 30000
+    centerElement: false
+    visibilityPercentage: 1
+- tapOn:
+    text: 'Quick queue bundle'
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible: '.*(Marker: queue:success|M:queue:success).*'
+    timeout: 30000
+- extendedWaitUntil:
+    visible: '.*Set next event: manual-manifest-v2.*'
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: '@capgo/capacitor-updater'
+    direction: UP
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      text: 'Quick reload app'
+    direction: DOWN
+    timeout: 30000
+    centerElement: false
+    visibilityPercentage: 1
+- tapOn:
+    text: 'Quick reload app'
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible: '@capgo/capacitor-updater'
+    timeout: 180000
+- scrollUntilVisible:
+    element:
+      text: '@capgo/capacitor-updater'
+    direction: UP
+    timeout: 120000
+- extendedWaitUntil:
+    visible: '.*Current bundle source: downloaded.*'
+    timeout: 180000
+- extendedWaitUntil:
+    visible: '.*Current bundle version: manual-manifest-v2.*'
+    timeout: 180000
+- scrollUntilVisible:
+    element:
+      text: 'Quick read next bundle'
+    direction: DOWN
+    timeout: 30000
+    centerElement: false
+    visibilityPercentage: 1
+- scrollUntilVisible:
+    element:
+      text: 'Quick confirm no update'
+    direction: DOWN
+    timeout: 30000
+    centerElement: false
+    visibilityPercentage: 1
+- tapOn:
+    text: 'Quick confirm no update'
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible: '.*(Marker: no-update:success|M:no-update:success).*'
+    timeout: 60000

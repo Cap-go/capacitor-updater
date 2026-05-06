@@ -55,6 +55,14 @@ private final class FreshDownloadCapgoUpdater: CapgoUpdater {
     }
 }
 
+private final class ChannelRequestCapgoUpdater: CapgoUpdater {
+    var requestResult: CapgoUpdater.RequestResult!
+
+    override func performRequest(_ request: URLRequest, label: String) -> CapgoUpdater.RequestResult {
+        requestResult
+    }
+}
+
 private final class ResetTrackingCapgoUpdater: CapgoUpdater {
     var currentBundleValue = BundleInfo(
         id: "current-id",
@@ -408,6 +416,14 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(BundleStatus.DOWNLOADING.localizedString, "downloading")
     }
 
+    func testBundleStatusStoredValue() {
+        XCTAssertEqual(BundleStatus.SUCCESS.storedValue, "success")
+        XCTAssertEqual(BundleStatus.ERROR.storedValue, "error")
+        XCTAssertEqual(BundleStatus.PENDING.storedValue, "pending")
+        XCTAssertEqual(BundleStatus.DELETED.storedValue, "deleted")
+        XCTAssertEqual(BundleStatus.DOWNLOADING.storedValue, "downloading")
+    }
+
     func testBundleStatusFromLocalizedString() {
         XCTAssertEqual(BundleStatus(localizedString: "success"), BundleStatus.SUCCESS)
         XCTAssertEqual(BundleStatus(localizedString: "error"), BundleStatus.ERROR)
@@ -415,6 +431,60 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(BundleStatus(localizedString: "deleted"), BundleStatus.DELETED)
         XCTAssertEqual(BundleStatus(localizedString: "downloading"), BundleStatus.DOWNLOADING)
         XCTAssertNil(BundleStatus(localizedString: "invalid"))
+    }
+
+    func testBundleStatusEncodesStableStoredValue() throws {
+        let data = try JSONEncoder().encode(BundleStatus.SUCCESS)
+        XCTAssertEqual(String(data: data, encoding: .utf8), "\"success\"")
+    }
+
+    func testBundleStatusDecodesLegacyCaseKeyObject() throws {
+        let data = try XCTUnwrap("""
+        {"SUCCESS":{}}
+        """.data(using: .utf8))
+
+        let decoded = try JSONDecoder().decode(BundleStatus.self, from: data)
+
+        XCTAssertEqual(decoded, .SUCCESS)
+    }
+
+    func testBundleInfoDecodesLegacyBundleStatusObject() throws {
+        let data = try XCTUnwrap("""
+        {"downloaded":"1970-01-01T00:00:00.000Z","id":"test-id","version":"1.0.0","checksum":"abc123","status":{"SUCCESS":{}}}
+        """.data(using: .utf8))
+
+        let decodedBundle = try JSONDecoder().decode(BundleInfo.self, from: data)
+
+        XCTAssertEqual(decodedBundle.getId(), "test-id")
+        XCTAssertEqual(decodedBundle.getVersionName(), "1.0.0")
+        XCTAssertEqual(decodedBundle.getChecksum(), "abc123")
+        XCTAssertEqual(decodedBundle.getStatus(), BundleStatus.SUCCESS.storedValue)
+    }
+
+    func testSetChannelRejectsNonSuccessStatusWithoutPersistingDefaultChannel() throws {
+        let updater = ChannelRequestCapgoUpdater()
+        updater.setLogger(Logger(withTag: "TestLogger"))
+        updater.channelUrl = "https://example.com/channel"
+        updater.defaultChannel = "stable"
+
+        let channelURL = try XCTUnwrap(URL(string: "https://example.com/channel"))
+        let response = try XCTUnwrap(HTTPURLResponse(url: channelURL, statusCode: 401, httpVersion: nil, headerFields: nil))
+        let responseData = try XCTUnwrap("""
+        {"status":"error","message":"Unauthorized"}
+        """.data(using: .utf8))
+        updater.requestResult = CapgoUpdater.RequestResult(data: responseData, response: response, error: nil, timedOut: false)
+
+        let defaultsKey = "CapacitorUpdaterTests.defaultChannel.\(UUID().uuidString)"
+        defer {
+            UserDefaults.standard.removeObject(forKey: defaultsKey)
+        }
+
+        let result = updater.setChannel(channel: "beta", defaultChannelKey: defaultsKey, allowSetDefaultChannel: true)
+
+        XCTAssertEqual(result.error, "response_error")
+        XCTAssertEqual(result.message, "Unauthorized")
+        XCTAssertEqual(updater.defaultChannel, "stable")
+        XCTAssertNil(UserDefaults.standard.string(forKey: defaultsKey))
     }
 
     // MARK: - DelayCondition Tests
@@ -695,7 +765,7 @@ class CapacitorUpdaterTests: XCTestCase {
 
         updater.finalizePendingReload(bundle: pendingBundle, previousBundleName: "1.0.0")
 
-        XCTAssertEqual(updater.bundleInfos["pending-id"]?.getStatus(), BundleStatus.SUCCESS.localizedString)
+        XCTAssertEqual(updater.bundleInfos["pending-id"]?.getStatus(), BundleStatus.SUCCESS.storedValue)
         XCTAssertEqual(updater.lastStatsAction, "set")
         XCTAssertEqual(updater.lastStatsVersionName, "2.0.0")
         XCTAssertEqual(updater.lastStatsOldVersionName, "1.0.0")

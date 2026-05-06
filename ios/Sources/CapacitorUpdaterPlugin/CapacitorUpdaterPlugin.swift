@@ -64,6 +64,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "isShakeMenuEnabled", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setShakeChannelSelector", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "isShakeChannelSelectorEnabled", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getAppId", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setAppId", returnType: CAPPluginReturnPromise),
         // App Store update methods
         CAPPluginMethod(name: "getAppUpdateInfo", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "openAppStore", returnType: CAPPluginReturnPromise),
@@ -233,7 +235,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         implementation.setPublicKey(getConfig().getString("publicKey") ?? "")
         implementation.notifyDownloadRaw = notifyDownload
         implementation.notifyListeners = { [weak self] eventName, data in
-            self?.notifyListeners(eventName, data: data)
+            let emit = {
+                self?.notifyListeners(eventName, data: data)
+            }
+            if Thread.isMainThread {
+                emit()
+            } else {
+                DispatchQueue.main.async {
+                    emit()
+                }
+            }
         }
         implementation.pluginVersion = self.pluginVersion
 
@@ -522,11 +533,88 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         logger.info("Cleanup finished, proceeding with download")
     }
 
+    private func resolveCall(_ call: CAPPluginCall, data: PluginCallResultData? = nil) {
+        let resolve = {
+            let savedCall = self.bridge?.savedCall(withID: call.callbackId)
+            let targetCall = savedCall ?? call
+
+            if let data {
+                targetCall.resolve(data)
+            } else {
+                targetCall.resolve()
+            }
+
+            if savedCall != nil {
+                self.bridge?.releaseCall(withID: call.callbackId)
+            }
+        }
+
+        if Thread.isMainThread {
+            resolve()
+        } else {
+            DispatchQueue.main.async {
+                resolve()
+            }
+        }
+    }
+
+    private func rejectCall(_ call: CAPPluginCall, message: String, code: String? = nil, error: Error? = nil, data: PluginCallResultData? = nil) {
+        let reject = {
+            let savedCall = self.bridge?.savedCall(withID: call.callbackId)
+            let targetCall = savedCall ?? call
+
+            targetCall.reject(message, code, error, data)
+
+            if savedCall != nil {
+                self.bridge?.releaseCall(withID: call.callbackId)
+            }
+        }
+
+        if Thread.isMainThread {
+            reject()
+        } else {
+            DispatchQueue.main.async {
+                reject()
+            }
+        }
+    }
+
+    private func saveCallForAsyncHandling(_ call: CAPPluginCall) {
+        bridge?.saveCall(call)
+    }
+
+    private func notifyListenersOnMain(_ eventName: String, data: JSObject) {
+        let notify = {
+            self.notifyListeners(eventName, data: data)
+        }
+
+        if Thread.isMainThread {
+            notify()
+        } else {
+            DispatchQueue.main.async {
+                notify()
+            }
+        }
+    }
+
+    private func bundlePayload(_ bundleInfo: BundleInfo) -> JSObject {
+        var payload: JSObject = [:]
+        for (key, value) in bundleInfo.toJSON() {
+            payload[key] = value
+        }
+        return payload
+    }
+
     @objc func notifyDownload(id: String, percent: Int, ignoreMultipleOfTen: Bool = false, bundle: BundleInfo? = nil) {
         let bundleInfo = bundle ?? self.implementation.getBundleInfo(id: id)
-        self.notifyListeners("download", data: ["percent": percent, "bundle": bundleInfo.toJSON()])
+        var downloadPayload: JSObject = [:]
+        downloadPayload["percent"] = percent
+        downloadPayload["bundle"] = bundlePayload(bundleInfo)
+        self.notifyListenersOnMain("download", data: downloadPayload)
         if percent == 100 {
-            self.notifyListeners("downloadComplete", data: ["bundle": bundleInfo.toJSON()])
+            var downloadCompletePayload: JSObject = [:]
+            downloadCompletePayload["bundle"] = bundlePayload(bundleInfo)
+            self.notifyListenersOnMain("downloadComplete", data: downloadCompletePayload)
             self.implementation.sendStats(action: "download_complete", versionName: bundleInfo.getVersionName())
         } else if percent.isMultiple(of: 10) || ignoreMultipleOfTen {
             self.implementation.sendStats(action: "download_\(percent)", versionName: bundleInfo.getVersionName())
@@ -623,6 +711,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         let manifestArray = call.getArray("manifest")
         let url = URL(string: urlString)
         logger.info("Downloading \(String(describing: url))")
+        self.saveCallForAsyncHandling(call)
         DispatchQueue.global(qos: .background).async {
             do {
                 let next: BundleInfo
@@ -670,13 +759,17 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 } else {
                     self.logger.info("Good checksum \(next.getChecksum()) \(checksum)")
                 }
-                self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
-                call.resolve(next.toJSON())
+                var updateAvailablePayload: JSObject = [:]
+                updateAvailablePayload["bundle"] = self.bundlePayload(next)
+                self.notifyListenersOnMain("updateAvailable", data: updateAvailablePayload)
+                self.resolveCall(call, data: next.toJSON())
             } catch {
                 self.logger.error("Failed to download from: \(String(describing: url)) \(error.localizedDescription)")
-                self.notifyListeners("downloadFailed", data: ["version": version])
+                var downloadFailedPayload: JSObject = [:]
+                downloadFailedPayload["version"] = version
+                self.notifyListenersOnMain("downloadFailed", data: downloadFailedPayload)
                 self.implementation.sendStats(action: "download_fail")
-                call.reject("Failed to download from: \(url!) - \(error.localizedDescription)")
+                self.rejectCall(call, message: "Failed to download from: \(url!) - \(error.localizedDescription)")
             }
         }
     }
@@ -902,18 +995,19 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func getLatest(_ call: CAPPluginCall) {
         let channel = call.getString("channel")
+        self.saveCallForAsyncHandling(call)
         runGetLatestWork {
             let res = self.implementation.getLatest(url: URL(string: self.updateUrl)!, channel: channel)
             if let error = res.error, !error.isEmpty {
                 let responseKind = self.updateResponseKind(kind: res.kind)
                 res.kind = responseKind
                 if responseKind == "failed" {
-                    call.reject(error)
+                    self.rejectCall(call, message: error)
                 } else {
                     if res.version.isEmpty {
                         res.version = self.implementation.getCurrentBundle().getVersionName()
                     }
-                    call.resolve(res.toDict())
+                    self.resolveCall(call, data: res.toDict())
                 }
             } else if let kind = res.kind, !kind.isEmpty {
                 let responseKind = self.updateResponseKind(kind: kind)
@@ -922,25 +1016,26 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     if res.version.isEmpty {
                         res.version = self.implementation.getCurrentBundle().getVersionName()
                     }
-                    call.resolve(res.toDict())
+                    self.resolveCall(call, data: res.toDict())
                 } else {
-                    call.reject(res.message ?? "server did not provide a message")
+                    self.rejectCall(call, message: res.message ?? "server did not provide a message")
                 }
             } else if let message = res.message, !message.isEmpty {
-                call.reject(message)
+                self.rejectCall(call, message: message)
             } else {
-                call.resolve(res.toDict())
+                self.resolveCall(call, data: res.toDict())
             }
         }
     }
 
     @objc func unsetChannel(_ call: CAPPluginCall) {
         let triggerAutoUpdate = call.getBool("triggerAutoUpdate", false)
-        DispatchQueue.global(qos: .background).async {
+        self.saveCallForAsyncHandling(call)
+        DispatchQueue.global(qos: .utility).async {
             let configDefaultChannel = self.getConfig().getString("defaultChannel", "")!
             let res = self.implementation.unsetChannel(defaultChannelKey: self.defaultChannelDefaultsKey, configDefaultChannel: configDefaultChannel)
             if res.error != "" {
-                call.reject(res.error, "UNSETCHANNEL_FAILED", nil, [
+                self.rejectCall(call, message: res.error, code: "UNSETCHANNEL_FAILED", data: [
                     "message": res.error,
                     "error": res.error.contains("Channel URL") ? "missing_config" : "request_failed"
                 ])
@@ -954,7 +1049,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         self.logger.info("Download already in progress, skipping duplicate download request")
                     }
                 }
-                call.resolve(res.toDict())
+                self.resolveCall(call, data: res.toDict())
             }
         }
     }
@@ -969,17 +1064,18 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         let triggerAutoUpdate = call.getBool("triggerAutoUpdate") ?? false
-        DispatchQueue.global(qos: .background).async {
+        self.saveCallForAsyncHandling(call)
+        DispatchQueue.global(qos: .utility).async {
             let res = self.implementation.setChannel(channel: channel, defaultChannelKey: self.defaultChannelDefaultsKey, allowSetDefaultChannel: self.allowSetDefaultChannel)
             if res.error != "" {
                 // Fire channelPrivate event if channel doesn't allow self-assignment
                 if res.error.contains("cannot_update_via_private_channel") || res.error.contains("channel_self_set_not_allowed") {
-                    self.notifyListeners("channelPrivate", data: [
+                    self.notifyListenersOnMain("channelPrivate", data: [
                         "channel": channel,
                         "message": res.error
                     ])
                 }
-                call.reject(res.error, "SETCHANNEL_FAILED", nil, [
+                self.rejectCall(call, message: res.error, code: "SETCHANNEL_FAILED", data: [
                     "message": res.error,
                     "error": res.error.contains("Channel URL") ? "missing_config" : (res.error.contains("cannot_update_via_private_channel") || res.error.contains("channel_self_set_not_allowed")) ? "channel_private" : "request_failed"
                 ])
@@ -993,35 +1089,39 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         self.logger.info("Download already in progress, skipping duplicate download request")
                     }
                 }
-                call.resolve(res.toDict())
+                self.resolveCall(call, data: res.toDict())
             }
         }
     }
 
     @objc func getChannel(_ call: CAPPluginCall) {
-        DispatchQueue.global(qos: .background).async {
+        self.saveCallForAsyncHandling(call)
+        DispatchQueue.global(qos: .utility).async {
             let res = self.implementation.getChannel()
             if res.error != "" {
-                call.reject(res.error, "GETCHANNEL_FAILED", nil, [
+                self.rejectCall(call, message: res.error, code: "GETCHANNEL_FAILED", data: [
                     "message": res.error,
                     "error": res.error.contains("Channel URL") ? "missing_config" : "request_failed"
                 ])
             } else {
-                call.resolve(res.toDict())
+                self.resolveCall(call, data: res.toDict())
             }
         }
     }
 
     @objc func listChannels(_ call: CAPPluginCall) {
-        DispatchQueue.global(qos: .background).async {
+        self.saveCallForAsyncHandling(call)
+        DispatchQueue.global(qos: .utility).async {
             let res = self.implementation.listChannels()
             if res.error != "" {
-                call.reject(res.error, "LISTCHANNELS_FAILED", nil, [
+                self.rejectCall(call, message: res.error, code: "LISTCHANNELS_FAILED", data: [
                     "message": res.error,
                     "error": res.error.contains("Channel URL") ? "missing_config" : "request_failed"
                 ])
             } else {
-                call.resolve(res.toDict())
+                var payload: JSObject = [:]
+                payload["channels"] = res.channels
+                self.resolveCall(call, data: payload)
             }
         }
     }
@@ -1148,6 +1248,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         let bundle = self.implementation.getCurrentBundle()
         self.implementation.setSuccess(bundle: bundle, autoDeletePrevious: self.autoDeletePrevious)
         logger.info("Current bundle loaded successfully. [notifyAppReady was called] \(bundle.toString())")
+
         call.resolve(["bundle": bundle.toJSON()])
     }
 
@@ -1237,7 +1338,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         logger.info("Current bundle is: \(current.toString())")
 
-        if BundleStatus.SUCCESS.localizedString != current.getStatus() {
+        if BundleStatus.SUCCESS.storedValue != current.getStatus() {
             logger.error("notifyAppReady was not called, roll back current bundle: \(current.toString())")
             logger.error("Did you forget to call 'notifyAppReady()' in your Capacitor App code?")
             self.notifyListeners("updateFailed", data: [
@@ -1768,7 +1869,23 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     func runBackgroundDownloadWork(_ work: @escaping () -> Void) {
-        DispatchQueue.global(qos: .background).async(execute: work)
+        // Live update checks/downloads are user-visible work. Using `.background`
+        // lets the scheduler starve them for minutes while the app is active.
+        DispatchQueue.global(qos: .utility).async(execute: work)
+    }
+
+    private func beginDownloadBackgroundTask() {
+        let registerTask = {
+            self.backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "Finish Download Tasks") {
+                self.endBackGroundTask()
+            }
+        }
+
+        if Thread.isMainThread {
+            registerTask()
+        } else {
+            DispatchQueue.main.sync(execute: registerTask)
+        }
     }
 
     func runGetLatestWork(_ work: @escaping () -> Void) {
@@ -1797,10 +1914,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.runBackgroundDownloadWork {
             // Wait for cleanup to complete before starting download
             self.waitForCleanupIfNeeded()
-            self.backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "Finish Download Tasks") {
-                // End the task if time expires.
-                self.endBackGroundTask()
-            }
+            self.beginDownloadBackgroundTask()
             self.logger.info("Check for update via \(self.updateUrl)")
             let res = self.implementation.getLatest(url: url, channel: nil)
             let current = self.implementation.getCurrentBundle()
@@ -2084,7 +2198,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 timer.invalidate()
                 return
             }
-            DispatchQueue.global(qos: .background).async {
+            DispatchQueue.global(qos: .utility).async {
                 let res = self.implementation.getLatest(url: url, channel: nil)
                 let current = self.implementation.getCurrentBundle()
 
@@ -2236,29 +2350,30 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         logger.info("Getting App Store update info for \(bundleId) in country \(country)")
 
+        self.saveCallForAsyncHandling(call)
         DispatchQueue.global(qos: .background).async {
             let urlString = "https://itunes.apple.com/lookup?bundleId=\(bundleId)&country=\(country)"
             guard let url = URL(string: urlString) else {
-                call.reject("Invalid URL for App Store lookup")
+                self.rejectCall(call, message: "Invalid URL for App Store lookup")
                 return
             }
 
             let task = URLSession.shared.dataTask(with: url) { data, _, error in
                 if let error = error {
                     self.logger.error("App Store lookup failed: \(error.localizedDescription)")
-                    call.reject("App Store lookup failed: \(error.localizedDescription)")
+                    self.rejectCall(call, message: "App Store lookup failed: \(error.localizedDescription)")
                     return
                 }
 
                 guard let data = data else {
-                    call.reject("No data received from App Store")
+                    self.rejectCall(call, message: "No data received from App Store")
                     return
                 }
 
                 do {
                     guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                           let resultCount = json["resultCount"] as? Int else {
-                        call.reject("Invalid response from App Store")
+                        self.rejectCall(call, message: "Invalid response from App Store")
                         return
                     }
 
@@ -2315,10 +2430,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         self.logger.info("App not found in App Store for bundleId: \(bundleId)")
                     }
 
-                    call.resolve(result)
+                    self.resolveCall(call, data: result)
                 } catch {
                     self.logger.error("Failed to parse App Store response: \(error.localizedDescription)")
-                    call.reject("Failed to parse App Store response: \(error.localizedDescription)")
+                    self.rejectCall(call, message: "Failed to parse App Store response: \(error.localizedDescription)")
                 }
             }
             task.resume()
@@ -2327,37 +2442,48 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func openAppStore(_ call: CAPPluginCall) {
         let appId = call.getString("appId")
+        let bundleId = implementation.appId
+        self.saveCallForAsyncHandling(call)
 
-        if let appId = appId {
-            // Open App Store with provided app ID
-            let urlString = "https://apps.apple.com/app/id\(appId)"
+        func openAppStorePage(urlString: String, invalidMessage: String = "Invalid App Store URL", failureMessage: String = "Failed to open App Store") {
             guard let url = URL(string: urlString) else {
-                call.reject("Invalid App Store URL")
+                self.rejectCall(call, message: invalidMessage)
                 return
             }
             DispatchQueue.main.async {
                 UIApplication.shared.open(url) { success in
                     if success {
-                        call.resolve()
+                        self.resolveCall(call)
                     } else {
-                        call.reject("Failed to open App Store")
+                        self.rejectCall(call, message: failureMessage)
                     }
                 }
             }
+        }
+
+        func openFallbackAppStorePage() {
+            guard let encodedBundleId = bundleId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+                self.rejectCall(call, message: "Failed to build App Store fallback URL")
+                return
+            }
+            openAppStorePage(urlString: "https://apps.apple.com/app/\(encodedBundleId)")
+        }
+
+        if let appId = appId {
+            openAppStorePage(urlString: "https://apps.apple.com/app/id\(appId)")
         } else {
-            // Look up app ID using bundle identifier
-            let bundleId = implementation.appId
             let lookupUrl = "https://itunes.apple.com/lookup?bundleId=\(bundleId)"
 
             DispatchQueue.global(qos: .background).async {
                 guard let url = URL(string: lookupUrl) else {
-                    call.reject("Invalid lookup URL")
+                    openFallbackAppStorePage()
                     return
                 }
 
                 let task = URLSession.shared.dataTask(with: url) { data, _, error in
                     if let error = error {
-                        call.reject("Failed to lookup app: \(error.localizedDescription)")
+                        self.logger.error("App Store lookup failed: \(error.localizedDescription)")
+                        openFallbackAppStorePage()
                         return
                     }
 
@@ -2366,39 +2492,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                           let results = json["results"] as? [[String: Any]],
                           let appInfo = results.first,
                           let trackId = appInfo["trackId"] as? Int else {
-                        // If lookup fails, try opening the generic App Store app page using bundle ID
-                        let fallbackUrlString = "https://apps.apple.com/app/\(bundleId)"
-                        guard let fallbackUrl = URL(string: fallbackUrlString) else {
-                            call.reject("Failed to find app in App Store and fallback URL is invalid")
-                            return
-                        }
-                        DispatchQueue.main.async {
-                            UIApplication.shared.open(fallbackUrl) { success in
-                                if success {
-                                    call.resolve()
-                                } else {
-                                    call.reject("Failed to open App Store")
-                                }
-                            }
-                        }
+                        openFallbackAppStorePage()
                         return
                     }
 
-                    let appStoreUrl = "https://apps.apple.com/app/id\(trackId)"
-                    guard let url = URL(string: appStoreUrl) else {
-                        call.reject("Invalid App Store URL")
-                        return
-                    }
-
-                    DispatchQueue.main.async {
-                        UIApplication.shared.open(url) { success in
-                            if success {
-                                call.resolve()
-                            } else {
-                                call.reject("Failed to open App Store")
-                            }
-                        }
-                    }
+                    openAppStorePage(urlString: "https://apps.apple.com/app/id\(trackId)")
                 }
                 task.resume()
             }
