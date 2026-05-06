@@ -72,7 +72,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "completeFlexibleUpdate", returnType: CAPPluginReturnPromise)
     ]
     public var implementation = CapgoUpdater()
-    private let pluginVersion: String = "8.43.5"
+    private let pluginVersion: String = "6.45.10"
     static let updateUrlDefault = "https://plugin.capgo.app/updates"
     static let statsUrlDefault = "https://plugin.capgo.app/stats"
     static let channelUrlDefault = "https://plugin.capgo.app/channel_self"
@@ -102,7 +102,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var autoSplashscreenTimeoutWorkItem: DispatchWorkItem?
     private var splashscreenLoaderView: UIActivityIndicatorView?
     private var splashscreenLoaderContainer: UIView?
+    private let splashscreenPluginName = "SplashScreen"
+    private let splashscreenRetryDelayMilliseconds = 100
+    private let splashscreenMaxRetries = 20
     private var autoSplashscreenTimedOut = false
+    private var splashscreenInvocationToken = 0
     private var autoDeleteFailed = false
     private var autoDeletePrevious = false
     var allowSetDefaultChannel = true
@@ -111,6 +115,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var taskRunning = false
     private var periodCheckDelay = 0
     private let downloadLock = NSLock()
+    private let onLaunchDirectUpdateStateLock = NSLock()
     private var downloadInProgress = false
     private var downloadStartTime: Date?
     private let downloadTimeout: TimeInterval = 3600 // 1 hour timeout
@@ -227,6 +232,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         implementation.setPublicKey(getConfig().getString("publicKey") ?? "")
         implementation.notifyDownloadRaw = notifyDownload
+        implementation.notifyListeners = { [weak self] eventName, data in
+            self?.notifyListeners(eventName, data: data)
+        }
         implementation.pluginVersion = self.pluginVersion
 
         // Set logger for shared classes
@@ -271,11 +279,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         self.implementation.autoReset()
 
-        // Check if app was recently installed/updated BEFORE cleanupObsoleteVersions updates LatestVersionNative
+        // Check if app was recently installed/updated BEFORE cleanup updates the stored native build version.
         self.wasRecentlyInstalledOrUpdated = self.checkIfRecentlyInstalledOrUpdated()
 
         if resetWhenUpdate {
-            self.cleanupObsoleteVersions()
+            let didResetCurrentBundle = self.resetCurrentBundleForNativeBuildChangeIfNeeded()
+            self.cleanupObsoleteVersions(didResetCurrentBundle: didResetCurrentBundle)
         }
 
         // Load the server
@@ -391,7 +400,29 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         semaphoreReady.signal()
     }
 
-    private func cleanupObsoleteVersions() {
+    func storedNativeBuildVersion() -> String {
+        UserDefaults.standard.string(forKey: "LatestNativeBuildVersion") ?? UserDefaults.standard.string(forKey: "LatestVersionNative") ?? "0"
+    }
+
+    func hasNativeBuildVersionChanged() -> Bool {
+        let previous = self.storedNativeBuildVersion()
+        return previous != "0" && self.currentBuildVersion != previous
+    }
+
+    @discardableResult
+    func resetCurrentBundleForNativeBuildChangeIfNeeded() -> Bool {
+        let previous = self.storedNativeBuildVersion()
+        guard previous != "0" && self.currentBuildVersion != previous else {
+            return false
+        }
+
+        // Reset startup state synchronously so initialLoad() boots from the builtin bundle.
+        self.logger.info("Native build version changed from \(previous) to \(self.currentBuildVersion). Resetting startup bundle to builtin.")
+        self.implementation.reset(isInternal: true)
+        return true
+    }
+
+    private func cleanupObsoleteVersions(didResetCurrentBundle: Bool = false) {
         cleanupThread = Thread {
             self.cleanupLock.lock()
             defer {
@@ -426,9 +457,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             // 1. Write "LatestVersionNative" - this fixes the part 1 of this bug
             // 2. Compare both keys. If any is not equal to "currentBuildVersion", then revert to builtin version. This fixes the part 2 of this bug
 
-            let previous = UserDefaults.standard.string(forKey: "LatestNativeBuildVersion") ?? UserDefaults.standard.string(forKey: "LatestVersionNative") ?? "0"
+            let previous = self.storedNativeBuildVersion()
             if previous != "0" && self.currentBuildVersion != previous {
-                _ = self._reset(toLastSuccessful: false)
+                if !didResetCurrentBundle {
+                    self.logger.info("Native build version changed from \(previous) to \(self.currentBuildVersion). Resetting current bundle to builtin.")
+                    self.implementation.reset(isInternal: true)
+                }
                 let res = self.implementation.list()
                 for version in res {
                     // Check if thread was cancelled
@@ -647,46 +681,76 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    public func _reload() -> Bool {
-        guard let bridge = self.bridge else { return false }
-        self.semaphoreUp()
+    private func currentReloadDestination() -> URL {
         let id = self.implementation.getCurrentBundleId()
-        let dest: URL
         if BundleInfo.ID_BUILTIN == id {
-            dest = Bundle.main.resourceURL!.appendingPathComponent("public")
+            return Bundle.main.resourceURL!.appendingPathComponent("public")
         } else {
-            dest = self.implementation.getBundleDirectory(id: id)
+            return self.implementation.getBundleDirectory(id: id)
         }
+    }
+
+    private func applyCurrentBundleToBridge(_ bridge: CAPBridgeProtocol) -> Bool {
+        let id = self.implementation.getCurrentBundleId()
+        let dest = self.currentReloadDestination()
         logger.info("Reloading \(id)")
 
-        let performReload: () -> Bool = {
-            guard let vc = bridge.viewController as? CAPBridgeViewController else {
-                self.logger.error("Cannot get viewController")
-                return false
-            }
-            guard let capBridge = vc.bridge else {
-                self.logger.error("Cannot get capBridge")
-                return false
-            }
-            if self.keepUrlPathAfterReload {
-                if let currentURL = vc.webView?.url {
-                    capBridge.setServerBasePath(dest.path)
-                    var urlComponents = URLComponents(url: capBridge.config.serverURL, resolvingAgainstBaseURL: false)!
-                    urlComponents.path = currentURL.path
-                    urlComponents.query = currentURL.query
-                    urlComponents.fragment = currentURL.fragment
-                    if let finalUrl = urlComponents.url {
-                        _ = vc.webView?.load(URLRequest(url: finalUrl))
-                    } else {
-                        self.logger.error("Unable to build final URL when keeping path after reload; falling back to base path")
-                        vc.setServerBasePath(path: dest.path)
-                    }
+        guard let vc = bridge.viewController as? CAPBridgeViewController else {
+            self.logger.error("Cannot get viewController")
+            return false
+        }
+        guard let capBridge = vc.bridge else {
+            self.logger.error("Cannot get capBridge")
+            return false
+        }
+        if self.keepUrlPathAfterReload {
+            if let currentURL = vc.webView?.url {
+                capBridge.setServerBasePath(dest.path)
+                var urlComponents = URLComponents(url: capBridge.config.serverURL, resolvingAgainstBaseURL: false)!
+                urlComponents.path = currentURL.path
+                urlComponents.query = currentURL.query
+                urlComponents.fragment = currentURL.fragment
+                if let finalUrl = urlComponents.url {
+                    _ = vc.webView?.load(URLRequest(url: finalUrl))
                 } else {
-                    self.logger.error("vc.webView?.url is null? Falling back to base path reload.")
+                    self.logger.error("Unable to build final URL when keeping path after reload; falling back to base path")
                     vc.setServerBasePath(path: dest.path)
                 }
             } else {
+                self.logger.error("vc.webView?.url is null? Falling back to base path reload.")
                 vc.setServerBasePath(path: dest.path)
+            }
+        } else {
+            vc.setServerBasePath(path: dest.path)
+        }
+        return true
+    }
+
+    func restoreLiveBundleStateAfterFailedReload() {
+        guard let bridge = self.bridge else {
+            return
+        }
+
+        let restoreLiveState = {
+            _ = self.applyCurrentBundleToBridge(bridge)
+        }
+
+        if Thread.isMainThread {
+            restoreLiveState()
+        } else {
+            DispatchQueue.main.sync {
+                restoreLiveState()
+            }
+        }
+    }
+
+    public func _reload() -> Bool {
+        guard let bridge = self.bridge else { return false }
+        self.semaphoreUp()
+
+        let performReload: () -> Bool = {
+            guard self.applyCurrentBundleToBridge(bridge) else {
+                return false
             }
             self.checkAppReady()
             self.notifyListeners("appReloaded", data: [:])
@@ -705,6 +769,38 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func reload(_ call: CAPPluginCall) {
+        let current: BundleInfo = self.implementation.getCurrentBundle()
+        let next: BundleInfo? = self.implementation.getNextBundle()
+
+        if let next = next, !next.isErrorStatus(), next.getId() != current.getId() {
+            let previousState = self.implementation.captureResetState()
+            let previousBundleName = self.implementation.getCurrentBundle().getVersionName()
+            logger.info("Applying pending bundle before reload: \(next.toString())")
+            let didApplyPendingBundle: Bool
+            if next.isBuiltin() {
+                self.implementation.prepareResetStateForTransition()
+                didApplyPendingBundle = true
+            } else {
+                didApplyPendingBundle = self.implementation.stagePendingReload(bundle: next)
+            }
+            if didApplyPendingBundle && self._reload() {
+                if next.isBuiltin() {
+                    self.implementation.finalizeResetTransition(previousBundleName: previousBundleName, isInternal: false)
+                } else {
+                    self.implementation.finalizePendingReload(bundle: next, previousBundleName: previousBundleName)
+                }
+                self.notifyBundleSet(next)
+                _ = self.implementation.setNextBundle(next: Optional<String>.none)
+                call.resolve()
+                return
+            }
+            self.implementation.restoreResetState(previousState)
+            self.restoreLiveBundleStateAfterFailedReload()
+            logger.error("Reload failed after applying pending bundle: \(next.toString())")
+            call.reject("Reload failed after applying pending bundle")
+            return
+        }
+
         if self._reload() {
             call.resolve()
         } else {
@@ -739,8 +835,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if !res {
             logger.info("Bundle successfully set to: \(id) ")
             call.reject("Update failed, id \(id) doesn't exist")
+        } else if !self._reload() {
+            call.reject("Reload failed after setting bundle \(id)")
         } else {
-            self.reload(call)
+            self.notifyBundleSet(self.implementation.getBundleInfo(id: id))
+            call.resolve()
         }
     }
 
@@ -803,12 +902,32 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func getLatest(_ call: CAPPluginCall) {
         let channel = call.getString("channel")
-        DispatchQueue.global(qos: .background).async {
+        runGetLatestWork {
             let res = self.implementation.getLatest(url: URL(string: self.updateUrl)!, channel: channel)
-            if res.error != nil {
-                call.reject( res.error!)
-            } else if res.message != nil {
-                call.reject( res.message!)
+            if let error = res.error, !error.isEmpty {
+                let responseKind = self.updateResponseKind(kind: res.kind)
+                res.kind = responseKind
+                if responseKind == "failed" {
+                    call.reject(error)
+                } else {
+                    if res.version.isEmpty {
+                        res.version = self.implementation.getCurrentBundle().getVersionName()
+                    }
+                    call.resolve(res.toDict())
+                }
+            } else if let kind = res.kind, !kind.isEmpty {
+                let responseKind = self.updateResponseKind(kind: kind)
+                res.kind = responseKind
+                if responseKind != "failed" {
+                    if res.version.isEmpty {
+                        res.version = self.implementation.getCurrentBundle().getVersionName()
+                    }
+                    call.resolve(res.toDict())
+                } else {
+                    call.reject(res.message ?? "server did not provide a message")
+                }
+            } else if let message = res.message, !message.isEmpty {
+                call.reject(message)
             } else {
                 call.resolve(res.toDict())
             }
@@ -925,32 +1044,90 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         call.resolve()
     }
 
-    @objc func _reset(toLastSuccessful: Bool) -> Bool {
-        guard let bridge = self.bridge else { return false }
+    @objc func _reset(toLastSuccessful: Bool, usePendingBundle: Bool) -> Bool {
+        self.performReset(toLastSuccessful: toLastSuccessful, usePendingBundle: usePendingBundle, isInternal: false)
+    }
 
-        if (bridge.viewController as? CAPBridgeViewController) != nil {
-            let fallback: BundleInfo = self.implementation.getFallbackBundle()
+    func performReset(toLastSuccessful: Bool, usePendingBundle: Bool, isInternal: Bool) -> Bool {
+        guard self.canPerformResetTransition() else { return false }
 
-            // If developer wants to reset to the last successful bundle, and that bundle is not
-            // the built-in bundle, set it as the bundle to use and reload.
-            if toLastSuccessful && !fallback.isBuiltin() {
-                logger.info("Resetting to: \(fallback.toString())")
-                return self.implementation.set(bundle: fallback) && self._reload()
+        let fallback: BundleInfo = self.implementation.getFallbackBundle()
+        let pending: BundleInfo? = self.implementation.getNextBundle()
+        let previousState = self.implementation.captureResetState()
+        let previousBundleName = self.implementation.getCurrentBundle().getVersionName()
+
+        if usePendingBundle {
+            guard let pending = pending, !pending.isErrorStatus() else {
+                logger.error("No pending bundle available to reset to")
+                return false
             }
-
-            logger.info("Resetting to builtin version")
-
-            // Otherwise, reset back to the built-in bundle and reload.
-            self.implementation.reset()
-            return self._reload()
+            guard self.implementation.canSet(bundle: pending) else {
+                logger.error("Pending bundle is not installable")
+                return false
+            }
+            self.implementation.prepareResetStateForTransition()
+            logger.info("Resetting to pending bundle: \(pending.toString())")
+            let didApplyPendingBundle: Bool
+            if pending.isBuiltin() {
+                didApplyPendingBundle = true
+            } else {
+                didApplyPendingBundle = self.implementation.set(bundle: pending)
+            }
+            if didApplyPendingBundle && self._reload() {
+                self.implementation.finalizeResetTransition(previousBundleName: previousBundleName, isInternal: isInternal)
+                self.notifyBundleSet(pending)
+                _ = self.implementation.setNextBundle(next: Optional<String>.none)
+                return true
+            }
+            self.implementation.restoreResetState(previousState)
+            self.restoreLiveBundleStateAfterFailedReload()
+            return false
         }
 
+        // If developer wants to reset to the last successful bundle, and that bundle is not
+        // the built-in bundle, set it as the bundle to use and reload.
+        if toLastSuccessful && !fallback.isBuiltin() {
+            if self.implementation.canSet(bundle: fallback) {
+                self.implementation.prepareResetStateForTransition()
+                logger.info("Resetting to: \(fallback.toString())")
+                if self.implementation.set(bundle: fallback) && self._reload() {
+                    self.implementation.finalizeResetTransition(previousBundleName: previousBundleName, isInternal: isInternal)
+                    self.notifyBundleSet(fallback)
+                    return true
+                }
+                if !isInternal {
+                    self.implementation.restoreResetState(previousState)
+                    self.restoreLiveBundleStateAfterFailedReload()
+                    return false
+                }
+                logger.warn("Fallback reload failed during internal reset, resetting to builtin instead")
+            } else {
+                logger.warn("Fallback bundle is not installable, resetting to builtin instead")
+            }
+        }
+
+        self.implementation.prepareResetStateForTransition()
+        logger.info("Resetting to builtin version")
+        if self._reload() {
+            self.implementation.finalizeResetTransition(previousBundleName: previousBundleName, isInternal: isInternal)
+            return true
+        }
+        if !isInternal {
+            self.implementation.restoreResetState(previousState)
+            self.restoreLiveBundleStateAfterFailedReload()
+        }
         return false
+    }
+
+    func canPerformResetTransition() -> Bool {
+        guard let bridge = self.bridge else { return false }
+        return (bridge.viewController as? CAPBridgeViewController) != nil
     }
 
     @objc func reset(_ call: CAPPluginCall) {
         let toLastSuccessful = call.getBool("toLastSuccessful") ?? false
-        if self._reset(toLastSuccessful: toLastSuccessful) {
+        let usePendingBundle = call.getBool("usePendingBundle") ?? false
+        if self._reset(toLastSuccessful: toLastSuccessful, usePendingBundle: usePendingBundle) {
             call.resolve()
         } else {
             logger.error("Reset failed")
@@ -1069,7 +1246,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             self.persistLastFailedBundle(current)
             self.implementation.sendStats(action: "update_fail", versionName: current.getVersionName())
             self.implementation.setError(bundle: current)
-            _ = self._reset(toLastSuccessful: true)
+            _ = self.performReset(toLastSuccessful: true, usePendingBundle: false, isInternal: true)
             if self.autoDeleteFailed && !current.isBuiltin() {
                 logger.info("Deleting failing bundle: \(current.toString())")
                 let res = self.implementation.delete(id: current.getId(), removeInfo: false)
@@ -1092,6 +1269,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     func endBackGroundTask() {
         UIApplication.shared.endBackgroundTask(self.backgroundTaskID)
         self.backgroundTaskID = UIBackgroundTaskIdentifier.invalid
+    }
+
+    private func notifyBundleSet(_ bundle: BundleInfo) {
+        self.notifyListeners("set", data: ["bundle": bundle.toJSON()], retainUntilConsumed: true)
     }
 
     func sendReadyToJs(current: BundleInfo, msg: String) {
@@ -1121,32 +1302,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private func performHideSplashscreen() {
         self.cancelSplashscreenTimeout()
         self.removeSplashscreenLoader()
-
-        guard let bridge = self.bridge else {
-            self.logger.warn("Bridge not available for hiding splashscreen with autoSplashscreen")
-            return
-        }
-
-        // Create a plugin call for the hide method
-        let call = CAPPluginCall(callbackId: "autoHideSplashscreen", options: [:], success: { (_, _) in
-            self.logger.info("Splashscreen hidden automatically")
-        }, error: { (_) in
-            self.logger.error("Failed to auto-hide splashscreen")
-        })
-
-        // Try to call the SplashScreen hide method directly through the bridge
-        if let splashScreenPlugin = bridge.plugin(withName: "SplashScreen") {
-            // Use runtime method invocation to call hide method
-            let selector = NSSelectorFromString("hide:")
-            if splashScreenPlugin.responds(to: selector) {
-                _ = splashScreenPlugin.perform(selector, with: call)
-                self.logger.info("Called SplashScreen hide method")
-            } else {
-                self.logger.warn("autoSplashscreen: SplashScreen plugin does not respond to hide: method. Make sure @capacitor/splash-screen plugin is properly installed.")
-            }
-        } else {
-            self.logger.warn("autoSplashscreen: SplashScreen plugin not found. Install @capacitor/splash-screen plugin.")
-        }
+        self.splashscreenInvocationToken += 1
+        self.invokeSplashscreenMethod(
+            methodName: "hide",
+            callbackId: "autoHideSplashscreen",
+            options: self.splashscreenOptions(methodName: "hide"),
+            retriesRemaining: self.splashscreenMaxRetries,
+            requestToken: self.splashscreenInvocationToken
+        )
     }
 
     private func showSplashscreen() {
@@ -1162,35 +1325,132 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private func performShowSplashscreen() {
         self.cancelSplashscreenTimeout()
         self.autoSplashscreenTimedOut = false
-
-        guard let bridge = self.bridge else {
-            self.logger.warn("Bridge not available for showing splashscreen with autoSplashscreen")
-            return
-        }
-
-        // Create a plugin call for the show method
-        let call = CAPPluginCall(callbackId: "autoShowSplashscreen", options: [:], success: { (_, _) in
-            self.logger.info("Splashscreen shown automatically")
-        }, error: { (_) in
-            self.logger.error("Failed to auto-show splashscreen")
-        })
-
-        // Try to call the SplashScreen show method directly through the bridge
-        if let splashScreenPlugin = bridge.plugin(withName: "SplashScreen") {
-            // Use runtime method invocation to call show method
-            let selector = NSSelectorFromString("show:")
-            if splashScreenPlugin.responds(to: selector) {
-                _ = splashScreenPlugin.perform(selector, with: call)
-                self.logger.info("Called SplashScreen show method")
-            } else {
-                self.logger.warn("autoSplashscreen: SplashScreen plugin does not respond to show: method. Make sure @capacitor/splash-screen plugin is properly installed.")
-            }
-        } else {
-            self.logger.warn("autoSplashscreen: SplashScreen plugin not found. Install @capacitor/splash-screen plugin.")
-        }
+        self.splashscreenInvocationToken += 1
+        self.invokeSplashscreenMethod(
+            methodName: "show",
+            callbackId: "autoShowSplashscreen",
+            options: self.splashscreenOptions(methodName: "show"),
+            retriesRemaining: self.splashscreenMaxRetries,
+            requestToken: self.splashscreenInvocationToken
+        )
 
         self.addSplashscreenLoaderIfNeeded()
         self.scheduleSplashscreenTimeout()
+    }
+
+    private func splashscreenOptions(methodName: String) -> [String: Any] {
+        methodName == "show" ? ["autoHide": false] : [:]
+    }
+
+    private func splashscreenCompletedMessage(methodName: String) -> String {
+        methodName == "show" ? "Splashscreen shown automatically" : "Splashscreen hidden automatically"
+    }
+
+    func splashscreenOptionsForTesting(methodName: String) -> [String: Any] {
+        self.splashscreenOptions(methodName: methodName)
+    }
+
+    func isCurrentSplashscreenInvocationTokenForTesting(_ requestToken: Int) -> Bool {
+        requestToken == self.splashscreenInvocationToken
+    }
+
+    func advanceSplashscreenInvocationTokenForTesting() {
+        self.splashscreenInvocationToken += 1
+    }
+
+    private func makeSplashscreenCall(callbackId: String, options: [String: Any], methodName: String) -> CAPPluginCall {
+        CAPPluginCall(callbackId: callbackId, options: options, success: { [weak self] (_, _) in
+            guard let self = self else { return }
+            self.logger.info(self.splashscreenCompletedMessage(methodName: methodName))
+        }, error: { [weak self] (_) in
+            guard let self = self else { return }
+            self.logger.error("Failed to auto-\(methodName) splashscreen")
+        })
+    }
+
+    private func invokeSplashscreenMethod(
+        methodName: String,
+        callbackId: String,
+        options: [String: Any],
+        retriesRemaining: Int,
+        requestToken: Int
+    ) {
+        guard requestToken == self.splashscreenInvocationToken else {
+            return
+        }
+
+        guard let bridge = self.bridge else {
+            self.retrySplashscreenMethod(
+                methodName: methodName,
+                callbackId: callbackId,
+                options: options,
+                retriesRemaining: retriesRemaining,
+                requestToken: requestToken,
+                message: "Bridge not available for \(methodName == "show" ? "showing" : "hiding") splashscreen with autoSplashscreen"
+            )
+            return
+        }
+
+        guard let splashScreenPlugin = bridge.plugin(withName: self.splashscreenPluginName) else {
+            self.retrySplashscreenMethod(
+                methodName: methodName,
+                callbackId: callbackId,
+                options: options,
+                retriesRemaining: retriesRemaining,
+                requestToken: requestToken,
+                message: "autoSplashscreen: SplashScreen plugin not found. Install @capacitor/splash-screen plugin."
+            )
+            return
+        }
+
+        let selector = NSSelectorFromString("\(methodName):")
+        guard splashScreenPlugin.responds(to: selector) else {
+            self.retrySplashscreenMethod(
+                methodName: methodName,
+                callbackId: callbackId,
+                options: options,
+                retriesRemaining: retriesRemaining,
+                requestToken: requestToken,
+                message: "autoSplashscreen: SplashScreen plugin does not respond to \(methodName): method. Make sure @capacitor/splash-screen plugin is properly installed."
+            )
+            return
+        }
+
+        let call = self.makeSplashscreenCall(callbackId: callbackId, options: options, methodName: methodName)
+        _ = splashScreenPlugin.perform(selector, with: call)
+        self.logger.info("Called SplashScreen \(methodName) method")
+    }
+
+    private func retrySplashscreenMethod(
+        methodName: String,
+        callbackId: String,
+        options: [String: Any],
+        retriesRemaining: Int,
+        requestToken: Int,
+        message: String
+    ) {
+        guard retriesRemaining > 0 else {
+            if methodName == "show" {
+                self.logger.warn(message)
+            } else {
+                self.logger.error(message)
+            }
+            return
+        }
+
+        self.logger.info("\(message). Retrying.")
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(self.splashscreenRetryDelayMilliseconds)) { [weak self] in
+            guard let self = self, requestToken == self.splashscreenInvocationToken else {
+                return
+            }
+            self.invokeSplashscreenMethod(
+                methodName: methodName,
+                callbackId: callbackId,
+                options: options,
+                retriesRemaining: retriesRemaining - 1,
+                requestToken: requestToken
+            )
+        }
     }
 
     private func addSplashscreenLoaderIfNeeded() {
@@ -1344,7 +1604,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             return false
         case "onLaunch":
-            if !self.onLaunchDirectUpdateUsed {
+            if !self.getOnLaunchDirectUpdateUsed() {
                 return true
             }
             return false
@@ -1352,6 +1612,51 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             logger.error("Invalid directUpdateMode: \"\(self.directUpdateMode)\". Supported values are: \"false\", \"always\", \"atInstall\", \"onLaunch\". Defaulting to \"false\" behavior.")
             return false
         }
+    }
+
+    static func shouldConsumeOnLaunchDirectUpdate(directUpdateMode: String, plannedDirectUpdate: Bool) -> Bool {
+        plannedDirectUpdate && directUpdateMode == "onLaunch"
+    }
+
+    private func getOnLaunchDirectUpdateUsed() -> Bool {
+        self.onLaunchDirectUpdateStateLock.lock()
+        defer { self.onLaunchDirectUpdateStateLock.unlock() }
+        return self.onLaunchDirectUpdateUsed
+    }
+
+    private func setOnLaunchDirectUpdateUsed(_ used: Bool) {
+        self.onLaunchDirectUpdateStateLock.lock()
+        self.onLaunchDirectUpdateUsed = used
+        self.onLaunchDirectUpdateStateLock.unlock()
+    }
+
+    private func consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate: Bool) {
+        guard Self.shouldConsumeOnLaunchDirectUpdate(directUpdateMode: self.directUpdateMode, plannedDirectUpdate: plannedDirectUpdate) else {
+            return
+        }
+
+        self.setOnLaunchDirectUpdateUsed(true)
+    }
+
+    func configureDirectUpdateModeForTesting(_ directUpdateMode: String, onLaunchDirectUpdateUsed: Bool = false) {
+        self.directUpdateMode = directUpdateMode
+        self.setOnLaunchDirectUpdateUsed(onLaunchDirectUpdateUsed)
+    }
+
+    func setUpdateUrlForTesting(_ updateUrl: String) {
+        self.updateUrl = updateUrl
+    }
+
+    func setCurrentBuildVersionForTesting(_ currentBuildVersion: String) {
+        self.currentBuildVersion = currentBuildVersion
+    }
+
+    func shouldUseDirectUpdateForTesting() -> Bool {
+        self.shouldUseDirectUpdate()
+    }
+
+    var hasConsumedOnLaunchDirectUpdateForTesting: Bool {
+        self.getOnLaunchDirectUpdateUsed()
     }
 
     private func notifyBreakingEvents(version: String) {
@@ -1363,11 +1668,58 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.notifyListeners("majorAvailable", data: payload)
     }
 
+    private func updateResponseKind(kind: String?) -> String {
+        if let kind, ["up_to_date", "blocked", "failed"].contains(kind) {
+            return kind
+        }
+        return "failed"
+    }
+
+    private func endBackgroundDownloadAfterLatestError(
+        backendError: String,
+        res: AppVersion,
+        current: BundleInfo,
+        plannedDirectUpdate: Bool
+    ) {
+        let statusCode = res.statusCode
+        let responseKind = self.updateResponseKind(kind: res.kind)
+        let responseMessage = res.message?.isEmpty == false ? res.message : nil
+        let message = responseMessage ?? (backendError.isEmpty ? "server did not provide a message" : backendError)
+        let latestVersionName = res.version.isEmpty ? current.getVersionName() : res.version
+        self.notifyListeners("updateCheckResult", data: [
+            "kind": responseKind,
+            "error": backendError,
+            "message": message,
+            "statusCode": statusCode,
+            "version": latestVersionName,
+            "bundle": current.toJSON()
+        ])
+
+        if responseKind == "up_to_date" {
+            self.logger.info("No new version available")
+        } else if responseKind == "blocked" {
+            self.logger.info("Update check blocked with error: \(backendError)")
+        } else {
+            self.logger.error("getLatest failed with error: \(backendError)")
+        }
+
+        let isFailure = responseKind == "failed"
+        self.endBackGroundTaskWithNotif(
+            msg: message,
+            latestVersionName: latestVersionName,
+            current: current,
+            error: isFailure,
+            plannedDirectUpdate: plannedDirectUpdate,
+            sendStats: isFailure
+        )
+    }
+
     func endBackGroundTaskWithNotif(
         msg: String,
         latestVersionName: String,
         current: BundleInfo,
         error: Bool = true,
+        plannedDirectUpdate: Bool = false,
         failureAction: String = "download_fail",
         failureEvent: String = "downloadFailed",
         sendStats: Bool = true
@@ -1378,6 +1730,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         defer { downloadLock.unlock() }
         downloadInProgress = false
         downloadStartTime = nil
+
+        self.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate: plannedDirectUpdate)
 
         if error {
             if sendStats {
@@ -1413,6 +1767,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         return true
     }
 
+    func runBackgroundDownloadWork(_ work: @escaping () -> Void) {
+        DispatchQueue.global(qos: .background).async(execute: work)
+    }
+
+    func runGetLatestWork(_ work: @escaping () -> Void) {
+        DispatchQueue.global(qos: .background).async(execute: work)
+    }
+
     func backgroundDownload() {
         // Set download in progress flag (thread-safe)
         downloadLock.lock()
@@ -1432,7 +1794,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
-        DispatchQueue.global(qos: .background).async {
+        self.runBackgroundDownloadWork {
             // Wait for cleanup to complete before starting download
             self.waitForCleanupIfNeeded()
             self.backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "Finish Download Tasks") {
@@ -1444,16 +1806,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             let current = self.implementation.getCurrentBundle()
 
             // Handle network errors and other failures first
-            if let backendError = res.error, !backendError.isEmpty {
-                self.logger.error("getLatest failed with error: \(backendError)")
-                let statusCode = res.statusCode
-                let responseIsOk = statusCode >= 200 && statusCode < 300
-                self.endBackGroundTaskWithNotif(
-                    msg: res.message ?? backendError,
-                    latestVersionName: res.version,
+            let backendError = res.error ?? ""
+            let backendKind = res.kind ?? ""
+            if !backendError.isEmpty || !backendKind.isEmpty {
+                self.endBackgroundDownloadAfterLatestError(
+                    backendError: backendError,
+                    res: res,
                     current: current,
-                    error: true,
-                    sendStats: !responseIsOk
+                    plannedDirectUpdate: plannedDirectUpdate
                 )
                 return
             }
@@ -1462,26 +1822,39 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 let directUpdateAllowed = plannedDirectUpdate && !self.autoSplashscreenTimedOut
                 if directUpdateAllowed {
                     self.logger.info("Direct update to builtin version")
-                    if self.directUpdateMode == "onLaunch" {
-                        self.onLaunchDirectUpdateUsed = true
-                        self.directUpdate = false
-                    }
-                    _ = self._reset(toLastSuccessful: false)
-                    self.endBackGroundTaskWithNotif(msg: "Updated to builtin version", latestVersionName: res.version, current: self.implementation.getCurrentBundle(), error: false)
+                    _ = self._reset(toLastSuccessful: false, usePendingBundle: false)
+                    self.endBackGroundTaskWithNotif(
+                        msg: "Updated to builtin version",
+                        latestVersionName: res.version,
+                        current: self.implementation.getCurrentBundle(),
+                        error: false,
+                        plannedDirectUpdate: plannedDirectUpdate
+                    )
                 } else {
                     if plannedDirectUpdate && !directUpdateAllowed {
                         self.logger.info("Direct update skipped because splashscreen timeout occurred. Update will apply later.")
                     }
                     self.logger.info("Setting next bundle to builtin")
                     _ = self.implementation.setNextBundle(next: BundleInfo.ID_BUILTIN)
-                    self.endBackGroundTaskWithNotif(msg: "Next update will be to builtin version", latestVersionName: res.version, current: current, error: false)
+                    self.endBackGroundTaskWithNotif(
+                        msg: "Next update will be to builtin version",
+                        latestVersionName: res.version,
+                        current: current,
+                        error: false,
+                        plannedDirectUpdate: plannedDirectUpdate
+                    )
                 }
                 return
             }
             let sessionKey = res.sessionKey ?? ""
             guard let downloadUrl = URL(string: res.url) else {
                 self.logger.error("Error no url or wrong format")
-                self.endBackGroundTaskWithNotif(msg: "Error no url or wrong format", latestVersionName: res.version, current: current)
+                self.endBackGroundTaskWithNotif(
+                    msg: "Error no url or wrong format",
+                    latestVersionName: res.version,
+                    current: current,
+                    plannedDirectUpdate: plannedDirectUpdate
+                )
                 return
             }
             let latestVersionName = res.version
@@ -1499,6 +1872,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                                 self.logger.error("Failed to delete failed bundle: \(nextImpl!.toString())")
                             }
                         }
+                        self.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate: plannedDirectUpdate)
                         if res.manifest != nil {
                             nextImpl = try self.implementation.downloadManifest(manifest: res.manifest!, version: latestVersionName, sessionKey: sessionKey, link: res.link, comment: res.comment)
                         } else {
@@ -1507,12 +1881,22 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     }
                     guard let next = nextImpl else {
                         self.logger.error("Error downloading file")
-                        self.endBackGroundTaskWithNotif(msg: "Error downloading file", latestVersionName: latestVersionName, current: current)
+                        self.endBackGroundTaskWithNotif(
+                            msg: "Error downloading file",
+                            latestVersionName: latestVersionName,
+                            current: current,
+                            plannedDirectUpdate: plannedDirectUpdate
+                        )
                         return
                     }
                     if next.isErrorStatus() {
                         self.logger.error("Latest bundle already exists and is in error state. Aborting update.")
-                        self.endBackGroundTaskWithNotif(msg: "Latest version is in error state. Aborting update.", latestVersionName: latestVersionName, current: current)
+                        self.endBackGroundTaskWithNotif(
+                            msg: "Latest version is in error state. Aborting update.",
+                            latestVersionName: latestVersionName,
+                            current: current,
+                            plannedDirectUpdate: plannedDirectUpdate
+                        )
                         return
                     }
                     res.checksum = try CryptoCipher.decryptChecksum(checksum: res.checksum, publicKey: self.implementation.publicKey)
@@ -1526,7 +1910,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         if !resDel {
                             self.logger.error("Delete failed, id \(id) doesn't exist")
                         }
-                        self.endBackGroundTaskWithNotif(msg: "Error checksum", latestVersionName: latestVersionName, current: current)
+                        self.endBackGroundTaskWithNotif(
+                            msg: "Error checksum",
+                            latestVersionName: latestVersionName,
+                            current: current,
+                            plannedDirectUpdate: plannedDirectUpdate
+                        )
                         return
                     }
                     let directUpdateAllowed = plannedDirectUpdate && !self.autoSplashscreenTimedOut
@@ -1539,34 +1928,67 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         }
                         if !delayConditionList.isEmpty {
                             self.logger.info("Update delayed until delay conditions met")
-                            self.endBackGroundTaskWithNotif(msg: "Update delayed until delay conditions met", latestVersionName: latestVersionName, current: next, error: false)
+                            self.endBackGroundTaskWithNotif(
+                                msg: "Update delayed until delay conditions met",
+                                latestVersionName: latestVersionName,
+                                current: next,
+                                error: false,
+                                plannedDirectUpdate: plannedDirectUpdate
+                            )
                             return
                         }
-                        if self.directUpdateMode == "onLaunch" {
-                            self.onLaunchDirectUpdateUsed = true
-                            self.directUpdate = false
+                        if self.implementation.set(bundle: next) && self._reload() {
+                            self.notifyBundleSet(next)
+                            self.endBackGroundTaskWithNotif(
+                                msg: "update installed",
+                                latestVersionName: latestVersionName,
+                                current: next,
+                                error: false,
+                                plannedDirectUpdate: plannedDirectUpdate
+                            )
+                        } else {
+                            self.endBackGroundTaskWithNotif(
+                                msg: "Update install failed",
+                                latestVersionName: latestVersionName,
+                                current: next,
+                                plannedDirectUpdate: plannedDirectUpdate
+                            )
                         }
-                        _ = self.implementation.set(bundle: next)
-                        _ = self._reload()
-                        self.endBackGroundTaskWithNotif(msg: "update installed", latestVersionName: latestVersionName, current: next, error: false)
                     } else {
                         if plannedDirectUpdate && !directUpdateAllowed {
                             self.logger.info("Direct update skipped because splashscreen timeout occurred. Update will install on next app background.")
                         }
                         self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
                         _ = self.implementation.setNextBundle(next: next.getId())
-                        self.endBackGroundTaskWithNotif(msg: "update downloaded, will install next background", latestVersionName: latestVersionName, current: current, error: false)
+                        self.endBackGroundTaskWithNotif(
+                            msg: "update downloaded, will install next background",
+                            latestVersionName: latestVersionName,
+                            current: current,
+                            error: false,
+                            plannedDirectUpdate: plannedDirectUpdate
+                        )
                     }
                     return
                 } catch {
                     self.logger.error("Error downloading file \(error.localizedDescription)")
                     let current: BundleInfo = self.implementation.getCurrentBundle()
-                    self.endBackGroundTaskWithNotif(msg: "Error downloading file", latestVersionName: latestVersionName, current: current)
+                    self.endBackGroundTaskWithNotif(
+                        msg: "Error downloading file",
+                        latestVersionName: latestVersionName,
+                        current: current,
+                        plannedDirectUpdate: plannedDirectUpdate
+                    )
                     return
                 }
             } else {
                 self.logger.info("No need to update, \(current.getId()) is the latest bundle.")
-                self.endBackGroundTaskWithNotif(msg: "No need to update, \(current.getId()) is the latest bundle.", latestVersionName: latestVersionName, current: current, error: false)
+                self.endBackGroundTaskWithNotif(
+                    msg: "No need to update, \(current.getId()) is the latest bundle.",
+                    latestVersionName: latestVersionName,
+                    current: current,
+                    error: false,
+                    plannedDirectUpdate: plannedDirectUpdate
+                )
                 return
             }
         }
@@ -1590,6 +2012,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             logger.info("Next bundle is: \(next!.toString())")
             if self.implementation.set(bundle: next!) && self._reload() {
                 logger.info("Updated to bundle: \(next!.toString())")
+                self.notifyBundleSet(next!)
                 _ = self.implementation.setNextBundle(next: Optional<String>.none)
             } else {
                 logger.error("Update to bundle: \(next!.toString()) Failed!")

@@ -19,6 +19,7 @@ jobs:
   # Only bump version and create tag if all tests pass
   bump-version:
     needs: [test]
+    timeout-minutes: 30
     if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
     runs-on: ubuntu-latest
     name: "Bump version and create tag"

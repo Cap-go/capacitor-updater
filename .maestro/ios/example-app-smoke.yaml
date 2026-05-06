@@ -1,0 +1,62 @@
+appId: app.capgo.updater
+---
+- launchApp
+- extendedWaitUntil:
+    visible: 'CAPGO OTA VALIDATION'
+    timeout: 90000
+- assertVisible: 'CAPGO OTA VALIDATION'
+- scrollUntilVisible:
+    element:
+      text: 'Run notifyAppReady'
+    direction: DOWN
+- tapOn: 'Run notifyAppReady'
+- scrollUntilVisible:
+    element:
+      text: 'Action marker: notify-app-ready:success'
+    direction: DOWN
+    timeout: 20000
+- assertVisible: 'Action marker: notify-app-ready:success'
+- scrollUntilVisible:
+    element:
+      text: 'Run get current bundle'
+    direction: DOWN
+- tapOn: 'Run get current bundle'
+- scrollUntilVisible:
+    element:
+      text: 'Action marker: current-bundle:success'
+    direction: DOWN
+    timeout: 20000
+- assertVisible: 'Action marker: current-bundle:success'
+- scrollUntilVisible:
+    element:
+      text: 'Run list downloaded bundles'
+    direction: DOWN
+- tapOn: 'Run list downloaded bundles'
+- scrollUntilVisible:
+    element:
+      text: 'Action marker: list-bundles:success'
+    direction: DOWN
+    timeout: 20000
+- assertVisible: 'Action marker: list-bundles:success'
+- scrollUntilVisible:
+    element:
+      text: 'Run get plugin version'
+    direction: DOWN
+- tapOn: 'Run get plugin version'
+- scrollUntilVisible:
+    element:
+      text: 'Action marker: get-plugin-version:success'
+    direction: DOWN
+    timeout: 20000
+- assertVisible: 'Action marker: get-plugin-version:success'
+- scrollUntilVisible:
+    element:
+      text: 'Apply update URL'
+    direction: DOWN
+- tapOn: 'Apply update URL'
+- scrollUntilVisible:
+    element:
+      text: 'Action marker: set-update-url:success'
+    direction: DOWN
+    timeout: 20000
+- assertVisible: 'Action marker: set-update-url:success'
