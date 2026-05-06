@@ -75,7 +75,7 @@ jobs:
         id: test_ios
         run: bun run test:ios
   maestro_android_example_app:
-    timeout-minutes: 75
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     name: Android example app Maestro smoke / ${{ matrix.scenario }}
     strategy:
@@ -124,7 +124,7 @@ jobs:
           name: maestro-results-android-${{ matrix.scenario }}
           path: maestro-results
   maestro_ios_example_app:
-    timeout-minutes: 45
+    timeout-minutes: 30
     runs-on: macOS-latest
     name: iOS example app Maestro smoke / ${{ matrix.scenario }}
     strategy:
@@ -161,7 +161,7 @@ jobs:
           name: maestro-results-ios-${{ matrix.scenario }}
           path: maestro-results-ios
   maestro_ios_live_update:
-    timeout-minutes: 150
+    timeout-minutes: 30
     runs-on: macOS-latest
     name: iOS example app Maestro live update
     steps:
@@ -216,7 +216,7 @@ jobs:
         id: verify_code
         run: bun run verify:web
   maestro_android_scenarios:
-    timeout-minutes: 150
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     name: maestro_android / ${{ matrix.scenario }}
     strategy:
