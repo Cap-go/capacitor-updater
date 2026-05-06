@@ -106,6 +106,39 @@ function escapeMd(s = '') {
   return String(s).replace(/\|/g, '\\|');
 }
 
+function slugForHeading(s = '') {
+  let slug = '';
+  let inTag = false;
+  let needsDash = false;
+
+  for (const char of String(s).trim().toLowerCase()) {
+    if (char === '<') {
+      inTag = true;
+      continue;
+    }
+    if (char === '>') {
+      inTag = false;
+      continue;
+    }
+    if (inTag) continue;
+
+    const isAsciiLetter = char >= 'a' && char <= 'z';
+    const isDigit = char >= '0' && char <= '9';
+    const isWordChar = isAsciiLetter || isDigit || char === '_' || char === '-';
+    const isWhitespace = char === ' ' || char === '\n' || char === '\t' || char === '\r';
+
+    if (isWordChar) {
+      if (needsDash && slug && !slug.endsWith('-')) slug += '-';
+      slug += char;
+      needsDash = false;
+    } else if (isWhitespace) {
+      needsDash = true;
+    }
+  }
+
+  return slug.endsWith('-') ? slug.slice(0, -1) : slug;
+}
+
 function renderConfig(pluginConfigs) {
   if (!pluginConfigs || !pluginConfigs.length) return '';
   const cfg = pluginConfigs[0];
@@ -147,7 +180,8 @@ function renderMethods(api) {
         } else if (!m.signature?.includes('(')) {
           label = `${m.name}()`;
         }
-        return `- [\`${label}\`](#${m.slug})`;
+        const slug = m.name === 'addListener' ? slugForHeading(label) : m.slug;
+        return `- [\`${label}\`](#${slug})`;
       })
       .join('\n') + '\n\n';
   out += '</docgen-index>\n\n';

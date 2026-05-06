@@ -448,12 +448,36 @@ public class ShakeMenu implements ShakeDetector.Listener {
                                 }
 
                                 String latestError = getString(latestRes, "error");
+                                String latestKind = getString(latestRes, "kind");
+                                String latestMessage = getString(latestRes, "message");
+
+                                String detail = latestMessage != null && !latestMessage.isEmpty()
+                                    ? latestMessage
+                                    : latestError != null && !latestError.isEmpty()
+                                        ? latestError
+                                        : latestKind != null && !latestKind.isEmpty()
+                                            ? latestKind
+                                            : "server did not provide a message";
 
                                 // Handle update errors first (before "no new version" check)
-                                if (latestError != null && !latestError.isEmpty() && !"no_new_version_available".equals(latestError)) {
+                                if (
+                                    "failed".equals(latestKind) ||
+                                    (latestError != null &&
+                                        !latestError.isEmpty() &&
+                                        !"up_to_date".equals(latestKind) &&
+                                        !"blocked".equals(latestKind))
+                                ) {
                                     activity.runOnUiThread(() -> {
                                         progressDialog.dismiss();
-                                        showError("Channel set to " + channelName + ". Update check failed: " + latestError);
+                                        showError("Channel set to " + channelName + ". Update check failed: " + detail);
+                                    });
+                                    return;
+                                }
+
+                                if ("blocked".equals(latestKind)) {
+                                    activity.runOnUiThread(() -> {
+                                        progressDialog.dismiss();
+                                        showError("Channel set to " + channelName + ". Update check blocked: " + detail);
                                     });
                                     return;
                                 }
@@ -461,7 +485,7 @@ public class ShakeMenu implements ShakeDetector.Listener {
                                 String latestUrl = getString(latestRes, "url");
 
                                 // Check if there's an actual update available
-                                if ("no_new_version_available".equals(latestError) || latestUrl == null || latestUrl.isEmpty()) {
+                                if ("up_to_date".equals(latestKind) || latestUrl == null || latestUrl.isEmpty()) {
                                     activity.runOnUiThread(() -> {
                                         progressDialog.dismiss();
                                         showSuccess("Channel set to " + channelName + ". Already on latest version.");

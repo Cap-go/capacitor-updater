@@ -33,11 +33,28 @@ public class CapacitorUpdaterUnitTest {
 
     private static class TestableCapacitorUpdaterPlugin extends CapacitorUpdaterPlugin {
 
-        @Override
-        public void notifyListeners(String eventName, JSObject data) {}
+        private final ArrayList<String> notifiedEventNames = new ArrayList<>();
+        private final Map<String, JSObject> notifiedEventPayloads = new HashMap<>();
 
         @Override
-        public void notifyListeners(String eventName, JSObject data, boolean retainUntilConsumed) {}
+        public void notifyListeners(String eventName, JSObject data) {
+            this.notifiedEventNames.add(eventName);
+            this.notifiedEventPayloads.put(eventName, data);
+        }
+
+        @Override
+        public void notifyListeners(String eventName, JSObject data, boolean retainUntilConsumed) {
+            this.notifiedEventNames.add(eventName);
+            this.notifiedEventPayloads.put(eventName, data);
+        }
+
+        boolean hasNotifiedEvent(final String eventName) {
+            return this.notifiedEventNames.contains(eventName);
+        }
+
+        JSObject getNotifiedEventPayload(final String eventName) {
+            return this.notifiedEventPayloads.get(eventName);
+        }
     }
 
     private static final class ImmediateThreadCapacitorUpdaterPlugin extends TestableCapacitorUpdaterPlugin {
@@ -246,6 +263,104 @@ public class CapacitorUpdaterUnitTest {
             this.downloadBackgroundCalled = true;
             this.consumedWhenDownloadStarted = this.consumedStateSupplier.getAsBoolean();
             this.directUpdateWhenDownloadStarted = this.directUpdateStateSupplier.getAsBoolean();
+        }
+    }
+
+    private static final class NoNewVersionCapgoUpdater extends CapgoUpdater {
+
+        private final BundleInfo currentBundle = new BundleInfo("current-id", "1.0.0", BundleStatus.SUCCESS, new Date(), "abc123");
+        private boolean sendStatsCalled = false;
+        private final boolean includeKind;
+
+        NoNewVersionCapgoUpdater() {
+            this(true);
+        }
+
+        NoNewVersionCapgoUpdater(final boolean includeKind) {
+            super(null);
+            this.includeKind = includeKind;
+        }
+
+        @Override
+        public void getLatest(final String updateUrl, final String channel, final Callback callback) {
+            final Map<String, Object> response = new HashMap<>();
+            response.put("error", "no_new_version_available");
+            if (this.includeKind) {
+                response.put("kind", "up_to_date");
+            }
+            response.put("message", "No new version available");
+            response.put("statusCode", 200);
+            callback.callback(response);
+        }
+
+        @Override
+        public BundleInfo getCurrentBundle() {
+            return this.currentBundle;
+        }
+
+        @Override
+        public void sendStats(final String action, final String versionName, final String oldVersionName) {
+            this.sendStatsCalled = true;
+        }
+    }
+
+    private static final class BlockedUpdateCapgoUpdater extends CapgoUpdater {
+
+        private final BundleInfo currentBundle = new BundleInfo("current-id", "1.0.0", BundleStatus.SUCCESS, new Date(), "abc123");
+        private boolean sendStatsCalled = false;
+
+        BlockedUpdateCapgoUpdater() {
+            super(null);
+        }
+
+        @Override
+        public void getLatest(final String updateUrl, final String channel, final Callback callback) {
+            final Map<String, Object> response = new HashMap<>();
+            response.put("error", "disable_auto_update_to_major");
+            response.put("kind", "blocked");
+            response.put("message", "Cannot upgrade major version");
+            response.put("statusCode", 200);
+            callback.callback(response);
+        }
+
+        @Override
+        public BundleInfo getCurrentBundle() {
+            return this.currentBundle;
+        }
+
+        @Override
+        public void sendStats(final String action, final String versionName, final String oldVersionName) {
+            this.sendStatsCalled = true;
+        }
+    }
+
+    private static final class FailedUpdateCapgoUpdater extends CapgoUpdater {
+
+        private final BundleInfo currentBundle = new BundleInfo("current-id", "1.0.0", BundleStatus.SUCCESS, new Date(), "abc123");
+        private boolean downloadFailStatsCalled = false;
+
+        FailedUpdateCapgoUpdater() {
+            super(null);
+        }
+
+        @Override
+        public void getLatest(final String updateUrl, final String channel, final Callback callback) {
+            final Map<String, Object> response = new HashMap<>();
+            response.put("error", "response_error");
+            response.put("kind", "failed");
+            response.put("message", "Error getting Latest");
+            response.put("statusCode", 500);
+            callback.callback(response);
+        }
+
+        @Override
+        public BundleInfo getCurrentBundle() {
+            return this.currentBundle;
+        }
+
+        @Override
+        public void sendStats(final String action, final String versionName, final String oldVersionName) {
+            this.downloadFailStatsCalled = "download_fail".equals(action);
         }
     }
 
@@ -1419,6 +1534,110 @@ public class CapacitorUpdaterUnitTest {
             assertTrue(plugin.hasConsumedOnLaunchDirectUpdateForTesting());
             assertFalse(plugin.shouldUseDirectUpdateForTesting());
             assertTrue(plugin.implementation.directUpdate);
+        }
+    }
+
+    @Test
+    public void testNoNewVersionAvailableDoesNotNotifyDownloadFailed() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
+            NoNewVersionCapgoUpdater updater = new NoNewVersionCapgoUpdater();
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            invokeBackgroundDownload(plugin);
+
+            assertTrue(plugin.hasNotifiedEvent("noNeedUpdate"));
+            assertTrue(plugin.hasNotifiedEvent("updateCheckResult"));
+            JSObject payload = plugin.getNotifiedEventPayload("updateCheckResult");
+            assertNotNull(payload);
+            assertEquals("up_to_date", payload.getString("kind"));
+            assertEquals(200, payload.getInt("statusCode"));
+            assertEquals("1.0.0", payload.getString("version"));
+            assertFalse(plugin.hasNotifiedEvent("downloadFailed"));
+            assertFalse(updater.sendStatsCalled);
+        }
+    }
+
+    @Test
+    public void testGetLatestRejectsLegacyErrorWithoutBackendKind() {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
+            PluginCall call = mock(PluginCall.class);
+
+            plugin.implementation = new NoNewVersionCapgoUpdater(false);
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            plugin.getLatest(call);
+
+            verify(call, never()).resolve(any(JSObject.class));
+            verify(call).reject("no_new_version_available");
+        }
+    }
+
+    @Test
+    public void testBlockedUpdateCheckDoesNotNotifyDownloadFailed() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
+            BlockedUpdateCapgoUpdater updater = new BlockedUpdateCapgoUpdater();
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            invokeBackgroundDownload(plugin);
+
+            assertTrue(plugin.hasNotifiedEvent("noNeedUpdate"));
+            assertTrue(plugin.hasNotifiedEvent("updateCheckResult"));
+            JSObject payload = plugin.getNotifiedEventPayload("updateCheckResult");
+            assertNotNull(payload);
+            assertEquals("blocked", payload.getString("kind"));
+            assertEquals(200, payload.getInt("statusCode"));
+            assertEquals("1.0.0", payload.getString("version"));
+            assertFalse(plugin.hasNotifiedEvent("downloadFailed"));
+            assertFalse(updater.sendStatsCalled);
+        }
+    }
+
+    @Test
+    public void testFailedUpdateCheckNotifiesDownloadFailed() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
+            FailedUpdateCapgoUpdater updater = new FailedUpdateCapgoUpdater();
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            invokeBackgroundDownload(plugin);
+
+            assertTrue(plugin.hasNotifiedEvent("updateCheckResult"));
+            JSObject payload = plugin.getNotifiedEventPayload("updateCheckResult");
+            assertNotNull(payload);
+            assertEquals("failed", payload.getString("kind"));
+            assertEquals(500, payload.getInt("statusCode"));
+            assertEquals("1.0.0", payload.getString("version"));
+            assertTrue(plugin.hasNotifiedEvent("downloadFailed"));
+            assertTrue(updater.downloadFailStatsCalled);
         }
     }
 

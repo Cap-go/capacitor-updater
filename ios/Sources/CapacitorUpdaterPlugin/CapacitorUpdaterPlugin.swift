@@ -902,12 +902,32 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func getLatest(_ call: CAPPluginCall) {
         let channel = call.getString("channel")
-        DispatchQueue.global(qos: .background).async {
+        runGetLatestWork {
             let res = self.implementation.getLatest(url: URL(string: self.updateUrl)!, channel: channel)
-            if res.error != nil {
-                call.reject( res.error!)
-            } else if res.message != nil {
-                call.reject( res.message!)
+            if let error = res.error, !error.isEmpty {
+                let responseKind = self.updateResponseKind(kind: res.kind)
+                res.kind = responseKind
+                if responseKind == "failed" {
+                    call.reject(error)
+                } else {
+                    if res.version.isEmpty {
+                        res.version = self.implementation.getCurrentBundle().getVersionName()
+                    }
+                    call.resolve(res.toDict())
+                }
+            } else if let kind = res.kind, !kind.isEmpty {
+                let responseKind = self.updateResponseKind(kind: kind)
+                res.kind = responseKind
+                if responseKind != "failed" {
+                    if res.version.isEmpty {
+                        res.version = self.implementation.getCurrentBundle().getVersionName()
+                    }
+                    call.resolve(res.toDict())
+                } else {
+                    call.reject(res.message ?? "server did not provide a message")
+                }
+            } else if let message = res.message, !message.isEmpty {
+                call.reject(message)
             } else {
                 call.resolve(res.toDict())
             }
@@ -1648,6 +1668,52 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.notifyListeners("majorAvailable", data: payload)
     }
 
+    private func updateResponseKind(kind: String?) -> String {
+        if let kind, ["up_to_date", "blocked", "failed"].contains(kind) {
+            return kind
+        }
+        return "failed"
+    }
+
+    private func endBackgroundDownloadAfterLatestError(
+        backendError: String,
+        res: AppVersion,
+        current: BundleInfo,
+        plannedDirectUpdate: Bool
+    ) {
+        let statusCode = res.statusCode
+        let responseKind = self.updateResponseKind(kind: res.kind)
+        let responseMessage = res.message?.isEmpty == false ? res.message : nil
+        let message = responseMessage ?? (backendError.isEmpty ? "server did not provide a message" : backendError)
+        let latestVersionName = res.version.isEmpty ? current.getVersionName() : res.version
+        self.notifyListeners("updateCheckResult", data: [
+            "kind": responseKind,
+            "error": backendError,
+            "message": message,
+            "statusCode": statusCode,
+            "version": latestVersionName,
+            "bundle": current.toJSON()
+        ])
+
+        if responseKind == "up_to_date" {
+            self.logger.info("No new version available")
+        } else if responseKind == "blocked" {
+            self.logger.info("Update check blocked with error: \(backendError)")
+        } else {
+            self.logger.error("getLatest failed with error: \(backendError)")
+        }
+
+        let isFailure = responseKind == "failed"
+        self.endBackGroundTaskWithNotif(
+            msg: message,
+            latestVersionName: latestVersionName,
+            current: current,
+            error: isFailure,
+            plannedDirectUpdate: plannedDirectUpdate,
+            sendStats: isFailure
+        )
+    }
+
     func endBackGroundTaskWithNotif(
         msg: String,
         latestVersionName: String,
@@ -1705,6 +1771,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.global(qos: .background).async(execute: work)
     }
 
+    func runGetLatestWork(_ work: @escaping () -> Void) {
+        DispatchQueue.global(qos: .background).async(execute: work)
+    }
+
     func backgroundDownload() {
         // Set download in progress flag (thread-safe)
         downloadLock.lock()
@@ -1736,17 +1806,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             let current = self.implementation.getCurrentBundle()
 
             // Handle network errors and other failures first
-            if let backendError = res.error, !backendError.isEmpty {
-                self.logger.error("getLatest failed with error: \(backendError)")
-                let statusCode = res.statusCode
-                let responseIsOk = statusCode >= 200 && statusCode < 300
-                self.endBackGroundTaskWithNotif(
-                    msg: res.message ?? backendError,
-                    latestVersionName: res.version,
+            let backendError = res.error ?? ""
+            let backendKind = res.kind ?? ""
+            if !backendError.isEmpty || !backendKind.isEmpty {
+                self.endBackgroundDownloadAfterLatestError(
+                    backendError: backendError,
+                    res: res,
                     current: current,
-                    error: true,
-                    plannedDirectUpdate: plannedDirectUpdate,
-                    sendStats: !responseIsOk
+                    plannedDirectUpdate: plannedDirectUpdate
                 )
                 return
             }

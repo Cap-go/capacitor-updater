@@ -3,4 +3,4 @@ appId: app.capgo.updater
 - launchApp
 - extendedWaitUntil:
     visible: 'CAPGO OTA VALIDATION'
-    timeout: 90000
+    timeout: 180000

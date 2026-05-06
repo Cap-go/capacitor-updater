@@ -186,6 +186,7 @@ struct AppVersionDec: Decodable {
     let url: String?
     let message: String?
     let error: String?
+    let kind: String?
     let session_key: String?
     let major: Bool?
     let breaking: Bool?
@@ -203,6 +204,7 @@ public class AppVersion: NSObject {
     var url: String = ""
     var message: String?
     var error: String?
+    var kind: String?
     var sessionKey: String?
     var major: Bool?
     var breaking: Bool?
