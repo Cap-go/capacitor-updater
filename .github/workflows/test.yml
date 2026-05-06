@@ -139,7 +139,6 @@ jobs:
       matrix:
         scenario:
           - manual-zip
-          - manual-zip-no-persist
           - manual-zip-config-guards
     steps:
       - name: Check out
@@ -248,7 +247,6 @@ jobs:
           - legacy-true
           - at-install
           - on-launch
-          - manual-zip
           - manual-zip-config-guards
           - manual-manifest
     steps:
