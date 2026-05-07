@@ -1088,7 +1088,12 @@ public class CapgoUpdater {
         this.sendStats("set", bundle.getVersionName(), previousBundleName);
     }
 
+    @Deprecated
     public void autoReset() {
+        this.autoReset(this.versionCode == null ? "" : this.versionCode);
+    }
+
+    public void autoReset(final String currentNativeBuildVersion) {
         final BundleInfo currentBundle = this.getCurrentBundle();
         if (!currentBundle.isBuiltin() && !this.bundleExists(currentBundle.getId())) {
             logger.info("Folder at bundle path does not exist. Triggering reset.");
@@ -1099,7 +1104,35 @@ public class CapgoUpdater {
         if (shouldResetForForeignBundle(bundlePath, currentBundle.isBuiltin(), this.hasStoredBundleInfo(currentBundle.getId()))) {
             logger.info("Current bundle id is not one of the bundle ids stored by this plugin. Triggering reset.");
             this.reset();
+            return;
         }
+        final String previousNativeBuildVersion = this.getStoredNativeBuildVersion();
+        if (
+            !previousNativeBuildVersion.isEmpty() &&
+            currentNativeBuildVersion != null &&
+            !currentNativeBuildVersion.isEmpty() &&
+            !Objects.equals(previousNativeBuildVersion, currentNativeBuildVersion)
+        ) {
+            logger.info(
+                "Stored native build version " +
+                    previousNativeBuildVersion +
+                    " does not match current native build version " +
+                    currentNativeBuildVersion +
+                    ". Triggering reset."
+            );
+            this.reset();
+        }
+    }
+
+    private String getStoredNativeBuildVersion() {
+        if (this.prefs == null) {
+            return "";
+        }
+        String previousNativeBuildVersion = this.prefs.getString("LatestNativeBuildVersion", "");
+        if (previousNativeBuildVersion == null || previousNativeBuildVersion.isEmpty()) {
+            previousNativeBuildVersion = this.prefs.getString("LatestVersionNative", "");
+        }
+        return previousNativeBuildVersion == null ? "" : previousNativeBuildVersion;
     }
 
     public void reset() {

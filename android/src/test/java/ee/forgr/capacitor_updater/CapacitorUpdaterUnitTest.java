@@ -16,6 +16,8 @@ import com.getcapacitor.PluginHandle;
 import io.github.g00fy2.versioncompare.Version;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -609,6 +611,25 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
+    private static final class AutoResetNativeVersionCapgoUpdater extends CapgoUpdater {
+
+        private boolean resetCalled = false;
+
+        AutoResetNativeVersionCapgoUpdater() {
+            super(mock(Logger.class));
+        }
+
+        @Override
+        public void reset() {
+            this.resetCalled = true;
+        }
+
+        @Override
+        public void reset(final boolean internal) {
+            this.resetCalled = true;
+        }
+    }
+
     private static final class FixedPathCapgoUpdater extends CapgoUpdater {
 
         private final String currentBundlePath;
@@ -952,6 +973,52 @@ public class CapacitorUpdaterUnitTest {
         assertEquals(BundleInfo.ID_BUILTIN, bundleInfo.getId());
         assertEquals(BundleInfo.ID_BUILTIN, bundleInfo.getVersionName());
         assertEquals(BundleStatus.SUCCESS, bundleInfo.getStatus());
+    }
+
+    @Test
+    public void testGetStoredNativeBuildVersionFallsBackToLegacyKey() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            final SharedPreferences prefs = mock(SharedPreferences.class);
+
+            setPrivateField(plugin, "prefs", prefs);
+            when(prefs.getString("LatestNativeBuildVersion", "")).thenReturn("");
+            when(prefs.getString("LatestVersionNative", "")).thenReturn("7");
+
+            assertEquals("7", plugin.getStoredNativeBuildVersion());
+        }
+    }
+
+    @Test
+    public void testAutoResetFallsBackToLegacyNativeBuildVersionKey() throws Exception {
+        final String bundleId = "legacy-bundle-id";
+        final Path tempDir = Files.createTempDirectory("capgo-autoreset");
+        final Path bundleDir = tempDir.resolve("versions").resolve(bundleId);
+        Files.createDirectories(bundleDir);
+        Files.createFile(bundleDir.resolve("index.html"));
+
+        final AutoResetNativeVersionCapgoUpdater updater = new AutoResetNativeVersionCapgoUpdater();
+        final SharedPreferences prefs = mock(SharedPreferences.class);
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+        final BundleInfo storedBundle = new BundleInfo(bundleId, "1.0.0", BundleStatus.SUCCESS, new Date(), "checksum");
+
+        updater.documentsDir = tempDir.toFile();
+        updater.CAP_SERVER_PATH = "server-path";
+        updater.prefs = prefs;
+        updater.editor = editor;
+
+        when(prefs.getString("server-path", "public")).thenReturn(bundleDir.toString());
+        when(prefs.getString("server-path", null)).thenReturn(bundleDir.toString());
+        when(prefs.contains(bundleId + "_info")).thenReturn(true);
+        when(prefs.getString(bundleId + "_info", "")).thenReturn(storedBundle.toString());
+        when(prefs.getString("LatestNativeBuildVersion", "")).thenReturn("");
+        when(prefs.getString("LatestVersionNative", "")).thenReturn("7");
+
+        updater.autoReset("8");
+
+        assertTrue(updater.resetCalled);
     }
 
     @Test
