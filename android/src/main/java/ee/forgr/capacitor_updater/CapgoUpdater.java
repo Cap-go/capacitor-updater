@@ -1094,6 +1094,10 @@ public class CapgoUpdater {
     }
 
     public void autoReset(final String currentNativeBuildVersion) {
+        this.autoReset(currentNativeBuildVersion, true);
+    }
+
+    public void autoReset(final String currentNativeBuildVersion, final boolean resetWhenNativeVersionChanged) {
         final BundleInfo currentBundle = this.getCurrentBundle();
         if (!currentBundle.isBuiltin() && !this.bundleExists(currentBundle.getId())) {
             logger.info("Folder at bundle path does not exist. Triggering reset.");
@@ -1108,6 +1112,7 @@ public class CapgoUpdater {
         }
         final String previousNativeBuildVersion = this.getStoredNativeBuildVersion();
         if (
+            resetWhenNativeVersionChanged &&
             !previousNativeBuildVersion.isEmpty() &&
             currentNativeBuildVersion != null &&
             !currentNativeBuildVersion.isEmpty() &&

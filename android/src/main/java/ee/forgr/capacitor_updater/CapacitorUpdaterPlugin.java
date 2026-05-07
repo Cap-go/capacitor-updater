@@ -482,9 +482,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
         // Check if app was recently installed/updated BEFORE cleanupObsoleteVersions updates LatestVersionNative
         this.wasRecentlyInstalledOrUpdated = this.checkIfRecentlyInstalledOrUpdated();
 
-        this.implementation.autoReset(this.currentBuildVersion);
+        this.implementation.autoReset(this.currentBuildVersion, resetWhenUpdate);
         if (resetWhenUpdate) {
             this.cleanupObsoleteVersions();
+        } else {
+            this.persistCurrentNativeBuildVersion();
         }
 
         // Check for 'kill' delay condition on app launch
@@ -999,6 +1001,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
             previous = this.prefs.getString("LatestVersionNative", "");
         }
         return previous == null ? "" : previous;
+    }
+
+    void persistCurrentNativeBuildVersion() {
+        this.editor.putString("LatestNativeBuildVersion", this.currentBuildVersion);
+        this.editor.apply();
     }
 
     private void waitForCleanupIfNeeded() {

@@ -669,6 +669,20 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
+    private static Path createExistingBundleDirectory(final String prefix, final String bundleId) throws Exception {
+        final Path tempDir = Files.createTempDirectory(prefix);
+        tempDir.toFile().deleteOnExit();
+        final Path versionsDir = tempDir.resolve("versions");
+        final Path bundleDir = versionsDir.resolve(bundleId);
+        Files.createDirectories(bundleDir);
+        versionsDir.toFile().deleteOnExit();
+        bundleDir.toFile().deleteOnExit();
+        final Path indexFile = bundleDir.resolve("index.html");
+        Files.createFile(indexFile);
+        indexFile.toFile().deleteOnExit();
+        return tempDir;
+    }
+
     private static void invokeBackgroundDownload(final CapacitorUpdaterPlugin plugin) throws Exception {
         final Method backgroundDownload = CapacitorUpdaterPlugin.class.getDeclaredMethod("backgroundDownload");
         backgroundDownload.setAccessible(true);
@@ -992,12 +1006,29 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testPersistCurrentNativeBuildVersionWritesCurrentBuildKey() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+
+            setPrivateField(plugin, "editor", editor);
+            setPrivateField(plugin, "currentBuildVersion", "8");
+            when(editor.putString("LatestNativeBuildVersion", "8")).thenReturn(editor);
+
+            plugin.persistCurrentNativeBuildVersion();
+
+            verify(editor).putString("LatestNativeBuildVersion", "8");
+            verify(editor).apply();
+        }
+    }
+
+    @Test
     public void testAutoResetFallsBackToLegacyNativeBuildVersionKey() throws Exception {
         final String bundleId = "legacy-bundle-id";
-        final Path tempDir = Files.createTempDirectory("capgo-autoreset");
+        final Path tempDir = createExistingBundleDirectory("capgo-autoreset", bundleId);
         final Path bundleDir = tempDir.resolve("versions").resolve(bundleId);
-        Files.createDirectories(bundleDir);
-        Files.createFile(bundleDir.resolve("index.html"));
 
         final AutoResetNativeVersionCapgoUpdater updater = new AutoResetNativeVersionCapgoUpdater();
         final SharedPreferences prefs = mock(SharedPreferences.class);
@@ -1019,6 +1050,32 @@ public class CapacitorUpdaterUnitTest {
         updater.autoReset("8");
 
         assertTrue(updater.resetCalled);
+    }
+
+    @Test
+    public void testAutoResetSkipsNativeBuildVersionResetWhenDisabled() throws Exception {
+        final String bundleId = "legacy-bundle-id";
+        final Path tempDir = createExistingBundleDirectory("capgo-autoreset-disabled", bundleId);
+        final Path bundleDir = tempDir.resolve("versions").resolve(bundleId);
+
+        final AutoResetNativeVersionCapgoUpdater updater = new AutoResetNativeVersionCapgoUpdater();
+        final SharedPreferences prefs = mock(SharedPreferences.class);
+        final BundleInfo storedBundle = new BundleInfo(bundleId, "1.0.0", BundleStatus.SUCCESS, new Date(), "checksum");
+
+        updater.documentsDir = tempDir.toFile();
+        updater.CAP_SERVER_PATH = "server-path";
+        updater.prefs = prefs;
+
+        when(prefs.getString("server-path", "public")).thenReturn(bundleDir.toString());
+        when(prefs.getString("server-path", null)).thenReturn(bundleDir.toString());
+        when(prefs.contains(bundleId + "_info")).thenReturn(true);
+        when(prefs.getString(bundleId + "_info", "")).thenReturn(storedBundle.toString());
+        when(prefs.getString("LatestNativeBuildVersion", "")).thenReturn("");
+        when(prefs.getString("LatestVersionNative", "")).thenReturn("7");
+
+        updater.autoReset("8", false);
+
+        assertFalse(updater.resetCalled);
     }
 
     @Test
