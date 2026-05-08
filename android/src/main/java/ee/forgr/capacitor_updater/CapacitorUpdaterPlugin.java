@@ -482,9 +482,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
         // Check if app was recently installed/updated BEFORE cleanupObsoleteVersions updates LatestVersionNative
         this.wasRecentlyInstalledOrUpdated = this.checkIfRecentlyInstalledOrUpdated();
 
-        this.implementation.autoReset();
+        this.implementation.autoReset(this.currentBuildVersion, resetWhenUpdate);
         if (resetWhenUpdate) {
             this.cleanupObsoleteVersions();
+        } else {
+            this.persistCurrentNativeBuildVersion();
         }
 
         // Check for 'kill' delay condition on app launch
@@ -810,7 +812,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private boolean checkIfRecentlyInstalledOrUpdated() {
         String currentVersion = this.currentBuildVersion;
-        String lastKnownVersion = this.prefs.getString("LatestNativeBuildVersion", "");
+        String lastKnownVersion = this.getStoredNativeBuildVersion();
 
         if (lastKnownVersion.isEmpty()) {
             // First time running, consider it as recently installed
@@ -932,7 +934,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         cleanupThread = startNewThread(() -> {
             synchronized (cleanupLock) {
                 try {
-                    final String previous = this.prefs.getString("LatestNativeBuildVersion", "");
+                    final String previous = this.getStoredNativeBuildVersion();
                     if (!"".equals(previous) && !Objects.equals(this.currentBuildVersion, previous)) {
                         logger.info("New native build version detected: " + this.currentBuildVersion);
                         this.implementation.reset(true);
@@ -991,6 +993,19 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 // Watchdog thread was interrupted, that's fine
             }
         });
+    }
+
+    String getStoredNativeBuildVersion() {
+        String previous = this.prefs.getString("LatestNativeBuildVersion", "");
+        if (previous == null || previous.isEmpty()) {
+            previous = this.prefs.getString("LatestVersionNative", "");
+        }
+        return previous == null ? "" : previous;
+    }
+
+    void persistCurrentNativeBuildVersion() {
+        this.editor.putString("LatestNativeBuildVersion", this.currentBuildVersion);
+        this.editor.apply();
     }
 
     private void waitForCleanupIfNeeded() {
