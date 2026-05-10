@@ -49,6 +49,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getLatest", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setChannel", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "unsetChannel", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "reportWebViewError", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getChannel", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "listChannels", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setCustomId", returnType: CAPPluginReturnPromise),
@@ -130,6 +131,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var persistModifyUrl = false
     private var allowManualBundleError = false
     private var keepUrlPathFlagLastValue: Bool?
+    private var appHealthTracker: AppHealthTracker?
+    private var webViewStatsReporter: WebViewStatsReporter?
     public var shakeMenuEnabled = false
     public var shakeChannelSelectorEnabled = false
     let semaphoreReady = DispatchSemaphore(value: 0)
@@ -145,6 +148,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         } else {
             logger.error("Failed to get webView for logging")
         }
+        let webViewStatsReporter = WebViewStatsReporter(implementation: implementation)
+        self.webViewStatsReporter = webViewStatsReporter
+        webViewStatsReporter.install(on: self.bridge?.webView)
         #if targetEnvironment(simulator)
         logger.info("::::: SIMULATOR :::::")
         logger.info("Application directory: \(NSHomeDirectory())")
@@ -289,6 +295,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             implementation.defaultChannel = getConfig().getString("defaultChannel", "")!
         }
         self.implementation.autoReset()
+        let appHealthTracker = AppHealthTracker(implementation: self.implementation)
+        self.appHealthTracker = appHealthTracker
+        appHealthTracker.reportPreviousUncleanForegroundExit()
+        appHealthTracker.startSession()
 
         // Check if app was recently installed/updated BEFORE cleanup updates the stored native build version.
         self.wasRecentlyInstalledOrUpdated = self.checkIfRecentlyInstalledOrUpdated()
@@ -312,6 +322,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         let nc = NotificationCenter.default
         nc.addObserver(self, selector: #selector(appMovedToBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
         nc.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
+        nc.addObserver(self, selector: #selector(appWillTerminate), name: UIApplication.willTerminateNotification, object: nil)
+        nc.addObserver(self, selector: #selector(appDidReceiveMemoryWarning), name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
 
         // Check for 'kill' delay condition on app launch
         // This handles cases where the app was killed (willTerminateNotification is not reliable for system kills)
@@ -366,6 +378,22 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             UserDefaults.standard.synchronize()
             return nil
         }
+    }
+
+    @objc private func appWillTerminate() {
+        appHealthTracker?.markForeground(false)
+    }
+
+    @objc private func appDidReceiveMemoryWarning() {
+        appHealthTracker?.reportMemoryWarning()
+    }
+
+    @objc func reportWebViewError(_ call: CAPPluginCall) {
+        guard let webViewStatsReporter = webViewStatsReporter else {
+            call.resolve()
+            return
+        }
+        webViewStatsReporter.reportError(call)
     }
 
     private func initialLoad() -> Bool {
@@ -2153,6 +2181,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func appMovedToForeground() {
+        appHealthTracker?.markForeground(true)
         let current: BundleInfo = self.implementation.getCurrentBundle()
         self.implementation.sendStats(action: "app_moved_to_foreground", versionName: current.getVersionName())
         self.delayUpdateUtils.checkCancelDelay(source: .foreground)
@@ -2219,6 +2248,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func appMovedToBackground() {
         // Reset timeout flag at start of each background cycle
         self.autoSplashscreenTimedOut = false
+        appHealthTracker?.markForeground(false)
 
         let current: BundleInfo = self.implementation.getCurrentBundle()
         self.implementation.sendStats(action: "app_moved_to_background", versionName: current.getVersionName())

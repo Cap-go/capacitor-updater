@@ -7,6 +7,8 @@
 package ee.forgr.capacitor_updater;
 
 import android.app.Activity;
+import android.app.ActivityManager;
+import android.app.ApplicationExitInfo;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -20,6 +22,7 @@ import android.os.Looper;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.webkit.RenderProcessGoneDetail;
 import android.widget.FrameLayout;
 import android.widget.ProgressBar;
 import androidx.core.content.pm.PackageInfoCompat;
@@ -32,6 +35,7 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginHandle;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.PluginResult;
+import com.getcapacitor.WebViewListener;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.plugin.WebView;
 import com.google.android.gms.tasks.Task;
@@ -51,6 +55,7 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -84,6 +89,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final String DEFAULT_CHANNEL_PREF_KEY = "CapacitorUpdater.defaultChannel";
     private static final String[] BREAKING_EVENT_NAMES = { "breakingAvailable", "majorAvailable" };
     private static final String LAST_FAILED_BUNDLE_PREF_KEY = "CapacitorUpdater.lastFailedBundle";
+    private static final String LAST_REPORTED_APP_EXIT_TIMESTAMP_PREF_KEY = "CapacitorUpdater.lastReportedAppExitTimestamp";
+    private static final String LAST_WEBVIEW_RENDER_PROCESS_GONE_PREF_KEY = "CapacitorUpdater.lastWebViewRenderProcessGone";
     private static final String SPLASH_SCREEN_PLUGIN_ID = "SplashScreen";
     private static final int SPLASH_SCREEN_RETRY_DELAY_MS = 100;
     private static final int SPLASH_SCREEN_MAX_RETRIES = 20;
@@ -154,6 +161,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private FrameLayout splashscreenLoaderOverlay;
     private Runnable splashscreenTimeoutRunnable;
+    private WebViewListener webViewStatsListener;
 
     private static final class FireAndForgetPluginCall extends PluginCall {
 
@@ -483,6 +491,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.wasRecentlyInstalledOrUpdated = this.checkIfRecentlyInstalledOrUpdated();
 
         this.implementation.autoReset(this.currentBuildVersion, resetWhenUpdate);
+        this.reportPreviousAppExitReasons();
+        this.reportPreviousWebViewRenderProcessGone();
+        this.installWebViewStatsReporter();
         if (resetWhenUpdate) {
             this.cleanupObsoleteVersions();
         } else {
@@ -823,6 +834,456 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
 
         return false;
+    }
+
+    private void reportPreviousAppExitReasons() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || this.implementation == null || this.implementation.statsUrl.isEmpty()) {
+            return;
+        }
+
+        try {
+            final ActivityManager activityManager = (ActivityManager) this.getContext().getSystemService(Context.ACTIVITY_SERVICE);
+            if (activityManager == null) {
+                return;
+            }
+
+            final List<ApplicationExitInfo> exitReasons = activityManager.getHistoricalProcessExitReasons(
+                this.getContext().getPackageName(),
+                0,
+                8
+            );
+            if (exitReasons == null || exitReasons.isEmpty()) {
+                return;
+            }
+
+            final long lastReportedTimestamp = this.prefs.getLong(LAST_REPORTED_APP_EXIT_TIMESTAMP_PREF_KEY, 0L);
+            long newestReportedTimestamp = lastReportedTimestamp;
+            final BundleInfo current = this.implementation.getCurrentBundle();
+            final String versionName = current == null ? "" : current.getVersionName();
+
+            for (final ApplicationExitInfo exitInfo : exitReasons) {
+                if (exitInfo == null || exitInfo.getTimestamp() <= lastReportedTimestamp) {
+                    continue;
+                }
+
+                final String action = statsActionForApplicationExitReason(exitInfo.getReason());
+                if (action == null) {
+                    continue;
+                }
+
+                this.implementation.sendStats(action, versionName, "", buildApplicationExitMetadata(exitInfo));
+                newestReportedTimestamp = Math.max(newestReportedTimestamp, exitInfo.getTimestamp());
+            }
+
+            if (newestReportedTimestamp > lastReportedTimestamp) {
+                this.prefs.edit().putLong(LAST_REPORTED_APP_EXIT_TIMESTAMP_PREF_KEY, newestReportedTimestamp).apply();
+            }
+        } catch (final Exception e) {
+            logger.warn("Unable to report previous app exit reason: " + e.getMessage());
+        }
+    }
+
+    static String statsActionForApplicationExitReason(final int reason) {
+        switch (reason) {
+            case ApplicationExitInfo.REASON_CRASH:
+                return "app_crash";
+            case ApplicationExitInfo.REASON_CRASH_NATIVE:
+                return "app_crash_native";
+            case ApplicationExitInfo.REASON_ANR:
+                return "app_anr";
+            case ApplicationExitInfo.REASON_LOW_MEMORY:
+                return "app_killed_low_memory";
+            case ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE:
+                return "app_killed_excessive_resource_usage";
+            case ApplicationExitInfo.REASON_INITIALIZATION_FAILURE:
+                return "app_initialization_failure";
+            default:
+                return null;
+        }
+    }
+
+    static String applicationExitReasonName(final int reason) {
+        switch (reason) {
+            case ApplicationExitInfo.REASON_EXIT_SELF:
+                return "exit_self";
+            case ApplicationExitInfo.REASON_SIGNALED:
+                return "signaled";
+            case ApplicationExitInfo.REASON_LOW_MEMORY:
+                return "low_memory";
+            case ApplicationExitInfo.REASON_CRASH:
+                return "crash";
+            case ApplicationExitInfo.REASON_CRASH_NATIVE:
+                return "crash_native";
+            case ApplicationExitInfo.REASON_ANR:
+                return "anr";
+            case ApplicationExitInfo.REASON_INITIALIZATION_FAILURE:
+                return "initialization_failure";
+            case ApplicationExitInfo.REASON_PERMISSION_CHANGE:
+                return "permission_change";
+            case ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE:
+                return "excessive_resource_usage";
+            case ApplicationExitInfo.REASON_USER_REQUESTED:
+                return "user_requested";
+            case ApplicationExitInfo.REASON_DEPENDENCY_DIED:
+                return "dependency_died";
+            default:
+                return "unknown";
+        }
+    }
+
+    private static Map<String, String> buildApplicationExitMetadata(final ApplicationExitInfo exitInfo) {
+        final Map<String, String> metadata = new HashMap<>();
+        metadata.put("exit_reason", applicationExitReasonName(exitInfo.getReason()));
+        metadata.put("exit_reason_code", Integer.toString(exitInfo.getReason()));
+        metadata.put("exit_status", Integer.toString(exitInfo.getStatus()));
+        metadata.put("exit_importance", Integer.toString(exitInfo.getImportance()));
+        metadata.put("exit_timestamp", Long.toString(exitInfo.getTimestamp()));
+        metadata.put("pid", Integer.toString(exitInfo.getPid()));
+        metadata.put("pss_kb", Long.toString(exitInfo.getPss()));
+        metadata.put("rss_kb", Long.toString(exitInfo.getRss()));
+
+        final String processName = exitInfo.getProcessName();
+        if (processName != null && !processName.isEmpty()) {
+            metadata.put("process_name", truncateStatsMetadataValue(processName, 128));
+        }
+
+        final String description = exitInfo.getDescription();
+        if (description != null && !description.isEmpty()) {
+            metadata.put("exit_description", truncateStatsMetadataValue(description, 512));
+        }
+
+        return metadata;
+    }
+
+    private static String truncateStatsMetadataValue(final String value, final int maxLength) {
+        return value.length() <= maxLength ? value : value.substring(0, maxLength);
+    }
+
+    private void installWebViewStatsReporter() {
+        if (this.bridge == null || this.bridge.getWebView() == null || this.webViewStatsListener != null) {
+            return;
+        }
+
+        final android.webkit.WebView webView = this.bridge.getWebView();
+        final String script = buildWebViewStatsReporterScript();
+        this.installDocumentStartWebViewStatsReporter(webView, script);
+
+        this.webViewStatsListener = new WebViewListener() {
+            @Override
+            public void onPageStarted(final android.webkit.WebView view) {
+                CapacitorUpdaterPlugin.this.evaluateWebViewStatsReporterScript(view, script);
+            }
+
+            @Override
+            public void onPageLoaded(final android.webkit.WebView view) {
+                CapacitorUpdaterPlugin.this.evaluateWebViewStatsReporterScript(view, script);
+            }
+
+            @Override
+            public boolean onRenderProcessGone(final android.webkit.WebView view, final RenderProcessGoneDetail detail) {
+                final Map<String, String> metadata = CapacitorUpdaterPlugin.this.buildWebViewRenderProcessGoneMetadata(detail);
+                CapacitorUpdaterPlugin.this.persistPendingWebViewRenderProcessGone(metadata);
+                return false;
+            }
+        };
+
+        this.bridge.addWebViewListener(this.webViewStatsListener);
+        this.evaluateWebViewStatsReporterScript(webView, script);
+    }
+
+    private void installDocumentStartWebViewStatsReporter(final android.webkit.WebView webView, final String script) {
+        try {
+            final Class<?> webViewFeature = Class.forName("androidx.webkit.WebViewFeature");
+            final String feature = (String) webViewFeature.getField("DOCUMENT_START_SCRIPT").get(null);
+            final Boolean supported = (Boolean) webViewFeature.getMethod("isFeatureSupported", String.class).invoke(null, feature);
+            if (!Boolean.TRUE.equals(supported)) {
+                return;
+            }
+
+            final String allowedOrigin = Uri.parse(this.bridge.getAppUrl())
+                .buildUpon()
+                .path(null)
+                .fragment(null)
+                .clearQuery()
+                .build()
+                .toString();
+            final Class<?> webViewCompat = Class.forName("androidx.webkit.WebViewCompat");
+            webViewCompat
+                .getMethod("addDocumentStartJavaScript", android.webkit.WebView.class, String.class, Set.class)
+                .invoke(null, webView, script, java.util.Collections.singleton(allowedOrigin));
+        } catch (final Exception e) {
+            logger.debug("Unable to install document-start WebView stats reporter: " + e.getMessage());
+        }
+    }
+
+    private void evaluateWebViewStatsReporterScript(final android.webkit.WebView webView, final String script) {
+        if (webView == null) {
+            return;
+        }
+
+        this.mainHandler.post(() -> {
+            try {
+                webView.evaluateJavascript(script, null);
+            } catch (final Exception e) {
+                logger.debug("Unable to evaluate WebView stats reporter: " + e.getMessage());
+            }
+        });
+    }
+
+    private Map<String, String> buildWebViewRenderProcessGoneMetadata(final RenderProcessGoneDetail detail) {
+        final Map<String, String> metadata = new HashMap<>();
+        metadata.put("error_type", "render_process_gone");
+        metadata.put("source", "android_on_render_process_gone");
+        metadata.put("timestamp", Long.toString(System.currentTimeMillis()));
+        if (detail != null) {
+            metadata.put("did_crash", Boolean.toString(detail.didCrash()));
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                metadata.put("renderer_priority_at_exit", Integer.toString(detail.rendererPriorityAtExit()));
+            }
+        }
+        return metadata;
+    }
+
+    private void persistPendingWebViewRenderProcessGone(final Map<String, String> metadata) {
+        try {
+            final JSONObject json = new JSONObject(metadata);
+            this.prefs.edit().putString(LAST_WEBVIEW_RENDER_PROCESS_GONE_PREF_KEY, json.toString()).commit();
+        } catch (final Exception e) {
+            logger.debug("Unable to persist WebView render process crash metadata: " + e.getMessage());
+        }
+    }
+
+    private void reportPreviousWebViewRenderProcessGone() {
+        if (this.implementation == null || this.implementation.statsUrl.isEmpty()) {
+            return;
+        }
+
+        final String rawMetadata = this.prefs.getString(LAST_WEBVIEW_RENDER_PROCESS_GONE_PREF_KEY, "");
+        if (rawMetadata == null || rawMetadata.isEmpty()) {
+            return;
+        }
+
+        try {
+            final Map<String, String> metadata = jsonObjectToStringMap(new JSONObject(rawMetadata));
+            metadata.put("reported_after_restart", "true");
+            this.reportWebViewStats("webview_render_process_gone", metadata);
+            this.prefs.edit().remove(LAST_WEBVIEW_RENDER_PROCESS_GONE_PREF_KEY).apply();
+        } catch (final JSONException e) {
+            this.prefs.edit().remove(LAST_WEBVIEW_RENDER_PROCESS_GONE_PREF_KEY).apply();
+        }
+    }
+
+    private static Map<String, String> jsonObjectToStringMap(final JSONObject json) throws JSONException {
+        final Map<String, String> map = new HashMap<>();
+        final JSONArray names = json.names();
+        if (names == null) {
+            return map;
+        }
+
+        for (int i = 0; i < names.length(); i++) {
+            final String key = names.getString(i);
+            final String value = json.optString(key, "");
+            if (!value.isEmpty()) {
+                map.put(key, value);
+            }
+        }
+        return map;
+    }
+
+    @PluginMethod
+    public void reportWebViewError(final PluginCall call) {
+        final JSObject data = call.getData();
+        this.reportWebViewStats(
+            statsActionForWebViewErrorType(data.optString("type", "javascript_error")),
+            buildWebViewErrorMetadata(data)
+        );
+        call.resolve();
+    }
+
+    private void reportWebViewStats(final String action, final Map<String, String> metadata) {
+        if (this.implementation == null) {
+            return;
+        }
+
+        final BundleInfo current = this.implementation.getCurrentBundle();
+        final String versionName = current == null ? "" : current.getVersionName();
+        this.implementation.sendStats(action, versionName, "", metadata);
+    }
+
+    static String statsActionForWebViewErrorType(final String type) {
+        switch (type) {
+            case "unhandled_rejection":
+                return "webview_unhandled_rejection";
+            case "resource_error":
+                return "webview_resource_error";
+            case "security_policy_violation":
+                return "webview_security_policy_violation";
+            case "webview_unclean_restart":
+                return "webview_unclean_restart";
+            case "render_process_gone":
+                return "webview_render_process_gone";
+            case "web_content_process_terminated":
+                return "webview_content_process_terminated";
+            case "javascript_error":
+            default:
+                return "webview_javascript_error";
+        }
+    }
+
+    static Map<String, String> buildWebViewErrorMetadata(final JSObject data) {
+        final Map<String, String> metadata = new HashMap<>();
+        putStatsMetadataValue(metadata, "error_type", data.optString("type", "javascript_error"), 64);
+        putStatsMetadataValue(metadata, "message", data.optString("message", ""), 1024);
+        putStatsMetadataValue(metadata, "source", sanitizeStatsMetadataUrl(data.optString("source", "")), 512);
+        putStatsMetadataValue(metadata, "line", data.optString("line", data.optString("lineno", "")), 32);
+        putStatsMetadataValue(metadata, "column", data.optString("column", data.optString("colno", "")), 32);
+        putStatsMetadataValue(metadata, "stack", data.optString("stack", ""), 2048);
+        putStatsMetadataValue(metadata, "tag_name", data.optString("tag_name", ""), 64);
+        putStatsMetadataValue(metadata, "href", sanitizeStatsMetadataUrl(data.optString("href", "")), 512);
+        putStatsMetadataValue(metadata, "user_agent", data.optString("user_agent", ""), 256);
+        putStatsMetadataValue(metadata, "session_id", data.optString("session_id", ""), 128);
+        putStatsMetadataValue(metadata, "previous_session_id", data.optString("previous_session_id", ""), 128);
+        putStatsMetadataValue(metadata, "previous_href", sanitizeStatsMetadataUrl(data.optString("previous_href", "")), 512);
+        putStatsMetadataValue(metadata, "previous_started_at", data.optString("previous_started_at", ""), 64);
+        putStatsMetadataValue(metadata, "previous_updated_at", data.optString("previous_updated_at", ""), 64);
+        return metadata;
+    }
+
+    private static void putStatsMetadataValue(
+        final Map<String, String> metadata,
+        final String key,
+        final String value,
+        final int maxLength
+    ) {
+        if (value == null || value.isEmpty()) {
+            return;
+        }
+
+        metadata.put(key, truncateStatsMetadataValue(value, maxLength));
+    }
+
+    static String sanitizeStatsMetadataUrl(final String value) {
+        if (value == null || value.isEmpty()) {
+            return "";
+        }
+
+        try {
+            final java.net.URI uri = new java.net.URI(value);
+            if (uri.getScheme() != null && uri.getHost() != null) {
+                final String path = sanitizeStatsMetadataUrlPath(uri.getPath());
+                return new java.net.URI(
+                    uri.getScheme(),
+                    null,
+                    uri.getHost(),
+                    uri.getPort(),
+                    path.isEmpty() ? null : path,
+                    null,
+                    null
+                ).toString();
+            }
+        } catch (Exception ignored) {}
+
+        try {
+            final Uri uri = Uri.parse(value);
+            if (uri.getScheme() != null && uri.getHost() != null) {
+                final String host = stripUrlUserInfo(uri.getHost());
+                if (host.isEmpty()) {
+                    return stripUrlQueryAndFragment(value);
+                }
+                final StringBuilder authority = new StringBuilder(host);
+                if (uri.getPort() != -1) {
+                    authority.append(':').append(uri.getPort());
+                }
+                final Uri.Builder builder = new Uri.Builder().scheme(uri.getScheme()).authority(authority.toString());
+                final String path = sanitizeStatsMetadataUrlPath(uri.getPath());
+                if (!path.isEmpty()) {
+                    builder.path(path);
+                }
+                return builder.build().toString();
+            }
+        } catch (Exception ignored) {}
+
+        return stripUrlQueryAndFragment(value);
+    }
+
+    private static String sanitizeStatsMetadataUrlPath(final String path) {
+        if (path == null || path.isEmpty()) {
+            return "";
+        }
+
+        final String[] segments = path.split("/", -1);
+        for (int index = 0; index < segments.length; index++) {
+            if (isSensitiveUrlPathSegment(segments[index])) {
+                segments[index] = "redacted";
+            }
+        }
+        return String.join("/", segments);
+    }
+
+    private static String stripUrlUserInfo(final String host) {
+        if (host == null || host.isEmpty()) {
+            return "";
+        }
+
+        final int userInfoIndex = host.lastIndexOf('@');
+        if (userInfoIndex < 0) {
+            return host;
+        }
+        return host.substring(userInfoIndex + 1);
+    }
+
+    private static boolean isSensitiveUrlPathSegment(final String segment) {
+        return (
+            segment.matches("[0-9]{6,}") ||
+            segment.matches("[0-9a-fA-F]{16,}") ||
+            segment.matches("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+        );
+    }
+
+    private static String stripUrlQueryAndFragment(final String value) {
+        int end = value.length();
+        final int queryIndex = value.indexOf('?');
+        final int fragmentIndex = value.indexOf('#');
+        if (queryIndex >= 0) {
+            end = Math.min(end, queryIndex);
+        }
+        if (fragmentIndex >= 0) {
+            end = Math.min(end, fragmentIndex);
+        }
+        return value.substring(0, end);
+    }
+
+    static String buildWebViewStatsReporterScript() {
+        return (
+            "(function(){" +
+            "if(window.__capgoWebViewErrorReporterInstalled){return;}" +
+            "window.__capgoWebViewErrorReporterInstalled=true;" +
+            "var maxReports=20,sentReports=0,queue=[],seen={};" +
+            "var sessionKey='CapacitorUpdater.webViewSession';" +
+            "var sessionId=String(Date.now())+'-'+Math.random().toString(36).slice(2);" +
+            "function s(value){try{if(value===undefined){return '';}if(value===null){return 'null';}if(typeof value==='string'){return value;}if(value&&typeof value.message==='string'){return value.message;}return String(value);}catch(_){return '';}}" +
+            "function stack(value){try{return value&&value.stack?String(value.stack):'';}catch(_){return '';}}" +
+            "function updater(){var cap=window.Capacitor;if(!cap||!cap.Plugins){return null;}return cap.Plugins.CapacitorUpdater||null;}" +
+            "function flush(){var plugin=updater();if(!plugin||typeof plugin.reportWebViewError!=='function'){return false;}while(queue.length){var payload=queue.shift();try{var result=plugin.reportWebViewError(payload);if(result&&typeof result.catch==='function'){result.catch(function(){});}}catch(_){}}return true;}" +
+            "var retries=0;function scheduleFlush(){if(flush()){return;}if(retries++<40){setTimeout(scheduleFlush,250);}}" +
+            "function send(payload){try{if(sentReports>=maxReports){return;}payload.href=payload.href||location.href||'';payload.user_agent=navigator.userAgent||'';payload.session_id=sessionId;var key=[payload.type,payload.message,payload.source,payload.line,payload.column,payload.tag_name].join('|');if(seen[key]){return;}seen[key]=true;sentReports+=1;queue.push(payload);scheduleFlush();}catch(_){}}" +
+            "function readSession(){try{return JSON.parse(localStorage.getItem(sessionKey)||'null')||null;}catch(_){return null;}}" +
+            "function writeSession(active){try{localStorage.setItem(sessionKey,JSON.stringify({id:sessionId,active:active,href:location.href||'',started_at:window.__capgoWebViewSessionStartedAt,updated_at:String(Date.now())}));}catch(_){}}" +
+            "window.__capgoWebViewSessionStartedAt=String(Date.now());" +
+            "var previous=readSession();" +
+            "if(previous&&previous.active){send({type:'webview_unclean_restart',message:'WebView restarted without a clean page unload',previous_session_id:s(previous.id),previous_href:s(previous.href),previous_started_at:s(previous.started_at),previous_updated_at:s(previous.updated_at)});}" +
+            "writeSession(true);" +
+            "setInterval(function(){writeSession(true);},15000);" +
+            "function markClean(){writeSession(false);}" +
+            "window.addEventListener('pagehide',markClean,true);" +
+            "window.addEventListener('beforeunload',markClean,true);" +
+            "window.addEventListener('error',function(event){var target=event&&event.target;if(target&&target!==window&&(target.src||target.href)){send({type:'resource_error',message:'Resource failed to load',source:s(target.src||target.href),tag_name:s(target.tagName)});return;}send({type:'javascript_error',message:s((event&&event.message)||(event&&event.error)),source:s(event&&event.filename),line:s(event&&event.lineno),column:s(event&&event.colno),stack:stack(event&&event.error)});},true);" +
+            "window.addEventListener('unhandledrejection',function(event){var reason=event&&event.reason;send({type:'unhandled_rejection',message:s(reason),stack:stack(reason)});},true);" +
+            "document.addEventListener('securitypolicyviolation',function(event){send({type:'security_policy_violation',message:s(event&&event.violatedDirective),source:s(event&&event.blockedURI)});},true);" +
+            "document.addEventListener('deviceready',scheduleFlush,false);" +
+            "setTimeout(scheduleFlush,0);" +
+            "})();"
+        );
     }
 
     private boolean shouldUseDirectUpdate() {
@@ -3188,6 +3649,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 } catch (Exception e) {
                     logger.error("Failed to clean up AppLifecycleObserver: " + e.getMessage());
                 }
+            }
+
+            if (webViewStatsListener != null && bridge != null) {
+                bridge.removeWebViewListener(webViewStatsListener);
+                webViewStatsListener = null;
             }
         } catch (Exception e) {
             logger.error("Failed to run handleOnDestroy: " + e.getMessage());

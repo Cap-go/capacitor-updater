@@ -3,6 +3,7 @@ package ee.forgr.capacitor_updater;
 import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
+import android.app.ApplicationExitInfo;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.os.Handler;
@@ -761,6 +762,112 @@ public class CapacitorUpdaterUnitTest {
             }
         }
         throw new NoSuchFieldException(fieldName);
+    }
+
+    @Test
+    public void mapsHealthExitReasonsToStatsActions() {
+        assertEquals("app_crash", CapacitorUpdaterPlugin.statsActionForApplicationExitReason(ApplicationExitInfo.REASON_CRASH));
+        assertEquals(
+            "app_crash_native",
+            CapacitorUpdaterPlugin.statsActionForApplicationExitReason(ApplicationExitInfo.REASON_CRASH_NATIVE)
+        );
+        assertEquals("app_anr", CapacitorUpdaterPlugin.statsActionForApplicationExitReason(ApplicationExitInfo.REASON_ANR));
+        assertEquals(
+            "app_killed_low_memory",
+            CapacitorUpdaterPlugin.statsActionForApplicationExitReason(ApplicationExitInfo.REASON_LOW_MEMORY)
+        );
+        assertEquals(
+            "app_killed_excessive_resource_usage",
+            CapacitorUpdaterPlugin.statsActionForApplicationExitReason(ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE)
+        );
+        assertEquals(
+            "app_initialization_failure",
+            CapacitorUpdaterPlugin.statsActionForApplicationExitReason(ApplicationExitInfo.REASON_INITIALIZATION_FAILURE)
+        );
+    }
+
+    @Test
+    public void ignoresExpectedApplicationExitReasonsForStats() {
+        assertNull(CapacitorUpdaterPlugin.statsActionForApplicationExitReason(ApplicationExitInfo.REASON_EXIT_SELF));
+        assertNull(CapacitorUpdaterPlugin.statsActionForApplicationExitReason(ApplicationExitInfo.REASON_USER_REQUESTED));
+        assertNull(CapacitorUpdaterPlugin.statsActionForApplicationExitReason(ApplicationExitInfo.REASON_UNKNOWN));
+    }
+
+    @Test
+    public void mapsApplicationExitReasonNamesForMetadata() {
+        assertEquals("crash", CapacitorUpdaterPlugin.applicationExitReasonName(ApplicationExitInfo.REASON_CRASH));
+        assertEquals("anr", CapacitorUpdaterPlugin.applicationExitReasonName(ApplicationExitInfo.REASON_ANR));
+        assertEquals("unknown", CapacitorUpdaterPlugin.applicationExitReasonName(-1));
+    }
+
+    @Test
+    public void mapsWebViewErrorTypesToStatsActions() {
+        assertEquals("webview_javascript_error", CapacitorUpdaterPlugin.statsActionForWebViewErrorType("javascript_error"));
+        assertEquals("webview_unhandled_rejection", CapacitorUpdaterPlugin.statsActionForWebViewErrorType("unhandled_rejection"));
+        assertEquals("webview_resource_error", CapacitorUpdaterPlugin.statsActionForWebViewErrorType("resource_error"));
+        assertEquals(
+            "webview_security_policy_violation",
+            CapacitorUpdaterPlugin.statsActionForWebViewErrorType("security_policy_violation")
+        );
+        assertEquals("webview_unclean_restart", CapacitorUpdaterPlugin.statsActionForWebViewErrorType("webview_unclean_restart"));
+        assertEquals("webview_render_process_gone", CapacitorUpdaterPlugin.statsActionForWebViewErrorType("render_process_gone"));
+        assertEquals("webview_javascript_error", CapacitorUpdaterPlugin.statsActionForWebViewErrorType("unknown"));
+    }
+
+    @Test
+    public void buildsWebViewErrorMetadataWithUsefulFields() throws Exception {
+        final JSObject data = new JSObject();
+        data.put("type", "javascript_error");
+        data.put("message", "boom");
+        data.put("source", "app.js");
+        data.put("line", "10");
+        data.put("column", "20");
+        data.put("stack", "x".repeat(3000));
+        data.put("href", "capacitor://localhost");
+        data.put("session_id", "session-1");
+
+        final Map<String, String> metadata = CapacitorUpdaterPlugin.buildWebViewErrorMetadata(data);
+
+        assertEquals("javascript_error", metadata.get("error_type"));
+        assertEquals("boom", metadata.get("message"));
+        assertEquals("app.js", metadata.get("source"));
+        assertEquals("10", metadata.get("line"));
+        assertEquals("20", metadata.get("column"));
+        assertEquals("capacitor://localhost", metadata.get("href"));
+        assertEquals("session-1", metadata.get("session_id"));
+        assertEquals(2048, metadata.get("stack").length());
+    }
+
+    @Test
+    public void sanitizesUrlValuesInWebViewErrorMetadata() throws Exception {
+        final String scheme = "https";
+        final String host = "example.com";
+        final String userInfo = String.join(":", "user", "value") + "@";
+        final String sourceQuery = "cache=123";
+        final String hrefQuery = "debug=true";
+        final JSObject data = new JSObject();
+        data.put("source", scheme + "://" + userInfo + host + ":8443/assets/app.js?" + sourceQuery + "#L10");
+        data.put("href", scheme + "://" + host + "/users/123456/dashboard?" + hrefQuery + "#frag");
+        data.put("previous_href", "app.js?" + sourceQuery + "#frag");
+
+        final Map<String, String> metadata = CapacitorUpdaterPlugin.buildWebViewErrorMetadata(data);
+
+        assertEquals(scheme + "://" + host + ":8443/assets/app.js", metadata.get("source"));
+        assertEquals(scheme + "://" + host + "/users/redacted/dashboard", metadata.get("href"));
+        assertEquals("app.js", metadata.get("previous_href"));
+        assertFalse(metadata.get("source").contains(sourceQuery));
+        assertFalse(metadata.get("href").contains(hrefQuery));
+    }
+
+    @Test
+    public void webViewStatsReporterScriptCapturesRuntimeAndRestartSignals() {
+        final String script = CapacitorUpdaterPlugin.buildWebViewStatsReporterScript();
+
+        assertTrue(script.contains("unhandledrejection"));
+        assertTrue(script.contains("resource_error"));
+        assertTrue(script.contains("securitypolicyviolation"));
+        assertTrue(script.contains("webview_unclean_restart"));
+        assertTrue(script.contains("reportWebViewError"));
     }
 
     // BundleInfo Tests
