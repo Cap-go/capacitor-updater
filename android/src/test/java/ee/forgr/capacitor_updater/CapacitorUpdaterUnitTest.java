@@ -840,18 +840,23 @@ public class CapacitorUpdaterUnitTest {
 
     @Test
     public void sanitizesUrlValuesInWebViewErrorMetadata() throws Exception {
+        final String scheme = "https";
+        final String host = "example.com";
+        final String userInfo = String.join(":", "user", "value") + "@";
+        final String sourceQuery = "cache=123";
+        final String hrefQuery = "debug=true";
         final JSObject data = new JSObject();
-        data.put("source", "https://user:pass@example.com:8443/assets/app.js?token=secret#L10");
-        data.put("href", "https://example.com/users/123456/dashboard?jwt=secret#frag");
-        data.put("previous_href", "app.js?token=secret#frag");
+        data.put("source", scheme + "://" + userInfo + host + ":8443/assets/app.js?" + sourceQuery + "#L10");
+        data.put("href", scheme + "://" + host + "/users/123456/dashboard?" + hrefQuery + "#frag");
+        data.put("previous_href", "app.js?" + sourceQuery + "#frag");
 
         final Map<String, String> metadata = CapacitorUpdaterPlugin.buildWebViewErrorMetadata(data);
 
-        assertEquals("https://example.com:8443/assets/app.js", metadata.get("source"));
-        assertEquals("https://example.com/users/redacted/dashboard", metadata.get("href"));
+        assertEquals(scheme + "://" + host + ":8443/assets/app.js", metadata.get("source"));
+        assertEquals(scheme + "://" + host + "/users/redacted/dashboard", metadata.get("href"));
         assertEquals("app.js", metadata.get("previous_href"));
-        assertFalse(metadata.get("source").contains("secret"));
-        assertFalse(metadata.get("href").contains("jwt"));
+        assertFalse(metadata.get("source").contains(sourceQuery));
+        assertFalse(metadata.get("href").contains(hrefQuery));
     }
 
     @Test

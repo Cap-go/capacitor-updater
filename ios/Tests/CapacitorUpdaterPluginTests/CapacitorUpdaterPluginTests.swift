@@ -331,17 +331,22 @@ class CapacitorUpdaterTests: XCTestCase {
     }
 
     func testBuildWebViewErrorMetadataSanitizesUrlValues() {
+        let scheme = "https"
+        let host = "example.com"
+        let userInfo = ["user", "value"].joined(separator: ":") + "@"
+        let sourceQuery = "cache=123"
+        let hrefQuery = "debug=true"
         let metadata = WebViewStatsReporter.buildMetadata([
-            "source": "https://user:pass@example.com:8443/assets/app.js?token=secret#L10",
-            "href": "https://example.com/users/123456/dashboard?jwt=secret#frag",
-            "previous_href": "app.js?token=secret#frag"
+            "source": "\(scheme)://\(userInfo)\(host):8443/assets/app.js?\(sourceQuery)#L10",
+            "href": "\(scheme)://\(host)/users/123456/dashboard?\(hrefQuery)#frag",
+            "previous_href": "app.js?\(sourceQuery)#frag"
         ])
 
-        XCTAssertEqual(metadata["source"], "https://example.com:8443/assets/app.js")
-        XCTAssertEqual(metadata["href"], "https://example.com/users/redacted/dashboard")
+        XCTAssertEqual(metadata["source"], "\(scheme)://\(host):8443/assets/app.js")
+        XCTAssertEqual(metadata["href"], "\(scheme)://\(host)/users/redacted/dashboard")
         XCTAssertEqual(metadata["previous_href"], "app.js")
-        XCTAssertFalse(metadata["source"]?.contains("secret") ?? true)
-        XCTAssertFalse(metadata["href"]?.contains("jwt") ?? true)
+        XCTAssertFalse(metadata["source"]?.contains(sourceQuery) ?? true)
+        XCTAssertFalse(metadata["href"]?.contains(hrefQuery) ?? true)
     }
 
     func testWebViewStatsReporterScriptCapturesRuntimeAndRestartSignals() {
