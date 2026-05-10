@@ -55,6 +55,38 @@ private final class FreshDownloadCapgoUpdater: CapgoUpdater {
     }
 }
 
+private final class HealthStatsCapgoUpdater: CapgoUpdater {
+    var currentBundleValue = BundleInfo(
+        id: "current-id",
+        version: "1.0.0",
+        status: .SUCCESS,
+        downloaded: Date(),
+        checksum: "abc123"
+    )
+    var sentStatsActions: [String] = []
+    var lastStatsVersionName: String?
+    var lastStatsOldVersionName: String?
+    var lastStatsMetadata: [String: String]?
+
+    override func getCurrentBundle() -> BundleInfo {
+        currentBundleValue
+    }
+
+    override func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {
+        sentStatsActions.append(action)
+        lastStatsVersionName = versionName
+        lastStatsOldVersionName = oldVersionName
+        lastStatsMetadata = nil
+    }
+
+    override func sendStats(action: String, versionName: String?, oldVersionName: String?, metadata: [String: String]) {
+        sentStatsActions.append(action)
+        lastStatsVersionName = versionName
+        lastStatsOldVersionName = oldVersionName
+        lastStatsMetadata = metadata
+    }
+}
+
 private final class ChannelRequestCapgoUpdater: CapgoUpdater {
     var requestResult: CapgoUpdater.RequestResult!
 
@@ -294,6 +326,52 @@ class CapacitorUpdaterTests: XCTestCase {
         ))
     }
 
+    func testReportsPreviousUncleanForegroundExitAsAppCrashStat() {
+        let defaults = UserDefaults.standard
+        let keys = [
+            "CapacitorUpdater.appSessionId",
+            "CapacitorUpdater.appSessionForeground",
+            "CapacitorUpdater.appSessionStartedAt",
+            "CapacitorUpdater.lastReportedUncleanSessionId"
+        ]
+        keys.forEach { defaults.removeObject(forKey: $0) }
+        defer { keys.forEach { defaults.removeObject(forKey: $0) } }
+
+        defaults.set("session-unclean", forKey: "CapacitorUpdater.appSessionId")
+        defaults.set(true, forKey: "CapacitorUpdater.appSessionForeground")
+        defaults.set("1760000000000", forKey: "CapacitorUpdater.appSessionStartedAt")
+
+        let implementation = HealthStatsCapgoUpdater()
+        let tracker = AppHealthTracker(implementation: implementation)
+
+        tracker.reportPreviousUncleanForegroundExit()
+
+        XCTAssertEqual(implementation.sentStatsActions, ["app_crash"])
+        XCTAssertEqual(implementation.lastStatsVersionName, "1.0.0")
+        XCTAssertEqual(implementation.lastStatsOldVersionName, "")
+        XCTAssertEqual(implementation.lastStatsMetadata?["exit_reason"], "unclean_foreground_exit")
+        XCTAssertEqual(implementation.lastStatsMetadata?["exit_source"], "ios_session_marker")
+        XCTAssertEqual(implementation.lastStatsMetadata?["previous_session_id"], "session-unclean")
+        XCTAssertEqual(implementation.lastStatsMetadata?["session_started_at"], "1760000000000")
+
+        implementation.sentStatsActions.removeAll()
+        tracker.reportPreviousUncleanForegroundExit()
+
+        XCTAssertTrue(implementation.sentStatsActions.isEmpty)
+    }
+
+    func testReportsMemoryWarningAsHealthStat() {
+        let implementation = HealthStatsCapgoUpdater()
+        let tracker = AppHealthTracker(implementation: implementation)
+
+        tracker.reportMemoryWarning()
+
+        XCTAssertEqual(implementation.sentStatsActions, ["app_memory_warning"])
+        XCTAssertEqual(implementation.lastStatsVersionName, "1.0.0")
+        XCTAssertEqual(implementation.lastStatsOldVersionName, "")
+        XCTAssertEqual(implementation.lastStatsMetadata, ["source": "ios_memory_warning"])
+    }
+
     func testMapsWebViewErrorTypesToStatsActions() {
         XCTAssertEqual(WebViewStatsReporter.statsAction(for: "javascript_error"), "webview_javascript_error")
         XCTAssertEqual(WebViewStatsReporter.statsAction(for: "unhandled_rejection"), "webview_unhandled_rejection")
@@ -304,6 +382,10 @@ class CapacitorUpdaterTests: XCTestCase {
         )
         XCTAssertEqual(WebViewStatsReporter.statsAction(for: "webview_unclean_restart"), "webview_unclean_restart")
         XCTAssertEqual(WebViewStatsReporter.statsAction(for: "render_process_gone"), "webview_render_process_gone")
+        XCTAssertEqual(
+            WebViewStatsReporter.statsAction(for: "web_content_process_terminated"),
+            "webview_content_process_terminated"
+        )
         XCTAssertEqual(WebViewStatsReporter.statsAction(for: "unknown"), "webview_javascript_error")
     }
 
