@@ -1745,6 +1745,10 @@ public class CapgoUpdater {
     }
 
     public void sendStats(final String action, final String versionName, final String oldVersionName) {
+        this.sendStats(action, versionName, oldVersionName, null);
+    }
+
+    public void sendStats(final String action, final String versionName, final String oldVersionName, final Map<String, String> metadata) {
         // Check if rate limit was exceeded
         if (rateLimitExceeded) {
             logger.debug("Skipping sendStats due to rate limit (429). Stats will resume after app restart.");
@@ -1763,6 +1767,9 @@ public class CapgoUpdater {
             json.put("old_version_name", oldVersionName);
             json.put("action", action);
             json.put("timestamp", System.currentTimeMillis());
+            if (metadata != null && !metadata.isEmpty()) {
+                json.put("metadata", new JSONObject(metadata));
+            }
         } catch (JSONException e) {
             logger.error("Error preparing stats");
             logger.debug("JSONException: " + e.getMessage());

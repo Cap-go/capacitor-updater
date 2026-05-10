@@ -183,6 +183,7 @@ struct StatsEvent: Codable {
     let channel: String?
     let defaultChannel: String?
     let key_id: String?
+    let metadata: [String: String]?
     let timestamp: Int64
 }
 // swiftlint:enable identifier_name

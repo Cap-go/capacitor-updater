@@ -271,6 +271,75 @@ class CapacitorUpdaterTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: backgroundTimestampKey)
     }
 
+    func testShouldReportUncleanForegroundExitOnlyOnce() {
+        XCTAssertTrue(AppHealthTracker.shouldReportUncleanForegroundExit(
+            previousSessionId: "session-1",
+            lastReportedSessionId: nil,
+            wasForeground: true
+        ))
+        XCTAssertFalse(AppHealthTracker.shouldReportUncleanForegroundExit(
+            previousSessionId: "session-1",
+            lastReportedSessionId: "session-1",
+            wasForeground: true
+        ))
+        XCTAssertFalse(AppHealthTracker.shouldReportUncleanForegroundExit(
+            previousSessionId: "session-2",
+            lastReportedSessionId: nil,
+            wasForeground: false
+        ))
+        XCTAssertFalse(AppHealthTracker.shouldReportUncleanForegroundExit(
+            previousSessionId: "",
+            lastReportedSessionId: nil,
+            wasForeground: true
+        ))
+    }
+
+    func testMapsWebViewErrorTypesToStatsActions() {
+        XCTAssertEqual(WebViewStatsReporter.statsAction(for: "javascript_error"), "webview_javascript_error")
+        XCTAssertEqual(WebViewStatsReporter.statsAction(for: "unhandled_rejection"), "webview_unhandled_rejection")
+        XCTAssertEqual(WebViewStatsReporter.statsAction(for: "resource_error"), "webview_resource_error")
+        XCTAssertEqual(
+            WebViewStatsReporter.statsAction(for: "security_policy_violation"),
+            "webview_security_policy_violation"
+        )
+        XCTAssertEqual(WebViewStatsReporter.statsAction(for: "webview_unclean_restart"), "webview_unclean_restart")
+        XCTAssertEqual(WebViewStatsReporter.statsAction(for: "render_process_gone"), "webview_render_process_gone")
+        XCTAssertEqual(WebViewStatsReporter.statsAction(for: "unknown"), "webview_javascript_error")
+    }
+
+    func testBuildWebViewErrorMetadataKeepsUsefulFields() {
+        let metadata = WebViewStatsReporter.buildMetadata([
+            "type": "javascript_error",
+            "message": "boom",
+            "source": "app.js",
+            "line": "10",
+            "column": "20",
+            "stack": String(repeating: "x", count: 3_000),
+            "href": "capacitor://localhost",
+            "session_id": "session-1"
+        ])
+
+        XCTAssertEqual(metadata["error_type"], "javascript_error")
+        XCTAssertEqual(metadata["message"], "boom")
+        XCTAssertEqual(metadata["source"], "app.js")
+        XCTAssertEqual(metadata["line"], "10")
+        XCTAssertEqual(metadata["column"], "20")
+        XCTAssertEqual(metadata["href"], "capacitor://localhost")
+        XCTAssertEqual(metadata["session_id"], "session-1")
+        XCTAssertEqual(metadata["stack"]?.count, 2_048)
+        XCTAssertNil(metadata["tag_name"])
+    }
+
+    func testWebViewStatsReporterScriptCapturesRuntimeAndRestartSignals() {
+        let script = WebViewStatsReporter.script
+
+        XCTAssertTrue(script.contains("unhandledrejection"))
+        XCTAssertTrue(script.contains("resource_error"))
+        XCTAssertTrue(script.contains("securitypolicyviolation"))
+        XCTAssertTrue(script.contains("webview_unclean_restart"))
+        XCTAssertTrue(script.contains("reportWebViewError"))
+    }
+
     private func makeDelayConditionsJSON() throws -> String {
         let conditions = [
             ["kind": "kill", "value": ""],

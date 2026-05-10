@@ -2256,6 +2256,14 @@ import UIKit
     }()
 
     func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {
+        sendStatsWithMetadata(action: action, versionName: versionName, oldVersionName: oldVersionName, metadata: nil)
+    }
+
+    func sendStats(action: String, versionName: String?, oldVersionName: String?, metadata: [String: String]) {
+        sendStatsWithMetadata(action: action, versionName: versionName, oldVersionName: oldVersionName, metadata: metadata)
+    }
+
+    private func sendStatsWithMetadata(action: String, versionName: String?, oldVersionName: String?, metadata: [String: String]?) {
         // Check if rate limit was exceeded
         if CapgoUpdater.rateLimitExceeded {
             logger.debug("Skipping sendStats due to rate limit (429). Stats will resume after app restart.")
@@ -2286,6 +2294,7 @@ import UIKit
             channel: info.channel,
             defaultChannel: info.defaultChannel,
             key_id: info.key_id,
+            metadata: metadata,
             timestamp: Int64(Date().timeIntervalSince1970 * 1000)
         )
 
