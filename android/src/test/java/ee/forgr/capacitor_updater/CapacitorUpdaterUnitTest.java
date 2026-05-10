@@ -811,6 +811,10 @@ public class CapacitorUpdaterUnitTest {
         );
         assertEquals("webview_unclean_restart", CapacitorUpdaterPlugin.statsActionForWebViewErrorType("webview_unclean_restart"));
         assertEquals("webview_render_process_gone", CapacitorUpdaterPlugin.statsActionForWebViewErrorType("render_process_gone"));
+        assertEquals(
+            "webview_content_process_terminated",
+            CapacitorUpdaterPlugin.statsActionForWebViewErrorType("web_content_process_terminated")
+        );
         assertEquals("webview_javascript_error", CapacitorUpdaterPlugin.statsActionForWebViewErrorType("unknown"));
     }
 
