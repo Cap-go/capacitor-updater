@@ -198,16 +198,16 @@ final class WebViewStatsReporter {
         var metadata: [String: String] = [:]
         put(&metadata, key: "error_type", value: payloadValue(values, "type") ?? "javascript_error", maxLength: 64)
         put(&metadata, key: "message", value: payloadValue(values, "message"), maxLength: 1_024)
-        put(&metadata, key: "source", value: payloadValue(values, "source"), maxLength: 512)
+        put(&metadata, key: "source", value: sanitizeUrl(payloadValue(values, "source")), maxLength: 512)
         put(&metadata, key: "line", value: payloadValue(values, "line"), maxLength: 32)
         put(&metadata, key: "column", value: payloadValue(values, "column"), maxLength: 32)
         put(&metadata, key: "stack", value: payloadValue(values, "stack"), maxLength: 2_048)
         put(&metadata, key: "tag_name", value: payloadValue(values, "tag_name"), maxLength: 64)
-        put(&metadata, key: "href", value: payloadValue(values, "href"), maxLength: 512)
+        put(&metadata, key: "href", value: sanitizeUrl(payloadValue(values, "href")), maxLength: 512)
         put(&metadata, key: "user_agent", value: payloadValue(values, "user_agent"), maxLength: 256)
         put(&metadata, key: "session_id", value: payloadValue(values, "session_id"), maxLength: 128)
         put(&metadata, key: "previous_session_id", value: payloadValue(values, "previous_session_id"), maxLength: 128)
-        put(&metadata, key: "previous_href", value: payloadValue(values, "previous_href"), maxLength: 512)
+        put(&metadata, key: "previous_href", value: sanitizeUrl(payloadValue(values, "previous_href")), maxLength: 512)
         put(&metadata, key: "previous_started_at", value: payloadValue(values, "previous_started_at"), maxLength: 64)
         put(&metadata, key: "previous_updated_at", value: payloadValue(values, "previous_updated_at"), maxLength: 64)
         return metadata
@@ -218,6 +218,53 @@ final class WebViewStatsReporter {
             return nil
         }
         return value
+    }
+
+    static func sanitizeUrl(_ value: String?) -> String? {
+        guard let value = value, !value.isEmpty else {
+            return value
+        }
+
+        if var components = URLComponents(string: value), components.scheme != nil, components.host != nil {
+            components.user = nil
+            components.password = nil
+            components.query = nil
+            components.fragment = nil
+            components.path = sanitizeUrlPath(components.path)
+            return components.string ?? stripUrlQueryAndFragment(value)
+        }
+
+        return stripUrlQueryAndFragment(value)
+    }
+
+    private static func sanitizeUrlPath(_ path: String) -> String {
+        guard !path.isEmpty else {
+            return path
+        }
+
+        return path
+            .split(separator: "/", omittingEmptySubsequences: false)
+            .map { isSensitiveUrlPathSegment(String($0)) ? "redacted" : String($0) }
+            .joined(separator: "/")
+    }
+
+    private static func isSensitiveUrlPathSegment(_ segment: String) -> Bool {
+        segment.range(of: #"^[0-9]{6,}$"#, options: .regularExpression) != nil ||
+            segment.range(of: #"^[0-9a-fA-F]{16,}$"#, options: .regularExpression) != nil ||
+            segment.range(
+                of: #"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"#,
+                options: .regularExpression
+            ) != nil
+    }
+
+    private static func stripUrlQueryAndFragment(_ value: String) -> String {
+        let queryIndex = value.firstIndex(of: "?")
+        let fragmentIndex = value.firstIndex(of: "#")
+        let endIndexes = [queryIndex, fragmentIndex].compactMap { $0 }
+        guard let endIndex = endIndexes.min() else {
+            return value
+        }
+        return String(value[..<endIndex])
     }
 
     private static func put(_ metadata: inout [String: String], key: String, value: String?, maxLength: Int) {

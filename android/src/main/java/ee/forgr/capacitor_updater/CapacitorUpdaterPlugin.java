@@ -983,7 +983,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
             public boolean onRenderProcessGone(final android.webkit.WebView view, final RenderProcessGoneDetail detail) {
                 final Map<String, String> metadata = CapacitorUpdaterPlugin.this.buildWebViewRenderProcessGoneMetadata(detail);
                 CapacitorUpdaterPlugin.this.persistPendingWebViewRenderProcessGone(metadata);
-                CapacitorUpdaterPlugin.this.reportWebViewStats("webview_render_process_gone", metadata);
                 return false;
             }
         };
@@ -1135,16 +1134,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final Map<String, String> metadata = new HashMap<>();
         putStatsMetadataValue(metadata, "error_type", data.optString("type", "javascript_error"), 64);
         putStatsMetadataValue(metadata, "message", data.optString("message", ""), 1024);
-        putStatsMetadataValue(metadata, "source", data.optString("source", ""), 512);
+        putStatsMetadataValue(metadata, "source", sanitizeStatsMetadataUrl(data.optString("source", "")), 512);
         putStatsMetadataValue(metadata, "line", data.optString("line", data.optString("lineno", "")), 32);
         putStatsMetadataValue(metadata, "column", data.optString("column", data.optString("colno", "")), 32);
         putStatsMetadataValue(metadata, "stack", data.optString("stack", ""), 2048);
         putStatsMetadataValue(metadata, "tag_name", data.optString("tag_name", ""), 64);
-        putStatsMetadataValue(metadata, "href", data.optString("href", ""), 512);
+        putStatsMetadataValue(metadata, "href", sanitizeStatsMetadataUrl(data.optString("href", "")), 512);
         putStatsMetadataValue(metadata, "user_agent", data.optString("user_agent", ""), 256);
         putStatsMetadataValue(metadata, "session_id", data.optString("session_id", ""), 128);
         putStatsMetadataValue(metadata, "previous_session_id", data.optString("previous_session_id", ""), 128);
-        putStatsMetadataValue(metadata, "previous_href", data.optString("previous_href", ""), 512);
+        putStatsMetadataValue(metadata, "previous_href", sanitizeStatsMetadataUrl(data.optString("previous_href", "")), 512);
         putStatsMetadataValue(metadata, "previous_started_at", data.optString("previous_started_at", ""), 64);
         putStatsMetadataValue(metadata, "previous_updated_at", data.optString("previous_updated_at", ""), 64);
         return metadata;
@@ -1161,6 +1160,97 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
 
         metadata.put(key, truncateStatsMetadataValue(value, maxLength));
+    }
+
+    static String sanitizeStatsMetadataUrl(final String value) {
+        if (value == null || value.isEmpty()) {
+            return "";
+        }
+
+        try {
+            final java.net.URI uri = new java.net.URI(value);
+            if (uri.getScheme() != null && uri.getHost() != null) {
+                final String path = sanitizeStatsMetadataUrlPath(uri.getPath());
+                return new java.net.URI(
+                    uri.getScheme(),
+                    null,
+                    uri.getHost(),
+                    uri.getPort(),
+                    path.isEmpty() ? null : path,
+                    null,
+                    null
+                ).toString();
+            }
+        } catch (Exception ignored) {}
+
+        try {
+            final Uri uri = Uri.parse(value);
+            if (uri.getScheme() != null && uri.getHost() != null) {
+                final String host = stripUrlUserInfo(uri.getHost());
+                if (host.isEmpty()) {
+                    return stripUrlQueryAndFragment(value);
+                }
+                final StringBuilder authority = new StringBuilder(host);
+                if (uri.getPort() != -1) {
+                    authority.append(':').append(uri.getPort());
+                }
+                final Uri.Builder builder = new Uri.Builder().scheme(uri.getScheme()).authority(authority.toString());
+                final String path = sanitizeStatsMetadataUrlPath(uri.getPath());
+                if (!path.isEmpty()) {
+                    builder.path(path);
+                }
+                return builder.build().toString();
+            }
+        } catch (Exception ignored) {}
+
+        return stripUrlQueryAndFragment(value);
+    }
+
+    private static String sanitizeStatsMetadataUrlPath(final String path) {
+        if (path == null || path.isEmpty()) {
+            return "";
+        }
+
+        final String[] segments = path.split("/", -1);
+        for (int index = 0; index < segments.length; index++) {
+            if (isSensitiveUrlPathSegment(segments[index])) {
+                segments[index] = "redacted";
+            }
+        }
+        return String.join("/", segments);
+    }
+
+    private static String stripUrlUserInfo(final String host) {
+        if (host == null || host.isEmpty()) {
+            return "";
+        }
+
+        final int userInfoIndex = host.lastIndexOf('@');
+        if (userInfoIndex < 0) {
+            return host;
+        }
+        return host.substring(userInfoIndex + 1);
+    }
+
+    private static boolean isSensitiveUrlPathSegment(final String segment) {
+        return (
+            segment.matches("[0-9]{6,}") ||
+            segment.matches("[0-9a-fA-F]{16,}") ||
+            segment.matches("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+        );
+    }
+
+    private static String stripUrlQueryAndFragment(final String value) {
+        int end = value.length();
+        final int queryIndex = value.indexOf('?');
+        final int fragmentIndex = value.indexOf('#');
+        if (queryIndex >= 0) {
+            end = Math.min(end, queryIndex);
+        }
+        if (fragmentIndex >= 0) {
+            end = Math.min(end, fragmentIndex);
+        }
+        return value.substring(0, end);
     }
 
     static String buildWebViewStatsReporterScript() {

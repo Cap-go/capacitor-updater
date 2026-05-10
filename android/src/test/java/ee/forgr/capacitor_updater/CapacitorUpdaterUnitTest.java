@@ -839,6 +839,22 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void sanitizesUrlValuesInWebViewErrorMetadata() throws Exception {
+        final JSObject data = new JSObject();
+        data.put("source", "https://user:pass@example.com:8443/assets/app.js?token=secret#L10");
+        data.put("href", "https://example.com/users/123456/dashboard?jwt=secret#frag");
+        data.put("previous_href", "app.js?token=secret#frag");
+
+        final Map<String, String> metadata = CapacitorUpdaterPlugin.buildWebViewErrorMetadata(data);
+
+        assertEquals("https://example.com:8443/assets/app.js", metadata.get("source"));
+        assertEquals("https://example.com/users/redacted/dashboard", metadata.get("href"));
+        assertEquals("app.js", metadata.get("previous_href"));
+        assertFalse(metadata.get("source").contains("secret"));
+        assertFalse(metadata.get("href").contains("jwt"));
+    }
+
+    @Test
     public void webViewStatsReporterScriptCapturesRuntimeAndRestartSignals() {
         final String script = CapacitorUpdaterPlugin.buildWebViewStatsReporterScript();
 
