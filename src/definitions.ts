@@ -739,6 +739,23 @@ export interface CapacitorUpdaterPlugin {
   cancelDelay(): Promise<void>;
 
   /**
+   * Trigger the native auto-update check/download pipeline immediately.
+   *
+   * This starts the same background update flow used when the app moves to the
+   * foreground with auto-update enabled. It is useful for native integrations
+   * such as a silent push notification asking the app to check for a Capgo
+   * bundle without reimplementing the update protocol in JavaScript.
+   *
+   * The promise resolves after the native background work has been queued, not
+   * after the update has been downloaded or installed. Listen to updater events
+   * such as `updateAvailable`, `downloadComplete`, `downloadFailed`, and
+   * `noNeedUpdate` for the final result.
+   *
+   * @returns {Promise<TriggerUpdateCheckResult>} Whether a native update check was queued.
+   */
+  triggerUpdateCheck(): Promise<TriggerUpdateCheckResult>;
+
+  /**
    * Check the update server for the latest available bundle version.
    *
    * This queries your configured update URL (or Capgo backend) to see if a newer bundle
@@ -1964,6 +1981,11 @@ export interface AutoUpdateEnabled {
 
 export interface AutoUpdateAvailable {
   available: boolean;
+}
+
+export interface TriggerUpdateCheckResult {
+  status: 'queued' | 'already_running' | 'unavailable';
+  queued: boolean;
 }
 
 export interface SetShakeMenuOptions {
