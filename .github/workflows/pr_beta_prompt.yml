@@ -17,6 +17,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
       - name: Upsert beta publish comment
         uses: actions/github-script@v8
         env:
