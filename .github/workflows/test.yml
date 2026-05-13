@@ -18,6 +18,10 @@ jobs:
     timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
       - name: Check out
         uses: actions/checkout@v6
       - name: Enforce capacitor-swift-pm version
@@ -31,6 +35,10 @@ jobs:
     timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
       - name: Check out
         uses: actions/checkout@v6
       - name: Install Bun
@@ -60,6 +68,10 @@ jobs:
     timeout-minutes: 30
     runs-on: macOS-latest
     steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
       - name: Check out
         uses: actions/checkout@v6
       - name: Install Bun
@@ -101,7 +113,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: 24.x
       - name: Install root dependencies
         run: bun i
       - name: Setup java
@@ -156,7 +168,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: 24.x
       - name: Install root dependencies
         run: bun i
       - name: Install Maestro
@@ -195,7 +207,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: 24.x
       - name: Install root dependencies
         run: bun i
       - name: Install Maestro
@@ -220,6 +232,10 @@ jobs:
     runs-on: ubuntu-latest
     name: 'Build code and test'
     steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
       - name: Check out
         uses: actions/checkout@v6
       - name: Install Bun
@@ -269,7 +285,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: 24.x
       - name: Install dependencies
         run: bun i
       - name: Setup java
@@ -304,6 +320,10 @@ jobs:
     timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
       - name: Fail when any live update scenario fails
         run: |
           if [[ "${{ needs.maestro_android_scenarios.result }}" != "success" ]]; then
