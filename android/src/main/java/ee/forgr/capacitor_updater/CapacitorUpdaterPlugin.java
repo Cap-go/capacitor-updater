@@ -434,13 +434,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.implementation.defaultChannel = this.getConfig().getString("defaultChannel", "");
         }
 
-        int userValue = this.getConfig().getInt("periodCheckDelay", 0);
-
-        if (userValue >= 0 && userValue <= 600) {
-            this.periodCheckDelay = 600 * 1000;
-        } else if (userValue > 600) {
-            this.periodCheckDelay = userValue * 1000;
-        }
+        this.periodCheckDelay = normalizedPeriodCheckDelayMs(this.getConfig().getInt("periodCheckDelay", 0));
 
         this.implementation.documentsDir = this.getContext().getFilesDir();
         this.implementation.prefs = this.prefs;
@@ -1323,6 +1317,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     static boolean shouldConsumeOnLaunchDirectUpdate(final String directUpdateMode, final boolean plannedDirectUpdate) {
         return plannedDirectUpdate && "onLaunch".equals(directUpdateMode);
+    }
+
+    static int normalizedPeriodCheckDelayMs(final int valueSeconds) {
+        if (valueSeconds <= 0) {
+            return 0;
+        }
+        return Math.max(600, valueSeconds) * 1000;
     }
 
     private void consumeOnLaunchDirectUpdateAttempt(final boolean plannedDirectUpdate) {

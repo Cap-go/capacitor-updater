@@ -61,9 +61,9 @@ jobs:
       - name: Verify packed package in example app (Android)
         shell: bash
         run: bash ./.github/scripts/verify-packed-example.sh android
-      - name: Run Android Tests
+      - name: Run Android native tests
         id: test_android
-        run: bun run test:android
+        run: bun run native:test:android
   build_ios:
     timeout-minutes: 30
     runs-on: macOS-latest
@@ -89,9 +89,9 @@ jobs:
       - name: Verify packed package in example app (iOS)
         shell: bash
         run: bash ./.github/scripts/verify-packed-example.sh ios
-      - name: Run iOS Tests
+      - name: Run iOS native tests
         id: test_ios
-        run: bun run test:ios
+        run: bun run native:test:ios
   maestro_android_example_app:
     timeout-minutes: 30
     runs-on: ubuntu-latest
@@ -157,6 +157,7 @@ jobs:
       matrix:
         scenario:
           - manual-zip
+          - manual-zip-no-persist
           - manual-zip-config-guards
     steps:
       - name: Check out
@@ -197,6 +198,7 @@ jobs:
           - legacy-true
           - at-install
           - on-launch
+          - manual-manifest
     steps:
       - name: Check out
         uses: actions/checkout@v6

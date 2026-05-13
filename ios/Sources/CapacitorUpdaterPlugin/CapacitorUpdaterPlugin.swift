@@ -231,12 +231,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
         shakeMenuEnabled = getConfig().getBoolean("shakeMenu", false)
         shakeChannelSelectorEnabled = getConfig().getBoolean("allowShakeChannelSelector", false)
-        let periodCheckDelayValue = getConfig().getInt("periodCheckDelay", 0)
-        if periodCheckDelayValue >= 0 && periodCheckDelayValue > 600 {
-            periodCheckDelay = 600
-        } else {
-            periodCheckDelay = periodCheckDelayValue
-        }
+        periodCheckDelay = Self.normalizedPeriodCheckDelaySeconds(getConfig().getInt("periodCheckDelay", 0))
 
         implementation.setPublicKey(getConfig().getString("publicKey") ?? "")
         implementation.notifyDownloadRaw = notifyDownload
@@ -1745,6 +1740,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     static func shouldConsumeOnLaunchDirectUpdate(directUpdateMode: String, plannedDirectUpdate: Bool) -> Bool {
         plannedDirectUpdate && directUpdateMode == "onLaunch"
+    }
+
+    static func normalizedPeriodCheckDelaySeconds(_ value: Int) -> Int {
+        guard value > 0 else {
+            return 0
+        }
+        return max(600, value)
     }
 
     private func getOnLaunchDirectUpdateUsed() -> Bool {

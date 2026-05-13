@@ -1207,6 +1207,32 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testPeriodCheckDelayZeroDisablesPeriodicChecks() {
+        assertEquals(0, CapacitorUpdaterPlugin.normalizedPeriodCheckDelayMs(0));
+    }
+
+    @Test
+    public void testPeriodCheckDelayNegativeDisablesPeriodicChecks() {
+        assertEquals(0, CapacitorUpdaterPlugin.normalizedPeriodCheckDelayMs(-1));
+    }
+
+    @Test
+    public void testPeriodCheckDelayBelowMinimumClampsToTenMinutes() {
+        assertEquals(600_000, CapacitorUpdaterPlugin.normalizedPeriodCheckDelayMs(1));
+        assertEquals(600_000, CapacitorUpdaterPlugin.normalizedPeriodCheckDelayMs(599));
+    }
+
+    @Test
+    public void testPeriodCheckDelayAtMinimumIsAllowed() {
+        assertEquals(600_000, CapacitorUpdaterPlugin.normalizedPeriodCheckDelayMs(600));
+    }
+
+    @Test
+    public void testPeriodCheckDelayAboveMinimumIsPreserved() {
+        assertEquals(3_600_000, CapacitorUpdaterPlugin.normalizedPeriodCheckDelayMs(3600));
+    }
+
+    @Test
     public void testResetToPendingWithoutPendingBundleDoesNotResetState() throws Exception {
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);
