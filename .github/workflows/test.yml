@@ -37,6 +37,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: ./scripts/ci/install-bun.sh
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
       - name: Install dependencies
         id: install_code
         run: bun i
@@ -66,6 +70,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: ./scripts/ci/install-bun.sh
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
       - name: Install dependencies
         id: install_code
         run: bun i
