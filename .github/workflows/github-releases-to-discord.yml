@@ -9,6 +9,10 @@ jobs:
     timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
       - name: Checkout
         uses: actions/checkout@v6
       - name: GitHub Releases to Discord
