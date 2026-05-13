@@ -1233,6 +1233,11 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testPeriodCheckDelayOverflowClampsToMaxInt() {
+        assertEquals(Integer.MAX_VALUE, CapacitorUpdaterPlugin.normalizedPeriodCheckDelayMs(Integer.MAX_VALUE));
+    }
+
+    @Test
     public void testResetToPendingWithoutPendingBundleDoesNotResetState() throws Exception {
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);

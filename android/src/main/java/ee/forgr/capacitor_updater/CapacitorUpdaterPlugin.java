@@ -1323,7 +1323,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
         if (valueSeconds <= 0) {
             return 0;
         }
-        return Math.max(600, valueSeconds) * 1000;
+        final long normalizedSeconds = Math.max(600L, (long) valueSeconds);
+        final long delayMs = normalizedSeconds * 1000L;
+        return delayMs > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) delayMs;
     }
 
     private void consumeOnLaunchDirectUpdateAttempt(final boolean plannedDirectUpdate) {
