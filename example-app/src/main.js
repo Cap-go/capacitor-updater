@@ -197,6 +197,18 @@ const manualZipStoreContractSmokeActionIds =
   platform === 'ios'
     ? []
     : ['get-app-update-info', 'perform-immediate-update', 'start-flexible-update', 'complete-flexible-update', 'get-latest'];
+const manualZipChannelSmokeActionIds = platform === 'ios' ? [] : ['set-channel-beta', 'get-channel', 'unset-channel'];
+const coreSmokeExcludedActionIds = new Set([
+  'get-app-update-info',
+  'open-app-store',
+  'perform-immediate-update',
+  'start-flexible-update',
+  'complete-flexible-update',
+  'set-shake-menu',
+  'is-shake-menu-enabled',
+  'set-shake-channel-selector',
+  'is-shake-channel-selector-enabled',
+]);
 const smokeSequenceActionIdsByScenario = {
   'manual-zip': [
     'notify-app-ready',
@@ -214,9 +226,7 @@ const smokeSequenceActionIdsByScenario = {
     'set-stats-url',
     'set-channel-url',
     'get-latest',
-    'set-channel-beta',
-    'get-channel',
-    'unset-channel',
+    ...manualZipChannelSmokeActionIds,
     'get-next-bundle',
     'get-failed-update',
     'set-shake-menu',
@@ -2656,13 +2666,14 @@ async function runSmokeSequence() {
 function getSmokeSequenceActions() {
   const visibleActions = getVisibleActions();
   const overrideIds = smokeSequenceActionIdsByScenario[scenarioId];
+  const isExcludedFromCoreSmoke = (action) => action && coreSmokeExcludedActionIds.has(action.id);
 
   if (!overrideIds) {
-    return visibleActions.filter((action) => action.includeInSmokeSequence);
+    return visibleActions.filter((action) => action.includeInSmokeSequence && !isExcludedFromCoreSmoke(action));
   }
 
   const visibleActionsById = new Map(visibleActions.map((action) => [action.id, action]));
-  return overrideIds.map((id) => visibleActionsById.get(id)).filter(Boolean);
+  return overrideIds.map((id) => visibleActionsById.get(id)).filter((action) => action && !isExcludedFromCoreSmoke(action));
 }
 
 function createInputField(card, input) {

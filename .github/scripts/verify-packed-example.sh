@@ -26,7 +26,7 @@ bun pm pack --destination "$pack_dir" --quiet
 shopt -s nullglob
 packed_packages=("$pack_dir"/*.tgz)
 shopt -u nullglob
-if [ "${#packed_packages[@]}" -ne 1 ]; then
+if [[ "${#packed_packages[@]}" -ne 1 ]]; then
   echo "Expected exactly one package tarball, found ${#packed_packages[@]}"
   exit 1
 fi
@@ -40,7 +40,7 @@ bun run build
 
 case "$platform" in
   android)
-    if [ ! -d android ]; then
+    if [[ ! -d android ]]; then
       bunx cap add android
     fi
     bunx cap sync android
@@ -48,7 +48,7 @@ case "$platform" in
     ./gradlew build test
     ;;
   ios)
-    if [ ! -d ios ]; then
+    if [[ ! -d ios ]]; then
       bunx cap add ios
     fi
     bunx cap sync ios

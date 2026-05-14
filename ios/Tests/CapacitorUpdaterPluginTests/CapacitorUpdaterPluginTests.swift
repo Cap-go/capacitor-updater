@@ -704,6 +704,27 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate(directUpdateMode: "false", plannedDirectUpdate: true))
     }
 
+    func testPeriodCheckDelayZeroDisablesPeriodicChecks() {
+        XCTAssertEqual(CapacitorUpdaterPlugin.normalizedPeriodCheckDelaySeconds(0), 0)
+    }
+
+    func testPeriodCheckDelayNegativeDisablesPeriodicChecks() {
+        XCTAssertEqual(CapacitorUpdaterPlugin.normalizedPeriodCheckDelaySeconds(-1), 0)
+    }
+
+    func testPeriodCheckDelayBelowMinimumClampsToTenMinutes() {
+        XCTAssertEqual(CapacitorUpdaterPlugin.normalizedPeriodCheckDelaySeconds(1), 600)
+        XCTAssertEqual(CapacitorUpdaterPlugin.normalizedPeriodCheckDelaySeconds(599), 600)
+    }
+
+    func testPeriodCheckDelayAtMinimumIsAllowed() {
+        XCTAssertEqual(CapacitorUpdaterPlugin.normalizedPeriodCheckDelaySeconds(600), 600)
+    }
+
+    func testPeriodCheckDelayAboveMinimumIsPreserved() {
+        XCTAssertEqual(CapacitorUpdaterPlugin.normalizedPeriodCheckDelaySeconds(3600), 3600)
+    }
+
     func testResetToPendingWithoutInstallablePendingBundleDoesNotResetState() {
         let resetPlugin = ResetTestableCapacitorUpdaterPlugin()
         let resetImplementation = ResetTrackingCapgoUpdater()

@@ -43,17 +43,3 @@ appId: app.capgo.updater
 - extendedWaitUntil:
     visible: '.*(Marker: persisted:success|M:persisted:success).*'
     timeout: 120000
-- scrollUntilVisible:
-    element:
-      text: 'Quick open store page'
-    direction: DOWN
-    timeout: 30000
-    centerElement: true
-    visibilityPercentage: 1
-    waitToSettleTimeoutMs: 500
-- tapOn:
-    text: 'Quick open store page'
-    retryTapIfNoChange: true
-- extendedWaitUntil:
-    notVisible: '@capgo/capacitor-updater'
-    timeout: 120000
