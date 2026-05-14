@@ -1799,11 +1799,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.notifyListeners("majorAvailable", data: payload)
     }
 
-    private func updateResponseKind(kind: String?) -> String {
+    static func normalizedUpdateResponseKind(kind: String?) -> String {
         if let kind, ["up_to_date", "blocked", "failed"].contains(kind) {
             return kind
         }
         return "failed"
+    }
+
+    private func updateResponseKind(kind: String?) -> String {
+        Self.normalizedUpdateResponseKind(kind: kind)
     }
 
     private func endBackgroundDownloadAfterLatestError(

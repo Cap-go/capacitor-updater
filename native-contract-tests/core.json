@@ -1,0 +1,186 @@
+{
+  "version": 1,
+  "periodCheckDelay": [
+    {
+      "id": "period.disabled.zero",
+      "input": {
+        "seconds": 0
+      },
+      "expect": {
+        "normalizedSeconds": 0
+      }
+    },
+    {
+      "id": "period.disabled.negative",
+      "input": {
+        "seconds": -1
+      },
+      "expect": {
+        "normalizedSeconds": 0
+      }
+    },
+    {
+      "id": "period.below-minimum.one-second",
+      "input": {
+        "seconds": 1
+      },
+      "expect": {
+        "normalizedSeconds": 600
+      }
+    },
+    {
+      "id": "period.below-minimum.just-under",
+      "input": {
+        "seconds": 599
+      },
+      "expect": {
+        "normalizedSeconds": 600
+      }
+    },
+    {
+      "id": "period.minimum",
+      "input": {
+        "seconds": 600
+      },
+      "expect": {
+        "normalizedSeconds": 600
+      }
+    },
+    {
+      "id": "period.above-minimum",
+      "input": {
+        "seconds": 3600
+      },
+      "expect": {
+        "normalizedSeconds": 3600
+      }
+    },
+    {
+      "id": "period.large-value",
+      "input": {
+        "seconds": 2147483647
+      },
+      "expect": {
+        "normalizedSeconds": 2147483647
+      }
+    }
+  ],
+  "onLaunchDirectUpdateConsumption": [
+    {
+      "id": "direct-update.on-launch.planned",
+      "input": {
+        "mode": "onLaunch",
+        "plannedDirectUpdate": true
+      },
+      "expect": {
+        "consume": true
+      }
+    },
+    {
+      "id": "direct-update.on-launch.not-planned",
+      "input": {
+        "mode": "onLaunch",
+        "plannedDirectUpdate": false
+      },
+      "expect": {
+        "consume": false
+      }
+    },
+    {
+      "id": "direct-update.always.planned",
+      "input": {
+        "mode": "always",
+        "plannedDirectUpdate": true
+      },
+      "expect": {
+        "consume": false
+      }
+    },
+    {
+      "id": "direct-update.at-install.planned",
+      "input": {
+        "mode": "atInstall",
+        "plannedDirectUpdate": true
+      },
+      "expect": {
+        "consume": false
+      }
+    },
+    {
+      "id": "direct-update.false.planned",
+      "input": {
+        "mode": "false",
+        "plannedDirectUpdate": true
+      },
+      "expect": {
+        "consume": false
+      }
+    },
+    {
+      "id": "direct-update.invalid.planned",
+      "input": {
+        "mode": "invalid",
+        "plannedDirectUpdate": true
+      },
+      "expect": {
+        "consume": false
+      }
+    }
+  ],
+  "updateResponseKind": [
+    {
+      "id": "response-kind.up-to-date",
+      "input": {
+        "kind": "up_to_date"
+      },
+      "expect": {
+        "kind": "up_to_date"
+      }
+    },
+    {
+      "id": "response-kind.blocked",
+      "input": {
+        "kind": "blocked"
+      },
+      "expect": {
+        "kind": "blocked"
+      }
+    },
+    {
+      "id": "response-kind.failed",
+      "input": {
+        "kind": "failed"
+      },
+      "expect": {
+        "kind": "failed"
+      }
+    },
+    {
+      "id": "response-kind.missing",
+      "input": {
+        "kind": null
+      },
+      "expect": {
+        "kind": "failed"
+      }
+    },
+    {
+      "id": "response-kind.empty",
+      "input": {
+        "kind": ""
+      },
+      "expect": {
+        "kind": "failed"
+      }
+    },
+    {
+      "id": "response-kind.unknown",
+      "input": {
+        "kind": "update_available"
+      },
+      "expect": {
+        "kind": "failed"
+      }
+    }
+  ]
+}

@@ -1340,12 +1340,19 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     static int normalizedPeriodCheckDelayMs(final int valueSeconds) {
+        final int normalizedSeconds = normalizedPeriodCheckDelaySeconds(valueSeconds);
+        if (normalizedSeconds <= 0) {
+            return 0;
+        }
+        final long delayMs = (long) normalizedSeconds * 1000L;
+        return delayMs > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) delayMs;
+    }
+
+    static int normalizedPeriodCheckDelaySeconds(final int valueSeconds) {
         if (valueSeconds <= 0) {
             return 0;
         }
-        final long normalizedSeconds = Math.max(600L, (long) valueSeconds);
-        final long delayMs = normalizedSeconds * 1000L;
-        return delayMs > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) delayMs;
+        return Math.max(600, valueSeconds);
     }
 
     private void consumeOnLaunchDirectUpdateAttempt(final boolean plannedDirectUpdate) {
@@ -2568,11 +2575,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
-    private String getUpdateResponseKind(final String kind) {
+    static String normalizedUpdateResponseKind(final String kind) {
         if ("up_to_date".equals(kind) || "blocked".equals(kind) || "failed".equals(kind)) {
             return kind;
         }
         return "failed";
+    }
+
+    private String getUpdateResponseKind(final String kind) {
+        return normalizedUpdateResponseKind(kind);
     }
 
     private void notifyUpdateCheckResult(
