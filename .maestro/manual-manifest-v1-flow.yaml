@@ -45,18 +45,18 @@ appId: app.capgo.updater
     timeout: 30000
 - scrollUntilVisible:
     element:
-      id: 'quick-action-download-latest-bundle-observe-store'
+      id: 'quick-action-download-latest-bundle'
     direction: DOWN
     timeout: 30000
     centerElement: true
     visibilityPercentage: 1
     waitToSettleTimeoutMs: 500
 - tapOn:
-    id: 'quick-action-download-latest-bundle-observe-store'
+    id: 'quick-action-download-latest-bundle'
     retryTapIfNoChange: true
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
-    visible: '.*(Marker: download-store:success|M:download-store:success).*'
+    visible: '.*(Marker: download:success|M:download:success).*'
     timeout: 120000
 - scrollUntilVisible:
     element:
