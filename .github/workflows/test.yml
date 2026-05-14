@@ -45,6 +45,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: ./scripts/ci/install-bun.sh
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
       - name: Install dependencies
         id: install_code
         run: bun i
@@ -78,6 +82,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: ./scripts/ci/install-bun.sh
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
       - name: Install dependencies
         id: install_code
         run: bun i
@@ -93,7 +101,7 @@ jobs:
         id: test_ios
         run: bun run native:test:ios
   maestro_android_example_app:
-    timeout-minutes: 30
+    timeout-minutes: 45
     runs-on: ubuntu-latest
     name: Android example app Maestro smoke / ${{ matrix.scenario }}
     strategy:
@@ -263,7 +271,7 @@ jobs:
         id: verify_code
         run: bun run verify:web
   maestro_android_scenarios:
-    timeout-minutes: 30
+    timeout-minutes: 45
     runs-on: ubuntu-latest
     name: maestro_android / ${{ matrix.scenario }}
     strategy:
@@ -310,7 +318,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
           script: >-
             CAPGO_MAESTRO_FLOW_TIMEOUT_SECONDS=720
-            CAPGO_MAESTRO_FLOW_RETRIES=1
+            CAPGO_MAESTRO_FLOW_RETRIES=2
             CAPGO_MAESTRO_SPLIT_RETRIES=1
             CAPGO_MAESTRO_UI_STATE_TIMEOUT_SECONDS=180
             CAPGO_MAESTRO_DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS=180

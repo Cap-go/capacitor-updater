@@ -337,6 +337,36 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
+    private static final class BreakingNoUrlCapgoUpdater extends CapgoUpdater {
+
+        private final BundleInfo currentBundle = new BundleInfo("current-id", "1.0.0", BundleStatus.SUCCESS, new Date(), "abc123");
+        private boolean downloadFailStatsCalled = false;
+
+        BreakingNoUrlCapgoUpdater() {
+            super(null);
+        }
+
+        @Override
+        public void getLatest(final String updateUrl, final String channel, final Callback callback) {
+            final Map<String, Object> response = new HashMap<>();
+            response.put("version", "1.0.17");
+            response.put("breaking", true);
+            response.put("message", "store_update_required");
+            response.put("statusCode", 200);
+            callback.callback(response);
+        }
+
+        @Override
+        public BundleInfo getCurrentBundle() {
+            return this.currentBundle;
+        }
+
+        @Override
+        public void sendStats(final String action, final String versionName, final String oldVersionName) {
+            this.downloadFailStatsCalled = "download_fail".equals(action);
+        }
+    }
+
     private static final class FailedUpdateCapgoUpdater extends CapgoUpdater {
 
         private final BundleInfo currentBundle = new BundleInfo("current-id", "1.0.0", BundleStatus.SUCCESS, new Date(), "abc123");
@@ -1877,6 +1907,55 @@ public class CapacitorUpdaterUnitTest {
             assertEquals("1.0.0", payload.getString("version"));
             assertFalse(plugin.hasNotifiedEvent("downloadFailed"));
             assertFalse(updater.sendStatsCalled);
+        }
+    }
+
+    @Test
+    public void testBreakingNoUrlUpdateCheckNotifiesBreakingListeners() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
+            BreakingNoUrlCapgoUpdater updater = new BreakingNoUrlCapgoUpdater();
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            invokeBackgroundDownload(plugin);
+
+            assertTrue(plugin.hasNotifiedEvent("breakingAvailable"));
+            assertTrue(plugin.hasNotifiedEvent("majorAvailable"));
+            assertEquals("1.0.17", plugin.getNotifiedEventPayload("breakingAvailable").getString("version"));
+            assertEquals("1.0.17", plugin.getNotifiedEventPayload("majorAvailable").getString("version"));
+            assertTrue(plugin.hasNotifiedEvent("downloadFailed"));
+            assertTrue(updater.downloadFailStatsCalled);
+        }
+    }
+
+    @Test
+    public void testGetLatestBreakingResponseNotifiesBreakingListeners() {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
+            PluginCall call = mock(PluginCall.class);
+
+            plugin.implementation = new BreakingNoUrlCapgoUpdater();
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            plugin.getLatest(call);
+
+            assertTrue(plugin.hasNotifiedEvent("breakingAvailable"));
+            assertTrue(plugin.hasNotifiedEvent("majorAvailable"));
+            assertEquals("1.0.17", plugin.getNotifiedEventPayload("breakingAvailable").getString("version"));
+            assertEquals("1.0.17", plugin.getNotifiedEventPayload("majorAvailable").getString("version"));
+            verify(call).reject("store_update_required");
         }
     }
 

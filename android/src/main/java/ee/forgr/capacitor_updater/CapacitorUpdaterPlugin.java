@@ -218,6 +218,26 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
+    private boolean shouldNotifyBreakingEvents(final JSObject response) {
+        if (response == null) {
+            return false;
+        }
+
+        if (response.optBoolean("breaking", false)) {
+            return true;
+        }
+
+        final String error = response.optString("error", "");
+        final String message = response.optString("message", "");
+        return "disable_auto_update_to_major".equals(error) || "store_update_required".equals(message);
+    }
+
+    private void notifyBreakingEventsIfNeeded(final JSObject response, final String version) {
+        if (shouldNotifyBreakingEvents(response)) {
+            notifyBreakingEvents(version);
+        }
+    }
+
     private void persistLastFailedBundle(BundleInfo bundle) {
         if (this.prefs == null) {
             return;
@@ -2186,7 +2206,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     String error = jsRes.has("error") ? jsRes.getString("error") : "";
                     String errorMessage = jsRes.has("message") ? jsRes.getString("message") : "server did not provide a message";
                     String kind = CapacitorUpdaterPlugin.this.getUpdateResponseKind(jsRes.has("kind") ? jsRes.getString("kind") : null);
+                    String latestVersion = jsRes.has("version") ? jsRes.getString("version") : "";
                     jsRes.put("kind", kind);
+                    CapacitorUpdaterPlugin.this.notifyBreakingEventsIfNeeded(jsRes, latestVersion);
                     if ("failed".equals(kind)) {
                         logger.error("getLatest failed with error: " + error + ", message: " + errorMessage);
                         call.reject(error.isEmpty() ? errorMessage : error);
@@ -2199,6 +2221,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     }
                     return;
                 } else if (jsRes.has("message")) {
+                    String latestVersion = jsRes.has("version") ? jsRes.getString("version") : "";
+                    CapacitorUpdaterPlugin.this.notifyBreakingEventsIfNeeded(jsRes, latestVersion);
                     call.reject(jsRes.getString("message"));
                     return;
                 } else {
@@ -2685,6 +2709,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         String kind = CapacitorUpdaterPlugin.this.getUpdateResponseKind(jsRes.has("kind") ? jsRes.getString("kind") : null);
                         String latestVersion = jsRes.has("version") ? jsRes.getString("version") : current.getVersionName();
                         CapacitorUpdaterPlugin.this.notifyUpdateCheckResult(kind, error, errorMessage, statusCode, latestVersion, current);
+                        CapacitorUpdaterPlugin.this.notifyBreakingEventsIfNeeded(
+                            jsRes,
+                            jsRes.has("version") ? jsRes.getString("version") : ""
+                        );
 
                         if ("up_to_date".equals(kind)) {
                             logger.info("No new version available");
@@ -2747,6 +2775,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         }
 
                         if (!jsRes.has("url") || !CapacitorUpdaterPlugin.this.isValidURL(jsRes.getString("url"))) {
+                            CapacitorUpdaterPlugin.this.notifyBreakingEventsIfNeeded(jsRes, latestVersionName);
                             logger.error("Error no url or wrong format");
                             CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
                                 "Error no url or wrong format",
