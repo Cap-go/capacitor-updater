@@ -204,7 +204,7 @@ if (failures.length) {
 " "$server_state" "$SCENARIO_ID"
 
   case "$SCENARIO_ID" in
-    manual-zip|manual-zip-no-persist)
+    manual-zip-no-persist)
       if ! grep -Eq "/api/channel\\?scenario=${SCENARIO_ID}.*app_id=app\\.capgo\\.updater\\.e2e" \
         "$ARTIFACT_DIR/fake-capgo-server-ios-smoke.log"; then
         echo "Smoke server assertions failed:" >&2
