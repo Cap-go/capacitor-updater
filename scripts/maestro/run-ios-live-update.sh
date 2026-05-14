@@ -83,10 +83,10 @@ fi
 
 SIMULATOR_ID="${CAPGO_MAESTRO_IOS_SIMULATOR_ID:-$(default_simulator_id)}"
 APP_PATH="$DERIVED_DATA_PATH/Build/Products/Debug-iphonesimulator/App.app"
+RESULTS_DIR_READY=0
 
 cleanup() {
-  if [[ -f "$ARTIFACT_DIR/fake-capgo-server-ios.log" ]]; then
-    mkdir -p "$RESULTS_DIR"
+  if [[ "$RESULTS_DIR_READY" == "1" && -f "$ARTIFACT_DIR/fake-capgo-server-ios.log" ]]; then
     cp "$ARTIFACT_DIR/fake-capgo-server-ios.log" "$RESULTS_DIR/fake-capgo-server-ios.log" 2>/dev/null || true
   fi
 
@@ -773,6 +773,7 @@ mkdir -p "$ARTIFACT_DIR"
 validate_results_dir
 rm -rf -- "$RESULTS_DIR"
 mkdir -p "$RESULTS_DIR"
+RESULTS_DIR_READY=1
 
 echo "Using iOS device server URL: $DEVICE_SERVER_URL"
 

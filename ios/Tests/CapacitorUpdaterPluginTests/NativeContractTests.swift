@@ -81,11 +81,14 @@ final class NativeContractTests: XCTestCase {
         return value
     }
 
-    private func optionalString(_ source: [String: Any], _ key: String) -> String? {
+    private func optionalString(_ source: [String: Any], _ key: String, id: String) throws -> String? {
         guard let value = source[key], !(value is NSNull) else {
             return nil
         }
-        return value as? String
+        guard let stringValue = value as? String else {
+            throw ContractError.invalidCase("\(id).\(key) expected String or null")
+        }
+        return stringValue
     }
 
     func testPeriodCheckDelayMatchesNativeContract() throws {
@@ -126,7 +129,7 @@ final class NativeContractTests: XCTestCase {
             let expect = try dictionary(testCase, "expect", id: id)
 
             XCTAssertEqual(
-                CapacitorUpdaterPlugin.normalizedUpdateResponseKind(kind: optionalString(input, "kind")),
+                CapacitorUpdaterPlugin.normalizedUpdateResponseKind(kind: try optionalString(input, "kind", id: id)),
                 try string(expect, "kind", id: id),
                 id
             )
