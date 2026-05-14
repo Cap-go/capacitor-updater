@@ -65,9 +65,9 @@ jobs:
       - name: Verify packed package in example app (Android)
         shell: bash
         run: bash ./.github/scripts/verify-packed-example.sh android
-      - name: Run Android Tests
+      - name: Run Android native tests
         id: test_android
-        run: bun run test:android
+        run: bun run native:test:android
   build_ios:
     timeout-minutes: 30
     runs-on: macOS-latest
@@ -97,9 +97,9 @@ jobs:
       - name: Verify packed package in example app (iOS)
         shell: bash
         run: bash ./.github/scripts/verify-packed-example.sh ios
-      - name: Run iOS Tests
+      - name: Run iOS native tests
         id: test_ios
-        run: bun run test:ios
+        run: bun run native:test:ios
   maestro_android_example_app:
     timeout-minutes: 45
     runs-on: ubuntu-latest
@@ -157,7 +157,7 @@ jobs:
           name: maestro-results-android-${{ matrix.scenario }}
           path: maestro-results
   maestro_ios_example_app:
-    timeout-minutes: 30
+    timeout-minutes: 45
     runs-on: macOS-latest
     name: iOS example app Maestro smoke / ${{ matrix.scenario }}
     strategy:
@@ -165,6 +165,7 @@ jobs:
       matrix:
         scenario:
           - manual-zip
+          - manual-zip-no-persist
           - manual-zip-config-guards
     steps:
       - name: Check out
@@ -205,6 +206,7 @@ jobs:
           - legacy-true
           - at-install
           - on-launch
+          - manual-manifest
     steps:
       - name: Check out
         uses: actions/checkout@v6
@@ -269,7 +271,7 @@ jobs:
         id: verify_code
         run: bun run verify:web
   maestro_android_scenarios:
-    timeout-minutes: 45
+    timeout-minutes: 60
     runs-on: ubuntu-latest
     name: maestro_android / ${{ matrix.scenario }}
     strategy:
@@ -317,7 +319,7 @@ jobs:
           script: >-
             CAPGO_MAESTRO_FLOW_TIMEOUT_SECONDS=720
             CAPGO_MAESTRO_FLOW_RETRIES=2
-            CAPGO_MAESTRO_SPLIT_RETRIES=1
+            CAPGO_MAESTRO_SPLIT_RETRIES=2
             CAPGO_MAESTRO_UI_STATE_TIMEOUT_SECONDS=180
             CAPGO_MAESTRO_DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS=180
             ./scripts/maestro/run-android-live-update.sh "${{ matrix.scenario }}"

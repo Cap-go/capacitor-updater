@@ -232,12 +232,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
         shakeMenuEnabled = getConfig().getBoolean("shakeMenu", false)
         shakeChannelSelectorEnabled = getConfig().getBoolean("allowShakeChannelSelector", false)
-        let periodCheckDelayValue = getConfig().getInt("periodCheckDelay", 0)
-        if periodCheckDelayValue >= 0 && periodCheckDelayValue > 600 {
-            periodCheckDelay = 600
-        } else {
-            periodCheckDelay = periodCheckDelayValue
-        }
+        periodCheckDelay = Self.normalizedPeriodCheckDelaySeconds(getConfig().getInt("periodCheckDelay", 0))
 
         implementation.setPublicKey(getConfig().getString("publicKey") ?? "")
         implementation.notifyDownloadRaw = notifyDownload
@@ -1769,6 +1764,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         plannedDirectUpdate && directUpdateMode == "onLaunch"
     }
 
+    static func normalizedPeriodCheckDelaySeconds(_ value: Int) -> Int {
+        guard value > 0 else {
+            return 0
+        }
+        return max(600, value)
+    }
+
     private func getOnLaunchDirectUpdateUsed() -> Bool {
         self.onLaunchDirectUpdateStateLock.lock()
         defer { self.onLaunchDirectUpdateStateLock.unlock() }
@@ -1819,11 +1821,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.notifyListeners("majorAvailable", data: payload)
     }
 
-    private func updateResponseKind(kind: String?) -> String {
+    static func normalizedUpdateResponseKind(kind: String?) -> String {
         if let kind, ["up_to_date", "blocked", "failed"].contains(kind) {
             return kind
         }
         return "failed"
+    }
+
+    private func updateResponseKind(kind: String?) -> String {
+        Self.normalizedUpdateResponseKind(kind: kind)
     }
 
     private func endBackgroundDownloadAfterLatestError(

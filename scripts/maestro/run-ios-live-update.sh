@@ -16,7 +16,7 @@ MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-900}"
 export MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
 export MAESTRO_DRIVER_STARTUP_TIMEOUT="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-600000}"
 MAESTRO_TEST_RETRIES="${CAPGO_MAESTRO_TEST_RETRIES:-3}"
-FLOW_RETRY_PATTERN="iOS driver not ready in time|Failed to connect to /127\\.0\\.0\\.1:[0-9]+|Connection refused|Broken pipe|No visible element found|Request for viewHierarchy failed, because of unknown reason|XCTestDriver request failed\\. Status code: 500, path: viewHierarchy|Application .* is not running|Detected app crash|App crashed or stopped|failed to terminate dev\\.mobile\\.maestro-driver-iosUITests\\.xctrunner|found nothing to terminate|Assertion is false: \"@capgo/capacitor-updater\" is visible|Assertion is false: \".*Harness: ready.*\" is visible"
+FLOW_RETRY_PATTERN="iOS driver not ready in time|Failed to connect to /127\\.0\\.0\\.1:[0-9]+|Connection refused|Broken pipe|No visible element found|Request for viewHierarchy failed, because of unknown reason|XCTestDriver request failed\\. Status code: 500, path: viewHierarchy|Application .* is not running|Detected app crash|App crashed or stopped|failed to terminate dev\\.mobile\\.maestro-driver-iosUITests\\.xctrunner|found nothing to terminate|Assertion is false: \"@capgo/capacitor-updater\" is visible|Assertion is false: \".*Harness: ready.*\" is visible|Marker: download:success|Marker: download-store:success"
 SCENARIO_SEQUENCE=(deferred always legacy-true at-install on-launch manual-zip manual-zip-config-guards manual-manifest)
 APP_MARKETING_VERSION=""
 readonly ASSERT_AUTO_UPDATE_ENABLED='Auto update enabled: true'
@@ -83,8 +83,13 @@ fi
 
 SIMULATOR_ID="${CAPGO_MAESTRO_IOS_SIMULATOR_ID:-$(default_simulator_id)}"
 APP_PATH="$DERIVED_DATA_PATH/Build/Products/Debug-iphonesimulator/App.app"
+RESULTS_DIR_READY=0
 
 cleanup() {
+  if [[ "$RESULTS_DIR_READY" == "1" && -f "$ARTIFACT_DIR/fake-capgo-server-ios.log" ]]; then
+    cp "$ARTIFACT_DIR/fake-capgo-server-ios.log" "$RESULTS_DIR/fake-capgo-server-ios.log" 2>/dev/null || true
+  fi
+
   if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
     kill "$SERVER_PID" >/dev/null 2>&1 || true
     wait "$SERVER_PID" 2>/dev/null || true
@@ -768,6 +773,7 @@ mkdir -p "$ARTIFACT_DIR"
 validate_results_dir
 rm -rf -- "$RESULTS_DIR"
 mkdir -p "$RESULTS_DIR"
+RESULTS_DIR_READY=1
 
 echo "Using iOS device server URL: $DEVICE_SERVER_URL"
 

@@ -454,13 +454,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.implementation.defaultChannel = this.getConfig().getString("defaultChannel", "");
         }
 
-        int userValue = this.getConfig().getInt("periodCheckDelay", 0);
-
-        if (userValue >= 0 && userValue <= 600) {
-            this.periodCheckDelay = 600 * 1000;
-        } else if (userValue > 600) {
-            this.periodCheckDelay = userValue * 1000;
-        }
+        this.periodCheckDelay = normalizedPeriodCheckDelayMs(this.getConfig().getInt("periodCheckDelay", 0));
 
         this.implementation.documentsDir = this.getContext().getFilesDir();
         this.implementation.prefs = this.prefs;
@@ -1343,6 +1337,22 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     static boolean shouldConsumeOnLaunchDirectUpdate(final String directUpdateMode, final boolean plannedDirectUpdate) {
         return plannedDirectUpdate && "onLaunch".equals(directUpdateMode);
+    }
+
+    static int normalizedPeriodCheckDelayMs(final int valueSeconds) {
+        final int normalizedSeconds = normalizedPeriodCheckDelaySeconds(valueSeconds);
+        if (normalizedSeconds <= 0) {
+            return 0;
+        }
+        final long delayMs = (long) normalizedSeconds * 1000L;
+        return delayMs > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) delayMs;
+    }
+
+    static int normalizedPeriodCheckDelaySeconds(final int valueSeconds) {
+        if (valueSeconds <= 0) {
+            return 0;
+        }
+        return Math.max(600, valueSeconds);
     }
 
     private void consumeOnLaunchDirectUpdateAttempt(final boolean plannedDirectUpdate) {
@@ -2587,11 +2597,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
-    private String getUpdateResponseKind(final String kind) {
+    static String normalizedUpdateResponseKind(final String kind) {
         if ("up_to_date".equals(kind) || "blocked".equals(kind) || "failed".equals(kind)) {
             return kind;
         }
         return "failed";
+    }
+
+    private String getUpdateResponseKind(final String kind) {
+        return normalizedUpdateResponseKind(kind);
     }
 
     private void notifyUpdateCheckResult(
