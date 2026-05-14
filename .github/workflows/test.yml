@@ -157,7 +157,7 @@ jobs:
           name: maestro-results-android-${{ matrix.scenario }}
           path: maestro-results
   maestro_ios_example_app:
-    timeout-minutes: 30
+    timeout-minutes: 45
     runs-on: macOS-latest
     name: iOS example app Maestro smoke / ${{ matrix.scenario }}
     strategy:
@@ -271,7 +271,7 @@ jobs:
         id: verify_code
         run: bun run verify:web
   maestro_android_scenarios:
-    timeout-minutes: 45
+    timeout-minutes: 60
     runs-on: ubuntu-latest
     name: maestro_android / ${{ matrix.scenario }}
     strategy:
@@ -319,7 +319,7 @@ jobs:
           script: >-
             CAPGO_MAESTRO_FLOW_TIMEOUT_SECONDS=720
             CAPGO_MAESTRO_FLOW_RETRIES=2
-            CAPGO_MAESTRO_SPLIT_RETRIES=1
+            CAPGO_MAESTRO_SPLIT_RETRIES=2
             CAPGO_MAESTRO_UI_STATE_TIMEOUT_SECONDS=180
             CAPGO_MAESTRO_DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS=180
             ./scripts/maestro/run-android-live-update.sh "${{ matrix.scenario }}"

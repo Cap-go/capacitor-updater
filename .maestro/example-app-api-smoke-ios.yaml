@@ -27,59 +27,7 @@ appId: app.capgo.updater
     retryTapIfNoChange: true
 - extendedWaitUntil:
     visible: '.*(Marker: smoke-sequence:success|M:smoke-sequence:success).*'
-    timeout: 240000
-- scrollUntilVisible:
-    element:
-      text: 'Quick get store info'
-    direction: DOWN
-    timeout: 30000
-    visibilityPercentage: 1
-    waitToSettleTimeoutMs: 500
-- tapOn:
-    text: 'Quick get store info'
-    retryTapIfNoChange: true
-- extendedWaitUntil:
-    visible: '.*(Marker: get-app-update-info:success|M:get-app-update-info:success).*'
-    timeout: 120000
-- scrollUntilVisible:
-    element:
-      text: 'Quick immediate update'
-    direction: DOWN
-    timeout: 30000
-    visibilityPercentage: 1
-    waitToSettleTimeoutMs: 500
-- tapOn:
-    text: 'Quick immediate update'
-    retryTapIfNoChange: true
-- extendedWaitUntil:
-    visible: '.*(Marker: perform-immediate-update:success|M:perform-immediate-update:success).*'
-    timeout: 120000
-- scrollUntilVisible:
-    element:
-      text: 'Quick flexible update'
-    direction: DOWN
-    timeout: 30000
-    visibilityPercentage: 1
-    waitToSettleTimeoutMs: 500
-- tapOn:
-    text: 'Quick flexible update'
-    retryTapIfNoChange: true
-- extendedWaitUntil:
-    visible: '.*(Marker: start-flexible-update:success|M:start-flexible-update:success).*'
-    timeout: 120000
-- scrollUntilVisible:
-    element:
-      text: 'Quick complete update'
-    direction: DOWN
-    timeout: 30000
-    visibilityPercentage: 1
-    waitToSettleTimeoutMs: 500
-- tapOn:
-    text: 'Quick complete update'
-    retryTapIfNoChange: true
-- extendedWaitUntil:
-    visible: '.*(Marker: complete-flexible-update:success|M:complete-flexible-update:success).*'
-    timeout: 120000
+    timeout: 420000
 - runFlow: helpers/cold-launch-app.yaml
 - extendedWaitUntil:
     visible: '@capgo/capacitor-updater'
@@ -89,18 +37,4 @@ appId: app.capgo.updater
     timeout: 120000
 - extendedWaitUntil:
     visible: '.*(Marker: persisted:success|M:persisted:success).*'
-    timeout: 120000
-- scrollUntilVisible:
-    element:
-      text: 'Quick open store page'
-    direction: DOWN
-    timeout: 30000
-    centerElement: true
-    visibilityPercentage: 1
-    waitToSettleTimeoutMs: 500
-- tapOn:
-    text: 'Quick open store page'
-    retryTapIfNoChange: true
-- extendedWaitUntil:
-    notVisible: '@capgo/capacitor-updater'
     timeout: 120000

@@ -40,17 +40,17 @@ appId: app.capgo.updater
     timeout: 30000
 - scrollUntilVisible:
     element:
-      text: 'Quick download latest bundle'
+      text: 'Quick observe downloaded bundle'
     direction: DOWN
     timeout: 30000
     centerElement: true
     visibilityPercentage: 1
     waitToSettleTimeoutMs: 500
 - tapOn:
-    text: 'Quick download latest bundle'
+    text: 'Quick observe downloaded bundle'
     retryTapIfNoChange: true
 - extendedWaitUntil:
-    visible: '.*(Marker: download:success|M:download:success).*'
+    visible: '.*(Marker: download-store:success|M:download-store:success).*'
     timeout: 120000
 - scrollUntilVisible:
     element:
@@ -117,16 +117,16 @@ appId: app.capgo.updater
     timeout: 30000
 - scrollUntilVisible:
     element:
-      text: 'Quick download latest bundle'
+      text: 'Quick observe downloaded bundle'
     direction: DOWN
     timeout: 30000
     centerElement: false
     visibilityPercentage: 1
 - tapOn:
-    text: 'Quick download latest bundle'
+    text: 'Quick observe downloaded bundle'
     retryTapIfNoChange: true
 - extendedWaitUntil:
-    visible: '.*(Marker: download:success|M:download:success).*'
+    visible: '.*(Marker: download-store:success|M:download-store:success).*'
     timeout: 120000
 - scrollUntilVisible:
     element:

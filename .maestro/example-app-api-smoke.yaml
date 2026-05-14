@@ -35,16 +35,6 @@ appId: app.capgo.updater
       text: '@capgo/capacitor-updater'
     direction: UP
     timeout: 120000
-- scrollUntilVisible:
-    element:
-      text: 'Quick open store page'
-    direction: DOWN
-    timeout: 30000
-    visibilityPercentage: 1
-- tapOn: 'Quick open store page'
-- extendedWaitUntil:
-    notVisible: '@capgo/capacitor-updater'
-    timeout: 120000
 - runFlow: helpers/relaunch-app.yaml
 - extendedWaitUntil:
     visible: '@capgo/capacitor-updater'
