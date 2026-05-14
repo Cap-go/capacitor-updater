@@ -751,6 +751,10 @@ export interface CapacitorUpdaterPlugin {
    * such as `updateAvailable`, `downloadComplete`, `downloadFailed`, and
    * `noNeedUpdate` for the final result.
    *
+   * Native support is available on iOS and Android. On Web, this method returns
+   * a result with `status: 'unavailable'`. Native platforms also return
+   * `unavailable` when the native auto-update system is disabled.
+   *
    * @returns {Promise<TriggerUpdateCheckResult>} Whether a native update check was queued.
    */
   triggerUpdateCheck(): Promise<TriggerUpdateCheckResult>;
@@ -1983,8 +1987,26 @@ export interface AutoUpdateAvailable {
   available: boolean;
 }
 
+/**
+ * Result returned after requesting an immediate native auto-update check.
+ *
+ * @property status - Native trigger state: `queued` when a check was queued,
+ * `already_running` when the native update pipeline is already active, or
+ * `unavailable` on Web or when native auto-update is disabled.
+ * @property queued - Whether a new native update check was queued. This is
+ * `true` only when `status` is `queued`; otherwise it is `false`.
+ */
 export interface TriggerUpdateCheckResult {
+  /**
+   * Native trigger state: `queued` when a check was queued, `already_running`
+   * when the native update pipeline is already active, or `unavailable` on Web
+   * or when native auto-update is disabled.
+   */
   status: 'queued' | 'already_running' | 'unavailable';
+  /**
+   * Whether a new native update check was queued. This is `true` only when
+   * `status` is `queued`; otherwise it is `false`.
+   */
   queued: boolean;
 }
 

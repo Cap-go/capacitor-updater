@@ -926,6 +926,10 @@ after the update has been downloaded or installed. Listen to updater events
 such as `updateAvailable`, `downloadComplete`, `downloadFailed`, and
 `noNeedUpdate` for the final result.
 
+Native support is available on iOS and Android. On Web, this method returns
+a result with `status: 'unavailable'`. Native platforms also return
+`unavailable` when the native auto-update system is disabled.
+
 **Returns:** <code>Promise&lt;<a href="#triggerupdatecheckresult">TriggerUpdateCheckResult</a>&gt;</code>
 
 --------------------
@@ -2141,10 +2145,12 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 
 ##### TriggerUpdateCheckResult
 
-| Prop         | Type                                                        |
-| ------------ | ----------------------------------------------------------- |
-| **`status`** | <code>'queued' \| 'already_running' \| 'unavailable'</code> |
-| **`queued`** | <code>boolean</code>                                        |
+Result returned after requesting an immediate native auto-update check.
+
+| Prop         | Type                                                        | Description                                                                                                                                                                                  |
+| ------------ | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`status`** | <code>'queued' \| 'already_running' \| 'unavailable'</code> | Native trigger state: `queued` when a check was queued, `already_running` when the native update pipeline is already active, or `unavailable` on Web or when native auto-update is disabled. |
+| **`queued`** | <code>boolean</code>                                        | Whether a new native update check was queued. This is `true` only when `status` is `queued`; otherwise it is `false`.                                                                        |
 
 
 ##### LatestVersion

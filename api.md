@@ -702,6 +702,10 @@ after the update has been downloaded or installed. Listen to updater events
 such as `updateAvailable`, `downloadComplete`, `downloadFailed`, and
 `noNeedUpdate` for the final result.
 
+Native support is available on iOS and Android. On Web, this method returns
+a result with `status: 'unavailable'`. Native platforms also return
+`unavailable` when the native auto-update system is disabled.
+
 **Returns**
 
 `Promise<TriggerUpdateCheckResult>` — Whether a native update check was queued.
