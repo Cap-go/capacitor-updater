@@ -39,6 +39,7 @@ import type {
   ShakeMenuEnabled,
   SetShakeChannelSelectorOptions,
   ShakeChannelSelectorEnabled,
+  TriggerUpdateCheckResult,
   UpdateFailedEvent,
 } from './definitions';
 import { AppUpdateAvailability } from './definitions';
@@ -136,6 +137,11 @@ export class CapacitorUpdaterWeb extends WebPlugin implements CapacitorUpdaterPl
       version: '0.0.0',
       message: 'Cannot getLatest current bundle in web',
     };
+  }
+
+  async triggerUpdateCheck(): Promise<TriggerUpdateCheckResult> {
+    console.warn('Cannot triggerUpdateCheck in web');
+    return { status: 'unavailable', queued: false };
   }
 
   async setChannel(options: SetChannelOptions): Promise<ChannelRes> {

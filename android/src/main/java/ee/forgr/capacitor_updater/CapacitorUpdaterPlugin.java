@@ -2239,6 +2239,28 @@ public class CapacitorUpdaterPlugin extends Plugin {
         );
     }
 
+    public String triggerBackgroundUpdateCheck() {
+        if (this.updateUrl == null || this.updateUrl.isEmpty() || !this.isValidURL(this.updateUrl)) {
+            logger.error("Error no url or wrong format");
+            return "unavailable";
+        }
+        if (this.isDownloadStuckOrTimedOut()) {
+            logger.info("Download already in progress, skipping duplicate download request");
+            return "already_running";
+        }
+        this.backgroundDownload();
+        return "queued";
+    }
+
+    @PluginMethod
+    public void triggerUpdateCheck(final PluginCall call) {
+        final String status = this.triggerBackgroundUpdateCheck();
+        final JSObject ret = new JSObject();
+        ret.put("status", status);
+        ret.put("queued", "queued".equals(status));
+        call.resolve(ret);
+    }
+
     private boolean _reset(final Boolean toLastSuccessful, final Boolean usePendingBundle) {
         return this.performReset(toLastSuccessful, usePendingBundle, false);
     }

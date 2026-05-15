@@ -449,6 +449,7 @@ export default config;
 * [`reload()`](#reload)
 * [`setMultiDelay(...)`](#setmultidelay)
 * [`cancelDelay()`](#canceldelay)
+* [`triggerUpdateCheck()`](#triggerupdatecheck)
 * [`getLatest(...)`](#getlatest)
 * [`setChannel(...)`](#setchannel)
 * [`unsetChannel(...)`](#unsetchannel)
@@ -903,6 +904,33 @@ This is useful when:
 - You want to override a time-based delay early
 
 **Since:** 4.0.0
+
+--------------------
+
+
+#### triggerUpdateCheck()
+
+```typescript
+triggerUpdateCheck() => Promise<TriggerUpdateCheckResult>
+```
+
+Trigger the native auto-update check/download pipeline immediately.
+
+This starts the same background update flow used when the app moves to the
+foreground with auto-update enabled. It is useful for native integrations
+such as a silent push notification asking the app to check for a Capgo
+bundle without reimplementing the update protocol in JavaScript.
+
+The promise resolves after the native background work has been queued, not
+after the update has been downloaded or installed. Listen to updater events
+such as `updateAvailable`, `downloadComplete`, `downloadFailed`, and
+`noNeedUpdate` for the final result.
+
+Native support is available on iOS and Android. On Web, this method returns
+a result with `status: 'unavailable'`. Native platforms also return
+`unavailable` when the native auto-update system is disabled.
+
+**Returns:** <code>Promise&lt;<a href="#triggerupdatecheckresult">TriggerUpdateCheckResult</a>&gt;</code>
 
 --------------------
 
@@ -2113,6 +2141,16 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 | ----------- | --------------------------------------------------------- | ---------------------------------------- |
 | **`kind`**  | <code><a href="#delayuntilnext">DelayUntilNext</a></code> | Set up delay conditions in setMultiDelay |
 | **`value`** | <code>string</code>                                       |                                          |
+
+
+##### TriggerUpdateCheckResult
+
+Result returned after requesting an immediate native auto-update check.
+
+| Prop         | Type                                                        | Description                                                                                                                                                                                  |
+| ------------ | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`status`** | <code>'queued' \| 'already_running' \| 'unavailable'</code> | Native trigger state: `queued` when a check was queued, `already_running` when the native update pipeline is already active, or `unavailable` on Web or when native auto-update is disabled. |
+| **`queued`** | <code>boolean</code>                                        | Whether a new native update check was queued. This is `true` only when `status` is `queued`; otherwise it is `false`.                                                                        |
 
 
 ##### LatestVersion

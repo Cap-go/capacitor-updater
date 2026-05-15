@@ -47,6 +47,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "setMultiDelay", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cancelDelay", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getLatest", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "triggerUpdateCheck", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setChannel", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "unsetChannel", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "reportWebViewError", returnType: CAPPluginReturnPromise),
@@ -1049,6 +1050,27 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 self.resolveCall(call, data: res.toDict())
             }
         }
+    }
+
+    public func triggerBackgroundUpdateCheck() -> String {
+        guard !self.updateUrl.isEmpty, URL(string: self.updateUrl) != nil else {
+            logger.error("Error no url or wrong format")
+            return "unavailable"
+        }
+        if self.isDownloadStuckOrTimedOut() {
+            logger.info("Download already in progress, skipping duplicate download request")
+            return "already_running"
+        }
+        self.backgroundDownload()
+        return "queued"
+    }
+
+    @objc func triggerUpdateCheck(_ call: CAPPluginCall) {
+        let status = self.triggerBackgroundUpdateCheck()
+        call.resolve([
+            "status": status,
+            "queued": status == "queued"
+        ])
     }
 
     @objc func unsetChannel(_ call: CAPPluginCall) {

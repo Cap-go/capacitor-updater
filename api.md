@@ -74,6 +74,7 @@ CapacitorUpdater can be configured with these options:
 - [`reload`](#reload)
 - [`setMultiDelay`](#setmultidelay)
 - [`cancelDelay`](#canceldelay)
+- [`triggerUpdateCheck`](#triggerupdatecheck)
 - [`getLatest`](#getlatest)
 - [`setChannel`](#setchannel)
 - [`unsetChannel`](#unsetchannel)
@@ -678,6 +679,36 @@ This is useful when:
 **Since:** 4.0.0
 
 **Throws:** {Error} If the operation fails.
+
+
+--------------------
+
+
+### triggerUpdateCheck
+
+```typescript
+triggerUpdateCheck() => Promise<TriggerUpdateCheckResult>
+```
+
+Trigger the native auto-update check/download pipeline immediately.
+
+This starts the same background update flow used when the app moves to the
+foreground with auto-update enabled. It is useful for native integrations
+such as a silent push notification asking the app to check for a Capgo
+bundle without reimplementing the update protocol in JavaScript.
+
+The promise resolves after the native background work has been queued, not
+after the update has been downloaded or installed. Listen to updater events
+such as `updateAvailable`, `downloadComplete`, `downloadFailed`, and
+`noNeedUpdate` for the final result.
+
+Native support is available on iOS and Android. On Web, this method returns
+a result with `status: 'unavailable'`. Native platforms also return
+`unavailable` when the native auto-update system is disabled.
+
+**Returns**
+
+`Promise<TriggerUpdateCheckResult>` — Whether a native update check was queued.
 
 
 --------------------

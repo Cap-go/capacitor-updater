@@ -739,6 +739,27 @@ export interface CapacitorUpdaterPlugin {
   cancelDelay(): Promise<void>;
 
   /**
+   * Trigger the native auto-update check/download pipeline immediately.
+   *
+   * This starts the same background update flow used when the app moves to the
+   * foreground with auto-update enabled. It is useful for native integrations
+   * such as a silent push notification asking the app to check for a Capgo
+   * bundle without reimplementing the update protocol in JavaScript.
+   *
+   * The promise resolves after the native background work has been queued, not
+   * after the update has been downloaded or installed. Listen to updater events
+   * such as `updateAvailable`, `downloadComplete`, `downloadFailed`, and
+   * `noNeedUpdate` for the final result.
+   *
+   * Native support is available on iOS and Android. On Web, this method returns
+   * a result with `status: 'unavailable'`. Native platforms also return
+   * `unavailable` when the native auto-update system is disabled.
+   *
+   * @returns {Promise<TriggerUpdateCheckResult>} Whether a native update check was queued.
+   */
+  triggerUpdateCheck(): Promise<TriggerUpdateCheckResult>;
+
+  /**
    * Check the update server for the latest available bundle version.
    *
    * This queries your configured update URL (or Capgo backend) to see if a newer bundle
@@ -1964,6 +1985,29 @@ export interface AutoUpdateEnabled {
 
 export interface AutoUpdateAvailable {
   available: boolean;
+}
+
+/**
+ * Result returned after requesting an immediate native auto-update check.
+ *
+ * @property status - Native trigger state: `queued` when a check was queued,
+ * `already_running` when the native update pipeline is already active, or
+ * `unavailable` on Web or when native auto-update is disabled.
+ * @property queued - Whether a new native update check was queued. This is
+ * `true` only when `status` is `queued`; otherwise it is `false`.
+ */
+export interface TriggerUpdateCheckResult {
+  /**
+   * Native trigger state: `queued` when a check was queued, `already_running`
+   * when the native update pipeline is already active, or `unavailable` on Web
+   * or when native auto-update is disabled.
+   */
+  status: 'queued' | 'already_running' | 'unavailable';
+  /**
+   * Whether a new native update check was queued. This is `true` only when
+   * `status` is `queued`; otherwise it is `false`.
+   */
+  queued: boolean;
 }
 
 export interface SetShakeMenuOptions {
