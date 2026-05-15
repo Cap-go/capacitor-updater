@@ -125,6 +125,21 @@ PY
   return $?
 }
 
+flow_has_retryable_failure() {
+  local output_file="$1"
+  local debug_log="$2"
+
+  if grep -Eq "$FLOW_RETRY_PATTERN" "$output_file"; then
+    return 0
+  fi
+
+  if [[ -f "$debug_log" ]] && grep -Eq "$FLOW_RETRY_PATTERN" "$debug_log"; then
+    return 0
+  fi
+
+  return 1
+}
+
 resolve_path() {
   python3 - "$1" <<'PY'
 import os
@@ -357,7 +372,9 @@ run_flow() {
       echo "Maestro flow timed out after ${MAESTRO_TIMEOUT_SECONDS} seconds: ${flow_path}" >&2
     fi
 
-    if [[ $attempt -lt $MAESTRO_TEST_RETRIES ]] && { [[ $status -eq 124 ]] || grep -Eq "$FLOW_RETRY_PATTERN" "$output_file"; }; then
+    if [[ $attempt -lt $MAESTRO_TEST_RETRIES ]] && {
+      [[ $status -eq 124 ]] || flow_has_retryable_failure "$output_file" "$flow_results_dir/debug/maestro.log"
+    }; then
       echo "Retrying iOS Maestro flow after simulator/XCTest instability: ${flow_path}" >&2
       rm -f "$output_file"
       xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
