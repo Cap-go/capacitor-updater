@@ -17,6 +17,7 @@ export MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
 export MAESTRO_DRIVER_STARTUP_TIMEOUT="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-600000}"
 MAESTRO_TEST_RETRIES="${CAPGO_MAESTRO_TEST_RETRIES:-3}"
 FLOW_RETRY_PATTERN="iOS driver not ready in time|Failed to connect to /127\\.0\\.0\\.1:[0-9]+|Connection refused|Broken pipe|No visible element found|Request for viewHierarchy failed, because of unknown reason|XCTestDriver request failed\\. Status code: 500, path: viewHierarchy|Application .* is not running|Detected app crash|App crashed or stopped|failed to terminate dev\\.mobile\\.maestro-driver-iosUITests\\.xctrunner|found nothing to terminate|Assertion is false: \"@capgo/capacitor-updater\" is visible|Assertion is false: \".*Harness: ready.*\" is visible|Marker: download:success|Marker: download-store:success"
+DEBUG_LOG_FAILURE_PATTERN="fail|Fail|failure|Failure|error|Error|Exception|CommandFailed|Assertion is false|crash|Crash"
 SCENARIO_SEQUENCE=(deferred always legacy-true at-install on-launch manual-zip manual-zip-config-guards manual-manifest)
 APP_MARKETING_VERSION=""
 readonly ASSERT_AUTO_UPDATE_ENABLED='Auto update enabled: true'
@@ -125,6 +126,20 @@ PY
   return $?
 }
 
+debug_log_has_retryable_failure() {
+  local debug_log="$1"
+
+  awk -v failure_pattern="$DEBUG_LOG_FAILURE_PATTERN" -v retry_pattern="$FLOW_RETRY_PATTERN" '
+    $0 ~ failure_pattern && $0 ~ retry_pattern {
+      found = 1
+      exit
+    }
+    END {
+      exit found ? 0 : 1
+    }
+  ' "$debug_log"
+}
+
 flow_has_retryable_failure() {
   local output_file="$1"
   local debug_log="$2"
@@ -133,7 +148,7 @@ flow_has_retryable_failure() {
     return 0
   fi
 
-  if [[ -f "$debug_log" ]] && grep -Eq "$FLOW_RETRY_PATTERN" "$debug_log"; then
+  if [[ -f "$debug_log" ]] && debug_log_has_retryable_failure "$debug_log"; then
     return 0
   fi
 
