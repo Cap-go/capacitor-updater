@@ -1531,6 +1531,37 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertNotNil(updater)
     }
 
+    func testResolveManifestDestinationPathAllowsNestedRelativePaths() throws {
+        let updater = CapgoUpdater()
+        let destFolder = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("bundle")
+
+        let resolved = try updater.resolveManifestDestinationPath(fileName: "assets/index.html", isBrotli: false, destFolder: destFolder)
+
+        XCTAssertEqual(resolved.standardizedFileURL.path, destFolder.appendingPathComponent("assets/index.html").standardizedFileURL.path)
+    }
+
+    func testResolveManifestDestinationPathRejectsTraversalPaths() {
+        let updater = CapgoUpdater()
+        let destFolder = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("bundle")
+
+        XCTAssertThrowsError(try updater.resolveManifestDestinationPath(fileName: "../escape.txt", isBrotli: false, destFolder: destFolder))
+        XCTAssertThrowsError(try updater.resolveManifestDestinationPath(fileName: "assets/../../escape.txt", isBrotli: false, destFolder: destFolder))
+    }
+
+    func testResolveManifestDestinationPathRejectsAbsoluteAndWindowsPaths() {
+        let updater = CapgoUpdater()
+        let destFolder = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("bundle")
+
+        XCTAssertThrowsError(try updater.resolveManifestDestinationPath(fileName: "/tmp/escape.txt", isBrotli: false, destFolder: destFolder))
+        XCTAssertThrowsError(try updater.resolveManifestDestinationPath(fileName: "assets\\index.html", isBrotli: false, destFolder: destFolder))
+    }
+
     // MARK: - Performance Tests
 
     func testPerformanceStringTrim() {

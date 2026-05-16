@@ -874,6 +874,34 @@ import UIKit
         return actualHash == expectedHash
     }
 
+    func resolveManifestDestinationPath(fileName: String, isBrotli: Bool, destFolder: URL) throws -> URL {
+        let destFileName = isBrotli ? String(fileName.dropLast(3)) : fileName
+        let trimmedFileName = destFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !trimmedFileName.isEmpty else {
+            throw NSError(domain: "ManifestEntryError", code: 3, userInfo: [NSLocalizedDescriptionKey: "Manifest file_name is empty"])
+        }
+
+        guard !trimmedFileName.contains("\\") else {
+            throw NSError(domain: "ManifestEntryError", code: 4, userInfo: [NSLocalizedDescriptionKey: "Manifest file_name must use POSIX separators"])
+        }
+
+        guard !(trimmedFileName as NSString).isAbsolutePath else {
+            throw NSError(domain: "ManifestEntryError", code: 5, userInfo: [NSLocalizedDescriptionKey: "Manifest file_name must be relative"])
+        }
+
+        let destFilePath = destFolder.appendingPathComponent(trimmedFileName)
+        let canonicalPath = destFilePath.standardizedFileURL.path
+        let canonicalDir = destFolder.standardizedFileURL.path
+        let canonicalDirPrefix = canonicalDir.hasSuffix("/") ? canonicalDir : "\(canonicalDir)/"
+
+        guard canonicalPath.hasPrefix(canonicalDirPrefix) else {
+            throw NSError(domain: "ManifestEntryError", code: 6, userInfo: [NSLocalizedDescriptionKey: "Manifest file_name escapes destination directory"])
+        }
+
+        return destFilePath
+    }
+
     public func downloadManifest(manifest: [ManifestEntry], version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
         let id = self.randomString(length: 10)
         logger.info("downloadManifest start \(id)")
@@ -972,7 +1000,19 @@ import UIKit
             let legacyCacheFilePath: URL? = isBrotli ? cacheFolder.appendingPathComponent("\(finalFileHash)_\(fileNameWithoutPath)") : nil
 
             let destFileName = isBrotli ? String(fileName.dropLast(3)) : fileName
-            let destFilePath = destFolder.appendingPathComponent(destFileName)
+            let destFilePath: URL
+            do {
+                destFilePath = try resolveManifestDestinationPath(fileName: fileName, isBrotli: isBrotli, destFolder: destFolder)
+            } catch {
+                errorLock.lock()
+                if downloadError == nil {
+                    downloadError = error
+                }
+                errorLock.unlock()
+                hasError.value = true
+                logger.error("Invalid manifest file_name: \(fileName)")
+                continue
+            }
             let builtinFilePath = builtinFolder.appendingPathComponent(fileName)
 
             // Create parent directories synchronously (before operations start)

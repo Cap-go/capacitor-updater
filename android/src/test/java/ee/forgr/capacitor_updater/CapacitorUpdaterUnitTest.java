@@ -15,6 +15,8 @@ import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginHandle;
 import io.github.g00fy2.versioncompare.Version;
+import java.io.File;
+import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
@@ -58,6 +60,34 @@ public class CapacitorUpdaterUnitTest {
         JSObject getNotifiedEventPayload(final String eventName) {
             return this.notifiedEventPayloads.get(eventName);
         }
+    }
+
+    @Test
+    public void resolveManifestFileAllowsNestedRelativePaths() throws Exception {
+        final Path root = Files.createTempDirectory("capgo-manifest-safe");
+        final File dest = root.resolve("bundle").toFile();
+
+        final File resolved = DownloadService.resolveManifestFile(dest, "assets/index.html");
+
+        assertEquals(dest.toPath().resolve("assets/index.html").toFile().getCanonicalPath(), resolved.getCanonicalPath());
+    }
+
+    @Test
+    public void resolveManifestFileRejectsTraversalPaths() throws Exception {
+        final Path root = Files.createTempDirectory("capgo-manifest-traversal");
+        final File dest = root.resolve("bundle").toFile();
+
+        assertThrows(IOException.class, () -> DownloadService.resolveManifestFile(dest, "../escape.txt"));
+        assertThrows(IOException.class, () -> DownloadService.resolveManifestFile(dest, "assets/../../escape.txt"));
+    }
+
+    @Test
+    public void resolveManifestFileRejectsAbsoluteAndWindowsPaths() throws Exception {
+        final Path root = Files.createTempDirectory("capgo-manifest-absolute");
+        final File dest = root.resolve("bundle").toFile();
+
+        assertThrows(IOException.class, () -> DownloadService.resolveManifestFile(dest, root.resolve("escape.txt").toString()));
+        assertThrows(IOException.class, () -> DownloadService.resolveManifestFile(dest, "assets\\index.html"));
     }
 
     private static final class ImmediateThreadCapacitorUpdaterPlugin extends TestableCapacitorUpdaterPlugin {

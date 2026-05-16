@@ -79,6 +79,31 @@ public class DownloadService extends Worker {
     public static final String IS_EMULATOR = "is_emulator";
     private static final String UPDATE_FILE = "update.dat";
 
+    static File resolveManifestFile(File destFolder, String fileName) throws IOException {
+        if (fileName == null || fileName.trim().isEmpty()) {
+            throw new IOException("Manifest file_name is empty");
+        }
+        if (fileName.contains("\\")) {
+            throw new IOException("Manifest file_name must use POSIX separators");
+        }
+
+        File relativeFile = new File(fileName);
+        if (relativeFile.isAbsolute()) {
+            throw new IOException("Manifest file_name must be relative");
+        }
+
+        File targetFile = new File(destFolder, fileName);
+        String canonicalTarget = targetFile.getCanonicalPath();
+        String canonicalDest = destFolder.getCanonicalPath();
+        String canonicalDestPrefix = canonicalDest.endsWith(File.separator) ? canonicalDest : canonicalDest + File.separator;
+
+        if (!canonicalTarget.startsWith(canonicalDestPrefix)) {
+            throw new IOException("Manifest file_name escapes destination directory");
+        }
+
+        return targetFile;
+    }
+
     // Shared OkHttpClient to prevent resource leaks
     protected static OkHttpClient sharedClient;
     private static String currentAppId = "unknown";
@@ -338,7 +363,14 @@ public class DownloadService extends Worker {
                 boolean isBrotli = fileName.endsWith(".br");
                 String targetFileName = isBrotli ? fileName.substring(0, fileName.length() - 3) : fileName;
 
-                File targetFile = new File(destFolder, targetFileName);
+                File targetFile;
+                try {
+                    targetFile = resolveManifestFile(destFolder, targetFileName);
+                } catch (IOException e) {
+                    logger.error("Invalid manifest file_name: " + fileName);
+                    hasError.set(true);
+                    continue;
+                }
                 String cacheBaseName = new File(isBrotli ? targetFileName : fileName).getName();
                 File cacheFile = new File(cacheFolder, finalFileHash + "_" + cacheBaseName);
                 final File legacyCacheFile = isBrotli ? new File(cacheFolder, finalFileHash + "_" + new File(fileName).getName()) : null;
