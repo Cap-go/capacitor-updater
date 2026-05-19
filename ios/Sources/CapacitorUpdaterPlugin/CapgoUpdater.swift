@@ -874,9 +874,30 @@ import UIKit
         return actualHash == expectedHash
     }
 
+    private func resolveManifestFile(baseURL: URL, fileName: String) throws -> URL {
+        if fileName.isEmpty || fileName.contains("\\") || fileName.hasPrefix("/") {
+            throw NSError(domain: "ManifestEntryError", code: 3, userInfo: [NSLocalizedDescriptionKey: "Invalid manifest file path: \(fileName)"])
+        }
+
+        let targetURL = baseURL.appendingPathComponent(fileName).standardizedFileURL
+        let canonicalPath = targetURL.path
+        let canonicalBase = baseURL.standardizedFileURL.path
+        let canonicalBasePrefix = canonicalBase.hasSuffix("/") ? canonicalBase : "\(canonicalBase)/"
+
+        if canonicalPath != canonicalBase && !canonicalPath.hasPrefix(canonicalBasePrefix) {
+            throw NSError(domain: "ManifestEntryError", code: 4, userInfo: [NSLocalizedDescriptionKey: "Manifest file path escapes bundle directory: \(fileName)"])
+        }
+
+        return targetURL
+    }
+
     public func downloadManifest(manifest: [ManifestEntry], version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
         let id = self.randomString(length: 10)
         logger.info("downloadManifest start \(id)")
+        if !self.publicKey.isEmpty && sessionKey.isEmpty {
+            self.sendStats(action: "checksum_required", versionName: version)
+            throw NSError(domain: "ManifestEncryptionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Session key required when public key is present for manifest download"])
+        }
         let destFolder = self.getBundleDirectory(id: id)
         let builtinFolder = Bundle.main.bundleURL.appendingPathComponent("public")
 
@@ -972,8 +993,8 @@ import UIKit
             let legacyCacheFilePath: URL? = isBrotli ? cacheFolder.appendingPathComponent("\(finalFileHash)_\(fileNameWithoutPath)") : nil
 
             let destFileName = isBrotli ? String(fileName.dropLast(3)) : fileName
-            let destFilePath = destFolder.appendingPathComponent(destFileName)
-            let builtinFilePath = builtinFolder.appendingPathComponent(fileName)
+            let destFilePath = try self.resolveManifestFile(baseURL: destFolder, fileName: destFileName)
+            let builtinFilePath = try self.resolveManifestFile(baseURL: builtinFolder, fileName: fileName)
 
             // Create parent directories synchronously (before operations start)
             try? FileManager.default.createDirectory(at: destFilePath.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)

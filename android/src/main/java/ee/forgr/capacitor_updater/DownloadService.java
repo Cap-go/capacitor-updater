@@ -129,6 +129,28 @@ public class DownloadService extends Worker {
         return result.isEmpty() ? "unknown" : result;
     }
 
+    private File resolveManifestFile(File baseDir, String fileName) throws IOException {
+        if (fileName == null || fileName.isEmpty() || fileName.contains("\\")) {
+            throw new IOException("Invalid manifest file path: " + fileName);
+        }
+
+        File requestedFile = new File(fileName);
+        if (requestedFile.isAbsolute()) {
+            throw new IOException("Manifest file path must be relative: " + fileName);
+        }
+
+        File targetFile = new File(baseDir, fileName);
+        String canonicalBase = baseDir.getCanonicalPath();
+        String canonicalTarget = targetFile.getCanonicalPath();
+        String canonicalBasePrefix = canonicalBase.endsWith(File.separator) ? canonicalBase : canonicalBase + File.separator;
+
+        if (!canonicalTarget.equals(canonicalBase) && !canonicalTarget.startsWith(canonicalBasePrefix)) {
+            throw new IOException("Manifest file path escapes bundle directory: " + fileName);
+        }
+
+        return targetFile;
+    }
+
     // Method to update User-Agent values
     public static void updateUserAgent(String appId, String pluginVersion, String versionOs) {
         currentAppId = sanitizeUserAgentValue(appId);
@@ -285,6 +307,11 @@ public class DownloadService extends Worker {
         try {
             logger.debug("handleManifestDownload");
 
+            if (publicKey != null && !publicKey.isEmpty() && (sessionKey == null || sessionKey.isEmpty())) {
+                sendStatsAsync("checksum_required", version);
+                throw new IOException("Session key required when public key is present for manifest download: " + version);
+            }
+
             // Send stats for manifest download start
             sendStatsAsync("download_manifest_start", version);
 
@@ -338,11 +365,11 @@ public class DownloadService extends Worker {
                 boolean isBrotli = fileName.endsWith(".br");
                 String targetFileName = isBrotli ? fileName.substring(0, fileName.length() - 3) : fileName;
 
-                File targetFile = new File(destFolder, targetFileName);
+                File targetFile = resolveManifestFile(destFolder, targetFileName);
                 String cacheBaseName = new File(isBrotli ? targetFileName : fileName).getName();
                 File cacheFile = new File(cacheFolder, finalFileHash + "_" + cacheBaseName);
                 final File legacyCacheFile = isBrotli ? new File(cacheFolder, finalFileHash + "_" + new File(fileName).getName()) : null;
-                File builtinFile = new File(builtinFolder, fileName);
+                File builtinFile = resolveManifestFile(builtinFolder, fileName);
 
                 // Ensure parent directories of the target file exist
                 if (!Objects.requireNonNull(targetFile.getParentFile()).exists() && !targetFile.getParentFile().mkdirs()) {
