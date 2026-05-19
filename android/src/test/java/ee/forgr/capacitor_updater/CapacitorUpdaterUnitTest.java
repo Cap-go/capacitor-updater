@@ -817,6 +817,17 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void pluginMethodsDoNotExposeApplicationExitInfoToReflection() {
+        final String applicationExitInfoClassName = ApplicationExitInfo.class.getName();
+        for (final Method method : CapacitorUpdaterPlugin.class.getDeclaredMethods()) {
+            assertNotEquals(applicationExitInfoClassName, method.getReturnType().getName());
+            for (final Class<?> parameterType : method.getParameterTypes()) {
+                assertNotEquals(applicationExitInfoClassName, parameterType.getName());
+            }
+        }
+    }
+
+    @Test
     public void ignoresExpectedApplicationExitReasonsForStats() {
         assertNull(CapacitorUpdaterPlugin.statsActionForApplicationExitReason(ApplicationExitInfo.REASON_EXIT_SELF));
         assertNull(CapacitorUpdaterPlugin.statsActionForApplicationExitReason(ApplicationExitInfo.REASON_USER_REQUESTED));
