@@ -5,9 +5,13 @@ import Version
 
 private class TestableCapacitorUpdaterPlugin: CapacitorUpdaterPlugin {
     private(set) var notifiedEventNames: [String] = []
+    private(set) var notifiedEventPayloads: [String: [String: Any]] = [:]
 
     override func notifyListeners(_ eventName: String, data: [String: Any]?, retainUntilConsumed retain: Bool) {
         notifiedEventNames.append(eventName)
+        if let data {
+            notifiedEventPayloads[eventName] = data
+        }
     }
 
     override func endBackGroundTask() {
@@ -1256,6 +1260,42 @@ class CapacitorUpdaterTests: XCTestCase {
         wait(for: [rejected], timeout: 10)
     }
 
+    func testGetLatestBreakingResponseNotifiesBreakingListeners() throws {
+        let latest = AppVersion()
+        latest.version = "2.0.0"
+        latest.breaking = true
+        latest.message = "store_update_required"
+        latest.statusCode = 200
+
+        let breakingImplementation = FreshDownloadCapgoUpdater()
+        breakingImplementation.latestResponse = latest
+
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.implementation = breakingImplementation
+        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
+
+        let rejected = expectation(description: "getLatest rejects store update response")
+        let call = try XCTUnwrap(CAPPluginCall(
+            callbackId: "get-latest-breaking-response-test",
+            options: [:],
+            success: { _, _ in
+                XCTFail("getLatest should reject store update responses")
+            },
+            error: { error in
+                XCTAssertEqual(error?.message, "store_update_required")
+                rejected.fulfill()
+            }
+        ))
+
+        testPlugin.getLatest(call)
+        wait(for: [rejected], timeout: 10)
+
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("breakingAvailable"))
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("majorAvailable"))
+        XCTAssertEqual(testPlugin.notifiedEventPayloads["breakingAvailable"]?["version"] as? String, "2.0.0")
+        XCTAssertEqual(testPlugin.notifiedEventPayloads["majorAvailable"]?["version"] as? String, "2.0.0")
+    }
+
     func testBlockedUpdateCheckDoesNotNotifyDownloadFailed() {
         let current = BundleInfo(
             id: "test-id",
@@ -1265,6 +1305,7 @@ class CapacitorUpdaterTests: XCTestCase {
             checksum: "abc123"
         )
         let latest = AppVersion()
+        latest.version = "2.0.0"
         latest.error = "disable_auto_update_to_major"
         latest.kind = "blocked"
         latest.message = "Cannot upgrade major version"
@@ -1282,8 +1323,44 @@ class CapacitorUpdaterTests: XCTestCase {
 
         XCTAssertTrue(testPlugin.notifiedEventNames.contains("noNeedUpdate"))
         XCTAssertTrue(testPlugin.notifiedEventNames.contains("updateCheckResult"))
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("breakingAvailable"))
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("majorAvailable"))
+        XCTAssertEqual(testPlugin.notifiedEventPayloads["breakingAvailable"]?["version"] as? String, "2.0.0")
+        XCTAssertEqual(testPlugin.notifiedEventPayloads["majorAvailable"]?["version"] as? String, "2.0.0")
         XCTAssertFalse(testPlugin.notifiedEventNames.contains("downloadFailed"))
         XCTAssertFalse(blockedImplementation.sentStatsActions.contains("download_fail"))
+    }
+
+    func testBreakingNoUrlUpdateCheckNotifiesBreakingListeners() {
+        let current = BundleInfo(
+            id: "test-id",
+            version: "1.0.0",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "abc123"
+        )
+        let latest = AppVersion()
+        latest.version = "2.0.0"
+        latest.breaking = true
+        latest.message = "store_update_required"
+        latest.statusCode = 200
+
+        let breakingImplementation = FreshDownloadCapgoUpdater()
+        breakingImplementation.currentBundleValue = current
+        breakingImplementation.latestResponse = latest
+
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.implementation = breakingImplementation
+        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
+
+        testPlugin.backgroundDownload()
+
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("breakingAvailable"))
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("majorAvailable"))
+        XCTAssertEqual(testPlugin.notifiedEventPayloads["breakingAvailable"]?["version"] as? String, "2.0.0")
+        XCTAssertEqual(testPlugin.notifiedEventPayloads["majorAvailable"]?["version"] as? String, "2.0.0")
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("downloadFailed"))
+        XCTAssertTrue(breakingImplementation.sentStatsActions.contains("download_fail"))
     }
 
     func testFailedUpdateCheckNotifiesDownloadFailed() {

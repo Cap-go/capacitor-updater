@@ -1025,6 +1025,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             if let error = res.error, !error.isEmpty {
                 let responseKind = self.updateResponseKind(kind: res.kind)
                 res.kind = responseKind
+                self.notifyBreakingEventsIfNeeded(response: res, version: res.version)
                 if responseKind == "failed" {
                     self.rejectCall(call, message: error)
                 } else {
@@ -1036,6 +1037,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             } else if let kind = res.kind, !kind.isEmpty {
                 let responseKind = self.updateResponseKind(kind: kind)
                 res.kind = responseKind
+                self.notifyBreakingEventsIfNeeded(response: res, version: res.version)
                 if responseKind != "failed" {
                     if res.version.isEmpty {
                         res.version = self.implementation.getCurrentBundle().getVersionName()
@@ -1045,6 +1047,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     self.rejectCall(call, message: res.message ?? "server did not provide a message")
                 }
             } else if let message = res.message, !message.isEmpty {
+                self.notifyBreakingEventsIfNeeded(response: res, version: res.version)
                 self.rejectCall(call, message: message)
             } else {
                 self.resolveCall(call, data: res.toDict())
@@ -1821,6 +1824,20 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.notifyListeners("majorAvailable", data: payload)
     }
 
+    private func shouldNotifyBreakingEvents(response: AppVersion) -> Bool {
+        if response.breaking == true {
+            return true
+        }
+
+        return response.error == "disable_auto_update_to_major" || response.message == "store_update_required"
+    }
+
+    private func notifyBreakingEventsIfNeeded(response: AppVersion, version: String) {
+        if self.shouldNotifyBreakingEvents(response: response) {
+            self.notifyBreakingEvents(version: version)
+        }
+    }
+
     static func normalizedUpdateResponseKind(kind: String?) -> String {
         if let kind, ["up_to_date", "blocked", "failed"].contains(kind) {
             return kind
@@ -1851,6 +1868,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             "version": latestVersionName,
             "bundle": current.toJSON()
         ])
+        self.notifyBreakingEventsIfNeeded(response: res, version: res.version)
 
         if responseKind == "up_to_date" {
             self.logger.info("No new version available")
@@ -2017,17 +2035,18 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
             let sessionKey = res.sessionKey ?? ""
+            let latestVersionName = res.version
             guard let downloadUrl = URL(string: res.url) else {
+                self.notifyBreakingEventsIfNeeded(response: res, version: latestVersionName)
                 self.logger.error("Error no url or wrong format")
                 self.endBackGroundTaskWithNotif(
                     msg: "Error no url or wrong format",
-                    latestVersionName: res.version,
+                    latestVersionName: latestVersionName,
                     current: current,
                     plannedDirectUpdate: plannedDirectUpdate
                 )
                 return
             }
-            let latestVersionName = res.version
             if latestVersionName != "" && current.getVersionName() != latestVersionName {
                 do {
                     self.logger.info("New bundle: \(latestVersionName) found. Current is: \(current.getVersionName()). \(messageUpdate)")
