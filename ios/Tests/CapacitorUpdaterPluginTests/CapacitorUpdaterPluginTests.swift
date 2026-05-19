@@ -1296,6 +1296,49 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(testPlugin.notifiedEventPayloads["majorAvailable"]?["version"] as? String, "2.0.0")
     }
 
+    func testGetLatestBreakingResponseWithoutVersionNotifiesCurrentBundleVersion() throws {
+        let current = BundleInfo(
+            id: "test-id",
+            version: "1.0.0",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "abc123"
+        )
+        let latest = AppVersion()
+        latest.error = "disable_auto_update_to_major"
+        latest.kind = "blocked"
+        latest.message = "Cannot upgrade major version"
+        latest.statusCode = 200
+
+        let breakingImplementation = FreshDownloadCapgoUpdater()
+        breakingImplementation.currentBundleValue = current
+        breakingImplementation.latestResponse = latest
+
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.implementation = breakingImplementation
+        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
+
+        let resolved = expectation(description: "getLatest resolves blocked breaking response")
+        let call = try XCTUnwrap(CAPPluginCall(
+            callbackId: "get-latest-breaking-response-no-version-test",
+            options: [:],
+            success: { _, _ in
+                resolved.fulfill()
+            },
+            error: { _ in
+                XCTFail("getLatest should resolve blocked breaking responses")
+            }
+        ))
+
+        testPlugin.getLatest(call)
+        wait(for: [resolved], timeout: 10)
+
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("breakingAvailable"))
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("majorAvailable"))
+        XCTAssertEqual(testPlugin.notifiedEventPayloads["breakingAvailable"]?["version"] as? String, "1.0.0")
+        XCTAssertEqual(testPlugin.notifiedEventPayloads["majorAvailable"]?["version"] as? String, "1.0.0")
+    }
+
     func testBlockedUpdateCheckDoesNotNotifyDownloadFailed() {
         let current = BundleInfo(
             id: "test-id",

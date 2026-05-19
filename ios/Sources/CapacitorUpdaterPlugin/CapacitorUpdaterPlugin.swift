@@ -1834,7 +1834,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func notifyBreakingEventsIfNeeded(response: AppVersion, version: String) {
         if self.shouldNotifyBreakingEvents(response: response) {
-            self.notifyBreakingEvents(version: version)
+            let eventVersion = version.isEmpty ? self.implementation.getCurrentBundle().getVersionName() : version
+            self.notifyBreakingEvents(version: eventVersion)
         }
     }
 
