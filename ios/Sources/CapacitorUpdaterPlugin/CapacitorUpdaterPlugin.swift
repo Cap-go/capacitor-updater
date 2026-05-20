@@ -999,7 +999,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("startPreviewSession not allowed. Set allowPreview to true in your config to enable it.")
             return
         }
-        let previewAppId = call.getString("appId")?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let previewAppId = self.normalizedPreviewAppId(call.getString("appId"))
 
         if !self.previewSessionEnabled {
             let current = self.implementation.getCurrentBundle()
@@ -1156,6 +1156,24 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         logger.info("Restored appId after preview: \(previousAppId)")
     }
 
+    private func normalizedPreviewAppId(_ rawAppId: String?) -> String? {
+        guard let rawAppId else {
+            return nil
+        }
+
+        let appId = rawAppId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !appId.isEmpty else {
+            return nil
+        }
+
+        let lowercasedAppId = appId.lowercased()
+        if lowercasedAppId == "undefined" || lowercasedAppId == "null" {
+            return nil
+        }
+
+        return appId
+    }
+
     private func clearPreviewSessionForNativeBuildChange() {
         guard self.previewSessionEnabled || self.implementation.getPreviewFallbackBundle() != nil else {
             return
@@ -1273,8 +1291,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func getLatest(_ call: CAPPluginCall) {
         let channel = call.getString("channel")
-        let appId = call.getString("appId")?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if (appId?.isEmpty == false) && !self.allowPreview {
+        let appId = self.normalizedPreviewAppId(call.getString("appId"))
+        if appId != nil && !self.allowPreview {
             logger.error("getLatest preview override called without allowPreview")
             call.reject("getLatest preview override not allowed. Set allowPreview to true in your config to enable it.")
             return
@@ -1284,7 +1302,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             let res = self.implementation.getLatest(
                 url: URL(string: self.updateUrl)!,
                 channel: channel,
-                appIdOverride: appId?.isEmpty == false ? appId : nil
+                appIdOverride: appId
             )
             if let error = res.error, !error.isEmpty {
                 let responseKind = self.updateResponseKind(kind: res.kind)

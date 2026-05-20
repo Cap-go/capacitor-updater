@@ -2122,7 +2122,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             call.reject("startPreviewSession not allowed");
             return;
         }
-        final String previewAppId = call.getString("appId");
+        final String previewAppId = this.normalizePreviewAppId(call.getString("appId"));
         startNewThread(() -> {
             try {
                 if (!Boolean.TRUE.equals(this.previewSessionEnabled)) {
@@ -2149,10 +2149,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     logger.info("Preview session started with fallback bundle: " + current);
                 }
 
-                if (previewAppId != null && !previewAppId.trim().isEmpty()) {
-                    this.setActiveAppId(previewAppId.trim());
-                    this.editor.putString(PREVIEW_APP_ID_PREF_KEY, previewAppId.trim());
-                    logger.info("Preview session using appId: " + previewAppId.trim());
+                if (previewAppId != null) {
+                    this.setActiveAppId(previewAppId);
+                    this.editor.putString(PREVIEW_APP_ID_PREF_KEY, previewAppId);
+                    logger.info("Preview session using appId: " + previewAppId);
                 }
 
                 this.previewSessionEnabled = true;
@@ -2303,6 +2303,24 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         this.setActiveAppId(previousAppId);
         logger.info("Restored appId after preview: " + previousAppId);
+    }
+
+    private String normalizePreviewAppId(final String rawAppId) {
+        if (rawAppId == null) {
+            return null;
+        }
+
+        final String appId = rawAppId.trim();
+        if (appId.isEmpty()) {
+            return null;
+        }
+
+        final String lowercasedAppId = appId.toLowerCase(java.util.Locale.ROOT);
+        if ("undefined".equals(lowercasedAppId) || "null".equals(lowercasedAppId)) {
+            return null;
+        }
+
+        return appId;
     }
 
     private void clearPreviewSessionForNativeBuildChange() {
@@ -2480,9 +2498,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     @PluginMethod
     public void getLatest(final PluginCall call) {
         final String channel = call.getString("channel");
-        final String appId = call.getString("appId");
-        final String trimmedAppId = appId == null ? null : appId.trim();
-        final boolean hasPreviewAppId = trimmedAppId != null && !trimmedAppId.isEmpty();
+        final String previewAppId = this.normalizePreviewAppId(call.getString("appId"));
+        final boolean hasPreviewAppId = previewAppId != null;
         if (hasPreviewAppId && !Boolean.TRUE.equals(this.allowPreview)) {
             logger.error("getLatest preview override not allowed set allowPreview in your config to true to enable it");
             call.reject("getLatest preview override not allowed");
@@ -2524,7 +2541,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 CapacitorUpdaterPlugin.this.implementation.getLatest(
                     CapacitorUpdaterPlugin.this.updateUrl,
                     channel,
-                    trimmedAppId,
+                    previewAppId,
                     latestCallback
                 );
                 return;
