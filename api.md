@@ -66,6 +66,7 @@ CapacitorUpdater can be configured with these options:
 - [`download`](#download)
 - [`next`](#next)
 - [`set`](#set)
+- [`startPreviewSession`](#startpreviewsession)
 - [`delete`](#delete)
 - [`setBundleError`](#setbundleerror)
 - [`list`](#list)
@@ -376,6 +377,30 @@ For other state preservation needs, save your data before calling this method (e
 `Promise<void>` — A promise that will never resolve because the JavaScript context is destroyed.
 
 **Throws:** {Error} When there is no index.html file inside the bundle folder.
+
+
+--------------------
+
+
+### startPreviewSession
+
+```typescript
+startPreviewSession() => Promise<void>
+```
+
+Start a temporary preview/testing session.
+
+This stores the currently active bundle as the pending fallback, enables the
+native shake menu, and makes the next applied bundle show a native notice
+explaining that shaking the device can reload or leave the preview.
+
+Use this before calling {@link set} for Expo Go-style preview flows.
+
+**Returns**
+
+`Promise<void>` — Resolves when preview session state is prepared.
+
+**Since:** 8.47.0
 
 
 --------------------

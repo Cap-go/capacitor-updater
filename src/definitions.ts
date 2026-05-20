@@ -550,6 +550,20 @@ export interface CapacitorUpdaterPlugin {
   set(options: BundleId): Promise<void>;
 
   /**
+   * Start a temporary preview/testing session.
+   *
+   * This stores the currently active bundle as the pending fallback, enables the
+   * native shake menu, and makes the next applied bundle show a native notice
+   * explaining that shaking the device can reload or leave the preview.
+   *
+   * Use this before calling {@link set} for Expo Go-style preview flows.
+   *
+   * @returns {Promise<void>} Resolves when preview session state is prepared.
+   * @since 8.47.0
+   */
+  startPreviewSession(): Promise<void>;
+
+  /**
    * Delete a bundle from local storage to free up disk space.
    *
    * You cannot delete:
