@@ -37,7 +37,7 @@ private final class FreshDownloadCapgoUpdater: CapgoUpdater {
     var onDownloadStart: (() -> Void)?
     var sentStatsActions: [String] = []
 
-    override func getLatest(url: URL, channel: String?) -> AppVersion {
+    override func getLatest(url: URL, channel: String?, appIdOverride: String? = nil, preview: Bool = false) -> AppVersion {
         latestResponse
     }
 
