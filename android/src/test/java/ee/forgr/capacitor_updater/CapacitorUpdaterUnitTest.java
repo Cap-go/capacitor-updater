@@ -820,11 +820,19 @@ public class CapacitorUpdaterUnitTest {
     public void pluginMethodsDoNotExposeApplicationExitInfoToReflection() {
         final String applicationExitInfoClassName = ApplicationExitInfo.class.getName();
         for (final Method method : CapacitorUpdaterPlugin.class.getDeclaredMethods()) {
-            assertNotEquals(applicationExitInfoClassName, method.getReturnType().getName());
+            assertFalse(exposesApplicationExitInfoType(method.getReturnType(), applicationExitInfoClassName));
             for (final Class<?> parameterType : method.getParameterTypes()) {
-                assertNotEquals(applicationExitInfoClassName, parameterType.getName());
+                assertFalse(exposesApplicationExitInfoType(parameterType, applicationExitInfoClassName));
             }
         }
+    }
+
+    private static boolean exposesApplicationExitInfoType(final Class<?> type, final String applicationExitInfoClassName) {
+        Class<?> currentType = type;
+        while (currentType.isArray()) {
+            currentType = currentType.getComponentType();
+        }
+        return applicationExitInfoClassName.equals(currentType.getName());
     }
 
     @Test
