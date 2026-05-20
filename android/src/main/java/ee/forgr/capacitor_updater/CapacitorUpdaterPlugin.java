@@ -7,6 +7,7 @@
 package ee.forgr.capacitor_updater;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -85,6 +86,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final String STATS_URL_PREF_KEY = "CapacitorUpdater.statsUrl";
     private static final String CHANNEL_URL_PREF_KEY = "CapacitorUpdater.channelUrl";
     private static final String DEFAULT_CHANNEL_PREF_KEY = "CapacitorUpdater.defaultChannel";
+    private static final String PREVIEW_SESSION_PREF_KEY = "CapacitorUpdater.previewSession";
+    private static final String PREVIEW_PREVIOUS_SHAKE_MENU_PREF_KEY = "CapacitorUpdater.previewPreviousShakeMenu";
+    private static final String PREVIEW_PREVIOUS_SHAKE_CHANNEL_SELECTOR_PREF_KEY = "CapacitorUpdater.previewPreviousShakeChannelSelector";
+    private static final String PREVIEW_PREVIOUS_NEXT_BUNDLE_PREF_KEY = "CapacitorUpdater.previewPreviousNextBundle";
     private static final String[] BREAKING_EVENT_NAMES = { "breakingAvailable", "majorAvailable" };
     private static final String LAST_FAILED_BUNDLE_PREF_KEY = "CapacitorUpdater.lastFailedBundle";
     private static final String LAST_REPORTED_APP_EXIT_TIMESTAMP_PREF_KEY = "CapacitorUpdater.lastReportedAppExitTimestamp";
@@ -106,7 +111,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     static final int APPLICATION_EXIT_REASON_USER_REQUESTED = 10;
     static final int APPLICATION_EXIT_REASON_DEPENDENCY_DIED = 12;
 
-    private final String pluginVersion = "8.46.3";
+    private final String pluginVersion = "8.47.0";
     private static final String DELAY_CONDITION_PREFERENCES = "";
 
     private SharedPreferences.Editor editor;
@@ -136,6 +141,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private volatile boolean onLaunchDirectUpdateUsed = false;
     Boolean shakeMenuEnabled = false;
     Boolean shakeChannelSelectorEnabled = false;
+    Boolean previewSessionEnabled = false;
+    private Boolean previewSessionAlertPending = false;
     private Boolean allowManualBundleError = false;
     Boolean allowSetDefaultChannel = true;
 
@@ -509,12 +516,21 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.implementation.timeout = this.getConfig().getInt("responseTimeout", 20) * 1000;
         this.shakeMenuEnabled = this.getConfig().getBoolean("shakeMenu", false);
         this.shakeChannelSelectorEnabled = this.getConfig().getBoolean("allowShakeChannelSelector", false);
+        this.previewSessionEnabled = this.prefs.getBoolean(PREVIEW_SESSION_PREF_KEY, false);
+        if (Boolean.TRUE.equals(this.previewSessionEnabled)) {
+            this.shakeMenuEnabled = true;
+            this.shakeChannelSelectorEnabled = false;
+        }
         boolean resetWhenUpdate = this.getConfig().getBoolean("resetWhenUpdate", true);
 
         // Check if app was recently installed/updated BEFORE cleanupObsoleteVersions updates LatestVersionNative
         this.wasRecentlyInstalledOrUpdated = this.checkIfRecentlyInstalledOrUpdated();
+        final boolean nativeBuildVersionChanged = this.hasNativeBuildVersionChanged();
 
         this.implementation.autoReset(this.currentBuildVersion, resetWhenUpdate);
+        if (nativeBuildVersionChanged) {
+            this.clearPreviewSessionForNativeBuildChange();
+        }
         this.reportPreviousAppExitReasons();
         this.reportPreviousWebViewRenderProcessGone();
         this.installWebViewStatsReporter();
@@ -858,6 +874,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
 
         return false;
+    }
+
+    private boolean hasNativeBuildVersionChanged() {
+        final String lastKnownVersion = this.getStoredNativeBuildVersion();
+        return !lastKnownVersion.isEmpty() && !lastKnownVersion.equals(this.currentBuildVersion);
     }
 
     private void reportPreviousAppExitReasons() {
@@ -2004,6 +2025,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         }
                         this.notifyBundleSet(next);
                         this.implementation.setNextBundle(null);
+                        this.showPreviewSessionNoticeIfNeeded();
                         call.resolve();
                         return;
                     }
@@ -2015,6 +2037,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 }
 
                 if (this._reload()) {
+                    this.showPreviewSessionNoticeIfNeeded();
                     call.resolve();
                 } else {
                     logger.error("Reload failed");
@@ -2069,6 +2092,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 } else {
                     logger.info("Bundle successfully set to " + id);
                     this.notifyBundleSet(this.implementation.getBundleInfo(id));
+                    this.showPreviewSessionNoticeIfNeeded();
                     call.resolve();
                 }
             } catch (final Exception e) {
@@ -2076,6 +2100,228 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 call.reject("Could not set id " + id, e);
             }
         });
+    }
+
+    @PluginMethod
+    public void startPreviewSession(final PluginCall call) {
+        startNewThread(() -> {
+            try {
+                if (!Boolean.TRUE.equals(this.previewSessionEnabled)) {
+                    final BundleInfo current = this.implementation.getCurrentBundle();
+                    if (!this.implementation.setPreviewFallbackBundle(current.getId())) {
+                        logger.error("Could not save current bundle as preview fallback");
+                        call.reject("Could not save current bundle as preview fallback");
+                        return;
+                    }
+
+                    final BundleInfo previousNext = this.implementation.getNextBundle();
+                    if (previousNext == null || previousNext.isDeleted() || previousNext.isErrorStatus()) {
+                        this.editor.remove(PREVIEW_PREVIOUS_NEXT_BUNDLE_PREF_KEY);
+                    } else {
+                        this.editor.putString(PREVIEW_PREVIOUS_NEXT_BUNDLE_PREF_KEY, previousNext.getId());
+                    }
+
+                    this.editor.putBoolean(PREVIEW_PREVIOUS_SHAKE_MENU_PREF_KEY, Boolean.TRUE.equals(this.shakeMenuEnabled));
+                    this.editor.putBoolean(
+                        PREVIEW_PREVIOUS_SHAKE_CHANNEL_SELECTOR_PREF_KEY,
+                        Boolean.TRUE.equals(this.shakeChannelSelectorEnabled)
+                    );
+                    logger.info("Preview session started with fallback bundle: " + current);
+                }
+
+                this.previewSessionEnabled = true;
+                this.previewSessionAlertPending = true;
+                this.shakeMenuEnabled = true;
+                this.shakeChannelSelectorEnabled = false;
+                this.editor.putBoolean(PREVIEW_SESSION_PREF_KEY, true);
+                this.editor.apply();
+                this.ensureShakeMenuStarted();
+                call.resolve();
+            } catch (final Exception e) {
+                logger.error("Could not start preview session " + e.getMessage());
+                call.reject("Could not start preview session", e);
+            }
+        });
+    }
+
+    public boolean leavePreviewSessionFromShakeMenu() {
+        final BundleInfo previewBundle = this.implementation.getCurrentBundle();
+
+        final boolean didReset = this.resetToPreviewFallbackBundle();
+        if (!didReset) {
+            return false;
+        }
+
+        if (!this.clearPreviewChannelOverride()) {
+            return false;
+        }
+        final BundleInfo previewFallbackBundle = this.implementation.getPreviewFallbackBundle();
+        this.endPreviewSession();
+        final BundleInfo restoredNextBundle = this.implementation.getNextBundle();
+        if (
+            !previewBundle.isBuiltin() &&
+            (previewFallbackBundle == null || !previewBundle.getId().equals(previewFallbackBundle.getId())) &&
+            (restoredNextBundle == null || !previewBundle.getId().equals(restoredNextBundle.getId()))
+        ) {
+            try {
+                this.implementation.delete(previewBundle.getId(), false);
+            } catch (final Exception err) {
+                logger.warn("Cannot delete preview bundle " + previewBundle.getId() + ": " + err.getMessage());
+            }
+        }
+        return true;
+    }
+
+    public boolean reloadPreviewSessionFromShakeMenu() {
+        return this._reload();
+    }
+
+    public boolean hasActivePreviewSession() {
+        return Boolean.TRUE.equals(this.previewSessionEnabled);
+    }
+
+    private boolean resetToPreviewFallbackBundle() {
+        final BundleInfo fallback = this.implementation.getPreviewFallbackBundle();
+        if (fallback == null || fallback.isErrorStatus()) {
+            logger.error("No preview fallback bundle available");
+            return false;
+        }
+        if (!this.implementation.canSet(fallback)) {
+            logger.error("Preview fallback bundle is not installable");
+            return false;
+        }
+
+        final CapgoUpdater.ResetState previousState = this.implementation.captureResetState();
+        final String previousBundleName = this.implementation.getCurrentBundle().getVersionName();
+        logger.info("Resetting to preview fallback bundle: " + fallback.getVersionName());
+        if (this.implementation.stagePreviewFallbackReload(fallback) && this._reload()) {
+            this.implementation.finalizeResetTransition(previousBundleName, false);
+            this.notifyBundleSet(fallback);
+            return true;
+        }
+        this.implementation.restoreResetState(previousState);
+        this.restoreLiveBundleStateAfterFailedReload();
+        return false;
+    }
+
+    private void endPreviewSession() {
+        final boolean previousShakeMenuEnabled = this.prefs.getBoolean(
+            PREVIEW_PREVIOUS_SHAKE_MENU_PREF_KEY,
+            this.getConfig().getBoolean("shakeMenu", false)
+        );
+        final boolean previousShakeChannelSelectorEnabled = this.prefs.getBoolean(
+            PREVIEW_PREVIOUS_SHAKE_CHANNEL_SELECTOR_PREF_KEY,
+            this.getConfig().getBoolean("allowShakeChannelSelector", false)
+        );
+        this.restorePreviewPreviousNextBundle();
+
+        this.previewSessionEnabled = false;
+        this.previewSessionAlertPending = false;
+        this.shakeMenuEnabled = previousShakeMenuEnabled;
+        this.shakeChannelSelectorEnabled = previousShakeChannelSelectorEnabled;
+        this.editor.remove(PREVIEW_SESSION_PREF_KEY);
+        this.editor.remove(PREVIEW_PREVIOUS_SHAKE_MENU_PREF_KEY);
+        this.editor.remove(PREVIEW_PREVIOUS_SHAKE_CHANNEL_SELECTOR_PREF_KEY);
+        this.editor.remove(PREVIEW_PREVIOUS_NEXT_BUNDLE_PREF_KEY);
+        this.implementation.setPreviewFallbackBundle(null);
+        this.editor.apply();
+        logger.info("Preview session ended");
+    }
+
+    private void clearPreviewSessionForNativeBuildChange() {
+        if (!Boolean.TRUE.equals(this.previewSessionEnabled) && this.implementation.getPreviewFallbackBundle() == null) {
+            return;
+        }
+        logger.info("Native build changed; clearing preview session state");
+        this.previewSessionEnabled = false;
+        this.previewSessionAlertPending = false;
+        this.shakeMenuEnabled = this.getConfig().getBoolean("shakeMenu", false);
+        this.shakeChannelSelectorEnabled = this.getConfig().getBoolean("allowShakeChannelSelector", false);
+        this.editor.remove(PREVIEW_SESSION_PREF_KEY);
+        this.editor.remove(PREVIEW_PREVIOUS_SHAKE_MENU_PREF_KEY);
+        this.editor.remove(PREVIEW_PREVIOUS_SHAKE_CHANNEL_SELECTOR_PREF_KEY);
+        this.editor.remove(PREVIEW_PREVIOUS_NEXT_BUNDLE_PREF_KEY);
+        this.implementation.setPreviewFallbackBundle(null);
+        this.implementation.setNextBundle(null);
+        this.clearPreviewChannelOverride();
+        this.editor.apply();
+    }
+
+    private boolean clearPreviewChannelOverride() {
+        final String configDefaultChannel = this.getConfig().getString("defaultChannel", "");
+        final AtomicReference<Map<String, Object>> unsetChannelResult = new AtomicReference<>();
+        try {
+            this.implementation.unsetChannel(this.editor, DEFAULT_CHANNEL_PREF_KEY, configDefaultChannel, unsetChannelResult::set);
+        } catch (final Exception err) {
+            logger.error("Could not clear preview channel override: " + err.getMessage());
+            return false;
+        }
+
+        final Map<String, Object> result = unsetChannelResult.get();
+        if (result == null) {
+            logger.error("Could not clear preview channel override: no result");
+            return false;
+        }
+        if (result.containsKey("error")) {
+            final Object message = result.getOrDefault("message", result.get("error"));
+            logger.error("Could not clear preview channel override: " + message);
+            return false;
+        }
+        return true;
+    }
+
+    private void restorePreviewPreviousNextBundle() {
+        final String previousNextBundleId = this.prefs.getString(PREVIEW_PREVIOUS_NEXT_BUNDLE_PREF_KEY, null);
+        if (previousNextBundleId == null || previousNextBundleId.isEmpty()) {
+            this.implementation.setNextBundle(null);
+            return;
+        }
+        if (!this.implementation.setNextBundle(previousNextBundleId)) {
+            logger.warn("Could not restore pre-preview next bundle: " + previousNextBundleId);
+            this.implementation.setNextBundle(null);
+        }
+    }
+
+    private void ensureShakeMenuStarted() {
+        if (getActivity() instanceof com.getcapacitor.BridgeActivity && shakeMenu == null) {
+            try {
+                shakeMenu = new ShakeMenu(this, (com.getcapacitor.BridgeActivity) getActivity(), logger);
+                logger.info("Shake menu initialized");
+            } catch (Exception e) {
+                logger.error("Failed to initialize shake menu: " + e.getMessage());
+            }
+        }
+    }
+
+    private void showPreviewSessionNoticeIfNeeded() {
+        if (!Boolean.TRUE.equals(this.previewSessionEnabled) || !Boolean.TRUE.equals(this.previewSessionAlertPending)) {
+            return;
+        }
+        this.previewSessionAlertPending = false;
+
+        new Handler(Looper.getMainLooper()).postDelayed(
+            () -> {
+                try {
+                    if (!Boolean.TRUE.equals(this.previewSessionEnabled)) {
+                        return;
+                    }
+                    if (getActivity() == null || getActivity().isFinishing()) {
+                        this.previewSessionAlertPending = true;
+                        return;
+                    }
+
+                    new AlertDialog.Builder(getActivity())
+                        .setTitle("Preview started")
+                        .setMessage("Shake your device anytime to reload or leave the test app.")
+                        .setPositiveButton("Got it", (dialog, which) -> dialog.dismiss())
+                        .show();
+                } catch (final Exception e) {
+                    this.previewSessionAlertPending = true;
+                    logger.warn("Could not show preview session notice: " + e.getMessage());
+                }
+            },
+            600
+        );
     }
 
     @PluginMethod

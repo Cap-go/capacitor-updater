@@ -27,7 +27,8 @@ extension UIWindow {
     override open func motionEnded(_ motion: UIEvent.EventSubtype, with event: UIEvent?) {
         if motion == .motionShake {
             // Find the CapacitorUpdaterPlugin instance
-            guard let bridge = (rootViewController as? CAPBridgeProtocol),
+            guard let bridgeViewController = rootViewController as? CAPBridgeViewController,
+                  let bridge = bridgeViewController.bridge,
                   let plugin = bridge.plugin(withName: "CapacitorUpdaterPlugin") as? CapacitorUpdaterPlugin else {
                 return
             }
@@ -37,8 +38,9 @@ extension UIWindow {
                 return
             }
 
-            // Check if channel selector mode is enabled
-            if plugin.shakeChannelSelectorEnabled {
+            if plugin.hasActivePreviewSession() {
+                showDefaultMenu(plugin: plugin, bridge: bridge)
+            } else if plugin.shakeChannelSelectorEnabled {
                 showChannelSelector(plugin: plugin, bridge: bridge)
             } else {
                 showDefaultMenu(plugin: plugin, bridge: bridge)
@@ -54,6 +56,48 @@ extension UIWindow {
             return
         }
 
+        if !plugin.hasActivePreviewSession() {
+            showConfiguredDefaultMenu(plugin: plugin, bridge: bridge)
+            return
+        }
+
+        let appName = Bundle.main.infoDictionary?["CFBundleDisplayName"] as? String ?? "App"
+        let title = "Preview \(appName) Menu"
+        let message = "Reload the current preview or leave the test app."
+        let okButtonTitle = "Leave test app"
+        let reloadButtonTitle = "Reload app"
+        let cancelButtonTitle = "Close menu"
+
+        let alertShake = UIAlertController(title: title, message: message, preferredStyle: .alert)
+
+        alertShake.addAction(UIAlertAction(title: okButtonTitle, style: .default) { _ in
+            DispatchQueue.global(qos: .userInitiated).async {
+                if !plugin.leavePreviewSessionFromShakeMenu() {
+                    DispatchQueue.main.async {
+                        self.showError(message: "Could not leave the test app.", plugin: plugin)
+                    }
+                }
+            }
+        })
+
+        alertShake.addAction(UIAlertAction(title: reloadButtonTitle, style: .default) { _ in
+            DispatchQueue.main.async {
+                if !plugin.reloadPreviewSessionFromShakeMenu() {
+                    self.showError(message: "Could not reload the test app.", plugin: plugin)
+                }
+            }
+        })
+
+        alertShake.addAction(UIAlertAction(title: cancelButtonTitle, style: .default))
+
+        DispatchQueue.main.async {
+            if let topVC = UIApplication.topViewController() {
+                topVC.present(alertShake, animated: true)
+            }
+        }
+    }
+
+    private func showConfiguredDefaultMenu(plugin: CapacitorUpdaterPlugin, bridge: CAPBridgeProtocol) {
         let appName = Bundle.main.infoDictionary?["CFBundleDisplayName"] as? String ?? "App"
         let title = "Preview \(appName) Menu"
         let message = "What would you like to do?"

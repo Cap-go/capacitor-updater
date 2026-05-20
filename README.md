@@ -441,6 +441,7 @@ export default config;
 * [`download(...)`](#download)
 * [`next(...)`](#next)
 * [`set(...)`](#set)
+* [`startPreviewSession()`](#startpreviewsession)
 * [`delete(...)`](#delete)
 * [`setBundleError(...)`](#setbundleerror)
 * [`list(...)`](#list)
@@ -691,6 +692,25 @@ For other state preservation needs, save your data before calling this method (e
 | Param         | Type                                          | Description                                                                                       |
 | ------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | **`options`** | <code><a href="#bundleid">BundleId</a></code> | A {@link <a href="#bundleid">BundleId</a>} object containing the new bundle id to set as current. |
+
+--------------------
+
+
+#### startPreviewSession()
+
+```typescript
+startPreviewSession() => Promise<void>
+```
+
+Start a temporary preview/testing session.
+
+This stores the currently active bundle as the pending fallback, enables the
+native shake menu, and makes the next applied bundle show a native notice
+explaining that shaking the device can reload or leave the preview.
+
+Use this before calling {@link set} for Expo Go-style preview flows.
+
+**Since:** 8.47.0
 
 --------------------
 

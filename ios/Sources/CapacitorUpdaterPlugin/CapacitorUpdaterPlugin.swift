@@ -37,6 +37,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "setStatsUrl", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setChannelUrl", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "set", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "startPreviewSession", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "list", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "delete", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setBundleError", returnType: CAPPluginReturnPromise),
@@ -76,7 +77,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "completeFlexibleUpdate", returnType: CAPPluginReturnPromise)
     ]
     public var implementation = CapgoUpdater()
-    private let pluginVersion: String = "8.46.3"
+    private let pluginVersion: String = "8.47.0"
     static let updateUrlDefault = "https://plugin.capgo.app/updates"
     static let statsUrlDefault = "https://plugin.capgo.app/stats"
     static let channelUrlDefault = "https://plugin.capgo.app/channel_self"
@@ -87,6 +88,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private let channelUrlDefaultsKey = "CapacitorUpdater.channelUrl"
     private let defaultChannelDefaultsKey = "CapacitorUpdater.defaultChannel"
     private let lastFailedBundleDefaultsKey = "CapacitorUpdater.lastFailedBundle"
+    private let previewSessionDefaultsKey = "CapacitorUpdater.previewSession"
+    private let previewPreviousShakeMenuDefaultsKey = "CapacitorUpdater.previewPreviousShakeMenu"
+    private let previewPreviousShakeChannelSelectorDefaultsKey = "CapacitorUpdater.previewPreviousShakeChannelSelector"
+    private let previewPreviousNextBundleDefaultsKey = "CapacitorUpdater.previewPreviousNextBundle"
     // Note: DELAY_CONDITION_PREFERENCES is now defined in DelayUpdateUtils.DELAY_CONDITION_PREFERENCES
     private var updateUrl = ""
     private var backgroundTaskID: UIBackgroundTaskIdentifier = UIBackgroundTaskIdentifier.invalid
@@ -136,6 +141,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var webViewStatsReporter: WebViewStatsReporter?
     public var shakeMenuEnabled = false
     public var shakeChannelSelectorEnabled = false
+    public var previewSessionEnabled = false
+    private var previewSessionAlertPending = false
     let semaphoreReady = DispatchSemaphore(value: 0)
 
     private var delayUpdateUtils: DelayUpdateUtils!
@@ -232,6 +239,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
         shakeMenuEnabled = getConfig().getBoolean("shakeMenu", false)
         shakeChannelSelectorEnabled = getConfig().getBoolean("allowShakeChannelSelector", false)
+        previewSessionEnabled = UserDefaults.standard.bool(forKey: previewSessionDefaultsKey)
+        if previewSessionEnabled {
+            shakeMenuEnabled = true
+            shakeChannelSelectorEnabled = false
+        }
         periodCheckDelay = Self.normalizedPeriodCheckDelaySeconds(getConfig().getInt("periodCheckDelay", 0))
 
         implementation.setPublicKey(getConfig().getString("publicKey") ?? "")
@@ -298,6 +310,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         // Check if app was recently installed/updated BEFORE cleanup updates the stored native build version.
         self.wasRecentlyInstalledOrUpdated = self.checkIfRecentlyInstalledOrUpdated()
+        let nativeBuildVersionChanged = self.hasNativeBuildVersionChanged()
+        if nativeBuildVersionChanged {
+            self.clearPreviewSessionForNativeBuildChange()
+        }
 
         if resetWhenUpdate {
             let didResetCurrentBundle = self.resetCurrentBundleForNativeBuildChangeIfNeeded()
@@ -908,6 +924,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
                 self.notifyBundleSet(next)
                 _ = self.implementation.setNextBundle(next: Optional<String>.none)
+                self.showPreviewSessionNoticeIfNeeded()
                 call.resolve()
                 return
             }
@@ -919,6 +936,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         if self._reload() {
+            self.showPreviewSessionNoticeIfNeeded()
             call.resolve()
         } else {
             logger.error("Reload failed")
@@ -956,7 +974,172 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("Reload failed after setting bundle \(id)")
         } else {
             self.notifyBundleSet(self.implementation.getBundleInfo(id: id))
+            self.showPreviewSessionNoticeIfNeeded()
             call.resolve()
+        }
+    }
+
+    @objc func startPreviewSession(_ call: CAPPluginCall) {
+        if !self.previewSessionEnabled {
+            let current = self.implementation.getCurrentBundle()
+            guard self.implementation.setPreviewFallbackBundle(fallback: current.getId()) else {
+                logger.error("Could not save current bundle as preview fallback")
+                call.reject("Could not save current bundle as preview fallback")
+                return
+            }
+
+            if let previousNext = self.implementation.getNextBundle(),
+               !previousNext.isDeleted(),
+               !previousNext.isErrorStatus() {
+                UserDefaults.standard.set(previousNext.getId(), forKey: self.previewPreviousNextBundleDefaultsKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: self.previewPreviousNextBundleDefaultsKey)
+            }
+
+            UserDefaults.standard.set(self.shakeMenuEnabled, forKey: self.previewPreviousShakeMenuDefaultsKey)
+            UserDefaults.standard.set(self.shakeChannelSelectorEnabled, forKey: self.previewPreviousShakeChannelSelectorDefaultsKey)
+            logger.info("Preview session started with fallback bundle: \(current.toString())")
+        }
+
+        self.previewSessionEnabled = true
+        self.previewSessionAlertPending = true
+        self.shakeMenuEnabled = true
+        self.shakeChannelSelectorEnabled = false
+        UserDefaults.standard.set(true, forKey: self.previewSessionDefaultsKey)
+        UserDefaults.standard.synchronize()
+        call.resolve()
+    }
+
+    func leavePreviewSessionFromShakeMenu() -> Bool {
+        let previewBundle = self.implementation.getCurrentBundle()
+        let configDefaultChannel = self.getConfig().getString("defaultChannel", "")!
+
+        let didReset = self.resetToPreviewFallbackBundle()
+        guard didReset else {
+            return false
+        }
+
+        _ = self.implementation.unsetChannel(defaultChannelKey: self.defaultChannelDefaultsKey, configDefaultChannel: configDefaultChannel)
+        let previewFallbackBundle = self.implementation.getPreviewFallbackBundle()
+        self.endPreviewSession()
+        let restoredNextBundle = self.implementation.getNextBundle()
+        if !previewBundle.isBuiltin() &&
+            previewFallbackBundle?.getId() != previewBundle.getId() &&
+            restoredNextBundle?.getId() != previewBundle.getId() {
+            _ = self.implementation.delete(id: previewBundle.getId(), removeInfo: false)
+        }
+        return true
+    }
+
+    func reloadPreviewSessionFromShakeMenu() -> Bool {
+        self._reload()
+    }
+
+    func hasActivePreviewSession() -> Bool {
+        self.previewSessionEnabled
+    }
+
+    private func resetToPreviewFallbackBundle() -> Bool {
+        guard self.canPerformResetTransition() else { return false }
+        guard let fallback = self.implementation.getPreviewFallbackBundle(), !fallback.isErrorStatus() else {
+            logger.error("No preview fallback bundle available")
+            return false
+        }
+        guard self.implementation.canSet(bundle: fallback) else {
+            logger.error("Preview fallback bundle is not installable")
+            return false
+        }
+
+        let previousState = self.implementation.captureResetState()
+        let previousBundleName = self.implementation.getCurrentBundle().getVersionName()
+        logger.info("Resetting to preview fallback bundle: \(fallback.toString())")
+        if self.implementation.stagePreviewFallbackReload(bundle: fallback) && self._reload() {
+            self.implementation.finalizeResetTransition(previousBundleName: previousBundleName, isInternal: false)
+            self.notifyBundleSet(fallback)
+            return true
+        }
+        self.implementation.restoreResetState(previousState)
+        self.restoreLiveBundleStateAfterFailedReload()
+        return false
+    }
+
+    private func endPreviewSession() {
+        let previousShakeMenuEnabled = UserDefaults.standard.object(forKey: self.previewPreviousShakeMenuDefaultsKey) as? Bool
+            ?? getConfig().getBoolean("shakeMenu", false)
+        let previousShakeChannelSelectorEnabled = UserDefaults.standard.object(forKey: self.previewPreviousShakeChannelSelectorDefaultsKey) as? Bool
+            ?? getConfig().getBoolean("allowShakeChannelSelector", false)
+        self.restorePreviewPreviousNextBundle()
+
+        self.previewSessionEnabled = false
+        self.previewSessionAlertPending = false
+        self.shakeMenuEnabled = previousShakeMenuEnabled
+        self.shakeChannelSelectorEnabled = previousShakeChannelSelectorEnabled
+        UserDefaults.standard.removeObject(forKey: self.previewSessionDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: self.previewPreviousShakeMenuDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: self.previewPreviousShakeChannelSelectorDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: self.previewPreviousNextBundleDefaultsKey)
+        _ = self.implementation.setPreviewFallbackBundle(fallback: nil)
+        UserDefaults.standard.synchronize()
+        logger.info("Preview session ended")
+    }
+
+    private func clearPreviewSessionForNativeBuildChange() {
+        guard self.previewSessionEnabled || self.implementation.getPreviewFallbackBundle() != nil else {
+            return
+        }
+        logger.info("Native build changed; clearing preview session state")
+        self.previewSessionEnabled = false
+        self.previewSessionAlertPending = false
+        self.shakeMenuEnabled = getConfig().getBoolean("shakeMenu", false)
+        self.shakeChannelSelectorEnabled = getConfig().getBoolean("allowShakeChannelSelector", false)
+        UserDefaults.standard.removeObject(forKey: self.previewSessionDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: self.previewPreviousShakeMenuDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: self.previewPreviousShakeChannelSelectorDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: self.previewPreviousNextBundleDefaultsKey)
+        _ = self.implementation.setPreviewFallbackBundle(fallback: nil)
+        _ = self.implementation.setNextBundle(next: Optional<String>.none)
+        let configDefaultChannel = self.getConfig().getString("defaultChannel", "")!
+        _ = self.implementation.unsetChannel(defaultChannelKey: self.defaultChannelDefaultsKey, configDefaultChannel: configDefaultChannel)
+        UserDefaults.standard.synchronize()
+    }
+
+    private func restorePreviewPreviousNextBundle() {
+        guard let previousNextBundleId = UserDefaults.standard.string(forKey: self.previewPreviousNextBundleDefaultsKey),
+              !previousNextBundleId.isEmpty else {
+            _ = self.implementation.setNextBundle(next: Optional<String>.none)
+            return
+        }
+        if !self.implementation.setNextBundle(next: previousNextBundleId) {
+            logger.warn("Could not restore pre-preview next bundle: \(previousNextBundleId)")
+            _ = self.implementation.setNextBundle(next: Optional<String>.none)
+        }
+    }
+
+    private func showPreviewSessionNoticeIfNeeded() {
+        guard self.previewSessionEnabled && self.previewSessionAlertPending else {
+            return
+        }
+        self.previewSessionAlertPending = false
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(600)) {
+            guard self.previewSessionEnabled else {
+                return
+            }
+            if let topVC = UIApplication.topViewController(),
+               topVC.isKind(of: UIAlertController.self) {
+                self.previewSessionAlertPending = true
+                return
+            }
+
+            let alert = UIAlertController(
+                title: "Preview started",
+                message: "Shake your device anytime to reload or leave the test app.",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "Got it", style: .default))
+            if let topVC = UIApplication.topViewController() {
+                topVC.present(alert, animated: true)
+            }
         }
     }
 
