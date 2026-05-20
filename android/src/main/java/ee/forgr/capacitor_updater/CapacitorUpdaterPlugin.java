@@ -7,8 +7,6 @@
 package ee.forgr.capacitor_updater;
 
 import android.app.Activity;
-import android.app.ActivityManager;
-import android.app.ApplicationExitInfo;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -95,6 +93,18 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final int SPLASH_SCREEN_RETRY_DELAY_MS = 100;
     private static final int SPLASH_SCREEN_MAX_RETRIES = 20;
     private static final long PENDING_BUNDLE_APP_READY_MIN_TIMEOUT_MS = 30000L;
+    static final int APPLICATION_EXIT_REASON_UNKNOWN = 0;
+    static final int APPLICATION_EXIT_REASON_EXIT_SELF = 1;
+    static final int APPLICATION_EXIT_REASON_SIGNALED = 2;
+    static final int APPLICATION_EXIT_REASON_LOW_MEMORY = 3;
+    static final int APPLICATION_EXIT_REASON_CRASH = 4;
+    static final int APPLICATION_EXIT_REASON_CRASH_NATIVE = 5;
+    static final int APPLICATION_EXIT_REASON_ANR = 6;
+    static final int APPLICATION_EXIT_REASON_INITIALIZATION_FAILURE = 7;
+    static final int APPLICATION_EXIT_REASON_PERMISSION_CHANGE = 8;
+    static final int APPLICATION_EXIT_REASON_EXCESSIVE_RESOURCE_USAGE = 9;
+    static final int APPLICATION_EXIT_REASON_USER_REQUESTED = 10;
+    static final int APPLICATION_EXIT_REASON_DEPENDENCY_DIED = 12;
 
     private final String pluginVersion = "8.46.2";
     private static final String DELAY_CONDITION_PREFERENCES = "";
@@ -855,61 +865,28 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return;
         }
 
-        try {
-            final ActivityManager activityManager = (ActivityManager) this.getContext().getSystemService(Context.ACTIVITY_SERVICE);
-            if (activityManager == null) {
-                return;
-            }
-
-            final List<ApplicationExitInfo> exitReasons = activityManager.getHistoricalProcessExitReasons(
-                this.getContext().getPackageName(),
-                0,
-                8
-            );
-            if (exitReasons == null || exitReasons.isEmpty()) {
-                return;
-            }
-
-            final long lastReportedTimestamp = this.prefs.getLong(LAST_REPORTED_APP_EXIT_TIMESTAMP_PREF_KEY, 0L);
-            long newestReportedTimestamp = lastReportedTimestamp;
-            final BundleInfo current = this.implementation.getCurrentBundle();
-            final String versionName = current == null ? "" : current.getVersionName();
-
-            for (final ApplicationExitInfo exitInfo : exitReasons) {
-                if (exitInfo == null || exitInfo.getTimestamp() <= lastReportedTimestamp) {
-                    continue;
-                }
-
-                final String action = statsActionForApplicationExitReason(exitInfo.getReason());
-                if (action == null) {
-                    continue;
-                }
-
-                this.implementation.sendStats(action, versionName, "", buildApplicationExitMetadata(exitInfo));
-                newestReportedTimestamp = Math.max(newestReportedTimestamp, exitInfo.getTimestamp());
-            }
-
-            if (newestReportedTimestamp > lastReportedTimestamp) {
-                this.prefs.edit().putLong(LAST_REPORTED_APP_EXIT_TIMESTAMP_PREF_KEY, newestReportedTimestamp).apply();
-            }
-        } catch (final Exception e) {
-            logger.warn("Unable to report previous app exit reason: " + e.getMessage());
-        }
+        AndroidAppExitReporter.reportPreviousAppExitReasons(
+            this.getContext(),
+            this.prefs,
+            this.implementation,
+            this.logger,
+            LAST_REPORTED_APP_EXIT_TIMESTAMP_PREF_KEY
+        );
     }
 
     static String statsActionForApplicationExitReason(final int reason) {
         switch (reason) {
-            case ApplicationExitInfo.REASON_CRASH:
+            case APPLICATION_EXIT_REASON_CRASH:
                 return "app_crash";
-            case ApplicationExitInfo.REASON_CRASH_NATIVE:
+            case APPLICATION_EXIT_REASON_CRASH_NATIVE:
                 return "app_crash_native";
-            case ApplicationExitInfo.REASON_ANR:
+            case APPLICATION_EXIT_REASON_ANR:
                 return "app_anr";
-            case ApplicationExitInfo.REASON_LOW_MEMORY:
+            case APPLICATION_EXIT_REASON_LOW_MEMORY:
                 return "app_killed_low_memory";
-            case ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE:
+            case APPLICATION_EXIT_REASON_EXCESSIVE_RESOURCE_USAGE:
                 return "app_killed_excessive_resource_usage";
-            case ApplicationExitInfo.REASON_INITIALIZATION_FAILURE:
+            case APPLICATION_EXIT_REASON_INITIALIZATION_FAILURE:
                 return "app_initialization_failure";
             default:
                 return null;
@@ -918,58 +895,34 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     static String applicationExitReasonName(final int reason) {
         switch (reason) {
-            case ApplicationExitInfo.REASON_EXIT_SELF:
+            case APPLICATION_EXIT_REASON_EXIT_SELF:
                 return "exit_self";
-            case ApplicationExitInfo.REASON_SIGNALED:
+            case APPLICATION_EXIT_REASON_SIGNALED:
                 return "signaled";
-            case ApplicationExitInfo.REASON_LOW_MEMORY:
+            case APPLICATION_EXIT_REASON_LOW_MEMORY:
                 return "low_memory";
-            case ApplicationExitInfo.REASON_CRASH:
+            case APPLICATION_EXIT_REASON_CRASH:
                 return "crash";
-            case ApplicationExitInfo.REASON_CRASH_NATIVE:
+            case APPLICATION_EXIT_REASON_CRASH_NATIVE:
                 return "crash_native";
-            case ApplicationExitInfo.REASON_ANR:
+            case APPLICATION_EXIT_REASON_ANR:
                 return "anr";
-            case ApplicationExitInfo.REASON_INITIALIZATION_FAILURE:
+            case APPLICATION_EXIT_REASON_INITIALIZATION_FAILURE:
                 return "initialization_failure";
-            case ApplicationExitInfo.REASON_PERMISSION_CHANGE:
+            case APPLICATION_EXIT_REASON_PERMISSION_CHANGE:
                 return "permission_change";
-            case ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE:
+            case APPLICATION_EXIT_REASON_EXCESSIVE_RESOURCE_USAGE:
                 return "excessive_resource_usage";
-            case ApplicationExitInfo.REASON_USER_REQUESTED:
+            case APPLICATION_EXIT_REASON_USER_REQUESTED:
                 return "user_requested";
-            case ApplicationExitInfo.REASON_DEPENDENCY_DIED:
+            case APPLICATION_EXIT_REASON_DEPENDENCY_DIED:
                 return "dependency_died";
             default:
                 return "unknown";
         }
     }
 
-    private static Map<String, String> buildApplicationExitMetadata(final ApplicationExitInfo exitInfo) {
-        final Map<String, String> metadata = new HashMap<>();
-        metadata.put("exit_reason", applicationExitReasonName(exitInfo.getReason()));
-        metadata.put("exit_reason_code", Integer.toString(exitInfo.getReason()));
-        metadata.put("exit_status", Integer.toString(exitInfo.getStatus()));
-        metadata.put("exit_importance", Integer.toString(exitInfo.getImportance()));
-        metadata.put("exit_timestamp", Long.toString(exitInfo.getTimestamp()));
-        metadata.put("pid", Integer.toString(exitInfo.getPid()));
-        metadata.put("pss_kb", Long.toString(exitInfo.getPss()));
-        metadata.put("rss_kb", Long.toString(exitInfo.getRss()));
-
-        final String processName = exitInfo.getProcessName();
-        if (processName != null && !processName.isEmpty()) {
-            metadata.put("process_name", truncateStatsMetadataValue(processName, 128));
-        }
-
-        final String description = exitInfo.getDescription();
-        if (description != null && !description.isEmpty()) {
-            metadata.put("exit_description", truncateStatsMetadataValue(description, 512));
-        }
-
-        return metadata;
-    }
-
-    private static String truncateStatsMetadataValue(final String value, final int maxLength) {
+    static String truncateStatsMetadataValue(final String value, final int maxLength) {
         return value.length() <= maxLength ? value : value.substring(0, maxLength);
     }
 
