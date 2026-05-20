@@ -365,7 +365,7 @@ import UIKit
         if statusCode == 429 {
             // Send a statistic about the rate limit BEFORE setting the flag
             // Only send once to prevent infinite loop if the stat request itself gets rate limited
-            if !CapgoUpdater.rateLimitExceeded && !CapgoUpdater.rateLimitStatisticSent {
+            if !previewSession && !CapgoUpdater.rateLimitExceeded && !CapgoUpdater.rateLimitStatisticSent {
                 CapgoUpdater.rateLimitStatisticSent = true
 
                 // Dispatch to background queue to avoid blocking the main thread

@@ -245,7 +245,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         shakeChannelSelectorEnabled = getConfig().getBoolean("allowShakeChannelSelector", false)
         previewSessionEnabled = allowPreview && UserDefaults.standard.bool(forKey: previewSessionDefaultsKey)
         if !allowPreview && UserDefaults.standard.bool(forKey: previewSessionDefaultsKey) {
-            clearPreviewSessionPreferences()
+            clearPreviewSessionBecauseDisabled()
         }
         implementation.previewSession = previewSessionEnabled
         if previewSessionEnabled {
@@ -1108,6 +1108,32 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         _ = self.implementation.setPreviewFallbackBundle(fallback: nil)
         self.clearPreviewSessionPreferences()
         logger.info("Preview session ended")
+    }
+
+    private func clearPreviewSessionBecauseDisabled() {
+        logger.info("Preview session disabled by config; restoring preview fallback")
+        let fallback = self.implementation.getPreviewFallbackBundle()
+        let bundleToRestore: BundleInfo
+        if let fallback, !fallback.isErrorStatus() {
+            bundleToRestore = fallback
+        } else {
+            bundleToRestore = self.implementation.getBundleInfo(id: BundleInfo.ID_BUILTIN)
+        }
+
+        if self.implementation.canSet(bundle: bundleToRestore) {
+            _ = self.implementation.stagePreviewFallbackReload(bundle: bundleToRestore)
+        } else {
+            logger.warn("Could not restore preview fallback while disabling preview")
+        }
+
+        self.restorePreviewPreviousNextBundle()
+        self.restorePreviewPreviousAppId()
+        self.previewSessionEnabled = false
+        self.previewSessionAlertPending = false
+        self.implementation.previewSession = false
+        self.shakeMenuEnabled = getConfig().getBoolean("shakeMenu", false)
+        self.shakeChannelSelectorEnabled = getConfig().getBoolean("allowShakeChannelSelector", false)
+        self.clearPreviewSessionPreferences()
     }
 
     private func clearPreviewSessionPreferences() {

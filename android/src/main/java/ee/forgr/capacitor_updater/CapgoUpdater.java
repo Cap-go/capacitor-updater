@@ -1255,7 +1255,7 @@ public class CapgoUpdater {
         if (response.code() == 429) {
             // Send a statistic about the rate limit BEFORE setting the flag
             // Only send once to prevent infinite loop if the stat request itself gets rate limited
-            if (!rateLimitExceeded && !rateLimitStatisticSent) {
+            if (!this.previewSession && !rateLimitExceeded && !rateLimitStatisticSent) {
                 rateLimitStatisticSent = true;
                 sendRateLimitStatistic();
             }
@@ -1413,7 +1413,7 @@ public class CapgoUpdater {
     }
 
     public void getLatest(final String updateUrl, final String channel, final Callback callback) {
-        this.getLatest(updateUrl, channel, null, false, callback);
+        this.getLatest(updateUrl, channel, null, this.previewSession, callback);
     }
 
     public void getLatest(

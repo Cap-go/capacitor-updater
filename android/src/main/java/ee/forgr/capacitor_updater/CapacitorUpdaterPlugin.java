@@ -522,7 +522,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.shakeChannelSelectorEnabled = this.getConfig().getBoolean("allowShakeChannelSelector", false);
         this.previewSessionEnabled = Boolean.TRUE.equals(this.allowPreview) && this.prefs.getBoolean(PREVIEW_SESSION_PREF_KEY, false);
         if (!Boolean.TRUE.equals(this.allowPreview) && this.prefs.getBoolean(PREVIEW_SESSION_PREF_KEY, false)) {
-            this.clearPreviewSessionPreferences();
+            this.clearPreviewSessionBecauseDisabled();
         }
         this.implementation.previewSession = Boolean.TRUE.equals(this.previewSessionEnabled);
         if (Boolean.TRUE.equals(this.previewSessionEnabled)) {
@@ -2251,6 +2251,29 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.implementation.setPreviewFallbackBundle(null);
         this.clearPreviewSessionPreferences();
         logger.info("Preview session ended");
+    }
+
+    private void clearPreviewSessionBecauseDisabled() {
+        logger.info("Preview session disabled by config; restoring preview fallback");
+        final BundleInfo fallback = this.implementation.getPreviewFallbackBundle();
+        final BundleInfo bundleToRestore = fallback == null || fallback.isErrorStatus()
+            ? this.implementation.getBundleInfo(BundleInfo.ID_BUILTIN)
+            : fallback;
+
+        if (this.implementation.canSet(bundleToRestore)) {
+            this.implementation.stagePreviewFallbackReload(bundleToRestore);
+        } else {
+            logger.warn("Could not restore preview fallback while disabling preview");
+        }
+
+        this.restorePreviewPreviousNextBundle();
+        this.restorePreviewPreviousAppId();
+        this.previewSessionEnabled = false;
+        this.previewSessionAlertPending = false;
+        this.implementation.previewSession = false;
+        this.shakeMenuEnabled = this.getConfig().getBoolean("shakeMenu", false);
+        this.shakeChannelSelectorEnabled = this.getConfig().getBoolean("allowShakeChannelSelector", false);
+        this.clearPreviewSessionPreferences();
     }
 
     private void clearPreviewSessionPreferences() {
