@@ -38,6 +38,7 @@ import UIKit
     public var defaultChannel: String = ""
     public var appId: String = ""
     public var deviceID = ""
+    public var previewSession = false
     public var publicKey: String = ""
 
     // Cached key ID calculated once from publicKey
@@ -702,11 +703,11 @@ import UIKit
         }
     }
 
-    private func createInfoObject() -> InfoObject {
+    private func createInfoObject(appIdOverride: String? = nil, preview: Bool = false) -> InfoObject {
         return InfoObject(
             platform: "ios",
             device_id: self.deviceID,
-            app_id: self.appId,
+            app_id: appIdOverride ?? self.appId,
             custom_id: self.customId,
             version_build: self.versionBuild,
             version_code: self.versionCode,
@@ -718,11 +719,12 @@ import UIKit
             action: nil,
             channel: nil,
             defaultChannel: self.defaultChannel,
-            key_id: self.cachedKeyId
+            key_id: self.cachedKeyId,
+            preview: preview ? true : nil
         )
     }
 
-    public func getLatest(url: URL, channel: String?) -> AppVersion {
+    public func getLatest(url: URL, channel: String?, appIdOverride: String? = nil, preview: Bool = false) -> AppVersion {
         let latest: AppVersion = AppVersion()
         func applyLatestResponse(_ value: AppVersionDec?) {
             if let url = value?.url {
@@ -766,7 +768,7 @@ import UIKit
             }
         }
 
-        var parameters: InfoObject = self.createInfoObject()
+        var parameters: InfoObject = self.createInfoObject(appIdOverride: appIdOverride, preview: preview)
         if let channel = channel {
             parameters.defaultChannel = channel
         }
@@ -2291,6 +2293,11 @@ import UIKit
     }
 
     private func sendStatsWithMetadata(action: String, versionName: String?, oldVersionName: String?, metadata: [String: String]?) {
+        if previewSession {
+            logger.debug("Skipping sendStats during preview session.")
+            return
+        }
+
         // Check if rate limit was exceeded
         if CapgoUpdater.rateLimitExceeded {
             logger.debug("Skipping sendStats due to rate limit (429). Stats will resume after app restart.")

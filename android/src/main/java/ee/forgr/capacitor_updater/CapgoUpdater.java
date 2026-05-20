@@ -82,6 +82,7 @@ public class CapgoUpdater {
     public String channelUrl = "";
     public String defaultChannel = "";
     public String appId = "";
+    public boolean previewSession = false;
     public String publicKey = "";
     public String deviceID = "";
     public int timeout = 20000;
@@ -125,24 +126,32 @@ public class CapgoUpdater {
     }
 
     private boolean isEmulator() {
+        final String brand = String.valueOf(Build.BRAND);
+        final String device = String.valueOf(Build.DEVICE);
+        final String fingerprint = String.valueOf(Build.FINGERPRINT);
+        final String hardware = String.valueOf(Build.HARDWARE);
+        final String model = String.valueOf(Build.MODEL);
+        final String manufacturer = String.valueOf(Build.MANUFACTURER);
+        final String product = String.valueOf(Build.PRODUCT);
+
         return (
-            (Build.BRAND.startsWith("generic") && Build.DEVICE.startsWith("generic")) ||
-            Build.FINGERPRINT.startsWith("generic") ||
-            Build.FINGERPRINT.startsWith("unknown") ||
-            Build.HARDWARE.contains("goldfish") ||
-            Build.HARDWARE.contains("ranchu") ||
-            Build.MODEL.contains("google_sdk") ||
-            Build.MODEL.contains("Emulator") ||
-            Build.MODEL.contains("Android SDK built for x86") ||
-            Build.MANUFACTURER.contains("Genymotion") ||
-            Build.PRODUCT.contains("sdk_google") ||
-            Build.PRODUCT.contains("google_sdk") ||
-            Build.PRODUCT.contains("sdk") ||
-            Build.PRODUCT.contains("sdk_x86") ||
-            Build.PRODUCT.contains("sdk_gphone64_arm64") ||
-            Build.PRODUCT.contains("vbox86p") ||
-            Build.PRODUCT.contains("emulator") ||
-            Build.PRODUCT.contains("simulator")
+            (brand.startsWith("generic") && device.startsWith("generic")) ||
+            fingerprint.startsWith("generic") ||
+            fingerprint.startsWith("unknown") ||
+            hardware.contains("goldfish") ||
+            hardware.contains("ranchu") ||
+            model.contains("google_sdk") ||
+            model.contains("Emulator") ||
+            model.contains("Android SDK built for x86") ||
+            manufacturer.contains("Genymotion") ||
+            product.contains("sdk_google") ||
+            product.contains("google_sdk") ||
+            product.contains("sdk") ||
+            product.contains("sdk_x86") ||
+            product.contains("sdk_gphone64_arm64") ||
+            product.contains("vbox86p") ||
+            product.contains("emulator") ||
+            product.contains("simulator")
         );
     }
 
@@ -1210,10 +1219,14 @@ public class CapgoUpdater {
     }
 
     private JSONObject createInfoObject() throws JSONException {
+        return this.createInfoObject(null, false);
+    }
+
+    private JSONObject createInfoObject(final String appIdOverride, final boolean preview) throws JSONException {
         JSONObject json = new JSONObject();
         json.put("platform", "android");
         json.put("device_id", this.deviceID);
-        json.put("app_id", this.appId);
+        json.put("app_id", appIdOverride == null || appIdOverride.trim().isEmpty() ? this.appId : appIdOverride);
         json.put("custom_id", this.customId);
         json.put("version_build", this.versionBuild);
         json.put("version_code", this.versionCode);
@@ -1227,6 +1240,9 @@ public class CapgoUpdater {
         // Add encryption key ID if encryption is enabled (use cached value)
         if (!this.cachedKeyId.isEmpty()) {
             json.put("key_id", this.cachedKeyId);
+        }
+        if (preview) {
+            json.put("preview", true);
         }
 
         return json;
@@ -1397,9 +1413,19 @@ public class CapgoUpdater {
     }
 
     public void getLatest(final String updateUrl, final String channel, final Callback callback) {
+        this.getLatest(updateUrl, channel, null, false, callback);
+    }
+
+    public void getLatest(
+        final String updateUrl,
+        final String channel,
+        final String appIdOverride,
+        final boolean preview,
+        final Callback callback
+    ) {
         JSONObject json;
         try {
-            json = this.createInfoObject();
+            json = this.createInfoObject(appIdOverride, preview);
             if (channel != null && json != null) {
                 json.put("defaultChannel", channel);
             }
@@ -1413,7 +1439,9 @@ public class CapgoUpdater {
             return;
         }
 
-        logger.info("Auto-update parameters: " + json);
+        if (logger != null) {
+            logger.info("Auto-update parameters: " + json);
+        }
 
         makeJsonRequest(updateUrl, json, callback);
     }
@@ -1784,6 +1812,13 @@ public class CapgoUpdater {
     }
 
     public void sendStats(final String action, final String versionName, final String oldVersionName, final Map<String, String> metadata) {
+        if (this.previewSession) {
+            if (logger != null) {
+                logger.debug("Skipping sendStats during preview session.");
+            }
+            return;
+        }
+
         // Check if rate limit was exceeded
         if (rateLimitExceeded) {
             logger.debug("Skipping sendStats due to rate limit (429). Stats will resume after app restart.");

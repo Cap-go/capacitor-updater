@@ -90,6 +90,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final String PREVIEW_PREVIOUS_SHAKE_MENU_PREF_KEY = "CapacitorUpdater.previewPreviousShakeMenu";
     private static final String PREVIEW_PREVIOUS_SHAKE_CHANNEL_SELECTOR_PREF_KEY = "CapacitorUpdater.previewPreviousShakeChannelSelector";
     private static final String PREVIEW_PREVIOUS_NEXT_BUNDLE_PREF_KEY = "CapacitorUpdater.previewPreviousNextBundle";
+    private static final String PREVIEW_PREVIOUS_APP_ID_PREF_KEY = "CapacitorUpdater.previewPreviousAppId";
+    private static final String PREVIEW_APP_ID_PREF_KEY = "CapacitorUpdater.previewAppId";
     private static final String[] BREAKING_EVENT_NAMES = { "breakingAvailable", "majorAvailable" };
     private static final String LAST_FAILED_BUNDLE_PREF_KEY = "CapacitorUpdater.lastFailedBundle";
     private static final String LAST_REPORTED_APP_EXIT_TIMESTAMP_PREF_KEY = "CapacitorUpdater.lastReportedAppExitTimestamp";
@@ -144,6 +146,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     Boolean previewSessionEnabled = false;
     private Boolean previewSessionAlertPending = false;
     private Boolean allowManualBundleError = false;
+    private Boolean allowPreview = false;
     Boolean allowSetDefaultChannel = true;
 
     String getUpdateUrl() {
@@ -428,6 +431,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 "appId is missing in capacitor.config.json or plugin config, and cannot be retrieved from the native app, please add it globally or in the plugin config"
             );
         }
+        this.allowPreview = this.getConfig().getBoolean("allowPreview", false);
         logger.info("appId: " + implementation.appId);
 
         this.persistCustomId = this.getConfig().getBoolean("persistCustomId", false);
@@ -516,8 +520,17 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.implementation.timeout = this.getConfig().getInt("responseTimeout", 20) * 1000;
         this.shakeMenuEnabled = this.getConfig().getBoolean("shakeMenu", false);
         this.shakeChannelSelectorEnabled = this.getConfig().getBoolean("allowShakeChannelSelector", false);
-        this.previewSessionEnabled = this.prefs.getBoolean(PREVIEW_SESSION_PREF_KEY, false);
+        this.previewSessionEnabled = Boolean.TRUE.equals(this.allowPreview) && this.prefs.getBoolean(PREVIEW_SESSION_PREF_KEY, false);
+        if (!Boolean.TRUE.equals(this.allowPreview) && this.prefs.getBoolean(PREVIEW_SESSION_PREF_KEY, false)) {
+            this.clearPreviewSessionPreferences();
+        }
+        this.implementation.previewSession = Boolean.TRUE.equals(this.previewSessionEnabled);
         if (Boolean.TRUE.equals(this.previewSessionEnabled)) {
+            final String previewAppId = this.prefs.getString(PREVIEW_APP_ID_PREF_KEY, "");
+            if (previewAppId != null && !previewAppId.isEmpty()) {
+                this.setActiveAppId(previewAppId);
+                logger.info("Using preview appId " + previewAppId);
+            }
             this.shakeMenuEnabled = true;
             this.shakeChannelSelectorEnabled = false;
         }
@@ -2104,6 +2117,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     @PluginMethod
     public void startPreviewSession(final PluginCall call) {
+        if (!Boolean.TRUE.equals(this.allowPreview)) {
+            logger.error("startPreviewSession not allowed set allowPreview in your config to true to enable it");
+            call.reject("startPreviewSession not allowed");
+            return;
+        }
+        final String previewAppId = call.getString("appId");
         startNewThread(() -> {
             try {
                 if (!Boolean.TRUE.equals(this.previewSessionEnabled)) {
@@ -2121,6 +2140,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         this.editor.putString(PREVIEW_PREVIOUS_NEXT_BUNDLE_PREF_KEY, previousNext.getId());
                     }
 
+                    this.editor.putString(PREVIEW_PREVIOUS_APP_ID_PREF_KEY, this.implementation.appId);
                     this.editor.putBoolean(PREVIEW_PREVIOUS_SHAKE_MENU_PREF_KEY, Boolean.TRUE.equals(this.shakeMenuEnabled));
                     this.editor.putBoolean(
                         PREVIEW_PREVIOUS_SHAKE_CHANNEL_SELECTOR_PREF_KEY,
@@ -2129,8 +2149,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     logger.info("Preview session started with fallback bundle: " + current);
                 }
 
+                if (previewAppId != null && !previewAppId.trim().isEmpty()) {
+                    this.setActiveAppId(previewAppId.trim());
+                    this.editor.putString(PREVIEW_APP_ID_PREF_KEY, previewAppId.trim());
+                    logger.info("Preview session using appId: " + previewAppId.trim());
+                }
+
                 this.previewSessionEnabled = true;
                 this.previewSessionAlertPending = true;
+                this.implementation.previewSession = true;
                 this.shakeMenuEnabled = true;
                 this.shakeChannelSelectorEnabled = false;
                 this.editor.putBoolean(PREVIEW_SESSION_PREF_KEY, true);
@@ -2214,18 +2241,45 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.getConfig().getBoolean("allowShakeChannelSelector", false)
         );
         this.restorePreviewPreviousNextBundle();
+        this.restorePreviewPreviousAppId();
 
         this.previewSessionEnabled = false;
         this.previewSessionAlertPending = false;
+        this.implementation.previewSession = false;
         this.shakeMenuEnabled = previousShakeMenuEnabled;
         this.shakeChannelSelectorEnabled = previousShakeChannelSelectorEnabled;
+        this.implementation.setPreviewFallbackBundle(null);
+        this.clearPreviewSessionPreferences();
+        logger.info("Preview session ended");
+    }
+
+    private void clearPreviewSessionPreferences() {
+        if (this.implementation != null) {
+            this.implementation.setPreviewFallbackBundle(null);
+        }
         this.editor.remove(PREVIEW_SESSION_PREF_KEY);
         this.editor.remove(PREVIEW_PREVIOUS_SHAKE_MENU_PREF_KEY);
         this.editor.remove(PREVIEW_PREVIOUS_SHAKE_CHANNEL_SELECTOR_PREF_KEY);
         this.editor.remove(PREVIEW_PREVIOUS_NEXT_BUNDLE_PREF_KEY);
-        this.implementation.setPreviewFallbackBundle(null);
+        this.editor.remove(PREVIEW_PREVIOUS_APP_ID_PREF_KEY);
+        this.editor.remove(PREVIEW_APP_ID_PREF_KEY);
         this.editor.apply();
-        logger.info("Preview session ended");
+    }
+
+    private void setActiveAppId(final String appId) {
+        this.implementation.appId = appId;
+        if (this.implementation.versionOs != null) {
+            DownloadService.updateUserAgent(this.implementation.appId, this.pluginVersion, this.implementation.versionOs);
+        }
+    }
+
+    private void restorePreviewPreviousAppId() {
+        final String previousAppId = this.prefs.getString(PREVIEW_PREVIOUS_APP_ID_PREF_KEY, "");
+        if (previousAppId == null || previousAppId.isEmpty()) {
+            return;
+        }
+        this.setActiveAppId(previousAppId);
+        logger.info("Restored appId after preview: " + previousAppId);
     }
 
     private void clearPreviewSessionForNativeBuildChange() {
@@ -2235,16 +2289,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
         logger.info("Native build changed; clearing preview session state");
         this.previewSessionEnabled = false;
         this.previewSessionAlertPending = false;
+        this.implementation.previewSession = false;
         this.shakeMenuEnabled = this.getConfig().getBoolean("shakeMenu", false);
         this.shakeChannelSelectorEnabled = this.getConfig().getBoolean("allowShakeChannelSelector", false);
-        this.editor.remove(PREVIEW_SESSION_PREF_KEY);
-        this.editor.remove(PREVIEW_PREVIOUS_SHAKE_MENU_PREF_KEY);
-        this.editor.remove(PREVIEW_PREVIOUS_SHAKE_CHANNEL_SELECTOR_PREF_KEY);
-        this.editor.remove(PREVIEW_PREVIOUS_NEXT_BUNDLE_PREF_KEY);
+        this.restorePreviewPreviousAppId();
         this.implementation.setPreviewFallbackBundle(null);
         this.implementation.setNextBundle(null);
         this.clearPreviewChannelOverride();
-        this.editor.apply();
+        this.clearPreviewSessionPreferences();
     }
 
     private boolean clearPreviewChannelOverride() {
@@ -2405,37 +2457,59 @@ public class CapacitorUpdaterPlugin extends Plugin {
     @PluginMethod
     public void getLatest(final PluginCall call) {
         final String channel = call.getString("channel");
-        startNewThread(() ->
-            CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.updateUrl, channel, (res) -> {
-                JSObject jsRes = InternalUtils.mapToJSObject(res);
-                if (jsRes.has("error") || jsRes.has("kind")) {
-                    String error = jsRes.has("error") ? jsRes.getString("error") : "";
-                    String errorMessage = jsRes.has("message") ? jsRes.getString("message") : "server did not provide a message";
-                    String kind = CapacitorUpdaterPlugin.this.getUpdateResponseKind(jsRes.has("kind") ? jsRes.getString("kind") : null);
-                    String latestVersion = jsRes.has("version") ? jsRes.getString("version") : "";
-                    jsRes.put("kind", kind);
-                    CapacitorUpdaterPlugin.this.notifyBreakingEventsIfNeeded(jsRes, latestVersion);
-                    if ("failed".equals(kind)) {
-                        logger.error("getLatest failed with error: " + error + ", message: " + errorMessage);
-                        call.reject(error.isEmpty() ? errorMessage : error);
-                    } else {
-                        if (!jsRes.has("version") || jsRes.getString("version").isEmpty()) {
-                            jsRes.put("version", CapacitorUpdaterPlugin.this.implementation.getCurrentBundle().getVersionName());
-                        }
-                        logger.info("getLatest returned " + kind + ": " + errorMessage);
-                        call.resolve(jsRes);
-                    }
-                    return;
-                } else if (jsRes.has("message")) {
-                    String latestVersion = jsRes.has("version") ? jsRes.getString("version") : "";
-                    CapacitorUpdaterPlugin.this.notifyBreakingEventsIfNeeded(jsRes, latestVersion);
-                    call.reject(jsRes.getString("message"));
-                    return;
+        final String appId = call.getString("appId");
+        final boolean preview = Boolean.TRUE.equals(call.getBoolean("preview", false));
+        final String trimmedAppId = appId == null ? null : appId.trim();
+        final boolean hasPreviewAppId = trimmedAppId != null && !trimmedAppId.isEmpty();
+        if ((hasPreviewAppId || preview) && !Boolean.TRUE.equals(this.allowPreview)) {
+            logger.error("getLatest preview override not allowed set allowPreview in your config to true to enable it");
+            call.reject("getLatest preview override not allowed");
+            return;
+        }
+
+        final Callback latestCallback = (res) -> {
+            JSObject jsRes = InternalUtils.mapToJSObject(res);
+            if (jsRes.has("error") || jsRes.has("kind")) {
+                String error = jsRes.has("error") ? jsRes.getString("error") : "";
+                String errorMessage = jsRes.has("message") ? jsRes.getString("message") : "server did not provide a message";
+                String kind = CapacitorUpdaterPlugin.this.getUpdateResponseKind(jsRes.has("kind") ? jsRes.getString("kind") : null);
+                String latestVersion = jsRes.has("version") ? jsRes.getString("version") : "";
+                jsRes.put("kind", kind);
+                CapacitorUpdaterPlugin.this.notifyBreakingEventsIfNeeded(jsRes, latestVersion);
+                if ("failed".equals(kind)) {
+                    logger.error("getLatest failed with error: " + error + ", message: " + errorMessage);
+                    call.reject(error.isEmpty() ? errorMessage : error);
                 } else {
+                    if (!jsRes.has("version") || jsRes.getString("version").isEmpty()) {
+                        jsRes.put("version", CapacitorUpdaterPlugin.this.implementation.getCurrentBundle().getVersionName());
+                    }
+                    logger.info("getLatest returned " + kind + ": " + errorMessage);
                     call.resolve(jsRes);
                 }
-            })
-        );
+                return;
+            } else if (jsRes.has("message")) {
+                String latestVersion = jsRes.has("version") ? jsRes.getString("version") : "";
+                CapacitorUpdaterPlugin.this.notifyBreakingEventsIfNeeded(jsRes, latestVersion);
+                call.reject(jsRes.getString("message"));
+                return;
+            } else {
+                call.resolve(jsRes);
+            }
+        };
+
+        startNewThread(() -> {
+            if (hasPreviewAppId || preview) {
+                CapacitorUpdaterPlugin.this.implementation.getLatest(
+                    CapacitorUpdaterPlugin.this.updateUrl,
+                    channel,
+                    trimmedAppId,
+                    preview,
+                    latestCallback
+                );
+                return;
+            }
+            CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.updateUrl, channel, latestCallback);
+        });
     }
 
     public String triggerBackgroundUpdateCheck() {
@@ -3576,7 +3650,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             call.reject("setAppId called without appId");
             return;
         }
-        this.implementation.appId = appId;
+        this.setActiveAppId(appId);
         call.resolve();
     }
 

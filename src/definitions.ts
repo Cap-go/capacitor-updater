@@ -288,6 +288,17 @@ declare module '@capacitor/cli' {
       allowManualBundleError?: boolean;
 
       /**
+       * Allow JavaScript to start a native preview session and request previews for another app id.
+       * This is intended for trusted container apps that implement Expo Go-style preview flows.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default false
+       * @since 8.47.0
+       */
+      allowPreview?: boolean;
+
+      /**
        * Persist the customId set through {@link CapacitorUpdaterPlugin.setCustomId} across app restarts.
        *
        * Only available for Android and iOS.
@@ -555,13 +566,18 @@ export interface CapacitorUpdaterPlugin {
    * This stores the currently active bundle as the pending fallback, enables the
    * native shake menu, and makes the next applied bundle show a native notice
    * explaining that shaking the device can reload or leave the preview.
+   * Requires {@link PluginsConfig.CapacitorUpdater.allowPreview} to be `true`.
+   * When `appId` is provided, the preview session temporarily uses that app id
+   * for update checks until the user leaves the preview. Stats are skipped while
+   * the preview session is active.
    *
    * Use this before calling {@link set} for Expo Go-style preview flows.
    *
+   * @param options Optional preview session options.
    * @returns {Promise<void>} Resolves when preview session state is prepared.
    * @since 8.47.0
    */
-  startPreviewSession(): Promise<void>;
+  startPreviewSession(options?: StartPreviewSessionOptions): Promise<void>;
 
   /**
    * Delete a bundle from local storage to free up disk space.
@@ -1888,6 +1904,31 @@ export interface GetLatestOptions {
    * @default undefined
    */
   channel?: string;
+  /**
+   * App id to request updates for while using a trusted preview container.
+   * Requires {@link PluginsConfig.CapacitorUpdater.allowPreview} to be `true`.
+   * @since 8.47.0
+   * @default undefined
+   */
+  appId?: string;
+  /**
+   * Mark the update check as a preview request.
+   * Requires {@link PluginsConfig.CapacitorUpdater.allowPreview} to be `true`.
+   * @since 8.47.0
+   * @default false
+   */
+  preview?: boolean;
+}
+
+export interface StartPreviewSessionOptions {
+  /**
+   * App id to use while the preview session is active.
+   * The previous app id is restored when leaving the preview session.
+   * Requires {@link PluginsConfig.CapacitorUpdater.allowPreview} to be `true`.
+   * @since 8.47.0
+   * @default undefined
+   */
+  appId?: string;
 }
 
 export interface AppReadyResult {

@@ -92,6 +92,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private let previewPreviousShakeMenuDefaultsKey = "CapacitorUpdater.previewPreviousShakeMenu"
     private let previewPreviousShakeChannelSelectorDefaultsKey = "CapacitorUpdater.previewPreviousShakeChannelSelector"
     private let previewPreviousNextBundleDefaultsKey = "CapacitorUpdater.previewPreviousNextBundle"
+    private let previewPreviousAppIdDefaultsKey = "CapacitorUpdater.previewPreviousAppId"
+    private let previewAppIdDefaultsKey = "CapacitorUpdater.previewAppId"
     // Note: DELAY_CONDITION_PREFERENCES is now defined in DelayUpdateUtils.DELAY_CONDITION_PREFERENCES
     private var updateUrl = ""
     private var backgroundTaskID: UIBackgroundTaskIdentifier = UIBackgroundTaskIdentifier.invalid
@@ -136,6 +138,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var persistCustomId = false
     private var persistModifyUrl = false
     private var allowManualBundleError = false
+    private var allowPreview = false
     private var keepUrlPathFlagLastValue: Bool?
     private var appHealthTracker: AppHealthTracker?
     private var webViewStatsReporter: WebViewStatsReporter?
@@ -178,6 +181,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         persistModifyUrl = getConfig().getBoolean("persistModifyUrl", false)
         allowManualBundleError = getConfig().getBoolean("allowManualBundleError", false)
+        allowPreview = getConfig().getBoolean("allowPreview", false)
         logger.info("init for device \(self.implementation.deviceID)")
         guard let versionName = getConfig().getString("version", Bundle.main.versionName) else {
             logger.error("Cannot get version name")
@@ -239,7 +243,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
         shakeMenuEnabled = getConfig().getBoolean("shakeMenu", false)
         shakeChannelSelectorEnabled = getConfig().getBoolean("allowShakeChannelSelector", false)
-        previewSessionEnabled = UserDefaults.standard.bool(forKey: previewSessionDefaultsKey)
+        previewSessionEnabled = allowPreview && UserDefaults.standard.bool(forKey: previewSessionDefaultsKey)
+        if !allowPreview && UserDefaults.standard.bool(forKey: previewSessionDefaultsKey) {
+            clearPreviewSessionPreferences()
+        }
+        implementation.previewSession = previewSessionEnabled
         if previewSessionEnabled {
             shakeMenuEnabled = true
             shakeChannelSelectorEnabled = false
@@ -280,6 +288,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if implementation.appId == "" {
             // crash the app on purpose it should not happen
             fatalError("appId is missing in capacitor.config.json or plugin config, and cannot be retrieved from the native app, please add it globally or in the plugin config")
+        }
+        if previewSessionEnabled,
+           let previewAppId = UserDefaults.standard.string(forKey: previewAppIdDefaultsKey),
+           !previewAppId.isEmpty {
+            implementation.appId = previewAppId
+            logger.info("Using preview appId \(previewAppId)")
         }
         logger.info("appId \(implementation.appId)")
         implementation.statsUrl = getConfig().getString("statsUrl", CapacitorUpdaterPlugin.statsUrlDefault)!
@@ -980,6 +994,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func startPreviewSession(_ call: CAPPluginCall) {
+        guard self.allowPreview else {
+            logger.error("startPreviewSession called without allowPreview")
+            call.reject("startPreviewSession not allowed. Set allowPreview to true in your config to enable it.")
+            return
+        }
+        let previewAppId = call.getString("appId")?.trimmingCharacters(in: .whitespacesAndNewlines)
+
         if !self.previewSessionEnabled {
             let current = self.implementation.getCurrentBundle()
             guard self.implementation.setPreviewFallbackBundle(fallback: current.getId()) else {
@@ -996,13 +1017,21 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 UserDefaults.standard.removeObject(forKey: self.previewPreviousNextBundleDefaultsKey)
             }
 
+            UserDefaults.standard.set(self.implementation.appId, forKey: self.previewPreviousAppIdDefaultsKey)
             UserDefaults.standard.set(self.shakeMenuEnabled, forKey: self.previewPreviousShakeMenuDefaultsKey)
             UserDefaults.standard.set(self.shakeChannelSelectorEnabled, forKey: self.previewPreviousShakeChannelSelectorDefaultsKey)
             logger.info("Preview session started with fallback bundle: \(current.toString())")
         }
 
+        if let previewAppId = previewAppId, !previewAppId.isEmpty {
+            self.implementation.appId = previewAppId
+            UserDefaults.standard.set(previewAppId, forKey: self.previewAppIdDefaultsKey)
+            logger.info("Preview session using appId: \(previewAppId)")
+        }
+
         self.previewSessionEnabled = true
         self.previewSessionAlertPending = true
+        self.implementation.previewSession = true
         self.shakeMenuEnabled = true
         self.shakeChannelSelectorEnabled = false
         UserDefaults.standard.set(true, forKey: self.previewSessionDefaultsKey)
@@ -1069,18 +1098,36 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         let previousShakeChannelSelectorEnabled = UserDefaults.standard.object(forKey: self.previewPreviousShakeChannelSelectorDefaultsKey) as? Bool
             ?? getConfig().getBoolean("allowShakeChannelSelector", false)
         self.restorePreviewPreviousNextBundle()
+        self.restorePreviewPreviousAppId()
 
         self.previewSessionEnabled = false
         self.previewSessionAlertPending = false
+        self.implementation.previewSession = false
         self.shakeMenuEnabled = previousShakeMenuEnabled
         self.shakeChannelSelectorEnabled = previousShakeChannelSelectorEnabled
+        _ = self.implementation.setPreviewFallbackBundle(fallback: nil)
+        self.clearPreviewSessionPreferences()
+        logger.info("Preview session ended")
+    }
+
+    private func clearPreviewSessionPreferences() {
+        _ = self.implementation.setPreviewFallbackBundle(fallback: nil)
         UserDefaults.standard.removeObject(forKey: self.previewSessionDefaultsKey)
         UserDefaults.standard.removeObject(forKey: self.previewPreviousShakeMenuDefaultsKey)
         UserDefaults.standard.removeObject(forKey: self.previewPreviousShakeChannelSelectorDefaultsKey)
         UserDefaults.standard.removeObject(forKey: self.previewPreviousNextBundleDefaultsKey)
-        _ = self.implementation.setPreviewFallbackBundle(fallback: nil)
+        UserDefaults.standard.removeObject(forKey: self.previewPreviousAppIdDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: self.previewAppIdDefaultsKey)
         UserDefaults.standard.synchronize()
-        logger.info("Preview session ended")
+    }
+
+    private func restorePreviewPreviousAppId() {
+        guard let previousAppId = UserDefaults.standard.string(forKey: self.previewPreviousAppIdDefaultsKey),
+              !previousAppId.isEmpty else {
+            return
+        }
+        self.implementation.appId = previousAppId
+        logger.info("Restored appId after preview: \(previousAppId)")
     }
 
     private func clearPreviewSessionForNativeBuildChange() {
@@ -1090,17 +1137,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         logger.info("Native build changed; clearing preview session state")
         self.previewSessionEnabled = false
         self.previewSessionAlertPending = false
+        self.implementation.previewSession = false
         self.shakeMenuEnabled = getConfig().getBoolean("shakeMenu", false)
         self.shakeChannelSelectorEnabled = getConfig().getBoolean("allowShakeChannelSelector", false)
-        UserDefaults.standard.removeObject(forKey: self.previewSessionDefaultsKey)
-        UserDefaults.standard.removeObject(forKey: self.previewPreviousShakeMenuDefaultsKey)
-        UserDefaults.standard.removeObject(forKey: self.previewPreviousShakeChannelSelectorDefaultsKey)
-        UserDefaults.standard.removeObject(forKey: self.previewPreviousNextBundleDefaultsKey)
+        self.restorePreviewPreviousAppId()
         _ = self.implementation.setPreviewFallbackBundle(fallback: nil)
         _ = self.implementation.setNextBundle(next: Optional<String>.none)
         let configDefaultChannel = self.getConfig().getString("defaultChannel", "")!
         _ = self.implementation.unsetChannel(defaultChannelKey: self.defaultChannelDefaultsKey, configDefaultChannel: configDefaultChannel)
-        UserDefaults.standard.synchronize()
+        self.clearPreviewSessionPreferences()
     }
 
     private func restorePreviewPreviousNextBundle() {
@@ -1202,9 +1247,21 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func getLatest(_ call: CAPPluginCall) {
         let channel = call.getString("channel")
+        let appId = call.getString("appId")?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let preview = call.getBool("preview", false)
+        if ((appId?.isEmpty == false) || preview) && !self.allowPreview {
+            logger.error("getLatest preview override called without allowPreview")
+            call.reject("getLatest preview override not allowed. Set allowPreview to true in your config to enable it.")
+            return
+        }
         self.saveCallForAsyncHandling(call)
         runGetLatestWork {
-            let res = self.implementation.getLatest(url: URL(string: self.updateUrl)!, channel: channel)
+            let res = self.implementation.getLatest(
+                url: URL(string: self.updateUrl)!,
+                channel: channel,
+                appIdOverride: appId?.isEmpty == false ? appId : nil,
+                preview: preview
+            )
             if let error = res.error, !error.isEmpty {
                 let responseKind = self.updateResponseKind(kind: res.kind)
                 res.kind = responseKind
