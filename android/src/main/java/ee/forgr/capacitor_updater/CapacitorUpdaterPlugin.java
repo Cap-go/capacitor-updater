@@ -2481,10 +2481,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
     public void getLatest(final PluginCall call) {
         final String channel = call.getString("channel");
         final String appId = call.getString("appId");
-        final boolean preview = Boolean.TRUE.equals(call.getBoolean("preview", false));
         final String trimmedAppId = appId == null ? null : appId.trim();
         final boolean hasPreviewAppId = trimmedAppId != null && !trimmedAppId.isEmpty();
-        if ((hasPreviewAppId || preview) && !Boolean.TRUE.equals(this.allowPreview)) {
+        if (hasPreviewAppId && !Boolean.TRUE.equals(this.allowPreview)) {
             logger.error("getLatest preview override not allowed set allowPreview in your config to true to enable it");
             call.reject("getLatest preview override not allowed");
             return;
@@ -2521,12 +2520,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
         };
 
         startNewThread(() -> {
-            if (hasPreviewAppId || preview) {
+            if (hasPreviewAppId) {
                 CapacitorUpdaterPlugin.this.implementation.getLatest(
                     CapacitorUpdaterPlugin.this.updateUrl,
                     channel,
                     trimmedAppId,
-                    preview,
                     latestCallback
                 );
                 return;

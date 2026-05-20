@@ -703,7 +703,7 @@ import UIKit
         }
     }
 
-    private func createInfoObject(appIdOverride: String? = nil, preview: Bool = false) -> InfoObject {
+    private func createInfoObject(appIdOverride: String? = nil) -> InfoObject {
         return InfoObject(
             platform: "ios",
             device_id: self.deviceID,
@@ -719,12 +719,11 @@ import UIKit
             action: nil,
             channel: nil,
             defaultChannel: self.defaultChannel,
-            key_id: self.cachedKeyId,
-            preview: preview ? true : nil
+            key_id: self.cachedKeyId
         )
     }
 
-    public func getLatest(url: URL, channel: String?, appIdOverride: String? = nil, preview: Bool = false) -> AppVersion {
+    public func getLatest(url: URL, channel: String?, appIdOverride: String? = nil) -> AppVersion {
         let latest: AppVersion = AppVersion()
         func applyLatestResponse(_ value: AppVersionDec?) {
             if let url = value?.url {
@@ -768,7 +767,7 @@ import UIKit
             }
         }
 
-        var parameters: InfoObject = self.createInfoObject(appIdOverride: appIdOverride, preview: preview)
+        var parameters: InfoObject = self.createInfoObject(appIdOverride: appIdOverride)
         if let channel = channel {
             parameters.defaultChannel = channel
         }

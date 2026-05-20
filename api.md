@@ -40,7 +40,7 @@ CapacitorUpdater can be configured with these options:
 | **`allowModifyUrl`** | `boolean` | Allow the plugin to modify the updateUrl, statsUrl and channelUrl dynamically from the JavaScript side. | `false` | 5.4.0 |
 | **`allowModifyAppId`** | `boolean` | Allow the plugin to modify the appId dynamically from the JavaScript side. | `false` | 7.14.0 |
 | **`allowManualBundleError`** | `boolean` | Allow marking bundles as errored from JavaScript while using manual update flows. When enabled, {@link CapacitorUpdaterPlugin.setBundleError} can change a bundle status to `error`. | `false` | 7.20.0 |
-| **`allowPreview`** | `boolean` | Allow JavaScript to start a native preview session and request previews for another app id. This is intended for trusted container apps that implement Expo Go-style preview flows. Only available for Android and iOS. | `false` | 8.47.0 |
+| **`allowPreview`** | `boolean` | Allow JavaScript to start a native preview session and temporarily request updates for another app id. This is intended for trusted container apps that implement Expo Go-style preview flows. Only available for Android and iOS. | `false` | 8.47.0 |
 | **`persistCustomId`** | `boolean` | Persist the customId set through {@link CapacitorUpdaterPlugin.setCustomId} across app restarts. Only available for Android and iOS. | `false (will be true by default in a future major release v8.x.x)` | 7.17.3 |
 | **`persistModifyUrl`** | `boolean` | Persist the updateUrl, statsUrl and channelUrl set through {@link CapacitorUpdaterPlugin.setUpdateUrl}, {@link CapacitorUpdaterPlugin.setStatsUrl} and {@link CapacitorUpdaterPlugin.setChannelUrl} across app restarts. Only available for Android and iOS. | `false` | 7.20.0 |
 | **`allowSetDefaultChannel`** | `boolean` | Allow or disallow the {@link CapacitorUpdaterPlugin.setChannel} method to modify the defaultChannel. When set to `false`, calling `setChannel()` will return an error with code `disabled_by_config`. | `true` | 7.34.0 |
@@ -396,8 +396,8 @@ native shake menu, and makes the next applied bundle show a native notice
 explaining that shaking the device can reload or leave the preview.
 Requires {@link PluginsConfig.CapacitorUpdater.allowPreview} to be `true`.
 When `appId` is provided, the preview session temporarily uses that app id
-for update checks until the user leaves the preview. Stats are skipped while
-the preview session is active.
+for update checks until the user leaves the preview. Native updater stats are
+skipped while the preview session is active.
 
 Use this before calling {@link set} for Expo Go-style preview flows.
 

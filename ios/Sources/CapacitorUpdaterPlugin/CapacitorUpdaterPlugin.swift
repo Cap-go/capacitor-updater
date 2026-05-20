@@ -1274,8 +1274,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func getLatest(_ call: CAPPluginCall) {
         let channel = call.getString("channel")
         let appId = call.getString("appId")?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let preview = call.getBool("preview", false)
-        if ((appId?.isEmpty == false) || preview) && !self.allowPreview {
+        if (appId?.isEmpty == false) && !self.allowPreview {
             logger.error("getLatest preview override called without allowPreview")
             call.reject("getLatest preview override not allowed. Set allowPreview to true in your config to enable it.")
             return
@@ -1285,8 +1284,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             let res = self.implementation.getLatest(
                 url: URL(string: self.updateUrl)!,
                 channel: channel,
-                appIdOverride: appId?.isEmpty == false ? appId : nil,
-                preview: preview
+                appIdOverride: appId?.isEmpty == false ? appId : nil
             )
             if let error = res.error, !error.isEmpty {
                 let responseKind = self.updateResponseKind(kind: res.kind)

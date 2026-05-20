@@ -288,7 +288,7 @@ declare module '@capacitor/cli' {
       allowManualBundleError?: boolean;
 
       /**
-       * Allow JavaScript to start a native preview session and request previews for another app id.
+       * Allow JavaScript to start a native preview session and temporarily request updates for another app id.
        * This is intended for trusted container apps that implement Expo Go-style preview flows.
        *
        * Only available for Android and iOS.
@@ -568,8 +568,8 @@ export interface CapacitorUpdaterPlugin {
    * explaining that shaking the device can reload or leave the preview.
    * Requires {@link PluginsConfig.CapacitorUpdater.allowPreview} to be `true`.
    * When `appId` is provided, the preview session temporarily uses that app id
-   * for update checks until the user leaves the preview. Stats are skipped while
-   * the preview session is active.
+   * for update checks until the user leaves the preview. Native updater stats are
+   * skipped while the preview session is active.
    *
    * Use this before calling {@link set} for Expo Go-style preview flows.
    *
@@ -1905,19 +1905,13 @@ export interface GetLatestOptions {
    */
   channel?: string;
   /**
-   * App id to request updates for while using a trusted preview container.
+   * Temporarily use another app id for this update check while using a trusted preview container.
+   * This only changes the app id sent by this request; it does not persist a preview session.
    * Requires {@link PluginsConfig.CapacitorUpdater.allowPreview} to be `true`.
    * @since 8.47.0
    * @default undefined
    */
   appId?: string;
-  /**
-   * Mark the update check as a preview request.
-   * Requires {@link PluginsConfig.CapacitorUpdater.allowPreview} to be `true`.
-   * @since 8.47.0
-   * @default false
-   */
-  preview?: boolean;
 }
 
 export interface StartPreviewSessionOptions {

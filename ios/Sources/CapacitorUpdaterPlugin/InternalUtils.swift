@@ -133,7 +133,6 @@ struct InfoObject: Codable {
     var channel: String?
     var defaultChannel: String?
     var key_id: String?
-    var preview: Bool?
 }
 
 extension InfoObject {
@@ -161,7 +160,6 @@ extension InfoObject {
         set("channel", channel)
         set("defaultChannel", defaultChannel)
         set("key_id", key_id)
-        set("preview", preview)
         return parameters
     }
 }

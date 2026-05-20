@@ -1219,10 +1219,10 @@ public class CapgoUpdater {
     }
 
     private JSONObject createInfoObject() throws JSONException {
-        return this.createInfoObject(null, false);
+        return this.createInfoObject(null);
     }
 
-    private JSONObject createInfoObject(final String appIdOverride, final boolean preview) throws JSONException {
+    private JSONObject createInfoObject(final String appIdOverride) throws JSONException {
         JSONObject json = new JSONObject();
         json.put("platform", "android");
         json.put("device_id", this.deviceID);
@@ -1240,9 +1240,6 @@ public class CapgoUpdater {
         // Add encryption key ID if encryption is enabled (use cached value)
         if (!this.cachedKeyId.isEmpty()) {
             json.put("key_id", this.cachedKeyId);
-        }
-        if (preview) {
-            json.put("preview", true);
         }
 
         return json;
@@ -1413,19 +1410,13 @@ public class CapgoUpdater {
     }
 
     public void getLatest(final String updateUrl, final String channel, final Callback callback) {
-        this.getLatest(updateUrl, channel, null, this.previewSession, callback);
+        this.getLatest(updateUrl, channel, null, callback);
     }
 
-    public void getLatest(
-        final String updateUrl,
-        final String channel,
-        final String appIdOverride,
-        final boolean preview,
-        final Callback callback
-    ) {
+    public void getLatest(final String updateUrl, final String channel, final String appIdOverride, final Callback callback) {
         JSONObject json;
         try {
-            json = this.createInfoObject(appIdOverride, preview);
+            json = this.createInfoObject(appIdOverride);
             if (channel != null && json != null) {
                 json.put("defaultChannel", channel);
             }
