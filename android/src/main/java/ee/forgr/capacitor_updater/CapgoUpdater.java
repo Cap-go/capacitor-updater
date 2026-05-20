@@ -60,6 +60,7 @@ public class CapgoUpdater {
 
     private static final String FALLBACK_VERSION = "pastVersion";
     private static final String NEXT_VERSION = "nextVersion";
+    private static final String PREVIEW_FALLBACK_VERSION = "previewFallbackVersion";
     private static final String bundleDirectory = "versions";
     private static final String TEMP_UNZIP_PREFIX = "capgo_unzip_";
 
@@ -941,6 +942,17 @@ public class CapgoUpdater {
             logger.debug("Bundle ID: " + id);
             return false;
         }
+        final BundleInfo previewFallback = this.getPreviewFallbackBundle();
+        if (
+            previewFallback != null &&
+            !previewFallback.isDeleted() &&
+            !previewFallback.isErrorStatus() &&
+            previewFallback.getId().equals(id)
+        ) {
+            logger.error("Cannot delete the preview fallback bundle");
+            logger.debug("Bundle ID: " + id);
+            return false;
+        }
         final BundleInfo next = this.getNextBundle();
         if (next != null && !next.isDeleted() && !next.isErrorStatus() && next.getId().equals(id)) {
             logger.error("Cannot delete the next bundle");
@@ -1081,6 +1093,21 @@ public class CapgoUpdater {
         return true;
     }
 
+    boolean stagePreviewFallbackReload(final BundleInfo bundle) {
+        if (bundle == null || bundle.isErrorStatus()) {
+            return false;
+        }
+        if (bundle.isBuiltin()) {
+            this.setCurrentBundle(new File("public"));
+            return true;
+        }
+        if (!this.bundleExists(bundle.getId())) {
+            return false;
+        }
+        this.setCurrentBundle(this.getBundleDirectory(bundle.getId()));
+        return true;
+    }
+
     void finalizePendingReload(final BundleInfo bundle, final String previousBundleName) {
         if (bundle == null || bundle.isBuiltin()) {
             return;
@@ -1147,12 +1174,20 @@ public class CapgoUpdater {
     public void setSuccess(final BundleInfo bundle, Boolean autoDeletePrevious) {
         this.setBundleStatus(bundle.getId(), BundleStatus.SUCCESS);
         final BundleInfo fallback = this.getFallbackBundle();
+        final BundleInfo previewFallback = this.getPreviewFallbackBundle();
+        final boolean fallbackIsPreviewFallback = previewFallback != null && previewFallback.getId().equals(fallback.getId());
         logger.debug("Fallback bundle is: " + fallback);
         logger.info("Version successfully loaded: " + bundle.getVersionName());
         // Only attempt to delete when the fallback is a different bundle than the
         // currently loaded one. Otherwise we spam logs with "Cannot delete <id>"
         // because delete() protects the current bundle from removal.
-        if (autoDeletePrevious && !fallback.isBuiltin() && fallback.getId() != null && !fallback.getId().equals(bundle.getId())) {
+        if (
+            autoDeletePrevious &&
+            !fallback.isBuiltin() &&
+            fallback.getId() != null &&
+            !fallback.getId().equals(bundle.getId()) &&
+            !fallbackIsPreviewFallback
+        ) {
             final Boolean res = this.delete(fallback.getId());
             if (res) {
                 logger.info("Deleted previous bundle: " + fallback.getVersionName());
@@ -1969,6 +2004,31 @@ public class CapgoUpdater {
         final String id = this.prefs.getString(NEXT_VERSION, null);
         if (id == null) return null;
         return this.getBundleInfo(id);
+    }
+
+    public BundleInfo getPreviewFallbackBundle() {
+        final String id = this.prefs.getString(PREVIEW_FALLBACK_VERSION, null);
+        if (id == null) return null;
+        final BundleInfo bundle = this.getBundleInfo(id);
+        if (bundle.isErrorStatus() || (!bundle.isBuiltin() && !this.bundleExists(id))) {
+            this.setPreviewFallbackBundle(null);
+            return null;
+        }
+        return bundle;
+    }
+
+    public boolean setPreviewFallbackBundle(final String fallback) {
+        if (fallback == null) {
+            this.editor.remove(PREVIEW_FALLBACK_VERSION);
+        } else {
+            final BundleInfo newBundle = this.getBundleInfo(fallback);
+            if (newBundle.isErrorStatus() || (!newBundle.isBuiltin() && !this.bundleExists(fallback))) {
+                return false;
+            }
+            this.editor.putString(PREVIEW_FALLBACK_VERSION, fallback);
+        }
+        this.editor.commit();
+        return true;
     }
 
     public boolean setNextBundle(final String next) {

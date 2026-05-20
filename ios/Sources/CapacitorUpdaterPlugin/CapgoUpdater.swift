@@ -21,6 +21,7 @@ import UIKit
     private let INFO_SUFFIX: String = "_info"
     private let FALLBACK_VERSION: String = "pastVersion"
     private let NEXT_VERSION: String = "nextVersion"
+    private let PREVIEW_FALLBACK_VERSION: String = "previewFallbackVersion"
     private var unzipPercent = 0
     private let TEMP_UNZIP_PREFIX: String = "capgo_unzip_"
 
@@ -1599,6 +1600,15 @@ import UIKit
             return false
         }
 
+        if let previewFallback = self.getPreviewFallbackBundle(),
+           !previewFallback.isDeleted(),
+           !previewFallback.isErrorStatus(),
+           previewFallback.getId() == id {
+            logger.info("Cannot delete the preview fallback bundle")
+            logger.debug("Bundle ID: \(id)")
+            return false
+        }
+
         // Check if this is the next bundle and prevent deletion if it is
         if let next = self.getNextBundle(),
            !next.isDeleted() &&
@@ -1883,6 +1893,21 @@ import UIKit
         return true
     }
 
+    func stagePreviewFallbackReload(bundle: BundleInfo) -> Bool {
+        guard !bundle.isErrorStatus() else {
+            return false
+        }
+        if bundle.isBuiltin() {
+            self.setCurrentBundle(bundle: self.DEFAULT_FOLDER)
+            return true
+        }
+        guard bundleExists(id: bundle.getId()) else {
+            return false
+        }
+        self.setCurrentBundle(bundle: self.getBundleDirectory(id: bundle.getId()).path)
+        return true
+    }
+
     func finalizePendingReload(bundle: BundleInfo, previousBundleName: String) {
         guard !bundle.isBuiltin() else {
             return
@@ -1922,9 +1947,11 @@ import UIKit
     public func setSuccess(bundle: BundleInfo, autoDeletePrevious: Bool) {
         self.setBundleStatus(id: bundle.getId(), status: BundleStatus.SUCCESS)
         let fallback: BundleInfo = self.getFallbackBundle()
+        let previewFallback = self.getPreviewFallbackBundle()
+        let fallbackIsPreviewFallback = previewFallback?.getId() == fallback.getId()
         logger.info("Fallback bundle is: \(fallback.toString())")
         logger.info("Version successfully loaded: \(bundle.toString())")
-        if autoDeletePrevious && !fallback.isBuiltin() && fallback.getId() != bundle.getId() {
+        if autoDeletePrevious && !fallback.isBuiltin() && fallback.getId() != bundle.getId() && !fallbackIsPreviewFallback {
             let res = self.delete(id: fallback.getId())
             if res {
                 logger.info("Deleted previous bundle")
@@ -2456,6 +2483,33 @@ import UIKit
     public func getNextBundle() -> BundleInfo? {
         let id: String? = UserDefaults.standard.string(forKey: self.NEXT_VERSION)
         return self.getBundleInfo(id: id)
+    }
+
+    public func getPreviewFallbackBundle() -> BundleInfo? {
+        guard let id = UserDefaults.standard.string(forKey: self.PREVIEW_FALLBACK_VERSION) else {
+            return nil
+        }
+        let bundle = self.getBundleInfo(id: id)
+        if bundle.isErrorStatus() || (!bundle.isBuiltin() && !self.bundleExists(id: id)) {
+            _ = self.setPreviewFallbackBundle(fallback: nil)
+            return nil
+        }
+        return bundle
+    }
+
+    public func setPreviewFallbackBundle(fallback: String?) -> Bool {
+        guard let fallbackId = fallback else {
+            UserDefaults.standard.removeObject(forKey: self.PREVIEW_FALLBACK_VERSION)
+            UserDefaults.standard.synchronize()
+            return true
+        }
+        let newBundle: BundleInfo = self.getBundleInfo(id: fallbackId)
+        if newBundle.isErrorStatus() || (!newBundle.isBuiltin() && !self.bundleExists(id: fallbackId)) {
+            return false
+        }
+        UserDefaults.standard.set(fallbackId, forKey: self.PREVIEW_FALLBACK_VERSION)
+        UserDefaults.standard.synchronize()
+        return true
     }
 
     public func setNextBundle(next: String?) -> Bool {

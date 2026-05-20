@@ -66,8 +66,9 @@ public class ShakeMenu implements ShakeDetector.Listener {
 
         isShowing = true;
 
-        // Check if channel selector mode is enabled
-        if (plugin.shakeChannelSelectorEnabled) {
+        if (plugin.hasActivePreviewSession()) {
+            showDefaultMenu();
+        } else if (plugin.shakeChannelSelectorEnabled) {
             showChannelSelector();
         } else {
             showDefaultMenu();
@@ -75,6 +76,98 @@ public class ShakeMenu implements ShakeDetector.Listener {
     }
 
     private void showDefaultMenu() {
+        activity.runOnUiThread(() -> {
+            try {
+                if (!plugin.hasActivePreviewSession()) {
+                    showConfiguredDefaultMenu();
+                    return;
+                }
+                String appName = activity.getPackageManager().getApplicationLabel(activity.getApplicationInfo()).toString();
+                String title = "Preview " + appName + " Menu";
+                String message = "Reload the current preview or leave the test app.";
+                String okButtonTitle = "Leave test app";
+                String reloadButtonTitle = "Reload app";
+                String cancelButtonTitle = "Close menu";
+
+                AlertDialog.Builder builder = new AlertDialog.Builder(activity);
+                builder.setTitle(title);
+                builder.setMessage(message);
+
+                builder.setPositiveButton(okButtonTitle, null);
+                builder.setNeutralButton(reloadButtonTitle, null);
+
+                // Cancel button
+                builder.setNegativeButton(
+                    cancelButtonTitle,
+                    new DialogInterface.OnClickListener() {
+                        public void onClick(DialogInterface dialog, int id) {
+                            logger.info("Shake menu cancelled");
+                            dialog.dismiss();
+                            isShowing = false;
+                        }
+                    }
+                );
+
+                AlertDialog dialog = builder.create();
+                dialog.setOnDismissListener((dialogInterface) -> isShowing = false);
+                dialog.show();
+                dialog
+                    .getButton(AlertDialog.BUTTON_POSITIVE)
+                    .setOnClickListener((view) -> {
+                        setPreviewMenuButtonsEnabled(dialog, false);
+                        new Thread(() -> {
+                            try {
+                                if (!plugin.leavePreviewSessionFromShakeMenu()) {
+                                    activity.runOnUiThread(() -> showError("Could not leave the test app."));
+                                }
+                            } catch (Exception e) {
+                                logger.error("Error leaving test app: " + e.getMessage());
+                                activity.runOnUiThread(() -> showError("Error leaving test app: " + e.getMessage()));
+                            } finally {
+                                activity.runOnUiThread(() -> {
+                                    dialog.dismiss();
+                                    isShowing = false;
+                                });
+                            }
+                        })
+                            .start();
+                    });
+                dialog
+                    .getButton(AlertDialog.BUTTON_NEUTRAL)
+                    .setOnClickListener((view) -> {
+                        setPreviewMenuButtonsEnabled(dialog, false);
+                        new Thread(() -> {
+                            try {
+                                logger.info("Reloading webview");
+                                if (!plugin.reloadPreviewSessionFromShakeMenu()) {
+                                    activity.runOnUiThread(() -> showError("Could not reload the test app."));
+                                }
+                            } catch (Exception e) {
+                                logger.error("Error in Reload action: " + e.getMessage());
+                                activity.runOnUiThread(() -> showError("Error reloading test app: " + e.getMessage()));
+                            } finally {
+                                activity.runOnUiThread(() -> {
+                                    dialog.dismiss();
+                                    isShowing = false;
+                                });
+                            }
+                        })
+                            .start();
+                    });
+            } catch (Exception e) {
+                logger.error("Error showing shake menu: " + e.getMessage());
+                isShowing = false;
+            }
+        });
+    }
+
+    private void setPreviewMenuButtonsEnabled(AlertDialog dialog, boolean enabled) {
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(enabled);
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setEnabled(enabled);
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setEnabled(enabled);
+    }
+
+    private void showConfiguredDefaultMenu() {
         activity.runOnUiThread(() -> {
             try {
                 String appName = activity.getPackageManager().getApplicationLabel(activity.getApplicationInfo()).toString();
@@ -120,7 +213,6 @@ public class ShakeMenu implements ShakeDetector.Listener {
                                     bridge.setServerAssetPath(path);
                                 }
 
-                                // Try to delete the current bundle
                                 try {
                                     updater.delete(current.getId());
                                 } catch (Exception err) {

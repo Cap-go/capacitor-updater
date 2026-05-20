@@ -88,6 +88,11 @@ export class CapacitorUpdaterWeb extends WebPlugin implements CapacitorUpdaterPl
     return;
   }
 
+  async startPreviewSession(): Promise<void> {
+    console.warn('Cannot start preview session in web');
+    return;
+  }
+
   async getDeviceId(): Promise<DeviceId> {
     console.warn('Cannot get ID in web');
     return { deviceId: 'default' };
