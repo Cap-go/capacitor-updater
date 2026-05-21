@@ -27,6 +27,7 @@ import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import org.json.JSONArray;
+import org.json.JSONObject;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.MockedConstruction;
@@ -230,8 +231,12 @@ public class CapacitorUpdaterUnitTest {
         private BooleanSupplier consumedStateSupplier = () -> false;
         private BooleanSupplier directUpdateStateSupplier = () -> false;
         private boolean downloadBackgroundCalled = false;
+        private boolean downloadBackgroundSetNext = true;
         private boolean consumedWhenDownloadStarted = false;
         private boolean directUpdateWhenDownloadStarted = false;
+        private boolean setNextBundleCalled = false;
+        private String lastSetNextBundleId;
+        private java.util.function.Consumer<String> updateAvailableNotifier = (version) -> {};
 
         FreshDownloadCapgoUpdater() {
             super(null);
@@ -263,9 +268,80 @@ public class CapacitorUpdaterUnitTest {
             final String checksum,
             final JSONArray manifest
         ) {
+            this.downloadBackground(url, version, sessionKey, checksum, manifest, true);
+        }
+
+        @Override
+        public void downloadBackground(
+            final String url,
+            final String version,
+            final String sessionKey,
+            final String checksum,
+            final JSONArray manifest,
+            final boolean setNext
+        ) {
             this.downloadBackgroundCalled = true;
+            this.downloadBackgroundSetNext = setNext;
             this.consumedWhenDownloadStarted = this.consumedStateSupplier.getAsBoolean();
             this.directUpdateWhenDownloadStarted = this.directUpdateStateSupplier.getAsBoolean();
+            this.updateAvailableNotifier.accept(version);
+        }
+
+        @Override
+        public boolean setNextBundle(final String next) {
+            this.setNextBundleCalled = true;
+            this.lastSetNextBundleId = next;
+            return true;
+        }
+    }
+
+    private static final class BuiltinLatestCapgoUpdater extends CapgoUpdater {
+
+        private final BundleInfo currentBundle;
+        private final BundleInfo builtinBundle = new BundleInfo(
+            BundleInfo.ID_BUILTIN,
+            "builtin",
+            BundleStatus.SUCCESS,
+            BundleInfo.DOWNLOADED_BUILTIN,
+            "builtin"
+        );
+        private boolean setNextBundleCalled = false;
+        private String lastSetNextBundleId;
+
+        BuiltinLatestCapgoUpdater() {
+            this(new BundleInfo("current-id", "2.0.0", BundleStatus.SUCCESS, new Date(), "abc123"));
+        }
+
+        BuiltinLatestCapgoUpdater(final BundleInfo currentBundle) {
+            super(null);
+            this.currentBundle = currentBundle;
+        }
+
+        @Override
+        public void getLatest(final String updateUrl, final String channel, final Callback callback) {
+            final Map<String, Object> response = new HashMap<>();
+            response.put("version", "builtin");
+            callback.callback(response);
+        }
+
+        @Override
+        public BundleInfo getCurrentBundle() {
+            return this.currentBundle;
+        }
+
+        @Override
+        public BundleInfo getBundleInfo(final String id) {
+            if (BundleInfo.ID_BUILTIN.equals(id)) {
+                return this.builtinBundle;
+            }
+            return this.currentBundle;
+        }
+
+        @Override
+        public boolean setNextBundle(final String next) {
+            this.setNextBundleCalled = true;
+            this.lastSetNextBundleId = next;
+            return true;
         }
     }
 
@@ -718,6 +794,22 @@ public class CapacitorUpdaterUnitTest {
         final Method backgroundDownload = CapacitorUpdaterPlugin.class.getDeclaredMethod("backgroundDownload");
         backgroundDownload.setAccessible(true);
         backgroundDownload.invoke(plugin);
+    }
+
+    private static FreshDownloadCapgoUpdater configureOnlyDownloadBackgroundDownload(final ImmediateThreadCapacitorUpdaterPlugin plugin) {
+        final FreshDownloadCapgoUpdater updater = new FreshDownloadCapgoUpdater();
+
+        plugin.implementation = updater;
+        plugin.setAutoUpdateModeForTesting("onlyDownload");
+        plugin.setLoggerForTesting(mock(Logger.class));
+        updater.updateAvailableNotifier = (version) -> {
+            final JSObject ret = new JSObject();
+            final BundleInfo downloaded = new BundleInfo("downloaded-id", version, BundleStatus.PENDING, new Date(), "checksum");
+            ret.put("bundle", InternalUtils.mapToJSObject(downloaded.toJSONMap()));
+            plugin.notifyListeners("updateAvailable", ret);
+        };
+
+        return updater;
     }
 
     private static void invokePrivateVoidMethod(final CapacitorUpdaterPlugin plugin, final String methodName) throws Exception {
@@ -1849,6 +1941,121 @@ public class CapacitorUpdaterUnitTest {
             assertTrue(plugin.hasConsumedOnLaunchDirectUpdateForTesting());
             assertFalse(plugin.shouldUseDirectUpdateForTesting());
             assertTrue(plugin.implementation.directUpdate);
+        }
+    }
+
+    @Test
+    public void testOnlyDownloadModeDownloadsWithoutSchedulingOrDirectUpdate() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
+            final FreshDownloadCapgoUpdater updater = configureOnlyDownloadBackgroundDownload(plugin);
+
+            plugin.implementation.directUpdate = true;
+            updater.directUpdateStateSupplier = () -> Boolean.TRUE.equals(plugin.implementation.directUpdate);
+
+            assertFalse(plugin.shouldUseDirectUpdateForTesting());
+
+            invokeBackgroundDownload(plugin);
+
+            assertTrue(updater.downloadBackgroundCalled);
+            assertFalse(updater.downloadBackgroundSetNext);
+            assertFalse(updater.setNextBundleCalled);
+            assertNull(updater.lastSetNextBundleId);
+            assertFalse(updater.directUpdateWhenDownloadStarted);
+            assertFalse(plugin.implementation.directUpdate);
+            assertTrue(plugin.hasNotifiedEvent("updateAvailable"));
+        }
+    }
+
+    @Test
+    public void testOnlyDownloadModeDoesNotScheduleExistingDownloadedBundle() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
+            final FreshDownloadCapgoUpdater updater = configureOnlyDownloadBackgroundDownload(plugin);
+            updater.existingLatestBundle = new BundleInfo("downloaded-id", "2.0.0", BundleStatus.PENDING, new Date(), "checksum");
+
+            invokeBackgroundDownload(plugin);
+
+            assertFalse(updater.downloadBackgroundCalled);
+            assertFalse(updater.setNextBundleCalled);
+            assertNull(updater.lastSetNextBundleId);
+            assertTrue(plugin.hasNotifiedEvent("updateAvailable"));
+            assertFalse(plugin.hasNotifiedEvent("noNeedUpdate"));
+
+            final JSObject completionPayload = plugin.getNotifiedEventPayload("appReady");
+            final JSONObject completionBundle = completionPayload.getJSONObject("bundle");
+            assertEquals(updater.currentBundle.getId(), completionBundle.getString("id"));
+        }
+    }
+
+    @Test
+    public void testOnlyDownloadModeBuiltinNotifiesUpdateAvailableWithoutScheduling() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
+            final BuiltinLatestCapgoUpdater updater = new BuiltinLatestCapgoUpdater();
+
+            plugin.implementation = updater;
+            plugin.setAutoUpdateModeForTesting("onlyDownload");
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            assertFalse(plugin.shouldUseDirectUpdateForTesting());
+
+            invokeBackgroundDownload(plugin);
+
+            assertFalse(updater.setNextBundleCalled);
+            assertNull(updater.lastSetNextBundleId);
+            assertTrue(plugin.hasNotifiedEvent("updateAvailable"));
+
+            final JSObject updatePayload = plugin.getNotifiedEventPayload("updateAvailable");
+            final JSONObject updateBundle = updatePayload.getJSONObject("bundle");
+            assertEquals(BundleInfo.ID_BUILTIN, updateBundle.getString("id"));
+            assertFalse(plugin.hasNotifiedEvent("noNeedUpdate"));
+        }
+    }
+
+    @Test
+    public void testOnlyDownloadModeBuiltinDoesNotNotifyWhenBuiltinIsCurrent() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
+            final BundleInfo current = new BundleInfo(
+                BundleInfo.ID_BUILTIN,
+                "builtin",
+                BundleStatus.SUCCESS,
+                BundleInfo.DOWNLOADED_BUILTIN,
+                "builtin"
+            );
+            final BuiltinLatestCapgoUpdater updater = new BuiltinLatestCapgoUpdater(current);
+
+            plugin.implementation = updater;
+            plugin.setAutoUpdateModeForTesting("onlyDownload");
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            invokeBackgroundDownload(plugin);
+
+            assertFalse(updater.setNextBundleCalled);
+            assertNull(updater.lastSetNextBundleId);
+            assertFalse(plugin.hasNotifiedEvent("updateAvailable"));
+            assertTrue(plugin.hasNotifiedEvent("noNeedUpdate"));
         }
     }
 

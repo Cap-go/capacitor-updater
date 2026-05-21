@@ -65,6 +65,104 @@
       }
     }
   ],
+  "autoUpdateMode": [
+    {
+      "id": "auto-update.false",
+      "input": {
+        "mode": "false"
+      },
+      "expect": {
+        "mode": "off",
+        "enabled": false,
+        "directUpdateMode": "false",
+        "setNextBundle": false
+      }
+    },
+    {
+      "id": "auto-update.true",
+      "input": {
+        "mode": "true"
+      },
+      "expect": {
+        "mode": "atBackground",
+        "enabled": true,
+        "directUpdateMode": "false",
+        "setNextBundle": true
+      }
+    },
+    {
+      "id": "auto-update.at-background",
+      "input": {
+        "mode": "atBackground"
+      },
+      "expect": {
+        "mode": "atBackground",
+        "enabled": true,
+        "directUpdateMode": "false",
+        "setNextBundle": true
+      }
+    },
+    {
+      "id": "auto-update.at-install",
+      "input": {
+        "mode": "atInstall"
+      },
+      "expect": {
+        "mode": "atInstall",
+        "enabled": true,
+        "directUpdateMode": "atInstall",
+        "setNextBundle": true
+      }
+    },
+    {
+      "id": "auto-update.on-launch",
+      "input": {
+        "mode": "onLaunch"
+      },
+      "expect": {
+        "mode": "onLaunch",
+        "enabled": true,
+        "directUpdateMode": "onLaunch",
+        "setNextBundle": true
+      }
+    },
+    {
+      "id": "auto-update.always",
+      "input": {
+        "mode": "always"
+      },
+      "expect": {
+        "mode": "always",
+        "enabled": true,
+        "directUpdateMode": "always",
+        "setNextBundle": true
+      }
+    },
+    {
+      "id": "auto-update.only-download",
+      "input": {
+        "mode": "onlyDownload"
+      },
+      "expect": {
+        "mode": "onlyDownload",
+        "enabled": true,
+        "directUpdateMode": "false",
+        "setNextBundle": false
+      }
+    },
+    {
+      "id": "auto-update.invalid",
+      "input": {
+        "mode": "invalid"
+      },
+      "expect": {
+        "mode": "atBackground",
+        "enabled": true,
+        "directUpdateMode": "false",
+        "setNextBundle": true
+      }
+    }
+  ],
   "onLaunchDirectUpdateConsumption": [
     {
       "id": "direct-update.on-launch.planned",

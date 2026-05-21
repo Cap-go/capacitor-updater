@@ -54,14 +54,26 @@ declare module '@capacitor/cli' {
       autoDeletePrevious?: boolean;
 
       /**
-       * Configure whether the plugin should use Auto Update via an update server.
+       * Configure how the plugin should use Auto Update via an update server.
+       *
+       * Boolean values keep their existing behavior:
+       * - `true`: Same as `"atBackground"`.
+       * - `false`: Same as `"off"`.
+       *
+       * String values merge the previous Auto Update and Direct Update configuration:
+       * - `"off"`: Disable Auto Update.
+       * - `"atBackground"`: Check and download updates automatically, then apply them the next time the app moves to background.
+       * - `"atInstall"`: Direct install only after app install or native app update, otherwise use `"atBackground"` behavior.
+       * - `"onLaunch"`: Direct install on app launch, otherwise use `"atBackground"` behavior after the first launch attempt.
+       * - `"always"`: Direct install whenever Auto Update runs.
+       * - `"onlyDownload"`: Check and download updates automatically, emit `updateAvailable`, but never direct install or set the next bundle automatically.
        *
        * Only available for Android and iOS.
        *
        * @default true
-       * @example false
+       * @example "onlyDownload"
        */
-      autoUpdate?: boolean;
+      autoUpdate?: boolean | 'off' | 'atBackground' | 'atInstall' | 'onLaunch' | 'always' | 'onlyDownload';
 
       /**
        * Automatically delete previous downloaded bundles when a newer native app bundle is installed to the device.
@@ -130,6 +142,8 @@ declare module '@capacitor/cli' {
 
       /**
        * Configure when the plugin should direct install updates. Only for autoUpdate mode.
+       *
+       * @deprecated Use {@link PluginsConfig.CapacitorUpdater.autoUpdate} string modes instead.
        * Works well for apps less than 10MB and with uploads done using --delta flag.
        * Zip or apps more than 10MB will be relatively slow for users to update.
        * - false: Never do direct updates (use default behavior: download at start, set when backgrounded)
@@ -149,9 +163,9 @@ declare module '@capacitor/cli' {
       /**
        * Automatically handle splashscreen hiding when using directUpdate. When enabled, the plugin will automatically hide the splashscreen after updates are applied or when no update is needed.
        * This removes the need to manually listen for appReady events and call SplashScreen.hide().
-       * Only works when directUpdate is set to "atInstall", "always", "onLaunch", or true.
+       * Only works when autoUpdate is set to "atInstall", "always", or "onLaunch", or when the deprecated directUpdate option is set to "atInstall", "always", "onLaunch", or true.
        * Requires the @capacitor/splash-screen plugin to be installed and configured with launchAutoHide: false.
-       * Requires autoUpdate and directUpdate to be enabled.
+       * Requires Auto Update and Direct Update behavior to be enabled.
        *
        * Only available for Android and iOS.
        *

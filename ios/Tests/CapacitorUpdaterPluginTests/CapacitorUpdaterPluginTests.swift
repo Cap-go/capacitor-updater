@@ -6,9 +6,11 @@ import Version
 private class TestableCapacitorUpdaterPlugin: CapacitorUpdaterPlugin {
     private(set) var notifiedEventNames: [String] = []
     private(set) var notifiedEventPayloads: [String: [String: Any]] = [:]
+    private(set) var notifiedEventRetainValues: [String: Bool] = [:]
 
     override func notifyListeners(_ eventName: String, data: [String: Any]?, retainUntilConsumed retain: Bool) {
         notifiedEventNames.append(eventName)
+        notifiedEventRetainValues[eventName] = retain
         if let data {
             notifiedEventPayloads[eventName] = data
         }
@@ -34,7 +36,18 @@ private class TestableCapacitorUpdaterPlugin: CapacitorUpdaterPlugin {
 private final class FreshDownloadCapgoUpdater: CapgoUpdater {
     var currentBundleValue: BundleInfo!
     var latestResponse = AppVersion()
+    var existingBundleValue: BundleInfo?
+    var downloadedBundleValue: BundleInfo?
+    var builtinBundleValue = BundleInfo(
+        id: BundleInfo.ID_BUILTIN,
+        version: "builtin",
+        status: .SUCCESS,
+        downloaded: BundleInfo.DOWNLOADED_BUILTIN,
+        checksum: "builtin"
+    )
     var onDownloadStart: (() -> Void)?
+    var setNextBundleCalls = 0
+    var lastSetNextBundleId: String?
     var sentStatsActions: [String] = []
 
     override func getLatest(url: URL, channel: String?, appIdOverride: String? = nil) -> AppVersion {
@@ -46,12 +59,31 @@ private final class FreshDownloadCapgoUpdater: CapgoUpdater {
     }
 
     override func getBundleInfoByVersionName(version: String) -> BundleInfo? {
-        nil
+        guard existingBundleValue?.getVersionName() == version else {
+            return nil
+        }
+        return existingBundleValue
+    }
+
+    override func getBundleInfo(id: String?) -> BundleInfo {
+        if id == BundleInfo.ID_BUILTIN {
+            return builtinBundleValue
+        }
+        return currentBundleValue
     }
 
     override func download(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
         onDownloadStart?()
+        if let downloadedBundleValue {
+            return downloadedBundleValue
+        }
         throw NSError(domain: "CapacitorUpdaterPluginTests", code: 1)
+    }
+
+    override func setNextBundle(next: String?) -> Bool {
+        setNextBundleCalls += 1
+        lastSetNextBundleId = next
+        return true
     }
 
     override func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {
@@ -283,6 +315,7 @@ class CapacitorUpdaterTests: XCTestCase {
     var implementation: CapgoUpdater!
     private let delayPreferencesKey = DelayUpdateUtils.DELAY_CONDITION_PREFERENCES
     private let backgroundTimestampKey = DelayUpdateUtils.BACKGROUND_TIMESTAMP_KEY
+    private let onlyDownloadChecksum = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
     override func setUp() {
         super.setUp()
@@ -294,6 +327,65 @@ class CapacitorUpdaterTests: XCTestCase {
         plugin = nil
         implementation = nil
         super.tearDown()
+    }
+
+    private func makeOnlyDownloadBundle(
+        id: String = "downloaded-id",
+        version: String = "2.0.0",
+        status: BundleStatus = .PENDING,
+        checksum: String? = nil
+    ) -> BundleInfo {
+        BundleInfo(
+            id: id,
+            version: version,
+            status: status,
+            downloaded: Date(),
+            checksum: checksum ?? onlyDownloadChecksum
+        )
+    }
+
+    private func makeOnlyDownloadLatest() -> AppVersion {
+        let latest = AppVersion()
+        latest.version = "2.0.0"
+        latest.url = "https://example.com/update.zip"
+        latest.checksum = onlyDownloadChecksum
+        return latest
+    }
+
+    private func makeOnlyDownloadPlugin(
+        current: BundleInfo? = nil,
+        existing: BundleInfo? = nil,
+        downloaded: BundleInfo? = nil
+    ) -> (TestableCapacitorUpdaterPlugin, FreshDownloadCapgoUpdater) {
+        let freshDownloadImplementation = FreshDownloadCapgoUpdater()
+        freshDownloadImplementation.currentBundleValue = current ?? makeOnlyDownloadBundle(
+            id: "test-id",
+            version: "1.0.0",
+            status: .SUCCESS,
+            checksum: "abc123"
+        )
+        freshDownloadImplementation.latestResponse = makeOnlyDownloadLatest()
+        freshDownloadImplementation.existingBundleValue = existing
+        freshDownloadImplementation.downloadedBundleValue = downloaded
+
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.implementation = freshDownloadImplementation
+        testPlugin.setAutoUpdateModeForTesting("onlyDownload")
+        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
+        CryptoCipher.setLogger(Logger(withTag: "TestLogger"))
+
+        return (testPlugin, freshDownloadImplementation)
+    }
+
+    private func assertOnlyDownloadLeavesUpdateManual(
+        plugin testPlugin: TestableCapacitorUpdaterPlugin,
+        implementation freshDownloadImplementation: FreshDownloadCapgoUpdater
+    ) {
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("updateAvailable"))
+        XCTAssertEqual(testPlugin.notifiedEventRetainValues["updateAvailable"], true)
+        XCTAssertFalse(testPlugin.notifiedEventNames.contains("noNeedUpdate"))
+        XCTAssertEqual(freshDownloadImplementation.setNextBundleCalls, 0)
+        XCTAssertNil(freshDownloadImplementation.lastSetNextBundleId)
     }
 
     private func makeDelayUpdateUtils() throws -> DelayUpdateUtils {
@@ -1138,6 +1230,57 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertTrue(consumedWhenDownloadStarted)
         XCTAssertTrue(plugin.hasConsumedOnLaunchDirectUpdateForTesting)
         XCTAssertFalse(plugin.shouldUseDirectUpdateForTesting())
+    }
+
+    func testOnlyDownloadModeDownloadsWithoutSettingNextBundle() {
+        let (testPlugin, freshDownloadImplementation) = makeOnlyDownloadPlugin(downloaded: makeOnlyDownloadBundle())
+
+        XCTAssertFalse(testPlugin.shouldUseDirectUpdateForTesting())
+
+        testPlugin.backgroundDownload()
+
+        assertOnlyDownloadLeavesUpdateManual(plugin: testPlugin, implementation: freshDownloadImplementation)
+    }
+
+    func testOnlyDownloadModeDoesNotSetExistingDownloadedBundleNext() {
+        let (testPlugin, freshDownloadImplementation) = makeOnlyDownloadPlugin(existing: makeOnlyDownloadBundle())
+
+        testPlugin.backgroundDownload()
+
+        assertOnlyDownloadLeavesUpdateManual(plugin: testPlugin, implementation: freshDownloadImplementation)
+    }
+
+    func testOnlyDownloadModeBuiltinNotifiesUpdateAvailableWithoutSettingNextBundle() {
+        let (testPlugin, freshDownloadImplementation) = makeOnlyDownloadPlugin()
+        let latest = AppVersion()
+        latest.version = "builtin"
+        freshDownloadImplementation.latestResponse = latest
+
+        testPlugin.backgroundDownload()
+
+        assertOnlyDownloadLeavesUpdateManual(plugin: testPlugin, implementation: freshDownloadImplementation)
+        let updateBundle = testPlugin.notifiedEventPayloads["updateAvailable"]?["bundle"] as? [String: String]
+        XCTAssertEqual(updateBundle?["id"], BundleInfo.ID_BUILTIN)
+    }
+
+    func testOnlyDownloadModeBuiltinDoesNotNotifyWhenBuiltinIsCurrent() {
+        let current = BundleInfo(
+            id: BundleInfo.ID_BUILTIN,
+            version: "builtin",
+            status: .SUCCESS,
+            downloaded: BundleInfo.DOWNLOADED_BUILTIN,
+            checksum: "builtin"
+        )
+        let (testPlugin, freshDownloadImplementation) = makeOnlyDownloadPlugin(current: current)
+        let latest = AppVersion()
+        latest.version = "builtin"
+        freshDownloadImplementation.latestResponse = latest
+
+        testPlugin.backgroundDownload()
+
+        XCTAssertFalse(testPlugin.notifiedEventNames.contains("updateAvailable"))
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("noNeedUpdate"))
+        XCTAssertEqual(freshDownloadImplementation.setNextBundleCalls, 0)
     }
 
     func testNoNewVersionAvailableDoesNotNotifyDownloadFailed() {
