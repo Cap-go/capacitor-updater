@@ -1091,6 +1091,19 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return map;
     }
 
+    private static JSObject jsonObjectToJSObject(final JSONObject json) throws JSONException {
+        final JSObject ret = new JSObject();
+        final JSONArray names = json.names();
+        if (names == null) {
+            return ret;
+        }
+        for (int i = 0; i < names.length(); i++) {
+            final String key = names.getString(i);
+            ret.put(key, json.get(key));
+        }
+        return ret;
+    }
+
     @PluginMethod
     public void reportWebViewError(final PluginCall call) {
         final JSObject data = call.getData();
@@ -2498,6 +2511,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     @PluginMethod
     public void getLatest(final PluginCall call) {
         final String channel = call.getString("channel");
+        final boolean includeBundleSize = call.getBoolean("includeBundleSize", false);
         final String previewAppId = this.normalizePreviewAppId(call.getString("appId"));
         final boolean hasPreviewAppId = previewAppId != null;
         if (hasPreviewAppId && !Boolean.TRUE.equals(this.allowPreview)) {
@@ -2532,6 +2546,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 call.reject(jsRes.getString("message"));
                 return;
             } else {
+                if (includeBundleSize) {
+                    CapacitorUpdaterPlugin.this.attachBundleSize(jsRes);
+                }
                 call.resolve(jsRes);
             }
         };
@@ -2547,6 +2564,67 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 return;
             }
             CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.updateUrl, channel, latestCallback);
+        });
+    }
+
+    private void attachBundleSize(final JSObject latest) {
+        try {
+            final JSONArray manifest = latest.optJSONArray("manifest");
+            if (manifest == null || manifest.length() == 0) {
+                return;
+            }
+            final String sessionKey = latest.optString("sessionKey", "");
+            final JSONObject missing = this.implementation.missingBundleFilesResult(manifest, sessionKey);
+            final JSONArray missingManifest = missing.getJSONArray("missing");
+            final JSONObject size = this.implementation.getBundleDownloadSize(
+                this.updateUrl,
+                latest.optString("version", ""),
+                missingManifest
+            );
+            latest.put("missing", missing);
+            latest.put("downloadSize", size);
+        } catch (Exception e) {
+            logger.error("Failed to attach bundle size to getLatest result");
+            logger.debug("Error: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void getMissingBundleFiles(final PluginCall call) {
+        final JSONArray manifest = call.getData().optJSONArray("manifest");
+        if (manifest == null) {
+            call.reject("getMissingBundleFiles called without manifest");
+            return;
+        }
+        String sessionKey = call.getString("sessionKey");
+        if (sessionKey == null) {
+            sessionKey = "";
+        }
+        final String finalSessionKey = sessionKey;
+        startNewThread(() -> {
+            try {
+                call.resolve(jsonObjectToJSObject(this.implementation.missingBundleFilesResult(manifest, finalSessionKey)));
+            } catch (Exception e) {
+                call.reject("Could not get missing bundle files", e);
+            }
+        });
+    }
+
+    @PluginMethod
+    public void getBundleDownloadSize(final PluginCall call) {
+        final JSONArray manifest = call.getData().optJSONArray("manifest");
+        if (manifest == null) {
+            call.reject("getBundleDownloadSize called without manifest");
+            return;
+        }
+        final String version = call.getString("version");
+        startNewThread(() -> {
+            try {
+                final JSONObject size = this.implementation.getBundleDownloadSize(this.updateUrl, version, manifest);
+                call.resolve(jsonObjectToJSObject(size));
+            } catch (Exception e) {
+                call.reject("Could not get bundle download size", e);
+            }
         });
     }
 

@@ -78,6 +78,8 @@ CapacitorUpdater can be configured with these options:
 - [`cancelDelay`](#canceldelay)
 - [`triggerUpdateCheck`](#triggerupdatecheck)
 - [`getLatest`](#getlatest)
+- [`getMissingBundleFiles`](#getmissingbundlefiles)
+- [`getBundleDownloadSize`](#getbundledownloadsize)
 - [`setChannel`](#setchannel)
 - [`unsetChannel`](#unsetchannel)
 - [`getChannel`](#getchannel)
@@ -810,6 +812,87 @@ In this scenario, the server:
 **Since:** 4.0.0
 
 **Throws:** {Error} Throws for failed update checks or transport/request failures.
+
+
+--------------------
+
+
+### getMissingBundleFiles
+
+```typescript
+getMissingBundleFiles(options: GetMissingBundleFilesOptions) => Promise<GetMissingBundleFilesResult>
+```
+
+Return the manifest entries that still need to be downloaded for a partial update.
+
+Pass the result from {@link getLatest} directly when it includes a `manifest`.
+The native plugin compares each manifest entry with the files already available
+in the builtin bundle and the local delta cache. Entries that can be reused are
+omitted from the returned `missing` list.
+
+For encrypted manifests, pass the `sessionKey` returned by {@link getLatest} so
+encrypted file hashes can be checked against local files.
+
+```typescript
+const latest = await CapacitorUpdater.getLatest();
+const missing = await CapacitorUpdater.getMissingBundleFiles(latest);
+```
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `options` | `GetMissingBundleFilesOptions` | A {@link GetMissingBundleFilesOptions} object, or a {@link LatestVersion} response containing `manifest`. |
+
+**Returns**
+
+`Promise<GetMissingBundleFilesResult>` — The manifest entries that require network download.
+
+**Since:** 8.47.0
+
+**Throws:** {Error} If the manifest is missing or invalid.
+
+
+--------------------
+
+
+### getBundleDownloadSize
+
+```typescript
+getBundleDownloadSize(options: GetBundleDownloadSizeOptions) => Promise<GetBundleDownloadSizeResult>
+```
+
+Estimate the download size for manifest entries before downloading them.
+
+This method sends the provided manifest entries to the Capgo update endpoint
+once and reads the stored manifest `file_size` metadata. It does not perform
+per-file `HEAD` requests from the app.
+
+Use this after {@link getMissingBundleFiles} to estimate only the files this
+device still needs:
+
+```typescript
+const latest = await CapacitorUpdater.getLatest();
+const missing = await CapacitorUpdater.getMissingBundleFiles(latest);
+const size = await CapacitorUpdater.getBundleDownloadSize({
+  version: latest.version,
+  manifest: missing.missing,
+});
+```
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `options` | `GetBundleDownloadSizeOptions` | A {@link GetBundleDownloadSizeOptions} object containing manifest entries. |
+
+**Returns**
+
+`Promise<GetBundleDownloadSizeResult>` — Known byte totals and per-file size results.
+
+**Since:** 8.47.0
+
+**Throws:** {Error} If the manifest is missing or invalid.
 
 
 --------------------

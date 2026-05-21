@@ -876,6 +876,132 @@ import UIKit
         return actualHash == expectedHash
     }
 
+    private func resolveManifestFileHash(entry: ManifestEntry, sessionKey: String) -> String? {
+        guard var fileHash = entry.file_hash, !fileHash.isEmpty else {
+            return nil
+        }
+        if !self.publicKey.isEmpty && !sessionKey.isEmpty {
+            do {
+                fileHash = try CryptoCipher.decryptChecksum(checksum: fileHash, publicKey: self.publicKey)
+            } catch {
+                logger.error("Checksum decryption failed while checking missing manifest files")
+                logger.debug("File: \(entry.file_name ?? "unknown"), Error: \(error.localizedDescription)")
+                return nil
+            }
+        }
+        return fileHash
+    }
+
+    private func isManifestEntryAvailableLocally(entry: ManifestEntry, sessionKey: String) -> Bool {
+        guard let fileName = entry.file_name,
+              let fileHash = resolveManifestFileHash(entry: entry, sessionKey: sessionKey) else {
+            return false
+        }
+
+        let builtinFolder = Bundle.main.bundleURL.appendingPathComponent("public")
+        let builtinFilePath = builtinFolder.appendingPathComponent(fileName)
+        if FileManager.default.fileExists(atPath: builtinFilePath.path) && verifyChecksum(file: builtinFilePath, expectedHash: fileHash) {
+            return true
+        }
+
+        let fileNameWithoutPath = (fileName as NSString).lastPathComponent
+        let isBrotli = fileName.hasSuffix(".br")
+        let cacheBaseName = isBrotli ? String(fileNameWithoutPath.dropLast(3)) : fileNameWithoutPath
+        let cacheFilePath = cacheFolder.appendingPathComponent("\(fileHash)_\(cacheBaseName)")
+        if FileManager.default.fileExists(atPath: cacheFilePath.path) && verifyChecksum(file: cacheFilePath, expectedHash: fileHash) {
+            return true
+        }
+
+        if isBrotli {
+            let legacyCacheFilePath = cacheFolder.appendingPathComponent("\(fileHash)_\(fileNameWithoutPath)")
+            if FileManager.default.fileExists(atPath: legacyCacheFilePath.path) && verifyChecksum(file: legacyCacheFilePath, expectedHash: fileHash) {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    public func getMissingBundleFiles(manifest: [ManifestEntry], sessionKey: String) -> [ManifestEntry] {
+        return manifest.filter { entry in
+            !isManifestEntryAvailableLocally(entry: entry, sessionKey: sessionKey)
+        }
+    }
+
+    public func missingBundleFilesResult(manifest: [ManifestEntry], sessionKey: String) -> [String: Any] {
+        let missing = getMissingBundleFiles(manifest: manifest, sessionKey: sessionKey)
+        return [
+            "missing": missing.map { $0.toDict() },
+            "total": manifest.count,
+            "missingCount": missing.count,
+            "reusableCount": manifest.count - missing.count
+        ]
+    }
+
+    private func manifestSizeUrl(from updateUrl: URL) -> URL {
+        var components = URLComponents(url: updateUrl, resolvingAgainstBaseURL: false)
+        let path = components?.path ?? updateUrl.path
+        let trimmedPath = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        components?.path = trimmedPath == ""
+            ? "/manifest_size"
+            : "/\(trimmedPath)/manifest_size"
+        components?.query = nil
+        return components?.url ?? updateUrl.appendingPathComponent("manifest_size")
+    }
+
+    private func unavailableBundleSizeResult(manifest: [ManifestEntry], error: String) -> [String: Any] {
+        return [
+            "totalSize": 0,
+            "knownFiles": 0,
+            "unknownFiles": manifest.count,
+            "files": manifest.map {
+                var dict = $0.toDict()
+                dict["error"] = error
+                return dict
+            }
+        ]
+    }
+
+    public func getBundleDownloadSize(updateUrl: URL, version: String?, manifest: [ManifestEntry]) -> [String: Any] {
+        if manifest.isEmpty {
+            return [
+                "totalSize": 0,
+                "knownFiles": 0,
+                "unknownFiles": 0,
+                "files": []
+            ]
+        }
+
+        var parameters = self.createInfoObject().toParameters()
+        parameters["version"] = version ?? ""
+        parameters["manifest"] = manifest.map { $0.toDict() }
+
+        guard let request = createRequest(url: manifestSizeUrl(from: updateUrl), method: "POST", parameters: parameters) else {
+            return unavailableBundleSizeResult(manifest: manifest, error: "request_error")
+        }
+
+        let result = performRequest(request, label: "getBundleDownloadSize")
+        if result.timedOut {
+            return unavailableBundleSizeResult(manifest: manifest, error: "timeout_error")
+        }
+        if let error = result.error {
+            logger.error("Error getting bundle download size")
+            logger.debug("Error: \(error.localizedDescription)")
+            return unavailableBundleSizeResult(manifest: manifest, error: "response_error")
+        }
+        guard let data = result.data,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return unavailableBundleSizeResult(manifest: manifest, error: "parse_error")
+        }
+
+        let statusCode = result.response?.statusCode ?? 0
+        if statusCode < 200 || statusCode >= 300 {
+            return unavailableBundleSizeResult(manifest: manifest, error: "response_error")
+        }
+
+        return json
+    }
+
     public func downloadManifest(manifest: [ManifestEntry], version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
         let id = self.randomString(length: 10)
         logger.info("downloadManifest start \(id)")

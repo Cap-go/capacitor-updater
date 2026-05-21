@@ -355,6 +355,137 @@ public class CapgoUpdater {
         }
     }
 
+    private boolean verifyChecksum(final File file, final String expectedHash) {
+        if (expectedHash == null || expectedHash.isEmpty() || file == null || !file.exists()) {
+            return false;
+        }
+        final String actualHash = CryptoCipher.calcChecksum(file);
+        return expectedHash.equalsIgnoreCase(actualHash);
+    }
+
+    private String resolveManifestFileHash(final JSONObject entry, final String sessionKey) {
+        String fileHash = entry.optString("file_hash", "");
+        if (fileHash.isEmpty()) {
+            return "";
+        }
+        if (this.publicKey != null && !this.publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
+            try {
+                fileHash = CryptoCipher.decryptChecksum(fileHash, this.publicKey);
+            } catch (Exception e) {
+                logger.error("Checksum decryption failed while checking missing manifest files");
+                logger.debug("File: " + entry.optString("file_name", "unknown") + ", Error: " + e.getMessage());
+                return "";
+            }
+        }
+        return fileHash;
+    }
+
+    private boolean isManifestEntryAvailableLocally(final JSONObject entry, final String sessionKey) {
+        final String fileName = entry.optString("file_name", "");
+        final String fileHash = resolveManifestFileHash(entry, sessionKey);
+        if (fileName.isEmpty() || fileHash.isEmpty() || this.activity == null) {
+            return false;
+        }
+
+        final File builtinFile = new File(this.activity.getFilesDir(), "public/" + fileName);
+        if (verifyChecksum(builtinFile, fileHash)) {
+            return true;
+        }
+
+        final boolean isBrotli = fileName.endsWith(".br");
+        final String fileNameWithoutPath = new File(fileName).getName();
+        final String cacheBaseName = isBrotli ? fileNameWithoutPath.substring(0, fileNameWithoutPath.length() - 3) : fileNameWithoutPath;
+        final File cacheFolder = new File(this.activity.getCacheDir(), "capgo_downloads");
+        final File cacheFile = new File(cacheFolder, fileHash + "_" + cacheBaseName);
+        if (verifyChecksum(cacheFile, fileHash)) {
+            return true;
+        }
+
+        if (isBrotli) {
+            final File legacyCacheFile = new File(cacheFolder, fileHash + "_" + fileNameWithoutPath);
+            return verifyChecksum(legacyCacheFile, fileHash);
+        }
+
+        return false;
+    }
+
+    public JSONArray getMissingBundleFiles(final JSONArray manifest, final String sessionKey) throws JSONException {
+        final JSONArray missing = new JSONArray();
+        for (int i = 0; i < manifest.length(); i++) {
+            final JSONObject entry = manifest.getJSONObject(i);
+            if (!isManifestEntryAvailableLocally(entry, sessionKey)) {
+                missing.put(entry);
+            }
+        }
+        return missing;
+    }
+
+    public JSONObject missingBundleFilesResult(final JSONArray manifest, final String sessionKey) throws JSONException {
+        final JSONArray missing = getMissingBundleFiles(manifest, sessionKey);
+        final JSONObject ret = new JSONObject();
+        ret.put("missing", missing);
+        ret.put("total", manifest.length());
+        ret.put("missingCount", missing.length());
+        ret.put("reusableCount", manifest.length() - missing.length());
+        return ret;
+    }
+
+    private String manifestSizeUrl(final String updateUrl) {
+        HttpUrl parsed = HttpUrl.parse(updateUrl);
+        if (parsed == null) {
+            return updateUrl;
+        }
+        return parsed.newBuilder().addPathSegment("manifest_size").query(null).build().toString();
+    }
+
+    private JSONObject unavailableBundleSizeResult(final JSONArray manifest, final String error) throws JSONException {
+        final JSONObject ret = new JSONObject();
+        final JSONArray files = new JSONArray();
+        for (int i = 0; i < manifest.length(); i++) {
+            final JSONObject entry = new JSONObject(manifest.getJSONObject(i).toString());
+            entry.put("error", error);
+            files.put(entry);
+        }
+        ret.put("totalSize", 0);
+        ret.put("knownFiles", 0);
+        ret.put("unknownFiles", manifest.length());
+        ret.put("files", files);
+        return ret;
+    }
+
+    public JSONObject getBundleDownloadSize(final String updateUrl, final String version, final JSONArray manifest) throws JSONException {
+        if (manifest.length() == 0) {
+            final JSONObject ret = new JSONObject();
+            ret.put("totalSize", 0);
+            ret.put("knownFiles", 0);
+            ret.put("unknownFiles", 0);
+            ret.put("files", new JSONArray());
+            return ret;
+        }
+
+        final JSONObject json = this.createInfoObject();
+        json.put("version", version != null ? version : "");
+        json.put("manifest", manifest);
+
+        Request request = new Request.Builder()
+            .url(manifestSizeUrl(updateUrl))
+            .post(RequestBody.create(json.toString(), MediaType.get("application/json; charset=utf-8")))
+            .build();
+
+        try (Response response = DownloadService.sharedClient.newCall(request).execute()) {
+            final ResponseBody responseBody = response.body();
+            final String responseData = responseBody != null ? responseBody.string() : "";
+            if (!response.isSuccessful() || responseData.isEmpty()) {
+                return unavailableBundleSizeResult(manifest, "response_error");
+            }
+            return new JSONObject(responseData);
+        } catch (IOException e) {
+            logger.error("Error getting bundle download size");
+            logger.debug("Error: " + e.getMessage());
+            return unavailableBundleSizeResult(manifest, "response_error");
+        }
+    }
+
     private void observeWorkProgress(Context context, String id, boolean setNext) {
         if (!(context instanceof LifecycleOwner)) {
             logger.error("Context is not a LifecycleOwner, cannot observe work progress");

@@ -48,6 +48,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "setMultiDelay", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cancelDelay", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getLatest", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getMissingBundleFiles", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getBundleDownloadSize", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "triggerUpdateCheck", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setChannel", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "unsetChannel", returnType: CAPPluginReturnPromise),
@@ -750,6 +752,23 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         call.resolve(["version": self.pluginVersion])
     }
 
+    private func manifestEntries(from manifestArray: [Any]?) -> [ManifestEntry]? {
+        guard let manifestArray = manifestArray else {
+            return nil
+        }
+        var manifestEntries: [ManifestEntry] = []
+        for item in manifestArray {
+            if let manifestDict = item as? [String: Any] {
+                manifestEntries.append(ManifestEntry(
+                    file_name: manifestDict["file_name"] as? String,
+                    file_hash: manifestDict["file_hash"] as? String,
+                    download_url: manifestDict["download_url"] as? String
+                ))
+            }
+        }
+        return manifestEntries
+    }
+
     @objc func download(_ call: CAPPluginCall) {
         guard let urlString = call.getString("url") else {
             logger.error("Download called without url")
@@ -771,19 +790,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.global(qos: .background).async {
             do {
                 let next: BundleInfo
-                if let manifestArray = manifestArray {
-                    // Convert JSArray to [ManifestEntry]
-                    var manifestEntries: [ManifestEntry] = []
-                    for item in manifestArray {
-                        if let manifestDict = item as? [String: Any] {
-                            let entry = ManifestEntry(
-                                file_name: manifestDict["file_name"] as? String,
-                                file_hash: manifestDict["file_hash"] as? String,
-                                download_url: manifestDict["download_url"] as? String
-                            )
-                            manifestEntries.append(entry)
-                        }
-                    }
+                if let manifestEntries = self.manifestEntries(from: manifestArray) {
                     next = try self.implementation.downloadManifest(manifest: manifestEntries, version: version, sessionKey: sessionKey)
                 } else {
                     next = try self.implementation.download(url: url!, version: version, sessionKey: sessionKey)
@@ -1293,6 +1300,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func getLatest(_ call: CAPPluginCall) {
         let channel = call.getString("channel")
+        let includeBundleSize = call.getBool("includeBundleSize", false)
         let appId = self.normalizedPreviewAppId(call.getString("appId"))
         if appId != nil && !self.allowPreview {
             logger.error("getLatest preview override called without allowPreview")
@@ -1306,6 +1314,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 channel: channel,
                 appIdOverride: appId
             )
+            if includeBundleSize {
+                self.attachBundleSize(to: res)
+            }
             if let error = res.error, !error.isEmpty {
                 let responseKind = self.updateResponseKind(kind: res.kind)
                 res.kind = responseKind
@@ -1336,6 +1347,50 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             } else {
                 self.resolveCall(call, data: res.toDict())
             }
+        }
+    }
+
+    private func attachBundleSize(to res: AppVersion) {
+        guard let manifest = res.manifest, !manifest.isEmpty, let updateUrl = URL(string: self.updateUrl) else {
+            return
+        }
+        let missing = self.implementation.getMissingBundleFiles(manifest: manifest, sessionKey: res.sessionKey ?? "")
+        res.missing = [
+            "missing": missing.map { $0.toDict() },
+            "total": manifest.count,
+            "missingCount": missing.count,
+            "reusableCount": manifest.count - missing.count
+        ]
+        res.downloadSize = self.implementation.getBundleDownloadSize(updateUrl: updateUrl, version: res.version, manifest: missing)
+    }
+
+    @objc func getMissingBundleFiles(_ call: CAPPluginCall) {
+        guard let manifest = manifestEntries(from: call.getArray("manifest")) else {
+            call.reject("getMissingBundleFiles called without manifest")
+            return
+        }
+        let sessionKey = call.getString("sessionKey", "")
+        self.saveCallForAsyncHandling(call)
+        DispatchQueue.global(qos: .utility).async {
+            let res = self.implementation.missingBundleFilesResult(manifest: manifest, sessionKey: sessionKey)
+            self.resolveCall(call, data: res)
+        }
+    }
+
+    @objc func getBundleDownloadSize(_ call: CAPPluginCall) {
+        guard let manifest = manifestEntries(from: call.getArray("manifest")) else {
+            call.reject("getBundleDownloadSize called without manifest")
+            return
+        }
+        guard let updateUrl = URL(string: self.updateUrl) else {
+            call.reject("getBundleDownloadSize called without valid updateUrl")
+            return
+        }
+        let version = call.getString("version")
+        self.saveCallForAsyncHandling(call)
+        DispatchQueue.global(qos: .utility).async {
+            let res = self.implementation.getBundleDownloadSize(updateUrl: updateUrl, version: version, manifest: manifest)
+            self.resolveCall(call, data: res)
         }
     }
 

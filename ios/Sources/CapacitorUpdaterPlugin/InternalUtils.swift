@@ -240,6 +240,8 @@ public class AppVersion: NSObject {
     var breaking: Bool?
     var data: [String: String]?
     var manifest: [ManifestEntry]?
+    var missing: [String: Any]?
+    var downloadSize: [String: Any]?
     var link: String?
     var comment: String?
     var statusCode: Int = 0

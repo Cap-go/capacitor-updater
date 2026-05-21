@@ -20,10 +20,14 @@ import type {
   CurrentBundleResult,
   DeviceId,
   DownloadOptions,
+  GetBundleDownloadSizeOptions,
+  GetBundleDownloadSizeResult,
   GetAppUpdateInfoOptions,
   GetChannelRes,
   LatestVersion,
   ListChannelsResult,
+  GetMissingBundleFilesOptions,
+  GetMissingBundleFilesResult,
   MultiDelayConditions,
   OpenAppStoreOptions,
   PluginVersion,
@@ -148,6 +152,32 @@ export class CapacitorUpdaterWeb extends WebPlugin implements CapacitorUpdaterPl
   async triggerUpdateCheck(): Promise<TriggerUpdateCheckResult> {
     console.warn('Cannot triggerUpdateCheck in web');
     return { status: 'unavailable', queued: false };
+  }
+
+  async getMissingBundleFiles(options: GetMissingBundleFilesOptions): Promise<GetMissingBundleFilesResult> {
+    console.warn('Cannot inspect missing bundle files in web', options);
+    const missing = options.manifest ?? [];
+    return {
+      missing,
+      total: missing.length,
+      missingCount: missing.length,
+      reusableCount: 0,
+    };
+  }
+
+  async getBundleDownloadSize(options: GetBundleDownloadSizeOptions): Promise<GetBundleDownloadSizeResult> {
+    console.warn('Cannot estimate bundle download size in web', options);
+    return {
+      totalSize: 0,
+      knownFiles: 0,
+      unknownFiles: options.manifest?.length ?? 0,
+      files: (options.manifest ?? []).map((entry) => ({
+        file_name: entry.file_name,
+        file_hash: entry.file_hash,
+        download_url: entry.download_url,
+        error: 'unavailable',
+      })),
+    };
   }
 
   async setChannel(options: SetChannelOptions): Promise<ChannelRes> {
