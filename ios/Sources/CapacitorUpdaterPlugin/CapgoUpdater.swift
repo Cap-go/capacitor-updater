@@ -38,6 +38,7 @@ import UIKit
     public var defaultChannel: String = ""
     public var appId: String = ""
     public var deviceID = ""
+    public var previewSession = false
     public var publicKey: String = ""
 
     // Cached key ID calculated once from publicKey
@@ -364,7 +365,7 @@ import UIKit
         if statusCode == 429 {
             // Send a statistic about the rate limit BEFORE setting the flag
             // Only send once to prevent infinite loop if the stat request itself gets rate limited
-            if !CapgoUpdater.rateLimitExceeded && !CapgoUpdater.rateLimitStatisticSent {
+            if !previewSession && !CapgoUpdater.rateLimitExceeded && !CapgoUpdater.rateLimitStatisticSent {
                 CapgoUpdater.rateLimitStatisticSent = true
 
                 // Dispatch to background queue to avoid blocking the main thread
@@ -702,11 +703,11 @@ import UIKit
         }
     }
 
-    private func createInfoObject() -> InfoObject {
+    private func createInfoObject(appIdOverride: String? = nil) -> InfoObject {
         return InfoObject(
             platform: "ios",
             device_id: self.deviceID,
-            app_id: self.appId,
+            app_id: appIdOverride ?? self.appId,
             custom_id: self.customId,
             version_build: self.versionBuild,
             version_code: self.versionCode,
@@ -722,7 +723,7 @@ import UIKit
         )
     }
 
-    public func getLatest(url: URL, channel: String?) -> AppVersion {
+    public func getLatest(url: URL, channel: String?, appIdOverride: String? = nil) -> AppVersion {
         let latest: AppVersion = AppVersion()
         func applyLatestResponse(_ value: AppVersionDec?) {
             if let url = value?.url {
@@ -766,7 +767,7 @@ import UIKit
             }
         }
 
-        var parameters: InfoObject = self.createInfoObject()
+        var parameters: InfoObject = self.createInfoObject(appIdOverride: appIdOverride)
         if let channel = channel {
             parameters.defaultChannel = channel
         }
@@ -900,8 +901,8 @@ import UIKit
 
         let totalFiles = manifest.count
 
-        // Configure concurrent operation count similar to Android: min(64, max(32, totalFiles))
-        manifestDownloadQueue.maxConcurrentOperationCount = min(64, max(32, totalFiles))
+        // Keep this bounded because each manifest operation waits on a URLSession callback.
+        manifestDownloadQueue.maxConcurrentOperationCount = min(8, max(1, totalFiles))
 
         // Thread-safe counters for concurrent operations
         let completedFiles = AtomicCounter()
@@ -2291,6 +2292,11 @@ import UIKit
     }
 
     private func sendStatsWithMetadata(action: String, versionName: String?, oldVersionName: String?, metadata: [String: String]?) {
+        if previewSession {
+            logger.debug("Skipping sendStats during preview session.")
+            return
+        }
+
         // Check if rate limit was exceeded
         if CapgoUpdater.rateLimitExceeded {
             logger.debug("Skipping sendStats due to rate limit (429). Stats will resume after app restart.")

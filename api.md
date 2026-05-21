@@ -25,7 +25,7 @@ CapacitorUpdater can be configured with these options:
 | **`statsUrl`** | `string` | Configure the URL / endpoint to which update statistics are sent. Only available for Android and iOS. Set to "" to disable stats reporting. Native stats include update lifecycle events, app health signals such as crashes, Android ANRs, low-memory exits, iOS memory warnings, and WebView health signals such as JavaScript errors, unhandled promise rejections, resource load failures, WebView renderer exits, and unclean WebView restarts when available. | `https://plugin.capgo.app/stats` |  |
 | **`publicKey`** | `string` | Configure the public key for end to end live update encryption Version 2 Only available for Android and iOS. | `undefined` | 6.2.0 |
 | **`version`** | `string` | Configure the current version of the app. This will be used for the first update request. If not set, the plugin will get the version from the native code. Only available for Android and iOS. | `undefined` | 4.17.48 |
-| **`directUpdate`** | `boolean | 'always' | 'atInstall' | 'onLaunch'` | Configure when the plugin should direct install updates. Only for autoUpdate mode. Works well for apps less than 10MB and with uploads done using --delta flag. Zip or apps more than 10MB will be relatively slow for users to update. - false: Never do direct updates (use default behavior: download at start, set when backgrounded) - atInstall: Direct update only when app is installed, updated from store, otherwise act as directUpdate = false - onLaunch: Direct update only on app installed, updated from store or after app kill, otherwise act as directUpdate = false - always: Direct update in all previous cases (app installed, updated from store, after app kill or app resume), never act as directUpdate = false - true: (deprecated) Same as "always" for backward compatibility Activate this flag will automatically make the CLI upload delta in CICD envs and will ask for confirmation in local uploads. Only available for Android and iOS. | `false` | 5.1.0 |
+| **`directUpdate`** | `boolean \| 'always' \| 'atInstall' \| 'onLaunch'` | Configure when the plugin should direct install updates. Only for autoUpdate mode. Works well for apps less than 10MB and with uploads done using --delta flag. Zip or apps more than 10MB will be relatively slow for users to update. - false: Never do direct updates (use default behavior: download at start, set when backgrounded) - atInstall: Direct update only when app is installed, updated from store, otherwise act as directUpdate = false - onLaunch: Direct update only on app installed, updated from store or after app kill, otherwise act as directUpdate = false - always: Direct update in all previous cases (app installed, updated from store, after app kill or app resume), never act as directUpdate = false - true: (deprecated) Same as "always" for backward compatibility Activate this flag will automatically make the CLI upload delta in CICD envs and will ask for confirmation in local uploads. Only available for Android and iOS. | `false` | 5.1.0 |
 | **`autoSplashscreen`** | `boolean` | Automatically handle splashscreen hiding when using directUpdate. When enabled, the plugin will automatically hide the splashscreen after updates are applied or when no update is needed. This removes the need to manually listen for appReady events and call SplashScreen.hide(). Only works when directUpdate is set to "atInstall", "always", "onLaunch", or true. Requires the @capacitor/splash-screen plugin to be installed and configured with launchAutoHide: false. Requires autoUpdate and directUpdate to be enabled. Only available for Android and iOS. | `false` | 7.6.0 |
 | **`autoSplashscreenLoader`** | `boolean` | Display a native loading indicator on top of the splashscreen while automatic direct updates are running. Only takes effect when {@link autoSplashscreen} is enabled. Requires the @capacitor/splash-screen plugin to be installed and configured with launchAutoHide: false. Only available for Android and iOS. | `false` | 7.19.0 |
 | **`autoSplashscreenTimeout`** | `number` | Automatically hide the splashscreen after the specified number of milliseconds when using automatic direct updates. If the timeout elapses, the update continues to download in the background while the splashscreen is dismissed. Set to `0` (zero) to disable the timeout. When the timeout fires, the direct update flow is skipped and the downloaded bundle is installed on the next background/launch. Requires {@link autoSplashscreen} to be enabled. Only available for Android and iOS. | `10000 // (10 seconds)` | 7.19.0 |
@@ -40,6 +40,7 @@ CapacitorUpdater can be configured with these options:
 | **`allowModifyUrl`** | `boolean` | Allow the plugin to modify the updateUrl, statsUrl and channelUrl dynamically from the JavaScript side. | `false` | 5.4.0 |
 | **`allowModifyAppId`** | `boolean` | Allow the plugin to modify the appId dynamically from the JavaScript side. | `false` | 7.14.0 |
 | **`allowManualBundleError`** | `boolean` | Allow marking bundles as errored from JavaScript while using manual update flows. When enabled, {@link CapacitorUpdaterPlugin.setBundleError} can change a bundle status to `error`. | `false` | 7.20.0 |
+| **`allowPreview`** | `boolean` | Allow JavaScript to start a native preview session and temporarily request updates for another app id. This is intended for trusted container apps that implement Expo Go-style preview flows. Only available for Android and iOS. | `false` | 8.47.0 |
 | **`persistCustomId`** | `boolean` | Persist the customId set through {@link CapacitorUpdaterPlugin.setCustomId} across app restarts. Only available for Android and iOS. | `false (will be true by default in a future major release v8.x.x)` | 7.17.3 |
 | **`persistModifyUrl`** | `boolean` | Persist the updateUrl, statsUrl and channelUrl set through {@link CapacitorUpdaterPlugin.setUpdateUrl}, {@link CapacitorUpdaterPlugin.setStatsUrl} and {@link CapacitorUpdaterPlugin.setChannelUrl} across app restarts. Only available for Android and iOS. | `false` | 7.20.0 |
 | **`allowSetDefaultChannel`** | `boolean` | Allow or disallow the {@link CapacitorUpdaterPlugin.setChannel} method to modify the defaultChannel. When set to `false`, calling `setChannel()` will return an error with code `disabled_by_config`. | `true` | 7.34.0 |
@@ -385,7 +386,7 @@ For other state preservation needs, save your data before calling this method (e
 ### startPreviewSession
 
 ```typescript
-startPreviewSession() => Promise<void>
+startPreviewSession(options?: StartPreviewSessionOptions | undefined) => Promise<void>
 ```
 
 Start a temporary preview/testing session.
@@ -393,8 +394,18 @@ Start a temporary preview/testing session.
 This stores the currently active bundle as the pending fallback, enables the
 native shake menu, and makes the next applied bundle show a native notice
 explaining that shaking the device can reload or leave the preview.
+Requires {@link PluginsConfig.CapacitorUpdater.allowPreview} to be `true`.
+When `appId` is provided, the preview session temporarily uses that app id
+for update checks until the user leaves the preview. Native updater stats are
+skipped while the preview session is active.
 
 Use this before calling {@link set} for Expo Go-style preview flows.
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `options` | `StartPreviewSessionOptions \| undefined` | Optional preview session options. |
 
 **Returns**
 
@@ -500,7 +511,7 @@ Use this to:
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `options` | `ListOptions | undefined` | The {@link ListOptions} for customizing the bundle list output. |
+| `options` | `ListOptions \| undefined` | The {@link ListOptions} for customizing the bundle list output. |
 
 **Returns**
 
@@ -536,7 +547,7 @@ Use cases:
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `options` | `ResetOptions | undefined` |  |
+| `options` | `ResetOptions \| undefined` |  |
 
 **Returns**
 
@@ -790,7 +801,7 @@ In this scenario, the server:
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `options` | `GetLatestOptions | undefined` | Optional {@link GetLatestOptions} to specify which channel to check. |
+| `options` | `GetLatestOptions \| undefined` | Optional {@link GetLatestOptions} to specify which channel to check. |
 
 **Returns**
 
@@ -1902,7 +1913,7 @@ Use this to:
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `options` | `GetAppUpdateInfoOptions | undefined` | Optional {@link GetAppUpdateInfoOptions} with country code for iOS. |
+| `options` | `GetAppUpdateInfoOptions \| undefined` | Optional {@link GetAppUpdateInfoOptions} with country code for iOS. |
 
 **Returns**
 
@@ -1940,7 +1951,7 @@ or when the user needs to update on iOS.
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `options` | `OpenAppStoreOptions | undefined` | Optional {@link OpenAppStoreOptions} to customize which app's store page to open. |
+| `options` | `OpenAppStoreOptions \| undefined` | Optional {@link OpenAppStoreOptions} to customize which app's store page to open. |
 
 **Returns**
 

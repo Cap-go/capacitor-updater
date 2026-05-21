@@ -39,6 +39,7 @@ import type {
   ShakeMenuEnabled,
   SetShakeChannelSelectorOptions,
   ShakeChannelSelectorEnabled,
+  StartPreviewSessionOptions,
   TriggerUpdateCheckResult,
   UpdateFailedEvent,
 } from './definitions';
@@ -88,8 +89,8 @@ export class CapacitorUpdaterWeb extends WebPlugin implements CapacitorUpdaterPl
     return;
   }
 
-  async startPreviewSession(): Promise<void> {
-    console.warn('Cannot start preview session in web');
+  async startPreviewSession(options?: StartPreviewSessionOptions): Promise<void> {
+    console.warn('Cannot start preview session in web', options);
     return;
   }
 

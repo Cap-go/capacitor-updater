@@ -314,6 +314,7 @@ CapacitorUpdater can be configured with these options:
 | **`allowModifyUrl`**            | <code>boolean</code>                                          | Allow the plugin to modify the updateUrl, statsUrl and channelUrl dynamically from the JavaScript side.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | <code>false</code>                                                            | 5.4.0   |
 | **`allowModifyAppId`**          | <code>boolean</code>                                          | Allow the plugin to modify the appId dynamically from the JavaScript side.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | <code>false</code>                                                            | 7.14.0  |
 | **`allowManualBundleError`**    | <code>boolean</code>                                          | Allow marking bundles as errored from JavaScript while using manual update flows. When enabled, {@link CapacitorUpdaterPlugin.setBundleError} can change a bundle status to `error`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | <code>false</code>                                                            | 7.20.0  |
+| **`allowPreview`**              | <code>boolean</code>                                          | Allow JavaScript to start a native preview session and temporarily request updates for another app id. This is intended for trusted container apps that implement Expo Go-style preview flows. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | <code>false</code>                                                            | 8.47.0  |
 | **`persistCustomId`**           | <code>boolean</code>                                          | Persist the customId set through {@link CapacitorUpdaterPlugin.setCustomId} across app restarts. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | <code>false (will be true by default in a future major release v8.x.x)</code> | 7.17.3  |
 | **`persistModifyUrl`**          | <code>boolean</code>                                          | Persist the updateUrl, statsUrl and channelUrl set through {@link CapacitorUpdaterPlugin.setUpdateUrl}, {@link CapacitorUpdaterPlugin.setStatsUrl} and {@link CapacitorUpdaterPlugin.setChannelUrl} across app restarts. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | <code>false</code>                                                            | 7.20.0  |
 | **`allowSetDefaultChannel`**    | <code>boolean</code>                                          | Allow or disallow the {@link CapacitorUpdaterPlugin.setChannel} method to modify the defaultChannel. When set to `false`, calling `setChannel()` will return an error with code `disabled_by_config`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | <code>true</code>                                                             | 7.34.0  |
@@ -359,6 +360,7 @@ In `capacitor.config.json`:
       "allowModifyUrl": undefined,
       "allowModifyAppId": undefined,
       "allowManualBundleError": undefined,
+      "allowPreview": undefined,
       "persistCustomId": undefined,
       "persistModifyUrl": undefined,
       "allowSetDefaultChannel": undefined,
@@ -410,6 +412,7 @@ const config: CapacitorConfig = {
       allowModifyUrl: undefined,
       allowModifyAppId: undefined,
       allowManualBundleError: undefined,
+      allowPreview: undefined,
       persistCustomId: undefined,
       persistModifyUrl: undefined,
       allowSetDefaultChannel: undefined,
@@ -441,7 +444,7 @@ export default config;
 * [`download(...)`](#download)
 * [`next(...)`](#next)
 * [`set(...)`](#set)
-* [`startPreviewSession()`](#startpreviewsession)
+* [`startPreviewSession(...)`](#startpreviewsession)
 * [`delete(...)`](#delete)
 * [`setBundleError(...)`](#setbundleerror)
 * [`list(...)`](#list)
@@ -696,10 +699,10 @@ For other state preservation needs, save your data before calling this method (e
 --------------------
 
 
-#### startPreviewSession()
+#### startPreviewSession(...)
 
 ```typescript
-startPreviewSession() => Promise<void>
+startPreviewSession(options?: StartPreviewSessionOptions | undefined) => Promise<void>
 ```
 
 Start a temporary preview/testing session.
@@ -707,8 +710,16 @@ Start a temporary preview/testing session.
 This stores the currently active bundle as the pending fallback, enables the
 native shake menu, and makes the next applied bundle show a native notice
 explaining that shaking the device can reload or leave the preview.
+Requires {@link PluginsConfig.CapacitorUpdater.allowPreview} to be `true`.
+When `appId` is provided, the preview session temporarily uses that app id
+for update checks until the user leaves the preview. Native updater stats are
+skipped while the preview session is active.
 
 Use this before calling {@link set} for Expo Go-style preview flows.
+
+| Param         | Type                                                                              | Description                       |
+| ------------- | --------------------------------------------------------------------------------- | --------------------------------- |
+| **`options`** | <code><a href="#startpreviewsessionoptions">StartPreviewSessionOptions</a></code> | Optional preview session options. |
 
 **Since:** 8.47.0
 
@@ -2118,6 +2129,13 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 | **`id`** | <code>string</code> |
 
 
+##### StartPreviewSessionOptions
+
+| Prop        | Type                | Description                                                                                                                                                                                     | Default                | Since  |
+| ----------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ------ |
+| **`appId`** | <code>string</code> | App id to use while the preview session is active. The previous app id is restored when leaving the preview session. Requires {@link PluginsConfig.CapacitorUpdater.allowPreview} to be `true`. | <code>undefined</code> | 8.47.0 |
+
+
 ##### BundleListResult
 
 | Prop          | Type                      |
@@ -2195,9 +2213,10 @@ Result returned after requesting an immediate native auto-update check.
 
 ##### GetLatestOptions
 
-| Prop          | Type                | Description                                                                                     | Default                | Since |
-| ------------- | ------------------- | ----------------------------------------------------------------------------------------------- | ---------------------- | ----- |
-| **`channel`** | <code>string</code> | The channel to get the latest version for The channel must allow 'self_assign' for this to work | <code>undefined</code> | 6.8.0 |
+| Prop          | Type                | Description                                                                                                                                                                                                                                                        | Default                | Since  |
+| ------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------- | ------ |
+| **`channel`** | <code>string</code> | The channel to get the latest version for The channel must allow 'self_assign' for this to work                                                                                                                                                                    | <code>undefined</code> | 6.8.0  |
+| **`appId`**   | <code>string</code> | Temporarily use another app id for this update check while using a trusted preview container. This only changes the app id sent by this request; it does not persist a preview session. Requires {@link PluginsConfig.CapacitorUpdater.allowPreview} to be `true`. | <code>undefined</code> | 8.47.0 |
 
 
 ##### ChannelRes
