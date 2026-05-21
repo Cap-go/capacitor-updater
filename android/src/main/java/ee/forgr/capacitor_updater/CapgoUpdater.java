@@ -18,12 +18,15 @@ import androidx.work.WorkManager;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import java.io.BufferedInputStream;
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.FilenameFilter;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Date;
@@ -63,6 +66,8 @@ public class CapgoUpdater {
     private static final String PREVIEW_FALLBACK_VERSION = "previewFallbackVersion";
     private static final String bundleDirectory = "versions";
     private static final String TEMP_UNZIP_PREFIX = "capgo_unzip_";
+    private static final String CAPACITOR_CONFIG_ASSET = "capacitor.config.json";
+    private static final String BACKGROUND_RUNNER_CONFIG_KEY = "BackgroundRunner";
 
     public static final String TAG = "Capacitor-updater";
     public SharedPreferences.Editor editor;
@@ -763,6 +768,7 @@ public class CapgoUpdater {
     }
 
     private void setCurrentBundle(final File bundle) {
+        this.cancelBackgroundRunnerWorkBeforeBundleSwitch();
         this.editor.putString(this.CAP_SERVER_PATH, bundle.getPath());
         logger.info("Current bundle set to: " + bundle);
         this.editor.commit();
@@ -770,6 +776,73 @@ public class CapgoUpdater {
 
     static boolean shouldResetForForeignBundle(final String bundlePath, final boolean isBuiltin, final boolean hasStoredBundleInfo) {
         return bundlePath != null && !bundlePath.trim().isEmpty() && !isBuiltin && !hasStoredBundleInfo;
+    }
+
+    static String getBackgroundRunnerLabelFromConfig(final String configJson) {
+        if (configJson == null || configJson.trim().isEmpty()) {
+            return null;
+        }
+
+        try {
+            final JSONObject config = new JSONObject(configJson);
+            final JSONObject plugins = config.optJSONObject("plugins");
+            if (plugins == null) {
+                return null;
+            }
+
+            final JSONObject backgroundRunner = plugins.optJSONObject(BACKGROUND_RUNNER_CONFIG_KEY);
+            if (backgroundRunner == null) {
+                return null;
+            }
+
+            final String label = backgroundRunner.optString("label", "").trim();
+            return label.isEmpty() ? null : label;
+        } catch (JSONException ignored) {
+            return null;
+        }
+    }
+
+    private String readAssetAsString(final String assetPath) throws IOException {
+        final StringBuilder buffer = new StringBuilder();
+        try (
+            final BufferedReader reader = new BufferedReader(
+                new InputStreamReader(this.activity.getAssets().open(assetPath), StandardCharsets.UTF_8)
+            )
+        ) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                buffer.append(line).append('\n');
+            }
+        }
+        return buffer.toString();
+    }
+
+    private void cancelBackgroundRunnerWorkBeforeBundleSwitch() {
+        if (this.activity == null) {
+            return;
+        }
+
+        final String label;
+        try {
+            label = getBackgroundRunnerLabelFromConfig(this.readAssetAsString(CAPACITOR_CONFIG_ASSET));
+        } catch (IOException ignored) {
+            return;
+        }
+
+        if (label == null) {
+            return;
+        }
+
+        try {
+            final WorkManager workManager = WorkManager.getInstance(this.activity.getApplicationContext());
+            workManager.cancelUniqueWork(label);
+            workManager.cancelAllWorkByTag(label);
+            logger.info("Cancelled Background Runner work before bundle switch.");
+            logger.debug("Background Runner label: " + label);
+        } catch (Exception e) {
+            logger.warn("Failed to cancel Background Runner work before bundle switch.");
+            logger.debug("Background Runner cancellation error: " + e.getMessage());
+        }
     }
 
     private boolean hasStoredBundleInfo(final String id) {

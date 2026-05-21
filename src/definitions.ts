@@ -501,6 +501,11 @@ export interface CapacitorUpdaterPlugin {
    * For encrypted bundles, provide the `sessionKey` and `checksum` parameters.
    * For multi-file delta updates, provide the `manifest` array.
    *
+   * **Android Background Runner note:** `@capacitor/background-runner` loads its
+   * configured runner script from native APK assets. Live updates cannot replace
+   * that runner script. Keep it stable across OTA updates and ship a native app
+   * update when the runner code changes.
+   *
    * @example
    * const bundle = await CapacitorUpdater.download({
    *   url: `https://example.com/versions/${version}/dist.zip`,
