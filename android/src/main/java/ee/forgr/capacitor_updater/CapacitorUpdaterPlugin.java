@@ -2617,7 +2617,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             call.reject("getBundleDownloadSize called without manifest");
             return;
         }
-        final String version = call.getString("version");
+        final String version = call.getData().optString("version", "");
         startNewThread(() -> {
             try {
                 final JSONObject size = this.implementation.getBundleDownloadSize(this.updateUrl, version, manifest);

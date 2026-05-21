@@ -155,7 +155,7 @@ export class CapacitorUpdaterWeb extends WebPlugin implements CapacitorUpdaterPl
   }
 
   async getMissingBundleFiles(options: GetMissingBundleFilesOptions): Promise<GetMissingBundleFilesResult> {
-    console.warn('Cannot inspect missing bundle files in web', options);
+    console.warn('Cannot inspect missing bundle files in web', { manifestLength: options.manifest?.length ?? 0 });
     const missing = options.manifest ?? [];
     return {
       missing,
@@ -166,7 +166,7 @@ export class CapacitorUpdaterWeb extends WebPlugin implements CapacitorUpdaterPl
   }
 
   async getBundleDownloadSize(options: GetBundleDownloadSizeOptions): Promise<GetBundleDownloadSizeResult> {
-    console.warn('Cannot estimate bundle download size in web', options);
+    console.warn('Cannot estimate bundle download size in web', { manifestLength: options.manifest?.length ?? 0 });
     return {
       totalSize: 0,
       knownFiles: 0,
