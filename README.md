@@ -455,6 +455,8 @@ export default config;
 * [`cancelDelay()`](#canceldelay)
 * [`triggerUpdateCheck()`](#triggerupdatecheck)
 * [`getLatest(...)`](#getlatest)
+* [`getMissingBundleFiles(...)`](#getmissingbundlefiles)
+* [`getBundleDownloadSize(...)`](#getbundledownloadsize)
 * [`setChannel(...)`](#setchannel)
 * [`unsetChannel(...)`](#unsetchannel)
 * [`getChannel()`](#getchannel)
@@ -1020,6 +1022,73 @@ In this scenario, the server:
 **Returns:** <code>Promise&lt;<a href="#latestversion">LatestVersion</a>&gt;</code>
 
 **Since:** 4.0.0
+
+--------------------
+
+
+#### getMissingBundleFiles(...)
+
+```typescript
+getMissingBundleFiles(options: GetMissingBundleFilesOptions) => Promise<GetMissingBundleFilesResult>
+```
+
+Return the manifest entries that still need to be downloaded for a partial update.
+
+Pass the result from {@link getLatest} directly when it includes a `manifest`.
+The native plugin compares each manifest entry with the files already available
+in the builtin bundle and the local delta cache. Entries that can be reused are
+omitted from the returned `missing` list.
+
+For encrypted manifests, pass the `sessionKey` returned by {@link getLatest} so
+encrypted file hashes can be checked against local files.
+
+```typescript
+const latest = await CapacitorUpdater.getLatest();
+const missing = await CapacitorUpdater.getMissingBundleFiles(latest);
+```
+
+| Param         | Type                                                                                  | Description                                                                                                                                                                        |
+| ------------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`options`** | <code><a href="#getmissingbundlefilesoptions">GetMissingBundleFilesOptions</a></code> | A {@link <a href="#getmissingbundlefilesoptions">GetMissingBundleFilesOptions</a>} object, or a {@link <a href="#latestversion">LatestVersion</a>} response containing `manifest`. |
+
+**Returns:** <code>Promise&lt;<a href="#getmissingbundlefilesresult">GetMissingBundleFilesResult</a>&gt;</code>
+
+**Since:** 8.47.0
+
+--------------------
+
+
+#### getBundleDownloadSize(...)
+
+```typescript
+getBundleDownloadSize(options: GetBundleDownloadSizeOptions) => Promise<GetBundleDownloadSizeResult>
+```
+
+Estimate the download size for manifest entries before downloading them.
+
+This method sends the provided manifest entries to the Capgo update endpoint
+once and reads the stored manifest `file_size` metadata. It does not perform
+per-file `HEAD` requests from the app.
+
+Use this after {@link getMissingBundleFiles} to estimate only the files this
+device still needs:
+
+```typescript
+const latest = await CapacitorUpdater.getLatest();
+const missing = await CapacitorUpdater.getMissingBundleFiles(latest);
+const size = await CapacitorUpdater.getBundleDownloadSize({
+  version: latest.version,
+  manifest: missing.missing,
+});
+```
+
+| Param         | Type                                                                                  | Description                                                                                                            |
+| ------------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| **`options`** | <code><a href="#getbundledownloadsizeoptions">GetBundleDownloadSizeOptions</a></code> | A {@link <a href="#getbundledownloadsizeoptions">GetBundleDownloadSizeOptions</a>} object containing manifest entries. |
+
+**Returns:** <code>Promise&lt;<a href="#getbundledownloadsizeresult">GetBundleDownloadSizeResult</a>&gt;</code>
+
+**Since:** 8.47.0
 
 --------------------
 
@@ -2193,30 +2262,81 @@ Result returned after requesting an immediate native auto-update check.
 
 ##### LatestVersion
 
-| Prop             | Type                                                              | Description                                                                                                  | Since   |
-| ---------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------- |
-| **`version`**    | <code>string</code>                                               | Result of getLatest method                                                                                   | 4.0.0   |
-| **`checksum`**   | <code>string</code>                                               |                                                                                                              | 6       |
-| **`breaking`**   | <code>boolean</code>                                              | Indicates whether the update was flagged as breaking by the backend.                                         | 7.22.0  |
-| **`major`**      | <code>boolean</code>                                              |                                                                                                              |         |
-| **`message`**    | <code>string</code>                                               | Optional message from the server. When no new version is available, this will be "No new version available". |         |
-| **`sessionKey`** | <code>string</code>                                               |                                                                                                              |         |
-| **`error`**      | <code>string</code>                                               | Error code from the server, if any. Use `kind` for classification instead of parsing this value.             |         |
-| **`kind`**       | <code><a href="#updateresponsekind">UpdateResponseKind</a></code> | Classification for this response, provided by the backend.                                                   | 8.45.11 |
-| **`statusCode`** | <code>number</code>                                               | HTTP status code returned by the update server for classified update-check responses.                        | 8.45.11 |
-| **`old`**        | <code>string</code>                                               | The previous/current version name (provided for reference).                                                  |         |
-| **`url`**        | <code>string</code>                                               | Download URL for the bundle (when a new version is available).                                               |         |
-| **`manifest`**   | <code>ManifestEntry[]</code>                                      | File list for delta updates (when using multi-file downloads).                                               | 6.1     |
-| **`link`**       | <code>string</code>                                               | Optional link associated with this bundle version (e.g., release notes URL, changelog, GitHub release).      | 7.35.0  |
-| **`comment`**    | <code>string</code>                                               | Optional comment or description for this bundle version.                                                     | 7.35.0  |
+| Prop               | Type                                                                                | Description                                                                                                                                      | Since   |
+| ------------------ | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
+| **`version`**      | <code>string</code>                                                                 | Result of getLatest method                                                                                                                       | 4.0.0   |
+| **`checksum`**     | <code>string</code>                                                                 |                                                                                                                                                  | 6       |
+| **`breaking`**     | <code>boolean</code>                                                                | Indicates whether the update was flagged as breaking by the backend.                                                                             | 7.22.0  |
+| **`major`**        | <code>boolean</code>                                                                |                                                                                                                                                  |         |
+| **`message`**      | <code>string</code>                                                                 | Optional message from the server. When no new version is available, this will be "No new version available".                                     |         |
+| **`sessionKey`**   | <code>string</code>                                                                 |                                                                                                                                                  |         |
+| **`error`**        | <code>string</code>                                                                 | Error code from the server, if any. Use `kind` for classification instead of parsing this value.                                                 |         |
+| **`kind`**         | <code><a href="#updateresponsekind">UpdateResponseKind</a></code>                   | Classification for this response, provided by the backend.                                                                                       | 8.45.11 |
+| **`statusCode`**   | <code>number</code>                                                                 | HTTP status code returned by the update server for classified update-check responses.                                                            | 8.45.11 |
+| **`old`**          | <code>string</code>                                                                 | The previous/current version name (provided for reference).                                                                                      |         |
+| **`url`**          | <code>string</code>                                                                 | Download URL for the bundle (when a new version is available).                                                                                   |         |
+| **`manifest`**     | <code>ManifestEntry[]</code>                                                        | File list for delta updates (when using multi-file downloads).                                                                                   | 6.1     |
+| **`missing`**      | <code><a href="#getmissingbundlefilesresult">GetMissingBundleFilesResult</a></code> | Missing manifest entries for this device when {@link <a href="#getlatestoptions">GetLatestOptions.includeBundleSize</a>} is enabled.             | 8.47.0  |
+| **`downloadSize`** | <code><a href="#getbundledownloadsizeresult">GetBundleDownloadSizeResult</a></code> | Estimated download size for missing manifest entries when {@link <a href="#getlatestoptions">GetLatestOptions.includeBundleSize</a>} is enabled. | 8.47.0  |
+| **`link`**         | <code>string</code>                                                                 | Optional link associated with this bundle version (e.g., release notes URL, changelog, GitHub release).                                          | 7.35.0  |
+| **`comment`**      | <code>string</code>                                                                 | Optional comment or description for this bundle version.                                                                                         | 7.35.0  |
+
+
+##### GetMissingBundleFilesResult
+
+| Prop                | Type                         | Description                                                             | Since  |
+| ------------------- | ---------------------------- | ----------------------------------------------------------------------- | ------ |
+| **`missing`**       | <code>ManifestEntry[]</code> | Entries that are not available locally and need to be downloaded.       | 8.47.0 |
+| **`total`**         | <code>number</code>          | Total entries in the provided manifest.                                 | 8.47.0 |
+| **`missingCount`**  | <code>number</code>          | Number of entries that need to be downloaded.                           | 8.47.0 |
+| **`reusableCount`** | <code>number</code>          | Number of entries that can be reused from builtin files or local cache. | 8.47.0 |
+
+
+##### GetBundleDownloadSizeResult
+
+| Prop               | Type                          | Description                                         | Since  |
+| ------------------ | ----------------------------- | --------------------------------------------------- | ------ |
+| **`totalSize`**    | <code>number</code>           | Sum of all known file sizes in bytes.               | 8.47.0 |
+| **`knownFiles`**   | <code>number</code>           | Number of files with a known size.                  | 8.47.0 |
+| **`unknownFiles`** | <code>number</code>           | Number of files whose size could not be determined. | 8.47.0 |
+| **`files`**        | <code>BundleFileSize[]</code> | Per-file size results.                              | 8.47.0 |
+
+
+##### BundleFileSize
+
+| Prop               | Type                        | Description                                                 | Since  |
+| ------------------ | --------------------------- | ----------------------------------------------------------- | ------ |
+| **`file_name`**    | <code>string \| null</code> | File name from the manifest entry.                          | 8.47.0 |
+| **`file_hash`**    | <code>string \| null</code> | File hash from the manifest entry.                          | 8.47.0 |
+| **`download_url`** | <code>string \| null</code> | Download URL from the manifest entry.                       | 8.47.0 |
+| **`size`**         | <code>number</code>         | Estimated bytes to download when the server exposes a size. | 8.47.0 |
+| **`error`**        | <code>string</code>         | Error for this entry when the size could not be determined. | 8.47.0 |
 
 
 ##### GetLatestOptions
 
-| Prop          | Type                | Description                                                                                                                                                                                                                                                        | Default                | Since  |
-| ------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------- | ------ |
-| **`channel`** | <code>string</code> | The channel to get the latest version for The channel must allow 'self_assign' for this to work                                                                                                                                                                    | <code>undefined</code> | 6.8.0  |
-| **`appId`**   | <code>string</code> | Temporarily use another app id for this update check while using a trusted preview container. This only changes the app id sent by this request; it does not persist a preview session. Requires {@link PluginsConfig.CapacitorUpdater.allowPreview} to be `true`. | <code>undefined</code> | 8.47.0 |
+| Prop                    | Type                 | Description                                                                                                                                                                                                                                                                                                       | Default                | Since  |
+| ----------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ------ |
+| **`channel`**           | <code>string</code>  | The channel to get the latest version for The channel must allow 'self_assign' for this to work                                                                                                                                                                                                                   | <code>undefined</code> | 6.8.0  |
+| **`appId`**             | <code>string</code>  | Temporarily use another app id for this update check while using a trusted preview container. This only changes the app id sent by this request; it does not persist a preview session. Requires {@link PluginsConfig.CapacitorUpdater.allowPreview} to be `true`.                                                | <code>undefined</code> | 8.47.0 |
+| **`includeBundleSize`** | <code>boolean</code> | When true, the native plugin computes which manifest files are missing on this device and asks the Capgo update endpoint for their stored sizes before resolving {@link getLatest}. This adds one backend request only when the update response contains a manifest. It does not perform per-file network checks. | <code>false</code>     | 8.47.0 |
+
+
+##### GetMissingBundleFilesOptions
+
+| Prop             | Type                         | Description                                                                                                                                                       | Since  |
+| ---------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| **`manifest`**   | <code>ManifestEntry[]</code> | Manifest returned by {@link getLatest}. Passing the full {@link <a href="#latestversion">LatestVersion</a>} response is supported because it contains this field. | 8.47.0 |
+| **`version`**    | <code>string</code>          | Target bundle version. Passing the full {@link <a href="#latestversion">LatestVersion</a>} response is supported because it contains this field.                  | 8.47.0 |
+| **`sessionKey`** | <code>string</code>          | Session key returned by {@link getLatest}, required only when file hashes are encrypted.                                                                          | 8.47.0 |
+
+
+##### GetBundleDownloadSizeOptions
+
+| Prop           | Type                         | Description                                                                                                                                             | Since  |
+| -------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| **`manifest`** | <code>ManifestEntry[]</code> | Manifest entries to estimate. Pass `missing.missing` from {@link getMissingBundleFiles} to estimate only the bytes this device still needs to download. | 8.47.0 |
+| **`version`**  | <code>string</code>          | Target bundle version. Pass `latest.version` when estimating files returned by {@link getLatest}.                                                       | 8.47.0 |
 
 
 ##### ChannelRes

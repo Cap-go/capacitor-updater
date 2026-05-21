@@ -839,6 +839,55 @@ export interface CapacitorUpdaterPlugin {
   getLatest(options?: GetLatestOptions): Promise<LatestVersion>;
 
   /**
+   * Return the manifest entries that still need to be downloaded for a partial update.
+   *
+   * Pass the result from {@link getLatest} directly when it includes a `manifest`.
+   * The native plugin compares each manifest entry with the files already available
+   * in the builtin bundle and the local delta cache. Entries that can be reused are
+   * omitted from the returned `missing` list.
+   *
+   * For encrypted manifests, pass the `sessionKey` returned by {@link getLatest} so
+   * encrypted file hashes can be checked against local files.
+   *
+   * ```typescript
+   * const latest = await CapacitorUpdater.getLatest();
+   * const missing = await CapacitorUpdater.getMissingBundleFiles(latest);
+   * ```
+   *
+   * @param options A {@link GetMissingBundleFilesOptions} object, or a {@link LatestVersion} response containing `manifest`.
+   * @returns {Promise<GetMissingBundleFilesResult>} The manifest entries that require network download.
+   * @throws {Error} If the manifest is missing or invalid.
+   * @since 8.47.0
+   */
+  getMissingBundleFiles(options: GetMissingBundleFilesOptions): Promise<GetMissingBundleFilesResult>;
+
+  /**
+   * Estimate the download size for manifest entries before downloading them.
+   *
+   * This method sends the provided manifest entries to the Capgo update endpoint
+   * once and reads the stored manifest `file_size` metadata. It does not perform
+   * per-file `HEAD` requests from the app.
+   *
+   * Use this after {@link getMissingBundleFiles} to estimate only the files this
+   * device still needs:
+   *
+   * ```typescript
+   * const latest = await CapacitorUpdater.getLatest();
+   * const missing = await CapacitorUpdater.getMissingBundleFiles(latest);
+   * const size = await CapacitorUpdater.getBundleDownloadSize({
+   *   version: latest.version,
+   *   manifest: missing.missing,
+   * });
+   * ```
+   *
+   * @param options A {@link GetBundleDownloadSizeOptions} object containing manifest entries.
+   * @returns {Promise<GetBundleDownloadSizeResult>} Known byte totals and per-file size results.
+   * @throws {Error} If the manifest is missing or invalid.
+   * @since 8.47.0
+   */
+  getBundleDownloadSize(options: GetBundleDownloadSizeOptions): Promise<GetBundleDownloadSizeResult>;
+
+  /**
    * Assign this device to a specific update channel at runtime.
    *
    * Channels allow you to distribute different bundle versions to different groups of users
@@ -1795,6 +1844,133 @@ export interface ManifestEntry {
   download_url: string | null;
 }
 
+export interface GetMissingBundleFilesOptions {
+  /**
+   * Manifest returned by {@link getLatest}. Passing the full {@link LatestVersion}
+   * response is supported because it contains this field.
+   *
+   * @since 8.47.0
+   */
+  manifest?: ManifestEntry[];
+  /**
+   * Target bundle version. Passing the full {@link LatestVersion} response is
+   * supported because it contains this field.
+   *
+   * @since 8.47.0
+   */
+  version?: string;
+  /**
+   * Session key returned by {@link getLatest}, required only when file hashes are encrypted.
+   *
+   * @since 8.47.0
+   */
+  sessionKey?: string;
+}
+
+export interface GetMissingBundleFilesResult {
+  /**
+   * Entries that are not available locally and need to be downloaded.
+   *
+   * @since 8.47.0
+   */
+  missing: ManifestEntry[];
+  /**
+   * Total entries in the provided manifest.
+   *
+   * @since 8.47.0
+   */
+  total: number;
+  /**
+   * Number of entries that need to be downloaded.
+   *
+   * @since 8.47.0
+   */
+  missingCount: number;
+  /**
+   * Number of entries that can be reused from builtin files or local cache.
+   *
+   * @since 8.47.0
+   */
+  reusableCount: number;
+}
+
+export interface GetBundleDownloadSizeOptions {
+  /**
+   * Manifest entries to estimate. Pass `missing.missing` from {@link getMissingBundleFiles}
+   * to estimate only the bytes this device still needs to download.
+   *
+   * @since 8.47.0
+   */
+  manifest?: ManifestEntry[];
+  /**
+   * Target bundle version. Pass `latest.version` when estimating files returned
+   * by {@link getLatest}.
+   *
+   * @since 8.47.0
+   */
+  version?: string;
+}
+
+export interface BundleFileSize {
+  /**
+   * File name from the manifest entry.
+   *
+   * @since 8.47.0
+   */
+  file_name: string | null;
+  /**
+   * File hash from the manifest entry.
+   *
+   * @since 8.47.0
+   */
+  file_hash: string | null;
+  /**
+   * Download URL from the manifest entry.
+   *
+   * @since 8.47.0
+   */
+  download_url: string | null;
+  /**
+   * Estimated bytes to download when the server exposes a size.
+   *
+   * @since 8.47.0
+   */
+  size?: number;
+  /**
+   * Error for this entry when the size could not be determined.
+   *
+   * @since 8.47.0
+   */
+  error?: string;
+}
+
+export interface GetBundleDownloadSizeResult {
+  /**
+   * Sum of all known file sizes in bytes.
+   *
+   * @since 8.47.0
+   */
+  totalSize: number;
+  /**
+   * Number of files with a known size.
+   *
+   * @since 8.47.0
+   */
+  knownFiles: number;
+  /**
+   * Number of files whose size could not be determined.
+   *
+   * @since 8.47.0
+   */
+  unknownFiles: number;
+  /**
+   * Per-file size results.
+   *
+   * @since 8.47.0
+   */
+  files: BundleFileSize[];
+}
+
 export interface LatestVersion {
   /**
    * Result of getLatest method
@@ -1851,6 +2027,20 @@ export interface LatestVersion {
    * @since 6.1
    */
   manifest?: ManifestEntry[];
+  /**
+   * Missing manifest entries for this device when {@link GetLatestOptions.includeBundleSize}
+   * is enabled.
+   *
+   * @since 8.47.0
+   */
+  missing?: GetMissingBundleFilesResult;
+  /**
+   * Estimated download size for missing manifest entries when
+   * {@link GetLatestOptions.includeBundleSize} is enabled.
+   *
+   * @since 8.47.0
+   */
+  downloadSize?: GetBundleDownloadSizeResult;
   /**
    * Optional link associated with this bundle version (e.g., release notes URL, changelog, GitHub release).
    * @since 7.35.0
@@ -1912,6 +2102,18 @@ export interface GetLatestOptions {
    * @default undefined
    */
   appId?: string;
+  /**
+   * When true, the native plugin computes which manifest files are missing on
+   * this device and asks the Capgo update endpoint for their stored sizes before
+   * resolving {@link getLatest}.
+   *
+   * This adds one backend request only when the update response contains a
+   * manifest. It does not perform per-file network checks.
+   *
+   * @since 8.47.0
+   * @default false
+   */
+  includeBundleSize?: boolean;
 }
 
 export interface StartPreviewSessionOptions {
