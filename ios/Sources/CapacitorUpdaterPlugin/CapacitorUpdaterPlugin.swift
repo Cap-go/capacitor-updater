@@ -243,10 +243,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
         shakeMenuEnabled = getConfig().getBoolean("shakeMenu", false)
         shakeChannelSelectorEnabled = getConfig().getBoolean("allowShakeChannelSelector", false)
-        previewSessionEnabled = allowPreview && UserDefaults.standard.bool(forKey: previewSessionDefaultsKey)
-        if !allowPreview && UserDefaults.standard.bool(forKey: previewSessionDefaultsKey) {
-            clearPreviewSessionBecauseDisabled()
-        }
+        let storedPreviewSessionEnabled = UserDefaults.standard.bool(forKey: previewSessionDefaultsKey)
+        let shouldClearPreviewSessionBecauseDisabled = !allowPreview && storedPreviewSessionEnabled
+        previewSessionEnabled = allowPreview && storedPreviewSessionEnabled
         implementation.previewSession = previewSessionEnabled
         if previewSessionEnabled {
             shakeMenuEnabled = true
@@ -288,6 +287,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if implementation.appId == "" {
             // crash the app on purpose it should not happen
             fatalError("appId is missing in capacitor.config.json or plugin config, and cannot be retrieved from the native app, please add it globally or in the plugin config")
+        }
+        if shouldClearPreviewSessionBecauseDisabled {
+            clearPreviewSessionBecauseDisabled()
         }
         if previewSessionEnabled,
            let previewAppId = UserDefaults.standard.string(forKey: previewAppIdDefaultsKey),
