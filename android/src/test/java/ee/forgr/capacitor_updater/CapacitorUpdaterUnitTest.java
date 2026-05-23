@@ -15,8 +15,12 @@ import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginHandle;
 import io.github.g00fy2.versioncompare.Version;
+import java.io.File;
+import java.io.IOException;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -26,6 +30,8 @@ import java.util.Map;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.Test;
@@ -222,6 +228,16 @@ public class CapacitorUpdaterUnitTest {
         public BundleInfo getNextBundle() {
             return null;
         }
+    }
+
+    private static final class StatsIgnoringCapgoUpdater extends CapgoUpdater {
+
+        StatsIgnoringCapgoUpdater() {
+            super(mock(Logger.class));
+        }
+
+        @Override
+        public void sendStats(final String action) {}
     }
 
     private static final class FreshDownloadCapgoUpdater extends CapgoUpdater {
@@ -788,6 +804,34 @@ public class CapacitorUpdaterUnitTest {
         Files.createFile(indexFile);
         indexFile.toFile().deleteOnExit();
         return tempDir;
+    }
+
+    private static Path createZipWithEntry(final String entryName) throws Exception {
+        final Path zipPath = Files.createTempFile("capgo-zip-path", ".zip");
+        zipPath.toFile().deleteOnExit();
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(zipPath))) {
+            zip.putNextEntry(new ZipEntry(entryName));
+            zip.write("owned".getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+        }
+        return zipPath;
+    }
+
+    private static File invokeUnzip(final CapgoUpdater updater, final String id, final Path zipPath, final String dest) throws Exception {
+        final Method method = CapgoUpdater.class.getDeclaredMethod("unzip", String.class, File.class, String.class);
+        method.setAccessible(true);
+        try {
+            return (File) method.invoke(updater, id, zipPath.toFile(), dest);
+        } catch (InvocationTargetException e) {
+            final Throwable cause = e.getCause();
+            if (cause instanceof IOException) {
+                throw (IOException) cause;
+            }
+            if (cause instanceof RuntimeException) {
+                throw (RuntimeException) cause;
+            }
+            throw e;
+        }
     }
 
     private static void invokeBackgroundDownload(final CapacitorUpdaterPlugin plugin) throws Exception {
@@ -2400,6 +2444,43 @@ public class CapacitorUpdaterUnitTest {
 
             verify(splashScreenPlugin, never()).invoke(eq("hide"), any(PluginCall.class));
         }
+    }
+
+    @Test
+    public void testZipEntryRejectsSiblingPrefixPathTraversal() throws Exception {
+        final Path documentsDir = Files.createTempDirectory("capgo-zip-path");
+        documentsDir.toFile().deleteOnExit();
+        final Path zipPath = createZipWithEntry("../bundle-evil/pwned.txt");
+        final Path escapedPath = documentsDir.resolve("bundle-evil").resolve("pwned.txt");
+
+        final CapgoUpdater updater = new StatsIgnoringCapgoUpdater();
+        updater.documentsDir = documentsDir.toFile();
+
+        assertThrows(IOException.class, () -> invokeUnzip(updater, "bundle-id", zipPath, "bundle"));
+        assertFalse(Files.exists(escapedPath));
+    }
+
+    @Test
+    public void testManifestTargetRejectsPathTraversalAfterBrotliSuffixIsRemoved() throws Exception {
+        final Path documentsDir = Files.createTempDirectory("capgo-manifest-path");
+        documentsDir.toFile().deleteOnExit();
+        final Path destFolder = documentsDir.resolve("bundle");
+        Files.createDirectories(destFolder);
+
+        assertThrows(IOException.class, () -> DownloadService.resolveManifestTargetFile(destFolder.toFile(), "../bundle-evil/app.js.br"));
+        assertFalse(Files.exists(documentsDir.resolve("bundle-evil")));
+    }
+
+    @Test
+    public void testManifestTargetAllowsNestedBrotliFileInsideBundle() throws Exception {
+        final Path documentsDir = Files.createTempDirectory("capgo-manifest-valid");
+        documentsDir.toFile().deleteOnExit();
+        final Path destFolder = documentsDir.resolve("bundle");
+        Files.createDirectories(destFolder);
+
+        final File resolved = DownloadService.resolveManifestTargetFile(destFolder.toFile(), "assets/app.js.br");
+
+        assertEquals(destFolder.resolve("assets").resolve("app.js").toFile().getCanonicalFile(), resolved);
     }
 
     @Test

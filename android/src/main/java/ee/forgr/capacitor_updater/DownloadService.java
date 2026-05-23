@@ -168,6 +168,16 @@ public class DownloadService extends Worker {
         return Result.success(output);
     }
 
+    static File resolveManifestTargetFile(final File destFolder, final String fileName) throws IOException {
+        final boolean isBrotli = fileName.endsWith(".br");
+        final String targetFileName = isBrotli ? fileName.substring(0, fileName.length() - 3) : fileName;
+        return CapgoUpdater.resolvePathInsideDirectory(destFolder, targetFileName);
+    }
+
+    static File resolveManifestBuiltinFile(final File builtinFolder, final String fileName) throws IOException {
+        return CapgoUpdater.resolvePathInsideDirectory(builtinFolder, fileName);
+    }
+
     private String getInputString(String key, String fallback) {
         String value = getInputData().getString(key);
         return value != null ? value : fallback;
@@ -338,11 +348,20 @@ public class DownloadService extends Worker {
                 boolean isBrotli = fileName.endsWith(".br");
                 String targetFileName = isBrotli ? fileName.substring(0, fileName.length() - 3) : fileName;
 
-                File targetFile = new File(destFolder, targetFileName);
+                File targetFile;
+                File builtinFile;
+                try {
+                    targetFile = resolveManifestTargetFile(destFolder, fileName);
+                    builtinFile = resolveManifestBuiltinFile(builtinFolder, fileName);
+                } catch (IOException e) {
+                    logger.error("Invalid manifest file path: " + fileName);
+                    sendStatsAsync("manifest_path_fail", version + ":" + fileName);
+                    hasError.set(true);
+                    continue;
+                }
                 String cacheBaseName = new File(isBrotli ? targetFileName : fileName).getName();
                 File cacheFile = new File(cacheFolder, finalFileHash + "_" + cacheBaseName);
                 final File legacyCacheFile = isBrotli ? new File(cacheFolder, finalFileHash + "_" + new File(fileName).getName()) : null;
-                File builtinFile = new File(builtinFolder, fileName);
 
                 // Ensure parent directories of the target file exist
                 if (!Objects.requireNonNull(targetFile.getParentFile()).exists() && !targetFile.getParentFile().mkdirs()) {

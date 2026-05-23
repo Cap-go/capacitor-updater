@@ -97,6 +97,43 @@ import UIKit
         let timedOut: Bool
     }
 
+    enum SecurePathError: Error {
+        case emptyPath
+        case windowsPath
+        case absolutePath
+        case pathTraversal
+    }
+
+    static func resolvePathInsideDirectory(baseDirectory: URL, relativePath: String) throws -> URL {
+        if relativePath.isEmpty {
+            throw SecurePathError.emptyPath
+        }
+        if relativePath.contains("\\") || relativePath.contains("\0") {
+            throw SecurePathError.windowsPath
+        }
+        if (relativePath as NSString).isAbsolutePath {
+            throw SecurePathError.absolutePath
+        }
+
+        let canonicalBase = baseDirectory.standardizedFileURL
+        let canonicalBasePath = canonicalBase.path
+        let normalizedBasePath = canonicalBasePath.hasSuffix("/") ? canonicalBasePath : "\(canonicalBasePath)/"
+        let canonicalTarget = canonicalBase.appendingPathComponent(relativePath).standardizedFileURL
+        let canonicalTargetPath = canonicalTarget.path
+
+        if canonicalTargetPath != canonicalBasePath && !canonicalTargetPath.hasPrefix(normalizedBasePath) {
+            throw SecurePathError.pathTraversal
+        }
+
+        return canonicalTarget
+    }
+
+    static func resolveManifestTargetPath(baseDirectory: URL, fileName: String) throws -> URL {
+        let isBrotli = fileName.hasSuffix(".br")
+        let targetFileName = isBrotli ? String(fileName.dropLast(3)) : fileName
+        return try resolvePathInsideDirectory(baseDirectory: baseDirectory, relativePath: targetFileName)
+    }
+
     private func isTimedOutError(_ error: Error?) -> Bool {
         guard let nsError = error as NSError? else {
             return false
@@ -491,21 +528,15 @@ import UIKit
         }
     }
 
-    private func validateZipEntry(path: String, destUnZip: URL) throws {
-        // Check for Windows paths
-        if path.contains("\\") {
+    private func resolveZipEntry(path: String, destUnZip: URL) throws -> URL {
+        do {
+            return try Self.resolvePathInsideDirectory(baseDirectory: destUnZip, relativePath: path)
+        } catch SecurePathError.windowsPath {
             logger.error("Unzip failed: Windows path not supported")
             logger.debug("Invalid path: \(path)")
             self.sendStats(action: "windows_path_fail")
             throw CustomError.cannotUnzip
-        }
-
-        // Check for path traversal
-        let fileURL = destUnZip.appendingPathComponent(path)
-        let canonicalPath = fileURL.standardizedFileURL.path
-        let canonicalDir = destUnZip.standardizedFileURL.path
-
-        if !canonicalPath.hasPrefix(canonicalDir) {
+        } catch {
             self.sendStats(action: "canonical_path_fail")
             throw CustomError.cannotUnzip
         }
@@ -596,10 +627,7 @@ import UIKit
 
         do {
             for entry in archive {
-                // Validate entry path for security
-                try validateZipEntry(path: entry.path, destUnZip: destUnZip)
-
-                let destPath = destUnZip.appendingPathComponent(entry.path)
+                let destPath = try resolveZipEntry(path: entry.path, destUnZip: destUnZip)
 
                 if entry.type == .directory {
                     try FileManager.default.createDirectory(at: destPath, withIntermediateDirectories: true, attributes: nil)
@@ -1100,8 +1128,22 @@ import UIKit
             let legacyCacheFilePath: URL? = isBrotli ? cacheFolder.appendingPathComponent("\(finalFileHash)_\(fileNameWithoutPath)") : nil
 
             let destFileName = isBrotli ? String(fileName.dropLast(3)) : fileName
-            let destFilePath = destFolder.appendingPathComponent(destFileName)
-            let builtinFilePath = builtinFolder.appendingPathComponent(fileName)
+            let destFilePath: URL
+            let builtinFilePath: URL
+            do {
+                destFilePath = try Self.resolveManifestTargetPath(baseDirectory: destFolder, fileName: fileName)
+                builtinFilePath = try Self.resolvePathInsideDirectory(baseDirectory: builtinFolder, relativePath: fileName)
+            } catch {
+                logger.error("Invalid manifest file path: \(fileName)")
+                self.sendStats(action: "manifest_path_fail", versionName: "\(version):\(fileName)")
+                errorLock.lock()
+                if downloadError == nil {
+                    downloadError = error
+                }
+                errorLock.unlock()
+                hasError.value = true
+                continue
+            }
 
             // Create parent directories synchronously (before operations start)
             try? FileManager.default.createDirectory(at: destFilePath.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
