@@ -193,6 +193,30 @@ public class CapgoUpdater {
         this.cachedKeyId = CryptoCipher.calcKeyId(publicKey);
     }
 
+    static File resolvePathInsideDirectory(final File baseDirectory, final String relativePath) throws IOException {
+        if (relativePath == null || relativePath.isEmpty()) {
+            throw new IOException("Invalid empty path");
+        }
+        if (relativePath.contains("\\") || relativePath.indexOf('\0') >= 0) {
+            throw new IOException("Invalid path separator");
+        }
+        if (new File(relativePath).isAbsolute()) {
+            throw new IOException("Absolute paths are not allowed");
+        }
+
+        final File canonicalBase = baseDirectory.getCanonicalFile();
+        final File canonicalTarget = new File(canonicalBase, relativePath).getCanonicalFile();
+        final String basePath = canonicalBase.getPath();
+        final String targetPath = canonicalTarget.getPath();
+        final String normalizedBasePath = basePath.endsWith(File.separator) ? basePath : basePath + File.separator;
+
+        if (!targetPath.equals(basePath) && !targetPath.startsWith(normalizedBasePath)) {
+            throw new IOException("Path escapes base directory: " + relativePath);
+        }
+
+        return canonicalTarget;
+    }
+
     public String getKeyId() {
         return this.cachedKeyId;
     }
@@ -213,22 +237,20 @@ public class CapgoUpdater {
 
             ZipEntry entry;
             while ((entry = zis.getNextEntry()) != null) {
-                if (entry.getName().contains("\\")) {
-                    logger.error("Unzip failed: Windows path not supported");
-                    logger.debug("Invalid path: " + entry.getName());
-                    this.sendStats("windows_path_fail");
+                final File file;
+                try {
+                    file = resolvePathInsideDirectory(targetDirectory, entry.getName());
+                } catch (IOException e) {
+                    if (entry.getName().contains("\\")) {
+                        logger.error("Unzip failed: Windows path not supported");
+                        logger.debug("Invalid path: " + entry.getName());
+                        this.sendStats("windows_path_fail");
+                    } else {
+                        this.sendStats("canonical_path_fail");
+                    }
+                    throw e;
                 }
-                final File file = new File(targetDirectory, entry.getName());
-                final String canonicalPath = file.getCanonicalPath();
-                final String canonicalDir = targetDirectory.getCanonicalPath();
                 final File dir = entry.isDirectory() ? file : file.getParentFile();
-
-                if (!canonicalPath.startsWith(canonicalDir)) {
-                    this.sendStats("canonical_path_fail");
-                    throw new FileNotFoundException(
-                        "SecurityException, Failed to ensure directory is the start path : " + canonicalDir + " of " + canonicalPath
-                    );
-                }
 
                 assert dir != null;
                 if (!dir.isDirectory() && !dir.mkdirs()) {

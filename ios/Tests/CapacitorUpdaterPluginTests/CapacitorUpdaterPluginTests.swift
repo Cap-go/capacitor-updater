@@ -1651,6 +1651,53 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertNotNil(updater)
     }
 
+    func testZipEntryPathRejectsSiblingPrefixPathTraversal() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let base = root.appendingPathComponent("bundle")
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        XCTAssertThrowsError(
+            try CapgoUpdater.resolvePathInsideDirectory(
+                baseDirectory: base,
+                relativePath: "../bundle-evil/pwned.txt"
+            )
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("bundle-evil/pwned.txt").path))
+    }
+
+    func testManifestTargetPathRejectsPathTraversalAfterBrotliSuffixIsRemoved() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let base = root.appendingPathComponent("bundle")
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        XCTAssertThrowsError(
+            try CapgoUpdater.resolveManifestTargetPath(
+                baseDirectory: base,
+                fileName: "../bundle-evil/app.js.br"
+            )
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("bundle-evil/app.js").path))
+    }
+
+    func testManifestTargetPathAllowsNestedBrotliFileInsideBundle() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let base = root.appendingPathComponent("bundle")
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let resolved = try CapgoUpdater.resolveManifestTargetPath(
+            baseDirectory: base,
+            fileName: "assets/app.js.br"
+        )
+
+        XCTAssertEqual(
+            resolved.standardizedFileURL.path,
+            base.appendingPathComponent("assets/app.js").standardizedFileURL.path
+        )
+    }
+
     // MARK: - Performance Tests
 
     func testPerformanceStringTrim() {
