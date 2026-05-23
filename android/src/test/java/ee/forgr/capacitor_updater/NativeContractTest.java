@@ -53,6 +53,27 @@ public class NativeContractTest {
     }
 
     @Test
+    public void autoUpdateModeMatchesNativeContract() throws Exception {
+        JSONArray cases = contract().getJSONArray("autoUpdateMode");
+        for (int index = 0; index < cases.length(); index++) {
+            JSONObject testCase = cases.getJSONObject(index);
+            String id = testCase.getString("id");
+            String mode = testCase.getJSONObject("input").getString("mode");
+            JSONObject expect = testCase.getJSONObject("expect");
+            String normalizedMode = CapacitorUpdaterPlugin.normalizedAutoUpdateMode(mode);
+
+            assertEquals(id, expect.getString("mode"), normalizedMode);
+            assertEquals(id, expect.getBoolean("enabled"), CapacitorUpdaterPlugin.isAutoUpdateModeEnabled(normalizedMode));
+            assertEquals(
+                id,
+                expect.getString("directUpdateMode"),
+                CapacitorUpdaterPlugin.directUpdateModeForAutoUpdateMode(normalizedMode)
+            );
+            assertEquals(id, expect.getBoolean("setNextBundle"), CapacitorUpdaterPlugin.shouldAutoUpdateModeSetNextBundle(normalizedMode));
+        }
+    }
+
+    @Test
     public void onLaunchDirectUpdateConsumptionMatchesNativeContract() throws Exception {
         JSONArray cases = contract().getJSONArray("onLaunchDirectUpdateConsumption");
         for (int index = 0; index < cases.length(); index++) {

@@ -83,6 +83,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     static let updateUrlDefault = "https://plugin.capgo.app/updates"
     static let statsUrlDefault = "https://plugin.capgo.app/stats"
     static let channelUrlDefault = "https://plugin.capgo.app/channel_self"
+    static let autoUpdateModeOff = "off"
+    static let autoUpdateModeBackground = "atBackground"
+    static let autoUpdateModeInstall = "atInstall"
+    static let autoUpdateModeLaunch = "onLaunch"
+    static let autoUpdateModeAlways = "always"
+    static let autoUpdateModeOnlyDownload = "onlyDownload"
     private let keepUrlPathFlagKey = "__capgo_keep_url_path_after_reload"
     private let customIdDefaultsKey = "CapacitorUpdater.customId"
     private let updateUrlDefaultsKey = "CapacitorUpdater.updateUrl"
@@ -102,6 +108,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var currentVersionNative: Version = "0.0.0"
     private var currentBuildVersion: String = "0"
     private var autoUpdate = false
+    private var autoUpdateMode = CapacitorUpdaterPlugin.autoUpdateModeOff
     private var appReadyTimeout = 10000
     private var appReadyCheck: DispatchWorkItem?
     private var resetWhenUpdate = true
@@ -203,33 +210,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         keepUrlPathAfterReload = getConfig().getBoolean("keepUrlPathAfterReload", false)
         syncKeepUrlPathFlag(enabled: keepUrlPathAfterReload)
 
-        // Handle directUpdate configuration - support string values and backward compatibility
-        if let directUpdateString = getConfig().getString("directUpdate") {
-            // Handle backward compatibility for boolean true
-            if directUpdateString == "true" {
-                directUpdateMode = "always"
-                directUpdate = true
-            } else {
-                directUpdateMode = directUpdateString
-                directUpdate = directUpdateString == "always" || directUpdateString == "atInstall" || directUpdateString == "onLaunch"
-                // Validate directUpdate value
-                if directUpdateString != "false" && directUpdateString != "always" && directUpdateString != "atInstall" && directUpdateString != "onLaunch" {
-                    logger.error("Invalid directUpdate value: \"\(directUpdateString)\". Supported values are: \"false\", \"true\", \"always\", \"atInstall\", \"onLaunch\". Defaulting to \"false\".")
-                    directUpdateMode = "false"
-                    directUpdate = false
-                }
-            }
-        } else {
-            let directUpdateBool = getConfig().getBoolean("directUpdate", false)
-            if directUpdateBool {
-                directUpdateMode = "always" // backward compatibility: true = always
-                directUpdate = true
-            } else {
-                directUpdateMode = "false"
-                directUpdate = false
-            }
-        }
-
         autoSplashscreen = getConfig().getBoolean("autoSplashscreen", false)
         autoSplashscreenLoader = getConfig().getBoolean("autoSplashscreenLoader", false)
         let splashscreenTimeoutValue = getConfig().getInt("autoSplashscreenTimeout", 10000)
@@ -239,7 +219,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             updateUrl = storedUpdateUrl
             logger.info("Loaded persisted updateUrl")
         }
-        autoUpdate = getConfig().getBoolean("autoUpdate", true)
+        configureAutoUpdateModeFromConfig()
         appReadyTimeout = max(1000, getConfig().getInt("appReadyTimeout", 10000))  // Minimum 1 second
         implementation.timeout = Double(getConfig().getInt("responseTimeout", 20))
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
@@ -787,7 +767,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         let url = URL(string: urlString)
         logger.info("Downloading \(String(describing: url))")
         self.saveCallForAsyncHandling(call)
-        DispatchQueue.global(qos: .background).async {
+        self.runBackgroundDownloadWork {
             do {
                 let next: BundleInfo
                 if let manifestEntries = self.manifestEntries(from: manifestArray) {
@@ -2076,6 +2056,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func shouldUseDirectUpdate() -> Bool {
+        if !self.autoUpdate || self.autoUpdateMode == Self.autoUpdateModeOnlyDownload {
+            return false
+        }
         if self.autoSplashscreenTimedOut {
             return false
         }
@@ -2100,6 +2083,99 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             logger.error("Invalid directUpdateMode: \"\(self.directUpdateMode)\". Supported values are: \"false\", \"always\", \"atInstall\", \"onLaunch\". Defaulting to \"false\" behavior.")
             return false
         }
+    }
+
+    private func configureAutoUpdateModeFromConfig() {
+        if let configuredMode = getConfig().getString("autoUpdate"),
+           configuredMode != "",
+           configuredMode != "true",
+           configuredMode != "false" {
+            autoUpdateMode = Self.normalizedAutoUpdateMode(configuredMode)
+            if autoUpdateMode != configuredMode {
+                logger.error(
+                    "Invalid autoUpdate value: \"\(configuredMode)\". Supported values are: true, false, " +
+                        "\"off\", \"atBackground\", \"atInstall\", \"onLaunch\", \"always\", \"onlyDownload\". Defaulting to \"atBackground\"."
+                )
+            }
+        } else {
+            let configuredMode = getConfig().getString("autoUpdate")
+            let enabled = configuredMode != nil ? configuredMode == "true" : getConfig().getBoolean("autoUpdate", true)
+            autoUpdateMode = enabled
+                ? Self.autoUpdateModeForLegacyDirectUpdateMode(resolveLegacyDirectUpdateModeFromConfig())
+                : Self.autoUpdateModeOff
+        }
+
+        autoUpdate = Self.isAutoUpdateModeEnabled(autoUpdateMode)
+        directUpdateMode = Self.directUpdateModeForAutoUpdateMode(autoUpdateMode)
+        directUpdate = Self.isDirectUpdateMode(directUpdateMode)
+    }
+
+    private func resolveLegacyDirectUpdateModeFromConfig() -> String {
+        if let directUpdateString = getConfig().getString("directUpdate") {
+            if directUpdateString == "true" {
+                return Self.autoUpdateModeAlways
+            }
+            if directUpdateString == "false" || Self.isDirectUpdateMode(directUpdateString) {
+                return directUpdateString
+            }
+            logger.error(
+                "Invalid directUpdate value: \"\(directUpdateString)\". Supported values are: false, true, " +
+                    "\"always\", \"atInstall\", \"onLaunch\". Defaulting to \"false\"."
+            )
+            return "false"
+        }
+
+        return getConfig().getBoolean("directUpdate", false) ? Self.autoUpdateModeAlways : "false"
+    }
+
+    static func normalizedAutoUpdateMode(_ value: String?) -> String {
+        guard let value else {
+            return autoUpdateModeBackground
+        }
+        switch value {
+        case "false", autoUpdateModeOff:
+            return autoUpdateModeOff
+        case "true", autoUpdateModeBackground:
+            return autoUpdateModeBackground
+        case autoUpdateModeInstall, autoUpdateModeLaunch, autoUpdateModeAlways, autoUpdateModeOnlyDownload:
+            return value
+        default:
+            return autoUpdateModeBackground
+        }
+    }
+
+    static func autoUpdateModeForLegacyDirectUpdateMode(_ directUpdateMode: String) -> String {
+        switch directUpdateMode {
+        case autoUpdateModeInstall, autoUpdateModeLaunch, autoUpdateModeAlways:
+            return directUpdateMode
+        default:
+            return autoUpdateModeBackground
+        }
+    }
+
+    static func directUpdateModeForAutoUpdateMode(_ autoUpdateMode: String) -> String {
+        switch autoUpdateMode {
+        case autoUpdateModeInstall, autoUpdateModeLaunch, autoUpdateModeAlways:
+            return autoUpdateMode
+        default:
+            return "false"
+        }
+    }
+
+    static func isAutoUpdateModeEnabled(_ autoUpdateMode: String) -> Bool {
+        autoUpdateMode != autoUpdateModeOff
+    }
+
+    static func shouldAutoUpdateModeSetNextBundle(_ autoUpdateMode: String) -> Bool {
+        isAutoUpdateModeEnabled(autoUpdateMode) && autoUpdateMode != autoUpdateModeOnlyDownload
+    }
+
+    static func isDirectUpdateMode(_ directUpdateMode: String) -> Bool {
+        directUpdateMode == autoUpdateModeInstall || directUpdateMode == autoUpdateModeLaunch || directUpdateMode == autoUpdateModeAlways
+    }
+
+    private func shouldAutoSetNextBundle() -> Bool {
+        Self.shouldAutoUpdateModeSetNextBundle(autoUpdateMode)
     }
 
     static func shouldConsumeOnLaunchDirectUpdate(directUpdateMode: String, plannedDirectUpdate: Bool) -> Bool {
@@ -2135,11 +2211,21 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     func configureDirectUpdateModeForTesting(_ directUpdateMode: String, onLaunchDirectUpdateUsed: Bool = false) {
         self.directUpdateMode = directUpdateMode
+        self.autoUpdateMode = Self.autoUpdateModeForLegacyDirectUpdateMode(directUpdateMode)
+        self.autoUpdate = Self.isAutoUpdateModeEnabled(self.autoUpdateMode)
+        self.directUpdate = Self.isDirectUpdateMode(self.directUpdateMode)
         self.setOnLaunchDirectUpdateUsed(onLaunchDirectUpdateUsed)
     }
 
     func setUpdateUrlForTesting(_ updateUrl: String) {
         self.updateUrl = updateUrl
+    }
+
+    func setAutoUpdateModeForTesting(_ autoUpdateMode: String) {
+        self.autoUpdateMode = Self.normalizedAutoUpdateMode(autoUpdateMode)
+        self.autoUpdate = Self.isAutoUpdateModeEnabled(self.autoUpdateMode)
+        self.directUpdateMode = Self.directUpdateModeForAutoUpdateMode(self.autoUpdateMode)
+        self.directUpdate = Self.isDirectUpdateMode(self.directUpdateMode)
     }
 
     func setCurrentBuildVersionForTesting(_ currentBuildVersion: String) {
@@ -2237,7 +2323,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         plannedDirectUpdate: Bool = false,
         failureAction: String = "download_fail",
         failureEvent: String = "downloadFailed",
-        sendStats: Bool = true
+        sendStats: Bool = true,
+        notifyNoNeedUpdate: Bool = true
     ) {
         // Clear download in progress flag - this is called at the end of every download attempt
         // whether it succeeds, fails, or is skipped (e.g., already up to date)
@@ -2254,7 +2341,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             self.notifyListeners(failureEvent, data: ["version": latestVersionName])
         }
-        self.notifyListeners("noNeedUpdate", data: ["bundle": current.toJSON()])
+        if notifyNoNeedUpdate {
+            self.notifyListeners("noNeedUpdate", data: ["bundle": current.toJSON()])
+        }
         self.sendReadyToJs(current: current, msg: msg)
         logger.info("endBackGroundTaskWithNotif \(msg) current: \(current.getVersionName()) latestVersionName: \(latestVersionName)")
         self.endBackGroundTask()
@@ -2314,7 +2403,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         downloadLock.unlock()
 
         let plannedDirectUpdate = self.shouldUseDirectUpdate()
-        let messageUpdate = plannedDirectUpdate ? "Update will occur now." : "Update will occur next time app moves to background."
+        let messageUpdate: String
+        if plannedDirectUpdate {
+            messageUpdate = "Update will occur now."
+        } else if self.shouldAutoSetNextBundle() {
+            messageUpdate = "Update will occur next time app moves to background."
+        } else {
+            messageUpdate = "Update will be downloaded and made available."
+        }
         guard let url = URL(string: self.updateUrl) else {
             logger.error("Error no url or wrong format")
             // Clear the flag if we return early
@@ -2358,7 +2454,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         error: false,
                         plannedDirectUpdate: plannedDirectUpdate
                     )
-                } else {
+                } else if self.shouldAutoSetNextBundle() {
                     if plannedDirectUpdate && !directUpdateAllowed {
                         self.logger.info("Direct update skipped because splashscreen timeout occurred. Update will apply later.")
                     }
@@ -2370,6 +2466,21 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         current: current,
                         error: false,
                         plannedDirectUpdate: plannedDirectUpdate
+                    )
+                } else {
+                    self.logger.info("autoUpdate is set to onlyDownload, builtin version will not be set as next bundle")
+                    let builtinUpdateAvailable = !current.isBuiltin()
+                    if builtinUpdateAvailable {
+                        let builtinBundle = self.implementation.getBundleInfo(id: BundleInfo.ID_BUILTIN)
+                        self.notifyListeners("updateAvailable", data: ["bundle": builtinBundle.toJSON()], retainUntilConsumed: true)
+                    }
+                    self.endBackGroundTaskWithNotif(
+                        msg: "Latest version is builtin, autoUpdate onlyDownload",
+                        latestVersionName: res.version,
+                        current: current,
+                        error: false,
+                        plannedDirectUpdate: plannedDirectUpdate,
+                        notifyNoNeedUpdate: !builtinUpdateAvailable
                     )
                 }
                 return
@@ -2483,7 +2594,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                                 plannedDirectUpdate: plannedDirectUpdate
                             )
                         }
-                    } else {
+                    } else if self.shouldAutoSetNextBundle() {
                         if plannedDirectUpdate && !directUpdateAllowed {
                             self.logger.info("Direct update skipped because splashscreen timeout occurred. Update will install on next app background.")
                         }
@@ -2495,6 +2606,17 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                             current: current,
                             error: false,
                             plannedDirectUpdate: plannedDirectUpdate
+                        )
+                    } else {
+                        self.logger.info("autoUpdate is set to onlyDownload, downloaded update will not be set as next bundle")
+                        self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()], retainUntilConsumed: true)
+                        self.endBackGroundTaskWithNotif(
+                            msg: "update downloaded, autoUpdate onlyDownload",
+                            latestVersionName: latestVersionName,
+                            current: current,
+                            error: false,
+                            plannedDirectUpdate: plannedDirectUpdate,
+                            notifyNoNeedUpdate: false
                         )
                     }
                     return

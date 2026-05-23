@@ -105,6 +105,28 @@ final class NativeContractTests: XCTestCase {
         }
     }
 
+    func testAutoUpdateModeMatchesNativeContract() throws {
+        for testCase in try contractCases("autoUpdateMode") {
+            let id = try string(testCase, "id", id: "autoUpdateMode")
+            let input = try dictionary(testCase, "input", id: id)
+            let expect = try dictionary(testCase, "expect", id: id)
+            let normalizedMode = CapacitorUpdaterPlugin.normalizedAutoUpdateMode(try string(input, "mode", id: id))
+
+            XCTAssertEqual(normalizedMode, try string(expect, "mode", id: id), id)
+            XCTAssertEqual(CapacitorUpdaterPlugin.isAutoUpdateModeEnabled(normalizedMode), try bool(expect, "enabled", id: id), id)
+            XCTAssertEqual(
+                CapacitorUpdaterPlugin.directUpdateModeForAutoUpdateMode(normalizedMode),
+                try string(expect, "directUpdateMode", id: id),
+                id
+            )
+            XCTAssertEqual(
+                CapacitorUpdaterPlugin.shouldAutoUpdateModeSetNextBundle(normalizedMode),
+                try bool(expect, "setNextBundle", id: id),
+                id
+            )
+        }
+    }
+
     func testOnLaunchDirectUpdateConsumptionMatchesNativeContract() throws {
         for testCase in try contractCases("onLaunchDirectUpdateConsumption") {
             let id = try string(testCase, "id", id: "onLaunchDirectUpdateConsumption")
