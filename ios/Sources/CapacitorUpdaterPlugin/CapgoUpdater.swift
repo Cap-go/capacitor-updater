@@ -1009,6 +1009,7 @@ import UIKit
                 builtinFilePath = try Self.resolvePathInsideDirectory(baseDirectory: builtinFolder, relativePath: fileName)
             } catch {
                 logger.error("Invalid manifest file path: \(fileName)")
+                self.sendStats(action: "manifest_path_fail", versionName: "\(version):\(fileName)")
                 errorLock.lock()
                 if downloadError == nil {
                     downloadError = error

@@ -355,6 +355,7 @@ public class DownloadService extends Worker {
                     builtinFile = resolveManifestBuiltinFile(builtinFolder, fileName);
                 } catch (IOException e) {
                     logger.error("Invalid manifest file path: " + fileName);
+                    sendStatsAsync("manifest_path_fail", version + ":" + fileName);
                     hasError.set(true);
                     continue;
                 }
