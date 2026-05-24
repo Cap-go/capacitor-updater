@@ -18,11 +18,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v6.4.0
         with:
           node-version: 24.x
       - name: Upsert beta publish comment
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9.0.0
         env:
           IS_SAME_REPO: ${{ github.event.pull_request.head.repo.full_name == github.repository && 'true' || 'false' }}
         with:
