@@ -1312,7 +1312,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
 
             let next = try self.downloadBundle(
-                // Used only when payload.url exists; manifestEntries routes through downloadManifest instead.
+                // Fallback URL is only provided when payload.url is missing; when manifestEntries is present,
+                // downloadBundle routes through downloadManifest and ignores urlString.
                 urlString: payload.url ?? "https://404.capgo.app/no.zip",
                 version: version,
                 sessionKey: payload.sessionKey ?? "",
