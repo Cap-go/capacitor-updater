@@ -125,9 +125,11 @@ final class HealthStatsCapgoUpdater: CapgoUpdater {
 
 final class ChannelRequestCapgoUpdater: CapgoUpdater {
     var requestResult: CapgoUpdater.RequestResult!
+    var lastRequest: URLRequest?
 
     override func performRequest(_ request: URLRequest, label: String) -> CapgoUpdater.RequestResult {
-        requestResult
+        lastRequest = request
+        return requestResult
     }
 }
 

@@ -358,6 +358,45 @@ extension CapacitorUpdaterTests {
         XCTAssertNil(UserDefaults.standard.string(forKey: defaultsKey))
     }
 
+    func testListChannelsUsesSnakeCaseQueryParameters() throws {
+        let updater = ChannelRequestCapgoUpdater()
+        updater.setLogger(Logger(withTag: "TestLogger"))
+        updater.channelUrl = "https://example.com/channel"
+        updater.appId = "app.capgo.updater"
+        updater.customId = "qa-user-42"
+        updater.deviceID = "device-123"
+        updater.pluginVersion = "8.47.4"
+        updater.versionBuild = "1.0"
+
+        let channelURL = try XCTUnwrap(URL(string: "https://example.com/channel"))
+        let response = try XCTUnwrap(HTTPURLResponse(url: channelURL, statusCode: 200, httpVersion: nil, headerFields: nil))
+        let responseData = try XCTUnwrap("""
+        [{"id":"beta-id","name":"beta","public":true,"allow_self_set":true}]
+        """.data(using: .utf8))
+        updater.requestResult = CapgoUpdater.RequestResult(data: responseData, response: response, error: nil, timedOut: false)
+
+        let result = updater.listChannels()
+
+        XCTAssertEqual(result.error, "")
+        XCTAssertEqual(result.channels.first?["name"] as? String, "beta")
+
+        let requestURL = try XCTUnwrap(updater.lastRequest?.url)
+        let queryItems = URLComponents(url: requestURL, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        let query = Dictionary(uniqueKeysWithValues: queryItems.compactMap { item -> (String, String)? in
+            guard let value = item.value else {
+                return nil
+            }
+            return (item.name, value)
+        })
+
+        XCTAssertEqual(query["app_id"], "app.capgo.updater")
+        XCTAssertEqual(query["custom_id"], "qa-user-42")
+        XCTAssertEqual(query["device_id"], "device-123")
+        XCTAssertEqual(query["plugin_version"], "8.47.4")
+        XCTAssertNil(query["appId"])
+        XCTAssertNil(query["customId"])
+    }
+
     // MARK: - DelayCondition Tests
 
     func testDelayConditionInitialization() {

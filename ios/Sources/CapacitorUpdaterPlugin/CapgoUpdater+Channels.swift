@@ -235,18 +235,8 @@ extension CapgoUpdater {
         var urlComponents = URLComponents(string: self.channelUrl)
         var queryItems: [URLQueryItem] = urlComponents?.queryItems ?? []
 
-        // Convert InfoObject to dictionary using Mirror
-        let mirror = Mirror(reflecting: infoObject)
-        for child in mirror.children {
-            if let key = child.label, let value = child.value as? CustomStringConvertible {
-                queryItems.append(URLQueryItem(name: key, value: String(describing: value)))
-            } else if let key = child.label {
-                // Handle optional values
-                let mirror = Mirror(reflecting: child.value)
-                if let value = mirror.children.first?.value {
-                    queryItems.append(URLQueryItem(name: key, value: String(describing: value)))
-                }
-            }
+        for (key, value) in infoObject.toParameters() {
+            queryItems.append(URLQueryItem(name: key, value: String(describing: value)))
         }
 
         urlComponents?.queryItems = queryItems
