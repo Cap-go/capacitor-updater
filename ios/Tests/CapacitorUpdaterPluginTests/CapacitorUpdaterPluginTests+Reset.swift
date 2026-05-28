@@ -39,6 +39,12 @@ extension CapacitorUpdaterTests {
         XCTAssertEqual(CapacitorUpdaterPlugin.normalizedPeriodCheckDelaySeconds(3600), 3600)
     }
 
+    func testLegacyReloadSelectorIsStillExposed() {
+        let plugin = CapacitorUpdaterPlugin()
+
+        XCTAssertTrue(plugin.responds(to: NSSelectorFromString("_reload")))
+    }
+
     func testResetToPendingWithoutInstallablePendingBundleDoesNotResetState() {
         let resetPlugin = ResetTestableCapacitorUpdaterPlugin()
         let resetImplementation = ResetTrackingCapgoUpdater()

@@ -105,7 +105,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     let previewPreviousDefaultChannelWasSetDefaultsKey = "CapacitorUpdater.previewPreviousDefaultChannelWasSet"
     let previewAppIdDefaultsKey = "CapacitorUpdater.previewAppId"
     let previewPayloadUrlDefaultsKey = "CapacitorUpdater.previewPayloadUrl"
-    // Note: DELAY_CONDITION_PREFERENCES is now defined in DelayUpdateUtils.delayConditionPreferences
+    // Delay preference keys live in DelayUpdateUtils.
     var updateUrl = ""
     var backgroundTaskID: UIBackgroundTaskIdentifier = UIBackgroundTaskIdentifier.invalid
     var currentVersionNative: Version = "0.0.0"
@@ -185,6 +185,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     public func reloadCurrentBundle() -> Bool {
         reloadCurrentBundleImpl()
+    }
+
+    @objc(_reload)
+    @available(*, deprecated, message: "Use reloadCurrentBundle().")
+    public func reloadLegacyEntrypoint() -> Bool {
+        reloadCurrentBundle()
     }
 
     func restoreLiveBundleStateAfterFailedReload() {
