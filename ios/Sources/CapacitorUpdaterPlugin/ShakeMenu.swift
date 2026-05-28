@@ -80,9 +80,11 @@ extension UIWindow {
         })
 
         alertShake.addAction(UIAlertAction(title: reloadButtonTitle, style: .default) { _ in
-            DispatchQueue.main.async {
+            DispatchQueue.global(qos: .userInitiated).async {
                 if !plugin.reloadPreviewSessionFromShakeMenu() {
-                    self.showError(message: "Could not reload the test app.", plugin: plugin)
+                    DispatchQueue.main.async {
+                        self.showError(message: "Could not reload the test app.", plugin: plugin)
+                    }
                 }
             }
         })

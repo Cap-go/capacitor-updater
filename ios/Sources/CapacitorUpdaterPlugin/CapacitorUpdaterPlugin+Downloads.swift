@@ -101,6 +101,68 @@ extension CapacitorUpdaterPlugin {
         return manifestEntries
     }
 
+    struct PreviewPayload: Decodable {
+        let version: String?
+        let url: String?
+        let checksum: String?
+        let sessionKey: String?
+        let manifest: [ManifestEntry]?
+        let message: String?
+        let error: String?
+    }
+
+    func makePreviewError(_ message: String) -> NSError {
+        NSError(domain: "CapacitorUpdaterPreview", code: 0, userInfo: [NSLocalizedDescriptionKey: message])
+    }
+
+    func downloadBundle(
+        urlString: String,
+        version: String,
+        sessionKey: String,
+        checksum rawChecksum: String,
+        manifestEntries: [ManifestEntry]?
+    ) throws -> BundleInfo {
+        guard let url = URL(string: urlString) else {
+            throw makePreviewError("Invalid download URL")
+        }
+
+        var checksum = rawChecksum
+        let next: BundleInfo
+        if let manifestEntries = manifestEntries {
+            next = try self.implementation.downloadManifest(manifest: manifestEntries, version: version, sessionKey: sessionKey)
+        } else {
+            next = try self.implementation.download(url: url, version: version, sessionKey: sessionKey)
+        }
+
+        if self.implementation.publicKey != "" && checksum == "" {
+            self.logger.error("Public key present but no checksum provided")
+            self.implementation.sendStats(action: "checksum_required", versionName: next.getVersionName())
+            let id = next.getId()
+            let resDel = self.implementation.delete(id: id)
+            if !resDel {
+                self.logger.error("Delete failed, id \(id) doesn't exist")
+            }
+            throw ObjectSavableError.checksum
+        }
+
+        checksum = try CryptoCipher.decryptChecksum(checksum: checksum, publicKey: self.implementation.publicKey)
+        CryptoCipher.logChecksumInfo(label: "Bundle checksum", hexChecksum: next.getChecksum())
+        CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: checksum)
+        if (checksum != "" || self.implementation.publicKey != "") && next.getChecksum() != checksum {
+            self.logger.error("Error checksum \(next.getChecksum()) \(checksum)")
+            self.implementation.sendStats(action: "checksum_fail", versionName: next.getVersionName())
+            let id = next.getId()
+            let resDel = self.implementation.delete(id: id)
+            if !resDel {
+                self.logger.error("Delete failed, id \(id) doesn't exist")
+            }
+            throw ObjectSavableError.checksum
+        }
+
+        self.logger.info("Good checksum \(next.getChecksum()) \(checksum)")
+        return next
+    }
+
     @objc func download(_ call: CAPPluginCall) {
         guard let urlString = call.getString("url") else {
             logger.error("Download called without url")
@@ -341,6 +403,15 @@ extension CapacitorUpdaterPlugin {
             return
         }
         let previewAppId = self.normalizedPreviewAppId(call.getString("appId"))
+        let rawPayloadUrl = call.getString("payloadUrl")
+        let previewPayloadUrl = self.normalizedPreviewPayloadUrl(rawPayloadUrl)
+        if let rawPayloadUrl = rawPayloadUrl,
+           !rawPayloadUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           previewPayloadUrl == nil {
+            logger.error("startPreviewSession called with invalid payloadUrl")
+            call.reject("Invalid preview payloadUrl")
+            return
+        }
 
         if !self.previewSessionEnabled {
             let current = self.implementation.getCurrentBundle()
@@ -359,6 +430,13 @@ extension CapacitorUpdaterPlugin {
             }
 
             UserDefaults.standard.set(self.implementation.appId, forKey: self.previewPreviousAppIdDefaultsKey)
+            if let previousDefaultChannel = UserDefaults.standard.object(forKey: self.defaultChannelDefaultsKey) as? String {
+                UserDefaults.standard.set(previousDefaultChannel, forKey: self.previewPreviousDefaultChannelDefaultsKey)
+                UserDefaults.standard.set(true, forKey: self.previewPreviousDefaultChannelWasSetDefaultsKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: self.previewPreviousDefaultChannelDefaultsKey)
+                UserDefaults.standard.set(false, forKey: self.previewPreviousDefaultChannelWasSetDefaultsKey)
+            }
             UserDefaults.standard.set(self.shakeMenuEnabled, forKey: self.previewPreviousShakeMenuDefaultsKey)
             UserDefaults.standard.set(self.shakeChannelSelectorEnabled, forKey: self.previewPreviousShakeChannelSelectorDefaultsKey)
             logger.info("Preview session started with fallback bundle: \(current.toString())")
@@ -368,6 +446,13 @@ extension CapacitorUpdaterPlugin {
             self.implementation.appId = previewAppId
             UserDefaults.standard.set(previewAppId, forKey: self.previewAppIdDefaultsKey)
             logger.info("Preview session using appId: \(previewAppId)")
+        }
+
+        if let previewPayloadUrl = previewPayloadUrl {
+            UserDefaults.standard.set(previewPayloadUrl.absoluteString, forKey: self.previewPayloadUrlDefaultsKey)
+            logger.info("Preview session using payload URL")
+        } else {
+            UserDefaults.standard.removeObject(forKey: self.previewPayloadUrlDefaultsKey)
         }
 
         self.previewSessionEnabled = true
@@ -382,14 +467,12 @@ extension CapacitorUpdaterPlugin {
 
     func leavePreviewSessionFromShakeMenu() -> Bool {
         let previewBundle = self.implementation.getCurrentBundle()
-        let configDefaultChannel = self.getConfig().getString("defaultChannel", "")!
 
         let didReset = self.resetToPreviewFallbackBundle()
         guard didReset else {
             return false
         }
 
-        _ = self.implementation.unsetChannel(defaultChannelKey: self.defaultChannelDefaultsKey, configDefaultChannel: configDefaultChannel)
         let previewFallbackBundle = self.implementation.getPreviewFallbackBundle()
         self.endPreviewSession()
         let restoredNextBundle = self.implementation.getNextBundle()
@@ -402,7 +485,11 @@ extension CapacitorUpdaterPlugin {
     }
 
     func reloadPreviewSessionFromShakeMenu() -> Bool {
-        self.reloadCurrentBundle()
+        if let payloadUrl = self.storedPreviewPayloadUrl() {
+            return self.refreshPreviewSessionFromPayloadUrl(payloadUrl)
+        }
+
+        return self.reloadCurrentBundle()
     }
 
     func hasActivePreviewSession() -> Bool {
@@ -440,6 +527,7 @@ extension CapacitorUpdaterPlugin {
             ?? getConfig().getBoolean("allowShakeChannelSelector", false)
         self.restorePreviewPreviousNextBundle()
         self.restorePreviewPreviousAppId()
+        self.restorePreviewPreviousDefaultChannel()
 
         self.previewSessionEnabled = false
         self.previewSessionAlertPending = false
@@ -469,6 +557,7 @@ extension CapacitorUpdaterPlugin {
 
         self.restorePreviewPreviousNextBundle()
         self.restorePreviewPreviousAppId()
+        self.restorePreviewPreviousDefaultChannel()
         self.previewSessionEnabled = false
         self.previewSessionAlertPending = false
         self.implementation.previewSession = false
@@ -484,7 +573,10 @@ extension CapacitorUpdaterPlugin {
         UserDefaults.standard.removeObject(forKey: self.previewPreviousShakeChannelSelectorDefaultsKey)
         UserDefaults.standard.removeObject(forKey: self.previewPreviousNextBundleDefaultsKey)
         UserDefaults.standard.removeObject(forKey: self.previewPreviousAppIdDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: self.previewPreviousDefaultChannelDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: self.previewPreviousDefaultChannelWasSetDefaultsKey)
         UserDefaults.standard.removeObject(forKey: self.previewAppIdDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: self.previewPayloadUrlDefaultsKey)
         UserDefaults.standard.synchronize()
     }
 
@@ -495,6 +587,23 @@ extension CapacitorUpdaterPlugin {
         }
         self.implementation.appId = previousAppId
         logger.info("Restored appId after preview: \(previousAppId)")
+    }
+
+    func restorePreviewPreviousDefaultChannel() {
+        let configDefaultChannel = self.getConfig().getString("defaultChannel", "")!
+        let hadPreviousDefaultChannel = UserDefaults.standard.object(forKey: self.previewPreviousDefaultChannelWasSetDefaultsKey) as? Bool ?? false
+
+        guard hadPreviousDefaultChannel,
+              let previousDefaultChannel = UserDefaults.standard.string(forKey: self.previewPreviousDefaultChannelDefaultsKey) else {
+            UserDefaults.standard.removeObject(forKey: self.defaultChannelDefaultsKey)
+            self.implementation.defaultChannel = configDefaultChannel
+            logger.info("Restored defaultChannel after preview to config value")
+            return
+        }
+
+        UserDefaults.standard.set(previousDefaultChannel, forKey: self.defaultChannelDefaultsKey)
+        self.implementation.defaultChannel = previousDefaultChannel
+        logger.info("Restored defaultChannel after preview")
     }
 
     func normalizedPreviewAppId(_ rawAppId: String?) -> String? {
@@ -515,6 +624,99 @@ extension CapacitorUpdaterPlugin {
         return appId
     }
 
+    func normalizedPreviewPayloadUrl(_ rawPayloadUrl: String?) -> URL? {
+        guard let rawPayloadUrl else {
+            return nil
+        }
+
+        let payloadUrl = rawPayloadUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !payloadUrl.isEmpty,
+              let url = URL(string: payloadUrl),
+              url.scheme == "https" || url.scheme == "http" else {
+            return nil
+        }
+
+        return url
+    }
+
+    func storedPreviewPayloadUrl() -> URL? {
+        normalizedPreviewPayloadUrl(UserDefaults.standard.string(forKey: self.previewPayloadUrlDefaultsKey))
+    }
+
+    func fetchPreviewPayload(_ payloadUrl: URL) throws -> PreviewPayload {
+        var request = URLRequest(url: payloadUrl)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let semaphore = DispatchSemaphore(value: 0)
+        var responseData: Data?
+        var response: URLResponse?
+        var responseError: Error?
+
+        URLSession.shared.dataTask(with: request) { data, urlResponse, error in
+            responseData = data
+            response = urlResponse
+            responseError = error
+            semaphore.signal()
+        }.resume()
+
+        if semaphore.wait(timeout: .now() + 60) == .timedOut {
+            throw makePreviewError("Preview payload request timed out")
+        }
+
+        if let responseError = responseError {
+            throw responseError
+        }
+
+        let data = responseData ?? Data()
+        if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+            if let payload = try? JSONDecoder().decode(PreviewPayload.self, from: data) {
+                throw makePreviewError(payload.message ?? payload.error ?? "Preview payload request failed with HTTP \(httpResponse.statusCode)")
+            }
+            let message = String(data: data, encoding: .utf8) ?? "Preview payload request failed with HTTP \(httpResponse.statusCode)"
+            throw makePreviewError(message)
+        }
+
+        return try JSONDecoder().decode(PreviewPayload.self, from: data)
+    }
+
+    func refreshPreviewSessionFromPayloadUrl(_ payloadUrl: URL) -> Bool {
+        do {
+            let payload = try self.fetchPreviewPayload(payloadUrl)
+            guard let version = payload.version, !version.isEmpty else {
+                throw makePreviewError("Preview payload is missing a version")
+            }
+            guard payload.url != nil || payload.manifest?.isEmpty == false else {
+                throw makePreviewError("Preview payload is missing download information")
+            }
+
+            let current = self.implementation.getCurrentBundle()
+            if current.getVersionName() == version {
+                self.logger.info("Preview payload unchanged, reloading current bundle")
+                return self.reloadCurrentBundle()
+            }
+
+            let next = try self.downloadBundle(
+                // Fallback URL is only provided when payload.url is missing; when manifest entries exist,
+                // downloadBundle routes through downloadManifest and ignores urlString.
+                urlString: payload.url ?? "https://404.capgo.app/no.zip",
+                version: version,
+                sessionKey: payload.sessionKey ?? "",
+                checksum: payload.checksum ?? "",
+                manifestEntries: payload.manifest
+            )
+
+            guard self.implementation.set(id: next.getId()) else {
+                throw makePreviewError("Downloaded preview bundle cannot be applied")
+            }
+
+            self.notifyBundleSet(next)
+            return self.reloadCurrentBundle()
+        } catch {
+            self.logger.error("Could not refresh preview session: \(error.localizedDescription)")
+            return false
+        }
+    }
+
     func clearPreviewSessionForNativeBuildChange() {
         guard self.previewSessionEnabled || self.implementation.getPreviewFallbackBundle() != nil else {
             return
@@ -526,10 +728,9 @@ extension CapacitorUpdaterPlugin {
         self.shakeMenuEnabled = getConfig().getBoolean("shakeMenu", false)
         self.shakeChannelSelectorEnabled = getConfig().getBoolean("allowShakeChannelSelector", false)
         self.restorePreviewPreviousAppId()
+        self.restorePreviewPreviousDefaultChannel()
         _ = self.implementation.setPreviewFallbackBundle(fallback: nil)
         _ = self.implementation.setNextBundle(next: Optional<String>.none)
-        let configDefaultChannel = self.getConfig().getString("defaultChannel", "")!
-        _ = self.implementation.unsetChannel(defaultChannelKey: self.defaultChannelDefaultsKey, configDefaultChannel: configDefaultChannel)
         self.clearPreviewSessionPreferences()
     }
 

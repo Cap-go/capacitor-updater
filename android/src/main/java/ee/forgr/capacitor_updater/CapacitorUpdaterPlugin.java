@@ -49,9 +49,13 @@ import com.google.android.play.core.install.model.AppUpdateType;
 import com.google.android.play.core.install.model.InstallStatus;
 import com.google.android.play.core.install.model.UpdateAvailability;
 import io.github.g00fy2.versioncompare.Version;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -98,7 +102,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final String PREVIEW_PREVIOUS_SHAKE_CHANNEL_SELECTOR_PREF_KEY = "CapacitorUpdater.previewPreviousShakeChannelSelector";
     private static final String PREVIEW_PREVIOUS_NEXT_BUNDLE_PREF_KEY = "CapacitorUpdater.previewPreviousNextBundle";
     private static final String PREVIEW_PREVIOUS_APP_ID_PREF_KEY = "CapacitorUpdater.previewPreviousAppId";
+    private static final String PREVIEW_PREVIOUS_DEFAULT_CHANNEL_PREF_KEY = "CapacitorUpdater.previewPreviousDefaultChannel";
+    private static final String PREVIEW_PREVIOUS_DEFAULT_CHANNEL_WAS_SET_PREF_KEY = "CapacitorUpdater.previewPreviousDefaultChannelWasSet";
     private static final String PREVIEW_APP_ID_PREF_KEY = "CapacitorUpdater.previewAppId";
+    private static final String PREVIEW_PAYLOAD_URL_PREF_KEY = "CapacitorUpdater.previewPayloadUrl";
     private static final String[] BREAKING_EVENT_NAMES = { "breakingAvailable", "majorAvailable" };
     private static final String LAST_FAILED_BUNDLE_PREF_KEY = "CapacitorUpdater.lastFailedBundle";
     private static final String LAST_REPORTED_APP_EXIT_TIMESTAMP_PREF_KEY = "CapacitorUpdater.lastReportedAppExitTimestamp";
@@ -120,7 +127,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     static final int APPLICATION_EXIT_REASON_USER_REQUESTED = 10;
     static final int APPLICATION_EXIT_REASON_DEPENDENCY_DIED = 12;
 
-    private final String pluginVersion = "8.47.3";
+    private final String pluginVersion = "8.47.4";
     private static final String DELAY_CONDITION_PREFERENCES = "";
 
     private SharedPreferences.Editor editor;
@@ -1930,6 +1937,20 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
+    private BundleInfo downloadBundle(
+        final String url,
+        final String version,
+        final String sessionKey,
+        final String checksum,
+        final JSONArray manifest
+    ) throws IOException {
+        if (manifest != null) {
+            return this.implementation.downloadManifest(url, version, sessionKey, checksum, manifest);
+        }
+
+        return this.implementation.download(url, version, sessionKey, checksum);
+    }
+
     @PluginMethod
     public void download(final PluginCall call) {
         final String url = call.getString("url");
@@ -1951,20 +1972,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             logger.info("Downloading " + url);
             startNewThread(() -> {
                 try {
-                    final BundleInfo downloaded;
-                    if (manifest != null) {
-                        // For manifest downloads, we need to handle this asynchronously
-                        // to avoid automatically scheduling/applying the downloaded bundle.
-                        // Manual download must not schedule/apply the bundle automatically.
-                        CapacitorUpdaterPlugin.this.implementation.downloadBackground(url, version, sessionKey, checksum, manifest, false);
-                        // Return immediately with a pending status - the actual result will come via listeners
-                        final String id = CapacitorUpdaterPlugin.this.implementation.randomString();
-                        downloaded = new BundleInfo(id, version, BundleStatus.DOWNLOADING, new Date(System.currentTimeMillis()), "");
-                        call.resolve(InternalUtils.mapToJSObject(downloaded.toJSONMap()));
-                        return;
-                    } else {
-                        downloaded = CapacitorUpdaterPlugin.this.implementation.download(url, version, sessionKey, checksum);
-                    }
+                    final BundleInfo downloaded = this.downloadBundle(url, version, sessionKey, checksum, manifest);
                     if (downloaded.isErrorStatus()) {
                         throw new RuntimeException("Download failed: " + downloaded.getStatus());
                     } else {
@@ -2231,6 +2239,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return;
         }
         final String previewAppId = this.normalizePreviewAppId(call.getString("appId"));
+        final String rawPayloadUrl = call.getString("payloadUrl");
+        final String previewPayloadUrl = this.normalizePreviewPayloadUrl(rawPayloadUrl);
+        if (this.hasPreviewPayloadUrl(rawPayloadUrl) && previewPayloadUrl == null) {
+            logger.error("startPreviewSession called with invalid payloadUrl");
+            call.reject("Invalid preview payloadUrl");
+            return;
+        }
         startNewThread(() -> {
             try {
                 if (!Boolean.TRUE.equals(this.previewSessionEnabled)) {
@@ -2249,6 +2264,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     }
 
                     this.editor.putString(PREVIEW_PREVIOUS_APP_ID_PREF_KEY, this.implementation.appId);
+                    if (this.prefs.contains(DEFAULT_CHANNEL_PREF_KEY)) {
+                        this.editor.putString(
+                            PREVIEW_PREVIOUS_DEFAULT_CHANNEL_PREF_KEY,
+                            this.prefs.getString(DEFAULT_CHANNEL_PREF_KEY, "")
+                        );
+                        this.editor.putBoolean(PREVIEW_PREVIOUS_DEFAULT_CHANNEL_WAS_SET_PREF_KEY, true);
+                    } else {
+                        this.editor.remove(PREVIEW_PREVIOUS_DEFAULT_CHANNEL_PREF_KEY);
+                        this.editor.putBoolean(PREVIEW_PREVIOUS_DEFAULT_CHANNEL_WAS_SET_PREF_KEY, false);
+                    }
                     this.editor.putBoolean(PREVIEW_PREVIOUS_SHAKE_MENU_PREF_KEY, Boolean.TRUE.equals(this.shakeMenuEnabled));
                     this.editor.putBoolean(
                         PREVIEW_PREVIOUS_SHAKE_CHANNEL_SELECTOR_PREF_KEY,
@@ -2261,6 +2286,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     this.setActiveAppId(previewAppId);
                     this.editor.putString(PREVIEW_APP_ID_PREF_KEY, previewAppId);
                     logger.info("Preview session using appId: " + previewAppId);
+                }
+
+                if (previewPayloadUrl != null) {
+                    this.editor.putString(PREVIEW_PAYLOAD_URL_PREF_KEY, previewPayloadUrl);
+                    logger.info("Preview session using payload URL");
+                } else {
+                    this.editor.remove(PREVIEW_PAYLOAD_URL_PREF_KEY);
                 }
 
                 this.previewSessionEnabled = true;
@@ -2287,9 +2319,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return false;
         }
 
-        if (!this.clearPreviewChannelOverride()) {
-            return false;
-        }
         final BundleInfo previewFallbackBundle = this.implementation.getPreviewFallbackBundle();
         this.endPreviewSession();
         final BundleInfo restoredNextBundle = this.implementation.getNextBundle();
@@ -2308,6 +2337,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     public boolean reloadPreviewSessionFromShakeMenu() {
+        final String payloadUrl = this.storedPreviewPayloadUrl();
+        if (payloadUrl != null) {
+            return this.refreshPreviewSessionFromPayloadUrl(payloadUrl);
+        }
+
         return this._reload();
     }
 
@@ -2350,6 +2384,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         );
         this.restorePreviewPreviousNextBundle();
         this.restorePreviewPreviousAppId();
+        this.restorePreviewPreviousDefaultChannel();
 
         this.previewSessionEnabled = false;
         this.previewSessionAlertPending = false;
@@ -2376,6 +2411,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
         this.restorePreviewPreviousNextBundle();
         this.restorePreviewPreviousAppId();
+        this.restorePreviewPreviousDefaultChannel();
         this.previewSessionEnabled = false;
         this.previewSessionAlertPending = false;
         this.implementation.previewSession = false;
@@ -2393,7 +2429,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.editor.remove(PREVIEW_PREVIOUS_SHAKE_CHANNEL_SELECTOR_PREF_KEY);
         this.editor.remove(PREVIEW_PREVIOUS_NEXT_BUNDLE_PREF_KEY);
         this.editor.remove(PREVIEW_PREVIOUS_APP_ID_PREF_KEY);
+        this.editor.remove(PREVIEW_PREVIOUS_DEFAULT_CHANNEL_PREF_KEY);
+        this.editor.remove(PREVIEW_PREVIOUS_DEFAULT_CHANNEL_WAS_SET_PREF_KEY);
         this.editor.remove(PREVIEW_APP_ID_PREF_KEY);
+        this.editor.remove(PREVIEW_PAYLOAD_URL_PREF_KEY);
         this.editor.apply();
     }
 
@@ -2411,6 +2450,23 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         this.setActiveAppId(previousAppId);
         logger.info("Restored appId after preview: " + previousAppId);
+    }
+
+    private void restorePreviewPreviousDefaultChannel() {
+        final String configDefaultChannel = this.getConfig().getString("defaultChannel", "");
+        if (this.prefs.getBoolean(PREVIEW_PREVIOUS_DEFAULT_CHANNEL_WAS_SET_PREF_KEY, false)) {
+            final String previousDefaultChannel = this.prefs.getString(PREVIEW_PREVIOUS_DEFAULT_CHANNEL_PREF_KEY, "");
+            this.editor.putString(DEFAULT_CHANNEL_PREF_KEY, previousDefaultChannel);
+            this.implementation.defaultChannel = previousDefaultChannel;
+            this.editor.apply();
+            logger.info("Restored defaultChannel after preview");
+            return;
+        }
+
+        this.editor.remove(DEFAULT_CHANNEL_PREF_KEY);
+        this.implementation.defaultChannel = configDefaultChannel;
+        this.editor.apply();
+        logger.info("Restored defaultChannel after preview to config value");
     }
 
     private String normalizePreviewAppId(final String rawAppId) {
@@ -2431,6 +2487,131 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return appId;
     }
 
+    private boolean hasPreviewPayloadUrl(final String rawPayloadUrl) {
+        if (rawPayloadUrl == null) {
+            return false;
+        }
+
+        final String payloadUrl = rawPayloadUrl.trim();
+        if (payloadUrl.isEmpty()) {
+            return false;
+        }
+
+        final String lowercasedPayloadUrl = payloadUrl.toLowerCase(java.util.Locale.ROOT);
+        return !"undefined".equals(lowercasedPayloadUrl) && !"null".equals(lowercasedPayloadUrl);
+    }
+
+    private String normalizePreviewPayloadUrl(final String rawPayloadUrl) {
+        if (!this.hasPreviewPayloadUrl(rawPayloadUrl)) {
+            return null;
+        }
+
+        final String payloadUrl = rawPayloadUrl.trim();
+        try {
+            final URL parsedUrl = new URL(payloadUrl);
+            final String protocol = parsedUrl.getProtocol();
+            if (!"https".equals(protocol) && !"http".equals(protocol)) {
+                return null;
+            }
+            return parsedUrl.toString();
+        } catch (final MalformedURLException ignored) {
+            return null;
+        }
+    }
+
+    private String storedPreviewPayloadUrl() {
+        return this.normalizePreviewPayloadUrl(this.prefs.getString(PREVIEW_PAYLOAD_URL_PREF_KEY, null));
+    }
+
+    private String readResponseBody(final InputStream stream) throws IOException {
+        if (stream == null) {
+            return "";
+        }
+
+        try (InputStream input = stream; ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            final byte[] buffer = new byte[8192];
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                output.write(buffer, 0, read);
+            }
+            return output.toString(StandardCharsets.UTF_8.name());
+        }
+    }
+
+    private JSONObject fetchPreviewPayload(final String payloadUrl) throws IOException, JSONException {
+        final HttpURLConnection connection = (HttpURLConnection) new URL(payloadUrl).openConnection();
+        connection.setRequestMethod("GET");
+        connection.setRequestProperty("Accept", "application/json");
+        connection.setConnectTimeout(30000);
+        connection.setReadTimeout(60000);
+
+        try {
+            final int statusCode = connection.getResponseCode();
+            final String body = this.readResponseBody(
+                statusCode >= 200 && statusCode < 300 ? connection.getInputStream() : connection.getErrorStream()
+            );
+            final JSONObject payload = new JSONObject(body);
+            if (statusCode < 200 || statusCode >= 300) {
+                throw new IOException(
+                    payload.optString("message", payload.optString("error", "Preview payload request failed with HTTP " + statusCode))
+                );
+            }
+            return payload;
+        } finally {
+            connection.disconnect();
+        }
+    }
+
+    private BundleInfo downloadPreviewPayloadBundle(final JSONObject payload) throws IOException, JSONException {
+        final String version = payload.optString("version", "").trim();
+        if (version.isEmpty()) {
+            throw new IOException("Preview payload is missing a version");
+        }
+
+        final JSONArray manifest = payload.optJSONArray("manifest");
+        final String url = payload.optString("url", "");
+        if ((url == null || url.isEmpty()) && (manifest == null || manifest.length() == 0)) {
+            throw new IOException("Preview payload is missing download information");
+        }
+
+        return this.downloadBundle(
+            url == null || url.isEmpty() ? "https://404.capgo.app/no.zip" : url,
+            version,
+            payload.optString("sessionKey", ""),
+            payload.optString("checksum", ""),
+            manifest
+        );
+    }
+
+    private boolean refreshPreviewSessionFromPayloadUrl(final String payloadUrl) {
+        try {
+            final JSONObject payload = this.fetchPreviewPayload(payloadUrl);
+            final String version = payload.optString("version", "").trim();
+            if (version.isEmpty()) {
+                throw new IOException("Preview payload is missing a version");
+            }
+
+            if (version.equals(this.implementation.getCurrentBundle().getVersionName())) {
+                logger.info("Preview payload unchanged, reloading current bundle");
+                return this._reload();
+            }
+
+            final BundleInfo next = this.downloadPreviewPayloadBundle(payload);
+            if (next.isErrorStatus()) {
+                throw new IOException("Download failed: " + next.getStatus());
+            }
+            if (!this.implementation.set(next.getId())) {
+                throw new IOException("Downloaded preview bundle cannot be applied");
+            }
+
+            this.notifyBundleSet(next);
+            return this._reload();
+        } catch (final Exception err) {
+            logger.error("Could not refresh preview session: " + err.getMessage());
+            return false;
+        }
+    }
+
     private void clearPreviewSessionForNativeBuildChange() {
         if (!Boolean.TRUE.equals(this.previewSessionEnabled) && this.implementation.getPreviewFallbackBundle() == null) {
             return;
@@ -2442,33 +2623,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.shakeMenuEnabled = this.getConfig().getBoolean("shakeMenu", false);
         this.shakeChannelSelectorEnabled = this.getConfig().getBoolean("allowShakeChannelSelector", false);
         this.restorePreviewPreviousAppId();
+        this.restorePreviewPreviousDefaultChannel();
         this.implementation.setPreviewFallbackBundle(null);
         this.implementation.setNextBundle(null);
-        this.clearPreviewChannelOverride();
         this.clearPreviewSessionPreferences();
-    }
-
-    private boolean clearPreviewChannelOverride() {
-        final String configDefaultChannel = this.getConfig().getString("defaultChannel", "");
-        final AtomicReference<Map<String, Object>> unsetChannelResult = new AtomicReference<>();
-        try {
-            this.implementation.unsetChannel(this.editor, DEFAULT_CHANNEL_PREF_KEY, configDefaultChannel, unsetChannelResult::set);
-        } catch (final Exception err) {
-            logger.error("Could not clear preview channel override: " + err.getMessage());
-            return false;
-        }
-
-        final Map<String, Object> result = unsetChannelResult.get();
-        if (result == null) {
-            logger.error("Could not clear preview channel override: no result");
-            return false;
-        }
-        if (result.containsKey("error")) {
-            final Object message = result.getOrDefault("message", result.get("error"));
-            logger.error("Could not clear preview channel override: " + message);
-            return false;
-        }
-        return true;
     }
 
     private void restorePreviewPreviousNextBundle() {

@@ -79,7 +79,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "completeFlexibleUpdate", returnType: CAPPluginReturnPromise)
     ]
     public var implementation = CapgoUpdater()
-    let pluginVersion: String = "8.47.3"
+    let pluginVersion: String = "8.47.4"
     static let updateUrlDefault = "https://plugin.capgo.app/updates"
     static let statsUrlDefault = "https://plugin.capgo.app/stats"
     static let channelUrlDefault = "https://plugin.capgo.app/channel_self"
@@ -101,7 +101,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     let previewPreviousShakeChannelSelectorDefaultsKey = "CapacitorUpdater.previewPreviousShakeChannelSelector"
     let previewPreviousNextBundleDefaultsKey = "CapacitorUpdater.previewPreviousNextBundle"
     let previewPreviousAppIdDefaultsKey = "CapacitorUpdater.previewPreviousAppId"
+    let previewPreviousDefaultChannelDefaultsKey = "CapacitorUpdater.previewPreviousDefaultChannel"
+    let previewPreviousDefaultChannelWasSetDefaultsKey = "CapacitorUpdater.previewPreviousDefaultChannelWasSet"
     let previewAppIdDefaultsKey = "CapacitorUpdater.previewAppId"
+    let previewPayloadUrlDefaultsKey = "CapacitorUpdater.previewPayloadUrl"
     // Note: DELAY_CONDITION_PREFERENCES is now defined in DelayUpdateUtils.delayConditionPreferences
     var updateUrl = ""
     var backgroundTaskID: UIBackgroundTaskIdentifier = UIBackgroundTaskIdentifier.invalid
