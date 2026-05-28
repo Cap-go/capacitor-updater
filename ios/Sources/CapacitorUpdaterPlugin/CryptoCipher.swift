@@ -62,7 +62,6 @@ public struct CryptoCipher {
                 checksumBytes = base64Data
                 detectedFormat = "base64"
             }
-            // swiftlint:disable:next line_length
             logger.debug("Received checksum format: \(detectedFormat) (length: \(checksum.count) chars, \(checksumBytes.count) bytes)")
 
             if checksumBytes.isEmpty {
@@ -73,7 +72,6 @@ public struct CryptoCipher {
             // RSA-2048 encrypted data must be exactly 256 bytes
             // If the checksum is not 256 bytes, the bundle was not encrypted properly
             if checksumBytes.count != 256 {
-                // swiftlint:disable:next line_length
                 logger.error("Checksum is not RSA encrypted (size: \(checksumBytes.count) bytes, expected 256 for RSA-2048). Bundle must be uploaded with encryption when public key is configured.")
                 throw CustomError.cannotDecode
             }
@@ -103,7 +101,6 @@ public struct CryptoCipher {
                 logger.error("Unknown checksum algorithm detected")
                 logger.debug("Byte count: \(decryptedChecksum.count), Expected: 32 (SHA-256)")
             }
-            // swiftlint:disable:next line_length
             logger.debug("Decrypted checksum: \(detectedAlgorithm) hex format (length: \(result.count) chars, \(decryptedChecksum.count) bytes)")
             return result
         } catch {
@@ -242,7 +239,7 @@ public struct CryptoCipher {
                 throw NSError(domain: "Invalid decrypted session key", code: 5, userInfo: nil)
             }
 
-            let aesPrivateKey = AES128Key(iv: ivData, aes128Key: sessionKeyDataDecrypted, logger: logger)
+            let aesPrivateKey = AES128Key(initVector: ivData, aes128Key: sessionKeyDataDecrypted, logger: logger)
 
             let encryptedData: Data
             do {

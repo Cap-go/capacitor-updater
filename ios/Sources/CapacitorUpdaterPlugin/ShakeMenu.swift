@@ -8,7 +8,6 @@ import UIKit
 import Capacitor
 
 extension UIApplication {
-    // swiftlint:disable:next line_length
     public class func topViewController(_ base: UIViewController? = UIApplication.shared.windows.first?.rootViewController) -> UIViewController? {
         if let nav = base as? UINavigationController {
             return topViewController(nav.visibleViewController)
@@ -297,9 +296,6 @@ extension UIWindow {
     }
 
     private func selectChannel(name: String, plugin: CapacitorUpdaterPlugin, bridge: CAPBridgeProtocol) {
-        let updater = plugin.implementation
-
-        // Show progress indicator
         let progressAlert = UIAlertController(title: "Switching to \(name)", message: "Setting channel...", preferredStyle: .alert)
         let indicator = UIActivityIndicatorView(style: .medium)
         indicator.translatesAutoresizingMaskIntoConstraints = false
@@ -315,137 +311,147 @@ extension UIWindow {
             if let topVC = UIApplication.topViewController() {
                 topVC.present(progressAlert, animated: true) {
                     DispatchQueue.global(qos: .userInitiated).async {
-                        // Set the channel - respect plugin's allowSetDefaultChannel config
-                        let setResult = updater.setChannel(
-                            channel: name,
-                            defaultChannelKey: "CapacitorUpdater.defaultChannel",
-                            allowSetDefaultChannel: plugin.allowSetDefaultChannel
-                        )
-
-                        if !setResult.error.isEmpty {
-                            DispatchQueue.main.async {
-                                progressAlert.dismiss(animated: true) {
-                                    self.showError(message: "Failed to set channel: \(setResult.error)", plugin: plugin)
-                                }
-                            }
-                            return
-                        }
-
-                        // Update progress message
-                        DispatchQueue.main.async {
-                            progressAlert.message = "Checking for updates..."
-                        }
-
-                        // Check for updates with the new channel
-                        let pluginUpdateUrl = plugin.getUpdateUrl()
-                        let updateUrlStr = pluginUpdateUrl.isEmpty ? CapacitorUpdaterPlugin.updateUrlDefault : pluginUpdateUrl
-                        guard let updateUrl = URL(string: updateUrlStr) else {
-                            DispatchQueue.main.async {
-                                progressAlert.dismiss(animated: true) {
-                                    self.showError(
-                                        message: "Channel set to \(name). Invalid update URL, could not check for updates.",
-                                        plugin: plugin
-                                    )
-                                }
-                            }
-                            return
-                        }
-
-                        let latest = updater.getLatest(url: updateUrl, channel: name)
-                        let latestKind = latest.kind
-
-                        let detail = [latest.message, latest.error, latestKind]
-                            .compactMap { value in
-                                guard let value, !value.isEmpty else { return nil }
-                                return value
-                            }
-                            .first ?? "server did not provide a message"
-
-                        // Handle update errors first (before "no new version" check)
-                        if latestKind == "failed" || (latest.error?.isEmpty == false && latestKind != "up_to_date" && latestKind != "blocked") {
-                            DispatchQueue.main.async {
-                                progressAlert.dismiss(animated: true) {
-                                    self.showError(message: "Channel set to \(name). Update check failed: \(detail)", plugin: plugin)
-                                }
-                            }
-                            return
-                        }
-
-                        if latestKind == "blocked" {
-                            DispatchQueue.main.async {
-                                progressAlert.dismiss(animated: true) {
-                                    self.showError(message: "Channel set to \(name). Update check blocked: \(detail)", plugin: plugin)
-                                }
-                            }
-                            return
-                        }
-
-                        // Check if there's an actual update available
-                        if latestKind == "up_to_date" || latest.url.isEmpty {
-                            DispatchQueue.main.async {
-                                progressAlert.dismiss(animated: true) {
-                                    self.showSuccess(message: "Channel set to \(name). Already on latest version.", plugin: plugin)
-                                }
-                            }
-                            return
-                        }
-
-                        // Update message
-                        DispatchQueue.main.async {
-                            progressAlert.message = "Downloading update \(latest.version)..."
-                        }
-
-                        // Download the update
-                        do {
-                            let bundle: BundleInfo
-                            if let manifest = latest.manifest, !manifest.isEmpty {
-                                bundle = try updater.downloadManifest(
-                                    manifest: manifest,
-                                    version: latest.version,
-                                    sessionKey: latest.sessionKey ?? ""
-                                )
-                            } else {
-                                // Safe unwrap URL
-                                guard let downloadUrl = URL(string: latest.url) else {
-                                    DispatchQueue.main.async {
-                                        progressAlert.dismiss(animated: true) {
-                                            self.showError(message: "Failed to download update: invalid update URL.", plugin: plugin)
-                                        }
-                                    }
-                                    return
-                                }
-                                bundle = try updater.download(
-                                    url: downloadUrl,
-                                    version: latest.version,
-                                    sessionKey: latest.sessionKey ?? ""
-                                )
-                            }
-
-                            // Set as next bundle
-                            _ = updater.setNextBundle(next: bundle.getId())
-
-                            DispatchQueue.main.async {
-                                progressAlert.dismiss(animated: true) {
-                                    self.showSuccessWithReload(
-                                        message: "Update downloaded! Reload to apply version \(latest.version)?",
-                                        plugin: plugin,
-                                        bridge: bridge,
-                                        onReload: { [weak plugin] in
-                                            _ = updater.set(bundle: bundle)
-                                            _ = plugin?._reload()
-                                        }
-                                    )
-                                }
-                            }
-                        } catch {
-                            DispatchQueue.main.async {
-                                progressAlert.dismiss(animated: true) {
-                                    self.showError(message: "Failed to download update: \(error.localizedDescription)", plugin: plugin)
-                                }
-                            }
-                        }
+                        self.performChannelSelection(name: name, plugin: plugin, bridge: bridge, progressAlert: progressAlert)
                     }
                 }
+            }
+        }
+    }
+
+    private func performChannelSelection(
+        name: String,
+        plugin: CapacitorUpdaterPlugin,
+        bridge: CAPBridgeProtocol,
+        progressAlert: UIAlertController
+    ) {
+        let updater = plugin.implementation
+        let setResult = updater.setChannel(
+            channel: name,
+            defaultChannelKey: "CapacitorUpdater.defaultChannel",
+            allowSetDefaultChannel: plugin.allowSetDefaultChannel
+        )
+        guard setResult.error.isEmpty else {
+            dismiss(progressAlert, error: "Failed to set channel: \(setResult.error)", plugin: plugin)
+            return
+        }
+
+        update(progressAlert, message: "Checking for updates...")
+        let pluginUpdateUrl = plugin.getUpdateUrl()
+        let updateUrlStr = pluginUpdateUrl.isEmpty ? CapacitorUpdaterPlugin.updateUrlDefault : pluginUpdateUrl
+        guard let updateUrl = URL(string: updateUrlStr) else {
+            dismiss(progressAlert, error: "Channel set to \(name). Invalid update URL, could not check for updates.", plugin: plugin)
+            return
+        }
+
+        let latest = updater.getLatest(url: updateUrl, channel: name)
+        guard channelLatestResultCanDownload(latest, channelName: name, plugin: plugin, progressAlert: progressAlert) else {
+            return
+        }
+
+        update(progressAlert, message: "Downloading update \(latest.version)...")
+        downloadSelectedChannelUpdate(
+            latest: latest,
+            updater: updater,
+            plugin: plugin,
+            bridge: bridge,
+            progressAlert: progressAlert
+        )
+    }
+
+    private func channelLatestResultCanDownload(
+        _ latest: AppVersion,
+        channelName: String,
+        plugin: CapacitorUpdaterPlugin,
+        progressAlert: UIAlertController
+    ) -> Bool {
+        let latestKind = latest.kind
+        let detail = [latest.message, latest.error, latestKind]
+            .compactMap { value in
+                guard let value, !value.isEmpty else { return nil }
+                return value
+            }
+            .first ?? "server did not provide a message"
+
+        if latestKind == "failed" || (latest.error?.isEmpty == false && latestKind != "up_to_date" && latestKind != "blocked") {
+            dismiss(progressAlert, error: "Channel set to \(channelName). Update check failed: \(detail)", plugin: plugin)
+            return false
+        }
+        if latestKind == "blocked" {
+            dismiss(progressAlert, error: "Channel set to \(channelName). Update check blocked: \(detail)", plugin: plugin)
+            return false
+        }
+        if latestKind == "up_to_date" || latest.url.isEmpty {
+            dismiss(progressAlert, success: "Channel set to \(channelName). Already on latest version.", plugin: plugin)
+            return false
+        }
+        return true
+    }
+
+    private func downloadSelectedChannelUpdate(
+        latest: AppVersion,
+        updater: CapgoUpdater,
+        plugin: CapacitorUpdaterPlugin,
+        bridge: CAPBridgeProtocol,
+        progressAlert: UIAlertController
+    ) {
+        do {
+            let bundle = try downloadSelectedChannelBundle(latest: latest, updater: updater)
+            _ = updater.setNextBundle(next: bundle.getId())
+            DispatchQueue.main.async {
+                progressAlert.dismiss(animated: true) {
+                    self.showSuccessWithReload(
+                        message: "Update downloaded! Reload to apply version \(latest.version)?",
+                        plugin: plugin,
+                        bridge: bridge,
+                        onReload: { [weak plugin] in
+                            _ = updater.set(bundle: bundle)
+                            _ = plugin?.reloadCurrentBundle()
+                        }
+                    )
+                }
+            }
+        } catch {
+            dismiss(progressAlert, error: "Failed to download update: \(error.localizedDescription)", plugin: plugin)
+        }
+    }
+
+    private func downloadSelectedChannelBundle(latest: AppVersion, updater: CapgoUpdater) throws -> BundleInfo {
+        if let manifest = latest.manifest, !manifest.isEmpty {
+            return try updater.downloadManifest(
+                manifest: manifest,
+                version: latest.version,
+                sessionKey: latest.sessionKey ?? ""
+            )
+        }
+
+        guard let downloadUrl = URL(string: latest.url) else {
+            throw NSError(
+                domain: "ShakeMenu",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "invalid update URL"]
+            )
+        }
+        return try updater.download(url: downloadUrl, version: latest.version, sessionKey: latest.sessionKey ?? "")
+    }
+
+    private func update(_ progressAlert: UIAlertController, message: String) {
+        DispatchQueue.main.async {
+            progressAlert.message = message
+        }
+    }
+
+    private func dismiss(_ progressAlert: UIAlertController, error message: String, plugin: CapacitorUpdaterPlugin) {
+        DispatchQueue.main.async {
+            progressAlert.dismiss(animated: true) {
+                self.showError(message: message, plugin: plugin)
+            }
+        }
+    }
+
+    private func dismiss(_ progressAlert: UIAlertController, success message: String, plugin: CapacitorUpdaterPlugin) {
+        DispatchQueue.main.async {
+            progressAlert.dismiss(animated: true) {
+                self.showSuccess(message: message, plugin: plugin)
             }
         }
     }

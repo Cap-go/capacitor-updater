@@ -89,129 +89,96 @@ struct ManualRSAPublicKey {
         self.exponent = BigInt(exponentValue)
     }
 
+    private struct DERReader {
+        let bytes: [UInt8]
+        var index: Int
+
+        mutating func readTag(_ tag: UInt8) -> Bool {
+            guard index < bytes.count, bytes[index] == tag else {
+                return false
+            }
+            index += 1
+            return true
+        }
+
+        mutating func readLength() -> Int? {
+            guard index < bytes.count else {
+                return nil
+            }
+
+            if bytes[index] & 0x80 == 0 {
+                let length = Int(bytes[index])
+                index += 1
+                return length
+            }
+
+            let lengthByteCount = Int(bytes[index] & 0x7F)
+            guard index + lengthByteCount < bytes.count else {
+                return nil
+            }
+
+            index += 1
+            var length = 0
+            for offset in 0..<lengthByteCount {
+                length = (length << 8) | Int(bytes[index + offset])
+            }
+            index += lengthByteCount
+            return length
+        }
+
+        mutating func readIntegerData() -> Data? {
+            guard readTag(0x02), var length = readLength(), index + length <= bytes.count else {
+                return nil
+            }
+
+            if length > 0 && bytes[index] == 0x00 {
+                index += 1
+                length -= 1
+            }
+
+            guard index + length <= bytes.count else {
+                return nil
+            }
+
+            let value = Data(bytes[index..<(index + length)])
+            index += length
+            return value
+        }
+    }
+
+    static func rawKeyFallback(_ publicKeyData: Data) -> ManualRSAPublicKey? {
+        guard publicKeyData.count >= 3 else {
+            return nil
+        }
+
+        let modulusSize = publicKeyData.count - 3
+        guard modulusSize > 0 else {
+            return nil
+        }
+
+        let modulusData = publicKeyData.prefix(modulusSize)
+        let exponentData = publicKeyData.suffix(3)
+        return ManualRSAPublicKey(modulus: modulusData, exponent: exponentData)
+    }
+
     // Parse PKCS#1 format public key
     static func fromPKCS1(_ publicKeyData: Data) -> ManualRSAPublicKey? {
-        // Parse ASN.1 DER encoded RSA public key
-        // Format: RSAPublicKey ::= SEQUENCE { modulus INTEGER, publicExponent INTEGER }
-
-        guard publicKeyData.count > 0 else {
+        guard !publicKeyData.isEmpty else {
             return nil
         }
 
         let bytes = [UInt8](publicKeyData)
-
-        // Check for sequence tag (0x30)
         guard bytes[0] == 0x30 else {
-            // Try direct modulus/exponent approach as fallback
-            if publicKeyData.count >= 3 {
-                // Assume this is a raw RSA public key with modulus + exponent
-                // Most common: modulus is 256 bytes (2048 bits), exponent is 3 bytes (0x010001 = 65537)
-                let modulusSize = publicKeyData.count - 3
-                if modulusSize > 0 {
-                    let modulusData = publicKeyData.prefix(modulusSize)
-                    let exponentData = publicKeyData.suffix(3)
-                    return ManualRSAPublicKey(modulus: modulusData, exponent: exponentData)
-                }
-            }
+            return rawKeyFallback(publicKeyData)
+        }
 
+        var reader = DERReader(bytes: bytes, index: 1)
+        guard reader.readLength() != nil,
+              let modulusData = reader.readIntegerData(),
+              let exponentData = reader.readIntegerData() else {
             return nil
         }
 
-        var index = 1
-
-        // Skip length
-        if bytes[index] & 0x80 != 0 {
-            let lenBytes = Int(bytes[index] & 0x7F)
-            if (index + 1 + lenBytes) >= bytes.count {
-                return nil
-            }
-            index += 1 + lenBytes
-        } else {
-            index += 1
-        }
-
-        // Check for INTEGER tag for modulus (0x02)
-        if index >= bytes.count {
-            return nil
-        }
-
-        guard bytes[index] == 0x02 else {
-            return nil
-        }
-        index += 1
-
-        // Get modulus length
-        if index >= bytes.count {
-            return nil
-        }
-
-        var modulusLength = 0
-        if bytes[index] & 0x80 != 0 {
-            let lenBytes = Int(bytes[index] & 0x7F)
-            if (index + 1 + lenBytes) >= bytes.count {
-                return nil
-            }
-            index += 1
-            for i in 0..<lenBytes {
-                modulusLength = (modulusLength << 8) | Int(bytes[index + i])
-            }
-            index += lenBytes
-        } else {
-            modulusLength = Int(bytes[index])
-            index += 1
-        }
-
-        // Skip any leading zero in modulus (for unsigned integer)
-        if index < bytes.count && bytes[index] == 0x00 {
-            index += 1
-            modulusLength -= 1
-        }
-
-        // Extract modulus
-        if (index + modulusLength) > bytes.count {
-            return nil
-        }
-
-        let modulusData = Data(bytes[index..<(index + modulusLength)])
-        index += modulusLength
-
-        // Check for INTEGER tag for exponent
-        if index >= bytes.count {
-            return nil
-        }
-
-        guard bytes[index] == 0x02 else {
-            return nil
-        }
-        index += 1
-
-        // Get exponent length
-        if index >= bytes.count {
-            return nil
-        }
-
-        var exponentLength = 0
-        if bytes[index] & 0x80 != 0 {
-            let lenBytes = Int(bytes[index] & 0x7F)
-            if (index + 1 + lenBytes) >= bytes.count {
-                return nil
-            }
-            index += 1
-            for i in 0..<lenBytes {
-                exponentLength = (exponentLength << 8) | Int(bytes[index + i])
-            }
-            index += lenBytes
-        } else {
-            exponentLength = Int(bytes[index])
-            index += 1
-        }
-
-        // Extract exponent
-        if (index + exponentLength) > bytes.count {
-            return nil
-        }
-
-        let exponentData = Data(bytes[index..<(index + exponentLength)])
         return ManualRSAPublicKey(modulus: modulusData, exponent: exponentData)
     }
 
@@ -257,11 +224,9 @@ struct ManualRSAPublicKey {
         // Check for privateEncrypt padding format (0x00 || 0x01 || PS || 0x00)
         var startIndex = 0
         if paddedBytes.count > 2 && paddedBytes[0] == 0x00 && paddedBytes[1] == 0x01 {
-            for i in 2..<paddedBytes.count {
-                if paddedBytes[i] == 0x00 {
-                    startIndex = i + 1
-                    break
-                }
+            for byteIndex in 2..<paddedBytes.count where paddedBytes[byteIndex] == 0x00 {
+                startIndex = byteIndex + 1
+                break
             }
         }
         if startIndex < paddedBytes.count {

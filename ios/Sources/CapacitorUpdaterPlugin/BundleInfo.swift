@@ -7,11 +7,9 @@
 import Foundation
 
 @objc public class BundleInfo: NSObject, Decodable, Encodable {
-    // swiftlint:disable identifier_name
-    public static let ID_BUILTIN: String = "builtin"
-    public static let VERSION_UNKNOWN: String = "unknown"
-    public static let DOWNLOADED_BUILTIN: String = "1970-01-01T00:00:00.000Z"
-    // swiftlint:enable identifier_name
+    public static let idBuiltin: String = "builtin"
+    public static let versionUnknown: String = "unknown"
+    public static let downloadedBuiltin: String = "1970-01-01T00:00:00.000Z"
 
     private let downloaded: String
     private let id: String
@@ -33,7 +31,7 @@ import Foundation
 
     init(
         id: String, version: String, status: BundleStatus,
-        downloaded: String = BundleInfo.DOWNLOADED_BUILTIN, checksum: String,
+        downloaded: String = BundleInfo.downloadedBuiltin, checksum: String,
         link: String? = nil, comment: String? = nil
     ) {
         self.downloaded = downloaded.trim()
@@ -50,11 +48,11 @@ import Foundation
     }
 
     public func isBuiltin() -> Bool {
-        return BundleInfo.ID_BUILTIN == self.id
+        return BundleInfo.idBuiltin == self.id
     }
 
     public func isUnknown() -> Bool {
-        return BundleInfo.VERSION_UNKNOWN == self.id
+        return BundleInfo.versionUnknown == self.id
     }
 
     public func isErrorStatus() -> Bool {
@@ -67,11 +65,11 @@ import Foundation
 
     public func isDownloaded() -> Bool {
         return !self.isBuiltin() && self.downloaded != "" &&
-            self.downloaded != BundleInfo.DOWNLOADED_BUILTIN && !self.isDeleted()
+            self.downloaded != BundleInfo.downloadedBuiltin && !self.isDeleted()
     }
 
     public func getDownloaded() -> String {
-        return self.isBuiltin() ? BundleInfo.DOWNLOADED_BUILTIN : self.downloaded
+        return self.isBuiltin() ? BundleInfo.downloadedBuiltin : self.downloaded
     }
 
     public func getChecksum() -> String {
@@ -93,7 +91,7 @@ import Foundation
     }
 
     public func getId() -> String {
-        return self.isBuiltin() ? BundleInfo.ID_BUILTIN : self.id
+        return self.isBuiltin() ? BundleInfo.idBuiltin : self.id
     }
 
     public func setId(id: String) -> BundleInfo {
@@ -104,7 +102,7 @@ import Foundation
     }
 
     public func getVersionName() -> String {
-        return self.version.isEmpty ? BundleInfo.ID_BUILTIN : self.version
+        return self.version.isEmpty ? BundleInfo.idBuiltin : self.version
     }
 
     public func setVersionName(version: String) -> BundleInfo {
@@ -171,7 +169,6 @@ import Foundation
     }
 
     public func toString() -> String {
-        // swiftlint:disable:next line_length
         return "{ \"id\": \"\(self.getId())\", \"version\": \"\(self.getVersionName())\", \"downloaded\": \"\(self.getDownloaded())\", \"checksum\": \"\(self.getChecksum())\", \"status\": \"\(self.getStatus())\"}"
     }
 }

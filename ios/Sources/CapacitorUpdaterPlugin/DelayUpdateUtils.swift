@@ -17,10 +17,8 @@ import Version
 
 public class DelayUpdateUtils {
 
-    // swiftlint:disable identifier_name
-    static let DELAY_CONDITION_PREFERENCES = "DELAY_CONDITION_PREFERENCES_CAPGO"
-    static let BACKGROUND_TIMESTAMP_KEY = "BACKGROUND_TIMESTAMP_KEY_CAPGO"
-    // swiftlint:enable identifier_name
+    static let delayConditionPreferences = "DELAY_CONDITION_PREFERENCES_CAPGO"
+    static let backgroundTimestampKey = "BACKGROUND_TIMESTAMP_KEY_CAPGO"
     private let logger: Logger
 
     private let currentVersionNative: Version
@@ -46,7 +44,7 @@ public class DelayUpdateUtils {
 
     public func checkCancelDelay(source: CancelDelaySource) {
         let delayUpdatePreferences = UserDefaults.standard.string(
-            forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES) ?? "[]"
+            forKey: DelayUpdateUtils.delayConditionPreferences) ?? "[]"
         let delayConditionList: [DelayCondition] = fromJsonArr(json: delayUpdatePreferences).compactMap { obj in
             guard let kind = obj.value(forKey: "kind") as? String else { return nil }
             let value: String? = obj.value(forKey: "value") as? String
@@ -73,16 +71,13 @@ public class DelayUpdateUtils {
                     }
 
                     if delta > longValue {
-                        // swiftlint:disable:next line_length
                         logger.info("Background condition (value: \(value ?? "")) deleted at index \(index). Delta: \(delta), longValue: \(longValue)")
                     } else {
                         delayConditionListToKeep.append(condition)
-                        // swiftlint:disable:next line_length
                         logger.info("Background delay (value: \(value ?? "")) condition kept at index \(index) (source: \(source.description))")
                     }
                 } else {
                     delayConditionListToKeep.append(condition)
-                    // swiftlint:disable:next line_length
                     logger.info("Background delay (value: \(value ?? "")) condition kept at index \(index) (source: \(source.description))")
                 }
 
@@ -91,7 +86,6 @@ public class DelayUpdateUtils {
                     logger.info("Kill delay (value: \(value ?? "")) removed at index \(index) after app kill")
                 } else {
                     delayConditionListToKeep.append(condition)
-                    // swiftlint:disable:next line_length
                     logger.info("Kill delay (value: \(value ?? "")) condition kept at index \(index) (source: \(source.description))")
                 }
 
@@ -99,18 +93,15 @@ public class DelayUpdateUtils {
                 if let value = value, !value.isEmpty {
                     if let date = parseDateCondition(value) {
                         if Date() > date {
-                            // swiftlint:disable:next line_length
                             logger.info("Date delay (value: \(value)) condition removed due to expired date at index \(index)")
                         } else {
                             delayConditionListToKeep.append(condition)
                             logger.info("Date delay (value: \(value)) kept at index \(index)")
                         }
                     } else {
-                        // swiftlint:disable:next line_length
                         logger.error("Date delay (value: \(value)) condition removed due to parsing issue at index \(index)")
                     }
                 } else {
-                    // swiftlint:disable:next line_length
                     logger.error("Date delay (value: \(value ?? "")) condition removed due to empty value at index \(index)")
                 }
 
@@ -119,18 +110,15 @@ public class DelayUpdateUtils {
                     do {
                         let versionLimit = try Version(value)
                         if currentVersionNative >= versionLimit {
-                            // swiftlint:disable:next line_length
                             logger.info("Native version delay (value: \(value)) condition removed due to above limit at index \(index)")
                         } else {
                             delayConditionListToKeep.append(condition)
                             logger.info("Native version delay (value: \(value)) kept at index \(index)")
                         }
                     } catch {
-                        // swiftlint:disable:next line_length
                         logger.error("Native version delay (value: \(value)) condition removed due to parsing issue at index \(index): \(error)")
                     }
                 } else {
-                    // swiftlint:disable:next line_length
                     logger.error("Native version delay (value: \(value ?? "")) condition removed due to empty value at index \(index)")
                 }
 
@@ -152,7 +140,7 @@ public class DelayUpdateUtils {
 
     public func setMultiDelay(delayConditions: String) -> Bool {
         do {
-            UserDefaults.standard.set(delayConditions, forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES)
+            UserDefaults.standard.set(delayConditions, forKey: DelayUpdateUtils.delayConditionPreferences)
             UserDefaults.standard.synchronize()
             logger.info("Delay update saved")
             return true
@@ -164,7 +152,7 @@ public class DelayUpdateUtils {
 
     public func setBackgroundTimestamp(_ backgroundTimestamp: Int64) {
         do {
-            UserDefaults.standard.set(backgroundTimestamp, forKey: DelayUpdateUtils.BACKGROUND_TIMESTAMP_KEY)
+            UserDefaults.standard.set(backgroundTimestamp, forKey: DelayUpdateUtils.backgroundTimestampKey)
             UserDefaults.standard.synchronize()
             logger.info("Background timestamp saved")
         } catch {
@@ -174,18 +162,17 @@ public class DelayUpdateUtils {
 
     public func unsetBackgroundTimestamp() {
         do {
-            UserDefaults.standard.removeObject(forKey: DelayUpdateUtils.BACKGROUND_TIMESTAMP_KEY)
+            UserDefaults.standard.removeObject(forKey: DelayUpdateUtils.backgroundTimestampKey)
             UserDefaults.standard.synchronize()
             logger.info("Background timestamp removed")
         } catch {
-            // swiftlint:disable:next line_length
             logger.error("Failed to remove background timestamp, [Error calling 'unsetBackgroundTimestamp()']: \(error)")
         }
     }
 
     private func getBackgroundTimestamp() -> Int64 {
         do {
-            let key = DelayUpdateUtils.BACKGROUND_TIMESTAMP_KEY
+            let key = DelayUpdateUtils.backgroundTimestampKey
             let timestamp = UserDefaults.standard.object(forKey: key) as? Int64 ?? 0
             return timestamp
         } catch {
@@ -196,7 +183,7 @@ public class DelayUpdateUtils {
 
     public func cancelDelay(source: String) -> Bool {
         do {
-            UserDefaults.standard.removeObject(forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES)
+            UserDefaults.standard.removeObject(forKey: DelayUpdateUtils.delayConditionPreferences)
             UserDefaults.standard.synchronize()
             logger.info("All delays canceled from \(source)")
             return true
