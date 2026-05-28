@@ -105,6 +105,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private let previewPreviousDefaultChannelWasSetDefaultsKey = "CapacitorUpdater.previewPreviousDefaultChannelWasSet"
     private let previewAppIdDefaultsKey = "CapacitorUpdater.previewAppId"
     private let previewPayloadUrlDefaultsKey = "CapacitorUpdater.previewPayloadUrl"
+    private let previewSessionAlertPendingDefaultsKey = "CapacitorUpdater.previewSessionAlertPending"
+    private let previewDeepLinkScheme = "capgo"
+    private let previewDeepLinkRootComponent = "preview"
+    private let previewDeepLinkChannelComponent = "channel"
+    private let previewDeepLinkBundleComponent = "bundle"
+    private let previewPathSeparator = Character(UnicodeScalar(UInt8(47)))
     // Note: DELAY_CONDITION_PREFERENCES is now defined in DelayUpdateUtils.DELAY_CONDITION_PREFERENCES
     private var updateUrl = ""
     private var backgroundTaskID: UIBackgroundTaskIdentifier = UIBackgroundTaskIdentifier.invalid
@@ -158,6 +164,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     public var shakeChannelSelectorEnabled = false
     public var previewSessionEnabled = false
     private var previewSessionAlertPending = false
+    private var isLeavingPreviewForIncomingLink = false
     let semaphoreReady = DispatchSemaphore(value: 0)
 
     private var delayUpdateUtils: DelayUpdateUtils!
@@ -233,6 +240,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         previewSessionEnabled = allowPreview && storedPreviewSessionEnabled
         implementation.previewSession = previewSessionEnabled
         if previewSessionEnabled {
+            previewSessionAlertPending = UserDefaults.standard.object(forKey: previewSessionAlertPendingDefaultsKey) as? Bool ?? true
             shakeMenuEnabled = true
             shakeChannelSelectorEnabled = false
         }
@@ -315,6 +323,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if nativeBuildVersionChanged {
             self.clearPreviewSessionForNativeBuildChange()
         }
+        self.leavePreviewSessionForLaunchURLIfNeeded()
 
         if resetWhenUpdate {
             let didResetCurrentBundle = self.resetCurrentBundleForNativeBuildChangeIfNeeded()
@@ -332,11 +341,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             logger.error("unable to force reload, the plugin might fallback to the builtin version")
         }
 
-        let nc = NotificationCenter.default
-        nc.addObserver(self, selector: #selector(appMovedToBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
-        nc.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
-        nc.addObserver(self, selector: #selector(appWillTerminate), name: UIApplication.willTerminateNotification, object: nil)
-        nc.addObserver(self, selector: #selector(appDidReceiveMemoryWarning), name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
+        self.registerNotificationObservers()
 
         // Check for 'kill' delay condition on app launch
         // This handles cases where the app was killed (willTerminateNotification is not reliable for system kills)
@@ -344,6 +349,47 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         self.appMovedToForeground()
         self.checkForUpdateAfterDelay()
+        self.showPreviewSessionNoticeIfNeeded()
+    }
+
+    private func registerNotificationObservers() {
+        let notificationCenter = NotificationCenter.default
+        notificationCenter.addObserver(
+            self,
+            selector: #selector(appMovedToBackground),
+            name: UIApplication.didEnterBackgroundNotification,
+            object: nil
+        )
+        notificationCenter.addObserver(
+            self,
+            selector: #selector(appMovedToForeground),
+            name: UIApplication.willEnterForegroundNotification,
+            object: nil
+        )
+        notificationCenter.addObserver(
+            self,
+            selector: #selector(appWillTerminate),
+            name: UIApplication.willTerminateNotification,
+            object: nil
+        )
+        notificationCenter.addObserver(
+            self,
+            selector: #selector(appDidReceiveMemoryWarning),
+            name: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil
+        )
+        notificationCenter.addObserver(
+            self,
+            selector: #selector(handleOpenURLForPreviewSession(notification:)),
+            name: Notification.Name.capacitorOpenURL,
+            object: nil
+        )
+        notificationCenter.addObserver(
+            self,
+            selector: #selector(handleOpenURLForPreviewSession(notification:)),
+            name: Notification.Name.capacitorOpenUniversalLink,
+            object: nil
+        )
     }
 
     private func syncKeepUrlPathFlag(enabled: Bool) {
@@ -1077,6 +1123,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.shakeMenuEnabled = true
         self.shakeChannelSelectorEnabled = false
         UserDefaults.standard.set(true, forKey: self.previewSessionDefaultsKey)
+        UserDefaults.standard.set(true, forKey: self.previewSessionAlertPendingDefaultsKey)
         UserDefaults.standard.synchronize()
         call.resolve()
     }
@@ -1092,12 +1139,57 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         let previewFallbackBundle = self.implementation.getPreviewFallbackBundle()
         self.endPreviewSession()
         let restoredNextBundle = self.implementation.getNextBundle()
+        self.deletePreviewBundleIfUnused(previewBundle, previewFallbackBundle: previewFallbackBundle, restoredNextBundle: restoredNextBundle)
+        return true
+    }
+
+    private func leavePreviewSessionForLaunchURLIfNeeded() {
+        guard self.previewSessionEnabled,
+              !self.isLeavingPreviewForIncomingLink,
+              let launchUrl = ApplicationDelegateProxy.shared.lastURL,
+              self.isPreviewDeepLink(launchUrl) else {
+            return
+        }
+
+        self.isLeavingPreviewForIncomingLink = true
+        logger.info("Preview deeplink launch detected while preview session is active; restoring fallback before initial load")
+        if !self.leavePreviewSessionWithoutReload() {
+            logger.error("Could not leave preview session before initial preview deeplink routing")
+            self.isLeavingPreviewForIncomingLink = false
+        }
+    }
+
+    private func leavePreviewSessionWithoutReload() -> Bool {
+        let previewBundle = self.implementation.getCurrentBundle()
+        guard let previewFallbackBundle = self.implementation.getPreviewFallbackBundle(), !previewFallbackBundle.isErrorStatus() else {
+            logger.error("No preview fallback bundle available")
+            return false
+        }
+        guard self.implementation.canSet(bundle: previewFallbackBundle) else {
+            logger.error("Preview fallback bundle is not installable")
+            return false
+        }
+        guard self.implementation.stagePreviewFallbackReload(bundle: previewFallbackBundle) else {
+            logger.error("Could not stage preview fallback bundle")
+            return false
+        }
+
+        self.endPreviewSession()
+        let restoredNextBundle = self.implementation.getNextBundle()
+        self.deletePreviewBundleIfUnused(previewBundle, previewFallbackBundle: previewFallbackBundle, restoredNextBundle: restoredNextBundle)
+        return true
+    }
+
+    private func deletePreviewBundleIfUnused(
+        _ previewBundle: BundleInfo,
+        previewFallbackBundle: BundleInfo?,
+        restoredNextBundle: BundleInfo?
+    ) {
         if !previewBundle.isBuiltin() &&
             previewFallbackBundle?.getId() != previewBundle.getId() &&
             restoredNextBundle?.getId() != previewBundle.getId() {
             _ = self.implementation.delete(id: previewBundle.getId(), removeInfo: false)
         }
-        return true
     }
 
     func reloadPreviewSessionFromShakeMenu() -> Bool {
@@ -1147,6 +1239,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         self.previewSessionEnabled = false
         self.previewSessionAlertPending = false
+        self.isLeavingPreviewForIncomingLink = false
         self.implementation.previewSession = false
         self.shakeMenuEnabled = previousShakeMenuEnabled
         self.shakeChannelSelectorEnabled = previousShakeChannelSelectorEnabled
@@ -1176,6 +1269,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.restorePreviewPreviousDefaultChannel()
         self.previewSessionEnabled = false
         self.previewSessionAlertPending = false
+        self.isLeavingPreviewForIncomingLink = false
         self.implementation.previewSession = false
         self.shakeMenuEnabled = getConfig().getBoolean("shakeMenu", false)
         self.shakeChannelSelectorEnabled = getConfig().getBoolean("allowShakeChannelSelector", false)
@@ -1193,6 +1287,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         UserDefaults.standard.removeObject(forKey: self.previewPreviousDefaultChannelWasSetDefaultsKey)
         UserDefaults.standard.removeObject(forKey: self.previewAppIdDefaultsKey)
         UserDefaults.standard.removeObject(forKey: self.previewPayloadUrlDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: self.previewSessionAlertPendingDefaultsKey)
         UserDefaults.standard.synchronize()
     }
 
@@ -1257,6 +1352,55 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func storedPreviewPayloadUrl() -> URL? {
         normalizedPreviewPayloadUrl(UserDefaults.standard.string(forKey: self.previewPayloadUrlDefaultsKey))
+    }
+
+    private func previewPath(from url: URL) -> String {
+        if url.scheme == self.previewDeepLinkScheme {
+            var components: [String] = []
+            if let host = url.host, !host.isEmpty {
+                components.append(host)
+            }
+            components.append(contentsOf: url.path.split(separator: self.previewPathSeparator).map(String.init))
+            return self.normalizedPreviewPath(components)
+        }
+
+        return url.path
+    }
+
+    private func normalizedPreviewPath(_ components: [String]) -> String {
+        let separator = String(self.previewPathSeparator)
+        return separator + components.filter { !$0.isEmpty }.joined(separator: separator)
+    }
+
+    private func previewDeepLinkPath(_ leafComponent: String) -> String {
+        self.normalizedPreviewPath([self.previewDeepLinkRootComponent, leafComponent])
+    }
+
+    private func isPreviewDeepLink(_ url: URL) -> Bool {
+        let path = self.previewPath(from: url)
+        return path == self.previewDeepLinkPath(self.previewDeepLinkChannelComponent) ||
+            path == self.previewDeepLinkPath(self.previewDeepLinkBundleComponent)
+    }
+
+    @objc private func handleOpenURLForPreviewSession(notification: NSNotification) {
+        let rawUrl = (notification.object as? [String: Any])?["url"]
+        let url = rawUrl as? URL ?? (rawUrl as? NSURL).map { $0 as URL }
+        guard self.previewSessionEnabled,
+              !self.isLeavingPreviewForIncomingLink,
+              let url,
+              self.isPreviewDeepLink(url) else {
+            return
+        }
+
+        self.isLeavingPreviewForIncomingLink = true
+        logger.info("Preview deeplink received while preview session is active; restoring fallback before routing")
+        DispatchQueue.global(qos: .userInitiated).async {
+            let didLeave = self.leavePreviewSessionFromShakeMenu()
+            if !didLeave {
+                self.logger.error("Could not leave preview session before routing incoming preview deeplink")
+                self.isLeavingPreviewForIncomingLink = false
+            }
+        }
     }
 
     private func fetchPreviewPayload(_ payloadUrl: URL) throws -> PreviewPayload {
@@ -1340,6 +1484,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         logger.info("Native build changed; clearing preview session state")
         self.previewSessionEnabled = false
         self.previewSessionAlertPending = false
+        self.isLeavingPreviewForIncomingLink = false
         self.implementation.previewSession = false
         self.shakeMenuEnabled = getConfig().getBoolean("shakeMenu", false)
         self.shakeChannelSelectorEnabled = getConfig().getBoolean("allowShakeChannelSelector", false)
@@ -1367,6 +1512,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         self.previewSessionAlertPending = false
+        UserDefaults.standard.set(false, forKey: self.previewSessionAlertPendingDefaultsKey)
+        UserDefaults.standard.synchronize()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(600)) {
             guard self.previewSessionEnabled else {
@@ -1375,6 +1522,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             if let topVC = UIApplication.topViewController(),
                topVC.isKind(of: UIAlertController.self) {
                 self.previewSessionAlertPending = true
+                UserDefaults.standard.set(true, forKey: self.previewSessionAlertPendingDefaultsKey)
+                UserDefaults.standard.synchronize()
                 return
             }
 
@@ -1386,6 +1535,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             alert.addAction(UIAlertAction(title: "Got it", style: .default))
             if let topVC = UIApplication.topViewController() {
                 topVC.present(alert, animated: true)
+            } else {
+                self.previewSessionAlertPending = true
+                UserDefaults.standard.set(true, forKey: self.previewSessionAlertPendingDefaultsKey)
+                UserDefaults.standard.synchronize()
             }
         }
     }
