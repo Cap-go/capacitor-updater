@@ -2139,6 +2139,15 @@ export interface StartPreviewSessionOptions {
    * @default undefined
    */
   appId?: string;
+  /**
+   * HTTP(S) URL returning a preview download payload.
+   * When provided, the native shake reload action fetches this payload again
+   * before reloading so channel previews can move to the latest bundle.
+   * Requires {@link PluginsConfig.CapacitorUpdater.allowPreview} to be `true`.
+   * @since 8.48.0
+   * @default undefined
+   */
+  payloadUrl?: string;
 }
 
 export interface AppReadyResult {

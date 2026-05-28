@@ -2200,9 +2200,10 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 
 ##### StartPreviewSessionOptions
 
-| Prop        | Type                | Description                                                                                                                                                                                     | Default                | Since  |
-| ----------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ------ |
-| **`appId`** | <code>string</code> | App id to use while the preview session is active. The previous app id is restored when leaving the preview session. Requires {@link PluginsConfig.CapacitorUpdater.allowPreview} to be `true`. | <code>undefined</code> | 8.47.0 |
+| Prop             | Type                | Description                                                                                                                                                                                                                                                               | Default                | Since  |
+| ---------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ------ |
+| **`appId`**      | <code>string</code> | App id to use while the preview session is active. The previous app id is restored when leaving the preview session. Requires {@link PluginsConfig.CapacitorUpdater.allowPreview} to be `true`.                                                                           | <code>undefined</code> | 8.47.0 |
+| **`payloadUrl`** | <code>string</code> | HTTP(S) URL returning a preview download payload. When provided, the native shake reload action fetches this payload again before reloading so channel previews can move to the latest bundle. Requires {@link PluginsConfig.CapacitorUpdater.allowPreview} to be `true`. | <code>undefined</code> | 8.48.0 |
 
 
 ##### BundleListResult
