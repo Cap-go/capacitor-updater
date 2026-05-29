@@ -1,0 +1,105 @@
+appId: app.capgo.updater
+---
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible: '@capgo/capacitor-updater'
+    timeout: 180000
+- assertVisible: '@capgo/capacitor-updater'
+- extendedWaitUntil:
+    visible: '.*Harness: ready.*'
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      text: 'Quick apply app ID'
+    direction: DOWN
+    timeout: 30000
+    centerElement: false
+    visibilityPercentage: 1
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    text: 'Quick apply app ID'
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible: '.*(Marker: set-app-id:success|M:set-app-id:success).*'
+    timeout: 90000
+- scrollUntilVisible:
+    element:
+      text: 'Quick set custom ID'
+    direction: DOWN
+    timeout: 30000
+    centerElement: false
+    visibilityPercentage: 1
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    text: 'Quick set custom ID'
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible: '.*(Marker: set-custom-id:success|M:set-custom-id:success).*'
+    timeout: 90000
+- scrollUntilVisible:
+    element:
+      text: 'Quick apply runtime URLs'
+    direction: DOWN
+    timeout: 30000
+    centerElement: false
+    visibilityPercentage: 1
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    text: 'Quick apply runtime URLs'
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible: '.*(Marker: set-runtime-urls:success|M:set-runtime-urls:success).*'
+    timeout: 90000
+- scrollUntilVisible:
+    element:
+      text: 'Quick set beta channel'
+    direction: DOWN
+    timeout: 30000
+    centerElement: false
+    visibilityPercentage: 1
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    text: 'Quick set beta channel'
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible: '.*(Marker: set-channel-beta:success|M:set-channel-beta:success).*'
+    timeout: 90000
+- scrollUntilVisible:
+    element:
+      text: 'Quick unset channel'
+    direction: DOWN
+    timeout: 30000
+    centerElement: false
+    visibilityPercentage: 1
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    text: 'Quick unset channel'
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible: '.*(Marker: unset-channel:success|M:unset-channel:success).*'
+    timeout: 90000
+- scrollUntilVisible:
+    element:
+      text: 'Quick queue persisted check'
+    direction: DOWN
+    timeout: 30000
+    centerElement: false
+    visibilityPercentage: 1
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    text: 'Quick queue persisted check'
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible: '.*(Marker: boot-persisted:success|M:boot-persisted:success).*'
+    timeout: 90000
+- runFlow: helpers/cold-launch-app.yaml
+- extendedWaitUntil:
+    visible: '@capgo/capacitor-updater'
+    timeout: 120000
+- extendedWaitUntil:
+    visible: '.*Harness: ready.*'
+    timeout: 120000
+- extendedWaitUntil:
+    visible: '.*(Marker: persisted:success|M:persisted:success).*'
+    timeout: 180000

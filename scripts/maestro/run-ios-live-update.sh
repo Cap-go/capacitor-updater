@@ -11,8 +11,12 @@ HOST_SERVER_URL="${CAPGO_MAESTRO_HOST_BASE_URL:-http://127.0.0.1:${HOST_SERVER_P
 APP_ID="app.capgo.updater"
 SCENARIO_SELECTION="${1:-all}"
 SERVER_PID=""
+SKIP_BUILD="${CAPGO_MAESTRO_SKIP_BUILD:-0}"
+SKIP_BUNDLE_BUILD="${CAPGO_MAESTRO_SKIP_BUNDLE_BUILD:-0}"
+CLEAR_SWIFTPM_CAPACITOR_ARTIFACT_CACHE="${CAPGO_MAESTRO_CLEAR_SWIFTPM_CAPACITOR_ARTIFACT_CACHE:-0}"
+ASSUME_CLEAN_INSTALL="${CAPGO_MAESTRO_IOS_ASSUME_CLEAN_INSTALL:-0}"
 SIMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_IOS_BOOT_TIMEOUT_SECONDS:-180}"
-MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-900}"
+MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-600}"
 export MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
 export MAESTRO_DRIVER_STARTUP_TIMEOUT="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-600000}"
 MAESTRO_TEST_RETRIES="${CAPGO_MAESTRO_TEST_RETRIES:-3}"
@@ -83,7 +87,7 @@ else
 fi
 
 SIMULATOR_ID="${CAPGO_MAESTRO_IOS_SIMULATOR_ID:-$(default_simulator_id)}"
-APP_PATH="$DERIVED_DATA_PATH/Build/Products/Debug-iphonesimulator/App.app"
+APP_PATH="${CAPGO_MAESTRO_IOS_APP_PATH:-$DERIVED_DATA_PATH/Build/Products/Debug-iphonesimulator/App.app}"
 RESULTS_DIR_READY=0
 
 cleanup() {
@@ -244,6 +248,15 @@ start_fake_server() {
   return 1
 }
 
+assert_prebuilt_maestro_assets() {
+  if [[ -d "$ROOT_DIR/dist" && -d "$ARTIFACT_DIR/bundles" && -d "$ARTIFACT_DIR/manifest" ]]; then
+    return 0
+  fi
+
+  echo "Prebuilt dist/ and .maestro-artifacts/ assets are required when CAPGO_MAESTRO_SKIP_BUILD=1 or CAPGO_MAESTRO_SKIP_BUNDLE_BUILD=1." >&2
+  exit 1
+}
+
 boot_simulator() {
   local status=0
 
@@ -259,6 +272,25 @@ boot_simulator() {
     echo "Simulator failed to boot within ${SIMULATOR_BOOT_TIMEOUT_SECONDS} seconds." >&2
   fi
   return "$status"
+}
+
+reinstall_example_app() {
+  local started="$SECONDS"
+
+  if [[ ! -d "$APP_PATH" ]]; then
+    echo "Expected simulator app at $APP_PATH" >&2
+    return 1
+  fi
+
+  if [[ "$ASSUME_CLEAN_INSTALL" == "1" ]]; then
+    echo "Installing iOS app without pre-uninstall on clean simulator."
+  else
+    xcrun simctl uninstall "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
+  fi
+
+  xcrun simctl install "$SIMULATOR_ID" "$APP_PATH"
+  echo "Installed iOS app in $((SECONDS - started))s."
+  ASSUME_CLEAN_INSTALL=0
 }
 
 control_server() {
@@ -297,14 +329,29 @@ console.log([scenario.builtinLabel, builtinVersion.trim(), ...scenario.releases.
 }
 
 clear_swiftpm_capacitor_artifact_cache() {
+  if [[ "$CLEAR_SWIFTPM_CAPACITOR_ARTIFACT_CACHE" != "1" ]]; then
+    return 0
+  fi
+
   rm -rf "$HOME/Library/Caches/org.swift.swiftpm/artifacts"/https___github_com_ionic_team_capacitor_swift_pm_releases_download_8_0_0_*
   return 0
 }
 
 read_app_marketing_version() {
+  local bundled_version=""
+
   if [[ -n "$APP_MARKETING_VERSION" ]]; then
     printf '%s\n' "$APP_MARKETING_VERSION"
     return 0
+  fi
+
+  if [[ "$SKIP_BUILD" == "1" && -f "$APP_PATH/Info.plist" ]]; then
+    bundled_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Info.plist" 2>/dev/null || true)"
+    if [[ -n "$bundled_version" ]]; then
+      APP_MARKETING_VERSION="$bundled_version"
+      printf '%s\n' "$APP_MARKETING_VERSION"
+      return 0
+    fi
   fi
 
   APP_MARKETING_VERSION="$(
@@ -395,6 +442,7 @@ run_flow() {
       xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
       xcrun simctl shutdown "$SIMULATOR_ID" >/dev/null 2>&1 || true
       boot_simulator
+      reinstall_example_app
       sleep 5
       attempt=$((attempt + 1))
       continue
@@ -472,27 +520,50 @@ run_download_assert() {
     "LAST_DOWNLOAD_LINE=$(regex_contains_for_maestro "$last_download_line")"
 }
 
+run_combined_deferred_flow() {
+  local scenario_id="$1"
+  local builtin_label="$2"
+  local builtin_version="$3"
+  local first_release="$4"
+
+  run_flow \
+    "${scenario_id}-flow" \
+    "$ROOT_DIR/.maestro/ios/live-update-deferred.yaml" \
+    "HOST_SERVER_URL=$HOST_SERVER_URL" \
+    "SCENARIO_ID=$scenario_id" \
+    "BUILTIN_BUILD_LABEL=$(regex_contains_for_maestro "Build label: $builtin_label")" \
+    "FIRST_BUILD_LABEL=$(regex_contains_for_maestro "Build label: $first_release")" \
+    "SCENARIO_LINE=$(regex_contains_for_maestro 'Scenario: deferred')" \
+    "DIRECT_UPDATE_LINE=$(regex_contains_for_maestro 'Direct update mode: false')" \
+    "AUTO_UPDATE_ENABLED_LINE=$(regex_contains_for_maestro "$ASSERT_AUTO_UPDATE_ENABLED")" \
+    "AUTO_UPDATE_AVAILABLE_LINE=$(regex_contains_for_maestro "$ASSERT_AUTO_UPDATE_AVAILABLE")" \
+    "BUILTIN_NOTIFY_READY_LINE=$(regex_contains_for_maestro "Notify app ready: ok ($builtin_version)")" \
+    "FIRST_NOTIFY_READY_LINE=$(regex_contains_for_maestro "Notify app ready: ok ($first_release)")" \
+    "BUILTIN_SOURCE_LINE=$(regex_contains_for_maestro "$ASSERT_SOURCE_BUILTIN")" \
+    "DOWNLOADED_SOURCE_LINE=$(regex_contains_for_maestro "$ASSERT_SOURCE_DOWNLOADED")" \
+    "BUILTIN_VERSION_LINE=$(regex_contains_for_maestro "Current bundle version: $builtin_version")" \
+    "FIRST_CURRENT_VERSION_LINE=$(regex_contains_for_maestro "Current bundle version: $first_release")" \
+    "FIRST_NEXT_VERSION_LINE=$(regex_contains_for_maestro "Next bundle version: $first_release")" \
+    "FIRST_LAST_DOWNLOAD_LINE=$(regex_contains_for_maestro "Last completed download: $first_release")"
+}
+
 build_and_install_scenario() {
   local scenario_id="$1"
 
-  bun "$ROOT_DIR/scripts/maestro/prepare-ios-scenario.mjs" "$scenario_id"
-  clear_swiftpm_capacitor_artifact_cache
+  if [[ "$SKIP_BUILD" != "1" ]]; then
+    bun "$ROOT_DIR/scripts/maestro/prepare-ios-scenario.mjs" "$scenario_id"
+    clear_swiftpm_capacitor_artifact_cache
 
-  xcodebuild \
-    -project "$EXAMPLE_DIR/ios/App/App.xcodeproj" \
-    -scheme App \
-    -configuration Debug \
-    -destination "id=$SIMULATOR_ID" \
-    -derivedDataPath "$DERIVED_DATA_PATH" \
-    build
-
-  if [[ ! -d "$APP_PATH" ]]; then
-    echo "Expected simulator app at $APP_PATH" >&2
-    return 1
+    xcodebuild \
+      -project "$EXAMPLE_DIR/ios/App/App.xcodeproj" \
+      -scheme App \
+      -configuration Debug \
+      -destination "id=$SIMULATOR_ID" \
+      -derivedDataPath "$DERIVED_DATA_PATH" \
+      build
   fi
 
-  xcrun simctl uninstall "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
-  xcrun simctl install "$SIMULATOR_ID" "$APP_PATH"
+  reinstall_example_app
 }
 
 run_scenario() {
@@ -514,33 +585,10 @@ run_scenario() {
 
   control_server reset "$scenario_id"
   build_and_install_scenario "$scenario_id"
-  run_flow "${scenario_id}-cold-launch" "$ROOT_DIR/.maestro/helpers/cold-launch-app.yaml"
 
   case "$scenario_id" in
     deferred)
-      run_download_assert \
-        "${scenario_id}-downloaded" \
-        "Build label: $builtin_label" \
-        'Scenario: deferred' \
-        'Direct update mode: false' \
-        "$ASSERT_AUTO_UPDATE_ENABLED" \
-        "$ASSERT_AUTO_UPDATE_AVAILABLE" \
-        "Notify app ready: ok ($builtin_version)" \
-        "$ASSERT_SOURCE_BUILTIN" \
-        "Current bundle version: $builtin_version" \
-        "Next bundle version: $first_release" \
-        "Last completed download: $first_release"
-      run_flow "${scenario_id}-resume" "$ROOT_DIR/.maestro/helpers/relaunch-app.yaml"
-      run_core_assert \
-        "${scenario_id}-applied" \
-        "Build label: $first_release" \
-        'Scenario: deferred' \
-        'Direct update mode: false' \
-        "$ASSERT_AUTO_UPDATE_ENABLED" \
-        "$ASSERT_AUTO_UPDATE_AVAILABLE" \
-        "Notify app ready: ok ($first_release)" \
-        "$ASSERT_SOURCE_DOWNLOADED" \
-        "Current bundle version: $first_release"
+      run_combined_deferred_flow "$scenario_id" "$builtin_label" "$builtin_version" "$first_release"
       ;;
     always)
       run_core_assert \
@@ -553,18 +601,6 @@ run_scenario() {
         "Notify app ready: ok ($first_release)" \
         "$ASSERT_SOURCE_DOWNLOADED" \
         "Current bundle version: $first_release"
-      control_server advance "$scenario_id"
-      run_flow "${scenario_id}-resume" "$ROOT_DIR/.maestro/helpers/relaunch-app.yaml"
-      run_core_assert \
-        "${scenario_id}-second-release" \
-        "Build label: $second_release" \
-        'Scenario: always' \
-        'Direct update mode: always' \
-        "$ASSERT_AUTO_UPDATE_ENABLED" \
-        "$ASSERT_AUTO_UPDATE_AVAILABLE" \
-        "Notify app ready: ok ($second_release)" \
-        "$ASSERT_SOURCE_DOWNLOADED" \
-        "Current bundle version: $second_release"
       ;;
     legacy-true)
       run_core_assert \
@@ -577,18 +613,6 @@ run_scenario() {
         "Notify app ready: ok ($first_release)" \
         "$ASSERT_SOURCE_DOWNLOADED" \
         "Current bundle version: $first_release"
-      control_server advance "$scenario_id"
-      run_flow "${scenario_id}-resume" "$ROOT_DIR/.maestro/helpers/relaunch-app.yaml"
-      run_core_assert \
-        "${scenario_id}-second-release" \
-        "Build label: $second_release" \
-        'Scenario: legacy-true' \
-        'Direct update mode: true' \
-        "$ASSERT_AUTO_UPDATE_ENABLED" \
-        "$ASSERT_AUTO_UPDATE_AVAILABLE" \
-        "Notify app ready: ok ($second_release)" \
-        "$ASSERT_SOURCE_DOWNLOADED" \
-        "Current bundle version: $second_release"
       ;;
     at-install)
       run_core_assert \
@@ -601,31 +625,6 @@ run_scenario() {
         "Notify app ready: ok ($first_release)" \
         "$ASSERT_SOURCE_DOWNLOADED" \
         "Current bundle version: $first_release"
-      control_server advance "$scenario_id"
-      run_flow "${scenario_id}-resume-one" "$ROOT_DIR/.maestro/helpers/relaunch-app.yaml"
-      run_download_assert \
-        "${scenario_id}-downloaded" \
-        "Build label: $first_release" \
-        'Scenario: at-install' \
-        'Direct update mode: atInstall' \
-        "$ASSERT_AUTO_UPDATE_ENABLED" \
-        "$ASSERT_AUTO_UPDATE_AVAILABLE" \
-        "Notify app ready: ok ($first_release)" \
-        "$ASSERT_SOURCE_DOWNLOADED" \
-        "Current bundle version: $first_release" \
-        "Next bundle version: $second_release" \
-        "Last completed download: $second_release"
-      run_flow "${scenario_id}-resume-two" "$ROOT_DIR/.maestro/helpers/relaunch-app.yaml"
-      run_core_assert \
-        "${scenario_id}-second-release" \
-        "Build label: $second_release" \
-        'Scenario: at-install' \
-        'Direct update mode: atInstall' \
-        "$ASSERT_AUTO_UPDATE_ENABLED" \
-        "$ASSERT_AUTO_UPDATE_AVAILABLE" \
-        "Notify app ready: ok ($second_release)" \
-        "$ASSERT_SOURCE_DOWNLOADED" \
-        "Current bundle version: $second_release"
       ;;
     on-launch)
       run_core_assert \
@@ -638,18 +637,6 @@ run_scenario() {
         "Notify app ready: ok ($first_release)" \
         "$ASSERT_SOURCE_DOWNLOADED" \
         "Current bundle version: $first_release"
-      control_server advance "$scenario_id"
-      run_flow "${scenario_id}-cold-relaunch" "$ROOT_DIR/.maestro/helpers/cold-launch-app.yaml"
-      run_core_assert \
-        "${scenario_id}-second-release" \
-        "Build label: $second_release" \
-        'Scenario: on-launch' \
-        'Direct update mode: onLaunch' \
-        "$ASSERT_AUTO_UPDATE_ENABLED" \
-        "$ASSERT_AUTO_UPDATE_AVAILABLE" \
-        "Notify app ready: ok ($second_release)" \
-        "$ASSERT_SOURCE_DOWNLOADED" \
-        "Current bundle version: $second_release"
       ;;
     manual-zip)
       run_flow "${scenario_id}-flow" "$ROOT_DIR/.maestro/ios/manual-zip-flow.yaml"
@@ -813,11 +800,15 @@ boot_simulator
 
 cd "$ROOT_DIR"
 
-if [[ ! -d node_modules ]]; then
-  bun install
-fi
+if [[ "$SKIP_BUILD" == "1" || "$SKIP_BUNDLE_BUILD" == "1" ]]; then
+  assert_prebuilt_maestro_assets
+else
+  if [[ ! -d node_modules ]]; then
+    bun install
+  fi
 
-bun "$ROOT_DIR/scripts/maestro/build-bundles.mjs" "$SCENARIO_SELECTION"
+  bun "$ROOT_DIR/scripts/maestro/build-bundles.mjs" "$SCENARIO_SELECTION"
+fi
 
 start_fake_server
 

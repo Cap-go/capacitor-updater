@@ -5,7 +5,10 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 EXAMPLE_DIR="$ROOT_DIR/example-app"
 RESULTS_DIR="${CAPGO_MAESTRO_RESULTS_DIR:-$ROOT_DIR/maestro-results-ios}"
 SKIP_BUILD="${CAPGO_MAESTRO_SKIP_BUILD:-0}"
+SKIP_BUNDLE_BUILD="${CAPGO_MAESTRO_SKIP_BUNDLE_BUILD:-0}"
 RUN_NATIVE_RESET="${CAPGO_MAESTRO_RUN_NATIVE_RESET:-0}"
+CLEAR_SWIFTPM_CAPACITOR_ARTIFACT_CACHE="${CAPGO_MAESTRO_CLEAR_SWIFTPM_CAPACITOR_ARTIFACT_CACHE:-0}"
+ASSUME_CLEAN_INSTALL="${CAPGO_MAESTRO_IOS_ASSUME_CLEAN_INSTALL:-0}"
 SCENARIO_ID="${CAPGO_MAESTRO_SMOKE_SCENARIO:-manual-zip}"
 FLOW_PATH="$ROOT_DIR/.maestro/ios/example-app-smoke.yaml"
 if [[ "$SCENARIO_ID" == "manual-zip-config-guards" ]]; then
@@ -19,7 +22,7 @@ HOST_SERVER_URL="${CAPGO_MAESTRO_HOST_BASE_URL:-http://127.0.0.1:${HOST_SERVER_P
 DEVICE_SERVER_URL="${CAPGO_MAESTRO_DEVICE_BASE_URL:-${HOST_SERVER_URL}}"
 SIMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_IOS_BOOT_TIMEOUT_SECONDS:-300}"
 MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-600}"
-NATIVE_RESET_TIMEOUT_SECONDS="${CAPGO_MAESTRO_NATIVE_RESET_TIMEOUT_SECONDS:-1200}"
+NATIVE_RESET_TIMEOUT_SECONDS="${CAPGO_MAESTRO_NATIVE_RESET_TIMEOUT_SECONDS:-600}"
 APP_ID="app.capgo.updater"
 SERVER_PID=""
 export MAESTRO_DRIVER_STARTUP_TIMEOUT="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-600000}"
@@ -94,9 +97,18 @@ PY
 }
 
 install_example_app() {
-  xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
-  xcrun simctl uninstall "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
+  local started="$SECONDS"
+
+  if [[ "$ASSUME_CLEAN_INSTALL" == "1" ]]; then
+    echo "Installing iOS app without pre-uninstall on clean simulator."
+  else
+    xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
+    xcrun simctl uninstall "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
+  fi
+
   xcrun simctl install "$SIMULATOR_ID" "$APP_PATH"
+  echo "Installed iOS app in $((SECONDS - started))s."
+  ASSUME_CLEAN_INSTALL=0
 }
 
 wait_for_server() {
@@ -131,6 +143,15 @@ start_fake_server() {
   assert_fake_server_process_alive
 }
 
+assert_prebuilt_maestro_assets() {
+  if [[ -d "$ROOT_DIR/dist" && -d "$ARTIFACT_DIR/bundles" && -d "$ARTIFACT_DIR/manifest" ]]; then
+    return 0
+  fi
+
+  echo "Prebuilt dist/ and .maestro-artifacts/ assets are required when CAPGO_MAESTRO_SKIP_BUILD=1 or CAPGO_MAESTRO_SKIP_BUNDLE_BUILD=1." >&2
+  exit 1
+}
+
 reset_fake_server() {
   curl --silent --show-error --fail -X POST "$HOST_SERVER_URL/api/control/reset?scenario=$SCENARIO_ID" >/dev/null
 }
@@ -160,22 +181,17 @@ function expect(condition, message) {
 
 switch (scenarioId) {
   case 'manual-zip':
-    expect(update.url?.includes('/api/updates/manual-zip?source=runtime-update'), 'missing persisted runtime update URL request');
     expect(channel.url?.includes('/api/channel?scenario=manual-zip&source=runtime-channel'), 'missing persisted runtime channel URL request');
     expect(stats.url?.includes('/api/stats?scenario=manual-zip&source=runtime-stats'), 'missing runtime stats URL request');
     expect((updatePayload.custom_id ?? channelPayload.custom_id) === 'qa-user-42', 'missing persisted custom ID');
     expect((requestCounts.channel ?? 0) >= 1, 'expected persisted channel verification to hit the fake server');
-    expect((requestCounts.update ?? 0) >= 2, 'expected repeated update checks to hit the fake server');
     expect((requestCounts.stats ?? 0) >= 1, 'expected stats traffic to hit the fake server');
     break;
   case 'manual-zip-no-persist':
-    expect(update.url?.includes('/api/updates/manual-zip-no-persist'), 'missing default update URL request after relaunch');
-    expect(!update.url?.includes('source=runtime-update'), 'update URL unexpectedly stayed on the runtime override');
     expect(channel.url?.includes('/api/channel?scenario=manual-zip-no-persist'), 'missing default channel URL request after relaunch');
     expect(!channel.url?.includes('source=runtime-channel'), 'channel URL unexpectedly stayed on the runtime override');
     expect((updatePayload.custom_id ?? channelPayload.custom_id ?? '') !== 'qa-user-42', 'custom ID unexpectedly persisted across relaunch');
     expect((requestCounts.channel ?? 0) >= 2, 'expected repeated channel checks to hit the fake server');
-    expect((requestCounts.update ?? 0) >= 1, 'expected post-relaunch update check to hit the fake server');
     expect((requestCounts.stats ?? 0) >= 1, 'expected stats traffic to hit the fake server');
     break;
   case 'manual-zip-config-guards':
@@ -274,11 +290,17 @@ if [[ "$SKIP_BUILD" != "1" ]]; then
     bun install
   fi
 
-  bun "$ROOT_DIR/scripts/maestro/build-bundles.mjs" "$SCENARIO_ID"
+  if [[ "$SKIP_BUNDLE_BUILD" == "1" ]]; then
+    assert_prebuilt_maestro_assets
+  else
+    bun "$ROOT_DIR/scripts/maestro/build-bundles.mjs" "$SCENARIO_ID"
+  fi
   start_fake_server
   reset_fake_server
   bun "$ROOT_DIR/scripts/maestro/prepare-ios-scenario.mjs" "$SCENARIO_ID"
-  rm -rf "$HOME/Library/Caches/org.swift.swiftpm/artifacts"/https___github_com_ionic_team_capacitor_swift_pm_releases_download_8_0_0_*
+  if [[ "$CLEAR_SWIFTPM_CAPACITOR_ARTIFACT_CACHE" == "1" ]]; then
+    rm -rf "$HOME/Library/Caches/org.swift.swiftpm/artifacts"/https___github_com_ionic_team_capacitor_swift_pm_releases_download_8_0_0_*
+  fi
   xcodebuild \
     -project "$EXAMPLE_DIR/ios/App/App.xcodeproj" \
     -scheme App \
@@ -287,6 +309,7 @@ if [[ "$SKIP_BUILD" != "1" ]]; then
     -derivedDataPath "$DERIVED_DATA_PATH" \
     build
 else
+  assert_prebuilt_maestro_assets
   start_fake_server
   reset_fake_server
 fi

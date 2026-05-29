@@ -6,6 +6,7 @@ EXAMPLE_DIR="$ROOT_DIR/example-app"
 APK_PATH="$EXAMPLE_DIR/android/app/build/outputs/apk/debug/app-debug.apk"
 RESULTS_DIR="$ROOT_DIR/maestro-results"
 SKIP_BUILD="${CAPGO_MAESTRO_SKIP_BUILD:-0}"
+SKIP_BUNDLE_BUILD="${CAPGO_MAESTRO_SKIP_BUNDLE_BUILD:-0}"
 RUN_NATIVE_RESET="${CAPGO_MAESTRO_RUN_NATIVE_RESET:-0}"
 SCENARIO_ID="${CAPGO_MAESTRO_SMOKE_SCENARIO:-manual-zip}"
 FLOW_PATH="$ROOT_DIR/.maestro/android/example-app-smoke.yaml"
@@ -34,7 +35,7 @@ POST_INSTALL_STABILIZE_SECONDS="${CAPGO_MAESTRO_POST_INSTALL_STABILIZE_SECONDS:-
 APP_READY_TITLE="@capgo/capacitor-updater"
 APP_READY_ACTION="Run notifyAppReady"
 APP_ID="app.capgo.updater"
-FLOW_RETRY_PATTERN="TcpForwarder.waitFor|allocateForwarder|TimeoutException|Android driver did not start up in time|Maestro Android driver did not start up in time|UNAVAILABLE: io exception|UNAVAILABLE: Network closed|DEADLINE_EXCEEDED|waiting_for_connection|device offline|device .* not found|host:transport:emulator|Connection refused|Broken pipe|Failure calling service package|Can.t find service: package|Can.t find service: settings|Cannot access system provider: 'settings'|No service published for: input|No visible element found: id: quick-action|Could not find a visible element matching selector: id: quick-action|UiAutomation not connected|INTERNAL: UiAutomation|Assertion is false: \".*Harness: ready.*\" is visible|Assertion is false: \".*(Marker: smoke-sequence:success|M:smoke-sequence:success).*\" is visible"
+FLOW_RETRY_PATTERN="TcpForwarder.waitFor|allocateForwarder|TimeoutException|Android driver did not start up in time|Maestro Android driver did not start up in time|UNAVAILABLE: io exception|UNAVAILABLE: Network closed|DEADLINE_EXCEEDED|waiting_for_connection|device offline|device .* not found|host:transport:emulator|Connection refused|Broken pipe|Failure calling service package|Can.t find service: package|Can.t find service: settings|Cannot access system provider: 'settings'|No service published for: input|No visible element found: id: quick-action|Could not find a visible element matching selector: id: quick-action|UiAutomation not connected|INTERNAL: UiAutomation|Assertion is false: \".*Harness: ready.*\" is visible|Assertion is false: \".*(Marker: smoke-sequence:success|M:smoke-sequence:success).*\" is visible|Assertion is false: \".*(Marker: persisted:success|M:persisted:success).*\" is visible"
 TIMEOUT_CMD="$(command -v gtimeout || command -v timeout || true)"
 SERVER_PID=""
 
@@ -128,6 +129,15 @@ start_fake_server() {
   wait_for_server
   sleep 1
   assert_fake_server_process_alive
+}
+
+assert_prebuilt_maestro_assets() {
+  if [[ -d "$ROOT_DIR/dist" && -d "$ARTIFACT_DIR/bundles" && -d "$ARTIFACT_DIR/manifest" ]]; then
+    return 0
+  fi
+
+  echo "Prebuilt dist/ and .maestro-artifacts/ assets are required when CAPGO_MAESTRO_SKIP_BUILD=1 or CAPGO_MAESTRO_SKIP_BUNDLE_BUILD=1." >&2
+  exit 1
 }
 
 reset_fake_server() {
@@ -471,11 +481,16 @@ if [[ "$SKIP_BUILD" != "1" ]]; then
     bun install
   fi
 
-  bun "$ROOT_DIR/scripts/maestro/build-bundles.mjs" "$SCENARIO_ID"
+  if [[ "$SKIP_BUNDLE_BUILD" == "1" ]]; then
+    assert_prebuilt_maestro_assets
+  else
+    bun "$ROOT_DIR/scripts/maestro/build-bundles.mjs" "$SCENARIO_ID"
+  fi
   start_fake_server
   reset_fake_server
   bun "$ROOT_DIR/scripts/maestro/prepare-android-scenario.mjs" "$SCENARIO_ID"
 else
+  assert_prebuilt_maestro_assets
   start_fake_server
   reset_fake_server
 fi

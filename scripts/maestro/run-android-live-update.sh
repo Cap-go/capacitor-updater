@@ -15,6 +15,8 @@ APK_PATH="$ROOT_DIR/example-app/android/app/build/outputs/apk/debug/app-debug.ap
 SCENARIO_SELECTION="${1:-all}"
 ACTIVE_SCENARIO_ID=""
 SERVER_PID=""
+SKIP_BUILD="${CAPGO_MAESTRO_SKIP_BUILD:-0}"
+SKIP_BUNDLE_BUILD="${CAPGO_MAESTRO_SKIP_BUNDLE_BUILD:-0}"
 FLOW_RETRY_PATTERN="TcpForwarder.waitFor|allocateForwarder|TimeoutException|Android driver did not start up in time|UNAVAILABLE: io exception|UNAVAILABLE: Network closed|DEADLINE_EXCEEDED|waiting_for_connection|device offline|device .* not found|host:transport:emulator|Connection refused|Broken pipe|Failure calling service package|Can.t find service: package|Can.t find service: settings|Cannot access system provider: 'settings'|No service published for: input|UiAutomation not connected|INTERNAL: UiAutomation|No visible element found: id: quick-action|Could not find a visible element matching selector: id: quick-action"
 MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
 MAESTRO_DRIVER_STARTUP_TIMEOUT_VALUE="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-300000}"
@@ -81,6 +83,20 @@ wait_for_server() {
 
   echo "Fake Capgo server did not start in time." >&2
   return 1
+}
+
+assert_prebuilt_maestro_assets() {
+  if [[ ! -d "$ROOT_DIR/dist" || ! -d "$ARTIFACT_DIR/bundles" || ! -d "$ARTIFACT_DIR/manifest" ]]; then
+    echo "Prebuilt dist/ and .maestro-artifacts/ assets are required when CAPGO_MAESTRO_SKIP_BUILD=1 or CAPGO_MAESTRO_SKIP_BUNDLE_BUILD=1." >&2
+    exit 1
+  fi
+
+  if [[ "$SKIP_BUILD" == "1" && ! -f "$APK_PATH" ]]; then
+    echo "CAPGO_MAESTRO_SKIP_BUILD=1 requires a prebuilt Android APK at $APK_PATH." >&2
+    exit 1
+  fi
+
+  return 0
 }
 
 reset_adb_forwarding() {
@@ -945,7 +961,11 @@ run_flow() {
 
 prepare_scenario() {
   local scenario="$1"
-  bun "$ROOT_DIR/scripts/maestro/prepare-android-scenario.mjs" "$scenario"
+
+  if [[ "$SKIP_BUILD" != "1" ]]; then
+    bun "$ROOT_DIR/scripts/maestro/prepare-android-scenario.mjs" "$scenario"
+  fi
+
   install_apk
   return 0
 }
@@ -973,8 +993,15 @@ export CAPGO_MAESTRO_DEVICE_BASE_URL="$DEVICE_SERVER_URL"
 restart_adb_server
 ensure_android_device
 
-(cd "$ROOT_DIR/example-app" && bun install)
-bun "$ROOT_DIR/scripts/maestro/build-bundles.mjs" "$SCENARIO_SELECTION"
+if [[ "$SKIP_BUILD" == "1" || "$SKIP_BUNDLE_BUILD" == "1" ]]; then
+  assert_prebuilt_maestro_assets
+else
+  if [[ ! -d "$ROOT_DIR/example-app/node_modules" ]]; then
+    (cd "$ROOT_DIR/example-app" && bun install)
+  fi
+
+  bun "$ROOT_DIR/scripts/maestro/build-bundles.mjs" "$SCENARIO_SELECTION"
+fi
 stop_stale_fake_server
 bun "$ROOT_DIR/scripts/maestro/fake-capgo-server.mjs" >"$ARTIFACT_DIR/fake-capgo-server.log" 2>&1 &
 SERVER_PID=$!

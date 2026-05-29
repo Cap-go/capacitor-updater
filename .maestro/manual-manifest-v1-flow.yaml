@@ -94,6 +94,8 @@ appId: app.capgo.updater
 - tapOn:
     id: 'quick-action-reload-app'
     waitToSettleTimeoutMs: 500
+- stopApp
+- launchApp
 - extendedWaitUntil:
     visible: '@capgo/capacitor-updater'
     timeout: 180000
