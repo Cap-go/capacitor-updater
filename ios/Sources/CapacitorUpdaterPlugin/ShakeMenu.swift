@@ -29,7 +29,7 @@ extension UIWindow {
             // Find the CapacitorUpdaterPlugin instance
             guard let bridgeViewController = rootViewController as? CAPBridgeViewController,
                   let bridge = bridgeViewController.bridge,
-                  let plugin = bridge.plugin(withName: "CapacitorUpdaterPlugin") as? CapacitorUpdaterPlugin else {
+                  let plugin = bridge.plugin(withName: "CapacitorUpdater") as? CapacitorUpdaterPlugin else {
                 return
             }
 
