@@ -14,11 +14,13 @@ jobs:
   # Run all tests first before creating any tags
   test:
     if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
+    # Called workflow jobs are capped at 10 minutes; never raise that unless explicitly asked.
     uses: ./.github/workflows/test.yml
 
   # Only bump version and create tag if all tests pass
   bump-version:
     needs: [test]
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
     timeout-minutes: 10
     if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
     runs-on: ubuntu-latest

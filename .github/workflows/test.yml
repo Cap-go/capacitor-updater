@@ -15,6 +15,7 @@ on:
 
 jobs:
   guard_swiftpm_version:
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
     timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
@@ -32,6 +33,7 @@ jobs:
             exit 1
           fi
   build_android:
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
     timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
@@ -69,6 +71,7 @@ jobs:
         id: test_android
         run: bun run native:test:android
   build_ios:
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
     timeout-minutes: 10
     runs-on: macOS-latest
     steps:
@@ -101,6 +104,7 @@ jobs:
         id: test_ios
         run: bun run native:test:ios
   maestro_android_example_app:
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
     timeout-minutes: 10
     runs-on: ubuntu-latest
     name: Android example app Maestro smoke / ${{ matrix.scenario }}
@@ -157,6 +161,7 @@ jobs:
           name: maestro-results-android-${{ matrix.scenario }}
           path: maestro-results
   maestro_ios_example_app:
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
     timeout-minutes: 10
     runs-on: macOS-latest
     name: iOS example app Maestro smoke / ${{ matrix.scenario }}
@@ -194,6 +199,7 @@ jobs:
           name: maestro-results-ios-${{ matrix.scenario }}
           path: maestro-results-ios
   maestro_ios_live_update:
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
     timeout-minutes: 10
     runs-on: macOS-latest
     name: iOS example app Maestro live update / ${{ matrix.scenario }}
@@ -238,6 +244,7 @@ jobs:
           name: maestro-results-ios-live-update-${{ matrix.scenario }}
           path: maestro-results-ios-live-update/${{ matrix.scenario }}
   web:
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
     timeout-minutes: 10
     runs-on: ubuntu-latest
     name: 'Build code and test'
@@ -271,6 +278,7 @@ jobs:
         id: verify_code
         run: bun run verify:web
   maestro_android_scenarios:
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
     timeout-minutes: 10
     runs-on: ubuntu-latest
     name: maestro_android / ${{ matrix.scenario }}
@@ -327,6 +335,7 @@ jobs:
     if: always()
     needs:
       - maestro_android_scenarios
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
     timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:

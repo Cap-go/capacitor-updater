@@ -12,6 +12,7 @@ on:
 jobs:
   # Tests already passed before tag was created, so just build and deploy
   deploy:
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
     timeout-minutes: 10
     runs-on: ubuntu-latest
     name: "Build code and npm release"

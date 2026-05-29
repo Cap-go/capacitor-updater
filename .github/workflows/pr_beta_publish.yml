@@ -25,6 +25,7 @@ jobs:
   publish:
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event.issue.pull_request && contains(github.event.comment.body, '/publish-beta')) }}
     runs-on: ubuntu-latest
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
     timeout-minutes: 10
     steps:
       - name: Resolve PR and access checks
