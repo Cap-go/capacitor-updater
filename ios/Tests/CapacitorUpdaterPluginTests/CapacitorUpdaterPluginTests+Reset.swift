@@ -323,6 +323,7 @@ extension CapacitorUpdaterTests {
     func testReloadFinalizesPendingBundleSideEffectsAfterSuccess() throws {
         let reloadPlugin = ReloadBypassCapacitorUpdaterPlugin()
         let reloadImplementation = ResetTrackingCapgoUpdater()
+        let resolved = expectation(description: "reload resolves on pending bundle success")
 
         reloadImplementation.nextBundleValue = BundleInfo(
             id: "pending-id",
@@ -336,13 +337,16 @@ extension CapacitorUpdaterTests {
         let call = try XCTUnwrap(CAPPluginCall(
             callbackId: "reload-success-test",
             options: [:],
-            success: { _, _ in },
+            success: { _, _ in
+                resolved.fulfill()
+            },
             error: { _ in
                 XCTFail("reload should resolve when the pending bundle reload succeeds")
             }
         ))
 
         reloadPlugin.reload(call)
+        wait(for: [resolved], timeout: 1.0)
 
         XCTAssertEqual(reloadImplementation.setCalls, 0)
         XCTAssertEqual(reloadImplementation.stagePendingReloadCalls, 1)

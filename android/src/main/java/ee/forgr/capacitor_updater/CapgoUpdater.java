@@ -1736,8 +1736,7 @@ public class CapgoUpdater {
                         }
 
                         if (response.code() == 400) {
-                            assert responseBody != null;
-                            String data = responseBody.string();
+                            String data = responseBody != null ? responseBody.string() : "";
                             if (data.contains("channel_not_found") && !defaultChannel.isEmpty()) {
                                 Map<String, Object> ret = new HashMap<>();
                                 ret.put("channel", defaultChannel);
@@ -1756,8 +1755,14 @@ public class CapgoUpdater {
                             return;
                         }
 
-                        assert responseBody != null;
-                        String responseData = responseBody.string();
+                        String responseData = responseBody != null ? responseBody.string() : "";
+                        if (responseData.isEmpty()) {
+                            Map<String, Object> retError = new HashMap<>();
+                            retError.put("message", "Empty response body");
+                            retError.put("error", "response_error");
+                            callback.callback(retError);
+                            return;
+                        }
                         JSONObject jsonResponse = new JSONObject(responseData);
 
                         // Check for server-side errors first
@@ -1877,8 +1882,14 @@ public class CapgoUpdater {
                             return;
                         }
 
-                        assert responseBody != null;
-                        String data = responseBody.string();
+                        String data = responseBody != null ? responseBody.string() : "";
+                        if (data.isEmpty()) {
+                            Map<String, Object> retError = new HashMap<>();
+                            retError.put("message", "Empty response body");
+                            retError.put("error", "response_error");
+                            callback.callback(retError);
+                            return;
+                        }
 
                         try {
                             Map<String, Object> ret = new HashMap<>();

@@ -69,7 +69,7 @@ extension CapacitorUpdaterTests {
     // MARK: - File System Tests
 
     func testFileOperations() {
-        let testPath = NSTemporaryDirectory().appending("test_file.txt")
+        let testPath = NSTemporaryDirectory().appending("\(UUID().uuidString)-test_file.txt")
         let testContent = "Test content"
 
         // Test file creation

@@ -11,6 +11,15 @@ import Foundation
     public static let versionUnknown: String = "unknown"
     public static let downloadedBuiltin: String = "1970-01-01T00:00:00.000Z"
 
+    @available(*, deprecated, renamed: "idBuiltin")
+    public static let ID_BUILTIN: String = BundleInfo.idBuiltin
+
+    @available(*, deprecated, renamed: "versionUnknown")
+    public static let VERSION_UNKNOWN: String = BundleInfo.versionUnknown
+
+    @available(*, deprecated, renamed: "downloadedBuiltin")
+    public static let DOWNLOADED_BUILTIN: String = BundleInfo.downloadedBuiltin
+
     private let downloaded: String
     private let id: String
     private let version: String

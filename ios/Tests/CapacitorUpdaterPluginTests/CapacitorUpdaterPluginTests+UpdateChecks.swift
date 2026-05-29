@@ -4,6 +4,14 @@ import Capacitor
 import Version
 
 extension CapacitorUpdaterTests {
+    func testDirectUpdatePrecheckDoesNotConsumeAtInstallState() {
+        plugin.configureDirectUpdateModeForTesting("atInstall")
+        plugin.wasRecentlyInstalledOrUpdated = true
+
+        XCTAssertTrue(plugin.canUseDirectUpdateWithoutConsumingState())
+        XCTAssertTrue(plugin.wasRecentlyInstalledOrUpdated)
+    }
+
     func testOnLaunchCompletionConsumesWindowAfterFirstCycle() {
         let current = BundleInfo(
             id: "test-id",

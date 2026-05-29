@@ -140,11 +140,18 @@ extension CapacitorUpdaterPlugin {
     }
 
     func cleanupObsoleteVersions(didResetCurrentBundle: Bool = false) {
+        cleanupCondition.lock()
+        cleanupComplete = false
+        cleanupInProgress = true
+        cleanupCondition.unlock()
+
         cleanupThread = Thread {
-            self.cleanupLock.lock()
             defer {
+                self.cleanupCondition.lock()
                 self.cleanupComplete = true
-                self.cleanupLock.unlock()
+                self.cleanupInProgress = false
+                self.cleanupCondition.broadcast()
+                self.cleanupCondition.unlock()
                 self.logger.info("Cleanup complete")
             }
 
@@ -218,7 +225,10 @@ extension CapacitorUpdaterPlugin {
         let timeout = Double(self.appReadyTimeout / 2) / 1000.0
         Thread.detachNewThread {
             Thread.sleep(forTimeInterval: timeout)
-            if let thread = self.cleanupThread, !thread.isFinished && !self.cleanupComplete {
+            self.cleanupCondition.lock()
+            let shouldCancelCleanup = self.cleanupInProgress && !self.cleanupComplete
+            self.cleanupCondition.unlock()
+            if let thread = self.cleanupThread, !thread.isFinished && shouldCancelCleanup {
                 self.logger.warn("Cleanup timeout exceeded (\(timeout)s), cancelling cleanup thread")
                 thread.cancel()
             }
@@ -226,15 +236,18 @@ extension CapacitorUpdaterPlugin {
     }
 
     func waitForCleanupIfNeeded() {
-        if cleanupComplete {
+        cleanupCondition.lock()
+        if !cleanupInProgress || cleanupComplete {
+            cleanupCondition.unlock()
             return  // Already done, no need to wait
         }
 
         logger.info("Waiting for cleanup to complete before starting download...")
 
-        // Wait for cleanup to complete - blocks until lock is released
-        cleanupLock.lock()
-        cleanupLock.unlock()
+        while cleanupInProgress && !cleanupComplete {
+            cleanupCondition.wait()
+        }
+        cleanupCondition.unlock()
 
         logger.info("Cleanup finished, proceeding with download")
     }

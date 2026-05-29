@@ -252,6 +252,21 @@ extension CapacitorUpdaterPlugin {
 
         CryptoCipher.logChecksumInfo(label: "Bundle checksum", hexChecksum: next.getChecksum())
         CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: response.checksum)
+        if self.implementation.publicKey != "", response.checksum == "", response.manifest == nil {
+            self.logger.error("Public key present but no checksum provided")
+            self.implementation.sendStats(action: "checksum_required", versionName: next.getVersionName())
+            let id = next.getId()
+            if !self.implementation.delete(id: id) {
+                self.logger.error("Delete failed, id \(id) doesn't exist")
+            }
+            self.endBackGroundTaskWithNotif(
+                msg: "Error checksum",
+                latestVersionName: response.version,
+                current: current,
+                plannedDirectUpdate: plannedDirectUpdate
+            )
+            return false
+        }
         guard response.checksum != "", next.getChecksum() != response.checksum, response.manifest == nil else {
             return true
         }
@@ -299,6 +314,8 @@ extension CapacitorUpdaterPlugin {
     func installDownloadedBundleNow(next: BundleInfo, latestVersionName: String, plannedDirectUpdate: Bool) {
         if hasDelayConditions() {
             self.logger.info("Update delayed until delay conditions met")
+            self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
+            _ = self.implementation.setNextBundle(next: next.getId())
             self.endBackGroundTaskWithNotif(
                 msg: "Update delayed until delay conditions met",
                 latestVersionName: latestVersionName,

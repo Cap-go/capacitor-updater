@@ -150,8 +150,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     let downloadTimeout: TimeInterval = 3600 // 1 hour timeout
 
     // Lock to ensure cleanup completes before downloads start
-    let cleanupLock = NSLock()
+    let cleanupCondition = NSCondition()
     var cleanupComplete = false
+    var cleanupInProgress = false
     var cleanupThread: Thread?
     var persistCustomId = false
     var persistModifyUrl = false

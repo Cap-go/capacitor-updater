@@ -185,10 +185,11 @@ extension CapgoUpdater {
         guard let bundlePath: String = UserDefaults.standard.string(forKey: self.capServerPathKey) else {
             return BundleInfo.idBuiltin
         }
-        if (bundlePath).isEmpty {
+        let normalizedPath = bundlePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalizedPath.isEmpty || normalizedPath == self.defaultFolder {
             return BundleInfo.idBuiltin
         }
-        let bundleID: String = bundlePath.components(separatedBy: "/").last ?? bundlePath
+        let bundleID: String = normalizedPath.components(separatedBy: "/").last ?? normalizedPath
         return bundleID
     }
 

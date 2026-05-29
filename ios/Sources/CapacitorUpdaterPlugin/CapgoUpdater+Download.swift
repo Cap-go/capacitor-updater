@@ -165,8 +165,8 @@ extension CapgoUpdater {
     }
 
     func downloadImpl(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
-        let id: String = self.randomString(length: 10)
-        // Each download uses its own temp files keyed by bundle ID to prevent collisions
+        let id = self.stableDownloadId(url: url, version: version, sessionKey: sessionKey)
+        // Downloads use deterministic temp files so interrupted retries can resume.
         if version != getLocalUpdateVersion(for: id) {
             cleanDownloadData(for: id)
         }

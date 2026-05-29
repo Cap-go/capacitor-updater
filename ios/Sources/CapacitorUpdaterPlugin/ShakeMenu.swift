@@ -330,7 +330,8 @@ extension UIWindow {
         let setResult = updater.setChannel(
             channel: name,
             defaultChannelKey: "CapacitorUpdater.defaultChannel",
-            allowSetDefaultChannel: plugin.allowSetDefaultChannel
+            allowSetDefaultChannel: plugin.allowSetDefaultChannel,
+            configDefaultChannel: plugin.getConfig().getString("defaultChannel", "") ?? ""
         )
         guard setResult.error.isEmpty else {
             dismiss(progressAlert, error: "Failed to set channel: \(setResult.error)", plugin: plugin)
@@ -382,7 +383,8 @@ extension UIWindow {
             dismiss(progressAlert, error: "Channel set to \(channelName). Update check blocked: \(detail)", plugin: plugin)
             return false
         }
-        if latestKind == "up_to_date" || latest.url.isEmpty {
+        let hasManifest = !(latest.manifest?.isEmpty ?? true)
+        if latestKind == "up_to_date" || (latest.url.isEmpty && !hasManifest) {
             dismiss(progressAlert, success: "Channel set to \(channelName). Already on latest version.", plugin: plugin)
             return false
         }

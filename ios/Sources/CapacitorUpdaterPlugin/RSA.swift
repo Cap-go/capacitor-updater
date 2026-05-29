@@ -56,6 +56,10 @@ public struct RSAPublicKey {
                 return RSAPublicKey(manualKey: manualKey)
             }
 
+            guard rsaPublicKeyData.first != 0x30 else {
+                return nil
+            }
+
             // Most common public exponent is 65537 (0x010001)
             let commonExponent = Data([0x01, 0x00, 0x01]) // 65537 in big-endian
 
@@ -161,7 +165,60 @@ struct ManualRSAPublicKey {
         return ManualRSAPublicKey(modulus: modulusData, exponent: exponentData)
     }
 
-    // Parse PKCS#1 format public key
+    private static func parsePKCS1Sequence(_ bytes: [UInt8]) -> ManualRSAPublicKey? {
+        var reader = DERReader(bytes: bytes, index: 0)
+        guard reader.readTag(0x30),
+              let sequenceLength = reader.readLength(),
+              reader.index + sequenceLength <= bytes.count,
+              let modulusData = reader.readIntegerData(),
+              let exponentData = reader.readIntegerData() else {
+            return nil
+        }
+        return ManualRSAPublicKey(modulus: modulusData, exponent: exponentData)
+    }
+
+    private static func parseSubjectPublicKeyInfo(_ bytes: [UInt8]) -> ManualRSAPublicKey? {
+        var reader = DERReader(bytes: bytes, index: 0)
+        guard reader.readTag(0x30),
+              let outerLength = reader.readLength(),
+              reader.index + outerLength <= bytes.count else {
+            return nil
+        }
+        let outerEnd = reader.index + outerLength
+
+        guard reader.readTag(0x30),
+              let algorithmLength = reader.readLength(),
+              reader.index + algorithmLength <= outerEnd else {
+            return nil
+        }
+        let algorithmEnd = reader.index + algorithmLength
+
+        guard reader.readTag(0x06),
+              let oidLength = reader.readLength(),
+              reader.index + oidLength <= algorithmEnd else {
+            return nil
+        }
+        let rsaEncryptionOID: [UInt8] = [0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01]
+        let oid = Array(bytes[reader.index..<(reader.index + oidLength)])
+        guard oid == rsaEncryptionOID else {
+            return nil
+        }
+
+        reader.index = algorithmEnd
+        guard reader.readTag(0x03),
+              let bitStringLength = reader.readLength(),
+              bitStringLength > 1,
+              reader.index + bitStringLength <= outerEnd,
+              bytes[reader.index] == 0x00 else {
+            return nil
+        }
+
+        let payloadStart = reader.index + 1
+        let payloadEnd = reader.index + bitStringLength
+        return parsePKCS1Sequence(Array(bytes[payloadStart..<payloadEnd]))
+    }
+
+    // Parse PKCS#1 or SubjectPublicKeyInfo format public key
     static func fromPKCS1(_ publicKeyData: Data) -> ManualRSAPublicKey? {
         guard !publicKeyData.isEmpty else {
             return nil
@@ -172,14 +229,7 @@ struct ManualRSAPublicKey {
             return rawKeyFallback(publicKeyData)
         }
 
-        var reader = DERReader(bytes: bytes, index: 1)
-        guard reader.readLength() != nil,
-              let modulusData = reader.readIntegerData(),
-              let exponentData = reader.readIntegerData() else {
-            return nil
-        }
-
-        return ManualRSAPublicKey(modulus: modulusData, exponent: exponentData)
+        return parsePKCS1Sequence(bytes) ?? parseSubjectPublicKeyInfo(bytes)
     }
 
     // Decrypt data using raw RSA operation (c^d mod n)

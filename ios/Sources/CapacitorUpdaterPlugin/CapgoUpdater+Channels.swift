@@ -25,7 +25,7 @@ extension CapgoUpdater {
         return setChannel
     }
 
-    func setChannel(channel: String, defaultChannelKey: String, allowSetDefaultChannel: Bool) -> SetChannel {
+    func setChannel(channel: String, defaultChannelKey: String, allowSetDefaultChannel: Bool, configDefaultChannel: String = "") -> SetChannel {
         let setChannel: SetChannel = SetChannel()
 
         // Check if setting defaultChannel is allowed
@@ -105,6 +105,7 @@ extension CapgoUpdater {
         } else if responseValue.unset == true {
             UserDefaults.standard.removeObject(forKey: defaultChannelKey)
             UserDefaults.standard.synchronize()
+            self.defaultChannel = configDefaultChannel
             self.logger.info("Public channel requested, channel override removed")
 
             setChannel.status = responseValue.status ?? "ok"

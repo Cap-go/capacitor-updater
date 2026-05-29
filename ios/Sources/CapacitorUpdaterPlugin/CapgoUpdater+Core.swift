@@ -174,6 +174,16 @@ extension CapgoUpdater {
         return String((0..<length).map { _ in letters.randomElement()! })
     }
 
+    func stableDownloadId(url: URL, version: String, sessionKey: String) -> String {
+        let source = "\(sessionKey)|\(version)|\(url.absoluteString)"
+        var hash: UInt64 = 1_469_598_103_934_665_603
+        for byte in source.utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* 1_099_511_628_211
+        }
+        return String(format: "dl-%016llx", hash)
+    }
+
     public func setPublicKey(_ publicKey: String) {
         // Empty string means no encryption - proceed normally
         if publicKey.isEmpty {
@@ -182,9 +192,12 @@ extension CapgoUpdater {
             return
         }
 
-        // Non-empty: must be a valid RSA key or crash
+        // Non-empty: must be a valid RSA key or encrypted updates stay disabled.
         guard RSAPublicKey.load(rsaPublicKey: publicKey) != nil else {
-            fatalError("Invalid public key in capacitor.config.json: failed to parse RSA key. Remove the key or provide a valid PEM-formatted RSA public key.")
+            self.logger.error("Invalid public key in capacitor.config.json: failed to parse RSA key. Disabling encrypted updates.")
+            self.publicKey = ""
+            self.cachedKeyId = nil
+            return
         }
 
         self.publicKey = publicKey

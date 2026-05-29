@@ -79,8 +79,13 @@ extension CapacitorUpdaterPlugin {
         }
         self.saveCallForAsyncHandling(call)
         runGetLatestWork {
+            guard let updateURL = URL(string: self.updateUrl) else {
+                self.logger.error("getLatest called with invalid updateUrl")
+                self.rejectCall(call, message: "Invalid updateUrl")
+                return
+            }
             let res = self.implementation.getLatest(
-                url: URL(string: self.updateUrl)!,
+                url: updateURL,
                 channel: channel,
                 appIdOverride: appId
             )
@@ -221,9 +226,15 @@ extension CapacitorUpdaterPlugin {
             return
         }
         let triggerAutoUpdate = call.getBool("triggerAutoUpdate") ?? false
+        let configDefaultChannel = self.getConfig().getString("defaultChannel", "") ?? ""
         self.saveCallForAsyncHandling(call)
         DispatchQueue.global(qos: .utility).async {
-            let res = self.implementation.setChannel(channel: channel, defaultChannelKey: self.defaultChannelDefaultsKey, allowSetDefaultChannel: self.allowSetDefaultChannel)
+            let res = self.implementation.setChannel(
+                channel: channel,
+                defaultChannelKey: self.defaultChannelDefaultsKey,
+                allowSetDefaultChannel: self.allowSetDefaultChannel,
+                configDefaultChannel: configDefaultChannel
+            )
             if res.error != "" {
                 // Fire channelPrivate event if channel doesn't allow self-assignment
                 if res.error.contains("cannot_update_via_private_channel") || res.error.contains("channel_self_set_not_allowed") {

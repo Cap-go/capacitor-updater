@@ -92,7 +92,7 @@ extension CapacitorUpdaterPlugin {
                 canShowSplashscreen = false
             }
 
-            if !self.shouldUseDirectUpdate() {
+            if !self.canUseDirectUpdateWithoutConsumingState() {
                 if self.directUpdateMode == "false" {
                     logger.warn("autoSplashscreen is enabled but directUpdate is not configured for immediate updates. Set directUpdate to 'always' or disable autoSplashscreen.")
                 } else if self.directUpdateMode == "atInstall" || self.directUpdateMode == "onLaunch" {

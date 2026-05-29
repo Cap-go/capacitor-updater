@@ -178,8 +178,12 @@ extension CapacitorUpdaterPlugin {
         let sessionKey = call.getString("sessionKey", "")
         var checksum = call.getString("checksum", "")
         let manifestArray = call.getArray("manifest")
-        let url = URL(string: urlString)
-        logger.info("Downloading \(String(describing: url))")
+        guard let downloadURL = URL(string: urlString) else {
+            logger.error("Download called with invalid url")
+            call.reject("Invalid url")
+            return
+        }
+        logger.info("Downloading \(downloadURL)")
         self.saveCallForAsyncHandling(call)
         self.runBackgroundDownloadWork {
             do {
@@ -187,7 +191,7 @@ extension CapacitorUpdaterPlugin {
                 if let manifestEntries = self.manifestEntries(from: manifestArray) {
                     next = try self.implementation.downloadManifest(manifest: manifestEntries, version: version, sessionKey: sessionKey)
                 } else {
-                    next = try self.implementation.download(url: url!, version: version, sessionKey: sessionKey)
+                    next = try self.implementation.download(url: downloadURL, version: version, sessionKey: sessionKey)
                 }
                 // If public key is present but no checksum provided, refuse installation
                 if self.implementation.publicKey != "" && checksum == "" {
@@ -221,12 +225,12 @@ extension CapacitorUpdaterPlugin {
                 self.notifyListenersOnMain("updateAvailable", data: updateAvailablePayload)
                 self.resolveCall(call, data: next.toJSON())
             } catch {
-                self.logger.error("Failed to download from: \(String(describing: url)) \(error.localizedDescription)")
+                self.logger.error("Failed to download from: \(downloadURL) \(error.localizedDescription)")
                 var downloadFailedPayload: JSObject = [:]
                 downloadFailedPayload["version"] = version
                 self.notifyListenersOnMain("downloadFailed", data: downloadFailedPayload)
                 self.implementation.sendStats(action: "download_fail")
-                self.rejectCall(call, message: "Failed to download from: \(url!) - \(error.localizedDescription)")
+                self.rejectCall(call, message: "Failed to download from: \(downloadURL) - \(error.localizedDescription)")
             }
         }
     }

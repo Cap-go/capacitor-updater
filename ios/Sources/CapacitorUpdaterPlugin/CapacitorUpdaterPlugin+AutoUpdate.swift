@@ -57,6 +57,28 @@ extension CapacitorUpdaterPlugin {
         }
     }
 
+    func canUseDirectUpdateWithoutConsumingState() -> Bool {
+        if !self.autoUpdate || self.autoUpdateMode == Self.autoUpdateModeOnlyDownload {
+            return false
+        }
+        if self.autoSplashscreenTimedOut {
+            return false
+        }
+        switch directUpdateMode {
+        case "false":
+            return false
+        case "always":
+            return true
+        case "atInstall":
+            return self.wasRecentlyInstalledOrUpdated
+        case "onLaunch":
+            return !self.getOnLaunchDirectUpdateUsed()
+        default:
+            logger.error("Invalid directUpdateMode: \"\(self.directUpdateMode)\". Supported values are: \"false\", \"always\", \"atInstall\", \"onLaunch\". Defaulting to \"false\" behavior.")
+            return false
+        }
+    }
+
     func configureAutoUpdateModeFromConfig() {
         if let configuredMode = getConfig().getString("autoUpdate"),
            configuredMode != "",

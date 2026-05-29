@@ -181,6 +181,12 @@ extension CapacitorUpdaterTests {
         XCTAssertFalse(bundleInfo.isUnknown())
     }
 
+    func testBundleInfoDeprecatedAliasesForwardToNewConstants() {
+        XCTAssertEqual(BundleInfo.ID_BUILTIN, BundleInfo.idBuiltin)
+        XCTAssertEqual(BundleInfo.VERSION_UNKNOWN, BundleInfo.versionUnknown)
+        XCTAssertEqual(BundleInfo.DOWNLOADED_BUILTIN, BundleInfo.downloadedBuiltin)
+    }
+
     func testBundleInfoUnknown() {
         let bundleInfo = BundleInfo(
             id: BundleInfo.versionUnknown,
@@ -356,6 +362,77 @@ extension CapacitorUpdaterTests {
         XCTAssertEqual(result.message, "Unauthorized")
         XCTAssertEqual(updater.defaultChannel, "stable")
         XCTAssertNil(UserDefaults.standard.string(forKey: defaultsKey))
+    }
+
+    func testSetChannelUnsetRestoresConfiguredDefaultChannel() throws {
+        let updater = ChannelRequestCapgoUpdater()
+        updater.setLogger(Logger(withTag: "TestLogger"))
+        updater.channelUrl = "https://example.com/channel"
+        updater.defaultChannel = "beta"
+
+        let channelURL = try XCTUnwrap(URL(string: "https://example.com/channel"))
+        let response = try XCTUnwrap(HTTPURLResponse(url: channelURL, statusCode: 200, httpVersion: nil, headerFields: nil))
+        let responseData = try XCTUnwrap("""
+        {"status":"ok","message":"Public channel requested","unset":true}
+        """.data(using: .utf8))
+        updater.requestResult = CapgoUpdater.RequestResult(data: responseData, response: response, error: nil, timedOut: false)
+
+        let defaultsKey = "CapacitorUpdaterTests.defaultChannel.\(UUID().uuidString)"
+        UserDefaults.standard.set("beta", forKey: defaultsKey)
+        defer {
+            UserDefaults.standard.removeObject(forKey: defaultsKey)
+        }
+
+        let result = updater.setChannel(
+            channel: "public",
+            defaultChannelKey: defaultsKey,
+            allowSetDefaultChannel: true,
+            configDefaultChannel: "stable"
+        )
+
+        XCTAssertEqual(result.status, "ok")
+        XCTAssertEqual(updater.defaultChannel, "stable")
+        XCTAssertNil(UserDefaults.standard.string(forKey: defaultsKey))
+    }
+
+    func testCurrentBundleIdReturnsBuiltinForDefaultFolder() {
+        let updater = CapgoUpdater()
+        let previous = UserDefaults.standard.string(forKey: updater.capServerPathKey)
+        defer {
+            if let previous {
+                UserDefaults.standard.set(previous, forKey: updater.capServerPathKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: updater.capServerPathKey)
+            }
+        }
+
+        UserDefaults.standard.set(updater.defaultFolder, forKey: updater.capServerPathKey)
+
+        XCTAssertEqual(updater.getCurrentBundleId(), BundleInfo.idBuiltin)
+    }
+
+    func testStableDownloadIdIsDeterministicForRetries() throws {
+        let updater = CapgoUpdater()
+        let url = try XCTUnwrap(URL(string: "https://example.com/update.zip"))
+
+        let first = updater.stableDownloadId(url: url, version: "1.0.0", sessionKey: "session")
+        let second = updater.stableDownloadId(url: url, version: "1.0.0", sessionKey: "session")
+        let differentSession = updater.stableDownloadId(url: url, version: "1.0.0", sessionKey: "other")
+
+        XCTAssertEqual(first, second)
+        XCTAssertNotEqual(first, differentSession)
+    }
+
+    func testInvalidPublicKeyDisablesEncryptionWithoutCrashing() {
+        let updater = CapgoUpdater()
+        updater.setLogger(Logger(withTag: "TestLogger"))
+        updater.publicKey = "previous-key"
+        updater.cachedKeyId = "previous-key-id"
+
+        updater.setPublicKey("not a valid pem")
+
+        XCTAssertEqual(updater.publicKey, "")
+        XCTAssertNil(updater.getKeyId())
     }
 
     func testListChannelsUsesSnakeCaseQueryParameters() throws {
