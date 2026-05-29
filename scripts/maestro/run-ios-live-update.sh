@@ -318,6 +318,13 @@ read_app_marketing_version() {
   )"
 
   if [[ -z "$APP_MARKETING_VERSION" ]]; then
+    APP_MARKETING_VERSION="$(
+      sed -n 's/^[[:space:]]*MARKETING_VERSION = \([^;]*\);/\1/p' "$EXAMPLE_DIR/ios/App/App.xcodeproj/project.pbxproj" |
+        head -n 1
+    )"
+  fi
+
+  if [[ -z "$APP_MARKETING_VERSION" ]]; then
     echo "Unable to determine example-app iOS MARKETING_VERSION." >&2
     return 1
   fi
