@@ -68,14 +68,19 @@ extension GetChannel {
         return dict
     }
 }
-// swiftlint:disable identifier_name
 struct ChannelInfo: Codable {
     let id: String?
     let name: String?
     let `public`: Bool?
-    let allow_self_set: Bool?
+    let allowSelfSet: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case id, name
+        case `public`
+        case allowSelfSet = "allow_self_set"
+    }
 }
-// swiftlint:enable identifier_name
+
 struct ListChannelsDec: Decodable {
     let channels: [ChannelInfo]?
     let error: String?
@@ -115,24 +120,23 @@ extension ListChannels {
         return dict
     }
 }
-// swiftlint:disable identifier_name
 struct InfoObject: Codable {
     let platform: String?
-    let device_id: String?
-    let app_id: String?
-    let custom_id: String?
-    let version_build: String?
-    let version_code: String?
-    let version_os: String?
-    var version_name: String?
-    var old_version_name: String?
-    let plugin_version: String?
-    let is_emulator: Bool?
-    let is_prod: Bool?
+    let deviceId: String?
+    let appId: String?
+    let customId: String?
+    let versionBuild: String?
+    let versionCode: String?
+    let versionOs: String?
+    var versionName: String?
+    var oldVersionName: String?
+    let pluginVersion: String?
+    let isEmulator: Bool?
+    let isProd: Bool?
     var action: String?
     var channel: String?
     var defaultChannel: String?
-    var key_id: String?
+    var keyId: String?
 }
 
 extension InfoObject {
@@ -145,71 +149,91 @@ extension InfoObject {
             parameters[key] = value
         }
         set("platform", platform)
-        set("device_id", device_id)
-        set("app_id", app_id)
-        set("custom_id", custom_id)
-        set("version_build", version_build)
-        set("version_code", version_code)
-        set("version_os", version_os)
-        set("version_name", version_name)
-        set("old_version_name", old_version_name)
-        set("plugin_version", plugin_version)
-        set("is_emulator", is_emulator)
-        set("is_prod", is_prod)
+        set("device_id", deviceId)
+        set("app_id", appId)
+        set("custom_id", customId)
+        set("version_build", versionBuild)
+        set("version_code", versionCode)
+        set("version_os", versionOs)
+        set("version_name", versionName)
+        set("old_version_name", oldVersionName)
+        set("plugin_version", pluginVersion)
+        set("is_emulator", isEmulator)
+        set("is_prod", isProd)
         set("action", action)
         set("channel", channel)
         set("defaultChannel", defaultChannel)
-        set("key_id", key_id)
+        set("key_id", keyId)
         return parameters
     }
 }
-// swiftlint:enable identifier_name
 
-// swiftlint:disable identifier_name
 struct StatsEvent: Codable {
     let platform: String?
-    let device_id: String?
-    let app_id: String?
-    let custom_id: String?
-    let version_build: String?
-    let version_code: String?
-    let version_os: String?
-    let version_name: String?
-    let old_version_name: String?
-    let plugin_version: String?
-    let is_emulator: Bool?
-    let is_prod: Bool?
+    let deviceId: String?
+    let appId: String?
+    let customId: String?
+    let versionBuild: String?
+    let versionCode: String?
+    let versionOs: String?
+    let versionName: String?
+    let oldVersionName: String?
+    let pluginVersion: String?
+    let isEmulator: Bool?
+    let isProd: Bool?
     let action: String?
     let channel: String?
     let defaultChannel: String?
-    let key_id: String?
+    let keyId: String?
     let metadata: [String: String]?
     let timestamp: Int64
-}
-// swiftlint:enable identifier_name
 
-// swiftlint:disable identifier_name
-public struct ManifestEntry: Codable {
-    let file_name: String?
-    let file_hash: String?
-    let download_url: String?
+    enum CodingKeys: String, CodingKey {
+        case platform
+        case deviceId = "device_id"
+        case appId = "app_id"
+        case customId = "custom_id"
+        case versionBuild = "version_build"
+        case versionCode = "version_code"
+        case versionOs = "version_os"
+        case versionName = "version_name"
+        case oldVersionName = "old_version_name"
+        case pluginVersion = "plugin_version"
+        case isEmulator = "is_emulator"
+        case isProd = "is_prod"
+        case action, channel, defaultChannel, metadata, timestamp
+        case keyId = "key_id"
+    }
 }
-// swiftlint:enable identifier_name
+
+public struct ManifestEntry: Codable {
+    let fileName: String?
+    let fileHash: String?
+    let downloadUrl: String?
+
+    enum CodingKeys: String, CodingKey {
+        case fileName = "file_name"
+        case fileHash = "file_hash"
+        case downloadUrl = "download_url"
+    }
+}
 
 extension ManifestEntry {
     func toDict() -> [String: Any] {
-        var dict: [String: Any] = [String: Any]()
-        let mirror = Mirror(reflecting: self)
-        for child in mirror.children {
-            if let key = child.label {
-                dict[key] = child.value
-            }
+        var dict: [String: Any] = [:]
+        if let fileName {
+            dict["file_name"] = fileName
+        }
+        if let fileHash {
+            dict["file_hash"] = fileHash
+        }
+        if let downloadUrl {
+            dict["download_url"] = downloadUrl
         }
         return dict
     }
 }
 
-// swiftlint:disable identifier_name
 struct AppVersionDec: Decodable {
     let version: String?
     let checksum: String?
@@ -217,7 +241,7 @@ struct AppVersionDec: Decodable {
     let message: String?
     let error: String?
     let kind: String?
-    let session_key: String?
+    let sessionKey: String?
     let major: Bool?
     let breaking: Bool?
     let data: [String: String]?
@@ -225,8 +249,12 @@ struct AppVersionDec: Decodable {
     let link: String?
     let comment: String?
     // The HTTP status code is captured separately in CapgoUpdater; this struct only mirrors JSON.
+
+    enum CodingKeys: String, CodingKey {
+        case version, checksum, url, message, error, kind, major, breaking, data, manifest, link, comment
+        case sessionKey = "session_key"
+    }
 }
-// swiftlint:enable identifier_name
 
 public class AppVersion: NSObject {
     var version: String = ""

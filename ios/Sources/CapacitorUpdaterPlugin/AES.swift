@@ -23,14 +23,11 @@ public struct AES128Key {
     private let logger: Logger
     private let aes128Key: Data
     #if DEBUG
-    // swiftlint:disable:next identifier_name
-    public var __debug_iv: Data { initVector }
-    // swiftlint:disable:next identifier_name
-    public var __debug_aes128Key: Data { aes128Key }
+    public var debugInitVector: Data { initVector }
+    public var debugAES128Key: Data { aes128Key }
     #endif
-    // swiftlint:disable:next identifier_name
-    init(iv: Data, aes128Key: Data, logger: Logger) {
-        self.initVector = iv
+    init(initVector: Data, aes128Key: Data, logger: Logger) {
+        self.initVector = initVector
         self.aes128Key = aes128Key
         self.logger = logger
     }
