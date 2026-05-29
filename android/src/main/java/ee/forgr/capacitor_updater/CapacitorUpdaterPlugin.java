@@ -106,6 +106,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final String PREVIEW_PREVIOUS_DEFAULT_CHANNEL_WAS_SET_PREF_KEY = "CapacitorUpdater.previewPreviousDefaultChannelWasSet";
     private static final String PREVIEW_APP_ID_PREF_KEY = "CapacitorUpdater.previewAppId";
     private static final String PREVIEW_PAYLOAD_URL_PREF_KEY = "CapacitorUpdater.previewPayloadUrl";
+    private static final String PREVIEW_SESSION_ALERT_PENDING_PREF_KEY = "CapacitorUpdater.previewSessionAlertPending";
     private static final String[] BREAKING_EVENT_NAMES = { "breakingAvailable", "majorAvailable" };
     private static final String LAST_FAILED_BUNDLE_PREF_KEY = "CapacitorUpdater.lastFailedBundle";
     private static final String LAST_REPORTED_APP_EXIT_TIMESTAMP_PREF_KEY = "CapacitorUpdater.lastReportedAppExitTimestamp";
@@ -160,6 +161,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     Boolean shakeChannelSelectorEnabled = false;
     Boolean previewSessionEnabled = false;
     private Boolean previewSessionAlertPending = false;
+    private Boolean isLeavingPreviewForIncomingLink = false;
     private Boolean allowManualBundleError = false;
     private Boolean allowPreview = false;
     Boolean allowSetDefaultChannel = true;
@@ -502,6 +504,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         this.implementation.previewSession = Boolean.TRUE.equals(this.previewSessionEnabled);
         if (Boolean.TRUE.equals(this.previewSessionEnabled)) {
+            this.previewSessionAlertPending = this.prefs.contains(PREVIEW_SESSION_ALERT_PENDING_PREF_KEY)
+                ? this.prefs.getBoolean(PREVIEW_SESSION_ALERT_PENDING_PREF_KEY, false)
+                : true;
             final String previewAppId = this.prefs.getString(PREVIEW_APP_ID_PREF_KEY, "");
             if (previewAppId != null && !previewAppId.isEmpty()) {
                 this.setActiveAppId(previewAppId);
@@ -520,6 +525,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         if (nativeBuildVersionChanged) {
             this.clearPreviewSessionForNativeBuildChange();
         }
+        this.leavePreviewSessionForLaunchIntentIfNeeded();
         this.reportPreviousAppExitReasons();
         this.reportPreviousWebViewRenderProcessGone();
         this.installWebViewStatsReporter();
@@ -534,6 +540,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.delayUpdateUtils.checkCancelDelay(DelayUpdateUtils.CancelDelaySource.KILLED);
 
         this.checkForUpdateAfterDelay();
+        this.showPreviewSessionNoticeIfNeeded();
 
         // On Android 14+ (API 34+), topActivity in RecentTaskInfo returns null due to
         // security restrictions (StrandHogg task hijacking mitigations). Use ProcessLifecycleOwner
@@ -1322,9 +1329,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 );
             }
         } else {
-            final boolean enabled = configuredMode != null
-                ? "true".equals(configuredMode)
-                : Boolean.TRUE.equals(this.getConfig().getBoolean("autoUpdate", true));
+            final boolean enabled =
+                configuredMode != null
+                    ? "true".equals(configuredMode)
+                    : Boolean.TRUE.equals(this.getConfig().getBoolean("autoUpdate", true));
             this.autoUpdateMode = enabled
                 ? autoUpdateModeForLegacyDirectUpdateMode(this.resolveLegacyDirectUpdateModeFromConfig())
                 : AUTO_UPDATE_MODE_OFF;
@@ -2301,6 +2309,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 this.shakeMenuEnabled = true;
                 this.shakeChannelSelectorEnabled = false;
                 this.editor.putBoolean(PREVIEW_SESSION_PREF_KEY, true);
+                this.editor.putBoolean(PREVIEW_SESSION_ALERT_PENDING_PREF_KEY, true);
                 this.editor.apply();
                 this.ensureShakeMenuStarted();
                 call.resolve();
@@ -2322,6 +2331,58 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final BundleInfo previewFallbackBundle = this.implementation.getPreviewFallbackBundle();
         this.endPreviewSession();
         final BundleInfo restoredNextBundle = this.implementation.getNextBundle();
+        this.deletePreviewBundleIfUnused(previewBundle, previewFallbackBundle, restoredNextBundle);
+        return true;
+    }
+
+    private void leavePreviewSessionForLaunchIntentIfNeeded() {
+        final Intent intent = getActivity() == null ? null : getActivity().getIntent();
+        if (
+            intent == null ||
+            !Intent.ACTION_VIEW.equals(intent.getAction()) ||
+            intent.getData() == null ||
+            !Boolean.TRUE.equals(this.previewSessionEnabled) ||
+            !isPreviewDeepLink(intent.getData()) ||
+            Boolean.TRUE.equals(this.isLeavingPreviewForIncomingLink)
+        ) {
+            return;
+        }
+
+        this.isLeavingPreviewForIncomingLink = true;
+        logger.info("Preview deeplink launch detected while preview session is active; restoring fallback before initial load");
+        if (!this.leavePreviewSessionWithoutReload()) {
+            logger.error("Could not leave preview session before initial preview deeplink routing");
+            this.isLeavingPreviewForIncomingLink = false;
+        }
+    }
+
+    private boolean leavePreviewSessionWithoutReload() {
+        final BundleInfo previewBundle = this.implementation.getCurrentBundle();
+        final BundleInfo previewFallbackBundle = this.implementation.getPreviewFallbackBundle();
+        if (previewFallbackBundle == null || previewFallbackBundle.isErrorStatus()) {
+            logger.error("No preview fallback bundle available");
+            return false;
+        }
+        if (!this.implementation.canSet(previewFallbackBundle)) {
+            logger.error("Preview fallback bundle is not installable");
+            return false;
+        }
+        if (!this.implementation.stagePreviewFallbackReload(previewFallbackBundle)) {
+            logger.error("Could not stage preview fallback bundle");
+            return false;
+        }
+
+        this.endPreviewSession();
+        final BundleInfo restoredNextBundle = this.implementation.getNextBundle();
+        this.deletePreviewBundleIfUnused(previewBundle, previewFallbackBundle, restoredNextBundle);
+        return true;
+    }
+
+    private void deletePreviewBundleIfUnused(
+        final BundleInfo previewBundle,
+        final BundleInfo previewFallbackBundle,
+        final BundleInfo restoredNextBundle
+    ) {
         if (
             !previewBundle.isBuiltin() &&
             (previewFallbackBundle == null || !previewBundle.getId().equals(previewFallbackBundle.getId())) &&
@@ -2333,7 +2394,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 logger.warn("Cannot delete preview bundle " + previewBundle.getId() + ": " + err.getMessage());
             }
         }
-        return true;
     }
 
     public boolean reloadPreviewSessionFromShakeMenu() {
@@ -2388,6 +2448,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
         this.previewSessionEnabled = false;
         this.previewSessionAlertPending = false;
+        this.isLeavingPreviewForIncomingLink = false;
         this.implementation.previewSession = false;
         this.shakeMenuEnabled = previousShakeMenuEnabled;
         this.shakeChannelSelectorEnabled = previousShakeChannelSelectorEnabled;
@@ -2399,9 +2460,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private void clearPreviewSessionBecauseDisabled() {
         logger.info("Preview session disabled by config; restoring preview fallback");
         final BundleInfo fallback = this.implementation.getPreviewFallbackBundle();
-        final BundleInfo bundleToRestore = fallback == null || fallback.isErrorStatus()
-            ? this.implementation.getBundleInfo(BundleInfo.ID_BUILTIN)
-            : fallback;
+        final BundleInfo bundleToRestore =
+            fallback == null || fallback.isErrorStatus() ? this.implementation.getBundleInfo(BundleInfo.ID_BUILTIN) : fallback;
 
         if (this.implementation.canSet(bundleToRestore)) {
             this.implementation.stagePreviewFallbackReload(bundleToRestore);
@@ -2414,6 +2474,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.restorePreviewPreviousDefaultChannel();
         this.previewSessionEnabled = false;
         this.previewSessionAlertPending = false;
+        this.isLeavingPreviewForIncomingLink = false;
         this.implementation.previewSession = false;
         this.shakeMenuEnabled = this.getConfig().getBoolean("shakeMenu", false);
         this.shakeChannelSelectorEnabled = this.getConfig().getBoolean("allowShakeChannelSelector", false);
@@ -2433,6 +2494,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.editor.remove(PREVIEW_PREVIOUS_DEFAULT_CHANNEL_WAS_SET_PREF_KEY);
         this.editor.remove(PREVIEW_APP_ID_PREF_KEY);
         this.editor.remove(PREVIEW_PAYLOAD_URL_PREF_KEY);
+        this.editor.remove(PREVIEW_SESSION_ALERT_PENDING_PREF_KEY);
         this.editor.apply();
     }
 
@@ -2521,6 +2583,21 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private String storedPreviewPayloadUrl() {
         return this.normalizePreviewPayloadUrl(this.prefs.getString(PREVIEW_PAYLOAD_URL_PREF_KEY, null));
+    }
+
+    private String previewPathFromUri(final Uri uri) {
+        if ("capgo".equals(uri.getScheme())) {
+            final String host = uri.getHost();
+            final String path = uri.getPath();
+            return ("/" + (host == null ? "" : host) + (path == null ? "" : path)).replaceAll("/+", "/");
+        }
+
+        return uri.getPath();
+    }
+
+    private boolean isPreviewDeepLink(final Uri uri) {
+        final String path = this.previewPathFromUri(uri);
+        return "/preview/channel".equals(path) || "/preview/bundle".equals(path);
     }
 
     private String readResponseBody(final InputStream stream) throws IOException {
@@ -2619,6 +2696,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         logger.info("Native build changed; clearing preview session state");
         this.previewSessionEnabled = false;
         this.previewSessionAlertPending = false;
+        this.isLeavingPreviewForIncomingLink = false;
         this.implementation.previewSession = false;
         this.shakeMenuEnabled = this.getConfig().getBoolean("shakeMenu", false);
         this.shakeChannelSelectorEnabled = this.getConfig().getBoolean("allowShakeChannelSelector", false);
@@ -2657,30 +2735,33 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return;
         }
         this.previewSessionAlertPending = false;
+        this.editor.putBoolean(PREVIEW_SESSION_ALERT_PENDING_PREF_KEY, false);
+        this.editor.apply();
 
-        new Handler(Looper.getMainLooper()).postDelayed(
-            () -> {
-                try {
-                    if (!Boolean.TRUE.equals(this.previewSessionEnabled)) {
-                        return;
-                    }
-                    if (getActivity() == null || getActivity().isFinishing()) {
-                        this.previewSessionAlertPending = true;
-                        return;
-                    }
-
-                    new AlertDialog.Builder(getActivity())
-                        .setTitle("Preview started")
-                        .setMessage("Shake your device anytime to reload or leave the test app.")
-                        .setPositiveButton("Got it", (dialog, which) -> dialog.dismiss())
-                        .show();
-                } catch (final Exception e) {
-                    this.previewSessionAlertPending = true;
-                    logger.warn("Could not show preview session notice: " + e.getMessage());
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            try {
+                if (!Boolean.TRUE.equals(this.previewSessionEnabled)) {
+                    return;
                 }
-            },
-            600
-        );
+                if (getActivity() == null || getActivity().isFinishing()) {
+                    this.previewSessionAlertPending = true;
+                    this.editor.putBoolean(PREVIEW_SESSION_ALERT_PENDING_PREF_KEY, true);
+                    this.editor.apply();
+                    return;
+                }
+
+                new AlertDialog.Builder(getActivity())
+                    .setTitle("Preview started")
+                    .setMessage("Shake your device anytime to reload or leave the test app.")
+                    .setPositiveButton("Got it", (dialog, which) -> dialog.dismiss())
+                    .show();
+            } catch (final Exception e) {
+                this.previewSessionAlertPending = true;
+                this.editor.putBoolean(PREVIEW_SESSION_ALERT_PENDING_PREF_KEY, true);
+                this.editor.apply();
+                logger.warn("Could not show preview session notice: " + e.getMessage());
+            }
+        }, 600);
     }
 
     @PluginMethod
@@ -3918,6 +3999,34 @@ public class CapacitorUpdaterPlugin extends Plugin {
         } catch (NullPointerException e) {
             return false;
         }
+    }
+
+    @Override
+    protected void handleOnNewIntent(Intent intent) {
+        super.handleOnNewIntent(intent);
+        if (
+            intent == null ||
+            !Intent.ACTION_VIEW.equals(intent.getAction()) ||
+            intent.getData() == null ||
+            !Boolean.TRUE.equals(this.previewSessionEnabled) ||
+            !isPreviewDeepLink(intent.getData()) ||
+            Boolean.TRUE.equals(this.isLeavingPreviewForIncomingLink)
+        ) {
+            return;
+        }
+
+        this.isLeavingPreviewForIncomingLink = true;
+        if (getActivity() != null) {
+            getActivity().setIntent(intent);
+        }
+        logger.info("Preview deeplink received while preview session is active; restoring fallback before routing");
+        startNewThread(() -> {
+            final boolean didLeave = this.leavePreviewSessionFromShakeMenu();
+            if (!didLeave) {
+                logger.error("Could not leave preview session before routing incoming preview deeplink");
+                this.isLeavingPreviewForIncomingLink = false;
+            }
+        });
     }
 
     @Override

@@ -105,6 +105,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     let previewPreviousDefaultChannelWasSetDefaultsKey = "CapacitorUpdater.previewPreviousDefaultChannelWasSet"
     let previewAppIdDefaultsKey = "CapacitorUpdater.previewAppId"
     let previewPayloadUrlDefaultsKey = "CapacitorUpdater.previewPayloadUrl"
+    let previewSessionAlertPendingDefaultsKey = "CapacitorUpdater.previewSessionAlertPending"
+    let previewDeepLinkScheme = "capgo"
+    let previewDeepLinkRootComponent = "preview"
+    let previewDeepLinkChannelComponent = "channel"
+    let previewDeepLinkBundleComponent = "bundle"
+    let previewPathSeparator = Character(UnicodeScalar(UInt8(47)))
     // Delay preference keys live in DelayUpdateUtils.
     var updateUrl = ""
     var backgroundTaskID: UIBackgroundTaskIdentifier = UIBackgroundTaskIdentifier.invalid
@@ -158,6 +164,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     public var shakeChannelSelectorEnabled = false
     public var previewSessionEnabled = false
     var previewSessionAlertPending = false
+    var isLeavingPreviewForIncomingLink = false
     let semaphoreReady = DispatchSemaphore(value: 0)
 
     var delayUpdateUtils: DelayUpdateUtils!
@@ -252,6 +259,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         previewSessionEnabled = allowPreview && storedPreviewSessionEnabled
         implementation.previewSession = previewSessionEnabled
         if previewSessionEnabled {
+            previewSessionAlertPending = UserDefaults.standard.object(forKey: previewSessionAlertPendingDefaultsKey) as? Bool ?? true
             shakeMenuEnabled = true
             shakeChannelSelectorEnabled = false
         }
@@ -359,6 +367,7 @@ extension CapacitorUpdaterPlugin {
         if self.hasNativeBuildVersionChanged() {
             self.clearPreviewSessionForNativeBuildChange()
         }
+        self.leavePreviewSessionForLaunchURLIfNeeded()
         if resetWhenUpdate {
             let didResetCurrentBundle = self.resetCurrentBundleForNativeBuildChangeIfNeeded()
             self.cleanupObsoleteVersions(didResetCurrentBundle: didResetCurrentBundle)
@@ -366,17 +375,20 @@ extension CapacitorUpdaterPlugin {
         if !self.initialLoad() {
             logger.error("unable to force reload, the plugin might fallback to the builtin version")
         }
-        registerLifecycleObservers()
+        registerNotificationObservers()
         self.delayUpdateUtils.checkCancelDelay(source: .killed)
         self.appMovedToForeground()
         self.checkForUpdateAfterDelay()
+        self.showPreviewSessionNoticeIfNeeded()
     }
 
-    func registerLifecycleObservers() {
+    func registerNotificationObservers() {
         let notificationCenter = NotificationCenter.default
         notificationCenter.addObserver(self, selector: #selector(appMovedToBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
         notificationCenter.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
         notificationCenter.addObserver(self, selector: #selector(appWillTerminate), name: UIApplication.willTerminateNotification, object: nil)
         notificationCenter.addObserver(self, selector: #selector(appDidReceiveMemoryWarning), name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
+        notificationCenter.addObserver(self, selector: #selector(handleOpenURLForPreviewSession(notification:)), name: Notification.Name.capacitorOpenURL, object: nil)
+        notificationCenter.addObserver(self, selector: #selector(handleOpenURLForPreviewSession(notification:)), name: Notification.Name.capacitorOpenUniversalLink, object: nil)
     }
 }
