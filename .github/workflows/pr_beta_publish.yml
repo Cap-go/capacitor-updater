@@ -29,7 +29,7 @@ jobs:
     steps:
       - name: Resolve PR and access checks
         id: pr
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const prNumber = context.eventName === 'workflow_dispatch'
@@ -107,7 +107,7 @@ jobs:
             core.setOutput('head_sha', pr.head.sha);
 
       - name: Mark publish as running
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const marker = '<!-- pr-beta-publish -->';
@@ -211,7 +211,7 @@ jobs:
 
       - name: Publish success comment
         if: ${{ success() }}
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const marker = '<!-- pr-beta-publish -->';
@@ -272,7 +272,7 @@ jobs:
 
       - name: Publish failure comment
         if: ${{ failure() && steps.pr.outputs.pr_number != '' }}
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const marker = '<!-- pr-beta-publish -->';
