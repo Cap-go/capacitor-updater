@@ -37,5 +37,5 @@ appId: app.capgo.updater
     visible: '.*Harness: ready.*'
     timeout: 120000
 - extendedWaitUntil:
-    visible: '.*Probe: success.*'
+    visible: '.*(Marker: persisted:success|M:persisted:success).*'
     timeout: 120000

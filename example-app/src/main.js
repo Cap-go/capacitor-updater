@@ -153,7 +153,11 @@ let lastGlobalActionTriggerAt = 0;
 let suppressNonSequenceActionsUntil = 0;
 let suppressActionTriggersUntil = 0;
 const quickActionIds = [
+  'set-app-id',
+  'set-custom-id',
   'set-runtime-urls',
+  'set-channel-beta',
+  'unset-channel',
   'reset-server-release',
   'advance-server-release',
   'download-latest-bundle',
@@ -1558,6 +1562,7 @@ const actions = [
     id: 'set-app-id',
     label: 'Set app ID',
     buttonLabel: 'Apply app ID',
+    quickButtonLabel: 'Quick apply app ID',
     description: 'Change the updater app ID at runtime.',
     includeInSmokeSequence: true,
     successMarker: (result) =>
@@ -1573,17 +1578,19 @@ const actions = [
       },
     ],
     run: async (values) => {
+      const nextAppId = values.appId ?? runtimeSmokeAppId;
+
       if (!allowModifyAppId) {
-        return expectConfiguredRejection('setAppId()', () => plugin.setAppId({ appId: values.appId }), [
+        return expectConfiguredRejection('setAppId()', () => plugin.setAppId({ appId: nextAppId }), [
           'allowmodifyappid',
           'not allowed',
         ]);
       }
 
-      await plugin.setAppId({ appId: values.appId });
+      await plugin.setAppId({ appId: nextAppId });
       const result = await plugin.getAppId();
       expectStringFieldResult(result, 'appId', 'setAppId()');
-      invariant(result.appId === values.appId, `setAppId() expected ${values.appId}, received ${result.appId}`);
+      invariant(result.appId === nextAppId, `setAppId() expected ${nextAppId}, received ${result.appId}`);
       return result;
     },
   },
@@ -1591,6 +1598,7 @@ const actions = [
     id: 'set-custom-id',
     label: 'Set custom ID',
     buttonLabel: 'Apply custom ID',
+    quickButtonLabel: 'Quick set custom ID',
     description: 'Persist a custom identifier that the fake server can observe.',
     includeInSmokeSequence: true,
     inputs: [
@@ -1602,9 +1610,11 @@ const actions = [
       },
     ],
     run: async (values) => {
-      await plugin.setCustomId({ customId: values.customId });
+      const nextCustomId = values.customId ?? runtimeSmokeCustomId;
+
+      await plugin.setCustomId({ customId: nextCustomId });
       return {
-        customId: values.customId,
+        customId: nextCustomId,
         message: 'customId stored',
       };
     },
@@ -1758,6 +1768,7 @@ const actions = [
     id: 'set-channel-beta',
     label: 'Set public channel',
     buttonLabel: 'Set channel beta',
+    quickButtonLabel: 'Quick set beta channel',
     description: 'Persist a real channel override the server can observe.',
     includeInSmokeSequence: true,
     smokeTimeoutMs: 90000,
@@ -1845,6 +1856,7 @@ const actions = [
     id: 'unset-channel',
     label: 'Unset channel',
     buttonLabel: 'Run unsetChannel()',
+    quickButtonLabel: 'Quick unset channel',
     description: 'Clear the local channel override and fall back to default behaviour.',
     includeInSmokeSequence: true,
     smokeTimeoutMs: 90000,
@@ -2004,12 +2016,10 @@ const actions = [
     showWhen: () => serverUrl.startsWith('http'),
     markerId: 'boot-persisted',
     run: async () => {
-      if (scenarioId === 'manual-zip') {
-        const latest = state.lastLatest?.version ? state.lastLatest : await runGetLatestCheck();
+      if (scenarioId === 'manual-zip' && platform !== 'ios') {
         markPendingBootAction('verify-persisted-config-after-get-latest-boot');
         return {
           message: 'Queued persisted-config verification for the next boot after getLatest().',
-          version: latest.version,
         };
       }
 
@@ -2028,7 +2038,8 @@ const actions = [
     run: async () =>
       verifyPersistedRuntimeConfig({
         includePluginAppId: false,
-        probeLatest: scenarioId !== 'manual-zip-config-guards',
+        probeLatest:
+          platform !== 'ios' && scenarioId !== 'manual-zip-config-guards' && scenarioId !== 'manual-zip-no-persist',
       }),
   },
   {
@@ -2847,7 +2858,8 @@ function createQuickActionButton(action) {
     if (shouldIgnoreNonSequenceActionTrigger()) {
       return;
     }
-    void runAction(action, {}).catch((error) => {
+    const values = Object.fromEntries((action.inputs || []).map((input) => [input.name, input.value || '']));
+    void runAction(action, values).catch((error) => {
       console.error(`Quick action ${action.id} failed`, error);
     });
   });

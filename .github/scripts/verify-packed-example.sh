@@ -14,10 +14,13 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 tmp_root="${RUNNER_TEMP:-$(mktemp -d)}"
 pack_dir="$tmp_root/plugin-package"
 test_app="$tmp_root/plugin-example-app"
+skip_package_build="${CAPGO_VERIFY_PACKED_SKIP_BUILD:-0}"
 
 cd "$repo_root"
 
-bun run build
+if [[ "$skip_package_build" != "1" ]]; then
+  bun run build
+fi
 
 rm -rf "$pack_dir" "$test_app"
 mkdir -p "$pack_dir" "$test_app"
