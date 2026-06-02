@@ -112,7 +112,8 @@ declare module '@capacitor/cli' {
        * Native stats include update lifecycle events, app health signals such as crashes,
        * Android ANRs, low-memory exits, iOS memory warnings, and WebView health signals
        * such as JavaScript errors, unhandled promise rejections, resource load failures,
-       * WebView renderer exits, and unclean WebView restarts when available.
+       * WebView renderer exits, unclean WebView restarts, app launch readiness timing,
+       * and WebView load milestones when available.
        *
        * @default https://plugin.capgo.app/stats
        * @example https://example.com/api/stats

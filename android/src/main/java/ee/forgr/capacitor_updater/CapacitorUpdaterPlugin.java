@@ -196,6 +196,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private ShakeMenu shakeMenu;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final long launchStartedAtMs = System.currentTimeMillis();
+    private volatile long webViewPageStartedAtMs = 0;
+    private volatile boolean launchStartReported = false;
+    private volatile boolean launchReadyReported = false;
     private FrameLayout splashscreenLoaderOverlay;
     private Runnable splashscreenTimeoutRunnable;
     private WebViewListener webViewStatsListener;
@@ -474,6 +478,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         logger.info("init for device " + this.implementation.deviceID);
         logger.info("version native " + this.currentVersionNative.getOriginalString());
+        this.reportAppLaunchStart();
         this.autoDeleteFailed = this.getConfig().getBoolean("autoDeleteFailed", true);
         this.autoDeletePrevious = this.getConfig().getBoolean("autoDeletePrevious", true);
         this.updateUrl = this.getConfig().getString("updateUrl", updateUrlDefault);
@@ -955,11 +960,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.webViewStatsListener = new WebViewListener() {
             @Override
             public void onPageStarted(final android.webkit.WebView view) {
+                CapacitorUpdaterPlugin.this.webViewPageStartedAtMs = System.currentTimeMillis();
                 CapacitorUpdaterPlugin.this.evaluateWebViewStatsReporterScript(view, script);
             }
 
             @Override
             public void onPageLoaded(final android.webkit.WebView view) {
+                CapacitorUpdaterPlugin.this.reportWebViewPageLoaded(view);
                 CapacitorUpdaterPlugin.this.evaluateWebViewStatsReporterScript(view, script);
             }
 
@@ -1012,6 +1019,73 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 logger.debug("Unable to evaluate WebView stats reporter: " + e.getMessage());
             }
         });
+    }
+
+    private void reportAppLaunchStart() {
+        if (
+            this.implementation == null ||
+            this.implementation.statsUrl == null ||
+            this.implementation.statsUrl.isEmpty() ||
+            this.launchStartReported
+        ) {
+            return;
+        }
+
+        this.launchStartReported = true;
+        final BundleInfo current = this.implementation.getCurrentBundle();
+        final Map<String, String> metadata = new HashMap<>();
+        metadata.put("launch_started_at", Long.toString(this.launchStartedAtMs));
+        metadata.put("source", "plugin_load");
+        this.implementation.sendStats("app_launch_start", current == null ? "" : current.getVersionName(), "", metadata);
+    }
+
+    private void reportAppLaunchReady(final BundleInfo bundle) {
+        if (
+            this.implementation == null ||
+            this.implementation.statsUrl == null ||
+            this.implementation.statsUrl.isEmpty() ||
+            this.launchReadyReported
+        ) {
+            return;
+        }
+
+        this.launchReadyReported = true;
+        final Map<String, String> metadata = new HashMap<>();
+        metadata.put("duration_ms", Long.toString(Math.max(0, System.currentTimeMillis() - this.launchStartedAtMs)));
+        metadata.put("launch_started_at", Long.toString(this.launchStartedAtMs));
+        metadata.put("source", "notify_app_ready");
+        this.implementation.sendStats("app_launch_ready", bundle == null ? "" : bundle.getVersionName(), "", metadata);
+    }
+
+    private void reportAppLaunchTimeout(final BundleInfo bundle) {
+        if (this.implementation == null || this.implementation.statsUrl == null || this.implementation.statsUrl.isEmpty()) {
+            return;
+        }
+
+        final Map<String, String> metadata = new HashMap<>();
+        metadata.put("duration_ms", Long.toString(Math.max(0, System.currentTimeMillis() - this.launchStartedAtMs)));
+        metadata.put("launch_started_at", Long.toString(this.launchStartedAtMs));
+        metadata.put("timeout_ms", Long.toString(this.appReadyTimeout));
+        metadata.put("source", "app_ready_timeout");
+        this.implementation.sendStats("app_launch_timeout", bundle == null ? "" : bundle.getVersionName(), "", metadata);
+    }
+
+    private void reportWebViewPageLoaded(final android.webkit.WebView view) {
+        if (this.implementation == null || this.implementation.statsUrl == null || this.implementation.statsUrl.isEmpty()) {
+            return;
+        }
+
+        final Map<String, String> metadata = new HashMap<>();
+        metadata.put("source", "android_webview_listener");
+        final long pageStartedAt = this.webViewPageStartedAtMs;
+        if (pageStartedAt > 0) {
+            metadata.put("duration_ms", Long.toString(Math.max(0, System.currentTimeMillis() - pageStartedAt)));
+            metadata.put("page_started_at", Long.toString(pageStartedAt));
+        }
+        if (view != null && view.getUrl() != null && !view.getUrl().isEmpty()) {
+            metadata.put("href", truncateStatsMetadataValue(sanitizeStatsMetadataUrl(view.getUrl()), 512));
+        }
+        this.reportWebViewStats("webview_page_loaded", metadata);
     }
 
     private Map<String, String> buildWebViewRenderProcessGoneMetadata(final RenderProcessGoneDetail detail) {
@@ -1121,6 +1195,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 return "webview_render_process_gone";
             case "web_content_process_terminated":
                 return "webview_content_process_terminated";
+            case "webview_dom_content_loaded":
+                return "webview_dom_content_loaded";
+            case "webview_page_loaded":
+                return "webview_page_loaded";
             case "javascript_error":
             default:
                 return "webview_javascript_error";
@@ -1139,6 +1217,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
         putStatsMetadataValue(metadata, "href", sanitizeStatsMetadataUrl(data.optString("href", "")), 512);
         putStatsMetadataValue(metadata, "user_agent", data.optString("user_agent", ""), 256);
         putStatsMetadataValue(metadata, "session_id", data.optString("session_id", ""), 128);
+        putStatsMetadataValue(metadata, "duration_ms", data.optString("duration_ms", ""), 32);
+        putStatsMetadataValue(metadata, "page_started_at", data.optString("page_started_at", ""), 64);
         putStatsMetadataValue(metadata, "previous_session_id", data.optString("previous_session_id", ""), 128);
         putStatsMetadataValue(metadata, "previous_href", sanitizeStatsMetadataUrl(data.optString("previous_href", "")), 512);
         putStatsMetadataValue(metadata, "previous_started_at", data.optString("previous_started_at", ""), 64);
@@ -1271,12 +1351,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
             "if(previous&&previous.active){send({type:'webview_unclean_restart',message:'WebView restarted without a clean page unload',previous_session_id:s(previous.id),previous_href:s(previous.href),previous_started_at:s(previous.started_at),previous_updated_at:s(previous.updated_at)});}" +
             "writeSession(true);" +
             "setInterval(function(){writeSession(true);},15000);" +
+            "function pageDuration(){var started=Number(window.__capgoWebViewSessionStartedAt||Date.now());return String(Math.max(0,Date.now()-started));}" +
             "function markClean(){writeSession(false);}" +
             "window.addEventListener('pagehide',markClean,true);" +
             "window.addEventListener('beforeunload',markClean,true);" +
             "window.addEventListener('error',function(event){var target=event&&event.target;if(target&&target!==window&&(target.src||target.href)){send({type:'resource_error',message:'Resource failed to load',source:s(target.src||target.href),tag_name:s(target.tagName)});return;}send({type:'javascript_error',message:s((event&&event.message)||(event&&event.error)),source:s(event&&event.filename),line:s(event&&event.lineno),column:s(event&&event.colno),stack:stack(event&&event.error)});},true);" +
             "window.addEventListener('unhandledrejection',function(event){var reason=event&&event.reason;send({type:'unhandled_rejection',message:s(reason),stack:stack(reason)});},true);" +
             "document.addEventListener('securitypolicyviolation',function(event){send({type:'security_policy_violation',message:s(event&&event.violatedDirective),source:s(event&&event.blockedURI)});},true);" +
+            "document.addEventListener('DOMContentLoaded',function(){send({type:'webview_dom_content_loaded',message:'WebView DOM content loaded',duration_ms:pageDuration(),page_started_at:String(window.__capgoWebViewSessionStartedAt)});},true);" +
             "document.addEventListener('deviceready',scheduleFlush,false);" +
             "setTimeout(scheduleFlush,0);" +
             "})();"
@@ -3194,6 +3276,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         try {
             final BundleInfo bundle = this.implementation.getCurrentBundle();
             this.implementation.setSuccess(bundle, this.autoDeletePrevious);
+            this.reportAppLaunchReady(bundle);
             logger.info("Current bundle loaded successfully. ['notifyAppReady()' was called] " + bundle);
             logger.info("semaphoreReady countDown");
             this.semaphoreDown();
@@ -3836,6 +3919,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             ret.put("bundle", InternalUtils.mapToJSObject(current.toJSONMap()));
             this.persistLastFailedBundle(current);
             this.notifyListeners("updateFailed", ret);
+            this.reportAppLaunchTimeout(current);
             this.implementation.sendStats("update_fail", current.getVersionName());
             this.implementation.setError(current);
             this.performReset(true, false, true);

@@ -86,6 +86,10 @@ final class WebViewStatsReporter {
       }
       writeSession(true);
       setInterval(function(){writeSession(true);},15000);
+      function pageDuration(){
+        var started=Number(window.__capgoWebViewSessionStartedAt||Date.now());
+        return String(Math.max(0,Date.now()-started));
+      }
       function markClean(){writeSession(false);}
       window.addEventListener('pagehide',markClean,true);
       window.addEventListener('beforeunload',markClean,true);
@@ -118,6 +122,22 @@ final class WebViewStatsReporter {
           type:'security_policy_violation',
           message:s(event&&event.violatedDirective),
           source:s(event&&event.blockedURI)
+        });
+      },true);
+      document.addEventListener('DOMContentLoaded',function(){
+        send({
+          type:'webview_dom_content_loaded',
+          message:'WebView DOM content loaded',
+          duration_ms:pageDuration(),
+          page_started_at:String(window.__capgoWebViewSessionStartedAt)
+        });
+      },true);
+      window.addEventListener('load',function(){
+        send({
+          type:'webview_page_loaded',
+          message:'WebView page loaded',
+          duration_ms:pageDuration(),
+          page_started_at:String(window.__capgoWebViewSessionStartedAt)
         });
       },true);
       document.addEventListener('deviceready',scheduleFlush,false);
@@ -187,6 +207,10 @@ final class WebViewStatsReporter {
             return "webview_render_process_gone"
         case "web_content_process_terminated":
             return "webview_content_process_terminated"
+        case "webview_dom_content_loaded":
+            return "webview_dom_content_loaded"
+        case "webview_page_loaded":
+            return "webview_page_loaded"
         case "javascript_error":
             return "webview_javascript_error"
         default:
@@ -206,6 +230,8 @@ final class WebViewStatsReporter {
         put(&metadata, key: "href", value: sanitizeUrl(payloadValue(values, "href")), maxLength: 512)
         put(&metadata, key: "user_agent", value: payloadValue(values, "user_agent"), maxLength: 256)
         put(&metadata, key: "session_id", value: payloadValue(values, "session_id"), maxLength: 128)
+        put(&metadata, key: "duration_ms", value: payloadValue(values, "duration_ms"), maxLength: 32)
+        put(&metadata, key: "page_started_at", value: payloadValue(values, "page_started_at"), maxLength: 64)
         put(&metadata, key: "previous_session_id", value: payloadValue(values, "previous_session_id"), maxLength: 128)
         put(&metadata, key: "previous_href", value: sanitizeUrl(payloadValue(values, "previous_href")), maxLength: 512)
         put(&metadata, key: "previous_started_at", value: payloadValue(values, "previous_started_at"), maxLength: 64)
