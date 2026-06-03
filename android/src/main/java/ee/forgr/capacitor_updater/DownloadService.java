@@ -115,13 +115,15 @@ public class DownloadService extends Worker {
         }
 
         StringBuilder sanitized = new StringBuilder();
-        value.codePoints().forEach((cp) -> {
-            boolean isVisibleAscii = cp >= 0x20 && cp <= 0x7E;
-            boolean isIso88591 = cp >= 0xA0 && cp <= 0xFF;
-            if (isVisibleAscii || isIso88591) {
-                sanitized.appendCodePoint(cp);
-            }
-        });
+        value
+            .codePoints()
+            .forEach((cp) -> {
+                boolean isVisibleAscii = cp >= 0x20 && cp <= 0x7E;
+                boolean isIso88591 = cp >= 0xA0 && cp <= 0xFF;
+                if (isVisibleAscii || isIso88591) {
+                    sanitized.appendCodePoint(cp);
+                }
+            });
 
         String result = sanitized.toString().trim();
         return result.isEmpty() ? "unknown" : result;
@@ -253,26 +255,27 @@ public class DownloadService extends Worker {
                 .post(RequestBody.create(json.toString(), MediaType.get("application/json")))
                 .build();
 
-            sharedClient.newCall(request).enqueue(
-                new Callback() {
-                    @Override
-                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                        if (logger != null) {
-                            logger.error("Failed to send stats: " + e.getMessage());
+            sharedClient
+                .newCall(request)
+                .enqueue(
+                    new Callback() {
+                        @Override
+                        public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                            if (logger != null) {
+                                logger.error("Failed to send stats: " + e.getMessage());
+                            }
                         }
-                    }
 
-                    @Override
-                    public void onResponse(@NonNull Call call, @NonNull Response response) {
-                        try (ResponseBody body = response.body()) {
-                            // nothing else to do, just closing body
-                        } catch (Exception ignored) {
-                        } finally {
-                            response.close();
+                        @Override
+                        public void onResponse(@NonNull Call call, @NonNull Response response) {
+                            try (ResponseBody body = response.body()) {
+                                // nothing else to do, just closing body
+                            } catch (Exception ignored) {} finally {
+                                response.close();
+                            }
                         }
                     }
-                }
-            );
+                );
         } catch (Exception e) {
             if (logger != null) {
                 logger.error("sendStatsAsync error: " + e.getMessage());
