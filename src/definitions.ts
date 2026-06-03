@@ -1717,7 +1717,7 @@ export interface ChannelInfo {
    *
    * @since 7.5.0
    */
-  id: string;
+  id: number;
   /**
    * The channel name
    *

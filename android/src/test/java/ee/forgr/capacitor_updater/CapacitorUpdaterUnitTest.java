@@ -26,6 +26,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
@@ -33,6 +34,7 @@ import java.util.function.BooleanSupplier;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
@@ -969,6 +971,28 @@ public class CapacitorUpdaterUnitTest {
             currentType = currentType.getComponentType();
         }
         return applicationExitInfoClassName.equals(currentType.getName());
+    }
+
+    @Test
+    public void listChannelsResponseKeepsNumericChannelIds() throws Exception {
+        final Map<String, Object> result = CapgoUpdater.parseListChannelsResponse(
+            "[{\"id\":123,\"name\":\"Production\",\"public\":true,\"allow_self_set\":true}]"
+        );
+
+        final Object channelsValue = result.get("channels");
+        assertTrue(channelsValue instanceof List<?>);
+        final Object channelValue = ((List<?>) channelsValue).get(0);
+        assertTrue(channelValue instanceof Map<?, ?>);
+        final Object id = ((Map<?, ?>) channelValue).get("id");
+        assertTrue(id instanceof Number);
+        assertEquals(123, ((Number) id).intValue());
+    }
+
+    @Test
+    public void listChannelsResponseRejectsStringChannelIds() {
+        assertThrows(JSONException.class, () ->
+            CapgoUpdater.parseListChannelsResponse("[{\"id\":\"123\",\"name\":\"Production\",\"public\":true,\"allow_self_set\":true}]")
+        );
     }
 
     @Test

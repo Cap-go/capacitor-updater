@@ -22,19 +22,19 @@ const baseHeaders = {
 
 const channelCatalog = [
   {
-    id: 'beta',
+    id: 1,
     name: 'beta',
     public: false,
     allow_self_set: true,
   },
   {
-    id: 'public-preview',
+    id: 2,
     name: 'public-preview',
     public: true,
     allow_self_set: true,
   },
   {
-    id: 'private-alpha',
+    id: 3,
     name: 'private-alpha',
     public: false,
     allow_self_set: false,

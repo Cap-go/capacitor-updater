@@ -1903,64 +1903,66 @@ public class CapgoUpdater {
                         String data = responseBody.string();
 
                         try {
-                            Map<String, Object> ret = new HashMap<>();
+                            Map<String, Object> ret = parseListChannelsResponse(data);
 
+                            logger.info("Channels listed successfully");
+                            callback.callback(ret);
+                        } catch (JSONException arrayException) {
+                            // If not an array, try to parse as error object
                             try {
-                                // Try to parse as direct array first
-                                JSONArray channelsJson = new JSONArray(data);
-                                List<Map<String, Object>> channelsList = new ArrayList<>();
-
-                                for (int i = 0; i < channelsJson.length(); i++) {
-                                    JSONObject channelJson = channelsJson.getJSONObject(i);
-                                    Map<String, Object> channel = new HashMap<>();
-                                    channel.put("id", channelJson.optString("id", ""));
-                                    channel.put("name", channelJson.optString("name", ""));
-                                    channel.put("public", channelJson.optBoolean("public", false));
-                                    channel.put("allow_self_set", channelJson.optBoolean("allow_self_set", false));
-                                    channelsList.add(channel);
-                                }
-
-                                // Wrap in channels object for JS API
-                                ret.put("channels", channelsList);
-
-                                logger.info("Channels listed successfully");
-                                callback.callback(ret);
-                            } catch (JSONException arrayException) {
-                                // If not an array, try to parse as error object
-                                try {
-                                    JSONObject json = new JSONObject(data);
-                                    if (json.has("error")) {
-                                        Map<String, Object> retError = new HashMap<>();
-                                        retError.put("error", json.getString("error"));
-                                        if (json.has("message")) {
-                                            retError.put("message", json.getString("message"));
-                                        } else {
-                                            retError.put("message", "server did not provide a message");
-                                        }
-                                        callback.callback(retError);
-                                        return;
-                                    }
+                                JSONObject json = new JSONObject(data);
+                                if (json.has("error")) {
                                     Map<String, Object> retError = new HashMap<>();
-                                    retError.put("message", "Unexpected channels response format");
-                                    retError.put("error", "parse_error");
+                                    retError.put("error", json.getString("error"));
+                                    if (json.has("message")) {
+                                        retError.put("message", json.getString("message"));
+                                    } else {
+                                        retError.put("message", "server did not provide a message");
+                                    }
                                     callback.callback(retError);
                                     return;
-                                } catch (JSONException objException) {
-                                    // If neither array nor object, throw parse error
-                                    arrayException.addSuppressed(objException);
-                                    throw arrayException;
                                 }
+                                Map<String, Object> retError = new HashMap<>();
+                                retError.put("message", "Unexpected channels response format");
+                                retError.put("error", "parse_error");
+                                callback.callback(retError);
+                                return;
+                            } catch (JSONException objException) {
+                                // If neither array nor object, throw parse error
+                                arrayException.addSuppressed(objException);
+                                Map<String, Object> retError = new HashMap<>();
+                                retError.put("message", "JSON parse error: " + arrayException.getMessage());
+                                retError.put("error", "parse_error");
+                                callback.callback(retError);
                             }
-                        } catch (JSONException e) {
-                            Map<String, Object> retError = new HashMap<>();
-                            retError.put("message", "JSON parse error: " + e.getMessage());
-                            retError.put("error", "parse_error");
-                            callback.callback(retError);
                         }
                     }
                 }
             }
         );
+    }
+
+    static Map<String, Object> parseListChannelsResponse(final String data) throws JSONException {
+        JSONArray channelsJson = new JSONArray(data);
+        List<Map<String, Object>> channelsList = new ArrayList<>();
+
+        for (int i = 0; i < channelsJson.length(); i++) {
+            JSONObject channelJson = channelsJson.getJSONObject(i);
+            Object channelId = channelJson.get("id");
+            if (!(channelId instanceof Number)) {
+                throw new JSONException("Channel id must be a number");
+            }
+            Map<String, Object> channel = new HashMap<>();
+            channel.put("id", channelId);
+            channel.put("name", channelJson.optString("name", ""));
+            channel.put("public", channelJson.optBoolean("public", false));
+            channel.put("allow_self_set", channelJson.optBoolean("allow_self_set", false));
+            channelsList.add(channel);
+        }
+
+        Map<String, Object> ret = new HashMap<>();
+        ret.put("channels", channelsList);
+        return ret;
     }
 
     public void sendStats(final String action) {

@@ -2431,7 +2431,7 @@ import UIKit
         if let channels = responseValue.channels {
             listChannels.channels = channels.map { channel in
                 var channelDict: [String: Any] = [:]
-                channelDict["id"] = channel.id ?? ""
+                channelDict["id"] = channel.id
                 channelDict["name"] = channel.name ?? ""
                 channelDict["public"] = channel.public ?? false
                 channelDict["allow_self_set"] = channel.allow_self_set ?? false
