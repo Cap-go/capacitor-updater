@@ -821,6 +821,70 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(CapacitorUpdaterPlugin.normalizedPeriodCheckDelaySeconds(3600), 3600)
     }
 
+    func testCheckRevertSkipsRollbackDuringPreviewSession() {
+        let previewPlugin = TestableCapacitorUpdaterPlugin()
+        let previewImplementation = ResetTrackingCapgoUpdater()
+        previewImplementation.currentBundleValue = BundleInfo(
+            id: "preview-id",
+            version: "preview",
+            status: .PENDING,
+            downloaded: Date(),
+            checksum: "preview"
+        )
+
+        previewPlugin.implementation = previewImplementation
+        previewPlugin.previewSessionEnabled = true
+
+        previewPlugin.checkRevert()
+
+        XCTAssertFalse(previewImplementation.resetCalled)
+        XCTAssertFalse(previewPlugin.notifiedEventNames.contains("updateFailed"))
+    }
+
+    func testCheckRevertSkipsRollbackDuringPreviewTransition() {
+        let previewPlugin = TestableCapacitorUpdaterPlugin()
+        let previewImplementation = ResetTrackingCapgoUpdater()
+        previewImplementation.currentBundleValue = BundleInfo(
+            id: "preview-id",
+            version: "preview",
+            status: .PENDING,
+            downloaded: Date(),
+            checksum: "preview"
+        )
+        previewImplementation.previewSession = true
+
+        previewPlugin.implementation = previewImplementation
+
+        previewPlugin.checkRevert()
+
+        XCTAssertFalse(previewImplementation.resetCalled)
+        XCTAssertFalse(previewPlugin.notifiedEventNames.contains("updateFailed"))
+    }
+
+    func testTriggerUpdateCheckSkipsDuringPreviewSession() {
+        let previewPlugin = TestableCapacitorUpdaterPlugin()
+        let previewImplementation = ResetTrackingCapgoUpdater()
+        previewImplementation.currentBundleValue = BundleInfo(
+            id: "preview-id",
+            version: "preview",
+            status: .PENDING,
+            downloaded: Date(),
+            checksum: "preview"
+        )
+
+        previewPlugin.implementation = previewImplementation
+        previewPlugin.previewSessionEnabled = true
+        previewPlugin.setUpdateUrlForTesting("https://example.com/update")
+
+        let status = previewPlugin.triggerBackgroundUpdateCheck()
+
+        XCTAssertEqual(status, "preview_session")
+        XCTAssertFalse(previewImplementation.resetCalled)
+        XCTAssertFalse(previewPlugin.notifiedEventNames.contains("updateAvailable"))
+        XCTAssertFalse(previewPlugin.notifiedEventNames.contains("downloadFailed"))
+        XCTAssertFalse(previewPlugin.notifiedEventNames.contains("updateCheckResult"))
+    }
+
     func testResetToPendingWithoutInstallablePendingBundleDoesNotResetState() {
         let resetPlugin = ResetTestableCapacitorUpdaterPlugin()
         let resetImplementation = ResetTrackingCapgoUpdater()
