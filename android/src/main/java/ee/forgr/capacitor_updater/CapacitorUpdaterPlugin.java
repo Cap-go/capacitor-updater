@@ -798,6 +798,38 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return requestToken == this.splashscreenInvocationToken;
     }
 
+    private FrameLayout createLoaderOverlay(final Activity activity, final boolean blocksTouches, final int backgroundColor) {
+        final ProgressBar progressBar = new ProgressBar(activity);
+        progressBar.setIndeterminate(true);
+
+        final FrameLayout overlay = new FrameLayout(activity);
+        overlay.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        overlay.setClickable(blocksTouches);
+        overlay.setFocusable(blocksTouches);
+        overlay.setBackgroundColor(backgroundColor);
+        overlay.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+
+        final FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        params.gravity = Gravity.CENTER;
+        overlay.addView(progressBar, params);
+        return overlay;
+    }
+
+    private void attachLoaderOverlay(final Activity activity, final FrameLayout overlay) {
+        final ViewGroup decorView = (ViewGroup) activity.getWindow().getDecorView();
+        decorView.addView(overlay);
+    }
+
+    private void removeLoaderOverlay(final FrameLayout overlay) {
+        final ViewGroup parent = (ViewGroup) overlay.getParent();
+        if (parent != null) {
+            parent.removeView(overlay);
+        }
+    }
+
     private void addSplashscreenLoaderIfNeeded() {
         if (!Boolean.TRUE.equals(this.autoSplashscreenLoader)) {
             return;
@@ -814,26 +846,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 return;
             }
 
-            ProgressBar progressBar = new ProgressBar(activity);
-            progressBar.setIndeterminate(true);
-
-            FrameLayout overlay = new FrameLayout(activity);
-            overlay.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-            overlay.setClickable(false);
-            overlay.setFocusable(false);
-            overlay.setBackgroundColor(Color.TRANSPARENT);
-            overlay.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
-
-            FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            );
-            params.gravity = Gravity.CENTER;
-            overlay.addView(progressBar, params);
-
-            ViewGroup decorView = (ViewGroup) activity.getWindow().getDecorView();
-            decorView.addView(overlay);
-
+            FrameLayout overlay = createLoaderOverlay(activity, false, Color.TRANSPARENT);
+            attachLoaderOverlay(activity, overlay);
             this.splashscreenLoaderOverlay = overlay;
         };
 
@@ -847,10 +861,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private void removeSplashscreenLoader() {
         Runnable removeLoader = () -> {
             if (this.splashscreenLoaderOverlay != null) {
-                ViewGroup parent = (ViewGroup) this.splashscreenLoaderOverlay.getParent();
-                if (parent != null) {
-                    parent.removeView(this.splashscreenLoaderOverlay);
-                }
+                removeLoaderOverlay(this.splashscreenLoaderOverlay);
                 this.splashscreenLoaderOverlay = null;
             }
         };
@@ -886,25 +897,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
             cancelPreviewTransitionLoaderTimeout();
             schedulePreviewTransitionLoaderTimeout();
 
-            final ProgressBar progressBar = new ProgressBar(activity);
-            progressBar.setIndeterminate(true);
-
-            final FrameLayout overlay = new FrameLayout(activity);
-            overlay.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-            overlay.setClickable(true);
-            overlay.setFocusable(true);
-            overlay.setBackgroundColor(Color.argb(46, 0, 0, 0));
-            overlay.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
-
-            final FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            );
-            params.gravity = Gravity.CENTER;
-            overlay.addView(progressBar, params);
-
-            final ViewGroup decorView = (ViewGroup) activity.getWindow().getDecorView();
-            decorView.addView(overlay);
+            final FrameLayout overlay = createLoaderOverlay(activity, true, Color.argb(46, 0, 0, 0));
+            attachLoaderOverlay(activity, overlay);
             this.previewTransitionLoaderOverlay = overlay;
             logger.info("Preview transition loader shown: " + reason);
         };
@@ -932,10 +926,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 return;
             }
 
-            final ViewGroup parent = (ViewGroup) this.previewTransitionLoaderOverlay.getParent();
-            if (parent != null) {
-                parent.removeView(this.previewTransitionLoaderOverlay);
-            }
+            removeLoaderOverlay(this.previewTransitionLoaderOverlay);
             this.previewTransitionLoaderOverlay = null;
             logger.info("Preview transition loader hidden: " + reason);
         };

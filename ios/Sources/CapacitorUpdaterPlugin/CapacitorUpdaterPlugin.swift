@@ -2383,6 +2383,51 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    private func createLoaderOverlay(
+        backgroundColor: UIColor,
+        isUserInteractionEnabled: Bool,
+        indicatorColor: UIColor?
+    ) -> (container: UIView, indicator: UIActivityIndicatorView) {
+        let container = UIView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.backgroundColor = backgroundColor
+        container.isUserInteractionEnabled = isUserInteractionEnabled
+
+        let indicatorStyle: UIActivityIndicatorView.Style
+        if #available(iOS 13.0, *) {
+            indicatorStyle = .large
+        } else {
+            indicatorStyle = .whiteLarge
+        }
+
+        let indicator = UIActivityIndicatorView(style: indicatorStyle)
+        indicator.translatesAutoresizingMaskIntoConstraints = false
+        indicator.hidesWhenStopped = false
+        if let indicatorColor = indicatorColor {
+            indicator.color = indicatorColor
+        }
+        indicator.startAnimating()
+
+        return (container, indicator)
+    }
+
+    private func attachLoaderOverlay(
+        _ overlay: (container: UIView, indicator: UIActivityIndicatorView),
+        to rootView: UIView
+    ) {
+        overlay.container.addSubview(overlay.indicator)
+        rootView.addSubview(overlay.container)
+
+        NSLayoutConstraint.activate([
+            overlay.container.leadingAnchor.constraint(equalTo: rootView.leadingAnchor),
+            overlay.container.trailingAnchor.constraint(equalTo: rootView.trailingAnchor),
+            overlay.container.topAnchor.constraint(equalTo: rootView.topAnchor),
+            overlay.container.bottomAnchor.constraint(equalTo: rootView.bottomAnchor),
+            overlay.indicator.centerXAnchor.constraint(equalTo: overlay.container.centerXAnchor),
+            overlay.indicator.centerYAnchor.constraint(equalTo: overlay.container.centerYAnchor)
+        ])
+    }
+
     private func addSplashscreenLoaderIfNeeded() {
         guard self.autoSplashscreenLoader else {
             return
@@ -2397,40 +2442,20 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
 
-            let container = UIView()
-            container.translatesAutoresizingMaskIntoConstraints = false
-            container.backgroundColor = UIColor.clear
-            container.isUserInteractionEnabled = false
-
-            let indicatorStyle: UIActivityIndicatorView.Style
+            let indicatorColor: UIColor?
             if #available(iOS 13.0, *) {
-                indicatorStyle = .large
+                indicatorColor = UIColor.label
             } else {
-                indicatorStyle = .whiteLarge
+                indicatorColor = nil
             }
-
-            let indicator = UIActivityIndicatorView(style: indicatorStyle)
-            indicator.translatesAutoresizingMaskIntoConstraints = false
-            indicator.hidesWhenStopped = false
-            if #available(iOS 13.0, *) {
-                indicator.color = UIColor.label
-            }
-            indicator.startAnimating()
-
-            container.addSubview(indicator)
-            rootView.addSubview(container)
-
-            NSLayoutConstraint.activate([
-                container.leadingAnchor.constraint(equalTo: rootView.leadingAnchor),
-                container.trailingAnchor.constraint(equalTo: rootView.trailingAnchor),
-                container.topAnchor.constraint(equalTo: rootView.topAnchor),
-                container.bottomAnchor.constraint(equalTo: rootView.bottomAnchor),
-                indicator.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-                indicator.centerYAnchor.constraint(equalTo: container.centerYAnchor)
-            ])
-
-            self.splashscreenLoaderContainer = container
-            self.splashscreenLoaderView = indicator
+            let overlay = self.createLoaderOverlay(
+                backgroundColor: UIColor.clear,
+                isUserInteractionEnabled: false,
+                indicatorColor: indicatorColor
+            )
+            self.attachLoaderOverlay(overlay, to: rootView)
+            self.splashscreenLoaderContainer = overlay.container
+            self.splashscreenLoaderView = overlay.indicator
         }
 
         if Thread.isMainThread {
@@ -2482,40 +2507,20 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             self.previewTransitionLoaderTimeoutWorkItem?.cancel()
             self.schedulePreviewTransitionLoaderTimeout()
 
-            let container = UIView()
-            container.translatesAutoresizingMaskIntoConstraints = false
-            container.backgroundColor = UIColor.black.withAlphaComponent(0.18)
-            container.isUserInteractionEnabled = true
-
-            let indicatorStyle: UIActivityIndicatorView.Style
+            let indicatorColor: UIColor?
             if #available(iOS 13.0, *) {
-                indicatorStyle = .large
+                indicatorColor = UIColor.white
             } else {
-                indicatorStyle = .whiteLarge
+                indicatorColor = nil
             }
-
-            let indicator = UIActivityIndicatorView(style: indicatorStyle)
-            indicator.translatesAutoresizingMaskIntoConstraints = false
-            indicator.hidesWhenStopped = false
-            if #available(iOS 13.0, *) {
-                indicator.color = UIColor.white
-            }
-            indicator.startAnimating()
-
-            container.addSubview(indicator)
-            rootView.addSubview(container)
-
-            NSLayoutConstraint.activate([
-                container.leadingAnchor.constraint(equalTo: rootView.leadingAnchor),
-                container.trailingAnchor.constraint(equalTo: rootView.trailingAnchor),
-                container.topAnchor.constraint(equalTo: rootView.topAnchor),
-                container.bottomAnchor.constraint(equalTo: rootView.bottomAnchor),
-                indicator.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-                indicator.centerYAnchor.constraint(equalTo: container.centerYAnchor)
-            ])
-
-            self.previewTransitionLoaderContainer = container
-            self.previewTransitionLoaderView = indicator
+            let overlay = self.createLoaderOverlay(
+                backgroundColor: UIColor.black.withAlphaComponent(0.18),
+                isUserInteractionEnabled: true,
+                indicatorColor: indicatorColor
+            )
+            self.attachLoaderOverlay(overlay, to: rootView)
+            self.previewTransitionLoaderContainer = overlay.container
+            self.previewTransitionLoaderView = overlay.indicator
             self.logger.info("Preview transition loader shown: \(reason)")
         }
 
