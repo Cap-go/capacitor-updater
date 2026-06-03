@@ -64,22 +64,22 @@ public class ShakeMenu implements ShakeDetector.Listener {
             return;
         }
 
+        if (!plugin.hasActivePreviewSession()) {
+            logger.info("Shake ignored because no preview session is active");
+            return;
+        }
+
         isShowing = true;
 
-        if (plugin.hasActivePreviewSession()) {
-            showDefaultMenu();
-        } else if (plugin.shakeChannelSelectorEnabled) {
-            showChannelSelector();
-        } else {
-            showDefaultMenu();
-        }
+        showDefaultMenu();
     }
 
     private void showDefaultMenu() {
         activity.runOnUiThread(() -> {
             try {
                 if (!plugin.hasActivePreviewSession()) {
-                    showConfiguredDefaultMenu();
+                    logger.info("Shake preview menu ignored because no preview session is active");
+                    isShowing = false;
                     return;
                 }
                 String appName = activity.getPackageManager().getApplicationLabel(activity.getApplicationInfo()).toString();
@@ -111,43 +111,49 @@ public class ShakeMenu implements ShakeDetector.Listener {
                 AlertDialog dialog = builder.create();
                 dialog.setOnDismissListener((dialogInterface) -> isShowing = false);
                 dialog.show();
-                dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener((view) -> {
-                    setPreviewMenuButtonsEnabled(dialog, false);
-                    new Thread(() -> {
-                        try {
-                            if (!plugin.leavePreviewSessionFromShakeMenu()) {
-                                activity.runOnUiThread(() -> showError("Could not leave the test app."));
+                dialog
+                    .getButton(AlertDialog.BUTTON_POSITIVE)
+                    .setOnClickListener((view) -> {
+                        setPreviewMenuButtonsEnabled(dialog, false);
+                        new Thread(() -> {
+                            try {
+                                if (!plugin.leavePreviewSessionFromShakeMenu()) {
+                                    activity.runOnUiThread(() -> showError("Could not leave the test app."));
+                                }
+                            } catch (Exception e) {
+                                logger.error("Error leaving test app: " + e.getMessage());
+                                activity.runOnUiThread(() -> showError("Error leaving test app: " + e.getMessage()));
+                            } finally {
+                                activity.runOnUiThread(() -> {
+                                    dialog.dismiss();
+                                    isShowing = false;
+                                });
                             }
-                        } catch (Exception e) {
-                            logger.error("Error leaving test app: " + e.getMessage());
-                            activity.runOnUiThread(() -> showError("Error leaving test app: " + e.getMessage()));
-                        } finally {
-                            activity.runOnUiThread(() -> {
-                                dialog.dismiss();
-                                isShowing = false;
-                            });
-                        }
-                    }).start();
-                });
-                dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener((view) -> {
-                    setPreviewMenuButtonsEnabled(dialog, false);
-                    new Thread(() -> {
-                        try {
-                            logger.info("Reloading webview");
-                            if (!plugin.reloadPreviewSessionFromShakeMenu()) {
-                                activity.runOnUiThread(() -> showError("Could not reload the test app."));
+                        })
+                            .start();
+                    });
+                dialog
+                    .getButton(AlertDialog.BUTTON_NEUTRAL)
+                    .setOnClickListener((view) -> {
+                        setPreviewMenuButtonsEnabled(dialog, false);
+                        new Thread(() -> {
+                            try {
+                                logger.info("Reloading webview");
+                                if (!plugin.reloadPreviewSessionFromShakeMenu()) {
+                                    activity.runOnUiThread(() -> showError("Could not reload the test app."));
+                                }
+                            } catch (Exception e) {
+                                logger.error("Error in Reload action: " + e.getMessage());
+                                activity.runOnUiThread(() -> showError("Error reloading test app: " + e.getMessage()));
+                            } finally {
+                                activity.runOnUiThread(() -> {
+                                    dialog.dismiss();
+                                    isShowing = false;
+                                });
                             }
-                        } catch (Exception e) {
-                            logger.error("Error in Reload action: " + e.getMessage());
-                            activity.runOnUiThread(() -> showError("Error reloading test app: " + e.getMessage()));
-                        } finally {
-                            activity.runOnUiThread(() -> {
-                                dialog.dismiss();
-                                isShowing = false;
-                            });
-                        }
-                    }).start();
-                });
+                        })
+                            .start();
+                    });
             } catch (Exception e) {
                 logger.error("Error showing shake menu: " + e.getMessage());
                 isShowing = false;
@@ -345,7 +351,8 @@ public class ShakeMenu implements ShakeDetector.Listener {
                             presentChannelPicker(channels);
                         });
                     });
-                }).start();
+                })
+                    .start();
             } catch (Exception e) {
                 logger.error("Error showing channel selector: " + e.getMessage());
                 isShowing = false;
@@ -536,14 +543,13 @@ public class ShakeMenu implements ShakeDetector.Listener {
                                 String latestKind = getString(latestRes, "kind");
                                 String latestMessage = getString(latestRes, "message");
 
-                                String detail =
-                                    latestMessage != null && !latestMessage.isEmpty()
-                                        ? latestMessage
-                                        : latestError != null && !latestError.isEmpty()
-                                            ? latestError
-                                            : latestKind != null && !latestKind.isEmpty()
-                                                ? latestKind
-                                                : "server did not provide a message";
+                                String detail = latestMessage != null && !latestMessage.isEmpty()
+                                    ? latestMessage
+                                    : latestError != null && !latestError.isEmpty()
+                                        ? latestError
+                                        : latestKind != null && !latestKind.isEmpty()
+                                            ? latestKind
+                                            : "server did not provide a message";
 
                                 // Handle update errors first (before "no new version" check)
                                 if (
@@ -662,7 +668,8 @@ public class ShakeMenu implements ShakeDetector.Listener {
                             });
                         }
                     );
-                }).start();
+                })
+                    .start();
             } catch (Exception e) {
                 logger.error("Error selecting channel: " + e.getMessage());
                 isShowing = false;

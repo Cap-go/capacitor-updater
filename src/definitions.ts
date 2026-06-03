@@ -393,7 +393,8 @@ declare module '@capacitor/cli' {
       osLogging?: boolean;
 
       /**
-       * Enable shake gesture to show update menu for debugging/testing purposes
+       * Enable the shake gesture while a preview session is active.
+       * Outside preview sessions, shaking the device is ignored.
        *
        * @default false
        * @since  7.5.0
@@ -401,12 +402,9 @@ declare module '@capacitor/cli' {
       shakeMenu?: boolean;
 
       /**
-       * Enable the shake gesture to show a channel selector menu for switching between update channels.
-       * When enabled AND `shakeMenu` is true, the shake gesture shows a channel selector
-       * instead of the default debug menu (Go Home/Reload/Close).
-       *
-       * After selecting a channel, the app automatically checks for updates and downloads if available.
-       * Only works if channels have `allow_self_set` enabled on the backend.
+       * Keep the shake channel selector preference for compatibility.
+       * The native shake gesture is ignored outside preview sessions, and preview sessions
+       * always use the preview reload/leave menu.
        *
        * Only available for Android and iOS.
        *
@@ -1375,19 +1373,13 @@ export interface CapacitorUpdaterPlugin {
   getFailedUpdate(): Promise<UpdateFailedEvent | null>;
 
   /**
-   * Enable or disable the shake gesture menu for debugging and testing.
+   * Enable or disable the shake gesture menu.
    *
-   * When enabled, users can shake their device to open a debug menu that shows:
-   * - Current bundle information
-   * - Available bundles
-   * - Options to switch bundles manually
-   * - Update status
+   * During preview sessions, users can shake their device to:
+   * - Reload the current preview
+   * - Leave the test app and return to the fallback bundle
    *
-   * This is useful during development and testing to:
-   * - Quickly test different bundle versions
-   * - Debug update flows
-   * - Switch between production and test bundles
-   * - Verify bundle installations
+   * Outside preview sessions, the shake gesture is ignored.
    *
    * **Important:** Disable this in production builds or only enable for internal testers.
    *
@@ -1420,12 +1412,9 @@ export interface CapacitorUpdaterPlugin {
   /**
    * Enable or disable the shake channel selector at runtime.
    *
-   * When enabled AND shakeMenu is true, shaking the device shows a channel
-   * selector instead of the debug menu. This allows users to switch between
-   * update channels by shaking their device.
-   *
-   * After selecting a channel, the app automatically checks for updates
-   * and downloads if available.
+   * This keeps the shake channel selector preference for compatibility.
+   * The native shake gesture is ignored outside preview sessions, and preview sessions
+   * always use the preview reload/leave menu.
    *
    * Can also be configured via {@link PluginsConfig.CapacitorUpdater.allowShakeChannelSelector}.
    *

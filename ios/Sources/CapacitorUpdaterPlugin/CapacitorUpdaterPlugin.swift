@@ -89,6 +89,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     static let autoUpdateModeLaunch = "onLaunch"
     static let autoUpdateModeAlways = "always"
     static let autoUpdateModeOnlyDownload = "onlyDownload"
+    private static let previewLoaderTimeoutMs = 60000
     private let keepUrlPathFlagKey = "__capgo_keep_url_path_after_reload"
     private let customIdDefaultsKey = "CapacitorUpdater.customId"
     private let updateUrlDefaultsKey = "CapacitorUpdater.updateUrl"
@@ -131,6 +132,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var autoSplashscreenTimeoutWorkItem: DispatchWorkItem?
     private var splashscreenLoaderView: UIActivityIndicatorView?
     private var splashscreenLoaderContainer: UIView?
+    private var previewTransitionLoaderView: UIActivityIndicatorView?
+    private var previewTransitionLoaderContainer: UIView?
+    private var previewTransitionLoaderTimeoutWorkItem: DispatchWorkItem?
+    private var previewTransitionLoaderRequested = false
     private let splashscreenPluginName = "SplashScreen"
     private let splashscreenRetryDelayMilliseconds = 100
     private let splashscreenMaxRetries = 20
@@ -1119,6 +1124,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func startPreviewSession(_ call: CAPPluginCall) {
         guard self.allowPreview else {
+            self.hidePreviewTransitionLoader(reason: "preview-session-not-allowed")
             logger.error("startPreviewSession called without allowPreview")
             call.reject("startPreviewSession not allowed. Set allowPreview to true in your config to enable it.")
             return
@@ -1127,6 +1133,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         let rawPayloadUrl = call.getString("payloadUrl")
         let previewPayloadUrl = self.normalizedPreviewPayloadUrl(rawPayloadUrl)
         if let rawPayloadUrl = rawPayloadUrl, !rawPayloadUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, previewPayloadUrl == nil {
+            self.hidePreviewTransitionLoader(reason: "preview-session-invalid-payload")
             logger.error("startPreviewSession called with invalid payloadUrl")
             call.reject("Invalid preview payloadUrl")
             return
@@ -1135,6 +1142,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if !self.previewSessionEnabled {
             let current = self.implementation.getCurrentBundle()
             guard self.implementation.setPreviewFallbackBundle(fallback: current.getId()) else {
+                self.hidePreviewTransitionLoader(reason: "preview-session-fallback-failed")
                 logger.error("Could not save current bundle as preview fallback")
                 call.reject("Could not save current bundle as preview fallback")
                 return
@@ -1175,6 +1183,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         self.clearIncomingPreviewTransition()
+        self.hidePreviewTransitionLoader(reason: "preview-session-started")
         self.previewSessionEnabled = true
         self.previewSessionAlertPending = true
         self.implementation.previewSession = true
@@ -1189,8 +1198,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     func leavePreviewSessionFromShakeMenu() -> Bool {
         let previewBundle = self.implementation.getCurrentBundle()
 
+        self.showPreviewTransitionLoader(reason: "leave-preview-session")
         let didReset = self.resetToPreviewFallbackBundle()
         guard didReset else {
+            self.hidePreviewTransitionLoader(reason: "leave-preview-session-failed")
             return false
         }
 
@@ -1210,10 +1221,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         self.isLeavingPreviewForIncomingLink = true
+        self.showPreviewTransitionLoader(reason: "preview-launch-deeplink")
         logger.info("Preview deeplink launch detected while preview session is active; restoring fallback before initial load")
         if !self.leavePreviewSessionWithoutReload() {
             logger.error("Could not leave preview session before initial preview deeplink routing")
             self.isLeavingPreviewForIncomingLink = false
+            self.hidePreviewTransitionLoader(reason: "preview-launch-deeplink-failed")
         }
     }
 
@@ -1239,15 +1252,18 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func leavePreviewSessionForIncomingPreviewLink() -> Bool {
+        self.showPreviewTransitionLoader(reason: "incoming-preview-deeplink")
         let previewBundle = self.implementation.getCurrentBundle()
         guard let previewFallbackBundle = self.implementation.getPreviewFallbackBundle(), !previewFallbackBundle.isErrorStatus() else {
             logger.error("No preview fallback bundle available")
             self.clearIncomingPreviewTransition()
+            self.hidePreviewTransitionLoader(reason: "incoming-preview-deeplink-failed")
             return false
         }
         guard self.implementation.canSet(bundle: previewFallbackBundle) else {
             logger.error("Preview fallback bundle is not installable")
             self.clearIncomingPreviewTransition()
+            self.hidePreviewTransitionLoader(reason: "incoming-preview-deeplink-failed")
             return false
         }
 
@@ -1255,6 +1271,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         guard self.implementation.stagePreviewFallbackReload(bundle: previewFallbackBundle) else {
             logger.error("Could not stage preview fallback bundle")
             self.clearIncomingPreviewTransition()
+            self.hidePreviewTransitionLoader(reason: "incoming-preview-deeplink-failed")
             return false
         }
 
@@ -1272,6 +1289,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             self.implementation.restoreResetState(previousState)
             self.restoreLiveBundleStateAfterFailedReload()
             self.clearIncomingPreviewTransition()
+            self.hidePreviewTransitionLoader(reason: "incoming-preview-deeplink-reload-failed")
         }
         return didReload
     }
@@ -1289,11 +1307,18 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     func reloadPreviewSessionFromShakeMenu() -> Bool {
+        self.showPreviewTransitionLoader(reason: "reload-preview-session")
+        let didReload: Bool
         if let payloadUrl = self.storedPreviewPayloadUrl() {
-            return self.refreshPreviewSessionFromPayloadUrl(payloadUrl)
+            didReload = self.refreshPreviewSessionFromPayloadUrl(payloadUrl)
+        } else {
+            didReload = self._reload()
         }
 
-        return self._reload()
+        if !didReload {
+            self.hidePreviewTransitionLoader(reason: "reload-preview-session-failed")
+        }
+        return didReload
     }
 
     func hasActivePreviewSession() -> Bool {
@@ -1370,6 +1395,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.previewSessionAlertPending = false
         self.isLeavingPreviewForIncomingLink = false
         self.implementation.previewSession = false
+        self.hidePreviewTransitionLoader(reason: "preview-session-disabled")
         self.shakeMenuEnabled = getConfig().getBoolean("shakeMenu", false)
         self.shakeChannelSelectorEnabled = getConfig().getBoolean("allowShakeChannelSelector", false)
         self.clearPreviewSessionPreferences()
@@ -1492,12 +1518,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         self.isLeavingPreviewForIncomingLink = true
+        self.showPreviewTransitionLoader(reason: "incoming-preview-deeplink")
         logger.info("Preview deeplink received while preview session is active; restoring fallback before routing")
         DispatchQueue.global(qos: .userInitiated).async {
             let didLeave = self.leavePreviewSessionForIncomingPreviewLink()
             if !didLeave {
                 self.logger.error("Could not leave preview session before routing incoming preview deeplink")
                 self.isLeavingPreviewForIncomingLink = false
+                self.hidePreviewTransitionLoader(reason: "incoming-preview-deeplink-failed")
             }
         }
     }
@@ -2040,6 +2068,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.implementation.setSuccess(bundle: bundle, autoDeletePrevious: self.autoDeletePrevious)
         logger.info("Current bundle loaded successfully. [notifyAppReady was called] \(bundle.toString())")
         self.clearIncomingPreviewTransition()
+        self.hidePreviewTransitionLoader(reason: "notify-app-ready")
 
         call.resolve(["bundle": bundle.toJSON()])
     }
@@ -2186,6 +2215,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             if self.autoSplashscreen {
                 self.hideSplashscreen()
             }
+            self.hidePreviewTransitionLoader(reason: "app-ready")
         }
     }
 
@@ -2427,6 +2457,117 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 removeLoader()
             }
         }
+    }
+
+    private func showPreviewTransitionLoader(reason: String) {
+        self.previewTransitionLoaderRequested = true
+        let showLoader = {
+            guard self.previewTransitionLoaderRequested else {
+                return
+            }
+
+            if let container = self.previewTransitionLoaderContainer {
+                self.previewTransitionLoaderTimeoutWorkItem?.cancel()
+                self.schedulePreviewTransitionLoaderTimeout()
+                container.superview?.bringSubviewToFront(container)
+                return
+            }
+
+            guard let rootView = self.bridge?.viewController?.view else {
+                self.logger.warn("Preview transition loader unavailable: root view missing for \(reason)")
+                self.previewTransitionLoaderRequested = false
+                return
+            }
+
+            self.previewTransitionLoaderTimeoutWorkItem?.cancel()
+            self.schedulePreviewTransitionLoaderTimeout()
+
+            let container = UIView()
+            container.translatesAutoresizingMaskIntoConstraints = false
+            container.backgroundColor = UIColor.black.withAlphaComponent(0.18)
+            container.isUserInteractionEnabled = true
+
+            let indicatorStyle: UIActivityIndicatorView.Style
+            if #available(iOS 13.0, *) {
+                indicatorStyle = .large
+            } else {
+                indicatorStyle = .whiteLarge
+            }
+
+            let indicator = UIActivityIndicatorView(style: indicatorStyle)
+            indicator.translatesAutoresizingMaskIntoConstraints = false
+            indicator.hidesWhenStopped = false
+            if #available(iOS 13.0, *) {
+                indicator.color = UIColor.white
+            }
+            indicator.startAnimating()
+
+            container.addSubview(indicator)
+            rootView.addSubview(container)
+
+            NSLayoutConstraint.activate([
+                container.leadingAnchor.constraint(equalTo: rootView.leadingAnchor),
+                container.trailingAnchor.constraint(equalTo: rootView.trailingAnchor),
+                container.topAnchor.constraint(equalTo: rootView.topAnchor),
+                container.bottomAnchor.constraint(equalTo: rootView.bottomAnchor),
+                indicator.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+                indicator.centerYAnchor.constraint(equalTo: container.centerYAnchor)
+            ])
+
+            self.previewTransitionLoaderContainer = container
+            self.previewTransitionLoaderView = indicator
+            self.logger.info("Preview transition loader shown: \(reason)")
+        }
+
+        if Thread.isMainThread {
+            showLoader()
+        } else {
+            DispatchQueue.main.async {
+                showLoader()
+            }
+        }
+    }
+
+    private func hidePreviewTransitionLoader(reason: String) {
+        if !self.previewTransitionLoaderRequested &&
+            self.previewTransitionLoaderContainer == nil &&
+            self.previewTransitionLoaderTimeoutWorkItem == nil {
+            return
+        }
+
+        let hideLoader = {
+            self.previewTransitionLoaderRequested = false
+            self.previewTransitionLoaderTimeoutWorkItem?.cancel()
+            self.previewTransitionLoaderTimeoutWorkItem = nil
+            guard self.previewTransitionLoaderContainer != nil else {
+                return
+            }
+            self.previewTransitionLoaderView?.stopAnimating()
+            self.previewTransitionLoaderContainer?.removeFromSuperview()
+            self.previewTransitionLoaderView = nil
+            self.previewTransitionLoaderContainer = nil
+            self.logger.info("Preview transition loader hidden: \(reason)")
+        }
+
+        if Thread.isMainThread {
+            hideLoader()
+        } else {
+            DispatchQueue.main.async {
+                hideLoader()
+            }
+        }
+    }
+
+    private func schedulePreviewTransitionLoaderTimeout() {
+        self.previewTransitionLoaderTimeoutWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.hidePreviewTransitionLoader(reason: "preview-transition-timeout")
+        }
+        self.previewTransitionLoaderTimeoutWorkItem = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + .milliseconds(Self.previewLoaderTimeoutMs),
+            execute: workItem
+        )
     }
 
     private func scheduleSplashscreenTimeout() {
