@@ -82,7 +82,7 @@ public class CapgoUpdater {
     public String channelUrl = "";
     public String defaultChannel = "";
     public String appId = "";
-    public boolean previewSession = false;
+    public volatile boolean previewSession = false;
     public String publicKey = "";
     public String deviceID = "";
     public int timeout = 20000;

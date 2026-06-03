@@ -1562,6 +1562,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.implementation.directUpdate = false;
         }
         if (this.applyDownloadedBundleForDirectUpdate(latest)) {
+            this.implementation.setNextBundle(null);
             this.notifyBundleSet(latest);
             sendReadyToJs(latest, "update installed", true);
         } else {
@@ -2418,12 +2419,35 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private boolean leavePreviewSessionForIncomingPreviewLink() {
-        if (!this.leavePreviewSessionWithoutReload(true)) {
-            return false;
-        }
+        final BundleInfo previewBundle = this.implementation.getCurrentBundle();
+        final BundleInfo previewFallbackBundle = this.implementation.getPreviewFallbackBundle();
 
         try {
-            return this._reload();
+            if (previewFallbackBundle == null || previewFallbackBundle.isErrorStatus()) {
+                logger.error("No preview fallback bundle available");
+                return false;
+            }
+            if (!this.implementation.canSet(previewFallbackBundle)) {
+                logger.error("Preview fallback bundle is not installable");
+                return false;
+            }
+
+            final CapgoUpdater.ResetState previousState = this.implementation.captureResetState();
+            if (!this.implementation.stagePreviewFallbackReload(previewFallbackBundle)) {
+                logger.error("Could not stage preview fallback bundle");
+                return false;
+            }
+
+            if (!this._reload()) {
+                this.implementation.restoreResetState(previousState);
+                this.restoreLiveBundleStateAfterFailedReload();
+                return false;
+            }
+
+            this.endPreviewSession(true);
+            final BundleInfo restoredNextBundle = this.implementation.getNextBundle();
+            this.deletePreviewBundleIfUnused(previewBundle, previewFallbackBundle, restoredNextBundle);
+            return true;
         } finally {
             this.clearIncomingPreviewTransition();
         }

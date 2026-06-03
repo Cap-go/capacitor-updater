@@ -1041,6 +1041,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         if self._reload() {
             self.implementation.finalizePendingReload(bundle: next, previousBundleName: previousBundleName)
+            _ = self.implementation.setNextBundle(next: Optional<String>.none)
             return true
         }
 
@@ -1238,14 +1239,38 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func leavePreviewSessionForIncomingPreviewLink() -> Bool {
-        guard self.leavePreviewSessionWithoutReload(keepPreviewGuard: true) else {
+        let previewBundle = self.implementation.getCurrentBundle()
+        guard let previewFallbackBundle = self.implementation.getPreviewFallbackBundle(), !previewFallbackBundle.isErrorStatus() else {
+            logger.error("No preview fallback bundle available")
+            self.clearIncomingPreviewTransition()
+            return false
+        }
+        guard self.implementation.canSet(bundle: previewFallbackBundle) else {
+            logger.error("Preview fallback bundle is not installable")
+            self.clearIncomingPreviewTransition()
+            return false
+        }
+
+        let previousState = self.implementation.captureResetState()
+        guard self.implementation.stagePreviewFallbackReload(bundle: previewFallbackBundle) else {
+            logger.error("Could not stage preview fallback bundle")
+            self.clearIncomingPreviewTransition()
             return false
         }
 
         let didReload = self._reload()
         if didReload {
+            self.endPreviewSession(keepPreviewGuard: true)
+            let restoredNextBundle = self.implementation.getNextBundle()
+            self.deletePreviewBundleIfUnused(
+                previewBundle,
+                previewFallbackBundle: previewFallbackBundle,
+                restoredNextBundle: restoredNextBundle
+            )
             self.scheduleIncomingPreviewTransitionFallbackClear()
         } else {
+            self.implementation.restoreResetState(previousState)
+            self.restoreLiveBundleStateAfterFailedReload()
             self.clearIncomingPreviewTransition()
         }
         return didReload
