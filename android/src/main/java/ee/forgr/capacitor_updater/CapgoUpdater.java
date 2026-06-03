@@ -742,11 +742,15 @@ public class CapgoUpdater {
             CapgoUpdater.this.notifyListeners("updateAvailable", ret);
             logger.info("setNext: " + setNext);
             if (setNext) {
-                logger.info("directUpdate: " + this.directUpdate);
-                if (this.directUpdate) {
+                if (this.previewSession) {
+                    logger.info("Preview session is active, skipping automatic install of downloaded bundle");
+                    this.directUpdate = false;
+                } else if (this.directUpdate) {
+                    logger.info("directUpdate: " + this.directUpdate);
                     CapgoUpdater.this.directUpdateFinish(next);
                     this.directUpdate = false;
                 } else {
+                    logger.info("directUpdate: " + this.directUpdate);
                     this.setNextBundle(next.getId());
                 }
             }

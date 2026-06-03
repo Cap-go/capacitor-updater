@@ -159,15 +159,39 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private volatile boolean onLaunchDirectUpdateUsed = false;
     Boolean shakeMenuEnabled = false;
     Boolean shakeChannelSelectorEnabled = false;
-    Boolean previewSessionEnabled = false;
+    volatile Boolean previewSessionEnabled = false;
     private Boolean previewSessionAlertPending = false;
-    private Boolean isLeavingPreviewForIncomingLink = false;
+    private volatile Boolean isLeavingPreviewForIncomingLink = false;
     private Boolean allowManualBundleError = false;
     private Boolean allowPreview = false;
     Boolean allowSetDefaultChannel = true;
 
     String getUpdateUrl() {
         return this.updateUrl;
+    }
+
+    private boolean isPreviewSessionStateActive() {
+        return (
+            Boolean.TRUE.equals(this.previewSessionEnabled) ||
+            Boolean.TRUE.equals(this.isLeavingPreviewForIncomingLink) ||
+            (this.implementation != null && this.implementation.previewSession)
+        );
+    }
+
+    private boolean shouldBlockAutoUpdateForPreviewSession() {
+        if (!this.isPreviewSessionStateActive()) {
+            return false;
+        }
+
+        logger.info("Preview session is active. Skipping normal auto-update work.");
+        return true;
+    }
+
+    private void clearIncomingPreviewTransition() {
+        this.isLeavingPreviewForIncomingLink = false;
+        if (!Boolean.TRUE.equals(this.previewSessionEnabled) && this.implementation != null) {
+            this.implementation.previewSession = false;
+        }
     }
 
     // Used for activity-based foreground/background detection on Android < 14
@@ -1507,6 +1531,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
     void scheduleDirectUpdateFinish(final BundleInfo latest) {
         startNewThread(() -> {
             try {
+                if (this.shouldBlockAutoUpdateForPreviewSession()) {
+                    logger.info("Skipping direct update install while preview session state is active");
+                    this.implementation.directUpdate = false;
+                    this.clearBackgroundDownloadState();
+                    return;
+                }
                 Activity currentActivity = this.getActivity();
                 if (currentActivity != null) {
                     this.implementation.activity = currentActivity;
@@ -1521,14 +1551,51 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void directUpdateFinish(final BundleInfo latest) {
+        if (this.shouldBlockAutoUpdateForPreviewSession()) {
+            logger.info("Skipping direct update finish while preview session state is active");
+            this.implementation.directUpdate = false;
+            this.clearBackgroundDownloadState();
+            return;
+        }
         if ("onLaunch".equals(this.directUpdateMode)) {
             this.onLaunchDirectUpdateUsed = true;
             this.implementation.directUpdate = false;
         }
-        if (CapacitorUpdaterPlugin.this.implementation.set(latest) && CapacitorUpdaterPlugin.this._reload()) {
+        if (this.applyDownloadedBundleForDirectUpdate(latest)) {
             this.notifyBundleSet(latest);
             sendReadyToJs(latest, "update installed", true);
+        } else {
+            this.implementation.setNextBundle(latest.getId());
+            final JSObject ret = new JSObject();
+            ret.put("bundle", InternalUtils.mapToJSObject(latest.toJSONMap()));
+            this.notifyListeners("updateAvailable", ret);
+            sendReadyToJs(
+                this.implementation.getCurrentBundle(),
+                "Direct update reload failed, update will install next background",
+                false
+            );
         }
+    }
+
+    private boolean applyDownloadedBundleForDirectUpdate(final BundleInfo latest) {
+        final CapgoUpdater.ResetState previousState = this.implementation.captureResetState();
+        final String previousBundleName = this.implementation.getCurrentBundle().getVersionName();
+
+        if (!this.implementation.stagePendingReload(latest)) {
+            this.implementation.restoreResetState(previousState);
+            logger.error("Direct update failed to stage downloaded bundle: " + latest.toString());
+            return false;
+        }
+
+        if (this._reload()) {
+            this.implementation.finalizePendingReload(latest, previousBundleName);
+            return true;
+        }
+
+        this.implementation.restoreResetState(previousState);
+        this.restoreLiveBundleStateAfterFailedReload();
+        logger.error("Direct update reload failed after staging bundle: " + latest.toString());
+        return false;
     }
 
     private void cleanupObsoleteVersions() {
@@ -2136,6 +2203,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return this.semaphoreWait(phase, waitTimeMs);
     }
 
+    protected boolean reloadWithoutWaitingForAppReady() {
+        this.applyCurrentBundleToBridge();
+
+        final long waitTimeMs = this.resolveAppReadyCheckTimeoutMs();
+        this.checkAppReady(waitTimeMs);
+        this.notifyListeners("appReloaded", new JSObject());
+        return true;
+    }
+
     @PluginMethod
     public void reload(final PluginCall call) {
         startNewThread(() -> {
@@ -2143,7 +2219,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 final BundleInfo current = this.implementation.getCurrentBundle();
                 final BundleInfo next = this.implementation.getNextBundle();
 
-                if (next != null && !next.isErrorStatus() && !next.getId().equals(current.getId())) {
+                if (!this.isPreviewSessionStateActive() && next != null && !next.isErrorStatus() && !next.getId().equals(current.getId())) {
                     final CapgoUpdater.ResetState previousState = this.implementation.captureResetState();
                     final String previousBundleName = this.implementation.getCurrentBundle().getVersionName();
                     logger.info("Applying pending bundle before reload: " + next.getVersionName());
@@ -2223,6 +2299,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 if (!this.implementation.set(id)) {
                     logger.info("No such bundle " + id);
                     call.reject("Update failed, id " + id + " does not exist.");
+                } else if (Boolean.TRUE.equals(this.previewSessionEnabled)) {
+                    logger.info("Preview session set active bundle " + id + " without waiting for preview app readiness");
+                    this.reloadWithoutWaitingForAppReady();
+                    this.notifyBundleSet(this.implementation.getBundleInfo(id));
+                    this.showPreviewSessionNoticeIfNeeded();
+                    call.resolve();
                 } else if (!this._reload()) {
                     logger.error("Reload failed after setting bundle " + id);
                     call.reject("Reload failed after setting bundle " + id);
@@ -2335,6 +2417,18 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return true;
     }
 
+    private boolean leavePreviewSessionForIncomingPreviewLink() {
+        if (!this.leavePreviewSessionWithoutReload(true)) {
+            return false;
+        }
+
+        try {
+            return this._reload();
+        } finally {
+            this.clearIncomingPreviewTransition();
+        }
+    }
+
     private void leavePreviewSessionForLaunchIntentIfNeeded() {
         final Intent intent = getActivity() == null ? null : getActivity().getIntent();
         if (
@@ -2357,6 +2451,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private boolean leavePreviewSessionWithoutReload() {
+        return this.leavePreviewSessionWithoutReload(false);
+    }
+
+    private boolean leavePreviewSessionWithoutReload(final boolean keepPreviewGuard) {
         final BundleInfo previewBundle = this.implementation.getCurrentBundle();
         final BundleInfo previewFallbackBundle = this.implementation.getPreviewFallbackBundle();
         if (previewFallbackBundle == null || previewFallbackBundle.isErrorStatus()) {
@@ -2372,7 +2470,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return false;
         }
 
-        this.endPreviewSession();
+        this.endPreviewSession(keepPreviewGuard);
         final BundleInfo restoredNextBundle = this.implementation.getNextBundle();
         this.deletePreviewBundleIfUnused(previewBundle, previewFallbackBundle, restoredNextBundle);
         return true;
@@ -2402,7 +2500,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return this.refreshPreviewSessionFromPayloadUrl(payloadUrl);
         }
 
-        return this._reload();
+        return this.reloadWithoutWaitingForAppReady();
     }
 
     public boolean hasActivePreviewSession() {
@@ -2434,6 +2532,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void endPreviewSession() {
+        this.endPreviewSession(false);
+    }
+
+    private void endPreviewSession(final boolean keepPreviewGuard) {
         final boolean previousShakeMenuEnabled = this.prefs.getBoolean(
             PREVIEW_PREVIOUS_SHAKE_MENU_PREF_KEY,
             this.getConfig().getBoolean("shakeMenu", false)
@@ -2448,8 +2550,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
         this.previewSessionEnabled = false;
         this.previewSessionAlertPending = false;
-        this.isLeavingPreviewForIncomingLink = false;
-        this.implementation.previewSession = false;
+        if (keepPreviewGuard) {
+            this.implementation.previewSession = true;
+        } else {
+            this.clearIncomingPreviewTransition();
+        }
         this.shakeMenuEnabled = previousShakeMenuEnabled;
         this.shakeChannelSelectorEnabled = previousShakeChannelSelectorEnabled;
         this.implementation.setPreviewFallbackBundle(null);
@@ -2670,7 +2775,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
             if (version.equals(this.implementation.getCurrentBundle().getVersionName())) {
                 logger.info("Preview payload unchanged, reloading current bundle");
-                return this._reload();
+                return this.reloadWithoutWaitingForAppReady();
             }
 
             final BundleInfo next = this.downloadPreviewPayloadBundle(payload);
@@ -2682,7 +2787,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
 
             this.notifyBundleSet(next);
-            return this._reload();
+            return this.reloadWithoutWaitingForAppReady();
         } catch (final Exception err) {
             logger.error("Could not refresh preview session: " + err.getMessage());
             return false;
@@ -2967,6 +3072,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
             logger.error("Error no url or wrong format");
             return "unavailable";
         }
+        if (this.shouldBlockAutoUpdateForPreviewSession()) {
+            return "preview_session";
+        }
         if (this.isDownloadStuckOrTimedOut()) {
             logger.info("Download already in progress, skipping duplicate download request");
             return "already_running";
@@ -3135,7 +3243,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 @Override
                 public void run() {
                     try {
+                        if (CapacitorUpdaterPlugin.this.shouldBlockAutoUpdateForPreviewSession()) {
+                            return;
+                        }
                         CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.updateUrl, null, (res) -> {
+                            if (CapacitorUpdaterPlugin.this.shouldBlockAutoUpdateForPreviewSession()) {
+                                return;
+                            }
                             JSObject jsRes = InternalUtils.mapToJSObject(res);
                             if (jsRes.has("error") || jsRes.has("kind")) {
                                 final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
@@ -3198,6 +3312,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             logger.info("semaphoreReady countDown");
             this.semaphoreDown();
             logger.info("semaphoreReady countDown done");
+            this.clearIncomingPreviewTransition();
             final JSObject ret = new JSObject();
             ret.put("bundle", InternalUtils.mapToJSObject(bundle.toJSONMap()));
             call.resolve(ret);
@@ -3245,6 +3360,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private Boolean _isAutoUpdateEnabled() {
+        if (this.isPreviewSessionStateActive()) {
+            return false;
+        }
         final CapConfig config = CapConfig.loadDefault(this.getActivity());
         String serverUrl = config.getServerUrl();
         if (serverUrl != null && !serverUrl.isEmpty()) {
@@ -3443,6 +3561,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
         logger.info("endBackGroundTaskWithNotif " + msg);
     }
 
+    private void clearBackgroundDownloadState() {
+        this.backgroundDownloadTask = null;
+        this.downloadStartTimeMs = 0;
+    }
+
     private boolean isDownloadStuckOrTimedOut() {
         if (this.backgroundDownloadTask == null || !this.backgroundDownloadTask.isAlive()) {
             return false;
@@ -3469,6 +3592,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private Thread backgroundDownload() {
+        if (this.shouldBlockAutoUpdateForPreviewSession()) {
+            return null;
+        }
         final boolean plannedDirectUpdate = this.shouldUseDirectUpdate();
         final boolean initialDirectUpdateAllowed = this.isDirectUpdateCurrentlyAllowed(plannedDirectUpdate);
         final String messageUpdate = initialDirectUpdateAllowed
@@ -3479,9 +3605,17 @@ public class CapacitorUpdaterPlugin extends Plugin {
         Thread newTask = startNewThread(() -> {
             // Wait for cleanup to complete before starting download
             waitForCleanupIfNeeded();
+            if (CapacitorUpdaterPlugin.this.shouldBlockAutoUpdateForPreviewSession()) {
+                CapacitorUpdaterPlugin.this.clearBackgroundDownloadState();
+                return;
+            }
             logger.info("Check for update via: " + CapacitorUpdaterPlugin.this.updateUrl);
             try {
                 CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.updateUrl, null, (res) -> {
+                    if (CapacitorUpdaterPlugin.this.shouldBlockAutoUpdateForPreviewSession()) {
+                        CapacitorUpdaterPlugin.this.clearBackgroundDownloadState();
+                        return;
+                    }
                     JSObject jsRes = InternalUtils.mapToJSObject(res);
                     final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
 
@@ -3706,6 +3840,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                 : initialDirectUpdateAllowed;
                             startNewThread(() -> {
                                 try {
+                                    if (CapacitorUpdaterPlugin.this.shouldBlockAutoUpdateForPreviewSession()) {
+                                        CapacitorUpdaterPlugin.this.clearBackgroundDownloadState();
+                                        return;
+                                    }
                                     logger.info(
                                         "New bundle: " +
                                             latestVersionName +
@@ -3792,6 +3930,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private void installNext() {
         try {
+            if (this.shouldBlockAutoUpdateForPreviewSession()) {
+                return;
+            }
             String delayUpdatePreferences = prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]");
             ArrayList<DelayCondition> delayConditionList = delayUpdateUtils.parseDelayConditions(delayUpdatePreferences);
             if (!delayConditionList.isEmpty()) {
@@ -3825,6 +3966,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
         if (current.isBuiltin()) {
             logger.info("Built-in bundle is active. We skip the check for notifyAppReady.");
+            return;
+        }
+        if (this.isPreviewSessionStateActive()) {
+            logger.info("Preview session is active. We skip the check for notifyAppReady.");
             return;
         }
         logger.debug("Current bundle is: " + current);
@@ -4021,7 +4166,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         logger.info("Preview deeplink received while preview session is active; restoring fallback before routing");
         startNewThread(() -> {
-            final boolean didLeave = this.leavePreviewSessionFromShakeMenu();
+            final boolean didLeave = this.leavePreviewSessionForIncomingPreviewLink();
             if (!didLeave) {
                 logger.error("Could not leave preview session before routing incoming preview deeplink");
                 this.isLeavingPreviewForIncomingLink = false;

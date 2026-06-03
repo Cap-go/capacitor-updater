@@ -165,6 +165,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     public var previewSessionEnabled = false
     private var previewSessionAlertPending = false
     private var isLeavingPreviewForIncomingLink = false
+    private var previewTransitionClearWorkItem: DispatchWorkItem?
     let semaphoreReady = DispatchSemaphore(value: 0)
 
     private var delayUpdateUtils: DelayUpdateUtils!
@@ -986,7 +987,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         let current: BundleInfo = self.implementation.getCurrentBundle()
         let next: BundleInfo? = self.implementation.getNextBundle()
 
-        if let next = next, !next.isErrorStatus(), next.getId() != current.getId() {
+        if !self.isPreviewSessionStateActive(),
+           let next = next,
+           !next.isErrorStatus(),
+           next.getId() != current.getId() {
             let previousState = self.implementation.captureResetState()
             let previousBundleName = self.implementation.getCurrentBundle().getVersionName()
             logger.info("Applying pending bundle before reload: \(next.toString())")
@@ -1025,6 +1029,27 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    private func applyDownloadedBundleForDirectUpdate(_ next: BundleInfo) -> Bool {
+        let previousState = self.implementation.captureResetState()
+        let previousBundleName = self.implementation.getCurrentBundle().getVersionName()
+
+        guard self.implementation.stagePendingReload(bundle: next) else {
+            self.implementation.restoreResetState(previousState)
+            logger.error("Direct update failed to stage downloaded bundle: \(next.toString())")
+            return false
+        }
+
+        if self._reload() {
+            self.implementation.finalizePendingReload(bundle: next, previousBundleName: previousBundleName)
+            return true
+        }
+
+        self.implementation.restoreResetState(previousState)
+        self.restoreLiveBundleStateAfterFailedReload()
+        logger.error("Direct update reload failed after staging bundle: \(next.toString())")
+        return false
+    }
+
     @objc func next(_ call: CAPPluginCall) {
         guard let id = call.getString("id") else {
             logger.error("Next called without id")
@@ -1058,6 +1083,37 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             self.showPreviewSessionNoticeIfNeeded()
             call.resolve()
         }
+    }
+
+    private func isPreviewSessionStateActive() -> Bool {
+        self.previewSessionEnabled || self.isLeavingPreviewForIncomingLink || self.implementation.previewSession
+    }
+
+    private func shouldBlockAutoUpdateForPreviewSession() -> Bool {
+        guard self.isPreviewSessionStateActive() else {
+            return false
+        }
+
+        logger.info("Preview session is active. Skipping normal auto-update work.")
+        return true
+    }
+
+    private func clearIncomingPreviewTransition() {
+        self.previewTransitionClearWorkItem?.cancel()
+        self.previewTransitionClearWorkItem = nil
+        self.isLeavingPreviewForIncomingLink = false
+        if !self.previewSessionEnabled {
+            self.implementation.previewSession = false
+        }
+    }
+
+    private func scheduleIncomingPreviewTransitionFallbackClear() {
+        self.previewTransitionClearWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.clearIncomingPreviewTransition()
+        }
+        self.previewTransitionClearWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(self.appReadyTimeout), execute: workItem)
     }
 
     @objc func startPreviewSession(_ call: CAPPluginCall) {
@@ -1117,6 +1173,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             UserDefaults.standard.removeObject(forKey: self.previewPayloadUrlDefaultsKey)
         }
 
+        self.clearIncomingPreviewTransition()
         self.previewSessionEnabled = true
         self.previewSessionAlertPending = true
         self.implementation.previewSession = true
@@ -1159,7 +1216,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    private func leavePreviewSessionWithoutReload() -> Bool {
+    private func leavePreviewSessionWithoutReload(keepPreviewGuard: Bool = false) -> Bool {
         let previewBundle = self.implementation.getCurrentBundle()
         guard let previewFallbackBundle = self.implementation.getPreviewFallbackBundle(), !previewFallbackBundle.isErrorStatus() else {
             logger.error("No preview fallback bundle available")
@@ -1174,10 +1231,24 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             return false
         }
 
-        self.endPreviewSession()
+        self.endPreviewSession(keepPreviewGuard: keepPreviewGuard)
         let restoredNextBundle = self.implementation.getNextBundle()
         self.deletePreviewBundleIfUnused(previewBundle, previewFallbackBundle: previewFallbackBundle, restoredNextBundle: restoredNextBundle)
         return true
+    }
+
+    private func leavePreviewSessionForIncomingPreviewLink() -> Bool {
+        guard self.leavePreviewSessionWithoutReload(keepPreviewGuard: true) else {
+            return false
+        }
+
+        let didReload = self._reload()
+        if didReload {
+            self.scheduleIncomingPreviewTransitionFallbackClear()
+        } else {
+            self.clearIncomingPreviewTransition()
+        }
+        return didReload
     }
 
     private func deletePreviewBundleIfUnused(
@@ -1228,7 +1299,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         return false
     }
 
-    private func endPreviewSession() {
+    private func endPreviewSession(keepPreviewGuard: Bool = false) {
         let previousShakeMenuEnabled = UserDefaults.standard.object(forKey: self.previewPreviousShakeMenuDefaultsKey) as? Bool
             ?? getConfig().getBoolean("shakeMenu", false)
         let previousShakeChannelSelectorEnabled = UserDefaults.standard.object(forKey: self.previewPreviousShakeChannelSelectorDefaultsKey) as? Bool
@@ -1239,8 +1310,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         self.previewSessionEnabled = false
         self.previewSessionAlertPending = false
-        self.isLeavingPreviewForIncomingLink = false
-        self.implementation.previewSession = false
+        if keepPreviewGuard {
+            self.implementation.previewSession = true
+        } else {
+            self.clearIncomingPreviewTransition()
+        }
         self.shakeMenuEnabled = previousShakeMenuEnabled
         self.shakeChannelSelectorEnabled = previousShakeChannelSelectorEnabled
         _ = self.implementation.setPreviewFallbackBundle(fallback: nil)
@@ -1395,7 +1469,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.isLeavingPreviewForIncomingLink = true
         logger.info("Preview deeplink received while preview session is active; restoring fallback before routing")
         DispatchQueue.global(qos: .userInitiated).async {
-            let didLeave = self.leavePreviewSessionFromShakeMenu()
+            let didLeave = self.leavePreviewSessionForIncomingPreviewLink()
             if !didLeave {
                 self.logger.error("Could not leave preview session before routing incoming preview deeplink")
                 self.isLeavingPreviewForIncomingLink = false
@@ -1701,6 +1775,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             logger.error("Error no url or wrong format")
             return "unavailable"
         }
+        if self.shouldBlockAutoUpdateForPreviewSession() {
+            return "preview_session"
+        }
         if self.isDownloadStuckOrTimedOut() {
             logger.info("Download already in progress, skipping duplicate download request")
             return "already_running"
@@ -1937,6 +2014,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         let bundle = self.implementation.getCurrentBundle()
         self.implementation.setSuccess(bundle: bundle, autoDeletePrevious: self.autoDeletePrevious)
         logger.info("Current bundle loaded successfully. [notifyAppReady was called] \(bundle.toString())")
+        self.clearIncomingPreviewTransition()
 
         call.resolve(["bundle": bundle.toJSON()])
     }
@@ -1987,6 +2065,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     // Note: _checkCancelDelay method has been moved to DelayUpdateUtils class
 
     private func _isAutoUpdateEnabled() -> Bool {
+        if self.isPreviewSessionStateActive() {
+            return false
+        }
         let instanceDescriptor = (self.bridge?.viewController as? CAPBridgeViewController)?.instanceDescriptor()
         if instanceDescriptor?.serverURL != nil {
             logger.warn("AutoUpdate is automatic disabled when serverUrl is set.")
@@ -2022,6 +2103,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         let current: BundleInfo = self.implementation.getCurrentBundle()
         if current.isBuiltin() {
             logger.info("Built-in bundle is active. We skip the check for notifyAppReady.")
+            return
+        }
+        if self.isPreviewSessionStateActive() {
+            logger.info("Preview session is active. We skip the check for notifyAppReady.")
             return
         }
 
@@ -2693,6 +2778,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         return true
     }
 
+    private func clearDownloadInProgressState() {
+        downloadLock.lock()
+        defer { downloadLock.unlock() }
+        downloadInProgress = false
+        downloadStartTime = nil
+    }
+
     func runBackgroundDownloadWork(_ work: @escaping () -> Void) {
         // Live update checks/downloads are user-visible work. Using `.background`
         // lets the scheduler starve them for minutes while the app is active.
@@ -2718,6 +2810,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     func backgroundDownload() {
+        if self.shouldBlockAutoUpdateForPreviewSession() {
+            return
+        }
         // Set download in progress flag (thread-safe)
         downloadLock.lock()
         downloadInProgress = true
@@ -2746,10 +2841,19 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.runBackgroundDownloadWork {
             // Wait for cleanup to complete before starting download
             self.waitForCleanupIfNeeded()
+            if self.shouldBlockAutoUpdateForPreviewSession() {
+                self.clearDownloadInProgressState()
+                return
+            }
             self.beginDownloadBackgroundTask()
             self.logger.info("Check for update via \(self.updateUrl)")
             let res = self.implementation.getLatest(url: url, channel: nil)
             let current = self.implementation.getCurrentBundle()
+            if self.shouldBlockAutoUpdateForPreviewSession() {
+                self.clearDownloadInProgressState()
+                self.endBackGroundTask()
+                return
+            }
 
             // Handle network errors and other failures first
             let backendError = res.error ?? ""
@@ -2861,6 +2965,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         )
                         return
                     }
+                    if self.shouldBlockAutoUpdateForPreviewSession() {
+                        self.clearDownloadInProgressState()
+                        self.endBackGroundTask()
+                        return
+                    }
                     res.checksum = try CryptoCipher.decryptChecksum(checksum: res.checksum, publicKey: self.implementation.publicKey)
                     CryptoCipher.logChecksumInfo(label: "Bundle checksum", hexChecksum: next.getChecksum())
                     CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: res.checksum)
@@ -2878,6 +2987,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                             current: current,
                             plannedDirectUpdate: plannedDirectUpdate
                         )
+                        return
+                    }
+                    if self.shouldBlockAutoUpdateForPreviewSession() {
+                        self.clearDownloadInProgressState()
+                        self.endBackGroundTask()
                         return
                     }
                     let directUpdateAllowed = plannedDirectUpdate && !self.autoSplashscreenTimedOut
@@ -2899,7 +3013,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                             )
                             return
                         }
-                        if self.implementation.set(bundle: next) && self._reload() {
+                        if self.applyDownloadedBundleForDirectUpdate(next) {
                             self.notifyBundleSet(next)
                             self.endBackGroundTaskWithNotif(
                                 msg: "update installed",
@@ -2909,10 +3023,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                                 plannedDirectUpdate: plannedDirectUpdate
                             )
                         } else {
+                            _ = self.implementation.setNextBundle(next: next.getId())
+                            self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
                             self.endBackGroundTaskWithNotif(
-                                msg: "Update install failed",
+                                msg: "Direct update reload failed, update will install next background",
                                 latestVersionName: latestVersionName,
-                                current: next,
+                                current: self.implementation.getCurrentBundle(),
+                                error: false,
                                 plannedDirectUpdate: plannedDirectUpdate
                             )
                         }
@@ -2968,6 +3085,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func installNext() {
+        if self.shouldBlockAutoUpdateForPreviewSession() {
+            return
+        }
         let delayUpdatePreferences = UserDefaults.standard.string(forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES) ?? "[]"
         let delayConditionList: [DelayCondition] = fromJsonArr(json: delayUpdatePreferences).map { obj -> DelayCondition in
             let kind: String = obj.value(forKey: "kind") as! String
@@ -3059,8 +3179,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
             DispatchQueue.global(qos: .utility).async {
+                if self.shouldBlockAutoUpdateForPreviewSession() {
+                    return
+                }
                 let res = self.implementation.getLatest(url: url, channel: nil)
                 let current = self.implementation.getCurrentBundle()
+                if self.shouldBlockAutoUpdateForPreviewSession() {
+                    return
+                }
 
                 if res.version != current.getVersionName() {
                     self.logger.info("New version found: \(res.version)")

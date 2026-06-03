@@ -1423,6 +1423,70 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testCheckRevertSkipsRollbackDuringPreviewSession() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            updater.currentBundle = new BundleInfo("preview-id", "preview", BundleStatus.PENDING, new Date(), "preview");
+
+            plugin.implementation = updater;
+            plugin.previewSessionEnabled = true;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            invokePrivateVoidMethod(plugin, "checkRevert");
+
+            assertFalse(updater.resetCalled);
+            assertFalse(plugin.hasNotifiedEvent("updateFailed"));
+        }
+    }
+
+    @Test
+    public void testCheckRevertSkipsRollbackDuringPreviewTransition() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            updater.currentBundle = new BundleInfo("preview-id", "preview", BundleStatus.PENDING, new Date(), "preview");
+            updater.previewSession = true;
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            invokePrivateVoidMethod(plugin, "checkRevert");
+
+            assertFalse(updater.resetCalled);
+            assertFalse(plugin.hasNotifiedEvent("updateFailed"));
+        }
+    }
+
+    @Test
+    public void testTriggerUpdateCheckSkipsDuringPreviewSession() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            plugin.implementation = new ResetTrackingCapgoUpdater();
+            plugin.previewSessionEnabled = true;
+            plugin.setLoggerForTesting(mock(Logger.class));
+            setPrivateField(plugin, "updateUrl", "https://example.com/updates");
+
+            assertEquals("preview_session", plugin.triggerBackgroundUpdateCheck());
+        }
+    }
+
+    @Test
     public void testResetToPendingWithoutPendingBundleDoesNotResetState() throws Exception {
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);
@@ -2361,7 +2425,10 @@ public class CapacitorUpdaterUnitTest {
 
             assertTrue(plugin.startNewThreadCalled);
             assertTrue(plugin.reloadCalled);
-            assertEquals(1, updater.setCalls);
+            assertEquals(0, updater.setCalls);
+            assertEquals(1, updater.stagePendingReloadCalls);
+            assertEquals(1, updater.finalizePendingReloadCalls);
+            assertSame(latest, updater.finalizedPendingReloadBundle);
             assertSame(plugin.activity, updater.activity);
         }
     }
