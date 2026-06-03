@@ -68,6 +68,7 @@ public class DownloadService extends Worker {
     public static final String IS_MANIFEST = "is_manifest";
     public static final String APP_ID = "app_id";
     public static final String pluginVersion = "plugin_version";
+    public static final String INSTALL_SOURCE = "install_source";
     public static final String STATS_URL = "stats_url";
     public static final String DEVICE_ID = "device_id";
     public static final String CUSTOM_ID = "custom_id";
@@ -236,6 +237,7 @@ public class DownloadService extends Worker {
             json.put("platform", "android");
             json.put("app_id", getInputString(APP_ID, "unknown"));
             json.put("plugin_version", getInputString(pluginVersion, "unknown"));
+            json.put("install_source", getInputString(INSTALL_SOURCE, ""));
             json.put("version_name", version != null ? version : "");
             json.put("old_version_name", "");
             json.put("action", action);

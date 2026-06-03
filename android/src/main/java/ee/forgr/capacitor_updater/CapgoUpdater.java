@@ -9,6 +9,7 @@ package ee.forgr.capacitor_updater;
 import android.app.Activity;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.os.Build;
 import androidx.annotation.NonNull;
 import androidx.lifecycle.LifecycleOwner;
@@ -127,6 +128,51 @@ public class CapgoUpdater {
             return (activity.getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) == 0;
         } catch (Exception e) {
             return true; // Default to production if we can't determine
+        }
+    }
+
+    static String installSourceForInstallerPackage(final String installerPackageName) {
+        if (installerPackageName == null || installerPackageName.trim().isEmpty()) {
+            return "";
+        }
+
+        switch (installerPackageName) {
+            case "com.android.vending":
+                // Android exposes the Google Play installer package, but not whether the app came from production, alpha, beta, or internal testing.
+                return "google_play";
+            case "com.amazon.venezia":
+                return "amazon_appstore";
+            case "com.sec.android.app.samsungapps":
+                return "samsung_galaxy_store";
+            case "com.huawei.appmarket":
+                return "huawei_appgallery";
+            default:
+                return "";
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    private String getInstallSource() {
+        if (activity == null) {
+            return "";
+        }
+
+        try {
+            PackageManager packageManager = activity.getPackageManager();
+            String packageName = activity.getPackageName();
+            String installerPackageName;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                android.content.pm.InstallSourceInfo installSourceInfo = packageManager.getInstallSourceInfo(packageName);
+                installerPackageName = installSourceInfo.getInstallingPackageName();
+                if (installerPackageName == null || installerPackageName.trim().isEmpty()) {
+                    installerPackageName = installSourceInfo.getInitiatingPackageName();
+                }
+            } else {
+                installerPackageName = packageManager.getInstallerPackageName(packageName);
+            }
+            return installSourceForInstallerPackage(installerPackageName);
+        } catch (Exception e) {
+            return "";
         }
     }
 
@@ -646,6 +692,7 @@ public class CapgoUpdater {
             this.appId,
             this.pluginVersion,
             this.isProd(),
+            this.getInstallSource(),
             this.statsUrl,
             this.deviceID,
             this.versionBuild,
@@ -1463,6 +1510,7 @@ public class CapgoUpdater {
         json.put("plugin_version", this.pluginVersion);
         json.put("is_emulator", this.isEmulator());
         json.put("is_prod", this.isProd());
+        json.put("install_source", this.getInstallSource());
         json.put("defaultChannel", this.defaultChannel);
 
         // Add encryption key ID if encryption is enabled (use cached value)

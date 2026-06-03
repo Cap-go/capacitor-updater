@@ -2118,6 +2118,30 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertNotNil(updater)
     }
 
+    func testInfoObjectParametersIncludeInstallSource() {
+        let info = InfoObject(
+            platform: "ios",
+            device_id: "device-id",
+            app_id: "com.example.app",
+            custom_id: "",
+            version_build: "1.0.0",
+            version_code: "1",
+            version_os: "18.0",
+            version_name: "builtin",
+            old_version_name: "",
+            plugin_version: "8.0.0",
+            is_emulator: false,
+            is_prod: true,
+            installSource: "app_store",
+            action: "set",
+            channel: nil,
+            defaultChannel: "production",
+            key_id: nil
+        )
+
+        XCTAssertEqual(info.toParameters()["install_source"] as? String, "app_store")
+    }
+
     func testZipEntryPathRejectsSiblingPrefixPathTraversal() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let base = root.appendingPathComponent("bundle")
