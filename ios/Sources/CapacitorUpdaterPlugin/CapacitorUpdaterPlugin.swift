@@ -248,7 +248,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if previewSessionEnabled {
             previewSessionAlertPending = UserDefaults.standard.object(forKey: previewSessionAlertPendingDefaultsKey) as? Bool ?? true
             shakeMenuEnabled = true
-            shakeChannelSelectorEnabled = false
+            shakeChannelSelectorEnabled = UserDefaults.standard.object(forKey: previewPreviousShakeChannelSelectorDefaultsKey) as? Bool
+                ?? shakeChannelSelectorEnabled
         }
         periodCheckDelay = Self.normalizedPeriodCheckDelaySeconds(getConfig().getInt("periodCheckDelay", 0))
 
@@ -1188,7 +1189,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.previewSessionAlertPending = true
         self.implementation.previewSession = true
         self.shakeMenuEnabled = true
-        self.shakeChannelSelectorEnabled = false
         UserDefaults.standard.set(true, forKey: self.previewSessionDefaultsKey)
         UserDefaults.standard.set(true, forKey: self.previewSessionAlertPendingDefaultsKey)
         UserDefaults.standard.synchronize()

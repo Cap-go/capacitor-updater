@@ -33,17 +33,21 @@ extension UIWindow {
                 return
             }
 
-            // Check if shake menu is enabled
-            if !plugin.shakeMenuEnabled {
+            let canShowPreviewMenu = plugin.shakeMenuEnabled && plugin.hasActivePreviewSession()
+            let canShowChannelSelector = plugin.shakeChannelSelectorEnabled
+
+            if !canShowPreviewMenu && !canShowChannelSelector {
+                if plugin.shakeMenuEnabled {
+                    plugin.logger.info("Shake preview menu ignored because no preview session is active")
+                }
                 return
             }
 
-            guard plugin.hasActivePreviewSession() else {
-                plugin.logger.info("Shake ignored because no preview session is active")
-                return
+            if canShowPreviewMenu {
+                showDefaultMenu(plugin: plugin, bridge: bridge)
+            } else {
+                showChannelSelector(plugin: plugin, bridge: bridge)
             }
-
-            showDefaultMenu(plugin: plugin, bridge: bridge)
         }
     }
 
@@ -88,6 +92,14 @@ extension UIWindow {
                 }
             }
         })
+
+        if plugin.shakeChannelSelectorEnabled {
+            alertShake.addAction(UIAlertAction(title: "Switch channel", style: .default) { _ in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    self.showChannelSelector(plugin: plugin, bridge: bridge)
+                }
+            })
+        }
 
         alertShake.addAction(UIAlertAction(title: cancelButtonTitle, style: .default))
 
