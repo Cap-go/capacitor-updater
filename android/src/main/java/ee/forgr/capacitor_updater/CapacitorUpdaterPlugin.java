@@ -115,6 +115,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final int SPLASH_SCREEN_RETRY_DELAY_MS = 100;
     private static final int SPLASH_SCREEN_MAX_RETRIES = 20;
     private static final long PENDING_BUNDLE_APP_READY_MIN_TIMEOUT_MS = 30000L;
+    private static final long PREVIEW_TRANSITION_LOADER_TIMEOUT_MS = 60000L;
     static final int APPLICATION_EXIT_REASON_UNKNOWN = 0;
     static final int APPLICATION_EXIT_REASON_EXIT_SELF = 1;
     static final int APPLICATION_EXIT_REASON_SIGNALED = 2;
@@ -222,6 +223,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private FrameLayout splashscreenLoaderOverlay;
     private Runnable splashscreenTimeoutRunnable;
+    private FrameLayout previewTransitionLoaderOverlay;
+    private Runnable previewTransitionLoaderTimeoutRunnable;
+    private boolean previewTransitionLoaderRequested = false;
     private WebViewListener webViewStatsListener;
 
     private static final class FireAndForgetPluginCall extends PluginCall {
@@ -682,6 +686,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         if (this.autoSplashscreen) {
             this.hideSplashscreen();
         }
+        this.hidePreviewTransitionLoader("app-ready");
     }
 
     private void hideSplashscreen() {
@@ -793,6 +798,38 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return requestToken == this.splashscreenInvocationToken;
     }
 
+    private FrameLayout createLoaderOverlay(final Activity activity, final boolean blocksTouches, final int backgroundColor) {
+        final ProgressBar progressBar = new ProgressBar(activity);
+        progressBar.setIndeterminate(true);
+
+        final FrameLayout overlay = new FrameLayout(activity);
+        overlay.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        overlay.setClickable(blocksTouches);
+        overlay.setFocusable(blocksTouches);
+        overlay.setBackgroundColor(backgroundColor);
+        overlay.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+
+        final FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        params.gravity = Gravity.CENTER;
+        overlay.addView(progressBar, params);
+        return overlay;
+    }
+
+    private void attachLoaderOverlay(final Activity activity, final FrameLayout overlay) {
+        final ViewGroup decorView = (ViewGroup) activity.getWindow().getDecorView();
+        decorView.addView(overlay);
+    }
+
+    private void removeLoaderOverlay(final FrameLayout overlay) {
+        final ViewGroup parent = (ViewGroup) overlay.getParent();
+        if (parent != null) {
+            parent.removeView(overlay);
+        }
+    }
+
     private void addSplashscreenLoaderIfNeeded() {
         if (!Boolean.TRUE.equals(this.autoSplashscreenLoader)) {
             return;
@@ -809,26 +846,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 return;
             }
 
-            ProgressBar progressBar = new ProgressBar(activity);
-            progressBar.setIndeterminate(true);
-
-            FrameLayout overlay = new FrameLayout(activity);
-            overlay.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-            overlay.setClickable(false);
-            overlay.setFocusable(false);
-            overlay.setBackgroundColor(Color.TRANSPARENT);
-            overlay.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
-
-            FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            );
-            params.gravity = Gravity.CENTER;
-            overlay.addView(progressBar, params);
-
-            ViewGroup decorView = (ViewGroup) activity.getWindow().getDecorView();
-            decorView.addView(overlay);
-
+            FrameLayout overlay = createLoaderOverlay(activity, false, Color.TRANSPARENT);
+            attachLoaderOverlay(activity, overlay);
             this.splashscreenLoaderOverlay = overlay;
         };
 
@@ -842,10 +861,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private void removeSplashscreenLoader() {
         Runnable removeLoader = () -> {
             if (this.splashscreenLoaderOverlay != null) {
-                ViewGroup parent = (ViewGroup) this.splashscreenLoaderOverlay.getParent();
-                if (parent != null) {
-                    parent.removeView(this.splashscreenLoaderOverlay);
-                }
+                removeLoaderOverlay(this.splashscreenLoaderOverlay);
                 this.splashscreenLoaderOverlay = null;
             }
         };
@@ -854,6 +870,84 @@ public class CapacitorUpdaterPlugin extends Plugin {
             removeLoader.run();
         } else {
             this.mainHandler.post(removeLoader);
+        }
+    }
+
+    private void showPreviewTransitionLoader(final String reason) {
+        this.previewTransitionLoaderRequested = true;
+        final Runnable showLoader = () -> {
+            if (!this.previewTransitionLoaderRequested) {
+                return;
+            }
+
+            if (this.previewTransitionLoaderOverlay != null) {
+                cancelPreviewTransitionLoaderTimeout();
+                schedulePreviewTransitionLoaderTimeout();
+                this.previewTransitionLoaderOverlay.bringToFront();
+                return;
+            }
+
+            final Activity activity = getActivity();
+            if (activity == null) {
+                logger.warn("Preview transition loader unavailable: activity missing for " + reason);
+                this.previewTransitionLoaderRequested = false;
+                return;
+            }
+
+            cancelPreviewTransitionLoaderTimeout();
+            schedulePreviewTransitionLoaderTimeout();
+
+            final FrameLayout overlay = createLoaderOverlay(activity, true, Color.argb(46, 0, 0, 0));
+            attachLoaderOverlay(activity, overlay);
+            this.previewTransitionLoaderOverlay = overlay;
+            logger.info("Preview transition loader shown: " + reason);
+        };
+
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            showLoader.run();
+        } else {
+            this.mainHandler.post(showLoader);
+        }
+    }
+
+    private void hidePreviewTransitionLoader(final String reason) {
+        if (
+            !this.previewTransitionLoaderRequested &&
+            this.previewTransitionLoaderOverlay == null &&
+            this.previewTransitionLoaderTimeoutRunnable == null
+        ) {
+            return;
+        }
+
+        final Runnable hideLoader = () -> {
+            this.previewTransitionLoaderRequested = false;
+            cancelPreviewTransitionLoaderTimeout();
+            if (this.previewTransitionLoaderOverlay == null) {
+                return;
+            }
+
+            removeLoaderOverlay(this.previewTransitionLoaderOverlay);
+            this.previewTransitionLoaderOverlay = null;
+            logger.info("Preview transition loader hidden: " + reason);
+        };
+
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            hideLoader.run();
+        } else {
+            this.mainHandler.post(hideLoader);
+        }
+    }
+
+    private void schedulePreviewTransitionLoaderTimeout() {
+        cancelPreviewTransitionLoaderTimeout();
+        this.previewTransitionLoaderTimeoutRunnable = () -> hidePreviewTransitionLoader("preview-transition-timeout");
+        this.mainHandler.postDelayed(this.previewTransitionLoaderTimeoutRunnable, PREVIEW_TRANSITION_LOADER_TIMEOUT_MS);
+    }
+
+    private void cancelPreviewTransitionLoaderTimeout() {
+        if (this.previewTransitionLoaderTimeoutRunnable != null) {
+            this.mainHandler.removeCallbacks(this.previewTransitionLoaderTimeoutRunnable);
+            this.previewTransitionLoaderTimeoutRunnable = null;
         }
     }
 
@@ -2325,6 +2419,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     @PluginMethod
     public void startPreviewSession(final PluginCall call) {
         if (!Boolean.TRUE.equals(this.allowPreview)) {
+            this.hidePreviewTransitionLoader("preview-session-not-allowed");
             logger.error("startPreviewSession not allowed set allowPreview in your config to true to enable it");
             call.reject("startPreviewSession not allowed");
             return;
@@ -2333,6 +2428,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final String rawPayloadUrl = call.getString("payloadUrl");
         final String previewPayloadUrl = this.normalizePreviewPayloadUrl(rawPayloadUrl);
         if (this.hasPreviewPayloadUrl(rawPayloadUrl) && previewPayloadUrl == null) {
+            this.hidePreviewTransitionLoader("preview-session-invalid-payload");
             logger.error("startPreviewSession called with invalid payloadUrl");
             call.reject("Invalid preview payloadUrl");
             return;
@@ -2342,6 +2438,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 if (!Boolean.TRUE.equals(this.previewSessionEnabled)) {
                     final BundleInfo current = this.implementation.getCurrentBundle();
                     if (!this.implementation.setPreviewFallbackBundle(current.getId())) {
+                        this.hidePreviewTransitionLoader("preview-session-fallback-failed");
                         logger.error("Could not save current bundle as preview fallback");
                         call.reject("Could not save current bundle as preview fallback");
                         return;
@@ -2386,6 +2483,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     this.editor.remove(PREVIEW_PAYLOAD_URL_PREF_KEY);
                 }
 
+                this.hidePreviewTransitionLoader("preview-session-started");
                 this.previewSessionEnabled = true;
                 this.previewSessionAlertPending = true;
                 this.implementation.previewSession = true;
@@ -2397,6 +2495,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 this.ensureShakeMenuStarted();
                 call.resolve();
             } catch (final Exception e) {
+                this.hidePreviewTransitionLoader("preview-session-failed");
                 logger.error("Could not start preview session " + e.getMessage());
                 call.reject("Could not start preview session", e);
             }
@@ -2406,8 +2505,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
     public boolean leavePreviewSessionFromShakeMenu() {
         final BundleInfo previewBundle = this.implementation.getCurrentBundle();
 
+        this.showPreviewTransitionLoader("leave-preview-session");
         final boolean didReset = this.resetToPreviewFallbackBundle();
         if (!didReset) {
+            this.hidePreviewTransitionLoader("leave-preview-session-failed");
             return false;
         }
 
@@ -2419,8 +2520,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private boolean leavePreviewSessionForIncomingPreviewLink() {
+        this.showPreviewTransitionLoader("incoming-preview-deeplink");
         final BundleInfo previewBundle = this.implementation.getCurrentBundle();
         final BundleInfo previewFallbackBundle = this.implementation.getPreviewFallbackBundle();
+        boolean didReload = false;
 
         try {
             if (previewFallbackBundle == null || previewFallbackBundle.isErrorStatus()) {
@@ -2443,6 +2546,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 this.restoreLiveBundleStateAfterFailedReload();
                 return false;
             }
+            didReload = true;
 
             this.endPreviewSession(true);
             final BundleInfo restoredNextBundle = this.implementation.getNextBundle();
@@ -2450,6 +2554,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return true;
         } finally {
             this.clearIncomingPreviewTransition();
+            if (!didReload) {
+                this.hidePreviewTransitionLoader("incoming-preview-deeplink-failed");
+            }
         }
     }
 
@@ -2467,10 +2574,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
 
         this.isLeavingPreviewForIncomingLink = true;
+        this.showPreviewTransitionLoader("preview-launch-deeplink");
         logger.info("Preview deeplink launch detected while preview session is active; restoring fallback before initial load");
         if (!this.leavePreviewSessionWithoutReload()) {
             logger.error("Could not leave preview session before initial preview deeplink routing");
             this.isLeavingPreviewForIncomingLink = false;
+            this.hidePreviewTransitionLoader("preview-launch-deeplink-failed");
         }
     }
 
@@ -2519,12 +2628,19 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     public boolean reloadPreviewSessionFromShakeMenu() {
+        this.showPreviewTransitionLoader("reload-preview-session");
+        final boolean didReload;
         final String payloadUrl = this.storedPreviewPayloadUrl();
         if (payloadUrl != null) {
-            return this.refreshPreviewSessionFromPayloadUrl(payloadUrl);
+            didReload = this.refreshPreviewSessionFromPayloadUrl(payloadUrl);
+        } else {
+            didReload = this.reloadWithoutWaitingForAppReady();
         }
 
-        return this.reloadWithoutWaitingForAppReady();
+        if (!didReload) {
+            this.hidePreviewTransitionLoader("reload-preview-session-failed");
+        }
+        return didReload;
     }
 
     public boolean hasActivePreviewSession() {
@@ -2605,6 +2721,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.previewSessionAlertPending = false;
         this.isLeavingPreviewForIncomingLink = false;
         this.implementation.previewSession = false;
+        this.hidePreviewTransitionLoader("preview-session-disabled");
         this.shakeMenuEnabled = this.getConfig().getBoolean("shakeMenu", false);
         this.shakeChannelSelectorEnabled = this.getConfig().getBoolean("allowShakeChannelSelector", false);
         this.clearPreviewSessionPreferences();
@@ -3337,6 +3454,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.semaphoreDown();
             logger.info("semaphoreReady countDown done");
             this.clearIncomingPreviewTransition();
+            this.hidePreviewTransitionLoader("notify-app-ready");
             final JSObject ret = new JSObject();
             ret.put("bundle", InternalUtils.mapToJSObject(bundle.toJSONMap()));
             call.resolve(ret);
@@ -4185,6 +4303,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
 
         this.isLeavingPreviewForIncomingLink = true;
+        this.showPreviewTransitionLoader("incoming-preview-deeplink");
         if (getActivity() != null) {
             getActivity().setIntent(intent);
         }
@@ -4194,6 +4313,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             if (!didLeave) {
                 logger.error("Could not leave preview session before routing incoming preview deeplink");
                 this.isLeavingPreviewForIncomingLink = false;
+                this.hidePreviewTransitionLoader("incoming-preview-deeplink-failed");
             }
         });
     }

@@ -64,22 +64,22 @@ public class ShakeMenu implements ShakeDetector.Listener {
             return;
         }
 
+        if (!plugin.hasActivePreviewSession()) {
+            logger.info("Shake ignored because no preview session is active");
+            return;
+        }
+
         isShowing = true;
 
-        if (plugin.hasActivePreviewSession()) {
-            showDefaultMenu();
-        } else if (plugin.shakeChannelSelectorEnabled) {
-            showChannelSelector();
-        } else {
-            showDefaultMenu();
-        }
+        showDefaultMenu();
     }
 
     private void showDefaultMenu() {
         activity.runOnUiThread(() -> {
             try {
                 if (!plugin.hasActivePreviewSession()) {
-                    showConfiguredDefaultMenu();
+                    logger.info("Shake preview menu ignored because no preview session is active");
+                    isShowing = false;
                     return;
                 }
                 String appName = activity.getPackageManager().getApplicationLabel(activity.getApplicationInfo()).toString();

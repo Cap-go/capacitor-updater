@@ -38,13 +38,12 @@ extension UIWindow {
                 return
             }
 
-            if plugin.hasActivePreviewSession() {
-                showDefaultMenu(plugin: plugin, bridge: bridge)
-            } else if plugin.shakeChannelSelectorEnabled {
-                showChannelSelector(plugin: plugin, bridge: bridge)
-            } else {
-                showDefaultMenu(plugin: plugin, bridge: bridge)
+            guard plugin.hasActivePreviewSession() else {
+                plugin.logger.info("Shake ignored because no preview session is active")
+                return
             }
+
+            showDefaultMenu(plugin: plugin, bridge: bridge)
         }
     }
 
@@ -56,8 +55,8 @@ extension UIWindow {
             return
         }
 
-        if !plugin.hasActivePreviewSession() {
-            showConfiguredDefaultMenu(plugin: plugin, bridge: bridge)
+        guard plugin.hasActivePreviewSession() else {
+            plugin.logger.info("Shake preview menu ignored because no preview session is active")
             return
         }
 
