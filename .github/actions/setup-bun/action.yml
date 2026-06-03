@@ -20,11 +20,11 @@ runs:
   using: composite
   steps:
     - name: Setup Node.js
-      uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+      uses: actions/setup-node@v6
       with:
         node-version: 24.x
     - name: Cache Bun runtime
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+      uses: actions/cache@v5
       with:
         path: ~/.bun
         key: ${{ runner.os }}-bun-${{ inputs.bun-version }}
@@ -36,7 +36,7 @@ runs:
       run: ./scripts/ci/install-bun.sh
     - name: Cache Bun dependencies
       if: inputs.dependency-cache-key != '' && inputs.dependency-cache-path != ''
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+      uses: actions/cache@v5
       with:
         path: ${{ inputs.dependency-cache-path }}
         key: ${{ inputs.dependency-cache-key }}

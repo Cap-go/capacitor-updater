@@ -8,7 +8,7 @@ runs:
   using: composite
   steps:
     - name: Cache Maestro runtime
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+      uses: actions/cache@v5
       with:
         path: ~/.maestro
         key: ${{ runner.os }}-maestro-${{ inputs.maestro-version }}
