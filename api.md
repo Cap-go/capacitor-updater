@@ -49,8 +49,8 @@ CapacitorUpdater can be configured with these options:
 | **`keepUrlPathAfterReload`** | `boolean` | Configure the plugin to keep the URL path after a reload. WARNING: When a reload is triggered, 'window.history' will be cleared. | `false` | 6.8.0 |
 | **`disableJSLogging`** | `boolean` | Disable the JavaScript logging of the plugin. if true, the plugin will not log to the JavaScript console. only the native log will be done | `false` | 7.3.0 |
 | **`osLogging`** | `boolean` | Enable OS-level logging. When enabled, logs are written to the system log which can be inspected in production builds. - **iOS**: Uses os_log instead of Swift.print, logs accessible via Console.app or Instruments - **Android**: Logs to Logcat (android.util.Log) When set to false, system logging is disabled on both platforms (only JavaScript console logging will occur if enabled). This is useful for debugging production apps (App Store/TestFlight builds on iOS, or production APKs on Android). | `true` | 8.42.0 |
-| **`shakeMenu`** | `boolean` | Enable the shake gesture while a preview session is active. Outside preview sessions, shaking the device is ignored. | `false` | 7.5.0 |
-| **`allowShakeChannelSelector`** | `boolean` | Keep the shake channel selector preference for compatibility. The native shake gesture is ignored outside preview sessions, and preview sessions always use the preview reload/leave menu. Only available for Android and iOS. | `false` | 8.43.0 |
+| **`shakeMenu`** | `boolean` | Enable the shake gesture while a preview session is active. Outside preview sessions this preview menu is ignored, unless {@link PluginsConfig.CapacitorUpdater.allowShakeChannelSelector} is enabled. | `false` | 7.5.0 |
+| **`allowShakeChannelSelector`** | `boolean` | Enable the shake gesture to show a channel selector menu for switching between update channels. If {@link PluginsConfig.CapacitorUpdater.shakeMenu} is also enabled while a preview session is active, the shake menu includes both preview actions and channel switching. Only available for Android and iOS. | `false` | 8.43.0 |
 
 
 </docgen-config>
@@ -1776,8 +1776,10 @@ Enable or disable the shake gesture menu.
 During preview sessions, users can shake their device to:
 - Reload the current preview
 - Leave the test app and return to the fallback bundle
+- Switch update channel, when {@link setShakeChannelSelector} is also enabled
 
-Outside preview sessions, the shake gesture is ignored.
+Outside preview sessions, this preview menu is ignored. The channel selector can still be
+shown outside preview sessions when {@link setShakeChannelSelector} is enabled.
 
 **Important:** Disable this in production builds or only enable for internal testers.
 
@@ -1837,9 +1839,9 @@ setShakeChannelSelector(options: SetShakeChannelSelectorOptions) => Promise<void
 
 Enable or disable the shake channel selector at runtime.
 
-This keeps the shake channel selector preference for compatibility.
-The native shake gesture is ignored outside preview sessions, and preview sessions
-always use the preview reload/leave menu.
+When enabled, shaking the device can show a channel selector, including outside preview sessions.
+If {@link setShakeMenu} is also enabled while a preview session is active, the shake menu includes
+both preview actions and channel switching.
 
 Can also be configured via {@link PluginsConfig.CapacitorUpdater.allowShakeChannelSelector}.
 

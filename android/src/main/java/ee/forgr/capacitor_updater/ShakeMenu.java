@@ -26,6 +26,10 @@ import org.json.JSONArray;
 
 public class ShakeMenu implements ShakeDetector.Listener {
 
+    private interface PreviewMenuAction {
+        boolean run();
+    }
+
     private CapacitorUpdaterPlugin plugin;
     private BridgeActivity activity;
     private ShakeDetector shakeDetector;
@@ -52,9 +56,14 @@ public class ShakeMenu implements ShakeDetector.Listener {
     public void onShakeDetected() {
         logger.info("Shake detected");
 
-        // Check if shake menu is enabled
-        if (!plugin.shakeMenuEnabled) {
-            logger.info("Shake menu is disabled");
+        boolean canShowPreviewMenu = Boolean.TRUE.equals(plugin.shakeMenuEnabled) && plugin.hasActivePreviewSession();
+        boolean canShowChannelSelector = Boolean.TRUE.equals(plugin.shakeChannelSelectorEnabled);
+        if (!canShowPreviewMenu && !canShowChannelSelector) {
+            if (Boolean.TRUE.equals(plugin.shakeMenuEnabled)) {
+                logger.info("Shake preview menu ignored because no preview session is active");
+            } else {
+                logger.info("Shake menu is disabled");
+            }
             return;
         }
 
@@ -64,14 +73,13 @@ public class ShakeMenu implements ShakeDetector.Listener {
             return;
         }
 
-        if (!plugin.hasActivePreviewSession()) {
-            logger.info("Shake ignored because no preview session is active");
-            return;
-        }
-
         isShowing = true;
 
-        showDefaultMenu();
+        if (canShowPreviewMenu) {
+            showDefaultMenu();
+        } else {
+            showChannelSelector();
+        }
     }
 
     private void showDefaultMenu() {
@@ -80,6 +88,10 @@ public class ShakeMenu implements ShakeDetector.Listener {
                 if (!plugin.hasActivePreviewSession()) {
                     logger.info("Shake preview menu ignored because no preview session is active");
                     isShowing = false;
+                    return;
+                }
+                if (Boolean.TRUE.equals(plugin.shakeChannelSelectorEnabled)) {
+                    showCombinedPreviewMenu();
                     return;
                 }
                 String appName = activity.getPackageManager().getApplicationLabel(activity.getApplicationInfo()).toString();
@@ -113,46 +125,90 @@ public class ShakeMenu implements ShakeDetector.Listener {
                 dialog.show();
                 dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener((view) -> {
                     setPreviewMenuButtonsEnabled(dialog, false);
-                    new Thread(() -> {
-                        try {
-                            if (!plugin.leavePreviewSessionFromShakeMenu()) {
-                                activity.runOnUiThread(() -> showError("Could not leave the test app."));
-                            }
-                        } catch (Exception e) {
-                            logger.error("Error leaving test app: " + e.getMessage());
-                            activity.runOnUiThread(() -> showError("Error leaving test app: " + e.getMessage()));
-                        } finally {
-                            activity.runOnUiThread(() -> {
-                                dialog.dismiss();
-                                isShowing = false;
-                            });
-                        }
-                    }).start();
+                    runPreviewMenuAction(dialog, "Could not leave the test app.", "Error leaving test app: ", () ->
+                        plugin.leavePreviewSessionFromShakeMenu()
+                    );
                 });
                 dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener((view) -> {
                     setPreviewMenuButtonsEnabled(dialog, false);
-                    new Thread(() -> {
-                        try {
-                            logger.info("Reloading webview");
-                            if (!plugin.reloadPreviewSessionFromShakeMenu()) {
-                                activity.runOnUiThread(() -> showError("Could not reload the test app."));
-                            }
-                        } catch (Exception e) {
-                            logger.error("Error in Reload action: " + e.getMessage());
-                            activity.runOnUiThread(() -> showError("Error reloading test app: " + e.getMessage()));
-                        } finally {
-                            activity.runOnUiThread(() -> {
-                                dialog.dismiss();
-                                isShowing = false;
-                            });
-                        }
-                    }).start();
+                    logger.info("Reloading webview");
+                    runPreviewMenuAction(dialog, "Could not reload the test app.", "Error reloading test app: ", () ->
+                        plugin.reloadPreviewSessionFromShakeMenu()
+                    );
                 });
             } catch (Exception e) {
                 logger.error("Error showing shake menu: " + e.getMessage());
                 isShowing = false;
             }
         });
+    }
+
+    private void showCombinedPreviewMenu() {
+        try {
+            String appName = activity.getPackageManager().getApplicationLabel(activity.getApplicationInfo()).toString();
+            String title = "Preview " + appName + " Menu";
+            String message = "Reload or leave the current preview, or switch update channel.";
+            String[] actions = { "Reload preview", "Leave test app", "Switch channel" };
+            final boolean[] openingChannelSelector = { false };
+            final boolean[] previewActionRunning = { false };
+
+            AlertDialog.Builder builder = new AlertDialog.Builder(activity);
+            builder.setTitle(title);
+            builder.setMessage(message);
+            builder.setItems(actions, (dialogInterface, which) -> {
+                AlertDialog dialog = (AlertDialog) dialogInterface;
+                if (which == 0) {
+                    previewActionRunning[0] = true;
+                    logger.info("Reloading webview");
+                    runPreviewMenuAction(dialog, "Could not reload the test app.", "Error reloading test app: ", () ->
+                        plugin.reloadPreviewSessionFromShakeMenu()
+                    );
+                } else if (which == 1) {
+                    previewActionRunning[0] = true;
+                    runPreviewMenuAction(dialog, "Could not leave the test app.", "Error leaving test app: ", () ->
+                        plugin.leavePreviewSessionFromShakeMenu()
+                    );
+                } else {
+                    openingChannelSelector[0] = true;
+                    dialog.dismiss();
+                    showChannelSelector();
+                }
+            });
+            builder.setNegativeButton("Close menu", (dialog, id) -> {
+                logger.info("Shake menu cancelled");
+                dialog.dismiss();
+                isShowing = false;
+            });
+
+            AlertDialog dialog = builder.create();
+            dialog.setOnDismissListener((dialogInterface) -> {
+                if (!openingChannelSelector[0] && !previewActionRunning[0]) {
+                    isShowing = false;
+                }
+            });
+            dialog.show();
+        } catch (Exception e) {
+            logger.error("Error showing combined shake menu: " + e.getMessage());
+            isShowing = false;
+        }
+    }
+
+    private void runPreviewMenuAction(AlertDialog dialog, String failureMessage, String errorPrefix, PreviewMenuAction action) {
+        new Thread(() -> {
+            try {
+                if (!action.run()) {
+                    activity.runOnUiThread(() -> showError(failureMessage));
+                }
+            } catch (Exception e) {
+                logger.error(errorPrefix + e.getMessage());
+                activity.runOnUiThread(() -> showError(errorPrefix + e.getMessage()));
+            } finally {
+                activity.runOnUiThread(() -> {
+                    dialog.dismiss();
+                    isShowing = false;
+                });
+            }
+        }).start();
     }
 
     private void setPreviewMenuButtonsEnabled(AlertDialog dialog, boolean enabled) {
