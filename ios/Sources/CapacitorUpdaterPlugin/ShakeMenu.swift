@@ -95,8 +95,14 @@ extension UIWindow {
 
         if plugin.shakeChannelSelectorEnabled {
             alertShake.addAction(UIAlertAction(title: "Switch channel", style: .default) { _ in
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                let showSelector = {
                     self.showChannelSelector(plugin: plugin, bridge: bridge)
+                }
+
+                if let presenter = alertShake.presentingViewController {
+                    presenter.dismiss(animated: true, completion: showSelector)
+                } else {
+                    DispatchQueue.main.async(execute: showSelector)
                 }
             })
         }
