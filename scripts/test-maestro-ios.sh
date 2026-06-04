@@ -194,27 +194,39 @@ const channel = debug.lastChannelRequest ?? {};
 const channelPayload = channel.payload ?? {};
 const channelCount = debug.requestCounts?.channel ?? 0;
 const channelUrl = channel.url ?? '';
+const channelAppId = channelPayload.app_id ?? '';
 const channelCustomId = channelPayload.custom_id ?? '';
+const defaultAppId = process.argv[4];
+const runtimeAppId = defaultAppId + '.e2e';
 let ok = channelCount > beforeChannelCount;
 
 if (scenarioId === 'manual-zip') {
-  ok = ok && channelUrl.includes('/api/channel?scenario=manual-zip&source=runtime-channel') && channelCustomId === 'qa-user-42';
+  ok =
+    ok &&
+    channelUrl.includes('/api/channel?scenario=manual-zip&source=runtime-channel') &&
+    channelAppId === defaultAppId &&
+    channelAppId !== runtimeAppId &&
+    channelCustomId === 'qa-user-42';
 } else if (scenarioId === 'manual-zip-config-guards') {
   ok =
     ok &&
     channelUrl.includes('/api/channel?scenario=manual-zip-config-guards') &&
+    channelAppId === defaultAppId &&
+    channelAppId !== runtimeAppId &&
     !channelUrl.includes('source=runtime-channel') &&
     channelCustomId === 'qa-user-42';
 } else if (scenarioId === 'manual-zip-no-persist') {
   ok =
     ok &&
     channelUrl.includes('/api/channel?scenario=manual-zip-no-persist') &&
+    channelAppId === defaultAppId &&
+    channelAppId !== runtimeAppId &&
     !channelUrl.includes('source=runtime-channel') &&
     channelCustomId !== 'qa-user-42';
 }
 
 process.exit(ok ? 0 : 1);
-" "$server_state" "$SCENARIO_ID" "$before_channel_count"; then
+" "$server_state" "$SCENARIO_ID" "$before_channel_count" "$APP_ID"; then
       return 0
     fi
     sleep 2
@@ -240,6 +252,8 @@ const stats = debug.lastStatsRequest ?? {};
 const updatePayload = update.payload ?? {};
 const channelPayload = channel.payload ?? {};
 const requestCounts = debug.requestCounts ?? {};
+const defaultAppId = 'app.capgo.updater';
+const runtimeAppId = defaultAppId + '.e2e';
 
 function expect(condition, message) {
   if (!condition) {
@@ -250,6 +264,8 @@ function expect(condition, message) {
 switch (scenarioId) {
   case 'manual-zip':
     expect(channel.url?.includes('/api/channel?scenario=manual-zip&source=runtime-channel'), 'missing persisted runtime channel URL request');
+    expect(channelPayload.app_id === defaultAppId, 'runtime app ID unexpectedly persisted across relaunch');
+    expect(channelPayload.app_id !== runtimeAppId, 'channel request still used runtime app ID after relaunch');
     expect((updatePayload.custom_id ?? channelPayload.custom_id) === 'qa-user-42', 'missing persisted custom ID');
     expect((requestCounts.channel ?? 0) >= 1, 'expected persisted channel verification to hit the fake server');
     expect((requestCounts.stats ?? 0) >= 1, 'expected stats traffic to hit the fake server');
@@ -257,6 +273,8 @@ switch (scenarioId) {
   case 'manual-zip-no-persist':
     expect(channel.url?.includes('/api/channel?scenario=manual-zip-no-persist'), 'missing default channel URL request after relaunch');
     expect(!channel.url?.includes('source=runtime-channel'), 'channel URL unexpectedly stayed on the runtime override');
+    expect(channelPayload.app_id === defaultAppId, 'runtime app ID unexpectedly persisted across relaunch');
+    expect(channelPayload.app_id !== runtimeAppId, 'channel request still used runtime app ID after relaunch');
     expect((channelPayload.custom_id ?? '') !== 'qa-user-42', 'custom ID unexpectedly persisted across relaunch');
     expect((requestCounts.channel ?? 0) >= 2, 'expected repeated channel checks to hit the fake server');
     expect((requestCounts.stats ?? 0) >= 1, 'expected stats traffic to hit the fake server');
@@ -265,6 +283,8 @@ switch (scenarioId) {
     expect(!update.url?.includes('source=runtime-update'), 'guarded config unexpectedly accepted a runtime update URL override');
     expect(channel.url?.includes('/api/channel?scenario=manual-zip-config-guards'), 'missing default channel URL request for guarded config');
     expect(!channel.url?.includes('source=runtime-channel'), 'guarded config unexpectedly accepted a runtime channel URL override');
+    expect(channelPayload.app_id === defaultAppId, 'guarded config unexpectedly accepted the runtime app ID override');
+    expect(channelPayload.app_id !== runtimeAppId, 'guarded config channel request still used runtime app ID override');
     expect((updatePayload.custom_id ?? channelPayload.custom_id) === 'qa-user-42', 'custom ID should still persist when only URL/App ID setters are guarded');
     expect((requestCounts.channel ?? 0) >= 1, 'expected guarded config channel checks to hit the fake server');
     expect((requestCounts.stats ?? 0) >= 1, 'expected stats traffic to hit the fake server');
@@ -454,6 +474,8 @@ done
 case "$SCENARIO_ID" in
   manual-zip | manual-zip-config-guards | manual-zip-no-persist)
     wait_for_queued_boot_verification
+    ;;
+  *)
     ;;
 esac
 
