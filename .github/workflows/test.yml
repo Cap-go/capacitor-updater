@@ -567,7 +567,7 @@ jobs:
             CAPGO_MAESTRO_SPLIT_RETRIES=2
             CAPGO_MAESTRO_UI_STATE_TIMEOUT_SECONDS=180
             CAPGO_MAESTRO_DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS=180
-            ./scripts/maestro/run-android-live-update.sh "${{ matrix.scenario }}"
+            bash ./scripts/maestro/run-android-live-update-ci.sh "${{ matrix.scenario }}"
 
   maestro_android:
     if: always()
