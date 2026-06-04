@@ -2586,6 +2586,32 @@ public class CapacitorUpdaterUnitTest {
         assertEquals("CapacitorUpdater/unknown (unknown) android/unknown", ua);
     }
 
+    @Test
+    public void persistDefaultChannelFromResponseStoresServerChannel() {
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+        when(editor.putString("CapacitorUpdater.defaultChannel", "company-a")).thenReturn(editor);
+
+        updater.persistDefaultChannelFromResponse(" company-a ", editor, "CapacitorUpdater.defaultChannel");
+
+        assertEquals("company-a", updater.defaultChannel);
+        verify(editor).putString("CapacitorUpdater.defaultChannel", "company-a");
+        verify(editor).apply();
+    }
+
+    @Test
+    public void persistDefaultChannelFromResponseIgnoresBuiltinVersionName() {
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+        updater.defaultChannel = "stable";
+
+        updater.persistDefaultChannelFromResponse("builtin", editor, "CapacitorUpdater.defaultChannel");
+
+        assertEquals("stable", updater.defaultChannel);
+        verify(editor, never()).putString(anyString(), anyString());
+        verify(editor, never()).apply();
+    }
+
     /**
      * Regression test for: NoSuchMethodError crash on Android 8.0/8.1 (API 26/27).
      * getLongVersionCode() was introduced in API 28; the plugin must use

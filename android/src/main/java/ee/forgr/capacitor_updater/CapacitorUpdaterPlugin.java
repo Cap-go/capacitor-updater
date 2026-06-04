@@ -1995,6 +1995,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     CapacitorUpdaterPlugin.this.editor,
                     DEFAULT_CHANNEL_PREF_KEY,
                     CapacitorUpdaterPlugin.this.allowSetDefaultChannel,
+                    CapacitorUpdaterPlugin.this.getConfig().getString("defaultChannel", ""),
                     (res) -> {
                         JSObject jsRes = InternalUtils.mapToJSObject(res);
                         if (jsRes.has("error")) {
@@ -2043,21 +2044,25 @@ public class CapacitorUpdaterPlugin extends Plugin {
         try {
             logger.info("getChannel");
             startNewThread(() ->
-                CapacitorUpdaterPlugin.this.implementation.getChannel((res) -> {
-                    JSObject jsRes = InternalUtils.mapToJSObject(res);
-                    if (jsRes.has("error")) {
-                        String errorMessage = jsRes.has("message") ? jsRes.getString("message") : jsRes.getString("error");
-                        String errorCode = jsRes.getString("error");
+                CapacitorUpdaterPlugin.this.implementation.getChannel(
+                    (res) -> {
+                        JSObject jsRes = InternalUtils.mapToJSObject(res);
+                        if (jsRes.has("error")) {
+                            String errorMessage = jsRes.has("message") ? jsRes.getString("message") : jsRes.getString("error");
+                            String errorCode = jsRes.getString("error");
 
-                        JSObject errorObj = new JSObject();
-                        errorObj.put("message", errorMessage);
-                        errorObj.put("error", errorCode);
+                            JSObject errorObj = new JSObject();
+                            errorObj.put("message", errorMessage);
+                            errorObj.put("error", errorCode);
 
-                        call.reject(errorMessage, "GETCHANNEL_FAILED", null, errorObj);
-                    } else {
-                        call.resolve(jsRes);
-                    }
-                })
+                            call.reject(errorMessage, "GETCHANNEL_FAILED", null, errorObj);
+                        } else {
+                            call.resolve(jsRes);
+                        }
+                    },
+                    CapacitorUpdaterPlugin.this.editor,
+                    DEFAULT_CHANNEL_PREF_KEY
+                )
             );
         } catch (final Exception e) {
             logger.error("Failed to getChannel " + e.getMessage());

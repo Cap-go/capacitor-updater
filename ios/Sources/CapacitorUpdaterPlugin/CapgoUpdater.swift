@@ -2151,7 +2151,12 @@ import UIKit
         return setChannel
     }
 
-    func setChannel(channel: String, defaultChannelKey: String, allowSetDefaultChannel: Bool) -> SetChannel {
+    func setChannel(
+        channel: String,
+        defaultChannelKey: String,
+        allowSetDefaultChannel: Bool,
+        configDefaultChannel: String = ""
+    ) -> SetChannel {
         let setChannel: SetChannel = SetChannel()
 
         // Check if setting defaultChannel is allowed
@@ -2231,6 +2236,7 @@ import UIKit
         } else if responseValue.unset == true {
             UserDefaults.standard.removeObject(forKey: defaultChannelKey)
             UserDefaults.standard.synchronize()
+            self.defaultChannel = configDefaultChannel
             self.logger.info("Public channel requested, channel override removed")
 
             setChannel.status = responseValue.status ?? "ok"
@@ -2247,7 +2253,7 @@ import UIKit
         return setChannel
     }
 
-    func getChannel() -> GetChannel {
+    func getChannel(defaultChannelKey: String? = nil) -> GetChannel {
         let getChannel: GetChannel = GetChannel()
 
         // Check if rate limit was exceeded
@@ -2334,8 +2340,24 @@ import UIKit
             getChannel.message = responseValue.message ?? ""
             getChannel.channel = responseValue.channel ?? ""
             getChannel.allowSet = responseValue.allowSet ?? true
+            persistDefaultChannelFromResponse(channel: responseValue.channel, defaultChannelKey: defaultChannelKey)
         }
         return getChannel
+    }
+
+    func persistDefaultChannelFromResponse(channel: String?, defaultChannelKey: String?) {
+        guard let channelName = channel?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !channelName.isEmpty,
+              channelName != BundleInfo.ID_BUILTIN else {
+            return
+        }
+
+        self.defaultChannel = channelName
+        if let defaultChannelKey, !defaultChannelKey.isEmpty {
+            UserDefaults.standard.set(channelName, forKey: defaultChannelKey)
+            UserDefaults.standard.synchronize()
+        }
+        logger.info("defaultChannel synchronized from getChannel(): \(channelName)")
     }
 
     func listChannels() -> ListChannels {
