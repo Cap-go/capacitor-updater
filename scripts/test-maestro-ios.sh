@@ -32,7 +32,7 @@ FLOW_RETRY_PATTERN="iOS driver not ready in time|Failed to connect to /127\\.0\\
 export CAPGO_MAESTRO_DEVICE_BASE_URL="$DEVICE_SERVER_URL"
 
 default_simulator_id() {
-  xcrun simctl list devices available | sed -nE 's/^[[:space:]]*iPhone.*\(([0-9A-F-]{36})\) \([^)]*\)[[:space:]]*$/\1/p' | head -n 1
+  "$ROOT_DIR/scripts/maestro/select-ios-simulator.sh"
 }
 
 default_app_path() {
@@ -344,6 +344,7 @@ while (( attempt <= MAESTRO_TEST_RETRIES )); do
   run_with_timeout "$MAESTRO_TIMEOUT_SECONDS" maestro test \
     -p ios \
     --device "$SIMULATOR_ID" \
+    --no-reinstall-driver \
     "$FLOW_PATH" \
     --format junit \
     --output "$RESULTS_DIR/junit.xml" \

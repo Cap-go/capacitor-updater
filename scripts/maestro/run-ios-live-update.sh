@@ -30,7 +30,7 @@ readonly ASSERT_SOURCE_BUILTIN='Current bundle source: builtin'
 readonly ASSERT_SOURCE_DOWNLOADED='Current bundle source: downloaded'
 
 default_simulator_id() {
-  xcrun simctl list devices available | sed -nE 's/^[[:space:]]*iPhone.*\(([0-9A-F-]{36})\) \([^)]*\)[[:space:]]*$/\1/p' | head -n 1
+  "$ROOT_DIR/scripts/maestro/select-ios-simulator.sh"
 }
 
 detect_host_ipv4() {
@@ -403,6 +403,7 @@ run_flow() {
         maestro test \
           -p ios \
           --device "$SIMULATOR_ID" \
+          --no-reinstall-driver \
           "${maestro_args[@]}" \
           "$flow_path" \
           --format junit \
@@ -415,6 +416,7 @@ run_flow() {
         maestro test \
           -p ios \
           --device "$SIMULATOR_ID" \
+          --no-reinstall-driver \
           "$flow_path" \
           --format junit \
           --output "$flow_results_dir/junit.xml" \

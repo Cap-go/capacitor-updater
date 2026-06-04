@@ -22,7 +22,7 @@ DERIVED_DATA_V2="$(mktemp -d "${TMPDIR:-/tmp}/capgo-ios-native-reset-v2.XXXXXX")
 SERVER_PID=""
 
 default_simulator_id() {
-  xcrun simctl list devices available | sed -nE 's/^[[:space:]]*iPhone.*\(([0-9A-F-]{36})\) \([^)]*\)[[:space:]]*$/\1/p' | head -n 1
+  "$ROOT_DIR/scripts/maestro/select-ios-simulator.sh"
 }
 
 cleanup() {
@@ -104,6 +104,7 @@ run_maestro_flow() {
     ios
     --device
     "$SIMULATOR_ID"
+    --no-reinstall-driver
   )
 
   if (( ${#extra_args[@]} > 0 )); then

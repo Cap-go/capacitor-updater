@@ -357,15 +357,7 @@ jobs:
       - name: Boot iOS simulator early
         run: |
           set -euo pipefail
-          simulator_id="$(
-            xcrun simctl list devices available |
-              sed -nE 's/^[[:space:]]*iPhone.*\(([0-9A-F-]{36})\) \([^)]*\)[[:space:]]*$/\1/p' |
-              head -n 1
-          )"
-          if [[ -z "$simulator_id" ]]; then
-            echo "No available iPhone simulator found." >&2
-            exit 1
-          fi
+          simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
           echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
           xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
       - name: Setup Bun
@@ -429,15 +421,7 @@ jobs:
       - name: Boot iOS simulator early
         run: |
           set -euo pipefail
-          simulator_id="$(
-            xcrun simctl list devices available |
-              sed -nE 's/^[[:space:]]*iPhone.*\(([0-9A-F-]{36})\) \([^)]*\)[[:space:]]*$/\1/p' |
-              head -n 1
-          )"
-          if [[ -z "$simulator_id" ]]; then
-            echo "No available iPhone simulator found." >&2
-            exit 1
-          fi
+          simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
           echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
           xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
       - name: Setup Bun
