@@ -10,14 +10,18 @@ private final class ListChannelsRequestCapgoUpdater: CapgoUpdater {
         super.init()
     }
 
-    override func performRequest(_ request: URLRequest, label: String) -> CapgoUpdater.RequestResult {
+    override func performRequest(_: URLRequest, label _: String) -> CapgoUpdater.RequestResult {
         requestResult
     }
 }
 
 final class ListChannelsTests: XCTestCase {
+    private let channelScheme = "https"
+    private let channelHost = "example.com"
+    private let channelPathComponent = "channel"
+
     func testListChannelsDecodesNumericChannelIdsAsNumbers() throws {
-        let channelURL = try XCTUnwrap(URL(string: "https://example.com/channel"))
+        let channelURL = try makeChannelURL()
         let response = try XCTUnwrap(HTTPURLResponse(url: channelURL, statusCode: 200, httpVersion: nil, headerFields: nil))
         let responseData = Data("""
         [
@@ -28,7 +32,7 @@ final class ListChannelsTests: XCTestCase {
         let requestResult = CapgoUpdater.RequestResult(data: responseData, response: response, error: nil, timedOut: false)
         let updater = ListChannelsRequestCapgoUpdater(requestResult: requestResult)
         updater.setLogger(Logger(withTag: "TestLogger"))
-        updater.channelUrl = "https://example.com/channel"
+        updater.channelUrl = channelURL.absoluteString
 
         let result = updater.listChannels()
 
@@ -42,7 +46,7 @@ final class ListChannelsTests: XCTestCase {
     }
 
     func testListChannelsRejectsStringChannelIds() throws {
-        let channelURL = try XCTUnwrap(URL(string: "https://example.com/channel"))
+        let channelURL = try makeChannelURL()
         let response = try XCTUnwrap(HTTPURLResponse(url: channelURL, statusCode: 200, httpVersion: nil, headerFields: nil))
         let responseData = Data("""
         [
@@ -52,11 +56,19 @@ final class ListChannelsTests: XCTestCase {
         let requestResult = CapgoUpdater.RequestResult(data: responseData, response: response, error: nil, timedOut: false)
         let updater = ListChannelsRequestCapgoUpdater(requestResult: requestResult)
         updater.setLogger(Logger(withTag: "TestLogger"))
-        updater.channelUrl = "https://example.com/channel"
+        updater.channelUrl = channelURL.absoluteString
 
         let result = updater.listChannels()
 
         XCTAssertEqual(result.error, "decode_error")
         XCTAssertEqual(result.channels.count, 0)
+    }
+
+    private func makeChannelURL() throws -> URL {
+        var components = URLComponents()
+        components.scheme = channelScheme
+        components.host = channelHost
+        components.path = "/" + channelPathComponent
+        return try XCTUnwrap(components.url)
     }
 }
