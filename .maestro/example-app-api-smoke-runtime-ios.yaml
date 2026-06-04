@@ -11,85 +11,96 @@ appId: app.capgo.updater
     timeout: 120000
 - scrollUntilVisible:
     element:
-      text: 'Quick apply app ID'
+      text: '@capgo/capacitor-updater'
+    direction: UP
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      id: 'quick-action-set-app-id'
     direction: DOWN
     timeout: 30000
-    centerElement: false
+    centerElement: true
     visibilityPercentage: 1
     waitToSettleTimeoutMs: 500
 - tapOn:
-    text: 'Quick apply app ID'
+    id: 'quick-action-set-app-id'
     retryTapIfNoChange: true
+    waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: set-app-id:success|M:set-app-id:success).*'
     timeout: 90000
 - scrollUntilVisible:
     element:
-      text: 'Quick set custom ID'
+      id: 'quick-action-set-custom-id'
     direction: DOWN
     timeout: 30000
-    centerElement: false
+    centerElement: true
     visibilityPercentage: 1
     waitToSettleTimeoutMs: 500
 - tapOn:
-    text: 'Quick set custom ID'
+    id: 'quick-action-set-custom-id'
     retryTapIfNoChange: true
+    waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: set-custom-id:success|M:set-custom-id:success).*'
     timeout: 90000
 - scrollUntilVisible:
     element:
-      text: 'Quick apply runtime URLs'
+      id: 'quick-action-set-runtime-urls'
     direction: DOWN
     timeout: 30000
-    centerElement: false
+    centerElement: true
     visibilityPercentage: 1
     waitToSettleTimeoutMs: 500
 - tapOn:
-    text: 'Quick apply runtime URLs'
+    id: 'quick-action-set-runtime-urls'
     retryTapIfNoChange: true
+    waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: set-runtime-urls:success|M:set-runtime-urls:success).*'
     timeout: 90000
 - scrollUntilVisible:
     element:
-      text: 'Quick set beta channel'
+      id: 'quick-action-set-channel-beta'
     direction: DOWN
     timeout: 30000
-    centerElement: false
+    centerElement: true
     visibilityPercentage: 1
     waitToSettleTimeoutMs: 500
 - tapOn:
-    text: 'Quick set beta channel'
+    id: 'quick-action-set-channel-beta'
     retryTapIfNoChange: true
+    waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: set-channel-beta:success|M:set-channel-beta:success).*'
     timeout: 90000
 - scrollUntilVisible:
     element:
-      text: 'Quick unset channel'
+      id: 'quick-action-unset-channel'
     direction: DOWN
     timeout: 30000
-    centerElement: false
+    centerElement: true
     visibilityPercentage: 1
     waitToSettleTimeoutMs: 500
 - tapOn:
-    text: 'Quick unset channel'
+    id: 'quick-action-unset-channel'
     retryTapIfNoChange: true
+    waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: unset-channel:success|M:unset-channel:success).*'
     timeout: 90000
 - scrollUntilVisible:
     element:
-      text: 'Quick queue persisted check'
+      id: 'quick-action-queue-boot-verify-persisted-config'
     direction: DOWN
     timeout: 30000
-    centerElement: false
+    centerElement: true
     visibilityPercentage: 1
     waitToSettleTimeoutMs: 500
 - tapOn:
-    text: 'Quick queue persisted check'
+    id: 'quick-action-queue-boot-verify-persisted-config'
     retryTapIfNoChange: true
+    waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: boot-persisted:success|M:boot-persisted:success).*'
     timeout: 90000
