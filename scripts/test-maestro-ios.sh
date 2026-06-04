@@ -156,10 +156,69 @@ reset_fake_server() {
   curl --silent --show-error --fail -X POST "$HOST_SERVER_URL/api/control/reset?scenario=$SCENARIO_ID" >/dev/null
 }
 
+read_smoke_server_state() {
+  curl --silent --show-error --fail "$HOST_SERVER_URL/api/control/state?scenario=$SCENARIO_ID"
+}
+
+server_request_count() {
+  local server_state="$1"
+  local request_kind="$2"
+
+  bun --eval "
+const state = JSON.parse(process.argv[1]);
+const requestKind = process.argv[2];
+console.log(state.debug?.requestCounts?.[requestKind] ?? 0);
+" "$server_state" "$request_kind"
+}
+
+wait_for_queued_boot_verification() {
+  local before_state=""
+  local before_channel_count="0"
+  local server_state=""
+
+  before_state="$(read_smoke_server_state)"
+  before_channel_count="$(server_request_count "$before_state" channel)"
+
+  echo "Running queued iOS boot verification with simctl relaunch."
+  xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
+  xcrun simctl launch "$SIMULATOR_ID" "$APP_ID" >/dev/null
+
+  for _ in $(seq 1 60); do
+    server_state="$(read_smoke_server_state)"
+    if bun --eval "
+const state = JSON.parse(process.argv[1]);
+const scenarioId = process.argv[2];
+const beforeChannelCount = Number(process.argv[3]);
+const debug = state.debug ?? {};
+const channel = debug.lastChannelRequest ?? {};
+const channelPayload = channel.payload ?? {};
+const channelCount = debug.requestCounts?.channel ?? 0;
+let ok = channelCount > beforeChannelCount && channelPayload.custom_id === 'qa-user-42';
+
+if (scenarioId === 'manual-zip') {
+  ok = ok && channel.url?.includes('/api/channel?scenario=manual-zip&source=runtime-channel');
+} else if (scenarioId === 'manual-zip-config-guards') {
+  ok =
+    ok &&
+    channel.url?.includes('/api/channel?scenario=manual-zip-config-guards') &&
+    !channel.url?.includes('source=runtime-channel');
+}
+
+process.exit(ok ? 0 : 1);
+" "$server_state" "$SCENARIO_ID" "$before_channel_count"; then
+      return 0
+    fi
+    sleep 2
+  done
+
+  echo "Queued iOS boot verification did not hit the fake server after relaunch." >&2
+  return 1
+}
+
 assert_smoke_server_state() {
   local server_state=""
 
-  server_state="$(curl --silent --show-error --fail "$HOST_SERVER_URL/api/control/state?scenario=$SCENARIO_ID")"
+  server_state="$(read_smoke_server_state)"
 
   bun --eval "
 const state = JSON.parse(process.argv[1]);
@@ -382,6 +441,12 @@ while (( attempt <= MAESTRO_TEST_RETRIES )); do
   rm -f "$output_file"
   exit "$status"
 done
+
+case "$SCENARIO_ID" in
+  manual-zip | manual-zip-config-guards)
+    wait_for_queued_boot_verification
+    ;;
+esac
 
 assert_smoke_server_state
 
