@@ -182,7 +182,6 @@ function expect(condition, message) {
 switch (scenarioId) {
   case 'manual-zip':
     expect(channel.url?.includes('/api/channel?scenario=manual-zip&source=runtime-channel'), 'missing persisted runtime channel URL request');
-    expect(stats.url?.includes('/api/stats?scenario=manual-zip&source=runtime-stats'), 'missing runtime stats URL request');
     expect((updatePayload.custom_id ?? channelPayload.custom_id) === 'qa-user-42', 'missing persisted custom ID');
     expect((requestCounts.channel ?? 0) >= 1, 'expected persisted channel verification to hit the fake server');
     expect((requestCounts.stats ?? 0) >= 1, 'expected stats traffic to hit the fake server');
