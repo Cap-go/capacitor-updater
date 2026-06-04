@@ -16,20 +16,8 @@ preferred_names=(
   'iPhone 12'
 )
 
-preferred_device_types=(
-  'com.apple.CoreSimulator.SimDeviceType.iPhone-SE-3rd-generation'
-  'com.apple.CoreSimulator.SimDeviceType.iPhone-SE--2nd-generation-'
-  'com.apple.CoreSimulator.SimDeviceType.iPhone-16e'
-  'com.apple.CoreSimulator.SimDeviceType.iPhone-15'
-  'com.apple.CoreSimulator.SimDeviceType.iPhone-14'
-  'com.apple.CoreSimulator.SimDeviceType.iPhone-17e'
-  'com.apple.CoreSimulator.SimDeviceType.iPhone-17'
-  'com.apple.CoreSimulator.SimDeviceType.iPhone-16'
-  'com.apple.CoreSimulator.SimDeviceType.iPhone-13'
-  'com.apple.CoreSimulator.SimDeviceType.iPhone-12'
-)
-
 available_devices="$(xcrun simctl list devices available)"
+available_device_types="$(xcrun simctl list devicetypes)"
 device_line_regex='^[[:space:]]*(.*)[[:space:]]\(([0-9A-F-]{36})\)[[:space:]]\([^)]*\)[[:space:]]*$'
 
 find_existing_device() {
@@ -73,31 +61,55 @@ latest_ios_runtime() {
     tail -n 1
 }
 
-device_type_exists() {
-  local device_type="$1"
+device_type_identifier_for_name() {
+  local device_name="$1"
+  local line=""
+  local name=""
+  local identifier=""
 
-  xcrun simctl list devicetypes | grep -Fq "($device_type)"
+  while IFS= read -r line; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    identifier="${line##* (}"
+    identifier="${identifier%)}"
+    name="${line% ($identifier)}"
+    if [[ "$name" == "$device_name" && "$identifier" == com.apple.CoreSimulator.SimDeviceType.* ]]; then
+      printf '%s\n' "$identifier"
+      return 0
+    fi
+  done <<<"$available_device_types"
 }
 
 create_lightweight_device() {
   local runtime_id=""
+  local device_name=""
   local device_type=""
   local simulator_id=""
+  local create_error_log=""
 
   runtime_id="$(latest_ios_runtime)"
   if [[ -z "$runtime_id" ]]; then
     return 1
   fi
 
-  for device_type in "${preferred_device_types[@]}"; do
-    if device_type_exists "$device_type"; then
-      if simulator_id="$(xcrun simctl create "Capgo Maestro iPhone" "$device_type" "$runtime_id" 2>/dev/null)"; then
-        printf '%s\n' "$simulator_id"
-        return 0
-      fi
+  create_error_log="$(mktemp "${TMPDIR:-/tmp}/capgo-simctl-create.XXXXXX")"
+
+  for device_name in "${preferred_names[@]:1}"; do
+    device_type="$(device_type_identifier_for_name "$device_name")"
+    if [[ -n "$device_type" ]] &&
+      simulator_id="$(xcrun simctl create "Capgo Maestro iPhone" "$device_type" "$runtime_id" 2>"$create_error_log")" &&
+      [[ -n "$simulator_id" ]]; then
+      rm -f "$create_error_log"
+      printf '%s\n' "$simulator_id"
+      return 0
+    fi
+
+    if [[ -s "$create_error_log" ]]; then
+      cat "$create_error_log" >&2
+      : >"$create_error_log"
     fi
   done
 
+  rm -f "$create_error_log"
   return 1
 }
 
@@ -110,10 +122,8 @@ for preferred_name in "${preferred_names[@]}"; do
 done
 
 if simulator_id="$(create_lightweight_device)"; then
-  if [[ -n "$simulator_id" ]]; then
-    printf '%s\n' "$simulator_id"
-    exit 0
-  fi
+  printf '%s\n' "$simulator_id"
+  exit 0
 fi
 
 simulator_id="$(find_first_iphone)"

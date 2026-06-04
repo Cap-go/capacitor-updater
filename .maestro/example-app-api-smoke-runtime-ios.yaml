@@ -88,7 +88,7 @@ appId: app.capgo.updater
     element:
       text: 'Quick queue persisted check'
     direction: DOWN
-    timeout: 120000
+    timeout: 30000
     centerElement: true
     visibilityPercentage: 1
     waitToSettleTimeoutMs: 500
