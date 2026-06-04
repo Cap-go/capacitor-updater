@@ -2377,7 +2377,7 @@ Result returned after requesting an immediate native auto-update check.
 
 | Prop                 | Type                 | Description                                     | Since |
 | -------------------- | -------------------- | ----------------------------------------------- | ----- |
-| **`id`**             | <code>string</code>  | The channel ID                                  | 7.5.0 |
+| **`id`**             | <code>number</code>  | The channel ID                                  | 7.5.0 |
 | **`name`**           | <code>string</code>  | The channel name                                | 7.5.0 |
 | **`public`**         | <code>boolean</code> | Whether this is a public channel                | 7.5.0 |
 | **`allow_self_set`** | <code>boolean</code> | Whether devices can self-assign to this channel | 7.5.0 |

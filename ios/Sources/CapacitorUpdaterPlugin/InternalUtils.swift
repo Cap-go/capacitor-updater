@@ -70,7 +70,7 @@ extension GetChannel {
 }
 // swiftlint:disable identifier_name
 struct ChannelInfo: Codable {
-    let id: String?
+    let id: Int
     let name: String?
     let `public`: Bool?
     let allow_self_set: Bool?
