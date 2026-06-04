@@ -202,6 +202,45 @@ const manualZipStoreContractSmokeActionIds =
     ? []
     : ['get-app-update-info', 'perform-immediate-update', 'start-flexible-update', 'complete-flexible-update', 'get-latest'];
 const manualZipChannelSmokeActionIds = platform === 'ios' ? [] : ['set-channel-beta', 'get-channel', 'unset-channel'];
+const manualZipSmokeActionIds =
+  platform === 'ios'
+    ? [
+        'set-app-id',
+        'set-custom-id',
+        'set-update-url',
+        'set-stats-url',
+        'set-channel-url',
+        'set-channel-beta',
+        'unset-channel',
+        'queue-boot-verify-persisted-config',
+      ]
+    : [
+        'notify-app-ready',
+        'current-bundle',
+        'list-bundles',
+        'get-plugin-version',
+        'get-builtin-version',
+        'get-device-id',
+        'is-auto-update-enabled',
+        'is-auto-update-available',
+        'get-app-id',
+        'set-app-id',
+        'set-custom-id',
+        'set-update-url',
+        'set-stats-url',
+        'set-channel-url',
+        'get-latest',
+        ...manualZipChannelSmokeActionIds,
+        'get-next-bundle',
+        'get-failed-update',
+        'set-shake-menu',
+        'is-shake-menu-enabled',
+        'set-shake-channel-selector',
+        'is-shake-channel-selector-enabled',
+        'queue-boot-verify-persisted-config',
+        'remove-all-listeners',
+        ...manualZipStoreContractSmokeActionIds,
+      ];
 const coreSmokeExcludedActionIds = new Set([
   'get-app-update-info',
   'open-app-store',
@@ -214,33 +253,7 @@ const coreSmokeExcludedActionIds = new Set([
   'is-shake-channel-selector-enabled',
 ]);
 const smokeSequenceActionIdsByScenario = {
-  'manual-zip': [
-    'notify-app-ready',
-    'current-bundle',
-    'list-bundles',
-    'get-plugin-version',
-    'get-builtin-version',
-    'get-device-id',
-    'is-auto-update-enabled',
-    'is-auto-update-available',
-    'get-app-id',
-    'set-app-id',
-    'set-custom-id',
-    'set-update-url',
-    'set-stats-url',
-    'set-channel-url',
-    'get-latest',
-    ...manualZipChannelSmokeActionIds,
-    'get-next-bundle',
-    'get-failed-update',
-    'set-shake-menu',
-    'is-shake-menu-enabled',
-    'set-shake-channel-selector',
-    'is-shake-channel-selector-enabled',
-    'queue-boot-verify-persisted-config',
-    'remove-all-listeners',
-    ...manualZipStoreContractSmokeActionIds,
-  ],
+  'manual-zip': manualZipSmokeActionIds,
   'manual-zip-no-persist': [
     'set-custom-id',
     'set-app-id',
