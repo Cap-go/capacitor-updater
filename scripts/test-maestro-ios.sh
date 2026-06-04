@@ -371,7 +371,11 @@ while (( attempt <= MAESTRO_TEST_RETRIES )); do
     xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
     run_with_timeout "$SIMULATOR_BOOT_TIMEOUT_SECONDS" xcrun simctl bootstatus "$SIMULATOR_ID" -b || true
     reset_fake_server
-    install_example_app
+    if [[ "${CAPGO_MAESTRO_IOS_REINSTALL_ON_RETRY:-0}" == "1" ]]; then
+      install_example_app
+    else
+      echo "Reusing installed iOS app for retry."
+    fi
     attempt=$((attempt + 1))
     continue
   fi
