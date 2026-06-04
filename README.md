@@ -1823,10 +1823,10 @@ Enable or disable the shake gesture menu.
 During preview sessions, users can shake their device to:
 - Reload the current preview
 - Leave the test app and return to the fallback bundle
-- Switch update channel, when {@link setShakeChannelSelector} is also enabled
+- Switch update channel, when {@link PluginsConfig.CapacitorUpdater.allowShakeChannelSelector} is also enabled
 
 Outside preview sessions, this preview menu is ignored. The channel selector can still be
-shown outside preview sessions when {@link setShakeChannelSelector} is enabled.
+shown outside preview sessions when {@link PluginsConfig.CapacitorUpdater.allowShakeChannelSelector} is enabled.
 
 **Important:** Disable this in production builds or only enable for internal testers.
 
