@@ -209,6 +209,7 @@ const manualZipSmokeActionIds =
         'set-custom-id',
         'set-update-url',
         'set-stats-url',
+        'notify-app-ready',
         'set-channel-url',
         'set-channel-beta',
         'unset-channel',
