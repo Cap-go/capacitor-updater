@@ -394,7 +394,8 @@ declare module '@capacitor/cli' {
 
       /**
        * Enable the shake gesture while a preview session is active.
-       * Outside preview sessions, shaking the device is ignored.
+       * Outside preview sessions this preview menu is ignored, unless
+       * {@link PluginsConfig.CapacitorUpdater.allowShakeChannelSelector} is enabled.
        *
        * @default false
        * @since  7.5.0
@@ -402,9 +403,9 @@ declare module '@capacitor/cli' {
       shakeMenu?: boolean;
 
       /**
-       * Keep the shake channel selector preference for compatibility.
-       * The native shake gesture is ignored outside preview sessions, and preview sessions
-       * always use the preview reload/leave menu.
+       * Enable the shake gesture to show a channel selector menu for switching between update channels.
+       * If {@link PluginsConfig.CapacitorUpdater.shakeMenu} is also enabled while a preview session is active,
+       * the shake menu includes both preview actions and channel switching.
        *
        * Only available for Android and iOS.
        *
@@ -1378,8 +1379,10 @@ export interface CapacitorUpdaterPlugin {
    * During preview sessions, users can shake their device to:
    * - Reload the current preview
    * - Leave the test app and return to the fallback bundle
+   * - Switch update channel, when {@link PluginsConfig.CapacitorUpdater.allowShakeChannelSelector} is also enabled
    *
-   * Outside preview sessions, the shake gesture is ignored.
+   * Outside preview sessions, this preview menu is ignored. The channel selector can still be
+   * shown outside preview sessions when {@link PluginsConfig.CapacitorUpdater.allowShakeChannelSelector} is enabled.
    *
    * **Important:** Disable this in production builds or only enable for internal testers.
    *
@@ -1412,9 +1415,9 @@ export interface CapacitorUpdaterPlugin {
   /**
    * Enable or disable the shake channel selector at runtime.
    *
-   * This keeps the shake channel selector preference for compatibility.
-   * The native shake gesture is ignored outside preview sessions, and preview sessions
-   * always use the preview reload/leave menu.
+   * When enabled, shaking the device can show a channel selector, including outside preview sessions.
+   * If {@link setShakeMenu} is also enabled while a preview session is active, the shake menu includes
+   * both preview actions and channel switching.
    *
    * Can also be configured via {@link PluginsConfig.CapacitorUpdater.allowShakeChannelSelector}.
    *

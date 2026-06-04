@@ -541,7 +541,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 logger.info("Using preview appId " + previewAppId);
             }
             this.shakeMenuEnabled = true;
-            this.shakeChannelSelectorEnabled = false;
+            this.shakeChannelSelectorEnabled = this.prefs.contains(PREVIEW_PREVIOUS_SHAKE_CHANNEL_SELECTOR_PREF_KEY)
+                ? this.prefs.getBoolean(PREVIEW_PREVIOUS_SHAKE_CHANNEL_SELECTOR_PREF_KEY, false)
+                : this.shakeChannelSelectorEnabled;
         }
         boolean resetWhenUpdate = this.getConfig().getBoolean("resetWhenUpdate", true);
 
@@ -2488,7 +2490,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 this.previewSessionAlertPending = true;
                 this.implementation.previewSession = true;
                 this.shakeMenuEnabled = true;
-                this.shakeChannelSelectorEnabled = false;
                 this.editor.putBoolean(PREVIEW_SESSION_PREF_KEY, true);
                 this.editor.putBoolean(PREVIEW_SESSION_ALERT_PENDING_PREF_KEY, true);
                 this.editor.apply();
@@ -2697,6 +2698,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         this.shakeMenuEnabled = previousShakeMenuEnabled;
         this.shakeChannelSelectorEnabled = previousShakeChannelSelectorEnabled;
+        this.syncShakeMenuLifecycle();
         this.implementation.setPreviewFallbackBundle(null);
         this.clearPreviewSessionPreferences();
         logger.info("Preview session ended");
@@ -2724,6 +2726,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.hidePreviewTransitionLoader("preview-session-disabled");
         this.shakeMenuEnabled = this.getConfig().getBoolean("shakeMenu", false);
         this.shakeChannelSelectorEnabled = this.getConfig().getBoolean("allowShakeChannelSelector", false);
+        this.syncShakeMenuLifecycle();
         this.clearPreviewSessionPreferences();
     }
 
@@ -2946,6 +2949,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.implementation.previewSession = false;
         this.shakeMenuEnabled = this.getConfig().getBoolean("shakeMenu", false);
         this.shakeChannelSelectorEnabled = this.getConfig().getBoolean("allowShakeChannelSelector", false);
+        this.syncShakeMenuLifecycle();
         this.restorePreviewPreviousAppId();
         this.restorePreviewPreviousDefaultChannel();
         this.implementation.setPreviewFallbackBundle(null);
@@ -2974,6 +2978,24 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 logger.error("Failed to initialize shake menu: " + e.getMessage());
             }
         }
+    }
+
+    private void syncShakeMenuLifecycle() {
+        if (this.shouldListenForShake()) {
+            this.ensureShakeMenuStarted();
+        } else if (shakeMenu != null) {
+            try {
+                shakeMenu.stop();
+                shakeMenu = null;
+                logger.info("Shake menu stopped");
+            } catch (Exception e) {
+                logger.error("Failed to stop shake menu: " + e.getMessage());
+            }
+        }
+    }
+
+    private boolean shouldListenForShake() {
+        return Boolean.TRUE.equals(this.shakeMenuEnabled) || Boolean.TRUE.equals(this.shakeChannelSelectorEnabled);
     }
 
     private void showPreviewSessionNoticeIfNeeded() {
@@ -4334,13 +4356,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
 
             // Initialize shake menu if enabled and activity is BridgeActivity
-            if (shakeMenuEnabled && getActivity() instanceof com.getcapacitor.BridgeActivity && shakeMenu == null) {
-                try {
-                    shakeMenu = new ShakeMenu(this, (com.getcapacitor.BridgeActivity) getActivity(), logger);
-                    logger.info("Shake menu initialized");
-                } catch (Exception e) {
-                    logger.error("Failed to initialize shake menu: " + e.getMessage());
-                }
+            if (this.shouldListenForShake()) {
+                this.ensureShakeMenuStarted();
             }
         } catch (Exception e) {
             logger.error("Failed to run handleOnStart: " + e.getMessage());
@@ -4399,23 +4416,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.shakeMenuEnabled = enabled;
         logger.info("Shake menu " + (enabled ? "enabled" : "disabled"));
 
-        // Manage shake menu instance based on enabled state
-        if (enabled && getActivity() instanceof com.getcapacitor.BridgeActivity && shakeMenu == null) {
-            try {
-                shakeMenu = new ShakeMenu(this, (com.getcapacitor.BridgeActivity) getActivity(), logger);
-                logger.info("Shake menu initialized");
-            } catch (Exception e) {
-                logger.error("Failed to initialize shake menu: " + e.getMessage());
-            }
-        } else if (!enabled && shakeMenu != null) {
-            try {
-                shakeMenu.stop();
-                shakeMenu = null;
-                logger.info("Shake menu stopped");
-            } catch (Exception e) {
-                logger.error("Failed to stop shake menu: " + e.getMessage());
-            }
-        }
+        this.syncShakeMenuLifecycle();
 
         call.resolve();
     }
@@ -4443,6 +4444,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
         this.shakeChannelSelectorEnabled = enabled;
         logger.info("Shake channel selector " + (enabled ? "enabled" : "disabled"));
+        this.syncShakeMenuLifecycle();
         call.resolve();
     }
 
