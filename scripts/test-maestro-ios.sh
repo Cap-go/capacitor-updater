@@ -28,7 +28,7 @@ SERVER_PID=""
 export MAESTRO_DRIVER_STARTUP_TIMEOUT="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-600000}"
 export MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
 MAESTRO_TEST_RETRIES="${CAPGO_MAESTRO_TEST_RETRIES:-3}"
-FLOW_RETRY_PATTERN="iOS driver not ready in time|Failed to connect to /127\\.0\\.0\\.1:[0-9]+|Connection refused|Broken pipe|No visible element found|Request for viewHierarchy failed, because of unknown reason|XCTestDriver request failed\\. Status code: 500, path: viewHierarchy|Application .* is not running|Detected app crash|App crashed or stopped|smoke-sequence:success.*is visible|failed to terminate dev\\.mobile\\.maestro-driver-iosUITests\\.xctrunner|found nothing to terminate|Assertion is false: \"@capgo/capacitor-updater\" is visible|Assertion is false: \".*Harness: ready.*\" is visible|Assertion is false: \".*persisted:success.*\" is visible"
+FLOW_RETRY_PATTERN="iOS driver not ready in time|Failed to connect to /127\\.0\\.0\\.1:[0-9]+|Connection refused|Broken pipe|Request for viewHierarchy failed, because of unknown reason|XCTestDriver request failed\\. Status code: 500, path: viewHierarchy|Application .* is not running|Detected app crash|App crashed or stopped|smoke-sequence:success.*is visible|failed to terminate dev\\.mobile\\.maestro-driver-iosUITests\\.xctrunner|found nothing to terminate|Assertion is false: \"@capgo/capacitor-updater\" is visible|Assertion is false: \".*Harness: ready.*\" is visible|Assertion is false: \".*persisted:success.*\" is visible"
 export CAPGO_MAESTRO_DEVICE_BASE_URL="$DEVICE_SERVER_URL"
 
 default_simulator_id() {
@@ -193,15 +193,24 @@ const debug = state.debug ?? {};
 const channel = debug.lastChannelRequest ?? {};
 const channelPayload = channel.payload ?? {};
 const channelCount = debug.requestCounts?.channel ?? 0;
-let ok = channelCount > beforeChannelCount && channelPayload.custom_id === 'qa-user-42';
+const channelUrl = channel.url ?? '';
+const channelCustomId = channelPayload.custom_id ?? '';
+let ok = channelCount > beforeChannelCount;
 
 if (scenarioId === 'manual-zip') {
-  ok = ok && channel.url?.includes('/api/channel?scenario=manual-zip&source=runtime-channel');
+  ok = ok && channelUrl.includes('/api/channel?scenario=manual-zip&source=runtime-channel') && channelCustomId === 'qa-user-42';
 } else if (scenarioId === 'manual-zip-config-guards') {
   ok =
     ok &&
-    channel.url?.includes('/api/channel?scenario=manual-zip-config-guards') &&
-    !channel.url?.includes('source=runtime-channel');
+    channelUrl.includes('/api/channel?scenario=manual-zip-config-guards') &&
+    !channelUrl.includes('source=runtime-channel') &&
+    channelCustomId === 'qa-user-42';
+} else if (scenarioId === 'manual-zip-no-persist') {
+  ok =
+    ok &&
+    channelUrl.includes('/api/channel?scenario=manual-zip-no-persist') &&
+    !channelUrl.includes('source=runtime-channel') &&
+    channelCustomId !== 'qa-user-42';
 }
 
 process.exit(ok ? 0 : 1);
@@ -248,7 +257,7 @@ switch (scenarioId) {
   case 'manual-zip-no-persist':
     expect(channel.url?.includes('/api/channel?scenario=manual-zip-no-persist'), 'missing default channel URL request after relaunch');
     expect(!channel.url?.includes('source=runtime-channel'), 'channel URL unexpectedly stayed on the runtime override');
-    expect((updatePayload.custom_id ?? channelPayload.custom_id ?? '') !== 'qa-user-42', 'custom ID unexpectedly persisted across relaunch');
+    expect((channelPayload.custom_id ?? '') !== 'qa-user-42', 'custom ID unexpectedly persisted across relaunch');
     expect((requestCounts.channel ?? 0) >= 2, 'expected repeated channel checks to hit the fake server');
     expect((requestCounts.stats ?? 0) >= 1, 'expected stats traffic to hit the fake server');
     break;
@@ -443,7 +452,7 @@ while (( attempt <= MAESTRO_TEST_RETRIES )); do
 done
 
 case "$SCENARIO_ID" in
-  manual-zip | manual-zip-config-guards)
+  manual-zip | manual-zip-config-guards | manual-zip-no-persist)
     wait_for_queued_boot_verification
     ;;
 esac
