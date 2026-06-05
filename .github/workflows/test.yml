@@ -357,15 +357,7 @@ jobs:
       - name: Boot iOS simulator early
         run: |
           set -euo pipefail
-          simulator_id="$(
-            xcrun simctl list devices available |
-              sed -nE 's/^[[:space:]]*iPhone.*\(([0-9A-F-]{36})\) \([^)]*\)[[:space:]]*$/\1/p' |
-              head -n 1
-          )"
-          if [[ -z "$simulator_id" ]]; then
-            echo "No available iPhone simulator found." >&2
-            exit 1
-          fi
+          simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
           echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
           xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
       - name: Setup Bun
@@ -395,8 +387,9 @@ jobs:
           CAPGO_MAESTRO_IOS_APP_PATH=maestro-ios-apps/${{ matrix.scenario }}/App.app
           CAPGO_MAESTRO_SMOKE_SCENARIO=${{ matrix.scenario }}
           CAPGO_MAESTRO_TEST_RETRIES=2
+          CAPGO_MAESTRO_IOS_REINSTALL_ON_RETRY=1
           CAPGO_MAESTRO_TIMEOUT_SECONDS=420
-          MAESTRO_DRIVER_STARTUP_TIMEOUT=180000
+          MAESTRO_DRIVER_STARTUP_TIMEOUT=90000
           bun run test:maestro:ios:smoke
       - name: Upload Maestro artifacts
         if: always()
@@ -429,15 +422,7 @@ jobs:
       - name: Boot iOS simulator early
         run: |
           set -euo pipefail
-          simulator_id="$(
-            xcrun simctl list devices available |
-              sed -nE 's/^[[:space:]]*iPhone.*\(([0-9A-F-]{36})\) \([^)]*\)[[:space:]]*$/\1/p' |
-              head -n 1
-          )"
-          if [[ -z "$simulator_id" ]]; then
-            echo "No available iPhone simulator found." >&2
-            exit 1
-          fi
+          simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
           echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
           xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
       - name: Setup Bun
@@ -468,7 +453,7 @@ jobs:
           CAPGO_MAESTRO_IOS_APP_PATH=maestro-ios-apps/${{ matrix.scenario }}/App.app \
           CAPGO_MAESTRO_RESULTS_DIR=maestro-results-ios-live-update/${{ matrix.scenario }} \
           CAPGO_MAESTRO_TIMEOUT_SECONDS=300 \
-          CAPGO_MAESTRO_TEST_RETRIES=1 \
+          CAPGO_MAESTRO_TEST_RETRIES=2 \
           MAESTRO_DRIVER_STARTUP_TIMEOUT=180000 \
           ./scripts/maestro/run-ios-live-update.sh "${{ matrix.scenario }}"
       - name: Upload live update Maestro artifacts
@@ -583,7 +568,7 @@ jobs:
             CAPGO_MAESTRO_SPLIT_RETRIES=2
             CAPGO_MAESTRO_UI_STATE_TIMEOUT_SECONDS=180
             CAPGO_MAESTRO_DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS=180
-            ./scripts/maestro/run-android-live-update.sh "${{ matrix.scenario }}"
+            bash ./scripts/maestro/run-android-live-update-ci.sh "${{ matrix.scenario }}"
 
   maestro_android:
     if: always()

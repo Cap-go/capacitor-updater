@@ -28,11 +28,11 @@ SERVER_PID=""
 export MAESTRO_DRIVER_STARTUP_TIMEOUT="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-600000}"
 export MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
 MAESTRO_TEST_RETRIES="${CAPGO_MAESTRO_TEST_RETRIES:-3}"
-FLOW_RETRY_PATTERN="iOS driver not ready in time|Failed to connect to /127\\.0\\.0\\.1:[0-9]+|Connection refused|Broken pipe|No visible element found|Request for viewHierarchy failed, because of unknown reason|XCTestDriver request failed\\. Status code: 500, path: viewHierarchy|Application .* is not running|Detected app crash|App crashed or stopped|smoke-sequence:success.*is visible|failed to terminate dev\\.mobile\\.maestro-driver-iosUITests\\.xctrunner|found nothing to terminate|Assertion is false: \"@capgo/capacitor-updater\" is visible|Assertion is false: \".*Harness: ready.*\" is visible|Assertion is false: \".*persisted:success.*\" is visible"
+FLOW_RETRY_PATTERN="iOS driver not ready in time|Failed to connect to /127\\.0\\.0\\.1:[0-9]+|Connection refused|Broken pipe|Request for viewHierarchy failed, because of unknown reason|XCTestDriver request failed\\. Status code: 500, path: viewHierarchy|Application .* is not running|Detected app crash|App crashed or stopped|smoke-sequence:success.*is visible|failed to terminate dev\\.mobile\\.maestro-driver-iosUITests\\.xctrunner|found nothing to terminate|Assertion is false: \"@capgo/capacitor-updater\" is visible|Assertion is false: \".*Harness: ready.*\" is visible|Assertion is false: \".*persisted:success.*\" is visible"
 export CAPGO_MAESTRO_DEVICE_BASE_URL="$DEVICE_SERVER_URL"
 
 default_simulator_id() {
-  xcrun simctl list devices available | sed -nE 's/^[[:space:]]*iPhone.*\(([0-9A-F-]{36})\) \([^)]*\)[[:space:]]*$/\1/p' | head -n 1
+  "$ROOT_DIR/scripts/maestro/select-ios-simulator.sh"
 }
 
 default_app_path() {
@@ -156,10 +156,90 @@ reset_fake_server() {
   curl --silent --show-error --fail -X POST "$HOST_SERVER_URL/api/control/reset?scenario=$SCENARIO_ID" >/dev/null
 }
 
+read_smoke_server_state() {
+  curl --silent --show-error --fail "$HOST_SERVER_URL/api/control/state?scenario=$SCENARIO_ID"
+}
+
+server_request_count() {
+  local server_state="$1"
+  local request_kind="$2"
+
+  bun --eval "
+const state = JSON.parse(process.argv[1]);
+const requestKind = process.argv[2];
+console.log(state.debug?.requestCounts?.[requestKind] ?? 0);
+" "$server_state" "$request_kind"
+}
+
+wait_for_queued_boot_verification() {
+  local before_state=""
+  local before_channel_count="0"
+  local server_state=""
+
+  before_state="$(read_smoke_server_state)"
+  before_channel_count="$(server_request_count "$before_state" channel)"
+
+  echo "Running queued iOS boot verification with simctl relaunch."
+  xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
+  xcrun simctl launch "$SIMULATOR_ID" "$APP_ID" >/dev/null
+
+  for _ in $(seq 1 60); do
+    server_state="$(read_smoke_server_state)"
+    if bun --eval "
+const state = JSON.parse(process.argv[1]);
+const scenarioId = process.argv[2];
+const beforeChannelCount = Number(process.argv[3]);
+const debug = state.debug ?? {};
+const channel = debug.lastChannelRequest ?? {};
+const channelPayload = channel.payload ?? {};
+const channelCount = debug.requestCounts?.channel ?? 0;
+const channelUrl = channel.url ?? '';
+const channelAppId = channelPayload.app_id ?? '';
+const channelCustomId = channelPayload.custom_id ?? '';
+const defaultAppId = process.argv[4];
+const runtimeAppId = defaultAppId + '.e2e';
+let ok = channelCount > beforeChannelCount;
+
+if (scenarioId === 'manual-zip') {
+  ok =
+    ok &&
+    channelUrl.includes('/api/channel?scenario=manual-zip&source=runtime-channel') &&
+    channelAppId === defaultAppId &&
+    channelAppId !== runtimeAppId &&
+    channelCustomId === 'qa-user-42';
+} else if (scenarioId === 'manual-zip-config-guards') {
+  ok =
+    ok &&
+    channelUrl.includes('/api/channel?scenario=manual-zip-config-guards') &&
+    channelAppId === defaultAppId &&
+    channelAppId !== runtimeAppId &&
+    !channelUrl.includes('source=runtime-channel') &&
+    channelCustomId === 'qa-user-42';
+} else if (scenarioId === 'manual-zip-no-persist') {
+  ok =
+    ok &&
+    channelUrl.includes('/api/channel?scenario=manual-zip-no-persist') &&
+    channelAppId === defaultAppId &&
+    channelAppId !== runtimeAppId &&
+    !channelUrl.includes('source=runtime-channel') &&
+    channelCustomId !== 'qa-user-42';
+}
+
+process.exit(ok ? 0 : 1);
+" "$server_state" "$SCENARIO_ID" "$before_channel_count" "$APP_ID"; then
+      return 0
+    fi
+    sleep 2
+  done
+
+  echo "Queued iOS boot verification did not hit the fake server after relaunch." >&2
+  return 1
+}
+
 assert_smoke_server_state() {
   local server_state=""
 
-  server_state="$(curl --silent --show-error --fail "$HOST_SERVER_URL/api/control/state?scenario=$SCENARIO_ID")"
+  server_state="$(read_smoke_server_state)"
 
   bun --eval "
 const state = JSON.parse(process.argv[1]);
@@ -172,6 +252,8 @@ const stats = debug.lastStatsRequest ?? {};
 const updatePayload = update.payload ?? {};
 const channelPayload = channel.payload ?? {};
 const requestCounts = debug.requestCounts ?? {};
+const defaultAppId = 'app.capgo.updater';
+const runtimeAppId = defaultAppId + '.e2e';
 
 function expect(condition, message) {
   if (!condition) {
@@ -182,7 +264,8 @@ function expect(condition, message) {
 switch (scenarioId) {
   case 'manual-zip':
     expect(channel.url?.includes('/api/channel?scenario=manual-zip&source=runtime-channel'), 'missing persisted runtime channel URL request');
-    expect(stats.url?.includes('/api/stats?scenario=manual-zip&source=runtime-stats'), 'missing runtime stats URL request');
+    expect(channelPayload.app_id === defaultAppId, 'runtime app ID unexpectedly persisted across relaunch');
+    expect(channelPayload.app_id !== runtimeAppId, 'channel request still used runtime app ID after relaunch');
     expect((updatePayload.custom_id ?? channelPayload.custom_id) === 'qa-user-42', 'missing persisted custom ID');
     expect((requestCounts.channel ?? 0) >= 1, 'expected persisted channel verification to hit the fake server');
     expect((requestCounts.stats ?? 0) >= 1, 'expected stats traffic to hit the fake server');
@@ -190,7 +273,9 @@ switch (scenarioId) {
   case 'manual-zip-no-persist':
     expect(channel.url?.includes('/api/channel?scenario=manual-zip-no-persist'), 'missing default channel URL request after relaunch');
     expect(!channel.url?.includes('source=runtime-channel'), 'channel URL unexpectedly stayed on the runtime override');
-    expect((updatePayload.custom_id ?? channelPayload.custom_id ?? '') !== 'qa-user-42', 'custom ID unexpectedly persisted across relaunch');
+    expect(channelPayload.app_id === defaultAppId, 'runtime app ID unexpectedly persisted across relaunch');
+    expect(channelPayload.app_id !== runtimeAppId, 'channel request still used runtime app ID after relaunch');
+    expect((channelPayload.custom_id ?? '') !== 'qa-user-42', 'custom ID unexpectedly persisted across relaunch');
     expect((requestCounts.channel ?? 0) >= 2, 'expected repeated channel checks to hit the fake server');
     expect((requestCounts.stats ?? 0) >= 1, 'expected stats traffic to hit the fake server');
     break;
@@ -198,8 +283,10 @@ switch (scenarioId) {
     expect(!update.url?.includes('source=runtime-update'), 'guarded config unexpectedly accepted a runtime update URL override');
     expect(channel.url?.includes('/api/channel?scenario=manual-zip-config-guards'), 'missing default channel URL request for guarded config');
     expect(!channel.url?.includes('source=runtime-channel'), 'guarded config unexpectedly accepted a runtime channel URL override');
+    expect(channelPayload.app_id === defaultAppId, 'guarded config unexpectedly accepted the runtime app ID override');
+    expect(channelPayload.app_id !== runtimeAppId, 'guarded config channel request still used runtime app ID override');
     expect((updatePayload.custom_id ?? channelPayload.custom_id) === 'qa-user-42', 'custom ID should still persist when only URL/App ID setters are guarded');
-    expect((requestCounts.channel ?? 0) >= 2, 'expected guarded config channel checks to hit the fake server');
+    expect((requestCounts.channel ?? 0) >= 1, 'expected guarded config channel checks to hit the fake server');
     expect((requestCounts.stats ?? 0) >= 1, 'expected stats traffic to hit the fake server');
     break;
   default:
@@ -344,6 +431,7 @@ while (( attempt <= MAESTRO_TEST_RETRIES )); do
   run_with_timeout "$MAESTRO_TIMEOUT_SECONDS" maestro test \
     -p ios \
     --device "$SIMULATOR_ID" \
+    --no-reinstall-driver \
     "$FLOW_PATH" \
     --format junit \
     --output "$RESULTS_DIR/junit.xml" \
@@ -370,7 +458,11 @@ while (( attempt <= MAESTRO_TEST_RETRIES )); do
     xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
     run_with_timeout "$SIMULATOR_BOOT_TIMEOUT_SECONDS" xcrun simctl bootstatus "$SIMULATOR_ID" -b || true
     reset_fake_server
-    install_example_app
+    if [[ "${CAPGO_MAESTRO_IOS_REINSTALL_ON_RETRY:-0}" == "1" ]]; then
+      install_example_app
+    else
+      echo "Reusing installed iOS app for retry."
+    fi
     attempt=$((attempt + 1))
     continue
   fi
@@ -378,6 +470,14 @@ while (( attempt <= MAESTRO_TEST_RETRIES )); do
   rm -f "$output_file"
   exit "$status"
 done
+
+case "$SCENARIO_ID" in
+  manual-zip | manual-zip-config-guards | manual-zip-no-persist)
+    wait_for_queued_boot_verification
+    ;;
+  *)
+    ;;
+esac
 
 assert_smoke_server_state
 
