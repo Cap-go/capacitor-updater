@@ -338,7 +338,8 @@ extension UIWindow {
                         let setResult = updater.setChannel(
                             channel: name,
                             defaultChannelKey: "CapacitorUpdater.defaultChannel",
-                            allowSetDefaultChannel: plugin.allowSetDefaultChannel
+                            allowSetDefaultChannel: plugin.allowSetDefaultChannel,
+                            configDefaultChannel: plugin.getConfig().getString("defaultChannel", "") ?? ""
                         )
 
                         if !setResult.error.isEmpty {
