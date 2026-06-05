@@ -2523,16 +2523,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private boolean leavePreviewSessionForIncomingPreviewLink() {
         this.showPreviewTransitionLoader("incoming-preview-deeplink");
         final BundleInfo previewBundle = this.implementation.getCurrentBundle();
-        final BundleInfo previewFallbackBundle = this.implementation.getPreviewFallbackBundle();
+        final BundleInfo previewFallbackBundle = this.resolvePreviewFallbackBundle("incoming preview deeplink");
         boolean didReload = false;
 
         try {
-            if (previewFallbackBundle == null || previewFallbackBundle.isErrorStatus()) {
-                logger.error("No preview fallback bundle available");
-                return false;
-            }
-            if (!this.implementation.canSet(previewFallbackBundle)) {
-                logger.error("Preview fallback bundle is not installable");
+            if (previewFallbackBundle == null) {
                 return false;
             }
 
@@ -2542,7 +2537,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 return false;
             }
 
-            if (!this._reload()) {
+            if (!this.reloadWithoutWaitingForAppReady()) {
                 this.implementation.restoreResetState(previousState);
                 this.restoreLiveBundleStateAfterFailedReload();
                 return false;
@@ -2590,13 +2585,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private boolean leavePreviewSessionWithoutReload(final boolean keepPreviewGuard) {
         final BundleInfo previewBundle = this.implementation.getCurrentBundle();
-        final BundleInfo previewFallbackBundle = this.implementation.getPreviewFallbackBundle();
-        if (previewFallbackBundle == null || previewFallbackBundle.isErrorStatus()) {
-            logger.error("No preview fallback bundle available");
-            return false;
-        }
-        if (!this.implementation.canSet(previewFallbackBundle)) {
-            logger.error("Preview fallback bundle is not installable");
+        final BundleInfo previewFallbackBundle = this.resolvePreviewFallbackBundle("preview deeplink launch");
+        if (previewFallbackBundle == null) {
             return false;
         }
         if (!this.implementation.stagePreviewFallbackReload(previewFallbackBundle)) {
@@ -2649,20 +2639,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private boolean resetToPreviewFallbackBundle() {
-        final BundleInfo fallback = this.implementation.getPreviewFallbackBundle();
-        if (fallback == null || fallback.isErrorStatus()) {
-            logger.error("No preview fallback bundle available");
-            return false;
-        }
-        if (!this.implementation.canSet(fallback)) {
-            logger.error("Preview fallback bundle is not installable");
+        final BundleInfo fallback = this.resolvePreviewFallbackBundle("leave preview");
+        if (fallback == null) {
             return false;
         }
 
         final CapgoUpdater.ResetState previousState = this.implementation.captureResetState();
         final String previousBundleName = this.implementation.getCurrentBundle().getVersionName();
         logger.info("Resetting to preview fallback bundle: " + fallback.getVersionName());
-        if (this.implementation.stagePreviewFallbackReload(fallback) && this._reload()) {
+        if (this.implementation.stagePreviewFallbackReload(fallback) && this.reloadWithoutWaitingForAppReady()) {
             this.implementation.finalizeResetTransition(previousBundleName, false);
             this.notifyBundleSet(fallback);
             return true;
@@ -2670,6 +2655,29 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.implementation.restoreResetState(previousState);
         this.restoreLiveBundleStateAfterFailedReload();
         return false;
+    }
+
+    private BundleInfo resolvePreviewFallbackBundle(final String reason) {
+        final BundleInfo fallback = this.implementation.getPreviewFallbackBundle();
+        if (fallback != null && !fallback.isErrorStatus() && this.implementation.canSet(fallback)) {
+            return fallback;
+        }
+
+        if (fallback == null) {
+            logger.warn("No preview fallback bundle available for " + reason + ". Falling back to builtin bundle.");
+        } else if (fallback.isErrorStatus()) {
+            logger.warn("Preview fallback bundle is in error state for " + reason + ". Falling back to builtin bundle.");
+        } else {
+            logger.warn("Preview fallback bundle is not installable for " + reason + ". Falling back to builtin bundle.");
+        }
+
+        final BundleInfo builtin = this.implementation.getBundleInfo(BundleInfo.ID_BUILTIN);
+        if (builtin != null && !builtin.isErrorStatus() && this.implementation.canSet(builtin)) {
+            return builtin;
+        }
+
+        logger.error("Builtin bundle is not available to leave preview for " + reason);
+        return null;
     }
 
     private void endPreviewSession() {
@@ -2706,11 +2714,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private void clearPreviewSessionBecauseDisabled() {
         logger.info("Preview session disabled by config; restoring preview fallback");
-        final BundleInfo fallback = this.implementation.getPreviewFallbackBundle();
-        final BundleInfo bundleToRestore =
-            fallback == null || fallback.isErrorStatus() ? this.implementation.getBundleInfo(BundleInfo.ID_BUILTIN) : fallback;
-
-        if (this.implementation.canSet(bundleToRestore)) {
+        final BundleInfo bundleToRestore = this.resolvePreviewFallbackBundle("preview disabled");
+        if (bundleToRestore != null) {
             this.implementation.stagePreviewFallbackReload(bundleToRestore);
         } else {
             logger.warn("Could not restore preview fallback while disabling preview");
