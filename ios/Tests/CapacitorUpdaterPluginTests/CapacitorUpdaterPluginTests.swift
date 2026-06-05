@@ -147,6 +147,8 @@ private final class ResetTrackingCapgoUpdater: CapgoUpdater {
         checksum: "builtin"
     )
     var nextBundleValue: BundleInfo?
+    var previewFallbackBundleValue: BundleInfo?
+    var stagedPreviewFallbackBundle: BundleInfo?
     var resetCalled = false
     var resetIsInternal = false
     var prepareResetStateForTransitionCalled = false
@@ -161,6 +163,8 @@ private final class ResetTrackingCapgoUpdater: CapgoUpdater {
     var setCalls = 0
     var stagePendingReloadResult = true
     var stagePendingReloadCalls = 0
+    var stagePreviewFallbackReloadResult = true
+    var stagePreviewFallbackReloadCalls = 0
     var finalizePendingReloadCalls = 0
     var finalizedPendingReloadBundle: BundleInfo?
     var finalizePendingReloadPreviousBundleName: String?
@@ -182,6 +186,32 @@ private final class ResetTrackingCapgoUpdater: CapgoUpdater {
 
     override func getNextBundle() -> BundleInfo? {
         nextBundleValue
+    }
+
+    override func getPreviewFallbackBundle() -> BundleInfo? {
+        previewFallbackBundleValue
+    }
+
+    override func getBundleInfo(id: String?) -> BundleInfo {
+        if id == BundleInfo.ID_BUILTIN {
+            return BundleInfo(
+                id: BundleInfo.ID_BUILTIN,
+                version: "builtin",
+                status: .SUCCESS,
+                downloaded: BundleInfo.DOWNLOADED_BUILTIN,
+                checksum: "builtin"
+            )
+        }
+        if id == currentBundleValue.getId() {
+            return currentBundleValue
+        }
+        if id == fallbackBundleValue.getId() {
+            return fallbackBundleValue
+        }
+        if let previewFallbackBundleValue, id == previewFallbackBundleValue.getId() {
+            return previewFallbackBundleValue
+        }
+        return BundleInfo(id: id ?? "missing-id", version: id ?? "missing", status: .PENDING, downloaded: Date(), checksum: "")
     }
 
     override func canSet(bundle: BundleInfo) -> Bool {
@@ -210,6 +240,16 @@ private final class ResetTrackingCapgoUpdater: CapgoUpdater {
     override func stagePendingReload(bundle: BundleInfo) -> Bool {
         stagePendingReloadCalls += 1
         return stagePendingReloadResult
+    }
+
+    override func stagePreviewFallbackReload(bundle: BundleInfo) -> Bool {
+        stagePreviewFallbackReloadCalls += 1
+        stagedPreviewFallbackBundle = bundle
+        return stagePreviewFallbackReloadResult
+    }
+
+    override func delete(id _: String, removeInfo _: Bool) -> Bool {
+        true
     }
 
     override func finalizePendingReload(bundle: BundleInfo, previousBundleName: String) {
@@ -244,10 +284,18 @@ private final class ResetTestableCapacitorUpdaterPlugin: TestableCapacitorUpdate
     override func _reload() -> Bool {
         true
     }
+
+    override func reloadWithoutWaitingForAppReady() -> Bool {
+        true
+    }
 }
 
 private final class ReloadBypassCapacitorUpdaterPlugin: TestableCapacitorUpdaterPlugin {
     override func _reload() -> Bool {
+        true
+    }
+
+    override func reloadWithoutWaitingForAppReady() -> Bool {
         true
     }
 }
@@ -260,6 +308,10 @@ private final class ReloadFailureCapacitorUpdaterPlugin: TestableCapacitorUpdate
     }
 
     override func _reload() -> Bool {
+        false
+    }
+
+    override func reloadWithoutWaitingForAppReady() -> Bool {
         false
     }
 
@@ -982,6 +1034,29 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(resetImplementation.restoredState?.currentBundlePath, resetImplementation.capturedState.currentBundlePath)
         XCTAssertEqual(resetImplementation.restoredState?.fallbackBundleId, resetImplementation.capturedState.fallbackBundleId)
         XCTAssertEqual(resetImplementation.restoredState?.nextBundleId, resetImplementation.capturedState.nextBundleId)
+    }
+
+    func testLeavePreviewUsesBuiltinWhenPreviewFallbackIsMissing() {
+        let resetPlugin = ResetTestableCapacitorUpdaterPlugin()
+        let resetImplementation = ResetTrackingCapgoUpdater()
+        resetImplementation.currentBundleValue = BundleInfo(
+            id: "preview-id",
+            version: "preview",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "preview"
+        )
+        resetImplementation.previewFallbackBundleValue = nil
+
+        resetPlugin.implementation = resetImplementation
+
+        XCTAssertTrue(resetPlugin.resetToPreviewFallbackBundle())
+        XCTAssertEqual(resetImplementation.stagePreviewFallbackReloadCalls, 1)
+        XCTAssertEqual(resetImplementation.stagedPreviewFallbackBundle?.getId(), BundleInfo.ID_BUILTIN)
+        XCTAssertTrue(resetImplementation.finalizeResetTransitionCalled)
+        XCTAssertEqual(resetImplementation.finalizeResetTransitionPreviousBundleName, "preview")
+        XCTAssertFalse(resetImplementation.finalizeResetTransitionIsInternal)
+        XCTAssertEqual(resetImplementation.restoreResetStateCalls, 0)
     }
 
     func testResetToLastSuccessfulWithoutInstallableFallbackFallsBackToBuiltin() {

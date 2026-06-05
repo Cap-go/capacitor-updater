@@ -989,6 +989,29 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    func reloadWithoutWaitingForAppReady() -> Bool {
+        guard let bridge = self.bridge else { return false }
+
+        let performReload: () -> Bool = {
+            guard self.applyCurrentBundleToBridge(bridge) else {
+                return false
+            }
+            self.checkAppReady()
+            self.notifyListeners("appReloaded", data: [:])
+            return true
+        }
+
+        if Thread.isMainThread {
+            return performReload()
+        } else {
+            var result = false
+            DispatchQueue.main.sync {
+                result = performReload()
+            }
+            return result
+        }
+    }
+
     @objc func reload(_ call: CAPPluginCall) {
         let current: BundleInfo = self.implementation.getCurrentBundle()
         let next: BundleInfo? = self.implementation.getNextBundle()
@@ -1232,12 +1255,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func leavePreviewSessionWithoutReload(keepPreviewGuard: Bool = false) -> Bool {
         let previewBundle = self.implementation.getCurrentBundle()
-        guard let previewFallbackBundle = self.implementation.getPreviewFallbackBundle(), !previewFallbackBundle.isErrorStatus() else {
-            logger.error("No preview fallback bundle available")
-            return false
-        }
-        guard self.implementation.canSet(bundle: previewFallbackBundle) else {
-            logger.error("Preview fallback bundle is not installable")
+        guard let previewFallbackBundle = self.resolvePreviewFallbackBundle(reason: "preview deeplink launch") else {
             return false
         }
         guard self.implementation.stagePreviewFallbackReload(bundle: previewFallbackBundle) else {
@@ -1254,14 +1272,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private func leavePreviewSessionForIncomingPreviewLink() -> Bool {
         self.showPreviewTransitionLoader(reason: "incoming-preview-deeplink")
         let previewBundle = self.implementation.getCurrentBundle()
-        guard let previewFallbackBundle = self.implementation.getPreviewFallbackBundle(), !previewFallbackBundle.isErrorStatus() else {
-            logger.error("No preview fallback bundle available")
-            self.clearIncomingPreviewTransition()
-            self.hidePreviewTransitionLoader(reason: "incoming-preview-deeplink-failed")
-            return false
-        }
-        guard self.implementation.canSet(bundle: previewFallbackBundle) else {
-            logger.error("Preview fallback bundle is not installable")
+        guard let previewFallbackBundle = self.resolvePreviewFallbackBundle(reason: "incoming preview deeplink") else {
             self.clearIncomingPreviewTransition()
             self.hidePreviewTransitionLoader(reason: "incoming-preview-deeplink-failed")
             return false
@@ -1275,7 +1286,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             return false
         }
 
-        let didReload = self._reload()
+        let didReload = self.reloadWithoutWaitingForAppReady()
         if didReload {
             self.endPreviewSession(keepPreviewGuard: true)
             let restoredNextBundle = self.implementation.getNextBundle()
@@ -1312,7 +1323,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if let payloadUrl = self.storedPreviewPayloadUrl() {
             didReload = self.refreshPreviewSessionFromPayloadUrl(payloadUrl)
         } else {
-            didReload = self._reload()
+            didReload = self.reloadWithoutWaitingForAppReady()
         }
 
         if !didReload {
@@ -1325,21 +1336,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.previewSessionEnabled
     }
 
-    private func resetToPreviewFallbackBundle() -> Bool {
+    func resetToPreviewFallbackBundle() -> Bool {
         guard self.canPerformResetTransition() else { return false }
-        guard let fallback = self.implementation.getPreviewFallbackBundle(), !fallback.isErrorStatus() else {
-            logger.error("No preview fallback bundle available")
-            return false
-        }
-        guard self.implementation.canSet(bundle: fallback) else {
-            logger.error("Preview fallback bundle is not installable")
+        guard let fallback = self.resolvePreviewFallbackBundle(reason: "leave preview") else {
             return false
         }
 
         let previousState = self.implementation.captureResetState()
         let previousBundleName = self.implementation.getCurrentBundle().getVersionName()
         logger.info("Resetting to preview fallback bundle: \(fallback.toString())")
-        if self.implementation.stagePreviewFallbackReload(bundle: fallback) && self._reload() {
+        if self.implementation.stagePreviewFallbackReload(bundle: fallback) && self.reloadWithoutWaitingForAppReady() {
             self.implementation.finalizeResetTransition(previousBundleName: previousBundleName, isInternal: false)
             self.notifyBundleSet(fallback)
             return true
@@ -1347,6 +1353,31 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.implementation.restoreResetState(previousState)
         self.restoreLiveBundleStateAfterFailedReload()
         return false
+    }
+
+    private func resolvePreviewFallbackBundle(reason: String) -> BundleInfo? {
+        let fallback = self.implementation.getPreviewFallbackBundle()
+        if let fallback, !fallback.isErrorStatus(), self.implementation.canSet(bundle: fallback) {
+            return fallback
+        }
+
+        if let fallback {
+            if fallback.isErrorStatus() {
+                logger.warn("Preview fallback bundle is in error state for \(reason). Falling back to builtin bundle.")
+            } else {
+                logger.warn("Preview fallback bundle is not installable for \(reason). Falling back to builtin bundle.")
+            }
+        } else {
+            logger.warn("No preview fallback bundle available for \(reason). Falling back to builtin bundle.")
+        }
+
+        let builtin = self.implementation.getBundleInfo(id: BundleInfo.ID_BUILTIN)
+        if !builtin.isErrorStatus(), self.implementation.canSet(bundle: builtin) {
+            return builtin
+        }
+
+        logger.error("Builtin bundle is not available to leave preview for \(reason)")
+        return nil
     }
 
     private func endPreviewSession(keepPreviewGuard: Bool = false) {
@@ -1374,15 +1405,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func clearPreviewSessionBecauseDisabled() {
         logger.info("Preview session disabled by config; restoring preview fallback")
-        let fallback = self.implementation.getPreviewFallbackBundle()
-        let bundleToRestore: BundleInfo
-        if let fallback, !fallback.isErrorStatus() {
-            bundleToRestore = fallback
-        } else {
-            bundleToRestore = self.implementation.getBundleInfo(id: BundleInfo.ID_BUILTIN)
-        }
-
-        if self.implementation.canSet(bundle: bundleToRestore) {
+        if let bundleToRestore = self.resolvePreviewFallbackBundle(reason: "preview disabled") {
             _ = self.implementation.stagePreviewFallbackReload(bundle: bundleToRestore)
         } else {
             logger.warn("Could not restore preview fallback while disabling preview")
@@ -1579,7 +1602,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             let current = self.implementation.getCurrentBundle()
             if current.getVersionName() == version {
                 self.logger.info("Preview payload unchanged, reloading current bundle")
-                return self._reload()
+                return self.reloadWithoutWaitingForAppReady()
             }
 
             let next = try self.downloadBundle(
@@ -1597,7 +1620,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
 
             self.notifyBundleSet(next)
-            return self._reload()
+            return self.reloadWithoutWaitingForAppReady()
         } catch {
             self.logger.error("Could not refresh preview session: \(error.localizedDescription)")
             return false

@@ -502,6 +502,8 @@ public class CapacitorUpdaterUnitTest {
             "builtin"
         );
         private BundleInfo nextBundle;
+        private BundleInfo previewFallbackBundle;
+        private BundleInfo stagedPreviewFallbackBundle;
         private boolean resetCalled = false;
         private boolean prepareResetStateForTransitionCalled = false;
         private int prepareResetStateForTransitionCalls = 0;
@@ -515,6 +517,8 @@ public class CapacitorUpdaterUnitTest {
         private int setCalls = 0;
         private boolean stagePendingReloadResult = true;
         private int stagePendingReloadCalls = 0;
+        private boolean stagePreviewFallbackReloadResult = true;
+        private int stagePreviewFallbackReloadCalls = 0;
         private int finalizePendingReloadCalls = 0;
         private BundleInfo finalizedPendingReloadBundle;
         private String finalizePendingReloadPreviousBundleName;
@@ -539,6 +543,28 @@ public class CapacitorUpdaterUnitTest {
         @Override
         public BundleInfo getNextBundle() {
             return this.nextBundle;
+        }
+
+        @Override
+        public BundleInfo getPreviewFallbackBundle() {
+            return this.previewFallbackBundle;
+        }
+
+        @Override
+        public BundleInfo getBundleInfo(final String id) {
+            if (BundleInfo.ID_BUILTIN.equals(id)) {
+                return new BundleInfo(BundleInfo.ID_BUILTIN, "builtin", BundleStatus.SUCCESS, BundleInfo.DOWNLOADED_BUILTIN, "builtin");
+            }
+            if (this.currentBundle != null && this.currentBundle.getId().equals(id)) {
+                return this.currentBundle;
+            }
+            if (this.fallbackBundle != null && this.fallbackBundle.getId().equals(id)) {
+                return this.fallbackBundle;
+            }
+            if (this.previewFallbackBundle != null && this.previewFallbackBundle.getId().equals(id)) {
+                return this.previewFallbackBundle;
+            }
+            return new BundleInfo(id, id, BundleStatus.PENDING, new Date(), "");
         }
 
         @Override
@@ -573,6 +599,18 @@ public class CapacitorUpdaterUnitTest {
         boolean stagePendingReload(final BundleInfo bundle) {
             this.stagePendingReloadCalls++;
             return this.stagePendingReloadResult;
+        }
+
+        @Override
+        boolean stagePreviewFallbackReload(final BundleInfo bundle) {
+            this.stagePreviewFallbackReloadCalls++;
+            this.stagedPreviewFallbackBundle = bundle;
+            return this.stagePreviewFallbackReloadResult;
+        }
+
+        @Override
+        public Boolean delete(final String id, final Boolean removeInfo) {
+            return true;
         }
 
         @Override
@@ -619,6 +657,11 @@ public class CapacitorUpdaterUnitTest {
         protected boolean _reload() {
             return true;
         }
+
+        @Override
+        protected boolean reloadWithoutWaitingForAppReady() {
+            return true;
+        }
     }
 
     private static final class ReloadFailureCapacitorUpdaterPlugin extends TestableCapacitorUpdaterPlugin {
@@ -642,6 +685,11 @@ public class CapacitorUpdaterUnitTest {
         }
 
         @Override
+        protected boolean reloadWithoutWaitingForAppReady() {
+            return false;
+        }
+
+        @Override
         protected void restoreLiveBundleStateAfterFailedReload() {
             this.restoreLiveBundleStateAfterFailedReloadCalls++;
         }
@@ -659,6 +707,13 @@ public class CapacitorUpdaterUnitTest {
 
         @Override
         protected boolean _reload() {
+            final int resultIndex = Math.min(this.reloadCallCount, this.reloadResults.length - 1);
+            this.reloadCallCount++;
+            return this.reloadResults[resultIndex];
+        }
+
+        @Override
+        protected boolean reloadWithoutWaitingForAppReady() {
             final int resultIndex = Math.min(this.reloadCallCount, this.reloadResults.length - 1);
             this.reloadCallCount++;
             return this.reloadResults[resultIndex];
@@ -883,6 +938,12 @@ public class CapacitorUpdaterUnitTest {
         final Method method = CapacitorUpdaterPlugin.class.getDeclaredMethod("performReset", Boolean.class, Boolean.class, boolean.class);
         method.setAccessible(true);
         return (boolean) method.invoke(plugin, toLastSuccessful, usePendingBundle, internal);
+    }
+
+    private static boolean invokePrivatePreviewFallbackResetMethod(final CapacitorUpdaterPlugin plugin) throws Exception {
+        final Method method = CapacitorUpdaterPlugin.class.getDeclaredMethod("resetToPreviewFallbackBundle");
+        method.setAccessible(true);
+        return (boolean) method.invoke(plugin);
     }
 
     private static void invokePrivateSplashMethod(
@@ -1647,6 +1708,34 @@ public class CapacitorUpdaterUnitTest {
             assertEquals(1, updater.restoreResetStateCalls);
             assertSame(updater.capturedState, updater.restoredState);
             assertEquals(1, plugin.restoreLiveBundleStateAfterFailedReloadCalls);
+        }
+    }
+
+    @Test
+    public void testLeavePreviewUsesBuiltinWhenPreviewFallbackIsMissing() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ReloadBypassCapacitorUpdaterPlugin plugin = new ReloadBypassCapacitorUpdaterPlugin();
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            updater.currentBundle = new BundleInfo("preview-id", "preview", BundleStatus.SUCCESS, new Date(), "preview");
+            updater.previewFallbackBundle = null;
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            final boolean result = invokePrivatePreviewFallbackResetMethod(plugin);
+
+            assertTrue(result);
+            assertEquals(1, updater.stagePreviewFallbackReloadCalls);
+            assertEquals(BundleInfo.ID_BUILTIN, updater.stagedPreviewFallbackBundle.getId());
+            assertTrue(updater.finalizeResetTransitionCalled);
+            assertEquals("preview", updater.finalizeResetTransitionPreviousBundleName);
+            assertFalse(updater.finalizeResetTransitionInternal);
+            assertEquals(0, updater.restoreResetStateCalls);
         }
     }
 
