@@ -3,6 +3,14 @@ import XCTest
 import Capacitor
 import Version
 
+private let testChannelUrl: String = {
+    var components = URLComponents()
+    components.scheme = "https"
+    components.host = "example.com"
+    components.path = "/channel"
+    return components.string ?? ""
+}()
+
 private class TestableCapacitorUpdaterPlugin: CapacitorUpdaterPlugin {
     private(set) var notifiedEventNames: [String] = []
     private(set) var notifiedEventPayloads: [String: [String: Any]] = [:]
@@ -730,10 +738,10 @@ class CapacitorUpdaterTests: XCTestCase {
     func testSetChannelRejectsNonSuccessStatusWithoutPersistingDefaultChannel() throws {
         let updater = ChannelRequestCapgoUpdater()
         updater.setLogger(Logger(withTag: "TestLogger"))
-        updater.channelUrl = "https://example.com/channel"
+        updater.channelUrl = testChannelUrl
         updater.defaultChannel = "stable"
 
-        let channelURL = try XCTUnwrap(URL(string: "https://example.com/channel"))
+        let channelURL = try XCTUnwrap(URL(string: testChannelUrl))
         let response = try XCTUnwrap(HTTPURLResponse(url: channelURL, statusCode: 401, httpVersion: nil, headerFields: nil))
         let responseData = try XCTUnwrap("""
         {"status":"error","message":"Unauthorized"}
@@ -756,9 +764,9 @@ class CapacitorUpdaterTests: XCTestCase {
     func testGetChannelPersistsServerChannelAsDefaultChannel() throws {
         let updater = ChannelRequestCapgoUpdater()
         updater.setLogger(Logger(withTag: "TestLogger"))
-        updater.channelUrl = "https://example.com/channel"
+        updater.channelUrl = testChannelUrl
 
-        let channelURL = try XCTUnwrap(URL(string: "https://example.com/channel"))
+        let channelURL = try XCTUnwrap(URL(string: testChannelUrl))
         let response = try XCTUnwrap(HTTPURLResponse(url: channelURL, statusCode: 200, httpVersion: nil, headerFields: nil))
         let responseData = try XCTUnwrap("""
         {"channel":"company-a","status":"ok","allowSet":true}
