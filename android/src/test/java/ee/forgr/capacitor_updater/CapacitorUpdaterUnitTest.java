@@ -1347,6 +1347,28 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testGetBackgroundRunnerLabelFromConfigExtractsLabel() {
+        final String config =
+            "{\"plugins\":{\"BackgroundRunner\":{\"label\":\"com.example.runner\",\"src\":\"runner.js\",\"autoStart\":true}}}";
+
+        assertEquals("com.example.runner", CapgoUpdater.getBackgroundRunnerLabelFromConfig(config));
+    }
+
+    @Test
+    public void testGetBackgroundRunnerLabelFromConfigReturnsNullWhenMissing() {
+        final String config = "{\"plugins\":{\"CapacitorUpdater\":{\"autoUpdate\":true}}}";
+
+        assertNull(CapgoUpdater.getBackgroundRunnerLabelFromConfig(config));
+    }
+
+    @Test
+    public void testGetBackgroundRunnerLabelFromConfigReturnsNullForBlankLabel() {
+        final String config = "{\"plugins\":{\"BackgroundRunner\":{\"label\":\"  \",\"src\":\"runner.js\"}}}";
+
+        assertNull(CapgoUpdater.getBackgroundRunnerLabelFromConfig(config));
+    }
+
+    @Test
     public void testGetBundleInfoBuiltinReturnsVersionBuildWhenPresent() {
         CapgoUpdater updater = new CapgoUpdater(null);
         updater.versionBuild = "1.2.3";
