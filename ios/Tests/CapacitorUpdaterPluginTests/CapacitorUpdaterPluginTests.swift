@@ -805,6 +805,46 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertNil(UserDefaults.standard.string(forKey: defaultsKey))
     }
 
+    func testGetChannelPersistsServerChannelAsDefaultChannel() throws {
+        let updater = ChannelRequestCapgoUpdater()
+        updater.setLogger(Logger(withTag: "TestLogger"))
+        updater.channelUrl = "https://example.com/channel"
+
+        let channelURL = try XCTUnwrap(URL(string: "https://example.com/channel"))
+        let response = try XCTUnwrap(HTTPURLResponse(url: channelURL, statusCode: 200, httpVersion: nil, headerFields: nil))
+        let responseData = try XCTUnwrap("""
+        {"channel":"company-a","status":"ok","allowSet":true}
+        """.data(using: .utf8))
+        updater.requestResult = CapgoUpdater.RequestResult(data: responseData, response: response, error: nil, timedOut: false)
+
+        let defaultsKey = "CapacitorUpdaterTests.defaultChannel.\(UUID().uuidString)"
+        defer {
+            UserDefaults.standard.removeObject(forKey: defaultsKey)
+        }
+
+        let result = updater.getChannel(defaultChannelKey: defaultsKey)
+
+        XCTAssertEqual(result.channel, "company-a")
+        XCTAssertEqual(updater.defaultChannel, "company-a")
+        XCTAssertEqual(UserDefaults.standard.string(forKey: defaultsKey), "company-a")
+    }
+
+    func testGetChannelDoesNotPersistBuiltinVersionNameAsDefaultChannel() {
+        let updater = ChannelRequestCapgoUpdater()
+        updater.setLogger(Logger(withTag: "TestLogger"))
+        updater.defaultChannel = "stable"
+
+        let defaultsKey = "CapacitorUpdaterTests.defaultChannel.\(UUID().uuidString)"
+        defer {
+            UserDefaults.standard.removeObject(forKey: defaultsKey)
+        }
+
+        updater.persistDefaultChannelFromResponse(channel: "builtin", defaultChannelKey: defaultsKey)
+
+        XCTAssertEqual(updater.defaultChannel, "stable")
+        XCTAssertNil(UserDefaults.standard.string(forKey: defaultsKey))
+    }
+
     // MARK: - DelayCondition Tests
 
     func testDelayConditionInitialization() {

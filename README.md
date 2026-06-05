@@ -1188,6 +1188,9 @@ Use this to:
 - Check if a device is on a specific channel before showing features
 - Verify channel assignment after calling {@link setChannel}
 
+On native platforms, a successful response also refreshes the locally persisted
+default channel used by update checks.
+
 **Returns:** <code>Promise&lt;<a href="#getchannelres">GetChannelRes</a>&gt;</code>
 
 **Since:** 4.8.0

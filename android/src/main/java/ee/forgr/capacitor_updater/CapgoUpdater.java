@@ -1615,6 +1615,17 @@ public class CapgoUpdater {
         final boolean allowSetDefaultChannel,
         final Callback callback
     ) {
+        this.setChannel(channel, editor, defaultChannelKey, allowSetDefaultChannel, "", callback);
+    }
+
+    public void setChannel(
+        final String channel,
+        final SharedPreferences.Editor editor,
+        final String defaultChannelKey,
+        final boolean allowSetDefaultChannel,
+        final String configDefaultChannel,
+        final Callback callback
+    ) {
         // Check if setting defaultChannel is allowed
         if (!allowSetDefaultChannel) {
             logger.error("setChannel is disabled by allowSetDefaultChannel config");
@@ -1666,6 +1677,7 @@ public class CapgoUpdater {
                 // Clear persisted defaultChannel and revert to config value
                 editor.remove(defaultChannelKey);
                 editor.apply();
+                this.defaultChannel = configDefaultChannel;
                 logger.info("Public channel requested, channel override removed");
                 callback.callback(res);
             } else {
@@ -1680,6 +1692,10 @@ public class CapgoUpdater {
     }
 
     public void getChannel(final Callback callback) {
+        this.getChannel(callback, null, null);
+    }
+
+    public void getChannel(final Callback callback, final SharedPreferences.Editor editor, final String defaultChannelKey) {
         // Check if rate limit was exceeded
         if (rateLimitExceeded) {
             logger.debug("Skipping getChannel due to rate limit (429). Requests will resume after app restart.");
@@ -1798,6 +1814,7 @@ public class CapgoUpdater {
                                 ret.put(key, jsonResponse.get(key));
                             }
                         }
+                        persistDefaultChannelFromResponse(ret.get("channel"), editor, defaultChannelKey);
                         logger.info("Channel get to \"" + ret);
                         callback.callback(ret);
                     } catch (JSONException e) {
@@ -1809,6 +1826,24 @@ public class CapgoUpdater {
                 }
             }
         );
+    }
+
+    void persistDefaultChannelFromResponse(final Object channel, final SharedPreferences.Editor editor, final String defaultChannelKey) {
+        if (!(channel instanceof String)) {
+            return;
+        }
+
+        final String channelName = ((String) channel).trim();
+        if (channelName.isEmpty() || BundleInfo.ID_BUILTIN.equals(channelName)) {
+            return;
+        }
+
+        this.defaultChannel = channelName;
+        if (editor != null && defaultChannelKey != null && !defaultChannelKey.isEmpty()) {
+            editor.putString(defaultChannelKey, channelName);
+            editor.apply();
+        }
+        logger.info("defaultChannel synchronized from getChannel(): " + channelName);
     }
 
     public void listChannels(final Callback callback) {

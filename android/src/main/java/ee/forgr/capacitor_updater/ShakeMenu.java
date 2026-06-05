@@ -542,6 +542,7 @@ public class ShakeMenu implements ShakeDetector.Listener {
                 new Thread(() -> {
                     final CapgoUpdater updater = plugin.implementation;
                     final Bridge bridge = activity.getBridge();
+                    final String configDefaultChannel = plugin.getConfig().getString("defaultChannel", "");
 
                     // Set the channel - respect plugin's allowSetDefaultChannel config
                     updater.setChannel(
@@ -549,6 +550,7 @@ public class ShakeMenu implements ShakeDetector.Listener {
                         updater.editor,
                         "CapacitorUpdater.defaultChannel",
                         plugin.allowSetDefaultChannel,
+                        configDefaultChannel,
                         (setRes) -> {
                             if (setRes == null) {
                                 activity.runOnUiThread(() -> {
