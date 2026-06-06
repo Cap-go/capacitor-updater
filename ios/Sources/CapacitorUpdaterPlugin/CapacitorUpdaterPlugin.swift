@@ -1229,7 +1229,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         let previewFallbackBundle = self.implementation.getPreviewFallbackBundle()
-        self.endPreviewSession()
+        self.endPreviewSession(keepPreviewGuard: true)
         let restoredNextBundle = self.implementation.getNextBundle()
         self.deletePreviewBundleIfUnused(previewBundle, previewFallbackBundle: previewFallbackBundle, restoredNextBundle: restoredNextBundle)
         return true
@@ -1382,9 +1382,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func endPreviewSession(keepPreviewGuard: Bool = false) {
         let previousShakeMenuEnabled = UserDefaults.standard.object(forKey: self.previewPreviousShakeMenuDefaultsKey) as? Bool
-            ?? getConfig().getBoolean("shakeMenu", false)
+            ?? self.getBooleanConfig("shakeMenu", defaultValue: false)
         let previousShakeChannelSelectorEnabled = UserDefaults.standard.object(forKey: self.previewPreviousShakeChannelSelectorDefaultsKey) as? Bool
-            ?? getConfig().getBoolean("allowShakeChannelSelector", false)
+            ?? self.getBooleanConfig("allowShakeChannelSelector", defaultValue: false)
         self.restorePreviewPreviousNextBundle()
         self.restorePreviewPreviousAppId()
         self.restorePreviewPreviousDefaultChannel()
@@ -1419,9 +1419,23 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.isLeavingPreviewForIncomingLink = false
         self.implementation.previewSession = false
         self.hidePreviewTransitionLoader(reason: "preview-session-disabled")
-        self.shakeMenuEnabled = getConfig().getBoolean("shakeMenu", false)
-        self.shakeChannelSelectorEnabled = getConfig().getBoolean("allowShakeChannelSelector", false)
+        self.shakeMenuEnabled = self.getBooleanConfig("shakeMenu", defaultValue: false)
+        self.shakeChannelSelectorEnabled = self.getBooleanConfig("allowShakeChannelSelector", defaultValue: false)
         self.clearPreviewSessionPreferences()
+    }
+
+    private func getBooleanConfig(_ key: String, defaultValue: Bool) -> Bool {
+        guard self.bridge != nil else {
+            return defaultValue
+        }
+        return getConfig().getBoolean(key, defaultValue)
+    }
+
+    private func getStringConfig(_ key: String, defaultValue: String) -> String {
+        guard self.bridge != nil else {
+            return defaultValue
+        }
+        return getConfig().getString(key, defaultValue) ?? defaultValue
     }
 
     private func clearPreviewSessionPreferences() {
@@ -1449,7 +1463,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func restorePreviewPreviousDefaultChannel() {
-        let configDefaultChannel = self.getConfig().getString("defaultChannel", "")!
+        let configDefaultChannel = self.getStringConfig("defaultChannel", defaultValue: "")
         let hadPreviousDefaultChannel = UserDefaults.standard.object(forKey: self.previewPreviousDefaultChannelWasSetDefaultsKey) as? Bool ?? false
 
         guard hadPreviousDefaultChannel,
@@ -1636,8 +1650,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.previewSessionAlertPending = false
         self.isLeavingPreviewForIncomingLink = false
         self.implementation.previewSession = false
-        self.shakeMenuEnabled = getConfig().getBoolean("shakeMenu", false)
-        self.shakeChannelSelectorEnabled = getConfig().getBoolean("allowShakeChannelSelector", false)
+        self.shakeMenuEnabled = self.getBooleanConfig("shakeMenu", defaultValue: false)
+        self.shakeChannelSelectorEnabled = self.getBooleanConfig("allowShakeChannelSelector", defaultValue: false)
         self.restorePreviewPreviousAppId()
         self.restorePreviewPreviousDefaultChannel()
         _ = self.implementation.setPreviewFallbackBundle(fallback: nil)

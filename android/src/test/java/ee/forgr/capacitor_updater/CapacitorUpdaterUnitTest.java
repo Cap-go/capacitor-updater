@@ -11,8 +11,10 @@ import android.os.Looper;
 import android.webkit.WebView;
 import androidx.appcompat.app.AppCompatActivity;
 import com.getcapacitor.Bridge;
+import com.getcapacitor.CapConfig;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
+import com.getcapacitor.PluginConfig;
 import com.getcapacitor.PluginHandle;
 import io.github.g00fy2.versioncompare.Version;
 import java.io.File;
@@ -522,6 +524,8 @@ public class CapacitorUpdaterUnitTest {
         private int finalizePendingReloadCalls = 0;
         private BundleInfo finalizedPendingReloadBundle;
         private String finalizePendingReloadPreviousBundleName;
+        private int setPreviewFallbackBundleCalls = 0;
+        private String lastPreviewFallbackBundle;
         private int restoreResetStateCalls = 0;
         private final ResetState capturedState = new ResetState("/stored/current", "fallback-id", "next-id");
         private ResetState restoredState;
@@ -606,6 +610,16 @@ public class CapacitorUpdaterUnitTest {
             this.stagePreviewFallbackReloadCalls++;
             this.stagedPreviewFallbackBundle = bundle;
             return this.stagePreviewFallbackReloadResult;
+        }
+
+        @Override
+        public boolean setPreviewFallbackBundle(final String fallback) {
+            this.setPreviewFallbackBundleCalls++;
+            this.lastPreviewFallbackBundle = fallback;
+            if (fallback == null) {
+                this.previewFallbackBundle = null;
+            }
+            return true;
         }
 
         @Override
@@ -1758,6 +1772,56 @@ public class CapacitorUpdaterUnitTest {
             assertEquals("preview", updater.finalizeResetTransitionPreviousBundleName);
             assertFalse(updater.finalizeResetTransitionInternal);
             assertEquals(0, updater.restoreResetStateCalls);
+        }
+    }
+
+    @Test
+    public void testLeavePreviewFromShakeMenuKeepsPreviewGuardUntilAppReady() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ReloadBypassCapacitorUpdaterPlugin plugin = new ReloadBypassCapacitorUpdaterPlugin();
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            final SharedPreferences prefs = mock(SharedPreferences.class);
+            final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+            final Bridge bridge = mock(Bridge.class);
+            final CapConfig capConfig = mock(CapConfig.class);
+            final PluginConfig pluginConfig = mock(PluginConfig.class);
+            final PluginHandle handle = mock(PluginHandle.class);
+
+            updater.currentBundle = new BundleInfo("preview-id", "preview", BundleStatus.SUCCESS, new Date(), "preview");
+            updater.previewFallbackBundle = new BundleInfo("fallback-id", "1.0.0", BundleStatus.SUCCESS, new Date(), "fallback");
+            updater.previewSession = true;
+            plugin.implementation = updater;
+            plugin.previewSessionEnabled = true;
+            plugin.setLoggerForTesting(mock(Logger.class));
+            setPrivateField(plugin, "prefs", prefs);
+            setPrivateField(plugin, "editor", editor);
+            setPrivateField(plugin, "bridge", bridge);
+            plugin.setPluginHandle(handle);
+
+            when(handle.getId()).thenReturn("CapacitorUpdater");
+            when(bridge.getConfig()).thenReturn(capConfig);
+            when(capConfig.getPluginConfiguration("CapacitorUpdater")).thenReturn(pluginConfig);
+            when(pluginConfig.getString(anyString(), nullable(String.class))).thenAnswer((invocation) -> invocation.getArgument(1));
+            when(pluginConfig.getBoolean(anyString(), anyBoolean())).thenAnswer((invocation) -> invocation.getArgument(1));
+            when(prefs.getString(anyString(), nullable(String.class))).thenAnswer((invocation) -> invocation.getArgument(1));
+            when(prefs.getBoolean(anyString(), anyBoolean())).thenAnswer((invocation) -> invocation.getArgument(1));
+            when(editor.remove(anyString())).thenReturn(editor);
+
+            assertTrue(plugin.leavePreviewSessionFromShakeMenu());
+            assertFalse(plugin.hasActivePreviewSession());
+            assertTrue(updater.previewSession);
+            assertEquals(1, updater.stagePreviewFallbackReloadCalls);
+            assertEquals("fallback-id", updater.stagedPreviewFallbackBundle.getId());
+            assertTrue(updater.finalizeResetTransitionCalled);
+            assertEquals("preview", updater.finalizeResetTransitionPreviousBundleName);
+            assertEquals(0, updater.restoreResetStateCalls);
+            assertNull(updater.lastPreviewFallbackBundle);
+            assertTrue(updater.setPreviewFallbackBundleCalls > 0);
         }
     }
 

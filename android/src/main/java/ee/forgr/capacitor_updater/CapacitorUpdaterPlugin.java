@@ -2519,7 +2519,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
 
         final BundleInfo previewFallbackBundle = this.implementation.getPreviewFallbackBundle();
-        this.endPreviewSession();
+        this.endPreviewSession(true);
         final BundleInfo restoredNextBundle = this.implementation.getNextBundle();
         this.deletePreviewBundleIfUnused(previewBundle, previewFallbackBundle, restoredNextBundle);
         return true;

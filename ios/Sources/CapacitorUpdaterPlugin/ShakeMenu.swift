@@ -7,6 +7,9 @@
 import UIKit
 import Capacitor
 
+private var lastShakeMenuShownAt: TimeInterval = 0
+private let shakeMenuCooldownSeconds: TimeInterval = 1.2
+
 extension UIApplication {
     // swiftlint:disable:next line_length
     public class func topViewController(_ base: UIViewController? = UIApplication.shared.windows.first?.rootViewController) -> UIViewController? {
@@ -43,25 +46,38 @@ extension UIWindow {
                 return
             }
 
+            let now = Date().timeIntervalSince1970
+            guard now - lastShakeMenuShownAt >= shakeMenuCooldownSeconds else {
+                plugin.logger.info("Shake menu ignored because cooldown is active")
+                return
+            }
+
             if canShowPreviewMenu {
-                showDefaultMenu(plugin: plugin, bridge: bridge)
+                if showDefaultMenu(plugin: plugin, bridge: bridge) {
+                    lastShakeMenuShownAt = now
+                }
             } else {
-                showChannelSelector(plugin: plugin, bridge: bridge)
+                if showChannelSelector(plugin: plugin, bridge: bridge) {
+                    lastShakeMenuShownAt = now
+                }
             }
         }
     }
 
-    private func showDefaultMenu(plugin: CapacitorUpdaterPlugin, bridge: CAPBridgeProtocol) {
+    @discardableResult
+    private func showDefaultMenu(plugin: CapacitorUpdaterPlugin, bridge: CAPBridgeProtocol) -> Bool {
         // Prevent multiple alerts from showing
-        if let topVC = UIApplication.topViewController(),
-           topVC.isKind(of: UIAlertController.self) {
+        guard let topVC = UIApplication.topViewController() else {
+            return false
+        }
+        if topVC.isKind(of: UIAlertController.self) {
             plugin.logger.info("UIAlertController is already presented")
-            return
+            return false
         }
 
         guard plugin.hasActivePreviewSession() else {
             plugin.logger.info("Shake preview menu ignored because no preview session is active")
-            return
+            return false
         }
 
         let appName = Bundle.main.infoDictionary?["CFBundleDisplayName"] as? String ?? "App"
@@ -96,7 +112,7 @@ extension UIWindow {
         if plugin.shakeChannelSelectorEnabled {
             alertShake.addAction(UIAlertAction(title: "Switch channel", style: .default) { _ in
                 let showSelector = {
-                    self.showChannelSelector(plugin: plugin, bridge: bridge)
+                    _ = self.showChannelSelector(plugin: plugin, bridge: bridge)
                 }
 
                 if let presenter = alertShake.presentingViewController {
@@ -110,10 +126,9 @@ extension UIWindow {
         alertShake.addAction(UIAlertAction(title: cancelButtonTitle, style: .default))
 
         DispatchQueue.main.async {
-            if let topVC = UIApplication.topViewController() {
-                topVC.present(alertShake, animated: true)
-            }
+            topVC.present(alertShake, animated: true)
         }
+        return true
     }
 
     private func showConfiguredDefaultMenu(plugin: CapacitorUpdaterPlugin, bridge: CAPBridgeProtocol) {
@@ -179,12 +194,15 @@ extension UIWindow {
         }
     }
 
-    private func showChannelSelector(plugin: CapacitorUpdaterPlugin, bridge: CAPBridgeProtocol) {
+    @discardableResult
+    private func showChannelSelector(plugin: CapacitorUpdaterPlugin, bridge: CAPBridgeProtocol) -> Bool {
         // Prevent multiple alerts from showing
-        if let topVC = UIApplication.topViewController(),
-           topVC.isKind(of: UIAlertController.self) {
+        guard let topVC = UIApplication.topViewController() else {
+            return false
+        }
+        if topVC.isKind(of: UIAlertController.self) {
             plugin.logger.info("UIAlertController is already presented")
-            return
+            return false
         }
 
         let updater = plugin.implementation
@@ -208,28 +226,27 @@ extension UIWindow {
         })
 
         DispatchQueue.main.async {
-            if let topVC = UIApplication.topViewController() {
-                topVC.present(loadingAlert, animated: true) {
-                    // Fetch channels in background
-                    DispatchQueue.global(qos: .userInitiated).async {
-                        let result = updater.listChannels()
+            topVC.present(loadingAlert, animated: true) {
+                // Fetch channels in background
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let result = updater.listChannels()
 
-                        DispatchQueue.main.async {
-                            loadingAlert.dismiss(animated: true) {
-                                guard !didCancel else { return }
-                                if !result.error.isEmpty {
-                                    self.showError(message: "Failed to load channels: \(result.error)", plugin: plugin)
-                                } else if result.channels.isEmpty {
-                                    self.showError(message: "No channels available for self-assignment", plugin: plugin)
-                                } else {
-                                    self.presentChannelPicker(channels: result.channels, plugin: plugin, bridge: bridge)
-                                }
+                    DispatchQueue.main.async {
+                        loadingAlert.dismiss(animated: true) {
+                            guard !didCancel else { return }
+                            if !result.error.isEmpty {
+                                self.showError(message: "Failed to load channels: \(result.error)", plugin: plugin)
+                            } else if result.channels.isEmpty {
+                                self.showError(message: "No channels available for self-assignment", plugin: plugin)
+                            } else {
+                                self.presentChannelPicker(channels: result.channels, plugin: plugin, bridge: bridge)
                             }
                         }
                     }
                 }
             }
         }
+        return true
     }
 
     private func presentChannelPicker(channels: [[String: Any]], plugin: CapacitorUpdaterPlugin, bridge: CAPBridgeProtocol) {
