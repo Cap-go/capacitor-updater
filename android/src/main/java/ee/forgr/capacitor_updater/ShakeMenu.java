@@ -24,7 +24,7 @@ import java.util.List;
 import java.util.Map;
 import org.json.JSONArray;
 
-public class ShakeMenu implements ShakeDetector.Listener {
+public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetector.Listener {
 
     private interface PreviewMenuAction {
         boolean run();
@@ -33,28 +33,46 @@ public class ShakeMenu implements ShakeDetector.Listener {
     private CapacitorUpdaterPlugin plugin;
     private BridgeActivity activity;
     private ShakeDetector shakeDetector;
+    private ThreeFingerPinchDetector pinchDetector;
     private boolean isShowing = false;
     private Logger logger;
 
-    public ShakeMenu(CapacitorUpdaterPlugin plugin, BridgeActivity activity, Logger logger) {
+    public ShakeMenu(CapacitorUpdaterPlugin plugin, BridgeActivity activity, Logger logger, String gesture) {
         this.plugin = plugin;
         this.activity = activity;
         this.logger = logger;
 
-        SensorManager sensorManager = (SensorManager) activity.getSystemService(Activity.SENSOR_SERVICE);
-        this.shakeDetector = new ShakeDetector(this);
-        this.shakeDetector.start(sensorManager);
+        if (CapacitorUpdaterPlugin.SHAKE_MENU_GESTURE_THREE_FINGER_PINCH.equals(gesture)) {
+            this.pinchDetector = new ThreeFingerPinchDetector(this, logger);
+            this.pinchDetector.start(activity);
+        } else {
+            SensorManager sensorManager = (SensorManager) activity.getSystemService(Activity.SENSOR_SERVICE);
+            this.shakeDetector = new ShakeDetector(this);
+            this.shakeDetector.start(sensorManager);
+        }
     }
 
     public void stop() {
         if (shakeDetector != null) {
             shakeDetector.stop();
         }
+        if (pinchDetector != null) {
+            pinchDetector.stop();
+        }
     }
 
     @Override
     public void onShakeDetected() {
-        logger.info("Shake detected");
+        onMenuGestureDetected("Shake");
+    }
+
+    @Override
+    public void onThreeFingerPinchDetected() {
+        onMenuGestureDetected("Three finger pinch");
+    }
+
+    private void onMenuGestureDetected(String gestureName) {
+        logger.info(gestureName + " detected");
 
         boolean canShowPreviewMenu = Boolean.TRUE.equals(plugin.shakeMenuEnabled) && plugin.hasActivePreviewSession();
         boolean canShowChannelSelector = Boolean.TRUE.equals(plugin.shakeChannelSelectorEnabled);

@@ -79,6 +79,9 @@ import org.json.JSONObject;
 @CapacitorPlugin(name = "CapacitorUpdater")
 public class CapacitorUpdaterPlugin extends Plugin {
 
+    static final String SHAKE_MENU_GESTURE_SHAKE = "shake";
+    static final String SHAKE_MENU_GESTURE_THREE_FINGER_PINCH = "threeFingerPinch";
+
     private static final String AUTO_UPDATE_MODE_OFF = "off";
     private static final String AUTO_UPDATE_MODE_BACKGROUND = "atBackground";
     private static final String AUTO_UPDATE_MODE_INSTALL = "atInstall";
@@ -160,6 +163,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private volatile boolean onLaunchDirectUpdateUsed = false;
     Boolean shakeMenuEnabled = false;
     Boolean shakeChannelSelectorEnabled = false;
+    String shakeMenuGesture = SHAKE_MENU_GESTURE_SHAKE;
     volatile Boolean previewSessionEnabled = false;
     private Boolean previewSessionAlertPending = false;
     private volatile Boolean isLeavingPreviewForIncomingLink = false;
@@ -526,6 +530,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.implementation.timeout = this.getConfig().getInt("responseTimeout", 20) * 1000;
         this.shakeMenuEnabled = this.getConfig().getBoolean("shakeMenu", false);
         this.shakeChannelSelectorEnabled = this.getConfig().getBoolean("allowShakeChannelSelector", false);
+        this.shakeMenuGesture = normalizedShakeMenuGesture(this.getConfig().getString("shakeMenuGesture", SHAKE_MENU_GESTURE_SHAKE));
         this.previewSessionEnabled = Boolean.TRUE.equals(this.allowPreview) && this.prefs.getBoolean(PREVIEW_SESSION_PREF_KEY, false);
         if (!Boolean.TRUE.equals(this.allowPreview) && this.prefs.getBoolean(PREVIEW_SESSION_PREF_KEY, false)) {
             this.clearPreviewSessionBecauseDisabled();
@@ -1502,6 +1507,28 @@ public class CapacitorUpdaterPlugin extends Plugin {
             default:
                 return AUTO_UPDATE_MODE_BACKGROUND;
         }
+    }
+
+    static String normalizedShakeMenuGesture(final String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return SHAKE_MENU_GESTURE_SHAKE;
+        }
+        final String normalized = value.trim();
+        if (SHAKE_MENU_GESTURE_THREE_FINGER_PINCH.equals(normalized)) {
+            return SHAKE_MENU_GESTURE_THREE_FINGER_PINCH;
+        }
+        return SHAKE_MENU_GESTURE_SHAKE;
+    }
+
+    static boolean isSupportedShakeMenuGesture(final String value) {
+        if (value == null) {
+            return true;
+        }
+        final String normalized = value.trim();
+        if (normalized.isEmpty()) {
+            return false;
+        }
+        return SHAKE_MENU_GESTURE_SHAKE.equals(normalized) || SHAKE_MENU_GESTURE_THREE_FINGER_PINCH.equals(normalized);
     }
 
     static String autoUpdateModeForLegacyDirectUpdateMode(final String directUpdateMode) {
@@ -2736,6 +2763,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.hidePreviewTransitionLoader("preview-session-disabled");
         this.shakeMenuEnabled = this.getConfig().getBoolean("shakeMenu", false);
         this.shakeChannelSelectorEnabled = this.getConfig().getBoolean("allowShakeChannelSelector", false);
+        this.shakeMenuGesture = normalizedShakeMenuGesture(this.getConfig().getString("shakeMenuGesture", SHAKE_MENU_GESTURE_SHAKE));
         this.syncShakeMenuLifecycle();
         this.clearPreviewSessionPreferences();
     }
@@ -2959,6 +2987,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.implementation.previewSession = false;
         this.shakeMenuEnabled = this.getConfig().getBoolean("shakeMenu", false);
         this.shakeChannelSelectorEnabled = this.getConfig().getBoolean("allowShakeChannelSelector", false);
+        this.shakeMenuGesture = normalizedShakeMenuGesture(this.getConfig().getString("shakeMenuGesture", SHAKE_MENU_GESTURE_SHAKE));
         this.syncShakeMenuLifecycle();
         this.restorePreviewPreviousAppId();
         this.restorePreviewPreviousDefaultChannel();
@@ -2982,12 +3011,24 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private void ensureShakeMenuStarted() {
         if (getActivity() instanceof com.getcapacitor.BridgeActivity && shakeMenu == null) {
             try {
-                shakeMenu = new ShakeMenu(this, (com.getcapacitor.BridgeActivity) getActivity(), logger);
-                logger.info("Shake menu initialized");
+                shakeMenu = new ShakeMenu(this, (com.getcapacitor.BridgeActivity) getActivity(), logger, this.shakeMenuGesture);
+                logger.info("Shake menu initialized with " + this.shakeMenuGesture + " gesture");
             } catch (Exception e) {
                 logger.error("Failed to initialize shake menu: " + e.getMessage());
             }
         }
+    }
+
+    private void restartShakeMenuListener() {
+        if (shakeMenu != null) {
+            try {
+                shakeMenu.stop();
+            } catch (Exception e) {
+                logger.error("Failed to restart shake menu listener: " + e.getMessage());
+            }
+            shakeMenu = null;
+        }
+        this.syncShakeMenuLifecycle();
     }
 
     private void syncShakeMenuLifecycle() {
@@ -4423,10 +4464,29 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return;
         }
 
-        this.shakeMenuEnabled = enabled;
-        logger.info("Shake menu " + (enabled ? "enabled" : "disabled"));
+        final String gesture = call.getString("gesture", null);
+        final boolean gestureChanged;
+        if (gesture != null) {
+            if (!isSupportedShakeMenuGesture(gesture)) {
+                logger.error("Unsupported shake menu gesture: " + gesture);
+                call.reject("Unsupported shake menu gesture. Use \"shake\" or \"threeFingerPinch\".");
+                return;
+            }
+            final String normalizedGesture = normalizedShakeMenuGesture(gesture);
+            gestureChanged = !normalizedGesture.equals(this.shakeMenuGesture);
+            this.shakeMenuGesture = normalizedGesture;
+        } else {
+            gestureChanged = false;
+        }
 
-        this.syncShakeMenuLifecycle();
+        this.shakeMenuEnabled = enabled;
+        logger.info("Shake menu " + (enabled ? "enabled" : "disabled") + " with " + this.shakeMenuGesture + " gesture");
+
+        if (gestureChanged) {
+            this.restartShakeMenuListener();
+        } else {
+            this.syncShakeMenuLifecycle();
+        }
 
         call.resolve();
     }
@@ -4436,6 +4496,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         try {
             final JSObject ret = new JSObject();
             ret.put("enabled", this.shakeMenuEnabled);
+            ret.put("gesture", this.shakeMenuGesture);
             call.resolve(ret);
         } catch (final Exception e) {
             logger.error("Could not get shake menu status " + e.getMessage());

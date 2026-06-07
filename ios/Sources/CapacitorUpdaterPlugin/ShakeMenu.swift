@@ -9,6 +9,7 @@ import Capacitor
 
 private var lastShakeMenuShownAt: TimeInterval = 0
 private let shakeMenuCooldownSeconds: TimeInterval = 1.2
+private let threeFingerPinchScaleDelta: CGFloat = 0.30
 
 extension UIApplication {
     // swiftlint:disable:next line_length
@@ -26,42 +27,124 @@ extension UIApplication {
     }
 }
 
+extension CapacitorUpdaterPlugin: UIGestureRecognizerDelegate {
+    func syncShakeMenuGestureRecognizer() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+
+            let shouldInstall = self.shakeMenuGesture == Self.shakeMenuGestureThreeFingerPinch &&
+                (self.shakeMenuEnabled || self.shakeChannelSelectorEnabled)
+
+            guard shouldInstall, let targetView = self.bridge?.webView ?? self.bridge?.viewController?.view else {
+                self.removeShakeMenuGestureRecognizer()
+                return
+            }
+
+            if self.shakeMenuPinchGestureRecognizer?.view === targetView {
+                return
+            }
+
+            self.removeShakeMenuGestureRecognizer()
+
+            let recognizer = UIPinchGestureRecognizer(target: self, action: #selector(self.handleShakeMenuPinch(_:)))
+            recognizer.cancelsTouchesInView = false
+            recognizer.delaysTouchesBegan = false
+            recognizer.delaysTouchesEnded = false
+            recognizer.delegate = self
+            targetView.addGestureRecognizer(recognizer)
+            self.shakeMenuPinchGestureRecognizer = recognizer
+            self.logger.info("Three finger pinch menu gesture initialized")
+        }
+    }
+
+    func removeShakeMenuGestureRecognizer() {
+        if let recognizer = self.shakeMenuPinchGestureRecognizer {
+            recognizer.view?.removeGestureRecognizer(recognizer)
+            self.shakeMenuPinchGestureRecognizer = nil
+            self.shakeMenuPinchGestureTriggered = false
+            self.logger.info("Three finger pinch menu gesture stopped")
+        }
+    }
+
+    @objc func handleShakeMenuPinch(_ recognizer: UIPinchGestureRecognizer) {
+        if recognizer.state == .ended || recognizer.state == .cancelled || recognizer.state == .failed {
+            self.shakeMenuPinchGestureTriggered = false
+            return
+        }
+        guard recognizer.state == .changed, !self.shakeMenuPinchGestureTriggered, recognizer.numberOfTouches == 3 else {
+            return
+        }
+        guard abs(recognizer.scale - 1) >= threeFingerPinchScaleDelta else {
+            return
+        }
+        guard self.shakeMenuGesture == Self.shakeMenuGestureThreeFingerPinch, let bridge = self.bridge else {
+            return
+        }
+        guard let window = recognizer.view?.window ?? bridge.viewController?.view.window else {
+            return
+        }
+
+        self.shakeMenuPinchGestureTriggered = true
+        _ = window.showCapacitorUpdaterMenu(plugin: self, bridge: bridge, gestureName: "Three finger pinch")
+    }
+
+    public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        if gestureRecognizer === self.shakeMenuPinchGestureRecognizer {
+            self.shakeMenuPinchGestureTriggered = false
+        }
+        return true
+    }
+
+    public func gestureRecognizer(
+        _: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith _: UIGestureRecognizer
+    ) -> Bool {
+        true
+    }
+}
+
 extension UIWindow {
     override open func motionEnded(_ motion: UIEvent.EventSubtype, with event: UIEvent?) {
         if motion == .motionShake {
-            // Find the CapacitorUpdaterPlugin instance
             guard let bridgeViewController = rootViewController as? CAPBridgeViewController,
                   let bridge = bridgeViewController.bridge,
                   let plugin = bridge.plugin(withName: "CapacitorUpdater") as? CapacitorUpdaterPlugin else {
                 return
             }
-
-            let canShowPreviewMenu = plugin.shakeMenuEnabled && plugin.hasActivePreviewSession()
-            let canShowChannelSelector = plugin.shakeChannelSelectorEnabled
-
-            if !canShowPreviewMenu && !canShowChannelSelector {
-                if plugin.shakeMenuEnabled {
-                    plugin.logger.info("Shake preview menu ignored because no preview session is active")
-                }
+            guard plugin.shakeMenuGesture == CapacitorUpdaterPlugin.shakeMenuGestureShake else {
                 return
             }
 
-            let now = Date().timeIntervalSince1970
-            guard now - lastShakeMenuShownAt >= shakeMenuCooldownSeconds else {
-                plugin.logger.info("Shake menu ignored because cooldown is active")
-                return
-            }
-
-            if canShowPreviewMenu {
-                if showDefaultMenu(plugin: plugin, bridge: bridge) {
-                    lastShakeMenuShownAt = now
-                }
-            } else {
-                if showChannelSelector(plugin: plugin, bridge: bridge) {
-                    lastShakeMenuShownAt = now
-                }
-            }
+            _ = showCapacitorUpdaterMenu(plugin: plugin, bridge: bridge, gestureName: "Shake")
         }
+    }
+
+    @discardableResult
+    fileprivate func showCapacitorUpdaterMenu(plugin: CapacitorUpdaterPlugin, bridge: CAPBridgeProtocol, gestureName: String) -> Bool {
+        let canShowPreviewMenu = plugin.shakeMenuEnabled && plugin.hasActivePreviewSession()
+        let canShowChannelSelector = plugin.shakeChannelSelectorEnabled
+
+        if !canShowPreviewMenu && !canShowChannelSelector {
+            if plugin.shakeMenuEnabled {
+                plugin.logger.info("\(gestureName) preview menu ignored because no preview session is active")
+            }
+            return false
+        }
+
+        let now = Date().timeIntervalSince1970
+        guard now - lastShakeMenuShownAt >= shakeMenuCooldownSeconds else {
+            plugin.logger.info("\(gestureName) menu ignored because cooldown is active")
+            return false
+        }
+
+        let didShow = canShowPreviewMenu
+            ? showDefaultMenu(plugin: plugin, bridge: bridge)
+            : showChannelSelector(plugin: plugin, bridge: bridge)
+
+        if didShow {
+            lastShakeMenuShownAt = now
+        }
+        return didShow
     }
 
     @discardableResult

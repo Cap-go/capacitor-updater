@@ -252,7 +252,7 @@ export class CapacitorUpdaterWeb extends WebPlugin implements CapacitorUpdaterPl
   }
 
   async isShakeMenuEnabled(): Promise<ShakeMenuEnabled> {
-    return Promise.resolve({ enabled: false });
+    return Promise.resolve({ enabled: false, gesture: 'shake' });
   }
 
   async setShakeChannelSelector(_options: SetShakeChannelSelectorOptions): Promise<void> {

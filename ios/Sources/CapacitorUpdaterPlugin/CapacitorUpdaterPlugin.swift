@@ -89,6 +89,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     static let autoUpdateModeLaunch = "onLaunch"
     static let autoUpdateModeAlways = "always"
     static let autoUpdateModeOnlyDownload = "onlyDownload"
+    static let shakeMenuGestureShake = "shake"
+    static let shakeMenuGestureThreeFingerPinch = "threeFingerPinch"
     private static let previewLoaderTimeoutMs = 60000
     private let keepUrlPathFlagKey = "__capgo_keep_url_path_after_reload"
     private let customIdDefaultsKey = "CapacitorUpdater.customId"
@@ -167,6 +169,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var webViewStatsReporter: WebViewStatsReporter?
     public var shakeMenuEnabled = false
     public var shakeChannelSelectorEnabled = false
+    public var shakeMenuGesture = CapacitorUpdaterPlugin.shakeMenuGestureShake
+    var shakeMenuPinchGestureRecognizer: UIPinchGestureRecognizer?
+    var shakeMenuPinchGestureTriggered = false
     public var previewSessionEnabled = false
     private var previewSessionAlertPending = false
     private var isLeavingPreviewForIncomingLink = false
@@ -241,6 +246,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
         shakeMenuEnabled = getConfig().getBoolean("shakeMenu", false)
         shakeChannelSelectorEnabled = getConfig().getBoolean("allowShakeChannelSelector", false)
+        shakeMenuGesture = Self.normalizedShakeMenuGesture(getConfig().getString("shakeMenuGesture", Self.shakeMenuGestureShake))
         let storedPreviewSessionEnabled = UserDefaults.standard.bool(forKey: previewSessionDefaultsKey)
         let shouldClearPreviewSessionBecauseDisabled = !allowPreview && storedPreviewSessionEnabled
         previewSessionEnabled = allowPreview && storedPreviewSessionEnabled
@@ -251,6 +257,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             shakeChannelSelectorEnabled = UserDefaults.standard.object(forKey: previewPreviousShakeChannelSelectorDefaultsKey) as? Bool
                 ?? shakeChannelSelectorEnabled
         }
+        syncShakeMenuGestureRecognizer()
         periodCheckDelay = Self.normalizedPeriodCheckDelaySeconds(getConfig().getInt("periodCheckDelay", 0))
 
         implementation.setPublicKey(getConfig().getString("publicKey") ?? "")
@@ -1212,6 +1219,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.previewSessionAlertPending = true
         self.implementation.previewSession = true
         self.shakeMenuEnabled = true
+        self.syncShakeMenuGestureRecognizer()
         UserDefaults.standard.set(true, forKey: self.previewSessionDefaultsKey)
         UserDefaults.standard.set(true, forKey: self.previewSessionAlertPendingDefaultsKey)
         UserDefaults.standard.synchronize()
@@ -1398,6 +1406,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         self.shakeMenuEnabled = previousShakeMenuEnabled
         self.shakeChannelSelectorEnabled = previousShakeChannelSelectorEnabled
+        self.syncShakeMenuGestureRecognizer()
         _ = self.implementation.setPreviewFallbackBundle(fallback: nil)
         self.clearPreviewSessionPreferences()
         logger.info("Preview session ended")
@@ -1421,6 +1430,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.hidePreviewTransitionLoader(reason: "preview-session-disabled")
         self.shakeMenuEnabled = self.getBooleanConfig("shakeMenu", defaultValue: false)
         self.shakeChannelSelectorEnabled = self.getBooleanConfig("allowShakeChannelSelector", defaultValue: false)
+        self.shakeMenuGesture = Self.normalizedShakeMenuGesture(self.getStringConfig("shakeMenuGesture", defaultValue: Self.shakeMenuGestureShake))
+        self.syncShakeMenuGestureRecognizer()
         self.clearPreviewSessionPreferences()
     }
 
@@ -1652,6 +1663,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.implementation.previewSession = false
         self.shakeMenuEnabled = self.getBooleanConfig("shakeMenu", defaultValue: false)
         self.shakeChannelSelectorEnabled = self.getBooleanConfig("allowShakeChannelSelector", defaultValue: false)
+        self.shakeMenuGesture = Self.normalizedShakeMenuGesture(self.getStringConfig("shakeMenuGesture", defaultValue: Self.shakeMenuGestureShake))
+        self.syncShakeMenuGestureRecognizer()
         self.restorePreviewPreviousAppId()
         self.restorePreviewPreviousDefaultChannel()
         _ = self.implementation.setPreviewFallbackBundle(fallback: nil)
@@ -2765,6 +2778,28 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    static func normalizedShakeMenuGesture(_ value: String?) -> String {
+        guard let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return shakeMenuGestureShake
+        }
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalized == shakeMenuGestureThreeFingerPinch {
+            return shakeMenuGestureThreeFingerPinch
+        }
+        return shakeMenuGestureShake
+    }
+
+    static func isSupportedShakeMenuGesture(_ value: String?) -> Bool {
+        guard let value else {
+            return true
+        }
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalized.isEmpty {
+            return false
+        }
+        return normalized == shakeMenuGestureShake || normalized == shakeMenuGestureThreeFingerPinch
+    }
+
     static func autoUpdateModeForLegacyDirectUpdateMode(_ directUpdateMode: String) -> String {
         switch directUpdateMode {
         case autoUpdateModeInstall, autoUpdateModeLaunch, autoUpdateModeAlways:
@@ -3485,14 +3520,25 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
+        if let gesture = call.getString("gesture") {
+            guard Self.isSupportedShakeMenuGesture(gesture) else {
+                logger.error("Unsupported shake menu gesture: \(gesture)")
+                call.reject("Unsupported shake menu gesture. Use \"shake\" or \"threeFingerPinch\".")
+                return
+            }
+            self.shakeMenuGesture = Self.normalizedShakeMenuGesture(gesture)
+        }
+
         self.shakeMenuEnabled = enabled
-        logger.info("Shake menu \(enabled ? "enabled" : "disabled")")
+        self.syncShakeMenuGestureRecognizer()
+        logger.info("Shake menu \(enabled ? "enabled" : "disabled") with \(self.shakeMenuGesture) gesture")
         call.resolve()
     }
 
     @objc func isShakeMenuEnabled(_ call: CAPPluginCall) {
         call.resolve([
-            "enabled": self.shakeMenuEnabled
+            "enabled": self.shakeMenuEnabled,
+            "gesture": self.shakeMenuGesture
         ])
     }
 
@@ -3504,6 +3550,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         self.shakeChannelSelectorEnabled = enabled
+        self.syncShakeMenuGestureRecognizer()
         logger.info("Shake channel selector \(enabled ? "enabled" : "disabled")")
         call.resolve()
     }
