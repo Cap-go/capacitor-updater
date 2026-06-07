@@ -1408,8 +1408,7 @@ export interface CapacitorUpdaterPlugin {
    * **Important:** Disable this in production builds or only enable for internal testers.
    *
    * This can also be configured via {@link PluginsConfig.CapacitorUpdater.shakeMenu}.
-   * The native gesture can be configured via {@link PluginsConfig.CapacitorUpdater.shakeMenuGesture}
-   * or `options.gesture`.
+   * The native gesture is configured via {@link PluginsConfig.CapacitorUpdater.shakeMenuGesture}.
    *
    * @param options {@link SetShakeMenuOptions} with `enabled: true` to enable or `enabled: false` to disable.
    * @returns {Promise<void>} Resolves when the setting is applied.
@@ -1443,8 +1442,7 @@ export interface CapacitorUpdaterPlugin {
    * both preview actions and channel switching.
    *
    * This can also be configured via {@link PluginsConfig.CapacitorUpdater.allowShakeChannelSelector}.
-   * The native gesture can be configured via {@link PluginsConfig.CapacitorUpdater.shakeMenuGesture}
-   * or {@link setShakeMenu}.
+   * The native gesture is configured via {@link PluginsConfig.CapacitorUpdater.shakeMenuGesture}.
    *
    * @param options {@link SetShakeChannelSelectorOptions} with `enabled: true` to enable or `enabled: false` to disable.
    * @returns {Promise<void>} Resolves when the setting is applied.
@@ -2312,12 +2310,6 @@ export type ShakeMenuGesture = 'shake' | 'threeFingerPinch';
 
 export interface SetShakeMenuOptions {
   enabled: boolean;
-  /**
-   * Native gesture used to open the preview/channel menu.
-   *
-   * @default 'shake'
-   */
-  gesture?: ShakeMenuGesture;
 }
 
 export interface ShakeMenuEnabled {

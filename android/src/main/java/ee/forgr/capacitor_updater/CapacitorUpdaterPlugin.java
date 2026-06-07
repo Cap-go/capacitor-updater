@@ -3019,18 +3019,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
-    private void restartShakeMenuListener() {
-        if (shakeMenu != null) {
-            try {
-                shakeMenu.stop();
-            } catch (Exception e) {
-                logger.error("Failed to restart shake menu listener: " + e.getMessage());
-            }
-            shakeMenu = null;
-        }
-        this.syncShakeMenuLifecycle();
-    }
-
     private void syncShakeMenuLifecycle() {
         if (this.shouldListenForShake()) {
             this.ensureShakeMenuStarted();
@@ -4464,29 +4452,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return;
         }
 
-        final String gesture = call.getString("gesture", null);
-        final boolean gestureChanged;
-        if (gesture != null) {
-            if (!isSupportedShakeMenuGesture(gesture)) {
-                logger.error("Unsupported shake menu gesture: " + gesture);
-                call.reject("Unsupported shake menu gesture. Use \"shake\" or \"threeFingerPinch\".");
-                return;
-            }
-            final String normalizedGesture = normalizedShakeMenuGesture(gesture);
-            gestureChanged = !normalizedGesture.equals(this.shakeMenuGesture);
-            this.shakeMenuGesture = normalizedGesture;
-        } else {
-            gestureChanged = false;
-        }
-
         this.shakeMenuEnabled = enabled;
         logger.info("Shake menu " + (enabled ? "enabled" : "disabled") + " with " + this.shakeMenuGesture + " gesture");
-
-        if (gestureChanged) {
-            this.restartShakeMenuListener();
-        } else {
-            this.syncShakeMenuLifecycle();
-        }
+        this.syncShakeMenuLifecycle();
 
         call.resolve();
     }

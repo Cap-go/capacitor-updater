@@ -1793,8 +1793,7 @@ shown outside preview sessions when {@link PluginsConfig.CapacitorUpdater.allowS
 **Important:** Disable this in production builds or only enable for internal testers.
 
 This can also be configured via {@link PluginsConfig.CapacitorUpdater.shakeMenu}.
-The native gesture can be configured via {@link PluginsConfig.CapacitorUpdater.shakeMenuGesture}
-or `options.gesture`.
+The native gesture is configured via {@link PluginsConfig.CapacitorUpdater.shakeMenuGesture}.
 
 **Parameters**
 
@@ -1855,8 +1854,7 @@ If {@link setShakeMenu} is also enabled while a preview session is active, the s
 both preview actions and channel switching.
 
 This can also be configured via {@link PluginsConfig.CapacitorUpdater.allowShakeChannelSelector}.
-The native gesture can be configured via {@link PluginsConfig.CapacitorUpdater.shakeMenuGesture}
-or {@link setShakeMenu}.
+The native gesture is configured via {@link PluginsConfig.CapacitorUpdater.shakeMenuGesture}.
 
 **Parameters**
 

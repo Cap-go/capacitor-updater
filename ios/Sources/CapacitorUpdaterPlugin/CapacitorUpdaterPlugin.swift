@@ -3520,15 +3520,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
-        if let gesture = call.getString("gesture") {
-            guard Self.isSupportedShakeMenuGesture(gesture) else {
-                logger.error("Unsupported shake menu gesture: \(gesture)")
-                call.reject("Unsupported shake menu gesture. Use \"shake\" or \"threeFingerPinch\".")
-                return
-            }
-            self.shakeMenuGesture = Self.normalizedShakeMenuGesture(gesture)
-        }
-
         self.shakeMenuEnabled = enabled
         self.syncShakeMenuGestureRecognizer()
         logger.info("Shake menu \(enabled ? "enabled" : "disabled") with \(self.shakeMenuGesture) gesture")
