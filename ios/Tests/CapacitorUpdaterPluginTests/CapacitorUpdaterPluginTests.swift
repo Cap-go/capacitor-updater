@@ -161,6 +161,7 @@ private final class ResetTrackingCapgoUpdater: CapgoUpdater {
     var setResult = true
     var canSetCalls = 0
     var setCalls = 0
+    var listedBundles: [BundleInfo] = []
     var stagePendingReloadResult = true
     var stagePendingReloadCalls = 0
     var stagePreviewFallbackReloadResult = true
@@ -182,12 +183,20 @@ private final class ResetTrackingCapgoUpdater: CapgoUpdater {
         currentBundleValue
     }
 
+    override func getCurrentBundleId() -> String {
+        currentBundleValue.getId()
+    }
+
     override func getFallbackBundle() -> BundleInfo {
         fallbackBundleValue
     }
 
     override func getNextBundle() -> BundleInfo? {
         nextBundleValue
+    }
+
+    override func list(raw: Bool = false) -> [BundleInfo] {
+        listedBundles
     }
 
     override func getPreviewFallbackBundle() -> BundleInfo? {
@@ -1144,6 +1153,72 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(resetImplementation.restoreResetStateCalls, 0)
         XCTAssertNil(resetImplementation.lastPreviewFallbackBundle)
         XCTAssertGreaterThan(resetImplementation.setPreviewFallbackBundleCalls, 0)
+    }
+
+    func testPreviewMenuListsStoredPreviewsAndCleansMissingBundles() throws {
+        let previewsKey = "CapacitorUpdater.previewSessions"
+        UserDefaults.standard.removeObject(forKey: previewsKey)
+        defer {
+            UserDefaults.standard.removeObject(forKey: previewsKey)
+        }
+
+        let previewPlugin = TestableCapacitorUpdaterPlugin()
+        let previewImplementation = ResetTrackingCapgoUpdater()
+        let current = BundleInfo(
+            id: "preview-current",
+            version: "2.0.0",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "current"
+        )
+        let other = BundleInfo(
+            id: "preview-other",
+            version: "1.5.0",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "other"
+        )
+
+        previewImplementation.currentBundleValue = current
+        previewImplementation.listedBundles = [current, other]
+        previewPlugin.implementation = previewImplementation
+        previewPlugin.previewSessionEnabled = true
+
+        UserDefaults.standard.set([
+            "preview-current": [
+                "name": "Current preview",
+                "source": "qr",
+                "createdAt": "2026-01-01T00:00:00.000Z",
+                "updatedAt": "2026-01-02T00:00:00.000Z",
+                "lastUsedAt": "2026-01-03T00:00:00.000Z"
+            ],
+            "preview-other": [
+                "name": "Other preview",
+                "createdAt": "2026-01-01T00:00:00.000Z",
+                "updatedAt": "2026-01-01T00:00:00.000Z",
+                "lastUsedAt": "2026-01-02T00:00:00.000Z"
+            ],
+            "missing-preview": [
+                "name": "Missing preview",
+                "lastUsedAt": "2026-01-04T00:00:00.000Z"
+            ]
+        ], forKey: previewsKey)
+
+        let previews = previewPlugin.previewMenuPreviews()
+
+        XCTAssertEqual(previews.count, 2)
+        let first = try XCTUnwrap(previews.first)
+        XCTAssertEqual(first["id"] as? String, "preview-current")
+        XCTAssertEqual(first["name"] as? String, "Current preview")
+        XCTAssertEqual(first["source"] as? String, "qr")
+        XCTAssertEqual(first["isActive"] as? Bool, true)
+
+        let second = try XCTUnwrap(previews.dropFirst().first)
+        XCTAssertEqual(second["id"] as? String, "preview-other")
+        XCTAssertEqual(second["isActive"] as? Bool, false)
+
+        let savedSessions = try XCTUnwrap(UserDefaults.standard.dictionary(forKey: previewsKey))
+        XCTAssertNil(savedSessions["missing-preview"])
     }
 
     func testNormalizeShakeMenuGestureSupportsThreeFingerPinch() {

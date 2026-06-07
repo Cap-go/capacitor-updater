@@ -69,6 +69,12 @@ CapacitorUpdater can be configured with these options:
 - [`next`](#next)
 - [`set`](#set)
 - [`startPreviewSession`](#startpreviewsession)
+- [`listPreviews`](#listpreviews)
+- [`setPreview`](#setpreview)
+- [`resetPreview`](#resetpreview)
+- [`deletePreview`](#deletepreview)
+- [`checkPreviewUpdate`](#checkpreviewupdate)
+- [`updatePreview`](#updatepreview)
 - [`delete`](#delete)
 - [`setBundleError`](#setbundleerror)
 - [`list`](#list)
@@ -408,6 +414,9 @@ for update checks until the user leaves the preview. Native updater stats are
 skipped while the preview session is active.
 
 Use this before calling {@link set} for Expo Go-style preview flows.
+Use {@link listPreviews}, {@link setPreview}, {@link resetPreview},
+{@link deletePreview}, {@link checkPreviewUpdate}, and
+{@link updatePreview} to manage saved local previews.
 
 **Parameters**
 
@@ -420,6 +429,173 @@ Use this before calling {@link set} for Expo Go-style preview flows.
 `Promise<void>` — Resolves when preview session state is prepared.
 
 **Since:** 8.47.0
+
+
+--------------------
+
+
+### listPreviews
+
+```typescript
+listPreviews() => Promise<PreviewListResult>
+```
+
+Get every locally available preview bundle that was registered by
+{@link startPreviewSession} and later applied with {@link set}.
+
+This only returns previews whose bundles are still available locally. It is
+safe to show this in a preview switcher or native debug menu.
+
+**Returns**
+
+`Promise<PreviewListResult>` — Locally available previews and current preview state.
+
+**Since:** 8.49.0
+
+**Throws:** {Error} If preview sessions are not enabled by config.
+
+
+--------------------
+
+
+### setPreview
+
+```typescript
+setPreview(options: BundleId) => Promise<void>
+```
+
+Switch to a locally available preview bundle and reload the WebView.
+
+If the app is not already in a preview session, the current live bundle is
+saved as the fallback so {@link resetPreview} or the native shake menu can
+return to it later.
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `options` | `BundleId` | A {@link BundleId} object containing the preview bundle ID. |
+
+**Returns**
+
+`Promise<void>` — Resolves once the preview switch is staged.
+
+**Since:** 8.49.0
+
+**Throws:** {Error} If preview sessions are disabled or the preview is not available locally.
+
+
+--------------------
+
+
+### resetPreview
+
+```typescript
+resetPreview() => Promise<void>
+```
+
+Leave the active preview session and reload the saved live bundle.
+
+This does not delete any saved previews. Use {@link deletePreview} to remove
+a preview from local storage.
+
+**Returns**
+
+`Promise<void>` — Resolves once the live bundle reload is staged.
+
+**Since:** 8.49.0
+
+**Throws:** {Error} If there is no preview fallback bundle available.
+
+
+--------------------
+
+
+### deletePreview
+
+```typescript
+deletePreview(options: BundleId) => Promise<DeletePreviewResult>
+```
+
+Delete a locally saved preview and its bundle when possible.
+
+Active previews cannot be deleted until you switch away from them or call
+{@link resetPreview}. If only the preview metadata can be removed, the
+method still resolves with `deleted: false`.
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `options` | `BundleId` | A {@link BundleId} object containing the preview bundle ID. |
+
+**Returns**
+
+`Promise<DeletePreviewResult>` — Whether the underlying bundle was deleted.
+
+**Since:** 8.49.0
+
+**Throws:** {Error} If preview sessions are disabled.
+
+
+--------------------
+
+
+### checkPreviewUpdate
+
+```typescript
+checkPreviewUpdate(options: BundleId) => Promise<PreviewUpdateResult>
+```
+
+Check whether a saved preview's payload URL points to a newer preview bundle.
+
+Only previews started with a `payloadUrl` can be checked natively. Direct URL
+previews can still be switched or deleted locally, but the updater does not
+know where to check for newer versions.
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `options` | `BundleId` | A {@link BundleId} object containing the preview bundle ID. |
+
+**Returns**
+
+`Promise<PreviewUpdateResult>` — Update status for the preview.
+
+**Since:** 8.49.0
+
+**Throws:** {Error} If preview sessions are disabled or the preview has no payload URL.
+
+
+--------------------
+
+
+### updatePreview
+
+```typescript
+updatePreview(options: BundleId) => Promise<PreviewUpdateResult>
+```
+
+Download the newest bundle for a saved preview payload URL.
+
+If the preview being updated is active, the new bundle is applied and the
+WebView reloads. Otherwise, the saved preview entry is moved to the newly
+downloaded bundle and can be selected later with {@link setPreview}.
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `options` | `BundleId` | A {@link BundleId} object containing the preview bundle ID. |
+
+**Returns**
+
+`Promise<PreviewUpdateResult>` — The update result and saved preview metadata.
+
+**Since:** 8.49.0
+
+**Throws:** {Error} If preview sessions are disabled or the preview cannot be updated.
 
 
 --------------------

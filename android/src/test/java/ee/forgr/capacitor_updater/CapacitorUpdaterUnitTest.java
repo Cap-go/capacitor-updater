@@ -12,6 +12,7 @@ import android.webkit.WebView;
 import androidx.appcompat.app.AppCompatActivity;
 import com.getcapacitor.Bridge;
 import com.getcapacitor.CapConfig;
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginConfig;
@@ -496,6 +497,7 @@ public class CapacitorUpdaterUnitTest {
     private static final class ResetTrackingCapgoUpdater extends CapgoUpdater {
 
         private BundleInfo currentBundle = new BundleInfo("current-id", "1.0.0", BundleStatus.SUCCESS, new Date(), "abc123");
+        private final List<BundleInfo> listedBundles = new ArrayList<>();
         private BundleInfo fallbackBundle = new BundleInfo(
             BundleInfo.ID_BUILTIN,
             "builtin",
@@ -547,6 +549,11 @@ public class CapacitorUpdaterUnitTest {
         @Override
         public BundleInfo getNextBundle() {
             return this.nextBundle;
+        }
+
+        @Override
+        public List<BundleInfo> list(final boolean rawList) {
+            return this.listedBundles;
         }
 
         @Override
@@ -1822,6 +1829,73 @@ public class CapacitorUpdaterUnitTest {
             assertEquals(0, updater.restoreResetStateCalls);
             assertNull(updater.lastPreviewFallbackBundle);
             assertTrue(updater.setPreviewFallbackBundleCalls > 0);
+        }
+    }
+
+    @Test
+    public void testPreviewMenuListsStoredPreviewsAndCleansMissingBundles() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            final SharedPreferences prefs = mock(SharedPreferences.class);
+            final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+            final String previewsKey = "CapacitorUpdater.previewSessions";
+            final BundleInfo current = new BundleInfo("preview-current", "2.0.0", BundleStatus.SUCCESS, new Date(), "current");
+            final BundleInfo other = new BundleInfo("preview-other", "1.5.0", BundleStatus.SUCCESS, new Date(), "other");
+            final String sessions = new JSONObject()
+                .put(
+                    "preview-current",
+                    new JSONObject()
+                        .put("name", "Current preview")
+                        .put("source", "qr")
+                        .put("createdAt", "2026-01-01T00:00:00.000Z")
+                        .put("updatedAt", "2026-01-02T00:00:00.000Z")
+                        .put("lastUsedAt", "2026-01-03T00:00:00.000Z")
+                )
+                .put(
+                    "preview-other",
+                    new JSONObject()
+                        .put("name", "Other preview")
+                        .put("createdAt", "2026-01-01T00:00:00.000Z")
+                        .put("updatedAt", "2026-01-01T00:00:00.000Z")
+                        .put("lastUsedAt", "2026-01-02T00:00:00.000Z")
+                )
+                .put("missing-preview", new JSONObject().put("name", "Missing preview").put("lastUsedAt", "2026-01-04T00:00:00.000Z"))
+                .toString();
+
+            updater.currentBundle = current;
+            updater.listedBundles.add(current);
+            updater.listedBundles.add(other);
+            plugin.implementation = updater;
+            plugin.previewSessionEnabled = true;
+            plugin.setLoggerForTesting(mock(Logger.class));
+            setPrivateField(plugin, "prefs", prefs);
+            setPrivateField(plugin, "editor", editor);
+
+            when(prefs.getString(eq(previewsKey), nullable(String.class))).thenReturn(sessions);
+            when(editor.putString(eq(previewsKey), anyString())).thenReturn(editor);
+
+            final JSArray previews = plugin.previewMenuPreviews();
+
+            assertEquals(2, previews.length());
+            final JSONObject first = previews.getJSONObject(0);
+            assertEquals("preview-current", first.getString("id"));
+            assertEquals("Current preview", first.getString("name"));
+            assertEquals("qr", first.getString("source"));
+            assertTrue(first.getBoolean("isActive"));
+
+            final JSONObject second = previews.getJSONObject(1);
+            assertEquals("preview-other", second.getString("id"));
+            assertFalse(second.getBoolean("isActive"));
+
+            final ArgumentCaptor<String> cleanedSessions = ArgumentCaptor.forClass(String.class);
+            verify(editor).putString(eq(previewsKey), cleanedSessions.capture());
+            assertFalse(new JSONObject(cleanedSessions.getValue()).has("missing-preview"));
         }
     }
 

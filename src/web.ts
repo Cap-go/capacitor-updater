@@ -31,6 +31,9 @@ import type {
   MultiDelayConditions,
   OpenAppStoreOptions,
   PluginVersion,
+  DeletePreviewResult,
+  PreviewListResult,
+  PreviewUpdateResult,
   ResetOptions,
   SetChannelOptions,
   SetCustomIdOptions,
@@ -96,6 +99,36 @@ export class CapacitorUpdaterWeb extends WebPlugin implements CapacitorUpdaterPl
   async startPreviewSession(options?: StartPreviewSessionOptions): Promise<void> {
     console.warn('Cannot start preview session in web', options);
     return;
+  }
+
+  async listPreviews(): Promise<PreviewListResult> {
+    console.warn('Cannot list previews in web');
+    return { previews: [], currentBundle: BUNDLE_BUILTIN };
+  }
+
+  async setPreview(options: BundleId): Promise<void> {
+    console.warn('Cannot set preview in web', options);
+    return;
+  }
+
+  async resetPreview(): Promise<void> {
+    console.warn('Cannot reset preview in web');
+    return;
+  }
+
+  async deletePreview(options: BundleId): Promise<DeletePreviewResult> {
+    console.warn('Cannot delete preview in web', options);
+    return { removed: false, deleted: false };
+  }
+
+  async checkPreviewUpdate(options: BundleId): Promise<PreviewUpdateResult> {
+    console.warn('Cannot check preview update in web', options);
+    throw this.unimplemented('Preview updates are not available on web platform');
+  }
+
+  async updatePreview(options: BundleId): Promise<PreviewUpdateResult> {
+    console.warn('Cannot update preview in web', options);
+    throw this.unimplemented('Preview updates are not available on web platform');
   }
 
   async getDeviceId(): Promise<DeviceId> {
