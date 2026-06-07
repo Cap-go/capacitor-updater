@@ -16,6 +16,8 @@ cleanup_android_emulator() {
   fi
 }
 
-trap cleanup_android_emulator EXIT
+if [[ "${CAPGO_MAESTRO_CLEANUP_ANDROID_EMULATOR_ON_EXIT:-0}" == "1" ]]; then
+  trap cleanup_android_emulator EXIT
+fi
 
 "$(dirname "$0")/run-android-live-update.sh" "$@"
