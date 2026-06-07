@@ -1842,8 +1842,7 @@ shown outside preview sessions when {@link PluginsConfig.CapacitorUpdater.allowS
 **Important:** Disable this in production builds or only enable for internal testers.
 
 This can also be configured via {@link PluginsConfig.CapacitorUpdater.shakeMenu}.
-The native gesture can be configured via {@link PluginsConfig.CapacitorUpdater.shakeMenuGesture}
-or `options.gesture`.
+The native gesture is configured via {@link PluginsConfig.CapacitorUpdater.shakeMenuGesture}.
 
 | Param         | Type                                                                |
 | ------------- | ------------------------------------------------------------------- |
@@ -1890,8 +1889,7 @@ If {@link setShakeMenu} is also enabled while a preview session is active, the s
 both preview actions and channel switching.
 
 This can also be configured via {@link PluginsConfig.CapacitorUpdater.allowShakeChannelSelector}.
-The native gesture can be configured via {@link PluginsConfig.CapacitorUpdater.shakeMenuGesture}
-or {@link setShakeMenu}.
+The native gesture is configured via {@link PluginsConfig.CapacitorUpdater.shakeMenuGesture}.
 
 | Param         | Type                                                                                      |
 | ------------- | ----------------------------------------------------------------------------------------- |
@@ -2554,10 +2552,9 @@ State information for flexible update progress (Android only).
 
 ##### SetShakeMenuOptions
 
-| Prop          | Type                                                          | Description                                           | Default              |
-| ------------- | ------------------------------------------------------------- | ----------------------------------------------------- | -------------------- |
-| **`enabled`** | <code>boolean</code>                                          |                                                       |                      |
-| **`gesture`** | <code><a href="#shakemenugesture">ShakeMenuGesture</a></code> | Native gesture used to open the preview/channel menu. | <code>'shake'</code> |
+| Prop          | Type                 |
+| ------------- | -------------------- |
+| **`enabled`** | <code>boolean</code> |
 
 
 ##### ShakeMenuEnabled
