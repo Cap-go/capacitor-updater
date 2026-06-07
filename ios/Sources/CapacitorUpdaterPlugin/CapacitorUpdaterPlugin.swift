@@ -2790,10 +2790,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     static func isSupportedShakeMenuGesture(_ value: String?) -> Bool {
-        guard let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard let value else {
             return true
         }
         let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalized.isEmpty {
+            return false
+        }
         return normalized == shakeMenuGestureShake || normalized == shakeMenuGestureThreeFingerPinch
     }
 

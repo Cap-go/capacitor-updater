@@ -1521,10 +1521,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     static boolean isSupportedShakeMenuGesture(final String value) {
-        if (value == null || value.trim().isEmpty()) {
+        if (value == null) {
             return true;
         }
         final String normalized = value.trim();
+        if (normalized.isEmpty()) {
+            return false;
+        }
         return SHAKE_MENU_GESTURE_SHAKE.equals(normalized) || SHAKE_MENU_GESTURE_THREE_FINGER_PINCH.equals(normalized);
     }
 

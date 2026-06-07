@@ -1152,6 +1152,10 @@ class CapacitorUpdaterTests: XCTestCase {
             CapacitorUpdaterPlugin.shakeMenuGestureShake
         )
         XCTAssertEqual(
+            CapacitorUpdaterPlugin.normalizedShakeMenuGesture("shake"),
+            CapacitorUpdaterPlugin.shakeMenuGestureShake
+        )
+        XCTAssertEqual(
             CapacitorUpdaterPlugin.normalizedShakeMenuGesture("unknown"),
             CapacitorUpdaterPlugin.shakeMenuGestureShake
         )
@@ -1161,6 +1165,7 @@ class CapacitorUpdaterTests: XCTestCase {
         )
         XCTAssertTrue(CapacitorUpdaterPlugin.isSupportedShakeMenuGesture("shake"))
         XCTAssertTrue(CapacitorUpdaterPlugin.isSupportedShakeMenuGesture("threeFingerPinch"))
+        XCTAssertFalse(CapacitorUpdaterPlugin.isSupportedShakeMenuGesture(" "))
         XCTAssertFalse(CapacitorUpdaterPlugin.isSupportedShakeMenuGesture("pinch"))
     }
 

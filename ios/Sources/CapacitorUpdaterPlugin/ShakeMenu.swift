@@ -96,8 +96,8 @@ extension CapacitorUpdaterPlugin: UIGestureRecognizerDelegate {
     }
 
     public func gestureRecognizer(
-        _ gestureRecognizer: UIGestureRecognizer,
-        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+        _: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith _: UIGestureRecognizer
     ) -> Bool {
         true
     }

@@ -10,6 +10,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import com.getcapacitor.Bridge;
 import com.getcapacitor.BridgeActivity;
+import java.lang.reflect.Field;
 
 public class ThreeFingerPinchDetector implements View.OnTouchListener {
 
@@ -24,6 +25,8 @@ public class ThreeFingerPinchDetector implements View.OnTouchListener {
     private final Listener listener;
     private final Logger logger;
     private View targetView;
+    private View.OnTouchListener previousOnTouchListener;
+    private boolean touchListenerInstalled = false;
     private float initialSpan = 0;
     private boolean tracking = false;
     private boolean triggered = false;
@@ -35,6 +38,10 @@ public class ThreeFingerPinchDetector implements View.OnTouchListener {
     }
 
     public void start(BridgeActivity activity) {
+        if (targetView != null) {
+            stop();
+        }
+
         View view = null;
         Bridge bridge = activity.getBridge();
         if (bridge != null && bridge.getWebView() != null) {
@@ -49,19 +56,32 @@ public class ThreeFingerPinchDetector implements View.OnTouchListener {
         }
 
         this.targetView = view;
-        this.targetView.setOnTouchListener(this);
+        this.previousOnTouchListener = getCurrentOnTouchListener(view);
+        if (this.previousOnTouchListener != this) {
+            this.targetView.setOnTouchListener(this);
+            this.touchListenerInstalled = true;
+        }
     }
 
     public void stop() {
         if (targetView != null) {
-            targetView.setOnTouchListener(null);
+            View.OnTouchListener currentOnTouchListener = getCurrentOnTouchListener(targetView);
+            if (touchListenerInstalled && (currentOnTouchListener == this || currentOnTouchListener == null)) {
+                targetView.setOnTouchListener(previousOnTouchListener);
+            }
             targetView = null;
+            previousOnTouchListener = null;
+            touchListenerInstalled = false;
         }
         reset();
     }
 
     @Override
     public boolean onTouch(View view, MotionEvent event) {
+        if (previousOnTouchListener != null && previousOnTouchListener != this) {
+            previousOnTouchListener.onTouch(view, event);
+        }
+
         int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_CANCEL || action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_POINTER_UP) {
             reset();
@@ -118,6 +138,26 @@ public class ThreeFingerPinchDetector implements View.OnTouchListener {
             totalDistance += Math.sqrt(dx * dx + dy * dy);
         }
         return totalDistance / REQUIRED_POINTER_COUNT;
+    }
+
+    private View.OnTouchListener getCurrentOnTouchListener(View view) {
+        try {
+            Field listenerInfoField = View.class.getDeclaredField("mListenerInfo");
+            listenerInfoField.setAccessible(true);
+            Object listenerInfo = listenerInfoField.get(view);
+            if (listenerInfo == null) {
+                return null;
+            }
+            Field onTouchListenerField = listenerInfo.getClass().getDeclaredField("mOnTouchListener");
+            onTouchListenerField.setAccessible(true);
+            Object listener = onTouchListenerField.get(listenerInfo);
+            if (listener instanceof View.OnTouchListener) {
+                return (View.OnTouchListener) listener;
+            }
+        } catch (ReflectiveOperationException | RuntimeException exception) {
+            logger.warn("Three finger pinch detector could not inspect the current touch listener: " + exception.getMessage());
+        }
+        return null;
     }
 
     private void reset() {
