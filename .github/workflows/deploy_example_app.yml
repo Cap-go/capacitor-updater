@@ -16,20 +16,6 @@ on:
       comment:
         description: 'Optional release comment'
         required: false
-  push:
-    branches:
-      - main
-    paths:
-      - 'src/**'
-      - 'ios/**'
-      - 'android/**'
-      - 'example-app/**'
-      - 'scripts/deploy-example-capgo.mjs'
-      - 'package.json'
-      - 'bun.lock'
-      - 'rollup.config.mjs'
-      - 'tsconfig.json'
-
 permissions:
   contents: read
 
@@ -39,10 +25,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           ref: ${{ github.event.release.tag_name || github.ref }}
-          fetch-depth: 0
+          fetch-depth: 1
           filter: blob:none
           persist-credentials: false
 
@@ -79,6 +65,15 @@ jobs:
           comment="${INPUT_COMMENT:-}"
           release_tag="${RELEASE_TAG:-}"
           repo_name="${GITHUB_REPOSITORY##*/}"
+          base_bundle="$(bun -e "const fs = require('fs'); const root = JSON.parse(fs.readFileSync('package.json', 'utf8')); const example = JSON.parse(fs.readFileSync('example-app/package.json', 'utf8')); console.log(example.version || root.version || '');")"
+
+          if [[ -n "$release_tag" ]]; then
+            bundle="${release_tag#v}"
+          elif [[ -n "$base_bundle" ]]; then
+            bundle="${base_bundle}-${GITHUB_RUN_NUMBER:-manual}"
+          else
+            bundle="${repo_name}-${GITHUB_RUN_NUMBER:-manual}"
+          fi
 
           if [[ -z "$channel" ]]; then
             channel="production"
@@ -94,6 +89,7 @@ jobs:
 
           {
             echo "channel=$channel"
+            echo "bundle=$bundle"
             echo "comment<<__CAPGO_COMMENT__"
             echo "$comment"
             echo "__CAPGO_COMMENT__"
@@ -104,4 +100,5 @@ jobs:
         env:
           CAPGO_TOKEN: ${{ secrets.CAPGO_TOKEN }}
           CAPGO_CHANNEL: ${{ steps.upload.outputs.channel }}
+          CAPGO_BUNDLE: ${{ steps.upload.outputs.bundle }}
           CAPGO_COMMENT: ${{ steps.upload.outputs.comment }}

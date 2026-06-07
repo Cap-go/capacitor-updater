@@ -9,12 +9,20 @@ const repoRoot = resolve(__dirname, '..');
 const appDir = resolve(repoRoot, 'example-app');
 const rootPackageJson = JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), 'utf8'));
 const examplePackageJson = JSON.parse(readFileSync(resolve(appDir, 'package.json'), 'utf8'));
-const configText = readFileSync(
-  existsSync(resolve(appDir, 'capacitor.config.ts'))
-    ? resolve(appDir, 'capacitor.config.ts')
-    : resolve(appDir, 'capacitor.config.json'),
-  'utf8',
-);
+const tsConfigPath = resolve(appDir, 'capacitor.config.ts');
+const jsonConfigPath = resolve(appDir, 'capacitor.config.json');
+const configPath = existsSync(tsConfigPath)
+  ? tsConfigPath
+  : existsSync(jsonConfigPath)
+    ? jsonConfigPath
+    : null;
+
+if (!configPath) {
+  console.error('Missing Capacitor config. Expected example-app/capacitor.config.ts or example-app/capacitor.config.json.');
+  process.exit(1);
+}
+
+const configText = readFileSync(configPath, 'utf8');
 
 function readConfigString(key, fallback) {
   const patterns = {
@@ -28,12 +36,12 @@ function readConfigString(key, fallback) {
 
 function runCapgo(args, allowFailure = false) {
   const token = process.env.CAPGO_TOKEN;
-  const fullArgs = ['x', '@capgo/cli@latest', ...args];
+  const fullArgs = ['x', '@capgo/cli@8.0.2', ...args];
   if (token) {
     fullArgs.push('--apikey', token);
   }
   const result = spawnSync(process.execPath, fullArgs, {
-    cwd: repoRoot,
+    cwd: appDir,
     stdio: 'inherit',
     env: process.env,
   });
@@ -48,7 +56,7 @@ const appName = process.env.CAPGO_APP_NAME || readConfigString('appName', rootPa
 const webDir = process.env.CAPGO_WEB_DIR || readConfigString('webDir', 'dist');
 const distDir = resolve(appDir, webDir);
 const channel = process.env.CAPGO_CHANNEL || process.argv[2] || 'production';
-const bundle = process.env.CAPGO_BUNDLE || rootPackageJson.version || examplePackageJson.version;
+const bundle = process.env.CAPGO_BUNDLE || examplePackageJson.version || rootPackageJson.version;
 const comment =
   process.env.CAPGO_COMMENT ||
   (process.env.GITHUB_RUN_NUMBER
@@ -63,6 +71,11 @@ if (!appId) {
 
 if (!existsSync(distDir)) {
   console.error(`Missing example app bundle at ${distDir}. Run bun run example:build first.`);
+  process.exit(1);
+}
+
+if (!bundle) {
+  console.error('Missing Capgo bundle version. Set CAPGO_BUNDLE or add a version to example-app/package.json or package.json.');
   process.exit(1);
 }
 
@@ -85,13 +98,13 @@ runCapgo([
   '--bundle',
   bundle,
   '--path',
-  distDir,
+  webDir,
   '--channel',
   channel,
   '--package-json',
-  'example-app/package.json,package.json',
+  'package.json,../package.json',
   '--node-modules',
-  'node_modules,example-app/node_modules',
+  'node_modules,../node_modules',
   '--delta',
   '--no-key',
   '--ignore-checksum-check',
