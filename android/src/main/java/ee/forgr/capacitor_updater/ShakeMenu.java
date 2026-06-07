@@ -39,11 +39,13 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
     private ThreeFingerPinchDetector pinchDetector;
     private boolean isShowing = false;
     private Logger logger;
+    private String gesture;
 
     public ShakeMenu(CapacitorUpdaterPlugin plugin, BridgeActivity activity, Logger logger, String gesture) {
         this.plugin = plugin;
         this.activity = activity;
         this.logger = logger;
+        this.gesture = gesture;
 
         if (CapacitorUpdaterPlugin.SHAKE_MENU_GESTURE_THREE_FINGER_PINCH.equals(gesture)) {
             this.pinchDetector = new ThreeFingerPinchDetector(this, logger);
@@ -53,6 +55,10 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
             this.shakeDetector = new ShakeDetector(this);
             this.shakeDetector.start(sensorManager);
         }
+    }
+
+    public boolean usesGesture(String gesture) {
+        return this.gesture != null && this.gesture.equals(gesture);
     }
 
     public void stop() {

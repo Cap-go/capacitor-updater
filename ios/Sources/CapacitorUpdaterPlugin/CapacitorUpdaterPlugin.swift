@@ -179,7 +179,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     public var shakeMenuEnabled = false
     public var shakeChannelSelectorEnabled = false
     public var shakeMenuGesture = CapacitorUpdaterPlugin.shakeMenuGestureShake
-    var shakeMenuPinchGestureRecognizer: UIPinchGestureRecognizer?
+    var shakeMenuPinchGestureRecognizer: ThreeFingerPinchGestureRecognizer?
     var shakeMenuPinchGestureTriggered = false
     public var previewSessionEnabled = false
     private var previewSessionAlertPending = false

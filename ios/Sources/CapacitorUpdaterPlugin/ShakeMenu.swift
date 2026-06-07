@@ -9,7 +9,78 @@ import Capacitor
 
 private var lastShakeMenuShownAt: TimeInterval = 0
 private let shakeMenuCooldownSeconds: TimeInterval = 1.2
-private let threeFingerPinchScaleDelta: CGFloat = 0.30
+private let threeFingerPinchScaleDelta: CGFloat = 0.12
+
+final class ThreeFingerPinchGestureRecognizer: UIGestureRecognizer {
+    private var initialSpan: CGFloat = 0
+    private(set) var scale: CGFloat = 1
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        super.touchesBegan(touches, with: event)
+        guard let view = self.view, let activeTouches = activeTouches(in: view, with: event), activeTouches.count <= 3 else {
+            self.state = .failed
+            return
+        }
+
+        if activeTouches.count == 3 {
+            self.initialSpan = span(for: activeTouches, in: view)
+            self.scale = 1
+            self.state = self.initialSpan > 0 ? .began : .failed
+        }
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+        super.touchesMoved(touches, with: event)
+        guard let view = self.view,
+              let activeTouches = activeTouches(in: view, with: event),
+              activeTouches.count == 3,
+              self.initialSpan > 0 else {
+            self.state = .failed
+            return
+        }
+
+        self.scale = span(for: activeTouches, in: view) / self.initialSpan
+        self.state = .changed
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+        super.touchesEnded(touches, with: event)
+        self.state = self.state == .possible || self.state == .began ? .failed : .ended
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+        super.touchesCancelled(touches, with: event)
+        self.state = .cancelled
+    }
+
+    override func reset() {
+        super.reset()
+        self.initialSpan = 0
+        self.scale = 1
+    }
+
+    private func activeTouches(in view: UIView, with event: UIEvent) -> [UITouch]? {
+        event.touches(for: view)?.filter { touch in
+            touch.phase != .ended && touch.phase != .cancelled
+        }
+    }
+
+    private func span(for touches: [UITouch], in view: UIView) -> CGFloat {
+        guard !touches.isEmpty else {
+            return 0
+        }
+
+        let points = touches.map { $0.location(in: view) }
+        let center = points.reduce(CGPoint.zero) { result, point in
+            CGPoint(x: result.x + point.x, y: result.y + point.y)
+        }
+        let centerPoint = CGPoint(x: center.x / CGFloat(points.count), y: center.y / CGFloat(points.count))
+        let totalDistance = points.reduce(CGFloat(0)) { result, point in
+            result + hypot(point.x - centerPoint.x, point.y - centerPoint.y)
+        }
+        return totalDistance / CGFloat(points.count)
+    }
+}
 
 extension UIApplication {
     // swiftlint:disable:next line_length
@@ -46,7 +117,7 @@ extension CapacitorUpdaterPlugin: UIGestureRecognizerDelegate {
 
             self.removeShakeMenuGestureRecognizer()
 
-            let recognizer = UIPinchGestureRecognizer(target: self, action: #selector(self.handleShakeMenuPinch(_:)))
+            let recognizer = ThreeFingerPinchGestureRecognizer(target: self, action: #selector(self.handleShakeMenuPinch(_:)))
             recognizer.cancelsTouchesInView = false
             recognizer.delaysTouchesBegan = false
             recognizer.delaysTouchesEnded = false
@@ -66,12 +137,12 @@ extension CapacitorUpdaterPlugin: UIGestureRecognizerDelegate {
         }
     }
 
-    @objc func handleShakeMenuPinch(_ recognizer: UIPinchGestureRecognizer) {
+    @objc func handleShakeMenuPinch(_ recognizer: ThreeFingerPinchGestureRecognizer) {
         if recognizer.state == .ended || recognizer.state == .cancelled || recognizer.state == .failed {
             self.shakeMenuPinchGestureTriggered = false
             return
         }
-        guard recognizer.state == .changed, !self.shakeMenuPinchGestureTriggered, recognizer.numberOfTouches == 3 else {
+        guard recognizer.state == .changed, !self.shakeMenuPinchGestureTriggered else {
             return
         }
         guard abs(recognizer.scale - 1) >= threeFingerPinchScaleDelta else {

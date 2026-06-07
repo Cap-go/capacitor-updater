@@ -856,6 +856,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
         this.checkForUpdateAfterDelay();
         this.showPreviewSessionNoticeIfNeeded();
+        this.syncShakeMenuLifecycle();
 
         // On Android 14+ (API 34+), topActivity in RecentTaskInfo returns null due to
         // security restrictions (StrandHogg task hijacking mitigations). Use ProcessLifecycleOwner
@@ -2774,7 +2775,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.editor.putBoolean(PREVIEW_SESSION_PREF_KEY, true);
         this.editor.putBoolean(PREVIEW_SESSION_ALERT_PENDING_PREF_KEY, true);
         this.editor.apply();
-        this.ensureShakeMenuStarted();
+        this.syncShakeMenuLifecycle();
     }
 
     @PluginMethod
@@ -3544,6 +3545,17 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void ensureShakeMenuStarted() {
+        if (shakeMenu != null && !shakeMenu.usesGesture(this.shakeMenuGesture)) {
+            try {
+                shakeMenu.stop();
+                shakeMenu = null;
+                logger.info("Shake menu restarted for " + this.shakeMenuGesture + " gesture");
+            } catch (Exception e) {
+                logger.error("Failed to restart shake menu: " + e.getMessage());
+                return;
+            }
+        }
+
         if (getActivity() instanceof com.getcapacitor.BridgeActivity && shakeMenu == null) {
             try {
                 shakeMenu = new ShakeMenu(this, (com.getcapacitor.BridgeActivity) getActivity(), logger, this.shakeMenuGesture);
@@ -4929,10 +4941,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 isPreviousMainActivity = true;
             }
 
-            // Initialize shake menu if enabled and activity is BridgeActivity
-            if (this.shouldListenForShake()) {
-                this.ensureShakeMenuStarted();
-            }
+            this.syncShakeMenuLifecycle();
         } catch (Exception e) {
             logger.error("Failed to run handleOnStart: " + e.getMessage());
         }
@@ -4964,6 +4973,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 backgroundTask.interrupt();
             }
             this.implementation.activity = getActivity();
+            this.syncShakeMenuLifecycle();
         } catch (Exception e) {
             logger.error("Failed to run handleOnResume: " + e.getMessage());
         }
