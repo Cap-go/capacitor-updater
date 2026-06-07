@@ -2322,7 +2322,7 @@ export interface SetShakeMenuOptions {
 
 export interface ShakeMenuEnabled {
   enabled: boolean;
-  gesture: ShakeMenuGesture;
+  gesture?: ShakeMenuGesture;
 }
 
 export interface SetShakeChannelSelectorOptions {
