@@ -2817,4 +2817,17 @@ public class CapacitorUpdaterUnitTest {
             assertEquals("42", result);
         }
     }
+
+    @Test
+    public void normalizeShakeMenuGestureSupportsThreeFingerPinch() {
+        assertEquals(CapacitorUpdaterPlugin.SHAKE_MENU_GESTURE_SHAKE, CapacitorUpdaterPlugin.normalizedShakeMenuGesture(null));
+        assertEquals(CapacitorUpdaterPlugin.SHAKE_MENU_GESTURE_SHAKE, CapacitorUpdaterPlugin.normalizedShakeMenuGesture("unknown"));
+        assertEquals(
+            CapacitorUpdaterPlugin.SHAKE_MENU_GESTURE_THREE_FINGER_PINCH,
+            CapacitorUpdaterPlugin.normalizedShakeMenuGesture("threeFingerPinch")
+        );
+        assertTrue(CapacitorUpdaterPlugin.isSupportedShakeMenuGesture("shake"));
+        assertTrue(CapacitorUpdaterPlugin.isSupportedShakeMenuGesture("threeFingerPinch"));
+        assertFalse(CapacitorUpdaterPlugin.isSupportedShakeMenuGesture("pinch"));
+    }
 }

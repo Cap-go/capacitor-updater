@@ -1146,6 +1146,24 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertGreaterThan(resetImplementation.setPreviewFallbackBundleCalls, 0)
     }
 
+    func testNormalizeShakeMenuGestureSupportsThreeFingerPinch() {
+        XCTAssertEqual(
+            CapacitorUpdaterPlugin.normalizedShakeMenuGesture(nil),
+            CapacitorUpdaterPlugin.shakeMenuGestureShake
+        )
+        XCTAssertEqual(
+            CapacitorUpdaterPlugin.normalizedShakeMenuGesture("unknown"),
+            CapacitorUpdaterPlugin.shakeMenuGestureShake
+        )
+        XCTAssertEqual(
+            CapacitorUpdaterPlugin.normalizedShakeMenuGesture("threeFingerPinch"),
+            CapacitorUpdaterPlugin.shakeMenuGestureThreeFingerPinch
+        )
+        XCTAssertTrue(CapacitorUpdaterPlugin.isSupportedShakeMenuGesture("shake"))
+        XCTAssertTrue(CapacitorUpdaterPlugin.isSupportedShakeMenuGesture("threeFingerPinch"))
+        XCTAssertFalse(CapacitorUpdaterPlugin.isSupportedShakeMenuGesture("pinch"))
+    }
+
     func testResetToLastSuccessfulWithoutInstallableFallbackFallsBackToBuiltin() {
         let resetPlugin = ResetTestableCapacitorUpdaterPlugin()
         let resetImplementation = ResetTrackingCapgoUpdater()
