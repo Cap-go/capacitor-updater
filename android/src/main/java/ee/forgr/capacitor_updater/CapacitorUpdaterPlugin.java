@@ -142,6 +142,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private SharedPreferences.Editor editor;
     private SharedPreferences prefs;
+    private final Object previewSessionsLock = new Object();
     protected CapgoUpdater implementation;
     private Boolean persistCustomId = false;
     private Boolean persistModifyUrl = false;
@@ -385,6 +386,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.editor.putString(PREVIEW_SESSIONS_PREF_KEY, sessions.toString()).apply();
     }
 
+    private boolean hasSavedPreviewSessions() {
+        synchronized (this.previewSessionsLock) {
+            return this.previewSessionsJson().length() > 0;
+        }
+    }
+
     private String metadataString(final JSONObject metadata, final String key) {
         return this.normalizedPreviewMetadataValue(metadata.optString(key, null));
     }
@@ -435,66 +442,70 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private JSArray listPreviewInfos(final boolean cleanup) {
-        final JSONObject sessions = this.previewSessionsJson();
-        final Set<String> availableBundleIds = this.availableBundleIds();
-        final String currentBundleId = this.implementation.getCurrentBundle().getId();
-        final JSArray previews = new JSArray();
-        final List<String> staleIds = new ArrayList<>();
+        synchronized (this.previewSessionsLock) {
+            final JSONObject sessions = this.previewSessionsJson();
+            final Set<String> availableBundleIds = this.availableBundleIds();
+            final String currentBundleId = this.implementation.getCurrentBundle().getId();
+            final JSArray previews = new JSArray();
+            final List<String> staleIds = new ArrayList<>();
 
-        final JSONArray names = sessions.names();
-        if (names == null) {
+            final JSONArray names = sessions.names();
+            if (names == null) {
+                return previews;
+            }
+
+            final List<JSObject> sortedPreviews = new ArrayList<>();
+            for (int i = 0; i < names.length(); i++) {
+                final String id = names.optString(i, "");
+                if (id.isEmpty()) {
+                    continue;
+                }
+                final JSONObject metadata = sessions.optJSONObject(id);
+                if (metadata == null) {
+                    staleIds.add(id);
+                    continue;
+                }
+                try {
+                    final JSObject info = this.previewInfo(id, metadata, availableBundleIds, currentBundleId);
+                    if (info == null) {
+                        staleIds.add(id);
+                    } else {
+                        sortedPreviews.add(info);
+                    }
+                } catch (final JSONException e) {
+                    logger.warn("Could not read preview metadata for " + id + ": " + e.getMessage());
+                    staleIds.add(id);
+                }
+            }
+
+            sortedPreviews.sort((first, second) -> second.optString("lastUsedAt", "").compareTo(first.optString("lastUsedAt", "")));
+            for (final JSObject preview : sortedPreviews) {
+                previews.put(preview);
+            }
+
+            if (cleanup && !staleIds.isEmpty()) {
+                for (final String id : staleIds) {
+                    sessions.remove(id);
+                }
+                this.savePreviewSessionsJson(sessions);
+            }
+
             return previews;
         }
-
-        final List<JSObject> sortedPreviews = new ArrayList<>();
-        for (int i = 0; i < names.length(); i++) {
-            final String id = names.optString(i, "");
-            if (id.isEmpty()) {
-                continue;
-            }
-            final JSONObject metadata = sessions.optJSONObject(id);
-            if (metadata == null) {
-                staleIds.add(id);
-                continue;
-            }
-            try {
-                final JSObject info = this.previewInfo(id, metadata, availableBundleIds, currentBundleId);
-                if (info == null) {
-                    staleIds.add(id);
-                } else {
-                    sortedPreviews.add(info);
-                }
-            } catch (final JSONException e) {
-                logger.warn("Could not read preview metadata for " + id + ": " + e.getMessage());
-                staleIds.add(id);
-            }
-        }
-
-        sortedPreviews.sort((first, second) -> second.optString("lastUsedAt", "").compareTo(first.optString("lastUsedAt", "")));
-        for (final JSObject preview : sortedPreviews) {
-            previews.put(preview);
-        }
-
-        if (cleanup && !staleIds.isEmpty()) {
-            for (final String id : staleIds) {
-                sessions.remove(id);
-            }
-            this.savePreviewSessionsJson(sessions);
-        }
-
-        return previews;
     }
 
     private JSObject storedPreviewInfo(final String id) {
-        final JSONObject metadata = this.previewSessionsJson().optJSONObject(id);
-        if (metadata == null) {
-            return null;
-        }
-        try {
-            return this.previewInfo(id, metadata, this.availableBundleIds(), this.implementation.getCurrentBundle().getId());
-        } catch (final JSONException e) {
-            logger.warn("Could not read preview metadata for " + id + ": " + e.getMessage());
-            return null;
+        synchronized (this.previewSessionsLock) {
+            final JSONObject metadata = this.previewSessionsJson().optJSONObject(id);
+            if (metadata == null) {
+                return null;
+            }
+            try {
+                return this.previewInfo(id, metadata, this.availableBundleIds(), this.implementation.getCurrentBundle().getId());
+            } catch (final JSONException e) {
+                logger.warn("Could not read preview metadata for " + id + ": " + e.getMessage());
+                return null;
+            }
         }
     }
 
@@ -505,71 +516,74 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private JSObject recordPreviewBundle(final BundleInfo bundle, final String oldId) {
         final String now = this.nowIsoString();
         final String id = bundle.getId();
-        final JSONObject sessions = this.previewSessionsJson();
-        JSONObject metadata = sessions.optJSONObject(id);
-        final boolean replacingPreview = oldId != null && !oldId.equals(id);
+        synchronized (this.previewSessionsLock) {
+            final JSONObject sessions = this.previewSessionsJson();
+            JSONObject metadata = sessions.optJSONObject(id);
+            final boolean replacingPreview = oldId != null && !oldId.equals(id);
 
-        try {
-            if (metadata == null && replacingPreview) {
-                final JSONObject oldMetadata = sessions.optJSONObject(oldId);
-                if (oldMetadata != null) {
-                    metadata = new JSONObject(oldMetadata.toString());
+            try {
+                if (metadata == null && replacingPreview) {
+                    final JSONObject oldMetadata = sessions.optJSONObject(oldId);
+                    if (oldMetadata != null) {
+                        metadata = new JSONObject(oldMetadata.toString());
+                    }
                 }
-            }
-            if (metadata == null) {
-                metadata = new JSONObject();
-            }
-
-            if (!metadata.has("createdAt")) {
-                metadata.put("createdAt", now);
-            }
-            metadata.put("updatedAt", now);
-            metadata.put("lastUsedAt", now);
-            metadata.put("version", bundle.getVersionName());
-
-            if (!replacingPreview) {
-                final String appId = this.currentPreviewMetadataValue(PREVIEW_APP_ID_PREF_KEY);
-                if (appId == null) {
-                    metadata.remove("appId");
-                } else {
-                    metadata.put("appId", appId);
+                if (metadata == null) {
+                    metadata = new JSONObject();
                 }
 
-                final String payloadUrl = this.currentPreviewMetadataValue(PREVIEW_PAYLOAD_URL_PREF_KEY);
-                if (payloadUrl == null) {
-                    metadata.remove("payloadUrl");
-                } else {
-                    metadata.put("payloadUrl", payloadUrl);
+                if (!metadata.has("createdAt")) {
+                    metadata.put("createdAt", now);
                 }
-            }
+                metadata.put("updatedAt", now);
+                metadata.put("lastUsedAt", now);
+                metadata.put("version", bundle.getVersionName());
 
-            if (!replacingPreview) {
-                final String name = this.currentPreviewMetadataValue(PREVIEW_NAME_PREF_KEY);
-                if (name != null) {
-                    metadata.put("name", name);
+                if (!replacingPreview) {
+                    final String appId = this.currentPreviewMetadataValue(PREVIEW_APP_ID_PREF_KEY);
+                    if (appId == null) {
+                        metadata.remove("appId");
+                    } else {
+                        metadata.put("appId", appId);
+                    }
+
+                    final String payloadUrl = this.currentPreviewMetadataValue(PREVIEW_PAYLOAD_URL_PREF_KEY);
+                    if (payloadUrl == null) {
+                        metadata.remove("payloadUrl");
+                    } else {
+                        metadata.put("payloadUrl", payloadUrl);
+                    }
                 }
 
-                final String source = this.currentPreviewMetadataValue(PREVIEW_SOURCE_PREF_KEY);
-                if (source != null) {
-                    metadata.put("source", source);
+                if (!replacingPreview) {
+                    final String name = this.currentPreviewMetadataValue(PREVIEW_NAME_PREF_KEY);
+                    if (name == null) {
+                        metadata.remove("name");
+                    } else {
+                        metadata.put("name", name);
+                    }
+
+                    final String source = this.currentPreviewMetadataValue(PREVIEW_SOURCE_PREF_KEY);
+                    if (source == null) {
+                        metadata.remove("source");
+                    } else {
+                        metadata.put("source", source);
+                    }
                 }
-            }
-            if (this.metadataString(metadata, "name") == null) {
-                metadata.put("name", bundle.getVersionName());
-            }
+                if (this.metadataString(metadata, "name") == null) {
+                    metadata.put("name", bundle.getVersionName());
+                }
 
-            if (oldId != null && !oldId.equals(id)) {
-                sessions.remove(oldId);
-            }
-            sessions.put(id, metadata);
-            this.savePreviewSessionsJson(sessions);
+                if (oldId != null && !oldId.equals(id)) {
+                    sessions.remove(oldId);
+                }
+                sessions.put(id, metadata);
+                this.savePreviewSessionsJson(sessions);
 
-            final JSObject stored = this.storedPreviewInfo(id);
-            if (stored != null) {
-                return stored;
+                return this.previewInfo(id, metadata, this.availableBundleIds(), this.implementation.getCurrentBundle().getId());
+            } catch (final JSONException e) {
+                logger.warn("Could not store preview metadata: " + e.getMessage());
             }
-        } catch (final JSONException e) {
-            logger.warn("Could not store preview metadata: " + e.getMessage());
         }
 
         final JSObject fallback = new JSObject();
@@ -2981,10 +2995,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return;
         }
 
-        final JSONObject sessions = this.previewSessionsJson();
-        final boolean removed = sessions.has(id);
-        sessions.remove(id);
-        this.savePreviewSessionsJson(sessions);
+        final boolean removed;
+        synchronized (this.previewSessionsLock) {
+            final JSONObject sessions = this.previewSessionsJson();
+            removed = sessions.has(id);
+            sessions.remove(id);
+            this.savePreviewSessionsJson(sessions);
+        }
 
         boolean deleted = false;
         final BundleInfo fallback = this.implementation.getPreviewFallbackBundle();
@@ -3510,7 +3527,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         if (
             !Boolean.TRUE.equals(this.previewSessionEnabled) &&
             this.implementation.getPreviewFallbackBundle() == null &&
-            this.previewSessionsJson().length() == 0
+            !this.hasSavedPreviewSessions()
         ) {
             return;
         }
@@ -3528,8 +3545,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.implementation.setPreviewFallbackBundle(null);
         this.implementation.setNextBundle(null);
         this.clearPreviewSessionPreferences();
-        this.editor.remove(PREVIEW_SESSIONS_PREF_KEY);
-        this.editor.apply();
+        synchronized (this.previewSessionsLock) {
+            this.editor.remove(PREVIEW_SESSIONS_PREF_KEY);
+            this.editor.apply();
+        }
     }
 
     private void restorePreviewPreviousNextBundle() {
