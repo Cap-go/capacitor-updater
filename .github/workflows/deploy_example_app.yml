@@ -1,0 +1,107 @@
+name: Deploy example app to Capgo
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Capgo channel'
+        required: false
+        default: 'production'
+      comment:
+        description: 'Optional release comment'
+        required: false
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'ios/**'
+      - 'android/**'
+      - 'example-app/**'
+      - 'scripts/deploy-example-capgo.mjs'
+      - 'package.json'
+      - 'bun.lock'
+      - 'rollup.config.mjs'
+      - 'tsconfig.json'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ github.event.release.tag_name || github.ref }}
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: 1.3.11
+
+      - name: Install plugin dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build plugin
+        run: bun run build
+
+      - name: Install example dependencies
+        working-directory: example-app
+        run: bun install --frozen-lockfile
+
+      - name: Build example app
+        working-directory: example-app
+        run: bun run build
+
+      - name: Resolve Capgo upload metadata
+        id: upload
+        shell: bash
+        env:
+          INPUT_CHANNEL: ${{ github.event.inputs.channel }}
+          INPUT_COMMENT: ${{ github.event.inputs.comment }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+
+          channel="${INPUT_CHANNEL:-}"
+          comment="${INPUT_COMMENT:-}"
+          release_tag="${RELEASE_TAG:-}"
+          repo_name="${GITHUB_REPOSITORY##*/}"
+
+          if [[ -z "$channel" ]]; then
+            channel="production"
+          fi
+
+          if [[ -z "$comment" ]]; then
+            if [[ -n "$release_tag" ]]; then
+              comment="${repo_name} example ${release_tag}"
+            else
+              comment="${repo_name} example ${GITHUB_RUN_NUMBER:-manual}"
+            fi
+          fi
+
+          {
+            echo "channel=$channel"
+            echo "comment<<__CAPGO_COMMENT__"
+            echo "$comment"
+            echo "__CAPGO_COMMENT__"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Deploy to Capgo
+        run: bun scripts/deploy-example-capgo.mjs
+        env:
+          CAPGO_TOKEN: ${{ secrets.CAPGO_TOKEN }}
+          CAPGO_CHANNEL: ${{ steps.upload.outputs.channel }}
+          CAPGO_COMMENT: ${{ steps.upload.outputs.comment }}

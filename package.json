@@ -71,7 +71,10 @@
     "clean": "rimraf ./dist",
     "watch": "tsc --watch",
     "prepublishOnly": "bun run build",
-    "check:wiring": "node scripts/check-capacitor-plugin-wiring.mjs"
+    "check:wiring": "node scripts/check-capacitor-plugin-wiring.mjs",
+    "example:install": "cd example-app && bun install --frozen-lockfile",
+    "example:build": "bun run build && cd example-app && bun install --frozen-lockfile && bun run build",
+    "example:capgo:deploy": "bun run example:build && bun scripts/deploy-example-capgo.mjs"
   },
   "devDependencies": {
     "@capacitor/android": "^8.0.0",

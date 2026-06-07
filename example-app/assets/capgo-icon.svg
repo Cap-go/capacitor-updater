@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="hsl(168 68% 42%)"/>
+      <stop offset="100%" stop-color="hsl(347 67% 47%)"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="24" stdDeviation="32" flood-color="#111827" flood-opacity="0.24"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" rx="228" fill="url(#bg)"/>
+  <path d="M0 724 C210 628 315 750 520 654 C724 559 782 392 1024 447 L1024 1024 L0 1024 Z" fill="hsl(166 66% 38%)" opacity="0.34"/>
+  <circle cx="786" cy="214" r="112" fill="#fff" opacity="0.16"/>
+  <rect x="230" y="252" width="564" height="520" rx="124" fill="#fff" opacity="0.13" filter="url(#shadow)"/>
+  <text x="512" y="574" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="284" font-weight="800" fill="#fff">U</text>
+  <text x="512" y="814" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="52" font-weight="700" fill="#fff" opacity="0.82">Updater Example</text>
+</svg>
