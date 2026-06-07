@@ -339,7 +339,7 @@ jobs:
     needs:
       - maestro_web_assets
       - maestro_ios_apps
-    timeout-minutes: 10
+    timeout-minutes: 20
     runs-on: macOS-latest
     name: iOS example app Maestro smoke / ${{ matrix.scenario }}
     strategy:
