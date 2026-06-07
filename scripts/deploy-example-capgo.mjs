@@ -56,7 +56,14 @@ const appName = process.env.CAPGO_APP_NAME || readConfigString('appName', rootPa
 const webDir = process.env.CAPGO_WEB_DIR || readConfigString('webDir', 'dist');
 const distDir = resolve(appDir, webDir);
 const channel = process.env.CAPGO_CHANNEL || process.argv[2] || 'production';
-const bundle = process.env.CAPGO_BUNDLE || examplePackageJson.version || rootPackageJson.version;
+function usableVersion(version) {
+  return version && version !== '0.0.0' ? version : undefined;
+}
+
+const bundle =
+  process.env.CAPGO_BUNDLE ||
+  usableVersion(examplePackageJson.version) ||
+  usableVersion(rootPackageJson.version);
 const comment =
   process.env.CAPGO_COMMENT ||
   (process.env.GITHUB_RUN_NUMBER

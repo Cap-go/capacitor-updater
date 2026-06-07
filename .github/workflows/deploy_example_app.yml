@@ -67,7 +67,7 @@ jobs:
           comment="${INPUT_COMMENT:-}"
           release_tag="${RELEASE_TAG:-}"
           repo_name="${GITHUB_REPOSITORY##*/}"
-          base_bundle="$(bun -e "const fs = require('fs'); const root = JSON.parse(fs.readFileSync('package.json', 'utf8')); const example = JSON.parse(fs.readFileSync('example-app/package.json', 'utf8')); console.log(example.version || root.version || '');")"
+          base_bundle="$(bun -e "const fs = require('fs'); const root = JSON.parse(fs.readFileSync('package.json', 'utf8')); const example = JSON.parse(fs.readFileSync('example-app/package.json', 'utf8')); const version = [example.version, root.version].find((value) => value && value !== '0.0.0'); console.log(version || '');")"
 
           if [[ -n "$release_tag" ]]; then
             bundle="${release_tag#v}"
