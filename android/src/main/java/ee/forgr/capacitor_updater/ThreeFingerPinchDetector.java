@@ -78,33 +78,34 @@ public class ThreeFingerPinchDetector implements View.OnTouchListener {
 
     @Override
     public boolean onTouch(View view, MotionEvent event) {
+        boolean consumedByPreviousListener = false;
         if (previousOnTouchListener != null && previousOnTouchListener != this) {
-            previousOnTouchListener.onTouch(view, event);
+            consumedByPreviousListener = previousOnTouchListener.onTouch(view, event);
         }
 
         int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_CANCEL || action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_POINTER_UP) {
             reset();
-            return false;
+            return consumedByPreviousListener;
         }
 
         if (event.getPointerCount() != REQUIRED_POINTER_COUNT) {
             if (action == MotionEvent.ACTION_POINTER_DOWN) {
                 reset();
             }
-            return false;
+            return consumedByPreviousListener;
         }
 
         float span = calculateSpan(event);
         if (span <= 0) {
-            return false;
+            return consumedByPreviousListener;
         }
 
         if (!tracking || action == MotionEvent.ACTION_POINTER_DOWN) {
             initialSpan = span;
             tracking = true;
             triggered = false;
-            return false;
+            return consumedByPreviousListener;
         }
 
         if (!triggered && Math.abs(span - initialSpan) / initialSpan >= MIN_SCALE_DELTA) {
@@ -118,7 +119,7 @@ public class ThreeFingerPinchDetector implements View.OnTouchListener {
             }
         }
 
-        return false;
+        return consumedByPreviousListener;
     }
 
     private float calculateSpan(MotionEvent event) {
