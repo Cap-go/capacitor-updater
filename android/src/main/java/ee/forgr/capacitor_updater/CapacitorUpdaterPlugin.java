@@ -506,9 +506,20 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final String now = this.nowIsoString();
         final String id = bundle.getId();
         final JSONObject sessions = this.previewSessionsJson();
-        final JSONObject metadata = sessions.optJSONObject(id) == null ? new JSONObject() : sessions.optJSONObject(id);
+        JSONObject metadata = sessions.optJSONObject(id);
+        final boolean replacingPreview = oldId != null && !oldId.equals(id);
 
         try {
+            if (metadata == null && replacingPreview) {
+                final JSONObject oldMetadata = sessions.optJSONObject(oldId);
+                if (oldMetadata != null) {
+                    metadata = new JSONObject(oldMetadata.toString());
+                }
+            }
+            if (metadata == null) {
+                metadata = new JSONObject();
+            }
+
             if (!metadata.has("createdAt")) {
                 metadata.put("createdAt", now);
             }
@@ -516,30 +527,35 @@ public class CapacitorUpdaterPlugin extends Plugin {
             metadata.put("lastUsedAt", now);
             metadata.put("version", bundle.getVersionName());
 
-            final String appId = this.currentPreviewMetadataValue(PREVIEW_APP_ID_PREF_KEY);
-            if (appId == null) {
-                metadata.remove("appId");
-            } else {
-                metadata.put("appId", appId);
+            if (!replacingPreview) {
+                final String appId = this.currentPreviewMetadataValue(PREVIEW_APP_ID_PREF_KEY);
+                if (appId == null) {
+                    metadata.remove("appId");
+                } else {
+                    metadata.put("appId", appId);
+                }
+
+                final String payloadUrl = this.currentPreviewMetadataValue(PREVIEW_PAYLOAD_URL_PREF_KEY);
+                if (payloadUrl == null) {
+                    metadata.remove("payloadUrl");
+                } else {
+                    metadata.put("payloadUrl", payloadUrl);
+                }
             }
 
-            final String payloadUrl = this.currentPreviewMetadataValue(PREVIEW_PAYLOAD_URL_PREF_KEY);
-            if (payloadUrl == null) {
-                metadata.remove("payloadUrl");
-            } else {
-                metadata.put("payloadUrl", payloadUrl);
-            }
+            if (!replacingPreview) {
+                final String name = this.currentPreviewMetadataValue(PREVIEW_NAME_PREF_KEY);
+                if (name != null) {
+                    metadata.put("name", name);
+                }
 
-            final String name = this.currentPreviewMetadataValue(PREVIEW_NAME_PREF_KEY);
-            if (name != null) {
-                metadata.put("name", name);
-            } else if (this.metadataString(metadata, "name") == null) {
+                final String source = this.currentPreviewMetadataValue(PREVIEW_SOURCE_PREF_KEY);
+                if (source != null) {
+                    metadata.put("source", source);
+                }
+            }
+            if (this.metadataString(metadata, "name") == null) {
                 metadata.put("name", bundle.getVersionName());
-            }
-
-            final String source = this.currentPreviewMetadataValue(PREVIEW_SOURCE_PREF_KEY);
-            if (source != null) {
-                metadata.put("source", source);
             }
 
             if (oldId != null && !oldId.equals(id)) {
@@ -572,6 +588,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private void updateCurrentPreviewSessionMetadataFrom(final JSObject preview) {
         final String appId = this.normalizedPreviewMetadataValue(preview.optString("appId", null));
         if (appId == null) {
+            this.restorePreviewPreviousAppId();
             this.editor.remove(PREVIEW_APP_ID_PREF_KEY);
         } else {
             this.setActiveAppId(appId);
@@ -2875,8 +2892,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 return;
             }
 
-            this.updateCurrentPreviewSessionMetadataFrom(preview);
-            this.activatePreviewSessionState();
             if (!this.implementation.set(id)) {
                 this.hidePreviewTransitionLoader("set-preview-failed");
                 call.reject("Preview " + id + " cannot be applied");
@@ -2884,6 +2899,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
 
             final BundleInfo bundle = this.implementation.getBundleInfo(id);
+            this.updateCurrentPreviewSessionMetadataFrom(preview);
+            this.activatePreviewSessionState();
             this.recordPreviewBundle(bundle);
             if (!this.reloadWithoutWaitingForAppReady()) {
                 this.hidePreviewTransitionLoader("set-preview-reload-failed");
@@ -2913,14 +2930,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return false;
         }
 
-        this.updateCurrentPreviewSessionMetadataFrom(preview);
-        this.activatePreviewSessionState();
         if (!this.implementation.set(id)) {
             this.hidePreviewTransitionLoader("set-preview-menu-failed");
             return false;
         }
 
         final BundleInfo bundle = this.implementation.getBundleInfo(id);
+        this.updateCurrentPreviewSessionMetadataFrom(preview);
+        this.activatePreviewSessionState();
         this.recordPreviewBundle(bundle);
         if (!this.reloadWithoutWaitingForAppReady()) {
             this.hidePreviewTransitionLoader("set-preview-menu-reload-failed");

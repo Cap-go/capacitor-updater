@@ -195,7 +195,7 @@ private final class ResetTrackingCapgoUpdater: CapgoUpdater {
         nextBundleValue
     }
 
-    override func list(raw: Bool = false) -> [BundleInfo] {
+    override func list(raw _: Bool = false) -> [BundleInfo] {
         listedBundles
     }
 

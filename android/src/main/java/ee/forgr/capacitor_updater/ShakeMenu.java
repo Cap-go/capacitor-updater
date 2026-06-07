@@ -124,6 +124,8 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
                     actions.add("Switch preview");
                 }
                 actions.add("Leave test app");
+                final boolean[] openingNestedSelector = { false };
+                final boolean[] previewActionRunning = { false };
 
                 AlertDialog.Builder builder = new AlertDialog.Builder(activity);
                 builder.setTitle(title);
@@ -132,14 +134,17 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
                     AlertDialog dialog = (AlertDialog) dialogInterface;
                     String action = actions.get(which);
                     if ("Reload preview".equals(action)) {
+                        previewActionRunning[0] = true;
                         logger.info("Reloading webview");
                         runPreviewMenuAction(dialog, "Could not reload the test app.", "Error reloading test app: ", () ->
                             plugin.reloadPreviewSessionFromShakeMenu()
                         );
                     } else if ("Switch preview".equals(action)) {
+                        openingNestedSelector[0] = true;
                         dialog.dismiss();
                         showPreviewSelector();
                     } else {
+                        previewActionRunning[0] = true;
                         runPreviewMenuAction(dialog, "Could not leave the test app.", "Error leaving test app: ", () ->
                             plugin.leavePreviewSessionFromShakeMenu()
                         );
@@ -159,7 +164,11 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
                 );
 
                 AlertDialog dialog = builder.create();
-                dialog.setOnDismissListener((dialogInterface) -> isShowing = false);
+                dialog.setOnDismissListener((dialogInterface) -> {
+                    if (!openingNestedSelector[0] && !previewActionRunning[0]) {
+                        isShowing = false;
+                    }
+                });
                 dialog.show();
             } catch (Exception e) {
                 logger.error("Error showing shake menu: " + e.getMessage());

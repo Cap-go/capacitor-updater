@@ -961,7 +961,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         let now = Date().iso8601withFractionalSeconds
         var sessions = self.previewSessions()
         let id = bundle.getId()
-        var metadata = sessions[id] ?? [:]
+        let replacingPreview = oldId.map { $0 != id } ?? false
+        var metadata = sessions[id] ?? (replacingPreview ? sessions[oldId ?? ""] ?? [:] : [:])
 
         if metadata["createdAt"] == nil {
             metadata["createdAt"] = now
@@ -970,25 +971,27 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         metadata["lastUsedAt"] = now
         metadata["version"] = bundle.getVersionName()
 
-        if let appId = self.currentPreviewMetadataValue(forKey: self.previewAppIdDefaultsKey) {
-            metadata["appId"] = appId
-        } else {
-            metadata.removeValue(forKey: "appId")
+        if !replacingPreview {
+            if let appId = self.currentPreviewMetadataValue(forKey: self.previewAppIdDefaultsKey) {
+                metadata["appId"] = appId
+            } else {
+                metadata.removeValue(forKey: "appId")
+            }
+
+            if let payloadUrl = self.currentPreviewMetadataValue(forKey: self.previewPayloadUrlDefaultsKey) {
+                metadata["payloadUrl"] = payloadUrl
+            } else {
+                metadata.removeValue(forKey: "payloadUrl")
+            }
         }
 
-        if let payloadUrl = self.currentPreviewMetadataValue(forKey: self.previewPayloadUrlDefaultsKey) {
-            metadata["payloadUrl"] = payloadUrl
-        } else {
-            metadata.removeValue(forKey: "payloadUrl")
-        }
-
-        if let name = self.currentPreviewMetadataValue(forKey: self.previewNameDefaultsKey) {
+        if !replacingPreview, let name = self.currentPreviewMetadataValue(forKey: self.previewNameDefaultsKey) {
             metadata["name"] = name
         } else if self.metadataString(metadata, "name") == nil {
             metadata["name"] = bundle.getVersionName()
         }
 
-        if let source = self.currentPreviewMetadataValue(forKey: self.previewSourceDefaultsKey) {
+        if !replacingPreview, let source = self.currentPreviewMetadataValue(forKey: self.previewSourceDefaultsKey) {
             metadata["source"] = source
         }
 
@@ -1013,6 +1016,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             self.implementation.appId = appId
             UserDefaults.standard.set(appId, forKey: self.previewAppIdDefaultsKey)
         } else {
+            self.restorePreviewPreviousAppId()
             UserDefaults.standard.removeObject(forKey: self.previewAppIdDefaultsKey)
         }
 
@@ -1517,8 +1521,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
 
-            self.updateCurrentPreviewSessionMetadata(from: preview)
-            self.activatePreviewSessionState()
             guard self.implementation.set(id: id) else {
                 self.hidePreviewTransitionLoader(reason: "set-preview-failed")
                 call.reject("Preview \(id) cannot be applied")
@@ -1526,6 +1528,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
 
             let bundle = self.implementation.getBundleInfo(id: id)
+            self.updateCurrentPreviewSessionMetadata(from: preview)
+            self.activatePreviewSessionState()
             _ = self.recordPreviewBundle(bundle)
             guard self.reloadWithoutWaitingForAppReady() else {
                 self.hidePreviewTransitionLoader(reason: "set-preview-reload-failed")
@@ -1554,14 +1558,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             return false
         }
 
-        self.updateCurrentPreviewSessionMetadata(from: preview)
-        self.activatePreviewSessionState()
         guard self.implementation.set(id: id) else {
             self.hidePreviewTransitionLoader(reason: "set-preview-menu-failed")
             return false
         }
 
         let bundle = self.implementation.getBundleInfo(id: id)
+        self.updateCurrentPreviewSessionMetadata(from: preview)
+        self.activatePreviewSessionState()
         _ = self.recordPreviewBundle(bundle)
         guard self.reloadWithoutWaitingForAppReady() else {
             self.hidePreviewTransitionLoader(reason: "set-preview-menu-reload-failed")
@@ -1664,6 +1668,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
 
                 let next = try self.downloadBundle(
+                    // Fallback URL is only provided when payload.url is missing; when manifestEntries is present,
+                    // downloadBundle routes through downloadManifest and ignores urlString.
                     urlString: payload.url ?? "https://404.capgo.app/no.zip",
                     version: version,
                     sessionKey: payload.sessionKey ?? "",
