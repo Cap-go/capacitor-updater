@@ -1612,7 +1612,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         var deleted = false
         let fallbackId = self.implementation.getPreviewFallbackBundle()?.getId()
         let nextId = self.implementation.getNextBundle()?.getId()
-        if id != fallbackId, id != nextId, id != BundleInfo.ID_BUILTIN {
+        if removed, id != fallbackId, id != nextId, id != BundleInfo.ID_BUILTIN {
             deleted = self.implementation.delete(id: id, removeInfo: false)
         }
 

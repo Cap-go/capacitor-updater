@@ -2989,6 +2989,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final BundleInfo fallback = this.implementation.getPreviewFallbackBundle();
         final BundleInfo next = this.implementation.getNextBundle();
         if (
+            removed &&
             !BundleInfo.ID_BUILTIN.equals(id) &&
             (fallback == null || !id.equals(fallback.getId())) &&
             (next == null || !id.equals(next.getId()))
