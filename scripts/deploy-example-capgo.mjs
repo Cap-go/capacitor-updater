@@ -46,7 +46,9 @@ const channel = process.env.CAPGO_CHANNEL || process.argv[2] || 'production';
 const bundle = process.env.CAPGO_BUNDLE || rootPackageJson.version || examplePackageJson.version;
 const comment =
   process.env.CAPGO_COMMENT ||
-  (process.env.GITHUB_RUN_NUMBER ? `${appName} run ${process.env.GITHUB_RUN_NUMBER}` : `${appName} ${bundle}`);
+  (process.env.GITHUB_RUN_NUMBER
+    ? `${appName} run ${process.env.GITHUB_RUN_NUMBER}`
+    : `${appName} ${bundle}`);
 const iconPath = process.env.CAPGO_ICON || resolve(appDir, 'assets', 'capgo-icon.png');
 
 if (!appId) {
