@@ -70,6 +70,7 @@
     "build": "bun run clean && bun run docgen && tsc && rollup -c rollup.config.mjs",
     "clean": "rimraf ./dist",
     "watch": "tsc --watch",
+    "prepare": "bun run build",
     "prepublishOnly": "bun run build",
     "check:wiring": "node scripts/check-capacitor-plugin-wiring.mjs"
   },
