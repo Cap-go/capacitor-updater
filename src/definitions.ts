@@ -393,7 +393,7 @@ declare module '@capacitor/cli' {
       osLogging?: boolean;
 
       /**
-       * Enable the shake gesture while a preview session is active.
+       * Enable the native preview menu gesture while a preview session is active.
        * Outside preview sessions this preview menu is ignored, unless
        * {@link PluginsConfig.CapacitorUpdater.allowShakeChannelSelector} is enabled.
        *
@@ -403,9 +403,22 @@ declare module '@capacitor/cli' {
       shakeMenu?: boolean;
 
       /**
-       * Enable the shake gesture to show a channel selector menu for switching between update channels.
+       * Choose which native gesture opens the preview/channel menu.
+       * This applies to both {@link PluginsConfig.CapacitorUpdater.shakeMenu}
+       * and {@link PluginsConfig.CapacitorUpdater.allowShakeChannelSelector}.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default 'shake'
+       * @since  8.48.0
+       */
+      shakeMenuGesture?: ShakeMenuGesture;
+
+      /**
+       * Enable the native menu gesture to show a channel selector menu for switching between update channels.
        * If {@link PluginsConfig.CapacitorUpdater.shakeMenu} is also enabled while a preview session is active,
        * the shake menu includes both preview actions and channel switching.
+       * The native gesture can be changed with {@link PluginsConfig.CapacitorUpdater.shakeMenuGesture}.
        *
        * Only available for Android and iOS.
        *
@@ -1382,9 +1395,9 @@ export interface CapacitorUpdaterPlugin {
   getFailedUpdate(): Promise<UpdateFailedEvent | null>;
 
   /**
-   * Enable or disable the shake gesture menu.
+   * Enable or disable the native preview menu gesture.
    *
-   * During preview sessions, users can shake their device to:
+   * During preview sessions, users can use the configured native gesture to:
    * - Reload the current preview
    * - Leave the test app and return to the fallback bundle
    * - Switch update channel, when {@link PluginsConfig.CapacitorUpdater.allowShakeChannelSelector} is also enabled
@@ -1395,6 +1408,8 @@ export interface CapacitorUpdaterPlugin {
    * **Important:** Disable this in production builds or only enable for internal testers.
    *
    * Can also be configured via {@link PluginsConfig.CapacitorUpdater.shakeMenu}.
+   * The native gesture can be configured via {@link PluginsConfig.CapacitorUpdater.shakeMenuGesture}
+   * or `options.gesture`.
    *
    * @param options {@link SetShakeMenuOptions} with `enabled: true` to enable or `enabled: false` to disable.
    * @returns {Promise<void>} Resolves when the setting is applied.
@@ -1404,7 +1419,7 @@ export interface CapacitorUpdaterPlugin {
   setShakeMenu(options: SetShakeMenuOptions): Promise<void>;
 
   /**
-   * Check if the shake gesture debug menu is currently enabled.
+   * Check if the native preview menu gesture is currently enabled.
    *
    * Returns the current state of the shake menu feature that can be toggled via
    * {@link setShakeMenu} or configured via {@link PluginsConfig.CapacitorUpdater.shakeMenu}.
@@ -1414,20 +1429,22 @@ export interface CapacitorUpdaterPlugin {
    * - Show/hide debug settings UI
    * - Verify configuration during testing
    *
-   * @returns {Promise<ShakeMenuEnabled>} Object with `enabled: true` or `enabled: false`.
+   * @returns {Promise<ShakeMenuEnabled>} Object with the current enabled state and gesture.
    * @throws {Error} If the operation fails.
    * @since 7.5.0
    */
   isShakeMenuEnabled(): Promise<ShakeMenuEnabled>;
 
   /**
-   * Enable or disable the shake channel selector at runtime.
+   * Enable or disable the channel selector menu gesture at runtime.
    *
-   * When enabled, shaking the device can show a channel selector, including outside preview sessions.
+   * When enabled, the configured native gesture can show a channel selector, including outside preview sessions.
    * If {@link setShakeMenu} is also enabled while a preview session is active, the shake menu includes
    * both preview actions and channel switching.
    *
    * Can also be configured via {@link PluginsConfig.CapacitorUpdater.allowShakeChannelSelector}.
+   * The native gesture can be configured via {@link PluginsConfig.CapacitorUpdater.shakeMenuGesture}
+   * or {@link setShakeMenu}.
    *
    * @param options {@link SetShakeChannelSelectorOptions} with `enabled: true` to enable or `enabled: false` to disable.
    * @returns {Promise<void>} Resolves when the setting is applied.
@@ -2284,12 +2301,21 @@ export interface TriggerUpdateCheckResult {
   queued: boolean;
 }
 
+export type ShakeMenuGesture = 'shake' | 'threeFingerPinch';
+
 export interface SetShakeMenuOptions {
   enabled: boolean;
+  /**
+   * Native gesture used to open the preview/channel menu.
+   *
+   * @default 'shake'
+   */
+  gesture?: ShakeMenuGesture;
 }
 
 export interface ShakeMenuEnabled {
   enabled: boolean;
+  gesture: ShakeMenuGesture;
 }
 
 export interface SetShakeChannelSelectorOptions {
