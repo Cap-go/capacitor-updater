@@ -17,17 +17,22 @@ const configText = readFileSync(
 );
 
 function readConfigString(key, fallback) {
-  const match = configText.match(new RegExp(`['"]?${key}['"]?\\s*[:=]\\s*['"]([^'"]+)['"]`));
+  const patterns = {
+    appId: /['"]?appId['"]?\s*[:=]\s*['"]([^'"]+)['"]/,
+    appName: /['"]?appName['"]?\s*[:=]\s*['"]([^'"]+)['"]/,
+    webDir: /['"]?webDir['"]?\s*[:=]\s*['"]([^'"]+)['"]/,
+  };
+  const match = patterns[key]?.exec(configText);
   return match?.[1] ?? fallback;
 }
 
 function runCapgo(args, allowFailure = false) {
   const token = process.env.CAPGO_TOKEN;
-  const fullArgs = ['@capgo/cli@latest', ...args];
+  const fullArgs = ['x', '@capgo/cli@latest', ...args];
   if (token) {
     fullArgs.push('--apikey', token);
   }
-  const result = spawnSync('bunx', fullArgs, {
+  const result = spawnSync(process.execPath, fullArgs, {
     cwd: repoRoot,
     stdio: 'inherit',
     env: process.env,
