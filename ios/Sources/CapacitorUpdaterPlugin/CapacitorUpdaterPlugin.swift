@@ -968,7 +968,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             metadata["createdAt"] = now
         }
         metadata["updatedAt"] = now
-        metadata["lastUsedAt"] = now
+        if metadata["lastUsedAt"] == nil || self.implementation.getCurrentBundleId() == id {
+            metadata["lastUsedAt"] = now
+        }
         metadata["version"] = bundle.getVersionName()
 
         if !replacingPreview {
@@ -985,14 +987,23 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
         }
 
-        if !replacingPreview, let name = self.currentPreviewMetadataValue(forKey: self.previewNameDefaultsKey) {
-            metadata["name"] = name
-        } else if self.metadataString(metadata, "name") == nil {
+        if !replacingPreview {
+            if let name = self.currentPreviewMetadataValue(forKey: self.previewNameDefaultsKey) {
+                metadata["name"] = name
+            } else {
+                metadata.removeValue(forKey: "name")
+            }
+        }
+        if self.metadataString(metadata, "name") == nil {
             metadata["name"] = bundle.getVersionName()
         }
 
-        if !replacingPreview, let source = self.currentPreviewMetadataValue(forKey: self.previewSourceDefaultsKey) {
-            metadata["source"] = source
+        if !replacingPreview {
+            if let source = self.currentPreviewMetadataValue(forKey: self.previewSourceDefaultsKey) {
+                metadata["source"] = source
+            } else {
+                metadata.removeValue(forKey: "source")
+            }
         }
 
         if let oldId, oldId != id {

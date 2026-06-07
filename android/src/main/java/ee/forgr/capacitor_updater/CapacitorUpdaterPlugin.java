@@ -536,7 +536,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     metadata.put("createdAt", now);
                 }
                 metadata.put("updatedAt", now);
-                metadata.put("lastUsedAt", now);
+                if (metadata.isNull("lastUsedAt") || this.implementation.getCurrentBundle().getId().equals(id)) {
+                    metadata.put("lastUsedAt", now);
+                }
                 metadata.put("version", bundle.getVersionName());
 
                 if (!replacingPreview) {
