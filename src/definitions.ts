@@ -2322,6 +2322,12 @@ export interface SetShakeMenuOptions {
 
 export interface ShakeMenuEnabled {
   enabled: boolean;
+  /**
+   * The currently configured native gesture used to open the preview/channel menu.
+   * Undefined means consumers should treat the gesture as the default `shake` behavior.
+   *
+   * @since 8.48.0
+   */
   gesture?: ShakeMenuGesture;
 }
 

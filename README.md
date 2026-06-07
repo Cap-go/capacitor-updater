@@ -2562,10 +2562,10 @@ State information for flexible update progress (Android only).
 
 ##### ShakeMenuEnabled
 
-| Prop          | Type                                                          |
-| ------------- | ------------------------------------------------------------- |
-| **`enabled`** | <code>boolean</code>                                          |
-| **`gesture`** | <code><a href="#shakemenugesture">ShakeMenuGesture</a></code> |
+| Prop          | Type                                                          | Description                                                                                                                                                        | Since  |
+| ------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
+| **`enabled`** | <code>boolean</code>                                          |                                                                                                                                                                    |        |
+| **`gesture`** | <code><a href="#shakemenugesture">ShakeMenuGesture</a></code> | The currently configured native gesture used to open the preview/channel menu. Undefined means consumers should treat the gesture as the default `shake` behavior. | 8.48.0 |
 
 
 ##### SetShakeChannelSelectorOptions
