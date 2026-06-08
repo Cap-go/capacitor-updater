@@ -9,7 +9,78 @@ import Capacitor
 
 private var lastShakeMenuShownAt: TimeInterval = 0
 private let shakeMenuCooldownSeconds: TimeInterval = 1.2
-private let threeFingerPinchScaleDelta: CGFloat = 0.30
+private let threeFingerPinchScaleDelta: CGFloat = 0.12
+
+final class ThreeFingerPinchGestureRecognizer: UIGestureRecognizer {
+    private var initialSpan: CGFloat = 0
+    private(set) var scale: CGFloat = 1
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        super.touchesBegan(touches, with: event)
+        guard let view = self.view, let activeTouches = activeTouches(in: view, with: event), activeTouches.count <= 3 else {
+            self.state = .failed
+            return
+        }
+
+        if activeTouches.count == 3 {
+            self.initialSpan = span(for: activeTouches, in: view)
+            self.scale = 1
+            self.state = self.initialSpan > 0 ? .began : .failed
+        }
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+        super.touchesMoved(touches, with: event)
+        guard let view = self.view,
+              let activeTouches = activeTouches(in: view, with: event),
+              activeTouches.count == 3,
+              self.initialSpan > 0 else {
+            self.state = .failed
+            return
+        }
+
+        self.scale = span(for: activeTouches, in: view) / self.initialSpan
+        self.state = .changed
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+        super.touchesEnded(touches, with: event)
+        self.state = self.state == .possible || self.state == .began ? .failed : .ended
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+        super.touchesCancelled(touches, with: event)
+        self.state = .cancelled
+    }
+
+    override func reset() {
+        super.reset()
+        self.initialSpan = 0
+        self.scale = 1
+    }
+
+    private func activeTouches(in view: UIView, with event: UIEvent) -> [UITouch]? {
+        event.touches(for: view)?.filter { touch in
+            touch.phase != .ended && touch.phase != .cancelled
+        }
+    }
+
+    private func span(for touches: [UITouch], in view: UIView) -> CGFloat {
+        guard !touches.isEmpty else {
+            return 0
+        }
+
+        let points = touches.map { $0.location(in: view) }
+        let center = points.reduce(CGPoint.zero) { result, point in
+            CGPoint(x: result.x + point.x, y: result.y + point.y)
+        }
+        let centerPoint = CGPoint(x: center.x / CGFloat(points.count), y: center.y / CGFloat(points.count))
+        let totalDistance = points.reduce(CGFloat(0)) { result, point in
+            result + hypot(point.x - centerPoint.x, point.y - centerPoint.y)
+        }
+        return totalDistance / CGFloat(points.count)
+    }
+}
 
 extension UIApplication {
     // swiftlint:disable:next line_length
@@ -46,7 +117,7 @@ extension CapacitorUpdaterPlugin: UIGestureRecognizerDelegate {
 
             self.removeShakeMenuGestureRecognizer()
 
-            let recognizer = UIPinchGestureRecognizer(target: self, action: #selector(self.handleShakeMenuPinch(_:)))
+            let recognizer = ThreeFingerPinchGestureRecognizer(target: self, action: #selector(self.handleShakeMenuPinch(_:)))
             recognizer.cancelsTouchesInView = false
             recognizer.delaysTouchesBegan = false
             recognizer.delaysTouchesEnded = false
@@ -66,12 +137,12 @@ extension CapacitorUpdaterPlugin: UIGestureRecognizerDelegate {
         }
     }
 
-    @objc func handleShakeMenuPinch(_ recognizer: UIPinchGestureRecognizer) {
+    @objc func handleShakeMenuPinch(_ recognizer: ThreeFingerPinchGestureRecognizer) {
         if recognizer.state == .ended || recognizer.state == .cancelled || recognizer.state == .failed {
             self.shakeMenuPinchGestureTriggered = false
             return
         }
-        guard recognizer.state == .changed, !self.shakeMenuPinchGestureTriggered, recognizer.numberOfTouches == 3 else {
+        guard recognizer.state == .changed, !self.shakeMenuPinchGestureTriggered else {
             return
         }
         guard abs(recognizer.scale - 1) >= threeFingerPinchScaleDelta else {
@@ -165,22 +236,12 @@ extension UIWindow {
 
         let appName = Bundle.main.infoDictionary?["CFBundleDisplayName"] as? String ?? "App"
         let title = "Preview \(appName) Menu"
-        let message = "Reload the current preview or leave the test app."
+        let message = "Reload, switch, or leave the current preview."
         let okButtonTitle = "Leave test app"
-        let reloadButtonTitle = "Reload app"
+        let reloadButtonTitle = "Reload preview"
         let cancelButtonTitle = "Close menu"
 
         let alertShake = UIAlertController(title: title, message: message, preferredStyle: .alert)
-
-        alertShake.addAction(UIAlertAction(title: okButtonTitle, style: .default) { _ in
-            DispatchQueue.global(qos: .userInitiated).async {
-                if !plugin.leavePreviewSessionFromShakeMenu() {
-                    DispatchQueue.main.async {
-                        self.showError(message: "Could not leave the test app.", plugin: plugin)
-                    }
-                }
-            }
-        })
 
         alertShake.addAction(UIAlertAction(title: reloadButtonTitle, style: .default) { _ in
             DispatchQueue.global(qos: .userInitiated).async {
@@ -191,6 +252,20 @@ extension UIWindow {
                 }
             }
         })
+
+        if !plugin.previewMenuPreviews().isEmpty {
+            alertShake.addAction(UIAlertAction(title: "Switch preview", style: .default) { _ in
+                let showSelector = {
+                    self.showPreviewSelector(plugin: plugin)
+                }
+
+                if let presenter = alertShake.presentingViewController {
+                    presenter.dismiss(animated: true, completion: showSelector)
+                } else {
+                    DispatchQueue.main.async(execute: showSelector)
+                }
+            })
+        }
 
         if plugin.shakeChannelSelectorEnabled {
             alertShake.addAction(UIAlertAction(title: "Switch channel", style: .default) { _ in
@@ -205,6 +280,16 @@ extension UIWindow {
                 }
             })
         }
+
+        alertShake.addAction(UIAlertAction(title: okButtonTitle, style: .default) { _ in
+            DispatchQueue.global(qos: .userInitiated).async {
+                if !plugin.leavePreviewSessionFromShakeMenu() {
+                    DispatchQueue.main.async {
+                        self.showError(message: "Could not leave the test app.", plugin: plugin)
+                    }
+                }
+            }
+        })
 
         alertShake.addAction(UIAlertAction(title: cancelButtonTitle, style: .default))
 
@@ -273,6 +358,130 @@ extension UIWindow {
         DispatchQueue.main.async {
             if let topVC = UIApplication.topViewController() {
                 topVC.present(alertShake, animated: true)
+            }
+        }
+    }
+
+    private func previewLabel(_ preview: [String: Any]) -> String {
+        let bundle = preview["bundle"] as? [String: Any]
+        let name = preview["name"] as? String
+        let version = bundle?["version"] as? String
+        var label = [name, version, preview["id"] as? String]
+            .compactMap { value in
+                guard let value, !value.isEmpty else { return nil }
+                return value
+            }
+            .first ?? "Preview"
+        if preview["isActive"] as? Bool == true {
+            label += " (current)"
+        }
+        return label
+    }
+
+    private func showPreviewSelector(plugin: CapacitorUpdaterPlugin) {
+        guard let topVC = UIApplication.topViewController() else {
+            return
+        }
+        if topVC.isKind(of: UIAlertController.self) {
+            plugin.logger.info("UIAlertController is already presented")
+            return
+        }
+
+        let previews = plugin.previewMenuPreviews()
+        guard !previews.isEmpty else {
+            self.showError(message: "No saved previews available on this device.", plugin: plugin)
+            return
+        }
+
+        let alert = UIAlertController(title: "Select Preview", message: "Choose a local preview to open", preferredStyle: .actionSheet)
+        let previewsToShow = Array(previews.prefix(5))
+        for preview in previewsToShow {
+            let title = self.previewLabel(preview)
+            let id = preview["id"] as? String ?? ""
+            alert.addAction(UIAlertAction(title: title, style: .default) { [weak self] _ in
+                self?.selectPreview(id: id, plugin: plugin)
+            })
+        }
+
+        if previews.count > 5 {
+            alert.addAction(UIAlertAction(title: "More previews...", style: .default) { [weak self] _ in
+                self?.showSearchablePreviewPicker(previews: previews, plugin: plugin)
+            })
+        }
+
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+
+        if let popoverController = alert.popoverPresentationController {
+            popoverController.sourceView = self
+            popoverController.sourceRect = CGRect(x: self.bounds.midX, y: self.bounds.midY, width: 0, height: 0)
+            popoverController.permittedArrowDirections = []
+        }
+
+        topVC.present(alert, animated: true)
+    }
+
+    private func showSearchablePreviewPicker(previews: [[String: Any]], plugin: CapacitorUpdaterPlugin) {
+        let alert = UIAlertController(title: "Search Previews", message: "Enter preview name or version", preferredStyle: .alert)
+
+        alert.addTextField { textField in
+            textField.placeholder = "Preview name..."
+        }
+
+        alert.addAction(UIAlertAction(title: "Search", style: .default) { [weak self, weak alert] _ in
+            guard let self else { return }
+            guard let searchText = alert?.textFields?.first?.text?.lowercased(), !searchText.isEmpty else {
+                self.showPreviewSelector(plugin: plugin)
+                return
+            }
+
+            let filtered = previews.filter { self.previewLabel($0).lowercased().contains(searchText) }
+            if filtered.isEmpty {
+                self.showError(message: "No previews found matching '\(searchText)'", plugin: plugin)
+            } else if filtered.count == 1, let id = filtered[0]["id"] as? String {
+                self.selectPreview(id: id, plugin: plugin)
+            } else {
+                self.presentPreviewPicker(previews: filtered, plugin: plugin)
+            }
+        })
+
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+
+        DispatchQueue.main.async {
+            if let topVC = UIApplication.topViewController() {
+                topVC.present(alert, animated: true)
+            }
+        }
+    }
+
+    private func presentPreviewPicker(previews: [[String: Any]], plugin: CapacitorUpdaterPlugin) {
+        let alert = UIAlertController(title: "Select Preview", message: "Choose a local preview to open", preferredStyle: .actionSheet)
+        for preview in previews.prefix(5) {
+            let id = preview["id"] as? String ?? ""
+            alert.addAction(UIAlertAction(title: self.previewLabel(preview), style: .default) { [weak self] _ in
+                self?.selectPreview(id: id, plugin: plugin)
+            })
+        }
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+
+        if let popoverController = alert.popoverPresentationController {
+            popoverController.sourceView = self
+            popoverController.sourceRect = CGRect(x: self.bounds.midX, y: self.bounds.midY, width: 0, height: 0)
+            popoverController.permittedArrowDirections = []
+        }
+
+        DispatchQueue.main.async {
+            if let topVC = UIApplication.topViewController() {
+                topVC.present(alert, animated: true)
+            }
+        }
+    }
+
+    private func selectPreview(id: String, plugin: CapacitorUpdaterPlugin) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            if !plugin.setPreviewFromShakeMenu(id: id) {
+                DispatchQueue.main.async {
+                    self.showError(message: "Could not switch preview.", plugin: plugin)
+                }
             }
         }
     }

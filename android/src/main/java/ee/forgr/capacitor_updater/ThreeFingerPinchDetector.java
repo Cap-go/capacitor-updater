@@ -19,7 +19,7 @@ public class ThreeFingerPinchDetector implements View.OnTouchListener {
     }
 
     private static final int REQUIRED_POINTER_COUNT = 3;
-    private static final float MIN_SCALE_DELTA = 0.30f;
+    private static final float MIN_SCALE_DELTA = 0.12f;
     private static final long PINCH_TIMEOUT = 1000;
 
     private final Listener listener;

@@ -448,6 +448,12 @@ export default config;
 * [`next(...)`](#next)
 * [`set(...)`](#set)
 * [`startPreviewSession(...)`](#startpreviewsession)
+* [`listPreviews()`](#listpreviews)
+* [`setPreview(...)`](#setpreview)
+* [`resetPreview()`](#resetpreview)
+* [`deletePreview(...)`](#deletepreview)
+* [`checkPreviewUpdate(...)`](#checkpreviewupdate)
+* [`updatePreview(...)`](#updatepreview)
 * [`delete(...)`](#delete)
 * [`setBundleError(...)`](#setbundleerror)
 * [`list(...)`](#list)
@@ -726,12 +732,140 @@ for update checks until the user leaves the preview. Native updater stats are
 skipped while the preview session is active.
 
 Use this before calling {@link set} for Expo Go-style preview flows.
+Use {@link listPreviews}, {@link setPreview}, {@link resetPreview},
+{@link deletePreview}, {@link checkPreviewUpdate}, and
+{@link updatePreview} to manage saved local previews.
 
 | Param         | Type                                                                              | Description                       |
 | ------------- | --------------------------------------------------------------------------------- | --------------------------------- |
 | **`options`** | <code><a href="#startpreviewsessionoptions">StartPreviewSessionOptions</a></code> | Optional preview session options. |
 
 **Since:** 8.47.0
+
+--------------------
+
+
+#### listPreviews()
+
+```typescript
+listPreviews() => Promise<PreviewListResult>
+```
+
+Get every locally available preview bundle that was registered by
+{@link startPreviewSession} and later applied with {@link set}.
+
+This only returns previews whose bundles are still available locally. It is
+safe to show this in a preview switcher or native debug menu.
+
+**Returns:** <code>Promise&lt;<a href="#previewlistresult">PreviewListResult</a>&gt;</code>
+
+**Since:** 8.49.0
+
+--------------------
+
+
+#### setPreview(...)
+
+```typescript
+setPreview(options: BundleId) => Promise<void>
+```
+
+Switch to a locally available preview bundle and reload the WebView.
+
+If the app is not already in a preview session, the current live bundle is
+saved as the fallback so {@link resetPreview} or the native shake menu can
+return to it later.
+
+| Param         | Type                                          | Description                                                                         |
+| ------------- | --------------------------------------------- | ----------------------------------------------------------------------------------- |
+| **`options`** | <code><a href="#bundleid">BundleId</a></code> | A {@link <a href="#bundleid">BundleId</a>} object containing the preview bundle ID. |
+
+**Since:** 8.49.0
+
+--------------------
+
+
+#### resetPreview()
+
+```typescript
+resetPreview() => Promise<void>
+```
+
+Leave the active preview session and reload the saved live bundle.
+
+This does not delete any saved previews. Use {@link deletePreview} to remove
+a preview from local storage.
+
+**Since:** 8.49.0
+
+--------------------
+
+
+#### deletePreview(...)
+
+```typescript
+deletePreview(options: BundleId) => Promise<DeletePreviewResult>
+```
+
+Delete a locally saved preview and its bundle when possible.
+
+Active previews cannot be deleted until you switch away from them or call
+{@link resetPreview}. If only the preview metadata can be removed, the
+method still resolves with `deleted: false`.
+
+| Param         | Type                                          | Description                                                                         |
+| ------------- | --------------------------------------------- | ----------------------------------------------------------------------------------- |
+| **`options`** | <code><a href="#bundleid">BundleId</a></code> | A {@link <a href="#bundleid">BundleId</a>} object containing the preview bundle ID. |
+
+**Returns:** <code>Promise&lt;<a href="#deletepreviewresult">DeletePreviewResult</a>&gt;</code>
+
+**Since:** 8.49.0
+
+--------------------
+
+
+#### checkPreviewUpdate(...)
+
+```typescript
+checkPreviewUpdate(options: BundleId) => Promise<PreviewUpdateResult>
+```
+
+Check whether a saved preview's payload URL points to a newer preview bundle.
+
+Only previews started with a `payloadUrl` can be checked natively. Direct URL
+previews can still be switched or deleted locally, but the updater does not
+know where to check for newer versions.
+
+| Param         | Type                                          | Description                                                                         |
+| ------------- | --------------------------------------------- | ----------------------------------------------------------------------------------- |
+| **`options`** | <code><a href="#bundleid">BundleId</a></code> | A {@link <a href="#bundleid">BundleId</a>} object containing the preview bundle ID. |
+
+**Returns:** <code>Promise&lt;<a href="#previewupdateresult">PreviewUpdateResult</a>&gt;</code>
+
+**Since:** 8.49.0
+
+--------------------
+
+
+#### updatePreview(...)
+
+```typescript
+updatePreview(options: BundleId) => Promise<PreviewUpdateResult>
+```
+
+Download the newest bundle for a saved preview payload URL.
+
+If the preview being updated is active, the new bundle is applied and the
+WebView reloads. Otherwise, the saved preview entry is moved to the newly
+downloaded bundle and can be selected later with {@link setPreview}.
+
+| Param         | Type                                          | Description                                                                         |
+| ------------- | --------------------------------------------- | ----------------------------------------------------------------------------------- |
+| **`options`** | <code><a href="#bundleid">BundleId</a></code> | A {@link <a href="#bundleid">BundleId</a>} object containing the preview bundle ID. |
+
+**Returns:** <code>Promise&lt;<a href="#previewupdateresult">PreviewUpdateResult</a>&gt;</code>
+
+**Since:** 8.49.0
 
 --------------------
 
@@ -2210,6 +2344,53 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 | ---------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ------ |
 | **`appId`**      | <code>string</code> | App id to use while the preview session is active. The previous app id is restored when leaving the preview session. Requires {@link PluginsConfig.CapacitorUpdater.allowPreview} to be `true`.                                                                           | <code>undefined</code> | 8.47.0 |
 | **`payloadUrl`** | <code>string</code> | HTTP(S) URL returning a preview download payload. When provided, the native shake reload action fetches this payload again before reloading so channel previews can move to the latest bundle. Requires {@link PluginsConfig.CapacitorUpdater.allowPreview} to be `true`. | <code>undefined</code> | 8.48.0 |
+| **`name`**       | <code>string</code> | Human-readable preview name stored with the next preview bundle applied by {@link set}. Native preview menus and {@link listPreviews} can display it.                                                                                                                     | <code>undefined</code> | 8.49.0 |
+| **`source`**     | <code>string</code> | Optional source label for the preview, such as `channel`, `bundle`, `url`, or `payload`. This is stored as metadata only.                                                                                                                                                 | <code>undefined</code> | 8.49.0 |
+
+
+##### PreviewListResult
+
+| Prop                | Type                                                | Description                                             | Since  |
+| ------------------- | --------------------------------------------------- | ------------------------------------------------------- | ------ |
+| **`previews`**      | <code>PreviewInfo[]</code>                          | Locally available preview bundles.                      | 8.49.0 |
+| **`current`**       | <code><a href="#previewinfo">PreviewInfo</a></code> | Current preview when a preview session is active.       | 8.49.0 |
+| **`currentBundle`** | <code><a href="#bundleinfo">BundleInfo</a></code>   | Bundle currently loaded by the WebView.                 | 8.49.0 |
+| **`liveBundle`**    | <code><a href="#bundleinfo">BundleInfo</a></code>   | Bundle that will be restored when leaving preview mode. | 8.49.0 |
+
+
+##### PreviewInfo
+
+| Prop             | Type                                              | Description                                                               | Since  |
+| ---------------- | ------------------------------------------------- | ------------------------------------------------------------------------- | ------ |
+| **`id`**         | <code>string</code>                               | Preview bundle id.                                                        | 8.49.0 |
+| **`bundle`**     | <code><a href="#bundleinfo">BundleInfo</a></code> | Locally downloaded bundle backing this preview.                           | 8.49.0 |
+| **`name`**       | <code>string</code>                               | Human-readable name supplied when the preview was started.                | 8.49.0 |
+| **`source`**     | <code>string</code>                               | Metadata source label supplied when the preview was started.              | 8.49.0 |
+| **`appId`**      | <code>string</code>                               | Preview app id, when the session uses an app id override.                 | 8.49.0 |
+| **`payloadUrl`** | <code>string</code>                               | Payload URL used to refresh this preview.                                 | 8.49.0 |
+| **`createdAt`**  | <code>string</code>                               | ISO timestamp for when this preview was first saved.                      | 8.49.0 |
+| **`updatedAt`**  | <code>string</code>                               | ISO timestamp for the last metadata or bundle update.                     | 8.49.0 |
+| **`lastUsedAt`** | <code>string</code>                               | ISO timestamp for the last time this preview was activated.               | 8.49.0 |
+| **`isActive`**   | <code>boolean</code>                              | Whether this preview is the currently active bundle in a preview session. | 8.49.0 |
+
+
+##### DeletePreviewResult
+
+| Prop          | Type                 | Description                                      | Since  |
+| ------------- | -------------------- | ------------------------------------------------ | ------ |
+| **`removed`** | <code>boolean</code> | Whether preview metadata was removed.            | 8.49.0 |
+| **`deleted`** | <code>boolean</code> | Whether the underlying local bundle was deleted. | 8.49.0 |
+
+
+##### PreviewUpdateResult
+
+| Prop                | Type                                                | Description                                                           | Since  |
+| ------------------- | --------------------------------------------------- | --------------------------------------------------------------------- | ------ |
+| **`preview`**       | <code><a href="#previewinfo">PreviewInfo</a></code> | Saved preview metadata after the check or update.                     | 8.49.0 |
+| **`latestVersion`** | <code>string</code>                                 | Latest version returned by the preview payload endpoint.              | 8.49.0 |
+| **`upToDate`**      | <code>boolean</code>                                | Whether the saved preview already matches the latest payload version. | 8.49.0 |
+| **`updated`**       | <code>boolean</code>                                | Whether a newer bundle was downloaded and saved.                      | 8.49.0 |
+| **`bundle`**        | <code><a href="#bundleinfo">BundleInfo</a></code>   | New bundle when {@link updatePreview} downloaded one.                 | 8.49.0 |
 
 
 ##### BundleListResult

@@ -603,12 +603,96 @@ export interface CapacitorUpdaterPlugin {
    * skipped while the preview session is active.
    *
    * Use this before calling {@link set} for Expo Go-style preview flows.
+   * Use {@link listPreviews}, {@link setPreview}, {@link resetPreview},
+   * {@link deletePreview}, {@link checkPreviewUpdate}, and
+   * {@link updatePreview} to manage saved local previews.
    *
    * @param options Optional preview session options.
    * @returns {Promise<void>} Resolves when preview session state is prepared.
    * @since 8.47.0
    */
   startPreviewSession(options?: StartPreviewSessionOptions): Promise<void>;
+
+  /**
+   * Get every locally available preview bundle that was registered by
+   * {@link startPreviewSession} and later applied with {@link set}.
+   *
+   * This only returns previews whose bundles are still available locally. It is
+   * safe to show this in a preview switcher or native debug menu.
+   *
+   * @returns {Promise<PreviewListResult>} Locally available previews and current preview state.
+   * @throws {Error} If preview sessions are not enabled by config.
+   * @since 8.49.0
+   */
+  listPreviews(): Promise<PreviewListResult>;
+
+  /**
+   * Switch to a locally available preview bundle and reload the WebView.
+   *
+   * If the app is not already in a preview session, the current live bundle is
+   * saved as the fallback so {@link resetPreview} or the native shake menu can
+   * return to it later.
+   *
+   * @param options A {@link BundleId} object containing the preview bundle ID.
+   * @returns {Promise<void>} Resolves once the preview switch is staged.
+   * @throws {Error} If preview sessions are disabled or the preview is not available locally.
+   * @since 8.49.0
+   */
+  setPreview(options: BundleId): Promise<void>;
+
+  /**
+   * Leave the active preview session and reload the saved live bundle.
+   *
+   * This does not delete any saved previews. Use {@link deletePreview} to remove
+   * a preview from local storage.
+   *
+   * @returns {Promise<void>} Resolves once the live bundle reload is staged.
+   * @throws {Error} If there is no preview fallback bundle available.
+   * @since 8.49.0
+   */
+  resetPreview(): Promise<void>;
+
+  /**
+   * Delete a locally saved preview and its bundle when possible.
+   *
+   * Active previews cannot be deleted until you switch away from them or call
+   * {@link resetPreview}. If only the preview metadata can be removed, the
+   * method still resolves with `deleted: false`.
+   *
+   * @param options A {@link BundleId} object containing the preview bundle ID.
+   * @returns {Promise<DeletePreviewResult>} Whether the underlying bundle was deleted.
+   * @throws {Error} If preview sessions are disabled.
+   * @since 8.49.0
+   */
+  deletePreview(options: BundleId): Promise<DeletePreviewResult>;
+
+  /**
+   * Check whether a saved preview's payload URL points to a newer preview bundle.
+   *
+   * Only previews started with a `payloadUrl` can be checked natively. Direct URL
+   * previews can still be switched or deleted locally, but the updater does not
+   * know where to check for newer versions.
+   *
+   * @param options A {@link BundleId} object containing the preview bundle ID.
+   * @returns {Promise<PreviewUpdateResult>} Update status for the preview.
+   * @throws {Error} If preview sessions are disabled or the preview has no payload URL.
+   * @since 8.49.0
+   */
+  checkPreviewUpdate(options: BundleId): Promise<PreviewUpdateResult>;
+
+  /**
+   * Download the newest bundle for a saved preview payload URL.
+   *
+   * If the preview being updated is active, the new bundle is applied and the
+   * WebView reloads. Otherwise, the saved preview entry is moved to the newly
+   * downloaded bundle and can be selected later with {@link setPreview}.
+   *
+   * @param options A {@link BundleId} object containing the preview bundle ID.
+   * @returns {Promise<PreviewUpdateResult>} The update result and saved preview metadata.
+   * @throws {Error} If preview sessions are disabled or the preview cannot be updated.
+   * @since 8.49.0
+   */
+  updatePreview(options: BundleId): Promise<PreviewUpdateResult>;
 
   /**
    * Delete a bundle from local storage to free up disk space.
@@ -2163,6 +2247,158 @@ export interface StartPreviewSessionOptions {
    * @default undefined
    */
   payloadUrl?: string;
+  /**
+   * Human-readable preview name stored with the next preview bundle applied by
+   * {@link set}. Native preview menus and {@link listPreviews} can display it.
+   * @since 8.49.0
+   * @default undefined
+   */
+  name?: string;
+  /**
+   * Optional source label for the preview, such as `channel`, `bundle`, `url`,
+   * or `payload`. This is stored as metadata only.
+   * @since 8.49.0
+   * @default undefined
+   */
+  source?: string;
+}
+
+export interface PreviewInfo {
+  /**
+   * Preview bundle id.
+   *
+   * @since 8.49.0
+   */
+  id: string;
+  /**
+   * Locally downloaded bundle backing this preview.
+   *
+   * @since 8.49.0
+   */
+  bundle: BundleInfo;
+  /**
+   * Human-readable name supplied when the preview was started.
+   *
+   * @since 8.49.0
+   */
+  name?: string;
+  /**
+   * Metadata source label supplied when the preview was started.
+   *
+   * @since 8.49.0
+   */
+  source?: string;
+  /**
+   * Preview app id, when the session uses an app id override.
+   *
+   * @since 8.49.0
+   */
+  appId?: string;
+  /**
+   * Payload URL used to refresh this preview.
+   *
+   * @since 8.49.0
+   */
+  payloadUrl?: string;
+  /**
+   * ISO timestamp for when this preview was first saved.
+   *
+   * @since 8.49.0
+   */
+  createdAt: string;
+  /**
+   * ISO timestamp for the last metadata or bundle update.
+   *
+   * @since 8.49.0
+   */
+  updatedAt: string;
+  /**
+   * ISO timestamp for the last time this preview was activated.
+   *
+   * @since 8.49.0
+   */
+  lastUsedAt: string;
+  /**
+   * Whether this preview is the currently active bundle in a preview session.
+   *
+   * @since 8.49.0
+   */
+  isActive: boolean;
+}
+
+export interface PreviewListResult {
+  /**
+   * Locally available preview bundles.
+   *
+   * @since 8.49.0
+   */
+  previews: PreviewInfo[];
+  /**
+   * Current preview when a preview session is active.
+   *
+   * @since 8.49.0
+   */
+  current?: PreviewInfo;
+  /**
+   * Bundle currently loaded by the WebView.
+   *
+   * @since 8.49.0
+   */
+  currentBundle: BundleInfo;
+  /**
+   * Bundle that will be restored when leaving preview mode.
+   *
+   * @since 8.49.0
+   */
+  liveBundle?: BundleInfo;
+}
+
+export interface DeletePreviewResult {
+  /**
+   * Whether preview metadata was removed.
+   *
+   * @since 8.49.0
+   */
+  removed: boolean;
+  /**
+   * Whether the underlying local bundle was deleted.
+   *
+   * @since 8.49.0
+   */
+  deleted: boolean;
+}
+
+export interface PreviewUpdateResult {
+  /**
+   * Saved preview metadata after the check or update.
+   *
+   * @since 8.49.0
+   */
+  preview: PreviewInfo;
+  /**
+   * Latest version returned by the preview payload endpoint.
+   *
+   * @since 8.49.0
+   */
+  latestVersion?: string;
+  /**
+   * Whether the saved preview already matches the latest payload version.
+   *
+   * @since 8.49.0
+   */
+  upToDate: boolean;
+  /**
+   * Whether a newer bundle was downloaded and saved.
+   *
+   * @since 8.49.0
+   */
+  updated: boolean;
+  /**
+   * New bundle when {@link updatePreview} downloaded one.
+   *
+   * @since 8.49.0
+   */
+  bundle?: BundleInfo;
 }
 
 export interface AppReadyResult {
