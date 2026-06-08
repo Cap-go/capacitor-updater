@@ -6,13 +6,22 @@
 
 package ee.forgr.capacitor_updater;
 
+import android.view.ActionMode;
+import android.view.KeyEvent;
+import android.view.KeyboardShortcutGroup;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.view.MotionEvent;
+import android.view.SearchEvent;
 import android.view.View;
-import com.getcapacitor.Bridge;
+import android.view.Window;
+import android.view.WindowManager;
+import android.view.accessibility.AccessibilityEvent;
 import com.getcapacitor.BridgeActivity;
-import java.lang.reflect.Field;
+import java.lang.ref.WeakReference;
+import java.util.List;
 
-public class ThreeFingerPinchDetector implements View.OnTouchListener {
+public class ThreeFingerPinchDetector {
 
     public interface Listener {
         void onThreeFingerPinchDetected();
@@ -24,9 +33,10 @@ public class ThreeFingerPinchDetector implements View.OnTouchListener {
 
     private final Listener listener;
     private final Logger logger;
-    private View targetView;
-    private View.OnTouchListener previousOnTouchListener;
-    private boolean touchListenerInstalled = false;
+    private Window targetWindow;
+    private Window.Callback previousWindowCallback;
+    private Window.Callback windowCallback;
+    private WeakReference<ThreeFingerPinchDetector> detectorReference;
     private float initialSpan = 0;
     private boolean tracking = false;
     private boolean triggered = false;
@@ -38,74 +48,68 @@ public class ThreeFingerPinchDetector implements View.OnTouchListener {
     }
 
     public void start(BridgeActivity activity) {
-        if (targetView != null) {
+        if (targetWindow != null) {
             stop();
         }
 
-        View view = null;
-        Bridge bridge = activity.getBridge();
-        if (bridge != null && bridge.getWebView() != null) {
-            view = bridge.getWebView();
-        }
-        if (view == null && activity.getWindow() != null) {
-            view = activity.getWindow().getDecorView().getRootView();
-        }
-        if (view == null) {
-            logger.warn("Three finger pinch detector could not find a target view");
+        Window window = activity.getWindow();
+        if (window == null) {
+            logger.warn("Three finger pinch detector could not find a target window");
             return;
         }
 
-        this.targetView = view;
-        this.previousOnTouchListener = getCurrentOnTouchListener(view);
-        if (this.previousOnTouchListener != this) {
-            this.targetView.setOnTouchListener(this);
-            this.touchListenerInstalled = true;
-        }
+        this.targetWindow = window;
+        this.previousWindowCallback = window.getCallback();
+        this.detectorReference = new WeakReference<>(this);
+        this.windowCallback = new PinchWindowCallback(this.previousWindowCallback, this.detectorReference);
+        window.setCallback(this.windowCallback);
+        logger.info("Three finger pinch detector installed on activity window");
     }
 
     public void stop() {
-        if (targetView != null) {
-            View.OnTouchListener currentOnTouchListener = getCurrentOnTouchListener(targetView);
-            if (touchListenerInstalled && (currentOnTouchListener == this || currentOnTouchListener == null)) {
-                targetView.setOnTouchListener(previousOnTouchListener);
+        if (targetWindow != null) {
+            if (windowCallback instanceof PinchWindowCallback) {
+                ((PinchWindowCallback) windowCallback).disable();
             }
-            targetView = null;
-            previousOnTouchListener = null;
-            touchListenerInstalled = false;
+            if (detectorReference != null) {
+                detectorReference.clear();
+            }
+            if (targetWindow.getCallback() == windowCallback) {
+                targetWindow.setCallback(previousWindowCallback);
+            }
+            targetWindow = null;
+            previousWindowCallback = null;
+            windowCallback = null;
+            detectorReference = null;
         }
         reset();
     }
 
-    @Override
-    public boolean onTouch(View view, MotionEvent event) {
-        boolean consumedByPreviousListener = false;
-        if (previousOnTouchListener != null && previousOnTouchListener != this) {
-            consumedByPreviousListener = previousOnTouchListener.onTouch(view, event);
-        }
-
+    private void handleTouch(MotionEvent event) {
         int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_CANCEL || action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_POINTER_UP) {
             reset();
-            return consumedByPreviousListener;
+            return;
         }
 
         if (event.getPointerCount() != REQUIRED_POINTER_COUNT) {
             if (action == MotionEvent.ACTION_POINTER_DOWN) {
                 reset();
             }
-            return consumedByPreviousListener;
+            return;
         }
 
         float span = calculateSpan(event);
         if (span <= 0) {
-            return consumedByPreviousListener;
+            return;
         }
 
         if (!tracking || action == MotionEvent.ACTION_POINTER_DOWN) {
             initialSpan = span;
             tracking = true;
             triggered = false;
-            return consumedByPreviousListener;
+            logger.info("Three finger pinch tracking started");
+            return;
         }
 
         if (!triggered && Math.abs(span - initialSpan) / initialSpan >= MIN_SCALE_DELTA) {
@@ -113,13 +117,12 @@ public class ThreeFingerPinchDetector implements View.OnTouchListener {
             if (currentTime - lastPinchTime > PINCH_TIMEOUT) {
                 triggered = true;
                 lastPinchTime = currentTime;
+                logger.info("Three finger pinch threshold reached");
                 if (listener != null) {
                     listener.onThreeFingerPinchDetected();
                 }
             }
         }
-
-        return consumedByPreviousListener;
     }
 
     private float calculateSpan(MotionEvent event) {
@@ -141,29 +144,180 @@ public class ThreeFingerPinchDetector implements View.OnTouchListener {
         return totalDistance / REQUIRED_POINTER_COUNT;
     }
 
-    private View.OnTouchListener getCurrentOnTouchListener(View view) {
-        try {
-            Field listenerInfoField = View.class.getDeclaredField("mListenerInfo");
-            listenerInfoField.setAccessible(true);
-            Object listenerInfo = listenerInfoField.get(view);
-            if (listenerInfo == null) {
-                return null;
-            }
-            Field onTouchListenerField = listenerInfo.getClass().getDeclaredField("mOnTouchListener");
-            onTouchListenerField.setAccessible(true);
-            Object listener = onTouchListenerField.get(listenerInfo);
-            if (listener instanceof View.OnTouchListener) {
-                return (View.OnTouchListener) listener;
-            }
-        } catch (ReflectiveOperationException | RuntimeException exception) {
-            logger.warn("Three finger pinch detector could not inspect the current touch listener: " + exception.getMessage());
-        }
-        return null;
-    }
-
     private void reset() {
         initialSpan = 0;
         tracking = false;
         triggered = false;
+    }
+
+    private static class PinchWindowCallback implements Window.Callback {
+
+        private final Window.Callback delegate;
+        private final WeakReference<ThreeFingerPinchDetector> detectorReference;
+        private boolean enabled = true;
+
+        PinchWindowCallback(Window.Callback delegate, WeakReference<ThreeFingerPinchDetector> detectorReference) {
+            this.delegate = delegate;
+            this.detectorReference = detectorReference;
+        }
+
+        void disable() {
+            enabled = false;
+            if (detectorReference != null) {
+                detectorReference.clear();
+            }
+        }
+
+        @Override
+        public boolean dispatchKeyEvent(KeyEvent event) {
+            return delegate != null && delegate.dispatchKeyEvent(event);
+        }
+
+        @Override
+        public boolean dispatchKeyShortcutEvent(KeyEvent event) {
+            return delegate != null && delegate.dispatchKeyShortcutEvent(event);
+        }
+
+        @Override
+        public boolean dispatchTouchEvent(MotionEvent event) {
+            boolean handled = delegate != null && delegate.dispatchTouchEvent(event);
+            if (enabled) {
+                ThreeFingerPinchDetector detector = detectorReference == null ? null : detectorReference.get();
+                if (detector != null) {
+                    detector.handleTouch(event);
+                }
+            }
+            return handled;
+        }
+
+        @Override
+        public boolean dispatchTrackballEvent(MotionEvent event) {
+            return delegate != null && delegate.dispatchTrackballEvent(event);
+        }
+
+        @Override
+        public boolean dispatchGenericMotionEvent(MotionEvent event) {
+            return delegate != null && delegate.dispatchGenericMotionEvent(event);
+        }
+
+        @Override
+        public boolean dispatchPopulateAccessibilityEvent(AccessibilityEvent event) {
+            return delegate != null && delegate.dispatchPopulateAccessibilityEvent(event);
+        }
+
+        @Override
+        public View onCreatePanelView(int featureId) {
+            return delegate == null ? null : delegate.onCreatePanelView(featureId);
+        }
+
+        @Override
+        public boolean onCreatePanelMenu(int featureId, Menu menu) {
+            return delegate != null && delegate.onCreatePanelMenu(featureId, menu);
+        }
+
+        @Override
+        public boolean onPreparePanel(int featureId, View view, Menu menu) {
+            return delegate != null && delegate.onPreparePanel(featureId, view, menu);
+        }
+
+        @Override
+        public boolean onMenuOpened(int featureId, Menu menu) {
+            return delegate != null && delegate.onMenuOpened(featureId, menu);
+        }
+
+        @Override
+        public boolean onMenuItemSelected(int featureId, MenuItem item) {
+            return delegate != null && delegate.onMenuItemSelected(featureId, item);
+        }
+
+        @Override
+        public void onWindowAttributesChanged(WindowManager.LayoutParams attrs) {
+            if (delegate != null) {
+                delegate.onWindowAttributesChanged(attrs);
+            }
+        }
+
+        @Override
+        public void onContentChanged() {
+            if (delegate != null) {
+                delegate.onContentChanged();
+            }
+        }
+
+        @Override
+        public void onWindowFocusChanged(boolean hasFocus) {
+            if (delegate != null) {
+                delegate.onWindowFocusChanged(hasFocus);
+            }
+        }
+
+        @Override
+        public void onAttachedToWindow() {
+            if (delegate != null) {
+                delegate.onAttachedToWindow();
+            }
+        }
+
+        @Override
+        public void onDetachedFromWindow() {
+            if (delegate != null) {
+                delegate.onDetachedFromWindow();
+            }
+        }
+
+        @Override
+        public void onPanelClosed(int featureId, Menu menu) {
+            if (delegate != null) {
+                delegate.onPanelClosed(featureId, menu);
+            }
+        }
+
+        @Override
+        public boolean onSearchRequested() {
+            return delegate != null && delegate.onSearchRequested();
+        }
+
+        @Override
+        public boolean onSearchRequested(SearchEvent searchEvent) {
+            return delegate != null && delegate.onSearchRequested(searchEvent);
+        }
+
+        @Override
+        public ActionMode onWindowStartingActionMode(ActionMode.Callback callback) {
+            return delegate == null ? null : delegate.onWindowStartingActionMode(callback);
+        }
+
+        @Override
+        public ActionMode onWindowStartingActionMode(ActionMode.Callback callback, int type) {
+            return delegate == null ? null : delegate.onWindowStartingActionMode(callback, type);
+        }
+
+        @Override
+        public void onActionModeStarted(ActionMode mode) {
+            if (delegate != null) {
+                delegate.onActionModeStarted(mode);
+            }
+        }
+
+        @Override
+        public void onActionModeFinished(ActionMode mode) {
+            if (delegate != null) {
+                delegate.onActionModeFinished(mode);
+            }
+        }
+
+        @Override
+        public void onProvideKeyboardShortcuts(List<KeyboardShortcutGroup> data, Menu menu, int deviceId) {
+            if (delegate != null) {
+                delegate.onProvideKeyboardShortcuts(data, menu, deviceId);
+            }
+        }
+
+        @Override
+        public void onPointerCaptureChanged(boolean hasCapture) {
+            if (delegate != null) {
+                delegate.onPointerCaptureChanged(hasCapture);
+            }
+        }
     }
 }
