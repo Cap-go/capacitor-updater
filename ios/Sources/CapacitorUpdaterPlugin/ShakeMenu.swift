@@ -14,10 +14,11 @@ private let threeFingerPinchScaleDelta: CGFloat = 0.12
 final class ThreeFingerPinchGestureRecognizer: UIGestureRecognizer {
     private var initialSpan: CGFloat = 0
     private(set) var scale: CGFloat = 1
+    var onTrackingStarted: (() -> Void)?
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
         super.touchesBegan(touches, with: event)
-        guard let view = self.view, let activeTouches = activeTouches(in: view, with: event), activeTouches.count <= 3 else {
+        guard let view = self.view, let activeTouches = activeTouches(with: event), activeTouches.count <= 3 else {
             self.state = .failed
             return
         }
@@ -25,14 +26,18 @@ final class ThreeFingerPinchGestureRecognizer: UIGestureRecognizer {
         if activeTouches.count == 3 {
             self.initialSpan = span(for: activeTouches, in: view)
             self.scale = 1
-            self.state = self.initialSpan > 0 ? .began : .failed
+            if self.initialSpan > 0 {
+                self.onTrackingStarted?()
+            } else {
+                self.state = .failed
+            }
         }
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
         super.touchesMoved(touches, with: event)
         guard let view = self.view,
-              let activeTouches = activeTouches(in: view, with: event),
+              let activeTouches = activeTouches(with: event),
               activeTouches.count == 3,
               self.initialSpan > 0 else {
             self.state = .failed
@@ -40,12 +45,16 @@ final class ThreeFingerPinchGestureRecognizer: UIGestureRecognizer {
         }
 
         self.scale = span(for: activeTouches, in: view) / self.initialSpan
-        self.state = .changed
+        if abs(self.scale - 1) >= threeFingerPinchScaleDelta {
+            self.state = .recognized
+        }
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
         super.touchesEnded(touches, with: event)
-        self.state = self.state == .possible || self.state == .began ? .failed : .ended
+        if self.state == .possible {
+            self.state = .failed
+        }
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
@@ -59,8 +68,8 @@ final class ThreeFingerPinchGestureRecognizer: UIGestureRecognizer {
         self.scale = 1
     }
 
-    private func activeTouches(in view: UIView, with event: UIEvent) -> [UITouch]? {
-        event.touches(for: view)?.filter { touch in
+    private func activeTouches(with event: UIEvent) -> [UITouch]? {
+        event.touches(for: self)?.filter { touch in
             touch.phase != .ended && touch.phase != .cancelled
         }
     }
@@ -106,7 +115,7 @@ extension CapacitorUpdaterPlugin: UIGestureRecognizerDelegate {
             let shouldInstall = self.shakeMenuGesture == Self.shakeMenuGestureThreeFingerPinch &&
                 (self.shakeMenuEnabled || self.shakeChannelSelectorEnabled)
 
-            guard shouldInstall, let targetView = self.bridge?.webView ?? self.bridge?.viewController?.view else {
+            guard shouldInstall, let targetView = self.bridge?.viewController?.view ?? self.bridge?.webView else {
                 self.removeShakeMenuGestureRecognizer()
                 return
             }
@@ -122,6 +131,9 @@ extension CapacitorUpdaterPlugin: UIGestureRecognizerDelegate {
             recognizer.delaysTouchesBegan = false
             recognizer.delaysTouchesEnded = false
             recognizer.delegate = self
+            recognizer.onTrackingStarted = { [weak self] in
+                self?.logger.info("Three finger pinch tracking started")
+            }
             targetView.addGestureRecognizer(recognizer)
             self.shakeMenuPinchGestureRecognizer = recognizer
             self.logger.info("Three finger pinch menu gesture initialized")
@@ -138,11 +150,7 @@ extension CapacitorUpdaterPlugin: UIGestureRecognizerDelegate {
     }
 
     @objc func handleShakeMenuPinch(_ recognizer: ThreeFingerPinchGestureRecognizer) {
-        if recognizer.state == .ended || recognizer.state == .cancelled || recognizer.state == .failed {
-            self.shakeMenuPinchGestureTriggered = false
-            return
-        }
-        guard recognizer.state == .changed, !self.shakeMenuPinchGestureTriggered else {
+        guard recognizer.state == .recognized, !self.shakeMenuPinchGestureTriggered else {
             return
         }
         guard abs(recognizer.scale - 1) >= threeFingerPinchScaleDelta else {
@@ -156,6 +164,7 @@ extension CapacitorUpdaterPlugin: UIGestureRecognizerDelegate {
         }
 
         self.shakeMenuPinchGestureTriggered = true
+        self.logger.info("Three finger pinch detected")
         _ = window.showCapacitorUpdaterMenu(plugin: self, bridge: bridge, gestureName: "Three finger pinch")
     }
 
