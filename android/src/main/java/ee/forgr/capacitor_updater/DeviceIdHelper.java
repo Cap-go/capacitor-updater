@@ -26,10 +26,10 @@ import javax.crypto.spec.GCMParameterSpec;
 
 /**
  * Helper class to manage device ID persistence across app installations.
- * Uses Android Keystore to persist the device ID across reinstalls.
+ * Uses Android Keystore-backed storage and backup-restorable SharedPreferences.
  *
- * The device ID is a random UUID stored in the Android Keystore, which persists
- * even after app uninstall/reinstall on Android 6.0+ (API 23+).
+ * The device ID is a random UUID stored in encrypted preferences and mirrored
+ * to appUUID so Android backup/restore can keep it across reinstalls.
  */
 public class DeviceIdHelper {
 
@@ -45,10 +45,10 @@ public class DeviceIdHelper {
      * Gets or creates a device ID that persists across reinstalls.
      *
      * This method:
-     * 1. First checks for an existing ID in Keystore-encrypted storage (persists across reinstalls)
-     * 2. Falls back to legacy SharedPreferences (for migration)
+     * 1. First checks for an existing ID in Keystore-encrypted storage
+     * 2. Falls back to legacy SharedPreferences restored by Android backup
      * 3. Generates a new UUID if neither exists
-     * 4. Stores the ID in Keystore-encrypted storage for future use
+     * 4. Stores the ID synchronously in both stores for future use
      *
      * @param context Application context
      * @param legacyPrefs Legacy SharedPreferences (for migration)
@@ -60,7 +60,9 @@ public class DeviceIdHelper {
             String deviceId = getDeviceIdFromKeystore(context);
 
             if (deviceId != null && !deviceId.isEmpty()) {
-                return deviceId.toLowerCase();
+                deviceId = deviceId.toLowerCase();
+                saveLegacyDeviceId(legacyPrefs, deviceId);
+                return deviceId;
             }
 
             // Migration: Check legacy SharedPreferences for existing device ID
@@ -74,7 +76,8 @@ public class DeviceIdHelper {
             // Ensure lowercase for consistency
             deviceId = deviceId.toLowerCase();
 
-            // Save to Keystore storage
+            // Save to backup-restorable preferences and Keystore storage
+            saveLegacyDeviceId(legacyPrefs, deviceId);
             saveDeviceIdToKeystore(context, deviceId);
 
             return deviceId;
@@ -90,31 +93,35 @@ public class DeviceIdHelper {
      * @param context Application context
      * @return Device ID string or null if not found
      */
-    private static String getDeviceIdFromKeystore(Context context) throws Exception {
-        SharedPreferences prefs = context.getSharedPreferences(DEVICE_ID_PREFS, Context.MODE_PRIVATE);
-        String encryptedDeviceId = prefs.getString(DEVICE_ID_KEY, null);
-        String ivString = prefs.getString(IV_KEY, null);
+    private static String getDeviceIdFromKeystore(Context context) {
+        try {
+            SharedPreferences prefs = context.getSharedPreferences(DEVICE_ID_PREFS, Context.MODE_PRIVATE);
+            String encryptedDeviceId = prefs.getString(DEVICE_ID_KEY, null);
+            String ivString = prefs.getString(IV_KEY, null);
 
-        if (encryptedDeviceId == null || ivString == null) {
+            if (encryptedDeviceId == null || ivString == null) {
+                return null;
+            }
+
+            // Get the encryption key from Keystore
+            SecretKey key = getOrCreateKey();
+            if (key == null) {
+                return null;
+            }
+
+            // Decrypt the device ID
+            byte[] encryptedBytes = android.util.Base64.decode(encryptedDeviceId, android.util.Base64.DEFAULT);
+            byte[] iv = android.util.Base64.decode(ivString, android.util.Base64.DEFAULT);
+
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            GCMParameterSpec spec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);
+            cipher.init(Cipher.DECRYPT_MODE, key, spec);
+
+            byte[] decryptedBytes = cipher.doFinal(encryptedBytes);
+            return new String(decryptedBytes, StandardCharsets.UTF_8);
+        } catch (Exception e) {
             return null;
         }
-
-        // Get the encryption key from Keystore
-        SecretKey key = getOrCreateKey();
-        if (key == null) {
-            return null;
-        }
-
-        // Decrypt the device ID
-        byte[] encryptedBytes = android.util.Base64.decode(encryptedDeviceId, android.util.Base64.DEFAULT);
-        byte[] iv = android.util.Base64.decode(ivString, android.util.Base64.DEFAULT);
-
-        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-        GCMParameterSpec spec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);
-        cipher.init(Cipher.DECRYPT_MODE, key, spec);
-
-        byte[] decryptedBytes = cipher.doFinal(encryptedBytes);
-        return new String(decryptedBytes, StandardCharsets.UTF_8);
     }
 
     /**
@@ -146,7 +153,7 @@ public class DeviceIdHelper {
             .edit()
             .putString(DEVICE_ID_KEY, android.util.Base64.encodeToString(encryptedBytes, android.util.Base64.DEFAULT))
             .putString(IV_KEY, android.util.Base64.encodeToString(iv, android.util.Base64.DEFAULT))
-            .apply();
+            .commit();
     }
 
     /**
@@ -207,9 +214,17 @@ public class DeviceIdHelper {
 
         if (deviceId == null || deviceId.isEmpty()) {
             deviceId = UUID.randomUUID().toString();
-            legacyPrefs.edit().putString(LEGACY_PREFS_KEY, deviceId).apply();
+            saveLegacyDeviceId(legacyPrefs, deviceId);
         }
 
         return deviceId.toLowerCase();
+    }
+
+    private static void saveLegacyDeviceId(SharedPreferences legacyPrefs, String deviceId) {
+        if (legacyPrefs == null || deviceId == null || deviceId.isEmpty()) {
+            return;
+        }
+
+        legacyPrefs.edit().putString(LEGACY_PREFS_KEY, deviceId).commit();
     }
 }
