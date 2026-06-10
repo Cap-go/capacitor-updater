@@ -1052,7 +1052,8 @@ export interface CapacitorUpdaterPlugin {
   /**
    * Remove the plugin-managed local channel assignment and return to the default channel.
    *
-   * This clears only the channel stored locally by {@link setChannel}; it does not delete Dashboard or Public API Device Override records. After the local assignment is cleared, the device falls back to:
+   * This clears only the channel stored locally by {@link setChannel}; it does not delete Dashboard or Public API Device Override records. After the local assignment is cleared, normal channel precedence applies:
+   * - An existing Dashboard or Public API Device Override, if one exists
    * - The {@link PluginsConfig.CapacitorUpdater.defaultChannel} if configured, or
    * - Your backend default channel for this app
    *
