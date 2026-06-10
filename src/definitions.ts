@@ -1008,6 +1008,11 @@ export interface CapacitorUpdaterPlugin {
    * Channels allow you to distribute different bundle versions to different groups of users
    * (e.g., "production", "beta", "staging"). This method switches the device to a new channel.
    *
+   * **Device Override UI:** `setChannel()` validates the channel with the backend, then stores the
+   * selected channel locally on the device. It does not create or update a backend Device Override,
+   * so the device will not appear as overridden in the Capgo dashboard. Only assignments created
+   * from the dashboard or the Public API are shown in the Device Override UI.
+   *
    * **Requirements:**
    * - The target channel must allow self-assignment (configured in your Capgo dashboard or backend)
    * - The backend may accept or reject the request based on channel settings
@@ -1034,7 +1039,8 @@ export interface CapacitorUpdaterPlugin {
    * });
    * ```
    *
-   * This sends a request to the Capgo backend linking your device ID to the specified channel.
+   * This sends a request to the Capgo backend to validate the specified channel, then stores the
+   * channel locally on the device.
    *
    * @param options The {@link SetChannelOptions} containing the channel name and optional auto-update trigger.
    * @returns {Promise<ChannelRes>} Channel operation result with status and optional error/message.
@@ -1044,11 +1050,12 @@ export interface CapacitorUpdaterPlugin {
   setChannel(options: SetChannelOptions): Promise<ChannelRes>;
 
   /**
-   * Remove the device's channel assignment and return to the default channel.
+   * Remove the plugin-managed local channel assignment and return to the default channel.
    *
-   * This unlinks the device from any specifically assigned channel, causing it to fall back to:
+   * This clears only the channel stored locally by {@link setChannel}; it does not delete Dashboard or Public API Device Override records. After the local assignment is cleared, normal channel precedence applies:
+   * - An existing Dashboard or Public API Device Override, if one exists
    * - The {@link PluginsConfig.CapacitorUpdater.defaultChannel} if configured, or
-   * - Your backend's default channel for this app
+   * - Your backend default channel for this app
    *
    * Use this when:
    * - Users opt out of beta/testing programs
