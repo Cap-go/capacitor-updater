@@ -1246,6 +1246,11 @@ Assign this device to a specific update channel at runtime.
 Channels allow you to distribute different bundle versions to different groups of users
 (e.g., "production", "beta", "staging"). This method switches the device to a new channel.
 
+**Device Override UI:** `setChannel()` validates the channel with the backend, then stores the
+selected channel locally on the device. It does not create or update a backend Device Override,
+so the device will not appear as overridden in the Capgo dashboard. Only assignments created
+from the dashboard or the Public API are shown in the Device Override UI.
+
 **Requirements:**
 - The target channel must allow self-assignment (configured in your Capgo dashboard or backend)
 - The backend may accept or reject the request based on channel settings
@@ -1272,7 +1277,8 @@ CapacitorUpdater.addListener('channelPrivate', (data) =&gt; {
 });
 ```
 
-This sends a request to the Capgo backend linking your device ID to the specified channel.
+This sends a request to the Capgo backend to validate the specified channel, then stores the
+channel locally on the device.
 
 | Param         | Type                                                            | Description                                                                                                                  |
 | ------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
