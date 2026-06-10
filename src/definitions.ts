@@ -1164,7 +1164,7 @@ export interface CapacitorUpdaterPlugin {
    * **Privacy & Security characteristics:**
    * - Generated as a UUID (not based on hardware identifiers)
    * - Stored securely in platform-specific secure storage
-   * - Android: Android Keystore (persists across app reinstalls on API 23+)
+   * - Android: mirrored into backup-restorable app preferences for reinstall restore
    * - iOS: Keychain with `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`
    * - Not synced to cloud (iOS)
    * - Follows Apple and Google privacy best practices
@@ -1172,7 +1172,9 @@ export interface CapacitorUpdaterPlugin {
    *
    * **Persistence:**
    * The device ID persists across app reinstalls to maintain consistent device identity
-   * for update tracking and analytics.
+   * for update tracking and analytics when platform storage is preserved. On Android,
+   * apps with custom backup rules must keep the plugin app preferences eligible for
+   * backup/restore; disabling Android backup or clearing app data creates a new ID.
    *
    * Use this to:
    * - Debug update delivery issues (check what ID the server sees)
