@@ -105,6 +105,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private let channelUrlDefaultsKey = "CapacitorUpdater.channelUrl"
     private let defaultChannelDefaultsKey = "CapacitorUpdater.defaultChannel"
     private let lastFailedBundleDefaultsKey = "CapacitorUpdater.lastFailedBundle"
+    private let lastVersionOsDefaultsKey = "CapacitorUpdater.lastVersionOs"
+    private let lastVersionBuildDefaultsKey = "CapacitorUpdater.lastVersionBuild"
+    private let lastVersionCodeDefaultsKey = "CapacitorUpdater.lastVersionCode"
+    private let osVersionChangedAction = "os_version_changed"
+    private let nativeAppVersionChangedAction = "native_app_version_changed"
     private let previewSessionDefaultsKey = "CapacitorUpdater.previewSession"
     private let previewPreviousShakeMenuDefaultsKey = "CapacitorUpdater.previewPreviousShakeMenu"
     private let previewPreviousShakeChannelSelectorDefaultsKey = "CapacitorUpdater.previewPreviousShakeChannelSelector"
@@ -347,6 +352,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             self.clearPreviewSessionForNativeBuildChange()
         }
         self.leavePreviewSessionForLaunchURLIfNeeded()
+        self.reportNativeVersionStatsIfChanged()
 
         if resetWhenUpdate {
             let didResetCurrentBundle = self.resetCurrentBundleForNativeBuildChangeIfNeeded()
@@ -528,6 +534,62 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     func hasNativeBuildVersionChanged() -> Bool {
         let previous = self.storedNativeBuildVersion()
         return previous != "0" && self.currentBuildVersion != previous
+    }
+
+    func reportNativeVersionStatsIfChanged() {
+        self.reportNativeVersionStatsIfChanged(
+            currentVersionBuild: self.implementation.versionBuild,
+            currentVersionCode: self.currentBuildVersion,
+            currentVersionOs: UIDevice.current.systemVersion
+        )
+    }
+
+    func reportNativeVersionStatsIfChanged(currentVersionBuild: String?, currentVersionCode: String?, currentVersionOs: String?) {
+        let normalizedVersionBuild = self.normalizedStatsValue(currentVersionBuild)
+        let normalizedVersionCode = self.normalizedStatsValue(currentVersionCode)
+        let normalizedVersionOs = self.normalizedStatsValue(currentVersionOs)
+        let userDefaults = UserDefaults.standard
+        let previousVersionOs = userDefaults.string(forKey: self.lastVersionOsDefaultsKey) ?? ""
+        let previousVersionBuild = userDefaults.string(forKey: self.lastVersionBuildDefaultsKey) ?? ""
+        let previousVersionCode = userDefaults.string(forKey: self.lastVersionCodeDefaultsKey) ?? ""
+
+        if !normalizedVersionOs.isEmpty, !previousVersionOs.isEmpty, previousVersionOs != normalizedVersionOs {
+            self.implementation.sendStats(
+                action: self.osVersionChangedAction,
+                versionName: self.implementation.getCurrentBundle().getVersionName(),
+                oldVersionName: "",
+                metadata: [
+                    "previous_version_os": previousVersionOs,
+                    "current_version_os": normalizedVersionOs
+                ]
+            )
+        }
+
+        let hasPreviousNativeVersion = !previousVersionBuild.isEmpty || !previousVersionCode.isEmpty
+        let nativeVersionChanged = hasPreviousNativeVersion &&
+            (previousVersionBuild != normalizedVersionBuild || previousVersionCode != normalizedVersionCode)
+        if nativeVersionChanged {
+            self.implementation.sendStats(
+                action: self.nativeAppVersionChangedAction,
+                versionName: self.implementation.getCurrentBundle().getVersionName(),
+                oldVersionName: "",
+                metadata: [
+                    "previous_version_build": previousVersionBuild,
+                    "current_version_build": normalizedVersionBuild,
+                    "previous_version_code": previousVersionCode,
+                    "current_version_code": normalizedVersionCode
+                ]
+            )
+        }
+
+        userDefaults.set(normalizedVersionOs, forKey: self.lastVersionOsDefaultsKey)
+        userDefaults.set(normalizedVersionBuild, forKey: self.lastVersionBuildDefaultsKey)
+        userDefaults.set(normalizedVersionCode, forKey: self.lastVersionCodeDefaultsKey)
+        userDefaults.synchronize()
+    }
+
+    private func normalizedStatsValue(_ value: String?) -> String {
+        value ?? ""
     }
 
     @discardableResult

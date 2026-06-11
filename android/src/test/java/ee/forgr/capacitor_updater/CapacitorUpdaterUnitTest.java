@@ -749,12 +749,21 @@ public class CapacitorUpdaterUnitTest {
     private static final class PendingReloadFinalizeCapgoUpdater extends CapgoUpdater {
 
         private final Map<String, BundleInfo> bundleInfos = new HashMap<>();
+        private final BundleInfo currentBundle = new BundleInfo("current-id", "1.0.0", BundleStatus.SUCCESS, new Date(), "abc123");
         private String lastStatsAction;
         private String lastStatsVersionName;
+        private final List<String> sentStatsActions = new ArrayList<>();
+        private final List<Map<String, String>> sentStatsMetadata = new ArrayList<>();
         private String lastStatsOldVersionName;
+        private Map<String, String> lastStatsMetadata;
 
         PendingReloadFinalizeCapgoUpdater() {
             super(null);
+        }
+
+        @Override
+        public BundleInfo getCurrentBundle() {
+            return this.currentBundle;
         }
 
         @Override
@@ -769,9 +778,27 @@ public class CapacitorUpdaterUnitTest {
 
         @Override
         public void sendStats(final String action, final String versionName, final String oldVersionName) {
+            this.sentStatsActions.add(action);
+            this.sentStatsMetadata.add(null);
             this.lastStatsAction = action;
             this.lastStatsVersionName = versionName;
             this.lastStatsOldVersionName = oldVersionName;
+            this.lastStatsMetadata = null;
+        }
+
+        @Override
+        public void sendStats(
+            final String action,
+            final String versionName,
+            final String oldVersionName,
+            final Map<String, String> metadata
+        ) {
+            this.sentStatsActions.add(action);
+            this.sentStatsMetadata.add(metadata);
+            this.lastStatsAction = action;
+            this.lastStatsVersionName = versionName;
+            this.lastStatsOldVersionName = oldVersionName;
+            this.lastStatsMetadata = metadata;
         }
     }
 
@@ -1444,6 +1471,66 @@ public class CapacitorUpdaterUnitTest {
             plugin.persistCurrentNativeBuildVersion();
 
             verify(editor).putString("LatestNativeBuildVersion", "8");
+            verify(editor).apply();
+        }
+    }
+
+    @Test
+    public void testReportNativeVersionStatsPersistsFirstSnapshotWithoutEvent() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            final PendingReloadFinalizeCapgoUpdater updater = new PendingReloadFinalizeCapgoUpdater();
+            final SharedPreferences prefs = mock(SharedPreferences.class);
+            final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+
+            plugin.implementation = updater;
+            setPrivateField(plugin, "prefs", prefs);
+            setPrivateField(plugin, "editor", editor);
+            when(prefs.getString("CapacitorUpdater.lastVersionOs", "")).thenReturn("");
+            when(prefs.getString("CapacitorUpdater.lastVersionBuild", "")).thenReturn("");
+            when(prefs.getString("CapacitorUpdater.lastVersionCode", "")).thenReturn("");
+
+            plugin.reportNativeVersionStatsIfChanged("1.0.0", "100", "14");
+
+            assertTrue(updater.sentStatsActions.isEmpty());
+            verify(editor).putString("CapacitorUpdater.lastVersionOs", "14");
+            verify(editor).putString("CapacitorUpdater.lastVersionBuild", "1.0.0");
+            verify(editor).putString("CapacitorUpdater.lastVersionCode", "100");
+            verify(editor).apply();
+        }
+    }
+
+    @Test
+    public void testReportNativeVersionStatsSendsChangedOsAndNativeVersionEvents() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            final PendingReloadFinalizeCapgoUpdater updater = new PendingReloadFinalizeCapgoUpdater();
+            final SharedPreferences prefs = mock(SharedPreferences.class);
+            final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+
+            plugin.implementation = updater;
+            setPrivateField(plugin, "prefs", prefs);
+            setPrivateField(plugin, "editor", editor);
+            when(prefs.getString("CapacitorUpdater.lastVersionOs", "")).thenReturn("13");
+            when(prefs.getString("CapacitorUpdater.lastVersionBuild", "")).thenReturn("1.0.0");
+            when(prefs.getString("CapacitorUpdater.lastVersionCode", "")).thenReturn("100");
+
+            plugin.reportNativeVersionStatsIfChanged("1.1.0", "101", "14");
+
+            assertEquals(List.of("os_version_changed", "native_app_version_changed"), updater.sentStatsActions);
+            assertEquals("13", updater.sentStatsMetadata.get(0).get("previous_version_os"));
+            assertEquals("14", updater.sentStatsMetadata.get(0).get("current_version_os"));
+            assertEquals("1.0.0", updater.sentStatsMetadata.get(1).get("previous_version_build"));
+            assertEquals("1.1.0", updater.sentStatsMetadata.get(1).get("current_version_build"));
+            assertEquals("100", updater.sentStatsMetadata.get(1).get("previous_version_code"));
+            assertEquals("101", updater.sentStatsMetadata.get(1).get("current_version_code"));
+            verify(editor).putString("CapacitorUpdater.lastVersionOs", "14");
+            verify(editor).putString("CapacitorUpdater.lastVersionBuild", "1.1.0");
+            verify(editor).putString("CapacitorUpdater.lastVersionCode", "101");
             verify(editor).apply();
         }
     }

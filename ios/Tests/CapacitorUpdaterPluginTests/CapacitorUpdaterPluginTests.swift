@@ -100,6 +100,7 @@ private final class HealthStatsCapgoUpdater: CapgoUpdater {
         checksum: "abc123"
     )
     var sentStatsActions: [String] = []
+    var sentStatsMetadata: [[String: String]?] = []
     var lastStatsVersionName: String?
     var lastStatsOldVersionName: String?
     var lastStatsMetadata: [String: String]?
@@ -110,6 +111,7 @@ private final class HealthStatsCapgoUpdater: CapgoUpdater {
 
     override func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {
         sentStatsActions.append(action)
+        sentStatsMetadata.append(nil)
         lastStatsVersionName = versionName
         lastStatsOldVersionName = oldVersionName
         lastStatsMetadata = nil
@@ -117,6 +119,7 @@ private final class HealthStatsCapgoUpdater: CapgoUpdater {
 
     override func sendStats(action: String, versionName: String?, oldVersionName: String?, metadata: [String: String]) {
         sentStatsActions.append(action)
+        sentStatsMetadata.append(metadata)
         lastStatsVersionName = versionName
         lastStatsOldVersionName = oldVersionName
         lastStatsMetadata = metadata
@@ -1915,6 +1918,64 @@ class CapacitorUpdaterTests: XCTestCase {
         plugin.setCurrentBuildVersionForTesting("2")
 
         XCTAssertTrue(plugin.hasNativeBuildVersionChanged())
+    }
+
+    func testReportNativeVersionStatsPersistsFirstSnapshotWithoutEvent() {
+        let keys = [
+            "CapacitorUpdater.lastVersionOs",
+            "CapacitorUpdater.lastVersionBuild",
+            "CapacitorUpdater.lastVersionCode"
+        ]
+        for key in keys {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+        defer {
+            for key in keys {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+        }
+
+        let statsImplementation = HealthStatsCapgoUpdater()
+        plugin.implementation = statsImplementation
+
+        plugin.reportNativeVersionStatsIfChanged(currentVersionBuild: "1.0.0", currentVersionCode: "100", currentVersionOs: "17.0")
+
+        XCTAssertTrue(statsImplementation.sentStatsActions.isEmpty)
+        XCTAssertEqual(UserDefaults.standard.string(forKey: "CapacitorUpdater.lastVersionOs"), "17.0")
+        XCTAssertEqual(UserDefaults.standard.string(forKey: "CapacitorUpdater.lastVersionBuild"), "1.0.0")
+        XCTAssertEqual(UserDefaults.standard.string(forKey: "CapacitorUpdater.lastVersionCode"), "100")
+    }
+
+    func testReportNativeVersionStatsSendsChangedOsAndNativeVersionEvents() {
+        let values = [
+            "CapacitorUpdater.lastVersionOs": "16.0",
+            "CapacitorUpdater.lastVersionBuild": "1.0.0",
+            "CapacitorUpdater.lastVersionCode": "100"
+        ]
+        for (key, value) in values {
+            UserDefaults.standard.set(value, forKey: key)
+        }
+        defer {
+            for key in values.keys {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+        }
+
+        let statsImplementation = HealthStatsCapgoUpdater()
+        plugin.implementation = statsImplementation
+
+        plugin.reportNativeVersionStatsIfChanged(currentVersionBuild: "1.1.0", currentVersionCode: "101", currentVersionOs: "17.0")
+
+        XCTAssertEqual(statsImplementation.sentStatsActions, ["os_version_changed", "native_app_version_changed"])
+        XCTAssertEqual(statsImplementation.sentStatsMetadata[0]?["previous_version_os"], "16.0")
+        XCTAssertEqual(statsImplementation.sentStatsMetadata[0]?["current_version_os"], "17.0")
+        XCTAssertEqual(statsImplementation.sentStatsMetadata[1]?["previous_version_build"], "1.0.0")
+        XCTAssertEqual(statsImplementation.sentStatsMetadata[1]?["current_version_build"], "1.1.0")
+        XCTAssertEqual(statsImplementation.sentStatsMetadata[1]?["previous_version_code"], "100")
+        XCTAssertEqual(statsImplementation.sentStatsMetadata[1]?["current_version_code"], "101")
+        XCTAssertEqual(UserDefaults.standard.string(forKey: "CapacitorUpdater.lastVersionOs"), "17.0")
+        XCTAssertEqual(UserDefaults.standard.string(forKey: "CapacitorUpdater.lastVersionBuild"), "1.1.0")
+        XCTAssertEqual(UserDefaults.standard.string(forKey: "CapacitorUpdater.lastVersionCode"), "101")
     }
 
     func testResetCurrentBundleForNativeBuildChangeIfNeededResetsSynchronously() {
