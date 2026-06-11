@@ -111,6 +111,25 @@ run_cleanup_command() {
 
   return 0
 }
+maestro_xcodebuild_pids() {
+  local driver_pattern="maestro-driver-iosUITests"
+
+  ps ax -o pid= -o command= |
+    awk -v driver="$driver_pattern" '
+      $0 ~ /xcodebuild/ && index($0, driver) > 0 && $0 !~ /awk/ {
+        print $1
+      }
+    '
+}
+
+terminate_maestro_xcodebuild() {
+  local pid=""
+
+  while IFS= read -r pid; do
+    [[ -z "$pid" ]] && continue
+    run_cleanup_command 5 kill "$pid"
+  done < <(maestro_xcodebuild_pids)
+}
 
 install_example_app() {
   local started="$SECONDS"
@@ -131,7 +150,7 @@ reset_ios_maestro_driver() {
   run_cleanup_command 10 xcrun simctl terminate "$SIMULATOR_ID" dev.mobile.maestro-driver-iosUITests.xctrunner
   run_cleanup_command 10 xcrun simctl terminate "$SIMULATOR_ID" dev.mobile.maestro-driver-iosUITests
   run_cleanup_command 5 pkill -f 'maestro-driver-iosUITests'
-  run_cleanup_command 5 pkill -x xcodebuild
+  terminate_maestro_xcodebuild
 }
 
 wait_for_server() {
