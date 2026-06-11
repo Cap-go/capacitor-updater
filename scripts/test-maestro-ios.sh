@@ -111,6 +111,13 @@ install_example_app() {
   ASSUME_CLEAN_INSTALL=0
 }
 
+reset_ios_maestro_driver() {
+  xcrun simctl terminate "$SIMULATOR_ID" dev.mobile.maestro-driver-iosUITests.xctrunner >/dev/null 2>&1 || true
+  xcrun simctl terminate "$SIMULATOR_ID" dev.mobile.maestro-driver-iosUITests >/dev/null 2>&1 || true
+  pkill -f 'maestro-driver-iosUITests' >/dev/null 2>&1 || true
+  pkill -x xcodebuild >/dev/null 2>&1 || true
+}
+
 wait_for_server() {
   for _ in $(seq 1 30); do
     if curl --silent --fail "$HOST_SERVER_URL/health" >/dev/null; then
@@ -454,8 +461,7 @@ while (( attempt <= MAESTRO_TEST_RETRIES )); do
     echo "Retrying iOS Maestro smoke flow after simulator/XCTest instability." >&2
     rm -f "$output_file"
     xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
-    xcrun simctl shutdown "$SIMULATOR_ID" >/dev/null 2>&1 || true
-    xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
+    reset_ios_maestro_driver
     run_with_timeout "$SIMULATOR_BOOT_TIMEOUT_SECONDS" xcrun simctl bootstatus "$SIMULATOR_ID" -b || true
     reset_fake_server
     if [[ "${CAPGO_MAESTRO_IOS_REINSTALL_ON_RETRY:-0}" == "1" ]]; then

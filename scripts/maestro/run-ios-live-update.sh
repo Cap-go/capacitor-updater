@@ -293,6 +293,13 @@ reinstall_example_app() {
   ASSUME_CLEAN_INSTALL=0
 }
 
+reset_ios_maestro_driver() {
+  xcrun simctl terminate "$SIMULATOR_ID" dev.mobile.maestro-driver-iosUITests.xctrunner >/dev/null 2>&1 || true
+  xcrun simctl terminate "$SIMULATOR_ID" dev.mobile.maestro-driver-iosUITests >/dev/null 2>&1 || true
+  pkill -f 'maestro-driver-iosUITests' >/dev/null 2>&1 || true
+  pkill -x xcodebuild >/dev/null 2>&1 || true
+}
+
 control_server() {
   local action="$1"
   local scenario="$2"
@@ -442,7 +449,7 @@ run_flow() {
       echo "Retrying iOS Maestro flow after simulator/XCTest instability: ${flow_path}" >&2
       rm -f "$output_file"
       xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
-      xcrun simctl shutdown "$SIMULATOR_ID" >/dev/null 2>&1 || true
+      reset_ios_maestro_driver
       boot_simulator
       reinstall_example_app
       sleep 5
