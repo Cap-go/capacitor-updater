@@ -352,12 +352,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             self.clearPreviewSessionForNativeBuildChange()
         }
         self.leavePreviewSessionForLaunchURLIfNeeded()
-        self.reportNativeVersionStatsIfChanged()
 
         if resetWhenUpdate {
             let didResetCurrentBundle = self.resetCurrentBundleForNativeBuildChangeIfNeeded()
             self.cleanupObsoleteVersions(didResetCurrentBundle: didResetCurrentBundle)
         }
+        self.reportNativeVersionStatsIfChanged()
 
         // Load the server
         // This is very much swift specific, android does not do that
