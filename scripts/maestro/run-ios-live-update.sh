@@ -130,6 +130,22 @@ PY
   return $?
 }
 
+run_cleanup_command() {
+  local timeout_seconds="$1"
+  shift
+
+  set +e
+  run_with_timeout "$timeout_seconds" "$@" >/dev/null 2>&1
+  local status=$?
+  set -e
+
+  if [[ $status -eq 124 ]]; then
+    echo "Timed out after ${timeout_seconds}s while cleaning up: $*" >&2
+  fi
+
+  return 0
+}
+
 debug_log_has_retryable_failure() {
   local debug_log="$1"
 
@@ -285,7 +301,7 @@ reinstall_example_app() {
   if [[ "$ASSUME_CLEAN_INSTALL" == "1" ]]; then
     echo "Installing iOS app without pre-uninstall on clean simulator."
   else
-    xcrun simctl uninstall "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
+    run_cleanup_command 20 xcrun simctl uninstall "$SIMULATOR_ID" "$APP_ID"
   fi
 
   xcrun simctl install "$SIMULATOR_ID" "$APP_PATH"
@@ -294,10 +310,10 @@ reinstall_example_app() {
 }
 
 reset_ios_maestro_driver() {
-  xcrun simctl terminate "$SIMULATOR_ID" dev.mobile.maestro-driver-iosUITests.xctrunner >/dev/null 2>&1 || true
-  xcrun simctl terminate "$SIMULATOR_ID" dev.mobile.maestro-driver-iosUITests >/dev/null 2>&1 || true
-  pkill -f 'maestro-driver-iosUITests' >/dev/null 2>&1 || true
-  pkill -x xcodebuild >/dev/null 2>&1 || true
+  run_cleanup_command 10 xcrun simctl terminate "$SIMULATOR_ID" dev.mobile.maestro-driver-iosUITests.xctrunner
+  run_cleanup_command 10 xcrun simctl terminate "$SIMULATOR_ID" dev.mobile.maestro-driver-iosUITests
+  run_cleanup_command 5 pkill -f 'maestro-driver-iosUITests'
+  run_cleanup_command 5 pkill -x xcodebuild
 }
 
 control_server() {
@@ -448,7 +464,7 @@ run_flow() {
     }; then
       echo "Retrying iOS Maestro flow after simulator/XCTest instability: ${flow_path}" >&2
       rm -f "$output_file"
-      xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
+      run_cleanup_command 10 xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID"
       reset_ios_maestro_driver
       boot_simulator
       reinstall_example_app
