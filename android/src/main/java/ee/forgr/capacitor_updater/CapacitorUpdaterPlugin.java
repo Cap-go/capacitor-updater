@@ -1828,9 +1828,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 );
             }
         } else {
-            final boolean enabled = configuredMode != null
-                ? "true".equals(configuredMode)
-                : Boolean.TRUE.equals(this.getConfig().getBoolean("autoUpdate", true));
+            final boolean enabled =
+                configuredMode != null
+                    ? "true".equals(configuredMode)
+                    : Boolean.TRUE.equals(this.getConfig().getBoolean("autoUpdate", true));
             this.autoUpdateMode = enabled
                 ? autoUpdateModeForLegacyDirectUpdateMode(this.resolveLegacyDirectUpdateModeFromConfig())
                 : AUTO_UPDATE_MODE_OFF;
@@ -3689,33 +3690,30 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.editor.putBoolean(PREVIEW_SESSION_ALERT_PENDING_PREF_KEY, false);
         this.editor.apply();
 
-        new Handler(Looper.getMainLooper()).postDelayed(
-            () -> {
-                try {
-                    if (!Boolean.TRUE.equals(this.previewSessionEnabled)) {
-                        return;
-                    }
-                    if (getActivity() == null || getActivity().isFinishing()) {
-                        this.previewSessionAlertPending = true;
-                        this.editor.putBoolean(PREVIEW_SESSION_ALERT_PENDING_PREF_KEY, true);
-                        this.editor.apply();
-                        return;
-                    }
-
-                    new AlertDialog.Builder(getActivity())
-                        .setTitle("Preview started")
-                        .setMessage("Shake your device anytime to reload or leave the test app.")
-                        .setPositiveButton("Got it", (dialog, which) -> dialog.dismiss())
-                        .show();
-                } catch (final Exception e) {
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            try {
+                if (!Boolean.TRUE.equals(this.previewSessionEnabled)) {
+                    return;
+                }
+                if (getActivity() == null || getActivity().isFinishing()) {
                     this.previewSessionAlertPending = true;
                     this.editor.putBoolean(PREVIEW_SESSION_ALERT_PENDING_PREF_KEY, true);
                     this.editor.apply();
-                    logger.warn("Could not show preview session notice: " + e.getMessage());
+                    return;
                 }
-            },
-            600
-        );
+
+                new AlertDialog.Builder(getActivity())
+                    .setTitle("Preview started")
+                    .setMessage("Shake your device anytime to reload or leave the test app.")
+                    .setPositiveButton("Got it", (dialog, which) -> dialog.dismiss())
+                    .show();
+            } catch (final Exception e) {
+                this.previewSessionAlertPending = true;
+                this.editor.putBoolean(PREVIEW_SESSION_ALERT_PENDING_PREF_KEY, true);
+                this.editor.apply();
+                logger.warn("Could not show preview session notice: " + e.getMessage());
+            }
+        }, 600);
     }
 
     @PluginMethod
