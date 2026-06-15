@@ -1332,17 +1332,23 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final String previousVersionOs = this.prefs.getString(LAST_VERSION_OS_PREF_KEY, "");
         final String previousVersionBuild = this.prefs.getString(LAST_VERSION_BUILD_PREF_KEY, "");
         final String previousVersionCode = this.prefs.getString(LAST_VERSION_CODE_PREF_KEY, "");
-
-        if (
+        final boolean osVersionChanged =
             !normalizedVersionOs.isEmpty() &&
             previousVersionOs != null &&
             !previousVersionOs.isEmpty() &&
-            !previousVersionOs.equals(normalizedVersionOs)
-        ) {
+            !previousVersionOs.equals(normalizedVersionOs);
+
+        if (osVersionChanged) {
             final Map<String, String> metadata = new HashMap<>();
             metadata.put("previous_version_os", previousVersionOs);
             metadata.put("current_version_os", normalizedVersionOs);
-            this.implementation.sendStats(OS_VERSION_CHANGED_ACTION, this.implementation.getCurrentBundle().getVersionName(), "", metadata);
+            this.implementation.sendStats(
+                OS_VERSION_CHANGED_ACTION,
+                this.implementation.getCurrentBundle().getVersionName(),
+                "",
+                metadata,
+                () -> this.persistLastVersionOs(normalizedVersionOs)
+            );
         }
 
         final boolean hasPreviousNativeVersion =
@@ -1362,13 +1368,39 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 NATIVE_APP_VERSION_CHANGED_ACTION,
                 this.implementation.getCurrentBundle().getVersionName(),
                 "",
-                metadata
+                metadata,
+                () -> this.persistLastNativeAppVersion(normalizedVersionBuild, normalizedVersionCode)
             );
         }
 
-        this.editor.putString(LAST_VERSION_OS_PREF_KEY, normalizedVersionOs);
-        this.editor.putString(LAST_VERSION_BUILD_PREF_KEY, normalizedVersionBuild);
-        this.editor.putString(LAST_VERSION_CODE_PREF_KEY, normalizedVersionCode);
+        if (!osVersionChanged || !nativeVersionChanged) {
+            if (!osVersionChanged) {
+                this.editor.putString(LAST_VERSION_OS_PREF_KEY, normalizedVersionOs);
+            }
+            if (!nativeVersionChanged) {
+                this.editor.putString(LAST_VERSION_BUILD_PREF_KEY, normalizedVersionBuild);
+                this.editor.putString(LAST_VERSION_CODE_PREF_KEY, normalizedVersionCode);
+            }
+            this.editor.apply();
+        }
+    }
+
+    private void persistLastVersionOs(final String versionOs) {
+        if (this.editor == null) {
+            return;
+        }
+
+        this.editor.putString(LAST_VERSION_OS_PREF_KEY, versionOs);
+        this.editor.apply();
+    }
+
+    private void persistLastNativeAppVersion(final String versionBuild, final String versionCode) {
+        if (this.editor == null) {
+            return;
+        }
+
+        this.editor.putString(LAST_VERSION_BUILD_PREF_KEY, versionBuild);
+        this.editor.putString(LAST_VERSION_CODE_PREF_KEY, versionCode);
         this.editor.apply();
     }
 
