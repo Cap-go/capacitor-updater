@@ -102,10 +102,21 @@ public class CapgoUpdater {
     private static volatile boolean rateLimitStatisticSent = false;
 
     // Stats batching - queue events and send max once per second
-    private final List<JSONObject> statsQueue = new CopyOnWriteArrayList<>();
+    private final List<QueuedStatsEvent> statsQueue = new CopyOnWriteArrayList<>();
     private final ScheduledExecutorService statsScheduler = Executors.newSingleThreadScheduledExecutor();
     private ScheduledFuture<?> statsFlushTask = null;
     private static final long STATS_FLUSH_INTERVAL_MS = 1000;
+
+    private static final class QueuedStatsEvent {
+
+        private final JSONObject event;
+        private final Runnable onSent;
+
+        private QueuedStatsEvent(final JSONObject event, final Runnable onSent) {
+            this.event = event;
+            this.onSent = onSent;
+        }
+    }
 
     private final Map<String, CompletableFuture<BundleInfo>> downloadFutures = new ConcurrentHashMap<>();
     private final ExecutorService io = Executors.newSingleThreadExecutor();
@@ -2086,6 +2097,16 @@ public class CapgoUpdater {
     }
 
     public void sendStats(final String action, final String versionName, final String oldVersionName, final Map<String, String> metadata) {
+        this.sendStats(action, versionName, oldVersionName, metadata, null);
+    }
+
+    public void sendStats(
+        final String action,
+        final String versionName,
+        final String oldVersionName,
+        final Map<String, String> metadata,
+        final Runnable onSent
+    ) {
         if (this.previewSession) {
             if (logger != null) {
                 logger.debug("Skipping sendStats during preview session.");
@@ -2120,7 +2141,7 @@ public class CapgoUpdater {
             return;
         }
 
-        statsQueue.add(json);
+        statsQueue.add(new QueuedStatsEvent(json, onSent));
         ensureStatsTimerStarted();
     }
 
@@ -2147,7 +2168,7 @@ public class CapgoUpdater {
         }
 
         // Copy and clear the queue atomically using synchronized block
-        List<JSONObject> eventsToSend;
+        List<QueuedStatsEvent> eventsToSend;
         synchronized (statsQueue) {
             if (statsQueue.isEmpty()) {
                 return;
@@ -2157,8 +2178,8 @@ public class CapgoUpdater {
         }
 
         JSONArray jsonArray = new JSONArray();
-        for (JSONObject event : eventsToSend) {
-            jsonArray.put(event);
+        for (QueuedStatsEvent queuedEvent : eventsToSend) {
+            jsonArray.put(queuedEvent.event);
         }
 
         Request request = new Request.Builder()
@@ -2186,6 +2207,7 @@ public class CapgoUpdater {
                         if (response.isSuccessful()) {
                             logger.info("Stats batch sent successfully");
                             logger.debug("Sent " + eventCount + " events");
+                            runStatsCallbacks(eventsToSend);
                         } else {
                             logger.error("Error sending stats batch");
                             logger.debug("Response code: " + response.code());
@@ -2194,6 +2216,23 @@ public class CapgoUpdater {
                 }
             }
         );
+    }
+
+    private void runStatsCallbacks(final List<QueuedStatsEvent> sentEvents) {
+        for (final QueuedStatsEvent sentEvent : sentEvents) {
+            if (sentEvent.onSent == null) {
+                continue;
+            }
+
+            try {
+                sentEvent.onSent.run();
+            } catch (Exception e) {
+                if (logger != null) {
+                    logger.error("Error running stats sent callback");
+                    logger.debug("Error: " + e.getMessage());
+                }
+            }
+        }
     }
 
     public BundleInfo getBundleInfo(final String id) {

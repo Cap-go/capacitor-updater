@@ -51,10 +51,15 @@ import UIKit
     private static var rateLimitStatisticSent = false
 
     // Stats batching - queue events and send max once per second
-    private var statsQueue: [StatsEvent] = []
+    private var statsQueue: [QueuedStatsEvent] = []
     private let statsQueueLock = NSLock()
     private var statsFlushTimer: Timer?
     private static let statsFlushInterval: TimeInterval = 1.0
+
+    private struct QueuedStatsEvent {
+        let event: StatsEvent
+        let onSent: (() -> Void)?
+    }
 
     private static func sanitizeHeaderValue(_ value: String) -> String {
         if value.isEmpty {
@@ -2474,14 +2479,24 @@ import UIKit
     }()
 
     func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {
-        sendStatsWithMetadata(action: action, versionName: versionName, oldVersionName: oldVersionName, metadata: nil)
+        sendStatsWithMetadata(action: action, versionName: versionName, oldVersionName: oldVersionName, metadata: nil, onSent: nil)
     }
 
     func sendStats(action: String, versionName: String?, oldVersionName: String?, metadata: [String: String]) {
-        sendStatsWithMetadata(action: action, versionName: versionName, oldVersionName: oldVersionName, metadata: metadata)
+        sendStatsWithMetadata(action: action, versionName: versionName, oldVersionName: oldVersionName, metadata: metadata, onSent: nil)
     }
 
-    private func sendStatsWithMetadata(action: String, versionName: String?, oldVersionName: String?, metadata: [String: String]?) {
+    func sendStats(action: String, versionName: String?, oldVersionName: String?, metadata: [String: String], onSent: @escaping () -> Void) {
+        sendStatsWithMetadata(action: action, versionName: versionName, oldVersionName: oldVersionName, metadata: metadata, onSent: onSent)
+    }
+
+    private func sendStatsWithMetadata(
+        action: String,
+        versionName: String?,
+        oldVersionName: String?,
+        metadata: [String: String]?,
+        onSent: (() -> Void)?
+    ) {
         if previewSession {
             logger.debug("Skipping sendStats during preview session.")
             return
@@ -2522,7 +2537,7 @@ import UIKit
         )
 
         statsQueueLock.lock()
-        statsQueue.append(event)
+        statsQueue.append(QueuedStatsEvent(event: event, onSent: onSent))
         statsQueueLock.unlock()
 
         ensureStatsTimerStarted()
@@ -2549,9 +2564,12 @@ import UIKit
             statsQueueLock.unlock()
             return
         }
-        let eventsToSend = statsQueue
+        let queuedEvents = statsQueue
         statsQueue.removeAll()
         statsQueueLock.unlock()
+
+        let eventsToSend = queuedEvents.map(\.event)
+        let onSentCallbacks = queuedEvents.compactMap(\.onSent)
 
         operationQueue.maxConcurrentOperationCount = 1
 
@@ -2570,10 +2588,18 @@ import UIKit
                     return
                 }
 
+                if let statusCode = response.response?.statusCode, !(200...299).contains(statusCode) {
+                    self.logger.error("Error sending stats batch")
+                    self.logger.debug("Response code: \(statusCode)")
+                    semaphore.signal()
+                    return
+                }
+
                 switch response.result {
                 case .success:
                     self.logger.info("Stats batch sent successfully")
                     self.logger.debug("Sent \(eventsToSend.count) events")
+                    onSentCallbacks.forEach { $0() }
                 case let .failure(error):
                     self.logger.error("Error sending stats batch")
                     self.logger.debug("Response: \(response.value?.debugDescription ?? "nil"), Error: \(error.localizedDescription)")

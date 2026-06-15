@@ -119,6 +119,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final String LAST_FAILED_BUNDLE_PREF_KEY = "CapacitorUpdater.lastFailedBundle";
     private static final String LAST_REPORTED_APP_EXIT_TIMESTAMP_PREF_KEY = "CapacitorUpdater.lastReportedAppExitTimestamp";
     private static final String LAST_WEBVIEW_RENDER_PROCESS_GONE_PREF_KEY = "CapacitorUpdater.lastWebViewRenderProcessGone";
+    private static final String LAST_VERSION_OS_PREF_KEY = "CapacitorUpdater.lastVersionOs";
+    private static final String LAST_VERSION_BUILD_PREF_KEY = "CapacitorUpdater.lastVersionBuild";
+    private static final String LAST_VERSION_CODE_PREF_KEY = "CapacitorUpdater.lastVersionCode";
+    private static final String OS_VERSION_CHANGED_ACTION = "os_version_changed";
+    private static final String NATIVE_APP_VERSION_CHANGED_ACTION = "native_app_version_changed";
     private static final String SPLASH_SCREEN_PLUGIN_ID = "SplashScreen";
     private static final int SPLASH_SCREEN_RETRY_DELAY_MS = 100;
     private static final int SPLASH_SCREEN_MAX_RETRIES = 20;
@@ -857,6 +862,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.clearPreviewSessionForNativeBuildChange();
         }
         this.leavePreviewSessionForLaunchIntentIfNeeded();
+        this.reportNativeVersionStatsIfChanged();
         this.reportPreviousAppExitReasons();
         this.reportPreviousWebViewRenderProcessGone();
         this.installWebViewStatsReporter();
@@ -1297,6 +1303,109 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private boolean hasNativeBuildVersionChanged() {
         final String lastKnownVersion = this.getStoredNativeBuildVersion();
         return !lastKnownVersion.isEmpty() && !lastKnownVersion.equals(this.currentBuildVersion);
+    }
+
+    void reportNativeVersionStatsIfChanged() {
+        if (this.implementation == null || this.prefs == null || this.editor == null) {
+            return;
+        }
+
+        this.reportNativeVersionStatsIfChanged(
+            this.implementation.versionBuild,
+            this.implementation.versionCode,
+            this.implementation.versionOs
+        );
+    }
+
+    void reportNativeVersionStatsIfChanged(
+        final String currentVersionBuild,
+        final String currentVersionCode,
+        final String currentVersionOs
+    ) {
+        if (this.implementation == null || this.prefs == null || this.editor == null) {
+            return;
+        }
+
+        final String normalizedVersionBuild = this.normalizedStatsValue(currentVersionBuild);
+        final String normalizedVersionCode = this.normalizedStatsValue(currentVersionCode);
+        final String normalizedVersionOs = this.normalizedStatsValue(currentVersionOs);
+        final String previousVersionOs = this.prefs.getString(LAST_VERSION_OS_PREF_KEY, "");
+        final String previousVersionBuild = this.prefs.getString(LAST_VERSION_BUILD_PREF_KEY, "");
+        final String previousVersionCode = this.prefs.getString(LAST_VERSION_CODE_PREF_KEY, "");
+        final boolean osVersionChanged =
+            !normalizedVersionOs.isEmpty() &&
+            previousVersionOs != null &&
+            !previousVersionOs.isEmpty() &&
+            !previousVersionOs.equals(normalizedVersionOs);
+
+        if (osVersionChanged) {
+            final Map<String, String> metadata = new HashMap<>();
+            metadata.put("previous_version_os", previousVersionOs);
+            metadata.put("current_version_os", normalizedVersionOs);
+            this.implementation.sendStats(
+                OS_VERSION_CHANGED_ACTION,
+                this.implementation.getCurrentBundle().getVersionName(),
+                "",
+                metadata,
+                () -> this.persistLastVersionOs(normalizedVersionOs)
+            );
+        }
+
+        final boolean hasPreviousNativeVersion =
+            (previousVersionBuild != null && !previousVersionBuild.isEmpty()) ||
+            (previousVersionCode != null && !previousVersionCode.isEmpty());
+        final boolean nativeVersionChanged =
+            hasPreviousNativeVersion &&
+            (!Objects.equals(previousVersionBuild, normalizedVersionBuild) || !Objects.equals(previousVersionCode, normalizedVersionCode));
+
+        if (nativeVersionChanged) {
+            final Map<String, String> metadata = new HashMap<>();
+            metadata.put("previous_version_build", previousVersionBuild == null ? "" : previousVersionBuild);
+            metadata.put("current_version_build", normalizedVersionBuild);
+            metadata.put("previous_version_code", previousVersionCode == null ? "" : previousVersionCode);
+            metadata.put("current_version_code", normalizedVersionCode);
+            this.implementation.sendStats(
+                NATIVE_APP_VERSION_CHANGED_ACTION,
+                this.implementation.getCurrentBundle().getVersionName(),
+                "",
+                metadata,
+                () -> this.persistLastNativeAppVersion(normalizedVersionBuild, normalizedVersionCode)
+            );
+        }
+
+        if (!osVersionChanged || !nativeVersionChanged) {
+            if (!osVersionChanged) {
+                this.editor.putString(LAST_VERSION_OS_PREF_KEY, normalizedVersionOs);
+            }
+            if (!nativeVersionChanged) {
+                this.editor.putString(LAST_VERSION_BUILD_PREF_KEY, normalizedVersionBuild);
+                this.editor.putString(LAST_VERSION_CODE_PREF_KEY, normalizedVersionCode);
+            }
+            this.editor.apply();
+        }
+    }
+
+    private void persistLastVersionOs(final String versionOs) {
+        if (this.editor == null) {
+            return;
+        }
+
+        this.editor.putString(LAST_VERSION_OS_PREF_KEY, versionOs);
+        this.editor.apply();
+    }
+
+    private void persistLastNativeAppVersion(final String versionBuild, final String versionCode) {
+        if (this.editor == null) {
+            return;
+        }
+
+        this.editor.putString(LAST_VERSION_BUILD_PREF_KEY, versionBuild);
+        this.editor.putString(LAST_VERSION_CODE_PREF_KEY, versionCode);
+        this.editor.apply();
+    }
+
+    private String normalizedStatsValue(final String value) {
+        return value == null ? "" : value;
     }
 
     private void reportPreviousAppExitReasons() {

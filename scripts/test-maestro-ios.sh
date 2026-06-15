@@ -96,19 +96,61 @@ PY
   return $?
 }
 
+run_cleanup_command() {
+  local timeout_seconds="$1"
+  shift
+
+  set +e
+  run_with_timeout "$timeout_seconds" "$@" >/dev/null 2>&1
+  local status=$?
+  set -e
+
+  if [[ $status -eq 124 ]]; then
+    echo "Timed out after ${timeout_seconds}s while cleaning up: $*" >&2
+  fi
+
+  return 0
+}
+maestro_xcodebuild_pids() {
+  local driver_pattern="maestro-driver-iosUITests"
+
+  ps ax -o pid= -o command= |
+    awk -v driver="$driver_pattern" '
+      $0 ~ /xcodebuild/ && index($0, driver) > 0 && $0 !~ /awk/ {
+        print $1
+      }
+    '
+}
+
+terminate_maestro_xcodebuild() {
+  local pid=""
+
+  while IFS= read -r pid; do
+    [[ -z "$pid" ]] && continue
+    run_cleanup_command 5 kill "$pid"
+  done < <(maestro_xcodebuild_pids)
+}
+
 install_example_app() {
   local started="$SECONDS"
 
   if [[ "$ASSUME_CLEAN_INSTALL" == "1" ]]; then
     echo "Installing iOS app without pre-uninstall on clean simulator."
   else
-    xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
-    xcrun simctl uninstall "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
+    run_cleanup_command 10 xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID"
+    run_cleanup_command 20 xcrun simctl uninstall "$SIMULATOR_ID" "$APP_ID"
   fi
 
   xcrun simctl install "$SIMULATOR_ID" "$APP_PATH"
   echo "Installed iOS app in $((SECONDS - started))s."
   ASSUME_CLEAN_INSTALL=0
+}
+
+reset_ios_maestro_driver() {
+  run_cleanup_command 10 xcrun simctl terminate "$SIMULATOR_ID" dev.mobile.maestro-driver-iosUITests.xctrunner
+  run_cleanup_command 10 xcrun simctl terminate "$SIMULATOR_ID" dev.mobile.maestro-driver-iosUITests
+  run_cleanup_command 5 pkill -f 'maestro-driver-iosUITests'
+  terminate_maestro_xcodebuild
 }
 
 wait_for_server() {
@@ -453,9 +495,8 @@ while (( attempt <= MAESTRO_TEST_RETRIES )); do
   if (( attempt < MAESTRO_TEST_RETRIES )) && { [[ $status -eq 124 ]] || grep -Eq "$FLOW_RETRY_PATTERN" "$output_file"; }; then
     echo "Retrying iOS Maestro smoke flow after simulator/XCTest instability." >&2
     rm -f "$output_file"
-    xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
-    xcrun simctl shutdown "$SIMULATOR_ID" >/dev/null 2>&1 || true
-    xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
+    run_cleanup_command 10 xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID"
+    reset_ios_maestro_driver
     run_with_timeout "$SIMULATOR_BOOT_TIMEOUT_SECONDS" xcrun simctl bootstatus "$SIMULATOR_ID" -b || true
     reset_fake_server
     if [[ "${CAPGO_MAESTRO_IOS_REINSTALL_ON_RETRY:-0}" == "1" ]]; then
