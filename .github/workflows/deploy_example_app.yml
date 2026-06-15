@@ -21,6 +21,7 @@ permissions:
 
 jobs:
   deploy:
+    if: ${{ github.event_name != 'release' || !github.event.release.prerelease }}
     name: Deploy example app to Capgo
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -69,10 +70,13 @@ jobs:
           repo_name="${GITHUB_REPOSITORY##*/}"
           base_bundle="$(bun -e "const fs = require('fs'); const root = JSON.parse(fs.readFileSync('package.json', 'utf8')); const example = JSON.parse(fs.readFileSync('example-app/package.json', 'utf8')); const version = [example.version, root.version].find((value) => value && value !== '0.0.0'); console.log(version || '');")"
 
-          if [[ -n "$release_tag" ]]; then
+          next_bundle_version() {
+            bun -e 'const base = process.argv[1]; const run = Number(process.argv[2] || 0); const match = base.match(/^(\d+)\.(\d+)\.(\d+)/); if (!match) { console.log(base); process.exit(0); } const [, major, minor, patch] = match; console.log(`${major}.${minor}.${Number(patch) + Math.max(run, 1)}`);' "$1" "${GITHUB_RUN_NUMBER:-0}"
+          }
+          if [[ -n "$base_bundle" ]]; then
+            bundle="$(next_bundle_version "$base_bundle")"
+          elif [[ -n "$release_tag" ]]; then
             bundle="${release_tag#v}"
-          elif [[ -n "$base_bundle" ]]; then
-            bundle="${base_bundle}-${GITHUB_RUN_NUMBER:-manual}"
           else
             bundle="${repo_name}-${GITHUB_RUN_NUMBER:-manual}"
           fi
