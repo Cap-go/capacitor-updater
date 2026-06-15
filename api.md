@@ -49,8 +49,9 @@ CapacitorUpdater can be configured with these options:
 | **`keepUrlPathAfterReload`** | `boolean` | Configure the plugin to keep the URL path after a reload. WARNING: When a reload is triggered, 'window.history' will be cleared. | `false` | 6.8.0 |
 | **`disableJSLogging`** | `boolean` | Disable the JavaScript logging of the plugin. if true, the plugin will not log to the JavaScript console. only the native log will be done | `false` | 7.3.0 |
 | **`osLogging`** | `boolean` | Enable OS-level logging. When enabled, logs are written to the system log which can be inspected in production builds. - **iOS**: Uses os_log instead of Swift.print, logs accessible via Console.app or Instruments - **Android**: Logs to Logcat (android.util.Log) When set to false, system logging is disabled on both platforms (only JavaScript console logging will occur if enabled). This is useful for debugging production apps (App Store/TestFlight builds on iOS, or production APKs on Android). | `true` | 8.42.0 |
-| **`shakeMenu`** | `boolean` | Enable the shake gesture while a preview session is active. Outside preview sessions this preview menu is ignored, unless {@link PluginsConfig.CapacitorUpdater.allowShakeChannelSelector} is enabled. | `false` | 7.5.0 |
-| **`allowShakeChannelSelector`** | `boolean` | Enable the shake gesture to show a channel selector menu for switching between update channels. If {@link PluginsConfig.CapacitorUpdater.shakeMenu} is also enabled while a preview session is active, the shake menu includes both preview actions and channel switching. Only available for Android and iOS. | `false` | 8.43.0 |
+| **`shakeMenu`** | `boolean` | Enable the native preview menu gesture while a preview session is active. Outside preview sessions this preview menu is ignored, unless {@link PluginsConfig.CapacitorUpdater.allowShakeChannelSelector} is enabled. | `false` | 7.5.0 |
+| **`shakeMenuGesture`** | `ShakeMenuGesture` | Choose which native gesture opens the preview/channel menu. This applies to both {@link PluginsConfig.CapacitorUpdater.shakeMenu} and {@link PluginsConfig.CapacitorUpdater.allowShakeChannelSelector}. Only available for Android and iOS. | `'shake'` | 8.48.0 |
+| **`allowShakeChannelSelector`** | `boolean` | Enable the native menu gesture to show a channel selector menu for switching between update channels. If {@link PluginsConfig.CapacitorUpdater.shakeMenu} is also enabled while a preview session is active, the shake menu includes both preview actions and channel switching. The native gesture can be changed with {@link PluginsConfig.CapacitorUpdater.shakeMenuGesture}. Only available for Android and iOS. | `false` | 8.43.0 |
 
 
 </docgen-config>
@@ -68,6 +69,12 @@ CapacitorUpdater can be configured with these options:
 - [`next`](#next)
 - [`set`](#set)
 - [`startPreviewSession`](#startpreviewsession)
+- [`listPreviews`](#listpreviews)
+- [`setPreview`](#setpreview)
+- [`resetPreview`](#resetpreview)
+- [`deletePreview`](#deletepreview)
+- [`checkPreviewUpdate`](#checkpreviewupdate)
+- [`updatePreview`](#updatepreview)
 - [`delete`](#delete)
 - [`setBundleError`](#setbundleerror)
 - [`list`](#list)
@@ -407,6 +414,9 @@ for update checks until the user leaves the preview. Native updater stats are
 skipped while the preview session is active.
 
 Use this before calling {@link set} for Expo Go-style preview flows.
+Use {@link listPreviews}, {@link setPreview}, {@link resetPreview},
+{@link deletePreview}, {@link checkPreviewUpdate}, and
+{@link updatePreview} to manage saved local previews.
 
 **Parameters**
 
@@ -419,6 +429,173 @@ Use this before calling {@link set} for Expo Go-style preview flows.
 `Promise<void>` — Resolves when preview session state is prepared.
 
 **Since:** 8.47.0
+
+
+--------------------
+
+
+### listPreviews
+
+```typescript
+listPreviews() => Promise<PreviewListResult>
+```
+
+Get every locally available preview bundle that was registered by
+{@link startPreviewSession} and later applied with {@link set}.
+
+This only returns previews whose bundles are still available locally. It is
+safe to show this in a preview switcher or native debug menu.
+
+**Returns**
+
+`Promise<PreviewListResult>` — Locally available previews and current preview state.
+
+**Since:** 8.49.0
+
+**Throws:** {Error} If preview sessions are not enabled by config.
+
+
+--------------------
+
+
+### setPreview
+
+```typescript
+setPreview(options: BundleId) => Promise<void>
+```
+
+Switch to a locally available preview bundle and reload the WebView.
+
+If the app is not already in a preview session, the current live bundle is
+saved as the fallback so {@link resetPreview} or the native shake menu can
+return to it later.
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `options` | `BundleId` | A {@link BundleId} object containing the preview bundle ID. |
+
+**Returns**
+
+`Promise<void>` — Resolves once the preview switch is staged.
+
+**Since:** 8.49.0
+
+**Throws:** {Error} If preview sessions are disabled or the preview is not available locally.
+
+
+--------------------
+
+
+### resetPreview
+
+```typescript
+resetPreview() => Promise<void>
+```
+
+Leave the active preview session and reload the saved live bundle.
+
+This does not delete any saved previews. Use {@link deletePreview} to remove
+a preview from local storage.
+
+**Returns**
+
+`Promise<void>` — Resolves once the live bundle reload is staged.
+
+**Since:** 8.49.0
+
+**Throws:** {Error} If there is no preview fallback bundle available.
+
+
+--------------------
+
+
+### deletePreview
+
+```typescript
+deletePreview(options: BundleId) => Promise<DeletePreviewResult>
+```
+
+Delete a locally saved preview and its bundle when possible.
+
+Active previews cannot be deleted until you switch away from them or call
+{@link resetPreview}. If only the preview metadata can be removed, the
+method still resolves with `deleted: false`.
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `options` | `BundleId` | A {@link BundleId} object containing the preview bundle ID. |
+
+**Returns**
+
+`Promise<DeletePreviewResult>` — Whether the underlying bundle was deleted.
+
+**Since:** 8.49.0
+
+**Throws:** {Error} If preview sessions are disabled.
+
+
+--------------------
+
+
+### checkPreviewUpdate
+
+```typescript
+checkPreviewUpdate(options: BundleId) => Promise<PreviewUpdateResult>
+```
+
+Check whether a saved preview's payload URL points to a newer preview bundle.
+
+Only previews started with a `payloadUrl` can be checked natively. Direct URL
+previews can still be switched or deleted locally, but the updater does not
+know where to check for newer versions.
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `options` | `BundleId` | A {@link BundleId} object containing the preview bundle ID. |
+
+**Returns**
+
+`Promise<PreviewUpdateResult>` — Update status for the preview.
+
+**Since:** 8.49.0
+
+**Throws:** {Error} If preview sessions are disabled or the preview has no payload URL.
+
+
+--------------------
+
+
+### updatePreview
+
+```typescript
+updatePreview(options: BundleId) => Promise<PreviewUpdateResult>
+```
+
+Download the newest bundle for a saved preview payload URL.
+
+If the preview being updated is active, the new bundle is applied and the
+WebView reloads. Otherwise, the saved preview entry is moved to the newly
+downloaded bundle and can be selected later with {@link setPreview}.
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `options` | `BundleId` | A {@link BundleId} object containing the preview bundle ID. |
+
+**Returns**
+
+`Promise<PreviewUpdateResult>` — The update result and saved preview metadata.
+
+**Since:** 8.49.0
+
+**Throws:** {Error} If preview sessions are disabled or the preview cannot be updated.
 
 
 --------------------
@@ -914,6 +1091,11 @@ Assign this device to a specific update channel at runtime.
 Channels allow you to distribute different bundle versions to different groups of users
 (e.g., "production", "beta", "staging"). This method switches the device to a new channel.
 
+**Device Override UI:** `setChannel()` validates the channel with the backend, then stores the
+selected channel locally on the device. It does not create or update a backend Device Override,
+so the device will not appear as overridden in the Capgo dashboard. Only assignments created
+from the dashboard or the Public API are shown in the Device Override UI.
+
 **Requirements:**
 - The target channel must allow self-assignment (configured in your Capgo dashboard or backend)
 - The backend may accept or reject the request based on channel settings
@@ -940,7 +1122,8 @@ CapacitorUpdater.addListener('channelPrivate', (data) => {
 });
 ```
 
-This sends a request to the Capgo backend linking your device ID to the specified channel.
+This sends a request to the Capgo backend to validate the specified channel, then stores the
+channel locally on the device.
 
 **Parameters**
 
@@ -966,11 +1149,12 @@ This sends a request to the Capgo backend linking your device ID to the specifie
 unsetChannel(options: UnsetChannelOptions) => Promise<void>
 ```
 
-Remove the device's channel assignment and return to the default channel.
+Remove the plugin-managed local channel assignment and return to the default channel.
 
-This unlinks the device from any specifically assigned channel, causing it to fall back to:
+This clears only the channel stored locally by {@link setChannel}; it does not delete Dashboard or Public API Device Override records. After the local assignment is cleared, normal channel precedence applies:
+- An existing Dashboard or Public API Device Override, if one exists
 - The {@link PluginsConfig.CapacitorUpdater.defaultChannel} if configured, or
-- Your backend's default channel for this app
+- Your backend default channel for this app
 
 Use this when:
 - Users opt out of beta/testing programs
@@ -1150,7 +1334,7 @@ It's automatically generated and stored securely by the plugin.
 **Privacy & Security characteristics:**
 - Generated as a UUID (not based on hardware identifiers)
 - Stored securely in platform-specific secure storage
-- Android: Android Keystore (persists across app reinstalls on API 23+)
+- Android: mirrored into backup-restorable app preferences for reinstall restore
 - iOS: Keychain with `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`
 - Not synced to cloud (iOS)
 - Follows Apple and Google privacy best practices
@@ -1158,7 +1342,9 @@ It's automatically generated and stored securely by the plugin.
 
 **Persistence:**
 The device ID persists across app reinstalls to maintain consistent device identity
-for update tracking and analytics.
+for update tracking and analytics when platform storage is preserved. On Android,
+apps with custom backup rules must keep the plugin app preferences eligible for
+backup/restore; disabling Android backup or clearing app data creates a new ID.
 
 Use this to:
 - Debug update delivery issues (check what ID the server sees)
@@ -1779,9 +1965,9 @@ Use this to:
 setShakeMenu(options: SetShakeMenuOptions) => Promise<void>
 ```
 
-Enable or disable the shake gesture menu.
+Enable or disable the native preview menu gesture.
 
-During preview sessions, users can shake their device to:
+During preview sessions, users can use the configured native gesture to:
 - Reload the current preview
 - Leave the test app and return to the fallback bundle
 - Switch update channel, when {@link PluginsConfig.CapacitorUpdater.allowShakeChannelSelector} is also enabled
@@ -1791,7 +1977,8 @@ shown outside preview sessions when {@link PluginsConfig.CapacitorUpdater.allowS
 
 **Important:** Disable this in production builds or only enable for internal testers.
 
-Can also be configured via {@link PluginsConfig.CapacitorUpdater.shakeMenu}.
+This can also be configured via {@link PluginsConfig.CapacitorUpdater.shakeMenu}.
+The native gesture is configured via {@link PluginsConfig.CapacitorUpdater.shakeMenuGesture}.
 
 **Parameters**
 
@@ -1817,7 +2004,7 @@ Can also be configured via {@link PluginsConfig.CapacitorUpdater.shakeMenu}.
 isShakeMenuEnabled() => Promise<ShakeMenuEnabled>
 ```
 
-Check if the shake gesture debug menu is currently enabled.
+Check if the native preview menu gesture is currently enabled.
 
 Returns the current state of the shake menu feature that can be toggled via
 {@link setShakeMenu} or configured via {@link PluginsConfig.CapacitorUpdater.shakeMenu}.
@@ -1829,7 +2016,7 @@ Use this to:
 
 **Returns**
 
-`Promise<ShakeMenuEnabled>` — Object with `enabled: true` or `enabled: false`.
+`Promise<ShakeMenuEnabled>` — Object with the current enabled state and gesture.
 
 **Since:** 7.5.0
 
@@ -1845,13 +2032,14 @@ Use this to:
 setShakeChannelSelector(options: SetShakeChannelSelectorOptions) => Promise<void>
 ```
 
-Enable or disable the shake channel selector at runtime.
+Enable or disable the channel selector menu gesture at runtime.
 
-When enabled, shaking the device can show a channel selector, including outside preview sessions.
+When enabled, the configured native gesture can show a channel selector, including outside preview sessions.
 If {@link setShakeMenu} is also enabled while a preview session is active, the shake menu includes
 both preview actions and channel switching.
 
-Can also be configured via {@link PluginsConfig.CapacitorUpdater.allowShakeChannelSelector}.
+This can also be configured via {@link PluginsConfig.CapacitorUpdater.allowShakeChannelSelector}.
+The native gesture is configured via {@link PluginsConfig.CapacitorUpdater.shakeMenuGesture}.
 
 **Parameters**
 
