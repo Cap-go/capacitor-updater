@@ -95,11 +95,10 @@ if (setStatus !== 0) {
 }
 
 console.log(`Deploying ${appId} to Capgo channel "${channel}"`);
-const channelArgs = ['channel', 'add', channel, appId];
+runCapgo(['channel', 'add', channel, appId], true);
 if (channel === 'production') {
-  channelArgs.push('--default');
+  runCapgo(['channel', 'set', channel, appId, '--state', 'default']);
 }
-runCapgo(channelArgs, true);
 
 
 runCapgo([
