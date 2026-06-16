@@ -168,7 +168,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private let onLaunchDirectUpdateStateLock = NSLock()
     private var downloadInProgress = false
     private var downloadStartTime: Date?
-    private let downloadTimeout: TimeInterval = 3600 // 1 hour timeout
+    private let downloadTimeout: TimeInterval = 600 // 10 minute timeout
 
     // Lock to ensure cleanup completes before downloads start
     private let cleanupLock = NSLock()

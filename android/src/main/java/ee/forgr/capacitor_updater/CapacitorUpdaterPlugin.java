@@ -216,7 +216,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private volatile Thread backgroundDownloadTask;
     private volatile Thread appReadyCheck;
     private volatile long downloadStartTimeMs = 0;
-    private static final long DOWNLOAD_TIMEOUT_MS = 3600000; // 1 hour timeout
+    private static final long DOWNLOAD_TIMEOUT_MS = 600000; // 10 minute timeout
 
     private final Phaser semaphoreReady = new Phaser(0) {
         @Override
