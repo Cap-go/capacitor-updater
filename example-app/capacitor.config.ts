@@ -6,6 +6,7 @@ const directUpdate =
   directUpdateEnv === 'true' || directUpdateEnv === 'false'
     ? directUpdateEnv === 'true'
     : directUpdateEnv;
+const usesDirectUpdate = directUpdate !== false;
 const parsedAppReadyTimeout = Number.parseInt(process.env.CAPGO_APP_READY_TIMEOUT ?? '20000', 10);
 const appReadyTimeout =
   Number.isFinite(parsedAppReadyTimeout) && parsedAppReadyTimeout >= 1000
@@ -28,7 +29,7 @@ const config: CapacitorConfig = {
   webDir: 'dist',
   plugins: {
     SplashScreen: {
-      launchAutoHide: true,
+      launchAutoHide: !usesDirectUpdate,
     },
     CapacitorUpdater: {
       autoUpdate,
@@ -43,6 +44,7 @@ const config: CapacitorConfig = {
       statsUrl: process.env.CAPGO_STATS_URL,
       channelUrl: process.env.CAPGO_CHANNEL_URL,
       appReadyTimeout,
+      autoSplashscreen: usesDirectUpdate,
     },
   },
 };
