@@ -79,7 +79,7 @@ First follow the migration guide of Capacitor:
 - **Channel storage change**: `setChannel()` now stores channel assignments locally on the device instead of in the cloud. This provides better offline support and reduces backend load.
   - Channel assignments persist between app restarts
   - Use `unsetChannel()` to clear the local assignment and revert to `defaultChannel`
-  - Old devices (< v7.34.0) will continue using cloud-based storage
+  - Old devices (< v7.34.0) use now a KV storage to prevent overload the primary DB of Capgo
 - **New event**: Listen to the `channelPrivate` event to handle cases where a user tries to assign themselves to a private channel (one that doesn't allow self-assignment). See example in the `setChannel()` documentation above.
 
 ## Migration to v7
