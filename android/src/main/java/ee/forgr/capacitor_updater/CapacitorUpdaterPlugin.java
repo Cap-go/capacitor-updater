@@ -142,7 +142,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     static final int APPLICATION_EXIT_REASON_USER_REQUESTED = 10;
     static final int APPLICATION_EXIT_REASON_DEPENDENCY_DIED = 12;
 
-    private final String pluginVersion = "8.49.3";
+    private final String pluginVersion = "8.49.4";
     private static final String DELAY_CONDITION_PREFERENCES = "";
 
     private SharedPreferences.Editor editor;
