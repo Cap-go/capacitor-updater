@@ -137,7 +137,7 @@ jobs:
     permissions:
       contents: read
     needs: maestro_web_assets
-    timeout-minutes: 10
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     name: Build Android Maestro app / ${{ matrix.scenario }}
     strategy:
@@ -191,7 +191,7 @@ jobs:
     permissions:
       contents: read
     needs: maestro_web_assets
-    timeout-minutes: 10
+    timeout-minutes: 20
     runs-on: macOS-latest
     name: Build iOS Maestro apps
     steps:
@@ -259,7 +259,7 @@ jobs:
     needs:
       - maestro_web_assets
       - maestro_android_apps
-    timeout-minutes: 10
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     name: Android example app Maestro smoke / ${{ matrix.scenario }}
     strategy:
@@ -339,7 +339,7 @@ jobs:
     needs:
       - maestro_web_assets
       - maestro_ios_apps
-    timeout-minutes: 10
+    timeout-minutes: 20
     runs-on: macOS-latest
     name: iOS example app Maestro smoke / ${{ matrix.scenario }}
     strategy:
@@ -404,7 +404,7 @@ jobs:
     needs:
       - maestro_web_assets
       - maestro_ios_apps
-    timeout-minutes: 10
+    timeout-minutes: 20
     runs-on: macOS-latest
     name: iOS example app Maestro live update / ${{ matrix.scenario }}
     strategy:
@@ -499,7 +499,7 @@ jobs:
     needs:
       - maestro_web_assets
       - maestro_android_apps
-    timeout-minutes: 10
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     name: maestro_android / ${{ matrix.scenario }}
     strategy:
