@@ -1,0 +1,119 @@
+name: Deploy example app to Capgo
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Capgo channel'
+        required: false
+        default: 'production'
+      comment:
+        description: 'Optional release comment'
+        required: false
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: ${{ github.event_name != 'release' || !github.event.release.prerelease }}
+    name: Deploy example app to Capgo
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event.release.tag_name || github.ref }}
+          fetch-depth: 1
+          filter: blob:none
+          persist-credentials: false
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.3.11
+          no-cache: true
+
+      - name: Install plugin dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build plugin
+        run: bun run build
+
+      - name: Install example dependencies
+        working-directory: example-app
+        run: bun install --frozen-lockfile
+
+      - name: Build example app
+        working-directory: example-app
+        run: bun run build
+
+      - name: Resolve Capgo upload metadata
+        id: upload
+        shell: bash
+        env:
+          INPUT_CHANNEL: ${{ github.event.inputs.channel }}
+          INPUT_COMMENT: ${{ github.event.inputs.comment }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+
+          channel="${INPUT_CHANNEL:-}"
+          comment="${INPUT_COMMENT:-}"
+          release_tag="${RELEASE_TAG:-}"
+          repo_name="${GITHUB_REPOSITORY##*/}"
+          base_bundle="$(bun -e "const fs = require('fs'); const root = JSON.parse(fs.readFileSync('package.json', 'utf8')); const example = JSON.parse(fs.readFileSync('example-app/package.json', 'utf8')); const version = [example.version, root.version].find((value) => value && value !== '0.0.0'); console.log(version || '');")"
+
+          next_bundle_version() {
+            bun -e 'const base = process.argv[1]; const run = Number(process.argv[2] || 0); const match = base.match(/^(\d+)\.(\d+)\.(\d+)/); if (!match) { console.log(base); process.exit(0); } const [, major, minor, patch] = match; console.log(`${major}.${minor}.${Number(patch) + Math.max(run, 1)}`);' "$1" "${GITHUB_RUN_NUMBER:-0}"
+          }
+          if [[ -n "$base_bundle" ]]; then
+            bundle="$(next_bundle_version "$base_bundle")"
+          elif [[ -n "$release_tag" ]]; then
+            bundle="${release_tag#v}"
+          else
+            bundle="${repo_name}-${GITHUB_RUN_NUMBER:-manual}"
+          fi
+
+          if [[ -z "$channel" ]]; then
+            channel="production"
+          fi
+
+          if [[ -z "$comment" ]]; then
+            if [[ -n "$release_tag" ]]; then
+              comment="${repo_name} example ${release_tag}"
+            else
+              comment="${repo_name} example ${GITHUB_RUN_NUMBER:-manual}"
+            fi
+          fi
+
+          {
+            echo "channel=$channel"
+            echo "bundle=$bundle"
+            echo "comment<<__CAPGO_COMMENT__"
+            echo "$comment"
+            echo "__CAPGO_COMMENT__"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Validate Capgo token
+        env:
+          CAPGO_TOKEN: ${{ secrets.CAPGO_TOKEN }}
+        run: |
+          if [ -z "$CAPGO_TOKEN" ]; then
+            echo "::error::CAPGO_TOKEN org secret is not available to this workflow"
+            exit 1
+          fi
+
+      - name: Deploy to Capgo
+        run: bun scripts/deploy-example-capgo.mjs
+        env:
+          CAPGO_TOKEN: ${{ secrets.CAPGO_TOKEN }}
+          CAPGO_CHANNEL: ${{ steps.upload.outputs.channel }}
+          CAPGO_BUNDLE: ${{ steps.upload.outputs.bundle }}
+          CAPGO_COMMENT: ${{ steps.upload.outputs.comment }}

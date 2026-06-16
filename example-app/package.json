@@ -10,13 +10,15 @@
   "scripts": {
     "start": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "capgo:deploy": "cd .. && bun run example:capgo:deploy"
   },
   "dependencies": {
     "@capacitor/core": "^8.0.0",
     "@capacitor/android": "^8.0.0",
     "@capacitor/ios": "^8.0.0",
-    "@capgo/capacitor-updater": "file:.."
+    "@capgo/capacitor-updater": "file:..",
+    "@capacitor/splash-screen": "^8.0.0"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.0.0",
