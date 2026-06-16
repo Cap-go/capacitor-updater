@@ -17,8 +17,7 @@
     "@capacitor/core": "^8.0.0",
     "@capacitor/android": "^8.0.0",
     "@capacitor/ios": "^8.0.0",
-    "@capgo/capacitor-updater": "file:..",
-    "@capacitor/splash-screen": "^8.0.0"
+    "@capgo/capacitor-updater": "file:.."
   },
   "devDependencies": {
     "@capacitor/cli": "^8.0.0",

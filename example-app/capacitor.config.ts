@@ -28,7 +28,7 @@ const config: CapacitorConfig = {
   webDir: 'dist',
   plugins: {
     SplashScreen: {
-      launchAutoHide: false,
+      launchAutoHide: true,
     },
     CapacitorUpdater: {
       autoUpdate,
