@@ -133,6 +133,20 @@ We recommend to declare [`CA92.1`](https://developer.apple.com/documentation/bun
 
 ## Installation
 
+You can use our AI-Assisted Setup to install the plugin. Add the Capgo skills to your AI tool using the following command:
+
+```bash
+npx skills add https://github.com/cap-go/capacitor-skills --skill capacitor-plugins
+```
+
+Then use the following prompt:
+
+```text
+Use the `capacitor-plugins` skill from `cap-go/capacitor-skills` to install the `@capgo/capacitor-updater` plugin in my project.
+```
+
+If you prefer Manual Setup, install the plugin by running the following commands and follow the platform-specific instructions below:
+
 Step by step here: [Getting started](https://capgo.app/docs/getting-started/add-an-app/)
 
 Or
