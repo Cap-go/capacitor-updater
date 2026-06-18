@@ -1160,7 +1160,7 @@ import UIKit
                 do {
                     // Try builtin first
                     if FileManager.default.fileExists(atPath: builtinFilePath.path) && self.verifyChecksum(file: builtinFilePath, expectedHash: finalFileHash) {
-                        try FileManager.default.copyItem(at: builtinFilePath, to: destFilePath)
+                        try self.copyItemReplacing(from: builtinFilePath, to: destFilePath)
                         self.logger.info("downloadManifest \(fileName) using builtin file \(id)")
                     }
                     // Try cache
@@ -1323,8 +1323,8 @@ import UIKit
                 finalData = decompressedData
             }
 
-            // Write to destination
-            try finalData.write(to: destFilePath)
+            // Write to destination (replace if leftover from a previous failed download)
+            try writeDataAtomically(finalData, to: destFilePath)
 
             // Always verify checksum when file_hash is present
             let calculatedChecksum = CryptoCipher.calcChecksum(filePath: destFilePath)
@@ -1336,8 +1336,8 @@ import UIKit
                 throw NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash)) for file \(fileName) at url \(downloadUrl)"])
             }
 
-            // Save to cache
-            try finalData.write(to: cacheFilePath)
+            // Save to cache (replace stale cache entries from partial or concurrent downloads)
+            try writeDataAtomically(finalData, to: cacheFilePath)
 
             self.logger.info("Manifest file downloaded and cached")
             self.logger.debug("Bundle: \(bundleId), File: \(fileName), Brotli: \(isBrotli), Encrypted: \(!self.publicKey.isEmpty && !sessionKey.isEmpty)")
@@ -1348,22 +1348,49 @@ import UIKit
         }
     }
 
+    /// Atomically write data to a file, replacing any existing file at the destination.
+    private func writeDataAtomically(_ data: Data, to destination: URL) throws {
+        let fileManager = FileManager.default
+        let tempURL = destination.deletingLastPathComponent().appendingPathComponent("\(destination.lastPathComponent).\(UUID().uuidString).tmp")
+        defer {
+            try? fileManager.removeItem(at: tempURL)
+        }
+
+        try data.write(to: tempURL, options: .atomic)
+        if fileManager.fileExists(atPath: destination.path) {
+            try fileManager.removeItem(at: destination)
+        }
+        try fileManager.moveItem(at: tempURL, to: destination)
+    }
+
+    /// Copy a file to the destination, replacing any existing file.
+    private func copyItemReplacing(from source: URL, to destination: URL) throws {
+        let fileManager = FileManager.default
+        if fileManager.fileExists(atPath: destination.path) {
+            try fileManager.removeItem(at: destination)
+        }
+        try fileManager.copyItem(at: source, to: destination)
+    }
+
     /// Atomically try to copy a file from cache - returns true if successful, false if file doesn't exist or copy failed
     /// This handles the race condition where OS can delete cache files between exists() check and copy
     private func tryCopyFromCache(from source: URL, to destination: URL, expectedHash: String) -> Bool {
+        let fileManager = FileManager.default
+
         // First quick check - if file doesn't exist, don't bother
-        guard FileManager.default.fileExists(atPath: source.path) else {
+        guard fileManager.fileExists(atPath: source.path) else {
             return false
         }
 
-        // Verify checksum before copy
+        // Verify checksum before copy; remove stale cache entries that would block re-download
         guard verifyChecksum(file: source, expectedHash: expectedHash) else {
+            try? fileManager.removeItem(at: source)
             return false
         }
 
         // Try to copy - if it fails (file deleted by OS between check and copy), return false
         do {
-            try FileManager.default.copyItem(at: source, to: destination)
+            try copyItemReplacing(from: source, to: destination)
             return true
         } catch {
             // File was deleted between check and copy, or other IO error - caller should download instead
