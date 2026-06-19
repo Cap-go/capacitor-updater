@@ -45,7 +45,7 @@ jobs:
 
       - name: Deploy to Capgo
         working-directory: example-app
-        run: bunx @capgo/cli@latest bundle upload app.capgo.updater --path dist --channel "$CAPGO_CHANNEL" --package-json package.json,../package.json --node-modules node_modules,../node_modules --delta --no-key --ignore-checksum-check --version-exists-ok --apikey "$CAPGO_TOKEN"
+        run: bunx @capgo/cli@8.12.1 bundle upload app.capgo.updater --path dist --channel "$CAPGO_CHANNEL" --package-json package.json,../package.json --node-modules node_modules,../node_modules --delta --no-key --ignore-checksum-check --version-exists-ok --apikey "$CAPGO_TOKEN"
         env:
           CAPGO_TOKEN: ${{ secrets.CAPGO_TOKEN }}
           CAPGO_CHANNEL: ${{ github.event.inputs.channel || 'production' }}
