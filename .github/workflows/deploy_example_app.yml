@@ -8,11 +8,6 @@ on:
   release:
     types: [published]
   workflow_dispatch:
-    inputs:
-      channel:
-        description: 'Capgo channel'
-        required: false
-        default: 'production'
 permissions:
   contents: read
 
@@ -46,7 +41,6 @@ jobs:
       - name: Deploy to Capgo
         working-directory: example-app
         # Keep --ignore-checksum-check because release builds can reuse the same example dist checksum.
-        run: bunx @capgo/cli@8.12.1 bundle upload app.capgo.updater --path dist --channel "$CAPGO_CHANNEL" --package-json package.json,../package.json --node-modules node_modules,../node_modules --delta --no-key --ignore-checksum-check --version-exists-ok --apikey "$CAPGO_TOKEN"
+        run: bunx @capgo/cli@latest bundle upload app.capgo.updater --path dist --channel production --package-json package.json,../package.json --node-modules node_modules,../node_modules --delta --no-key --ignore-checksum-check --version-exists-ok --apikey "$CAPGO_TOKEN"
         env:
           CAPGO_TOKEN: ${{ secrets.CAPGO_TOKEN }}
-          CAPGO_CHANNEL: ${{ github.event.inputs.channel || 'production' }}
