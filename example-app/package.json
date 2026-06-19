@@ -10,8 +10,7 @@
   "scripts": {
     "start": "vite",
     "build": "vite build",
-    "preview": "vite preview",
-    "capgo:deploy": "cd .. && bun run example:capgo:deploy"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@capacitor/core": "^8.0.0",
