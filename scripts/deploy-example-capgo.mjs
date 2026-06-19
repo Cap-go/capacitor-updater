@@ -36,7 +36,7 @@ function readConfigString(key, fallback) {
 
 function runCapgo(args, allowFailure = false) {
   const token = process.env.CAPGO_TOKEN;
-  const fullArgs = ['x', '@capgo/cli@8.5.3', ...args];
+  const fullArgs = ['x', '@capgo/cli@latest', ...args];
   if (token) {
     fullArgs.push('--apikey', token);
   }
