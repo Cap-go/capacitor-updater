@@ -1060,8 +1060,8 @@ import UIKit
 
         let totalFiles = manifest.count
 
-        // Keep this bounded because each manifest operation waits on a URLSession callback.
-        manifestDownloadQueue.maxConcurrentOperationCount = min(8, max(1, totalFiles))
+        // Configure concurrent operation count similar to Android: min(64, max(32, totalFiles))
+        manifestDownloadQueue.maxConcurrentOperationCount = min(64, max(32, totalFiles))
 
         // Thread-safe counters for concurrent operations
         let completedFiles = AtomicCounter()
