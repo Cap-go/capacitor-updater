@@ -54,19 +54,22 @@ declare module '@capacitor/cli' {
       autoDeletePrevious?: boolean;
 
       /**
-       * Configure how the plugin should use Auto Update via an update server.
+       * Configure how the plugin checks for, downloads, and applies live updates.
+       *
+       * The plugin checks for updates when the app moves to the foreground and, if
+       * {@link periodCheckDelay} is set, on a repeating timer while the app stays open.
        *
        * Boolean values keep their existing behavior:
        * - `true`: Same as `"atBackground"`.
        * - `false`: Same as `"off"`.
        *
        * String values merge the previous Auto Update and Direct Update configuration:
-       * - `"off"`: Disable Auto Update.
-       * - `"atBackground"`: Check and download updates automatically, then apply them the next time the app moves to background.
-       * - `"atInstall"`: Direct install only after app install or native app update, otherwise use `"atBackground"` behavior.
-       * - `"onLaunch"`: Direct install on app launch, otherwise use `"atBackground"` behavior after the first launch attempt.
-       * - `"always"`: Direct install whenever Auto Update runs.
-       * - `"onlyDownload"`: Check and download updates automatically, emit `updateAvailable`, but never direct install or set the next bundle automatically.
+       * - `"off"`: Disable automatic update checks.
+       * - `"atBackground"`: Check and download automatically on each foreground check, then apply the update the next time the app moves to background.
+       * - `"atInstall"`: Apply immediately only after a fresh install or native app store update; otherwise use `"atBackground"` behavior.
+       * - `"onLaunch"`: Apply immediately only when the app is brought to the foreground from a killed state (cold start). After that first check, fall back to `"atBackground"` behavior.
+       * - `"always"`: Check on every foreground transition and apply immediately whenever an update is available.
+       * - `"onlyDownload"`: Check and download automatically, emit `updateAvailable`, and never set the next bundle or apply an update automatically.
        *
        * Only available for Android and iOS.
        *
@@ -146,10 +149,10 @@ declare module '@capacitor/cli' {
        * @deprecated Use {@link PluginsConfig.CapacitorUpdater.autoUpdate} string modes instead.
        * Works well for apps less than 10MB and with uploads done using --delta flag.
        * Zip or apps more than 10MB will be relatively slow for users to update.
-       * - false: Never do direct updates (use default behavior: download at start, set when backgrounded)
-       * - atInstall: Direct update only when app is installed, updated from store, otherwise act as directUpdate = false
-       * - onLaunch: Direct update only on app installed, updated from store or after app kill, otherwise act as directUpdate = false
-       * - always: Direct update in all previous cases (app installed, updated from store, after app kill or app resume), never act as directUpdate = false
+       * - false: Never do direct updates (use default behavior: download on foreground check, apply when backgrounded)
+       * - atInstall: Direct update only after app install or native app store update, otherwise act as directUpdate = false
+       * - onLaunch: Direct update only when the app is brought to the foreground from a killed state, otherwise act as directUpdate = false
+       * - always: Direct update on every foreground check whenever an update is available, never act as directUpdate = false
        * - true: (deprecated) Same as "always" for backward compatibility
        *
        * Activate this flag will automatically make the CLI upload delta in CICD envs and will ask for confirmation in local uploads.
