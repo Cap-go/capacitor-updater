@@ -4,7 +4,7 @@
  * Invoked from build.yml on tag releases via `bun run changelog:ai`.
  */
 
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { appendFileSync } from 'node:fs';
 
 const DEFAULT_MODEL = '@cf/moonshotai/kimi-k2.7-code';
@@ -19,8 +19,8 @@ function parseArgs(argv) {
   return args;
 }
 
-function sh(cmd) {
-  return execSync(cmd, { encoding: 'utf8' }).trim();
+function git(args) {
+  return execFileSync('git', args, { encoding: 'utf8' }).trim();
 }
 
 function resolveTags({ fromTag, toTag }) {
@@ -34,13 +34,14 @@ function resolveTags({ fromTag, toTag }) {
     throw new Error('Missing target tag. Set GITHUB_REF to refs/tags/<tag> or pass --to-tag.');
   }
 
-  const previousTag = fromTag ?? sh(`git describe --tags --abbrev=0 "${currentTag}^"`);
+  const previousTag = fromTag ?? git(['describe', '--tags', '--abbrev=0', `${currentTag}^`]);
   return { previousTag, currentTag };
 }
 
 function buildPrompt(previousTag, currentTag) {
-  const commits = sh(`git log ${previousTag}..${currentTag} --pretty=format:%s`);
-  const diffStat = sh(`git diff --stat ${previousTag}..${currentTag} | tail -1`);
+  const commits = git(['log', `${previousTag}..${currentTag}`, '--pretty=format:%s']);
+  const diffLines = git(['diff', '--stat', `${previousTag}..${currentTag}`]).split('\n');
+  const diffStat = diffLines.at(-1)?.trim() ?? '';
 
   return `You are a technical writer creating a changelog for a software project.
 
@@ -101,7 +102,7 @@ async function generateChangelog(prompt, model) {
   }
 
   const content = payload.result?.choices?.[0]?.message?.content ?? payload.result?.response;
-  if (!content) {
+  if (!content || typeof content !== 'string') {
     throw new Error('Cloudflare AI returned an empty changelog response');
   }
 
@@ -129,7 +130,8 @@ console.error(`Range: ${previousTag}..${currentTag}`);
 try {
   const result = await generateChangelog(prompt, model);
   writeGithubOutput({ result, fromTag: previousTag, toTag: currentTag });
-} catch {
-  console.error('Changelog generation failed');
+} catch (error) {
+  const message = error instanceof Error ? error.message : 'Unknown error';
+  console.error(`Changelog generation failed: ${message}`);
   process.exit(1);
 }
