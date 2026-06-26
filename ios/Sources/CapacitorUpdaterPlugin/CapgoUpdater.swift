@@ -368,6 +368,22 @@ import UIKit
         return !self.isDevEnvironment && !self.isAppStoreReceiptSandbox() && !self.hasEmbeddedMobileProvision()
     }
 
+    private func installSource() -> String? {
+        if isEmulator() || self.isDevEnvironment || self.hasEmbeddedMobileProvision() {
+            return nil
+        }
+        guard let receiptURL = Bundle.main.appStoreReceiptURL else {
+            return nil
+        }
+        if receiptURL.lastPathComponent == "sandboxReceipt" {
+            return "testflight"
+        }
+        guard FileManager.default.fileExists(atPath: receiptURL.path) else {
+            return nil
+        }
+        return "app_store"
+    }
+
     /**
      * Checks if there is sufficient disk space for a download.
      * Matches Android behavior: 2x safety margin, throws "insufficient_disk_space"
@@ -749,6 +765,7 @@ import UIKit
             plugin_version: self.pluginVersion,
             is_emulator: self.isEmulator(),
             is_prod: self.isProd(),
+            installSource: self.installSource(),
             action: nil,
             channel: nil,
             defaultChannel: self.defaultChannel,
@@ -2410,23 +2427,11 @@ import UIKit
 
         // Create info object and convert to query parameters
         let infoObject = self.createInfoObject()
-
-        // Create query parameters from InfoObject
         var urlComponents = URLComponents(string: self.channelUrl)
         var queryItems: [URLQueryItem] = urlComponents?.queryItems ?? []
 
-        // Convert InfoObject to dictionary using Mirror
-        let mirror = Mirror(reflecting: infoObject)
-        for child in mirror.children {
-            if let key = child.label, let value = child.value as? CustomStringConvertible {
-                queryItems.append(URLQueryItem(name: key, value: String(describing: value)))
-            } else if let key = child.label {
-                // Handle optional values
-                let mirror = Mirror(reflecting: child.value)
-                if let value = mirror.children.first?.value {
-                    queryItems.append(URLQueryItem(name: key, value: String(describing: value)))
-                }
-            }
+        for (key, value) in infoObject.toParameters() {
+            queryItems.append(URLQueryItem(name: key, value: String(describing: value)))
         }
 
         urlComponents?.queryItems = queryItems
@@ -2555,6 +2560,7 @@ import UIKit
             plugin_version: info.plugin_version,
             is_emulator: info.is_emulator,
             is_prod: info.is_prod,
+            installSource: info.installSource,
             action: action,
             channel: info.channel,
             defaultChannel: info.defaultChannel,

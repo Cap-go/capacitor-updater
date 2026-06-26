@@ -129,10 +129,31 @@ struct InfoObject: Codable {
     let plugin_version: String?
     let is_emulator: Bool?
     let is_prod: Bool?
+    let installSource: String?
     var action: String?
     var channel: String?
     var defaultChannel: String?
     var key_id: String?
+
+    enum CodingKeys: String, CodingKey {
+        case platform
+        case device_id
+        case app_id
+        case custom_id
+        case version_build
+        case version_code
+        case version_os
+        case version_name
+        case old_version_name
+        case plugin_version
+        case is_emulator
+        case is_prod
+        case installSource = "install_source"
+        case action
+        case channel
+        case defaultChannel
+        case key_id
+    }
 }
 
 extension InfoObject {
@@ -156,6 +177,7 @@ extension InfoObject {
         set("plugin_version", plugin_version)
         set("is_emulator", is_emulator)
         set("is_prod", is_prod)
+        set("install_source", installSource)
         set("action", action)
         set("channel", channel)
         set("defaultChannel", defaultChannel)
@@ -179,12 +201,35 @@ struct StatsEvent: Codable {
     let plugin_version: String?
     let is_emulator: Bool?
     let is_prod: Bool?
+    let installSource: String?
     let action: String?
     let channel: String?
     let defaultChannel: String?
     let key_id: String?
     let metadata: [String: String]?
     let timestamp: Int64
+
+    enum CodingKeys: String, CodingKey {
+        case platform
+        case device_id
+        case app_id
+        case custom_id
+        case version_build
+        case version_code
+        case version_os
+        case version_name
+        case old_version_name
+        case plugin_version
+        case is_emulator
+        case is_prod
+        case installSource = "install_source"
+        case action
+        case channel
+        case defaultChannel
+        case key_id
+        case metadata
+        case timestamp
+    }
 }
 // swiftlint:enable identifier_name
 

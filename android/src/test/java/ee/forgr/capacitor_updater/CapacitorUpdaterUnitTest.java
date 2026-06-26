@@ -2991,6 +2991,21 @@ public class CapacitorUpdaterUnitTest {
         verify(editor, never()).apply();
     }
 
+    @Test
+    public void installSourceForInstallerPackageMapsKnownStores() {
+        assertEquals("google_play", CapgoUpdater.installSourceForInstallerPackage("com.android.vending"));
+        assertEquals("amazon_appstore", CapgoUpdater.installSourceForInstallerPackage("com.amazon.venezia"));
+        assertEquals("samsung_galaxy_store", CapgoUpdater.installSourceForInstallerPackage("com.sec.android.app.samsungapps"));
+        assertEquals("huawei_appgallery", CapgoUpdater.installSourceForInstallerPackage("com.huawei.appmarket"));
+    }
+
+    @Test
+    public void installSourceForInstallerPackageHandlesUnknownAndMissingInstallers() {
+        assertEquals("", CapgoUpdater.installSourceForInstallerPackage(null));
+        assertEquals("", CapgoUpdater.installSourceForInstallerPackage(" "));
+        assertEquals("", CapgoUpdater.installSourceForInstallerPackage("com.example.sideload"));
+    }
+
     /**
      * Regression test for: NoSuchMethodError crash on Android 8.0/8.1 (API 26/27).
      * getLongVersionCode() was introduced in API 28; the plugin must use
