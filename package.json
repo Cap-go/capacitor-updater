@@ -72,6 +72,7 @@
     "watch": "tsc --watch",
     "prepublishOnly": "bun run build",
     "check:wiring": "node scripts/check-capacitor-plugin-wiring.mjs",
+    "changelog:ai": "node scripts/generate-ai-changelog.mjs",
     "example:install": "cd example-app && bun install --frozen-lockfile",
     "example:build": "bun run build && cd example-app && bun install --frozen-lockfile && bun run build"
   },
