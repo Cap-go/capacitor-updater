@@ -97,12 +97,12 @@ async function generateChangelog(prompt, model) {
 
   const payload = await response.json();
   if (!response.ok || !payload.success) {
-    throw new Error(`Cloudflare AI request failed (${response.status}): ${JSON.stringify(payload.errors ?? payload)}`);
+    throw new Error(`Cloudflare AI request failed with status ${response.status}`);
   }
 
   const content = payload.result?.choices?.[0]?.message?.content ?? payload.result?.response;
   if (!content) {
-    throw new Error(`Unexpected Cloudflare AI response: ${JSON.stringify(payload.result)}`);
+    throw new Error('Cloudflare AI returned an empty changelog response');
   }
 
   return content.trim();
@@ -129,7 +129,7 @@ console.error(`Range: ${previousTag}..${currentTag}`);
 try {
   const result = await generateChangelog(prompt, model);
   writeGithubOutput({ result, fromTag: previousTag, toTag: currentTag });
-} catch (error) {
-  console.error(error instanceof Error ? error.message : error);
+} catch {
+  console.error('Changelog generation failed');
   process.exit(1);
 }
