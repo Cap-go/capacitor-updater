@@ -118,21 +118,18 @@ function writeGithubOutput({ result, fromTag, toTag }) {
   appendFileSync(outputFile, `to_tag=${toTag}\n`);
 }
 
-async function main() {
-  const args = parseArgs(process.argv.slice(2));
-  const model = args.model ?? process.env.CLOUDFLARE_AI_MODEL ?? DEFAULT_MODEL;
-  const { previousTag, currentTag } = resolveTags(args);
-  const prompt = buildPrompt(previousTag, currentTag);
+const args = parseArgs(process.argv.slice(2));
+const model = args.model ?? process.env.CLOUDFLARE_AI_MODEL ?? DEFAULT_MODEL;
+const { previousTag, currentTag } = resolveTags(args);
+const prompt = buildPrompt(previousTag, currentTag);
 
-  console.error(`Generating changelog with ${model}`);
-  console.error(`Range: ${previousTag}..${currentTag}`);
+console.error(`Generating changelog with ${model}`);
+console.error(`Range: ${previousTag}..${currentTag}`);
 
+try {
   const result = await generateChangelog(prompt, model);
-  console.log(result);
   writeGithubOutput({ result, fromTag: previousTag, toTag: currentTag });
-}
-
-main().catch((error) => {
+} catch (error) {
   console.error(error instanceof Error ? error.message : error);
   process.exit(1);
-});
+}
