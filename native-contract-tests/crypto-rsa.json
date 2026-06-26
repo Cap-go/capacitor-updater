@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "description": "RSA public-decrypt contract vectors generated with crypto.privateEncrypt (PKCS#1), matching Capgo CLI encryption.",
+  "publicKeyPem": "-----BEGIN RSA PUBLIC KEY-----\nMIIBCgKCAQEAqJikYizowR4jGct5Uv8NdTjc+oXdnSp+I/P27huEx/eHTP+UQRIR\nv6cYq2d9wOCU5qZpyf4P7u5qibvfWM+Db2L9FS6zjLrFxaKIVk4bnixHEkzFEwJ4\nlIWq2cuwyVpdwriXvKRTen1bxslJHDKSkRAZX/u2rS+lbfs5k//2FBnVXK2aNGIv\nI3Kl9bHl4xhnwe1CAahX+5j4mB50jrGJEYU/Ocp9gGHwwm4+smJhJRw8d6060dRY\nSmoGQ34X4J4jO16Wln26TGNaSA0iBPVJt82MvO1FJJJFMAuIJDQfbysIKYFBWlBA\n2OCmylv7cVls7DdUCiDIWbzNefCZa3RyBwIDAQAB\n-----END RSA PUBLIC KEY-----",
+  "rsaPublicDecrypt": [
+    {
+      "id": "session-key-16-bytes",
+      "input": {
+        "ciphertextHex": "371cabdcb9827ffbc75fa978701d4bb5751fbdbddc0f46b6670c10f4529a0d212ecebd1460b5aecda16fe3a13f14cfbc48da3768db978b93acc1e707fa7eab54ffc13062601eb2bce6a8f17bd0faa042cc44660f8f7235451c96860977abb57bfe031e01a21787d21fcc2f9bdf9f9fba07a8ab089db417bd0443633accbdad56d4a8ec0a1d3d35c7aafd163bd5f1b96fd94791911b2fe7f4561038dd9350ad703839281da43f07b06c78418e6af3530dc78d1fb9d4467ab2c83d745f01f051431cfbd70c8cad6db2f3153759e5bed6045a7e1b316d18a6aa06a1af38277e1daca559c5f1dc887268c1ff19b51199a51e948fcc9cb9de8be0a05d2fd90c1d1988"
+      },
+      "expect": {
+        "plaintextHex": "abababababababababababababababab"
+      }
+    },
+    {
+      "id": "checksum-sha256-32-bytes",
+      "input": {
+        "ciphertextHex": "05d6d98e02793a420054175330ffdad7bf0bbf64459829341663ca59c9ee2ef278ab8291b6d094410fbdd25d4bf40528d965d8b4fad590daf212b0d309602f895b3bbcd492e7fd42783fbfe23afa70370afa9e6c6a0a606dc12ecbc2c14c6d7bde8e008b378c9dbe4d269626ecb2475c6ab86e8f9ea183352bad4439fd561273b8fa75799382b4dc99d16172793ac200c5f885c9f5e91527afe2b95b0d0c6a9bcd8ce12897a7aff0c4901551f444396ba059d9adf4805719a86529ccc77cbaae58f6456eeeb44b936443b37a40e3b86ec883e4d58b16fb5dc1059171d4149568d42cda2ba474dcea82d706a8d89b55620c5fbac3d719922ee6753ff05f0d2bc8"
+      },
+      "expect": {
+        "plaintextHex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    }
+  ],
+  "decryptChecksum": [
+    {
+      "id": "hex-encoded-rsa-ciphertext",
+      "input": {
+        "checksumHex": "05d6d98e02793a420054175330ffdad7bf0bbf64459829341663ca59c9ee2ef278ab8291b6d094410fbdd25d4bf40528d965d8b4fad590daf212b0d309602f895b3bbcd492e7fd42783fbfe23afa70370afa9e6c6a0a606dc12ecbc2c14c6d7bde8e008b378c9dbe4d269626ecb2475c6ab86e8f9ea183352bad4439fd561273b8fa75799382b4dc99d16172793ac200c5f885c9f5e91527afe2b95b0d0c6a9bcd8ce12897a7aff0c4901551f444396ba059d9adf4805719a86529ccc77cbaae58f6456eeeb44b936443b37a40e3b86ec883e4d58b16fb5dc1059171d4149568d42cda2ba474dcea82d706a8d89b55620c5fbac3d719922ee6753ff05f0d2bc8"
+      },
+      "expect": {
+        "decryptedHex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    }
+  ],
+  "calcKeyId": [
+    {
+      "id": "fixture-public-key",
+      "input": {
+        "publicKeyPem": "-----BEGIN RSA PUBLIC KEY-----\nMIIBCgKCAQEAqJikYizowR4jGct5Uv8NdTjc+oXdnSp+I/P27huEx/eHTP+UQRIR\nv6cYq2d9wOCU5qZpyf4P7u5qibvfWM+Db2L9FS6zjLrFxaKIVk4bnixHEkzFEwJ4\nlIWq2cuwyVpdwriXvKRTen1bxslJHDKSkRAZX/u2rS+lbfs5k//2FBnVXK2aNGIv\nI3Kl9bHl4xhnwe1CAahX+5j4mB50jrGJEYU/Ocp9gGHwwm4+smJhJRw8d6060dRY\nSmoGQ34X4J4jO16Wln26TGNaSA0iBPVJt82MvO1FJJJFMAuIJDQfbysIKYFBWlBA\n2OCmylv7cVls7DdUCiDIWbzNefCZa3RyBwIDAQAB\n-----END RSA PUBLIC KEY-----"
+      },
+      "expect": {
+        "keyId": "MIIBCgKCAQEAqJikYizo"
+      }
+    }
+  ],
+  "rsaPublicKeyLoad": [
+    {
+      "id": "valid-pkcs1-pem",
+      "input": {
+        "publicKeyPem": "-----BEGIN RSA PUBLIC KEY-----\nMIIBCgKCAQEAqJikYizowR4jGct5Uv8NdTjc+oXdnSp+I/P27huEx/eHTP+UQRIR\nv6cYq2d9wOCU5qZpyf4P7u5qibvfWM+Db2L9FS6zjLrFxaKIVk4bnixHEkzFEwJ4\nlIWq2cuwyVpdwriXvKRTen1bxslJHDKSkRAZX/u2rS+lbfs5k//2FBnVXK2aNGIv\nI3Kl9bHl4xhnwe1CAahX+5j4mB50jrGJEYU/Ocp9gGHwwm4+smJhJRw8d6060dRY\nSmoGQ34X4J4jO16Wln26TGNaSA0iBPVJt82MvO1FJJJFMAuIJDQfbysIKYFBWlBA\n2OCmylv7cVls7DdUCiDIWbzNefCZa3RyBwIDAQAB\n-----END RSA PUBLIC KEY-----"
+      },
+      "expect": {
+        "loads": true
+      }
+    },
+    {
+      "id": "invalid-pem",
+      "input": {
+        "publicKeyPem": "not-a-key"
+      },
+      "expect": {
+        "loads": false
+      }
+    }
+  ],
+  "decryptChecksumInvalid": [
+    {
+      "id": "wrong-size-255-bytes",
+      "input": {
+        "checksumHex": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "throws": true
+      }
+    }
+  ]
+}

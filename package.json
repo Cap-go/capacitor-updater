@@ -73,7 +73,11 @@
     "prepublishOnly": "bun run build",
     "check:wiring": "node scripts/check-capacitor-plugin-wiring.mjs",
     "example:install": "cd example-app && bun install --frozen-lockfile",
-    "example:build": "bun run build && cd example-app && bun install --frozen-lockfile && bun run build"
+    "example:build": "bun run build && cd example-app && bun install --frozen-lockfile && bun run build",
+    "native:contract:crypto": "bun run native:contract:crypto:ios && bun run native:contract:crypto:android",
+    "native:contract:crypto:ios": "./scripts/test-ios.sh -only-testing:CapacitorUpdaterPluginTests/RsaContractTests",
+    "native:contract:crypto:android": "cd android && ./gradlew testDebugUnitTest --tests ee.forgr.capacitor_updater.RsaContractTest && cd ..",
+    "generate:rsa-contract": "bun scripts/generate-rsa-contract-fixtures.mjs"
   },
   "devDependencies": {
     "@capacitor/android": "^8.0.0",
