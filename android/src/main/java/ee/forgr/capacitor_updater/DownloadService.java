@@ -68,6 +68,7 @@ public class DownloadService extends Worker {
     public static final String IS_MANIFEST = "is_manifest";
     public static final String APP_ID = "app_id";
     public static final String pluginVersion = "plugin_version";
+    public static final String INSTALL_SOURCE = "install_source";
     public static final String STATS_URL = "stats_url";
     public static final String DEVICE_ID = "device_id";
     public static final String CUSTOM_ID = "custom_id";
@@ -115,15 +116,13 @@ public class DownloadService extends Worker {
         }
 
         StringBuilder sanitized = new StringBuilder();
-        value
-            .codePoints()
-            .forEach((cp) -> {
-                boolean isVisibleAscii = cp >= 0x20 && cp <= 0x7E;
-                boolean isIso88591 = cp >= 0xA0 && cp <= 0xFF;
-                if (isVisibleAscii || isIso88591) {
-                    sanitized.appendCodePoint(cp);
-                }
-            });
+        value.codePoints().forEach((cp) -> {
+            boolean isVisibleAscii = cp >= 0x20 && cp <= 0x7E;
+            boolean isIso88591 = cp >= 0xA0 && cp <= 0xFF;
+            if (isVisibleAscii || isIso88591) {
+                sanitized.appendCodePoint(cp);
+            }
+        });
 
         String result = sanitized.toString().trim();
         return result.isEmpty() ? "unknown" : result;
@@ -166,6 +165,16 @@ public class DownloadService extends Worker {
             .putBoolean(IS_MANIFEST, isManifest)
             .build();
         return Result.success(output);
+    }
+
+    static File resolveManifestTargetFile(final File destFolder, final String fileName) throws IOException {
+        final boolean isBrotli = fileName.endsWith(".br");
+        final String targetFileName = isBrotli ? fileName.substring(0, fileName.length() - 3) : fileName;
+        return CapgoUpdater.resolvePathInsideDirectory(destFolder, targetFileName);
+    }
+
+    static File resolveManifestBuiltinFile(final File builtinFolder, final String fileName) throws IOException {
+        return CapgoUpdater.resolvePathInsideDirectory(builtinFolder, fileName);
     }
 
     private String getInputString(String key, String fallback) {
@@ -228,6 +237,7 @@ public class DownloadService extends Worker {
             json.put("platform", "android");
             json.put("app_id", getInputString(APP_ID, "unknown"));
             json.put("plugin_version", getInputString(pluginVersion, "unknown"));
+            json.put("install_source", getInputString(INSTALL_SOURCE, ""));
             json.put("version_name", version != null ? version : "");
             json.put("old_version_name", "");
             json.put("action", action);
@@ -245,27 +255,26 @@ public class DownloadService extends Worker {
                 .post(RequestBody.create(json.toString(), MediaType.get("application/json")))
                 .build();
 
-            sharedClient
-                .newCall(request)
-                .enqueue(
-                    new Callback() {
-                        @Override
-                        public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                            if (logger != null) {
-                                logger.error("Failed to send stats: " + e.getMessage());
-                            }
-                        }
-
-                        @Override
-                        public void onResponse(@NonNull Call call, @NonNull Response response) {
-                            try (ResponseBody body = response.body()) {
-                                // nothing else to do, just closing body
-                            } catch (Exception ignored) {} finally {
-                                response.close();
-                            }
+            sharedClient.newCall(request).enqueue(
+                new Callback() {
+                    @Override
+                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                        if (logger != null) {
+                            logger.error("Failed to send stats: " + e.getMessage());
                         }
                     }
-                );
+
+                    @Override
+                    public void onResponse(@NonNull Call call, @NonNull Response response) {
+                        try (ResponseBody body = response.body()) {
+                            // nothing else to do, just closing body
+                        } catch (Exception ignored) {
+                        } finally {
+                            response.close();
+                        }
+                    }
+                }
+            );
         } catch (Exception e) {
             if (logger != null) {
                 logger.error("sendStatsAsync error: " + e.getMessage());
@@ -338,11 +347,20 @@ public class DownloadService extends Worker {
                 boolean isBrotli = fileName.endsWith(".br");
                 String targetFileName = isBrotli ? fileName.substring(0, fileName.length() - 3) : fileName;
 
-                File targetFile = new File(destFolder, targetFileName);
+                File targetFile;
+                File builtinFile;
+                try {
+                    targetFile = resolveManifestTargetFile(destFolder, fileName);
+                    builtinFile = resolveManifestBuiltinFile(builtinFolder, fileName);
+                } catch (IOException e) {
+                    logger.error("Invalid manifest file path: " + fileName);
+                    sendStatsAsync("manifest_path_fail", version + ":" + fileName);
+                    hasError.set(true);
+                    continue;
+                }
                 String cacheBaseName = new File(isBrotli ? targetFileName : fileName).getName();
                 File cacheFile = new File(cacheFolder, finalFileHash + "_" + cacheBaseName);
                 final File legacyCacheFile = isBrotli ? new File(cacheFolder, finalFileHash + "_" + new File(fileName).getName()) : null;
-                File builtinFile = new File(builtinFolder, fileName);
 
                 // Ensure parent directories of the target file exist
                 if (!Objects.requireNonNull(targetFile.getParentFile()).exists() && !targetFile.getParentFile().mkdirs()) {

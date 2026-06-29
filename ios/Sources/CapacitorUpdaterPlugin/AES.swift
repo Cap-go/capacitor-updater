@@ -1,4 +1,3 @@
-import BigInt
 import Foundation
 import CommonCrypto
 import CryptoKit

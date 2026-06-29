@@ -70,7 +70,7 @@ extension GetChannel {
 }
 // swiftlint:disable identifier_name
 struct ChannelInfo: Codable {
-    let id: String?
+    let id: Int
     let name: String?
     let `public`: Bool?
     let allow_self_set: Bool?
@@ -129,10 +129,61 @@ struct InfoObject: Codable {
     let plugin_version: String?
     let is_emulator: Bool?
     let is_prod: Bool?
+    let installSource: String?
     var action: String?
     var channel: String?
     var defaultChannel: String?
     var key_id: String?
+
+    enum CodingKeys: String, CodingKey {
+        case platform
+        case device_id
+        case app_id
+        case custom_id
+        case version_build
+        case version_code
+        case version_os
+        case version_name
+        case old_version_name
+        case plugin_version
+        case is_emulator
+        case is_prod
+        case installSource = "install_source"
+        case action
+        case channel
+        case defaultChannel
+        case key_id
+    }
+}
+
+extension InfoObject {
+    func toParameters() -> [String: Any] {
+        var parameters: [String: Any] = [:]
+        func set(_ key: String, _ value: Any?) {
+            guard let value = value else {
+                return
+            }
+            parameters[key] = value
+        }
+        set("platform", platform)
+        set("device_id", device_id)
+        set("app_id", app_id)
+        set("custom_id", custom_id)
+        set("version_build", version_build)
+        set("version_code", version_code)
+        set("version_os", version_os)
+        set("version_name", version_name)
+        set("old_version_name", old_version_name)
+        set("plugin_version", plugin_version)
+        set("is_emulator", is_emulator)
+        set("is_prod", is_prod)
+        set("install_source", installSource)
+        set("action", action)
+        set("channel", channel)
+        set("defaultChannel", defaultChannel)
+        set("key_id", key_id)
+        return parameters
+    }
 }
 // swiftlint:enable identifier_name
 
@@ -150,11 +201,35 @@ struct StatsEvent: Codable {
     let plugin_version: String?
     let is_emulator: Bool?
     let is_prod: Bool?
+    let installSource: String?
     let action: String?
     let channel: String?
     let defaultChannel: String?
     let key_id: String?
+    let metadata: [String: String]?
     let timestamp: Int64
+
+    enum CodingKeys: String, CodingKey {
+        case platform
+        case device_id
+        case app_id
+        case custom_id
+        case version_build
+        case version_code
+        case version_os
+        case version_name
+        case old_version_name
+        case plugin_version
+        case is_emulator
+        case is_prod
+        case installSource = "install_source"
+        case action
+        case channel
+        case defaultChannel
+        case key_id
+        case metadata
+        case timestamp
+    }
 }
 // swiftlint:enable identifier_name
 
@@ -210,6 +285,8 @@ public class AppVersion: NSObject {
     var breaking: Bool?
     var data: [String: String]?
     var manifest: [ManifestEntry]?
+    var missing: [String: Any]?
+    var downloadSize: [String: Any]?
     var link: String?
     var comment: String?
     var statusCode: Int = 0

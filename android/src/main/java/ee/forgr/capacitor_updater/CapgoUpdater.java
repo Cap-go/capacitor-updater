@@ -9,6 +9,7 @@ package ee.forgr.capacitor_updater;
 import android.app.Activity;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.os.Build;
 import androidx.annotation.NonNull;
 import androidx.lifecycle.LifecycleOwner;
@@ -18,12 +19,15 @@ import androidx.work.WorkManager;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import java.io.BufferedInputStream;
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.FilenameFilter;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Date;
@@ -60,8 +64,11 @@ public class CapgoUpdater {
 
     private static final String FALLBACK_VERSION = "pastVersion";
     private static final String NEXT_VERSION = "nextVersion";
+    private static final String PREVIEW_FALLBACK_VERSION = "previewFallbackVersion";
     private static final String bundleDirectory = "versions";
     private static final String TEMP_UNZIP_PREFIX = "capgo_unzip_";
+    private static final String CAPACITOR_CONFIG_ASSET = "capacitor.config.json";
+    private static final String BACKGROUND_RUNNER_CONFIG_KEY = "BackgroundRunner";
 
     public static final String TAG = "Capacitor-updater";
     public SharedPreferences.Editor editor;
@@ -81,6 +88,7 @@ public class CapgoUpdater {
     public String channelUrl = "";
     public String defaultChannel = "";
     public String appId = "";
+    public volatile boolean previewSession = false;
     public String publicKey = "";
     public String deviceID = "";
     public int timeout = 20000;
@@ -95,10 +103,21 @@ public class CapgoUpdater {
     private static volatile boolean rateLimitStatisticSent = false;
 
     // Stats batching - queue events and send max once per second
-    private final List<JSONObject> statsQueue = new CopyOnWriteArrayList<>();
+    private final List<QueuedStatsEvent> statsQueue = new CopyOnWriteArrayList<>();
     private final ScheduledExecutorService statsScheduler = Executors.newSingleThreadScheduledExecutor();
     private ScheduledFuture<?> statsFlushTask = null;
     private static final long STATS_FLUSH_INTERVAL_MS = 1000;
+
+    private static final class QueuedStatsEvent {
+
+        private final JSONObject event;
+        private final Runnable onSent;
+
+        private QueuedStatsEvent(final JSONObject event, final Runnable onSent) {
+            this.event = event;
+            this.onSent = onSent;
+        }
+    }
 
     private final Map<String, CompletableFuture<BundleInfo>> downloadFutures = new ConcurrentHashMap<>();
     private final ExecutorService io = Executors.newSingleThreadExecutor();
@@ -123,25 +142,78 @@ public class CapgoUpdater {
         }
     }
 
+    static String installSourceForInstallerPackage(final String installerPackageName) {
+        if (installerPackageName == null || installerPackageName.trim().isEmpty()) {
+            return "";
+        }
+
+        switch (installerPackageName) {
+            case "com.android.vending":
+                // Android exposes the Google Play installer package, but not whether the app came from production, alpha, beta, or internal testing.
+                return "google_play";
+            case "com.amazon.venezia":
+                return "amazon_appstore";
+            case "com.sec.android.app.samsungapps":
+                return "samsung_galaxy_store";
+            case "com.huawei.appmarket":
+                return "huawei_appgallery";
+            default:
+                return "";
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    private String getInstallSource() {
+        if (activity == null) {
+            return "";
+        }
+
+        try {
+            PackageManager packageManager = activity.getPackageManager();
+            String packageName = activity.getPackageName();
+            String installerPackageName;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                android.content.pm.InstallSourceInfo installSourceInfo = packageManager.getInstallSourceInfo(packageName);
+                installerPackageName = installSourceInfo.getInstallingPackageName();
+                if (installerPackageName == null || installerPackageName.trim().isEmpty()) {
+                    installerPackageName = installSourceInfo.getInitiatingPackageName();
+                }
+            } else {
+                installerPackageName = packageManager.getInstallerPackageName(packageName);
+            }
+            return installSourceForInstallerPackage(installerPackageName);
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
     private boolean isEmulator() {
+        final String brand = String.valueOf(Build.BRAND);
+        final String device = String.valueOf(Build.DEVICE);
+        final String fingerprint = String.valueOf(Build.FINGERPRINT);
+        final String hardware = String.valueOf(Build.HARDWARE);
+        final String model = String.valueOf(Build.MODEL);
+        final String manufacturer = String.valueOf(Build.MANUFACTURER);
+        final String product = String.valueOf(Build.PRODUCT);
+
         return (
-            (Build.BRAND.startsWith("generic") && Build.DEVICE.startsWith("generic")) ||
-            Build.FINGERPRINT.startsWith("generic") ||
-            Build.FINGERPRINT.startsWith("unknown") ||
-            Build.HARDWARE.contains("goldfish") ||
-            Build.HARDWARE.contains("ranchu") ||
-            Build.MODEL.contains("google_sdk") ||
-            Build.MODEL.contains("Emulator") ||
-            Build.MODEL.contains("Android SDK built for x86") ||
-            Build.MANUFACTURER.contains("Genymotion") ||
-            Build.PRODUCT.contains("sdk_google") ||
-            Build.PRODUCT.contains("google_sdk") ||
-            Build.PRODUCT.contains("sdk") ||
-            Build.PRODUCT.contains("sdk_x86") ||
-            Build.PRODUCT.contains("sdk_gphone64_arm64") ||
-            Build.PRODUCT.contains("vbox86p") ||
-            Build.PRODUCT.contains("emulator") ||
-            Build.PRODUCT.contains("simulator")
+            (brand.startsWith("generic") && device.startsWith("generic")) ||
+            fingerprint.startsWith("generic") ||
+            fingerprint.startsWith("unknown") ||
+            hardware.contains("goldfish") ||
+            hardware.contains("ranchu") ||
+            model.contains("google_sdk") ||
+            model.contains("Emulator") ||
+            model.contains("Android SDK built for x86") ||
+            manufacturer.contains("Genymotion") ||
+            product.contains("sdk_google") ||
+            product.contains("google_sdk") ||
+            product.contains("sdk") ||
+            product.contains("sdk_x86") ||
+            product.contains("sdk_gphone64_arm64") ||
+            product.contains("vbox86p") ||
+            product.contains("emulator") ||
+            product.contains("simulator")
         );
     }
 
@@ -183,6 +255,30 @@ public class CapgoUpdater {
         this.cachedKeyId = CryptoCipher.calcKeyId(publicKey);
     }
 
+    static File resolvePathInsideDirectory(final File baseDirectory, final String relativePath) throws IOException {
+        if (relativePath == null || relativePath.isEmpty()) {
+            throw new IOException("Invalid empty path");
+        }
+        if (relativePath.contains("\\") || relativePath.indexOf('\0') >= 0) {
+            throw new IOException("Invalid path separator");
+        }
+        if (new File(relativePath).isAbsolute()) {
+            throw new IOException("Absolute paths are not allowed");
+        }
+
+        final File canonicalBase = baseDirectory.getCanonicalFile();
+        final File canonicalTarget = new File(canonicalBase, relativePath).getCanonicalFile();
+        final String basePath = canonicalBase.getPath();
+        final String targetPath = canonicalTarget.getPath();
+        final String normalizedBasePath = basePath.endsWith(File.separator) ? basePath : basePath + File.separator;
+
+        if (!targetPath.equals(basePath) && !targetPath.startsWith(normalizedBasePath)) {
+            throw new IOException("Path escapes base directory: " + relativePath);
+        }
+
+        return canonicalTarget;
+    }
+
     public String getKeyId() {
         return this.cachedKeyId;
     }
@@ -203,22 +299,20 @@ public class CapgoUpdater {
 
             ZipEntry entry;
             while ((entry = zis.getNextEntry()) != null) {
-                if (entry.getName().contains("\\")) {
-                    logger.error("Unzip failed: Windows path not supported");
-                    logger.debug("Invalid path: " + entry.getName());
-                    this.sendStats("windows_path_fail");
+                final File file;
+                try {
+                    file = resolvePathInsideDirectory(targetDirectory, entry.getName());
+                } catch (IOException e) {
+                    if (entry.getName().contains("\\")) {
+                        logger.error("Unzip failed: Windows path not supported");
+                        logger.debug("Invalid path: " + entry.getName());
+                        this.sendStats("windows_path_fail");
+                    } else {
+                        this.sendStats("canonical_path_fail");
+                    }
+                    throw e;
                 }
-                final File file = new File(targetDirectory, entry.getName());
-                final String canonicalPath = file.getCanonicalPath();
-                final String canonicalDir = targetDirectory.getCanonicalPath();
                 final File dir = entry.isDirectory() ? file : file.getParentFile();
-
-                if (!canonicalPath.startsWith(canonicalDir)) {
-                    this.sendStats("canonical_path_fail");
-                    throw new FileNotFoundException(
-                        "SecurityException, Failed to ensure directory is the start path : " + canonicalDir + " of " + canonicalPath
-                    );
-                }
 
                 assert dir != null;
                 if (!dir.isDirectory() && !dir.mkdirs()) {
@@ -342,6 +436,137 @@ public class CapgoUpdater {
             while ((length = input.read(buffer)) != -1) {
                 output.write(buffer, 0, length);
             }
+        }
+    }
+
+    private boolean verifyChecksum(final File file, final String expectedHash) {
+        if (expectedHash == null || expectedHash.isEmpty() || file == null || !file.exists()) {
+            return false;
+        }
+        final String actualHash = CryptoCipher.calcChecksum(file);
+        return expectedHash.equalsIgnoreCase(actualHash);
+    }
+
+    private String resolveManifestFileHash(final JSONObject entry, final String sessionKey) {
+        String fileHash = entry.optString("file_hash", "");
+        if (fileHash.isEmpty()) {
+            return "";
+        }
+        if (this.publicKey != null && !this.publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
+            try {
+                fileHash = CryptoCipher.decryptChecksum(fileHash, this.publicKey);
+            } catch (Exception e) {
+                logger.error("Checksum decryption failed while checking missing manifest files");
+                logger.debug("File: " + entry.optString("file_name", "unknown") + ", Error: " + e.getMessage());
+                return "";
+            }
+        }
+        return fileHash;
+    }
+
+    private boolean isManifestEntryAvailableLocally(final JSONObject entry, final String sessionKey) {
+        final String fileName = entry.optString("file_name", "");
+        final String fileHash = resolveManifestFileHash(entry, sessionKey);
+        if (fileName.isEmpty() || fileHash.isEmpty() || this.activity == null) {
+            return false;
+        }
+
+        final File builtinFile = new File(this.activity.getFilesDir(), "public/" + fileName);
+        if (verifyChecksum(builtinFile, fileHash)) {
+            return true;
+        }
+
+        final boolean isBrotli = fileName.endsWith(".br");
+        final String fileNameWithoutPath = new File(fileName).getName();
+        final String cacheBaseName = isBrotli ? fileNameWithoutPath.substring(0, fileNameWithoutPath.length() - 3) : fileNameWithoutPath;
+        final File cacheFolder = new File(this.activity.getCacheDir(), "capgo_downloads");
+        final File cacheFile = new File(cacheFolder, fileHash + "_" + cacheBaseName);
+        if (verifyChecksum(cacheFile, fileHash)) {
+            return true;
+        }
+
+        if (isBrotli) {
+            final File legacyCacheFile = new File(cacheFolder, fileHash + "_" + fileNameWithoutPath);
+            return verifyChecksum(legacyCacheFile, fileHash);
+        }
+
+        return false;
+    }
+
+    public JSONArray getMissingBundleFiles(final JSONArray manifest, final String sessionKey) throws JSONException {
+        final JSONArray missing = new JSONArray();
+        for (int i = 0; i < manifest.length(); i++) {
+            final JSONObject entry = manifest.getJSONObject(i);
+            if (!isManifestEntryAvailableLocally(entry, sessionKey)) {
+                missing.put(entry);
+            }
+        }
+        return missing;
+    }
+
+    public JSONObject missingBundleFilesResult(final JSONArray manifest, final String sessionKey) throws JSONException {
+        final JSONArray missing = getMissingBundleFiles(manifest, sessionKey);
+        final JSONObject ret = new JSONObject();
+        ret.put("missing", missing);
+        ret.put("total", manifest.length());
+        ret.put("missingCount", missing.length());
+        ret.put("reusableCount", manifest.length() - missing.length());
+        return ret;
+    }
+
+    private String manifestSizeUrl(final String updateUrl) {
+        HttpUrl parsed = HttpUrl.parse(updateUrl);
+        if (parsed == null) {
+            return updateUrl;
+        }
+        return parsed.newBuilder().addPathSegment("manifest_size").query(null).build().toString();
+    }
+
+    private JSONObject unavailableBundleSizeResult(final JSONArray manifest, final String error) throws JSONException {
+        final JSONObject ret = new JSONObject();
+        final JSONArray files = new JSONArray();
+        for (int i = 0; i < manifest.length(); i++) {
+            final JSONObject entry = new JSONObject(manifest.getJSONObject(i).toString());
+            entry.put("error", error);
+            files.put(entry);
+        }
+        ret.put("totalSize", 0);
+        ret.put("knownFiles", 0);
+        ret.put("unknownFiles", manifest.length());
+        ret.put("files", files);
+        return ret;
+    }
+
+    public JSONObject getBundleDownloadSize(final String updateUrl, final String version, final JSONArray manifest) throws JSONException {
+        if (manifest.length() == 0) {
+            final JSONObject ret = new JSONObject();
+            ret.put("totalSize", 0);
+            ret.put("knownFiles", 0);
+            ret.put("unknownFiles", 0);
+            ret.put("files", new JSONArray());
+            return ret;
+        }
+
+        final JSONObject json = this.createInfoObject();
+        json.put("version", version != null ? version : "");
+        json.put("manifest", manifest);
+
+        Request request = new Request.Builder()
+            .url(manifestSizeUrl(updateUrl))
+            .post(RequestBody.create(json.toString(), MediaType.get("application/json; charset=utf-8")))
+            .build();
+
+        try (Response response = DownloadService.sharedClient.newCall(request).execute()) {
+            final ResponseBody responseBody = response.body();
+            final String responseData = responseBody != null ? responseBody.string() : "";
+            if (!response.isSuccessful() || responseData.isEmpty()) {
+                return unavailableBundleSizeResult(manifest, "response_error");
+            }
+            return new JSONObject(responseData);
+        } catch (IOException e) {
+            logger.error("Error getting bundle download size");
+            logger.debug("Error: " + e.getMessage());
+            return unavailableBundleSizeResult(manifest, "response_error");
         }
     }
 
@@ -478,6 +703,7 @@ public class CapgoUpdater {
             this.appId,
             this.pluginVersion,
             this.isProd(),
+            this.getInstallSource(),
             this.statsUrl,
             this.deviceID,
             this.versionBuild,
@@ -579,11 +805,15 @@ public class CapgoUpdater {
             CapgoUpdater.this.notifyListeners("updateAvailable", ret);
             logger.info("setNext: " + setNext);
             if (setNext) {
-                logger.info("directUpdate: " + this.directUpdate);
-                if (this.directUpdate) {
+                if (this.previewSession) {
+                    logger.info("Preview session is active, skipping automatic install of downloaded bundle");
+                    this.directUpdate = false;
+                } else if (this.directUpdate) {
+                    logger.info("directUpdate: " + this.directUpdate);
                     CapgoUpdater.this.directUpdateFinish(next);
                     this.directUpdate = false;
                 } else {
+                    logger.info("directUpdate: " + this.directUpdate);
                     this.setNextBundle(next.getId());
                 }
             }
@@ -753,6 +983,7 @@ public class CapgoUpdater {
     }
 
     private void setCurrentBundle(final File bundle) {
+        this.cancelBackgroundRunnerWorkBeforeBundleSwitch();
         this.editor.putString(this.CAP_SERVER_PATH, bundle.getPath());
         logger.info("Current bundle set to: " + bundle);
         this.editor.commit();
@@ -760,6 +991,73 @@ public class CapgoUpdater {
 
     static boolean shouldResetForForeignBundle(final String bundlePath, final boolean isBuiltin, final boolean hasStoredBundleInfo) {
         return bundlePath != null && !bundlePath.trim().isEmpty() && !isBuiltin && !hasStoredBundleInfo;
+    }
+
+    static String getBackgroundRunnerLabelFromConfig(final String configJson) {
+        if (configJson == null || configJson.trim().isEmpty()) {
+            return null;
+        }
+
+        try {
+            final JSONObject config = new JSONObject(configJson);
+            final JSONObject plugins = config.optJSONObject("plugins");
+            if (plugins == null) {
+                return null;
+            }
+
+            final JSONObject backgroundRunner = plugins.optJSONObject(BACKGROUND_RUNNER_CONFIG_KEY);
+            if (backgroundRunner == null) {
+                return null;
+            }
+
+            final String label = backgroundRunner.optString("label", "").trim();
+            return label.isEmpty() ? null : label;
+        } catch (JSONException ignored) {
+            return null;
+        }
+    }
+
+    private String readAssetAsString(final String assetPath) throws IOException {
+        final StringBuilder buffer = new StringBuilder();
+        try (
+            final BufferedReader reader = new BufferedReader(
+                new InputStreamReader(this.activity.getAssets().open(assetPath), StandardCharsets.UTF_8)
+            )
+        ) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                buffer.append(line).append('\n');
+            }
+        }
+        return buffer.toString();
+    }
+
+    private void cancelBackgroundRunnerWorkBeforeBundleSwitch() {
+        if (this.activity == null) {
+            return;
+        }
+
+        final String label;
+        try {
+            label = getBackgroundRunnerLabelFromConfig(this.readAssetAsString(CAPACITOR_CONFIG_ASSET));
+        } catch (IOException ignored) {
+            return;
+        }
+
+        if (label == null) {
+            return;
+        }
+
+        try {
+            final WorkManager workManager = WorkManager.getInstance(this.activity.getApplicationContext());
+            workManager.cancelUniqueWork(label);
+            workManager.cancelAllWorkByTag(label);
+            logger.info("Cancelled Background Runner work before bundle switch.");
+            logger.debug("Background Runner label: " + label);
+        } catch (Exception e) {
+            logger.warn("Failed to cancel Background Runner work before bundle switch.");
+            logger.debug("Background Runner cancellation error: " + e.getMessage());
+        }
     }
 
     private boolean hasStoredBundleInfo(final String id) {
@@ -941,6 +1239,17 @@ public class CapgoUpdater {
             logger.debug("Bundle ID: " + id);
             return false;
         }
+        final BundleInfo previewFallback = this.getPreviewFallbackBundle();
+        if (
+            previewFallback != null &&
+            !previewFallback.isDeleted() &&
+            !previewFallback.isErrorStatus() &&
+            previewFallback.getId().equals(id)
+        ) {
+            logger.error("Cannot delete the preview fallback bundle");
+            logger.debug("Bundle ID: " + id);
+            return false;
+        }
         final BundleInfo next = this.getNextBundle();
         if (next != null && !next.isDeleted() && !next.isErrorStatus() && next.getId().equals(id)) {
             logger.error("Cannot delete the next bundle");
@@ -1013,12 +1322,10 @@ public class CapgoUpdater {
     }
 
     void restoreResetState(final ResetState state) {
-        final String currentBundlePath = state.currentBundlePath == null || state.currentBundlePath.trim().isEmpty()
-            ? "public"
-            : state.currentBundlePath;
-        final String fallbackBundleId = state.fallbackBundleId == null || state.fallbackBundleId.isEmpty()
-            ? BundleInfo.ID_BUILTIN
-            : state.fallbackBundleId;
+        final String currentBundlePath =
+            state.currentBundlePath == null || state.currentBundlePath.trim().isEmpty() ? "public" : state.currentBundlePath;
+        final String fallbackBundleId =
+            state.fallbackBundleId == null || state.fallbackBundleId.isEmpty() ? BundleInfo.ID_BUILTIN : state.fallbackBundleId;
 
         this.editor.putString(this.CAP_SERVER_PATH, currentBundlePath);
         this.editor.putString(FALLBACK_VERSION, fallbackBundleId);
@@ -1081,6 +1388,21 @@ public class CapgoUpdater {
         return true;
     }
 
+    boolean stagePreviewFallbackReload(final BundleInfo bundle) {
+        if (bundle == null || bundle.isErrorStatus()) {
+            return false;
+        }
+        if (bundle.isBuiltin()) {
+            this.setCurrentBundle(new File("public"));
+            return true;
+        }
+        if (!this.bundleExists(bundle.getId())) {
+            return false;
+        }
+        this.setCurrentBundle(this.getBundleDirectory(bundle.getId()));
+        return true;
+    }
+
     void finalizePendingReload(final BundleInfo bundle, final String previousBundleName) {
         if (bundle == null || bundle.isBuiltin()) {
             return;
@@ -1088,7 +1410,16 @@ public class CapgoUpdater {
         this.sendStats("set", bundle.getVersionName(), previousBundleName);
     }
 
+    @Deprecated
     public void autoReset() {
+        this.autoReset(this.versionCode == null ? "" : this.versionCode);
+    }
+
+    public void autoReset(final String currentNativeBuildVersion) {
+        this.autoReset(currentNativeBuildVersion, true);
+    }
+
+    public void autoReset(final String currentNativeBuildVersion, final boolean resetWhenNativeVersionChanged) {
         final BundleInfo currentBundle = this.getCurrentBundle();
         if (!currentBundle.isBuiltin() && !this.bundleExists(currentBundle.getId())) {
             logger.info("Folder at bundle path does not exist. Triggering reset.");
@@ -1099,7 +1430,36 @@ public class CapgoUpdater {
         if (shouldResetForForeignBundle(bundlePath, currentBundle.isBuiltin(), this.hasStoredBundleInfo(currentBundle.getId()))) {
             logger.info("Current bundle id is not one of the bundle ids stored by this plugin. Triggering reset.");
             this.reset();
+            return;
         }
+        final String previousNativeBuildVersion = this.getStoredNativeBuildVersion();
+        if (
+            resetWhenNativeVersionChanged &&
+            !previousNativeBuildVersion.isEmpty() &&
+            currentNativeBuildVersion != null &&
+            !currentNativeBuildVersion.isEmpty() &&
+            !Objects.equals(previousNativeBuildVersion, currentNativeBuildVersion)
+        ) {
+            logger.info(
+                "Stored native build version " +
+                    previousNativeBuildVersion +
+                    " does not match current native build version " +
+                    currentNativeBuildVersion +
+                    ". Triggering reset."
+            );
+            this.reset();
+        }
+    }
+
+    private String getStoredNativeBuildVersion() {
+        if (this.prefs == null) {
+            return "";
+        }
+        String previousNativeBuildVersion = this.prefs.getString("LatestNativeBuildVersion", "");
+        if (previousNativeBuildVersion == null || previousNativeBuildVersion.isEmpty()) {
+            previousNativeBuildVersion = this.prefs.getString("LatestVersionNative", "");
+        }
+        return previousNativeBuildVersion == null ? "" : previousNativeBuildVersion;
     }
 
     public void reset() {
@@ -1109,12 +1469,20 @@ public class CapgoUpdater {
     public void setSuccess(final BundleInfo bundle, Boolean autoDeletePrevious) {
         this.setBundleStatus(bundle.getId(), BundleStatus.SUCCESS);
         final BundleInfo fallback = this.getFallbackBundle();
+        final BundleInfo previewFallback = this.getPreviewFallbackBundle();
+        final boolean fallbackIsPreviewFallback = previewFallback != null && previewFallback.getId().equals(fallback.getId());
         logger.debug("Fallback bundle is: " + fallback);
         logger.info("Version successfully loaded: " + bundle.getVersionName());
         // Only attempt to delete when the fallback is a different bundle than the
         // currently loaded one. Otherwise we spam logs with "Cannot delete <id>"
         // because delete() protects the current bundle from removal.
-        if (autoDeletePrevious && !fallback.isBuiltin() && fallback.getId() != null && !fallback.getId().equals(bundle.getId())) {
+        if (
+            autoDeletePrevious &&
+            !fallback.isBuiltin() &&
+            fallback.getId() != null &&
+            !fallback.getId().equals(bundle.getId()) &&
+            !fallbackIsPreviewFallback
+        ) {
             final Boolean res = this.delete(fallback.getId());
             if (res) {
                 logger.info("Deleted previous bundle: " + fallback.getVersionName());
@@ -1137,10 +1505,14 @@ public class CapgoUpdater {
     }
 
     private JSONObject createInfoObject() throws JSONException {
+        return this.createInfoObject(null);
+    }
+
+    private JSONObject createInfoObject(final String appIdOverride) throws JSONException {
         JSONObject json = new JSONObject();
         json.put("platform", "android");
         json.put("device_id", this.deviceID);
-        json.put("app_id", this.appId);
+        json.put("app_id", appIdOverride == null || appIdOverride.trim().isEmpty() ? this.appId : appIdOverride);
         json.put("custom_id", this.customId);
         json.put("version_build", this.versionBuild);
         json.put("version_code", this.versionCode);
@@ -1149,6 +1521,7 @@ public class CapgoUpdater {
         json.put("plugin_version", this.pluginVersion);
         json.put("is_emulator", this.isEmulator());
         json.put("is_prod", this.isProd());
+        json.put("install_source", this.getInstallSource());
         json.put("defaultChannel", this.defaultChannel);
 
         // Add encryption key ID if encryption is enabled (use cached value)
@@ -1166,7 +1539,7 @@ public class CapgoUpdater {
         if (response.code() == 429) {
             // Send a statistic about the rate limit BEFORE setting the flag
             // Only send once to prevent infinite loop if the stat request itself gets rate limited
-            if (!rateLimitExceeded && !rateLimitStatisticSent) {
+            if (!this.previewSession && !rateLimitExceeded && !rateLimitStatisticSent) {
                 rateLimitStatisticSent = true;
                 sendRateLimitStatistic();
             }
@@ -1220,113 +1593,115 @@ public class CapgoUpdater {
 
         Request request = new Request.Builder().url(url).post(body).build();
 
-        DownloadService.sharedClient
-            .newCall(request)
-            .enqueue(
-                new okhttp3.Callback() {
-                    @Override
-                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
+        DownloadService.sharedClient.newCall(request).enqueue(
+            new okhttp3.Callback() {
+                @Override
+                public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                    Map<String, Object> retError = new HashMap<>();
+                    retError.put("message", "Request failed: " + e.getMessage());
+                    retError.put("error", "network_error");
+                    retError.put("kind", "failed");
+                    callback.callback(retError);
+                }
+
+                @Override
+                public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                    try (ResponseBody responseBody = response.body()) {
+                        final int statusCode = response.code();
+                        final String responseData = responseBody != null ? responseBody.string() : "";
+                        JSONObject jsonResponse = null;
+                        if (!responseData.isEmpty()) {
+                            try {
+                                jsonResponse = new JSONObject(responseData);
+                            } catch (JSONException ignored) {
+                                // Non-JSON responses are handled as response or parse errors below.
+                            }
+                        }
+
+                        if (jsonResponse != null && (jsonResponse.has("error") || jsonResponse.has("kind"))) {
+                            if (statusCode == 429) {
+                                checkAndHandleRateLimitResponse(response);
+                            }
+                            Map<String, Object> retError = new HashMap<>();
+                            if (jsonResponse.has("error") && !jsonResponse.isNull("error")) {
+                                retError.put("error", jsonResponse.getString("error"));
+                            }
+                            if (jsonResponse.has("kind") && !jsonResponse.isNull("kind")) {
+                                retError.put("kind", jsonResponse.getString("kind"));
+                            }
+                            if (jsonResponse.has("message") && !jsonResponse.isNull("message")) {
+                                retError.put("message", jsonResponse.getString("message"));
+                            } else {
+                                retError.put("message", "server did not provide a message");
+                            }
+                            if (jsonResponse.has("version") && !jsonResponse.isNull("version")) {
+                                retError.put("version", jsonResponse.getString("version"));
+                            }
+                            retError.put("statusCode", statusCode);
+                            callback.callback(retError);
+                            return;
+                        }
+
+                        // Check for 429 rate limit
+                        if (checkAndHandleRateLimitResponse(response)) {
+                            Map<String, Object> retError = new HashMap<>();
+                            retError.put("message", "Rate limit exceeded");
+                            retError.put("error", "rate_limit_exceeded");
+                            retError.put("kind", "failed");
+                            retError.put("statusCode", statusCode);
+                            callback.callback(retError);
+                            return;
+                        }
+
+                        if (!response.isSuccessful()) {
+                            Map<String, Object> retError = new HashMap<>();
+                            retError.put("message", "Server error: " + response.code());
+                            retError.put("error", "response_error");
+                            retError.put("kind", "failed");
+                            retError.put("statusCode", statusCode);
+                            callback.callback(retError);
+                            return;
+                        }
+
+                        if (jsonResponse == null) {
+                            throw new JSONException("Response is not a JSON object");
+                        }
+
+                        Map<String, Object> ret = new HashMap<>();
+                        ret.put("statusCode", statusCode);
+
+                        Iterator<String> keys = jsonResponse.keys();
+                        while (keys.hasNext()) {
+                            String key = keys.next();
+                            if (jsonResponse.has(key)) {
+                                if ("session_key".equals(key)) {
+                                    ret.put("sessionKey", jsonResponse.get(key));
+                                } else {
+                                    ret.put(key, jsonResponse.get(key));
+                                }
+                            }
+                        }
+                        callback.callback(ret);
+                    } catch (JSONException e) {
                         Map<String, Object> retError = new HashMap<>();
-                        retError.put("message", "Request failed: " + e.getMessage());
-                        retError.put("error", "network_error");
+                        retError.put("message", "JSON parse error: " + e.getMessage());
+                        retError.put("error", "parse_error");
                         retError.put("kind", "failed");
                         callback.callback(retError);
                     }
-
-                    @Override
-                    public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                        try (ResponseBody responseBody = response.body()) {
-                            final int statusCode = response.code();
-                            final String responseData = responseBody != null ? responseBody.string() : "";
-                            JSONObject jsonResponse = null;
-                            if (!responseData.isEmpty()) {
-                                try {
-                                    jsonResponse = new JSONObject(responseData);
-                                } catch (JSONException ignored) {
-                                    // Non-JSON responses are handled as response or parse errors below.
-                                }
-                            }
-
-                            if (jsonResponse != null && (jsonResponse.has("error") || jsonResponse.has("kind"))) {
-                                if (statusCode == 429) {
-                                    checkAndHandleRateLimitResponse(response);
-                                }
-                                Map<String, Object> retError = new HashMap<>();
-                                if (jsonResponse.has("error") && !jsonResponse.isNull("error")) {
-                                    retError.put("error", jsonResponse.getString("error"));
-                                }
-                                if (jsonResponse.has("kind") && !jsonResponse.isNull("kind")) {
-                                    retError.put("kind", jsonResponse.getString("kind"));
-                                }
-                                if (jsonResponse.has("message") && !jsonResponse.isNull("message")) {
-                                    retError.put("message", jsonResponse.getString("message"));
-                                } else {
-                                    retError.put("message", "server did not provide a message");
-                                }
-                                if (jsonResponse.has("version") && !jsonResponse.isNull("version")) {
-                                    retError.put("version", jsonResponse.getString("version"));
-                                }
-                                retError.put("statusCode", statusCode);
-                                callback.callback(retError);
-                                return;
-                            }
-
-                            // Check for 429 rate limit
-                            if (checkAndHandleRateLimitResponse(response)) {
-                                Map<String, Object> retError = new HashMap<>();
-                                retError.put("message", "Rate limit exceeded");
-                                retError.put("error", "rate_limit_exceeded");
-                                retError.put("kind", "failed");
-                                retError.put("statusCode", statusCode);
-                                callback.callback(retError);
-                                return;
-                            }
-
-                            if (!response.isSuccessful()) {
-                                Map<String, Object> retError = new HashMap<>();
-                                retError.put("message", "Server error: " + response.code());
-                                retError.put("error", "response_error");
-                                retError.put("kind", "failed");
-                                retError.put("statusCode", statusCode);
-                                callback.callback(retError);
-                                return;
-                            }
-
-                            if (jsonResponse == null) {
-                                throw new JSONException("Response is not a JSON object");
-                            }
-
-                            Map<String, Object> ret = new HashMap<>();
-                            ret.put("statusCode", statusCode);
-
-                            Iterator<String> keys = jsonResponse.keys();
-                            while (keys.hasNext()) {
-                                String key = keys.next();
-                                if (jsonResponse.has(key)) {
-                                    if ("session_key".equals(key)) {
-                                        ret.put("sessionKey", jsonResponse.get(key));
-                                    } else {
-                                        ret.put(key, jsonResponse.get(key));
-                                    }
-                                }
-                            }
-                            callback.callback(ret);
-                        } catch (JSONException e) {
-                            Map<String, Object> retError = new HashMap<>();
-                            retError.put("message", "JSON parse error: " + e.getMessage());
-                            retError.put("error", "parse_error");
-                            retError.put("kind", "failed");
-                            callback.callback(retError);
-                        }
-                    }
                 }
-            );
+            }
+        );
     }
 
     public void getLatest(final String updateUrl, final String channel, final Callback callback) {
+        this.getLatest(updateUrl, channel, null, callback);
+    }
+
+    public void getLatest(final String updateUrl, final String channel, final String appIdOverride, final Callback callback) {
         JSONObject json;
         try {
-            json = this.createInfoObject();
+            json = this.createInfoObject(appIdOverride);
             if (channel != null && json != null) {
                 json.put("defaultChannel", channel);
             }
@@ -1340,7 +1715,9 @@ public class CapgoUpdater {
             return;
         }
 
-        logger.info("Auto-update parameters: " + json);
+        if (logger != null) {
+            logger.info("Auto-update parameters: " + json);
+        }
 
         makeJsonRequest(updateUrl, json, callback);
     }
@@ -1368,6 +1745,17 @@ public class CapgoUpdater {
         final SharedPreferences.Editor editor,
         final String defaultChannelKey,
         final boolean allowSetDefaultChannel,
+        final Callback callback
+    ) {
+        this.setChannel(channel, editor, defaultChannelKey, allowSetDefaultChannel, "", callback);
+    }
+
+    public void setChannel(
+        final String channel,
+        final SharedPreferences.Editor editor,
+        final String defaultChannelKey,
+        final boolean allowSetDefaultChannel,
+        final String configDefaultChannel,
         final Callback callback
     ) {
         // Check if setting defaultChannel is allowed
@@ -1421,6 +1809,7 @@ public class CapgoUpdater {
                 // Clear persisted defaultChannel and revert to config value
                 editor.remove(defaultChannelKey);
                 editor.apply();
+                this.defaultChannel = configDefaultChannel;
                 logger.info("Public channel requested, channel override removed");
                 callback.callback(res);
             } else {
@@ -1435,6 +1824,10 @@ public class CapgoUpdater {
     }
 
     public void getChannel(final Callback callback) {
+        this.getChannel(callback, null, null);
+    }
+
+    public void getChannel(final Callback callback, final SharedPreferences.Editor editor, final String defaultChannelKey) {
         // Check if rate limit was exceeded
         if (rateLimitExceeded) {
             logger.debug("Skipping getChannel due to rate limit (429). Requests will resume after app restart.");
@@ -1472,88 +1865,117 @@ public class CapgoUpdater {
             .put(RequestBody.create(json.toString(), MediaType.get("application/json")))
             .build();
 
-        DownloadService.sharedClient
-            .newCall(request)
-            .enqueue(
-                new okhttp3.Callback() {
-                    @Override
-                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
+        DownloadService.sharedClient.newCall(request).enqueue(
+            new okhttp3.Callback() {
+                @Override
+                public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                    Map<String, Object> retError = new HashMap<>();
+                    retError.put("message", "Request failed: " + e.getMessage());
+                    retError.put("error", "network_error");
+                    callback.callback(retError);
+                }
+
+                @Override
+                public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                    try (ResponseBody responseBody = response.body()) {
+                        // Check for 429 rate limit
+                        if (checkAndHandleRateLimitResponse(response)) {
+                            Map<String, Object> retError = new HashMap<>();
+                            retError.put("message", "Rate limit exceeded");
+                            retError.put("error", "rate_limit_exceeded");
+                            callback.callback(retError);
+                            return;
+                        }
+
+                        if (response.code() == 400) {
+                            if (responseBody == null) {
+                                Map<String, Object> retError = new HashMap<>();
+                                retError.put("message", "Empty response body");
+                                retError.put("error", "no_response_body");
+                                callback.callback(retError);
+                                return;
+                            }
+                            String data = responseBody.string();
+                            if (data.contains("channel_not_found") && !defaultChannel.isEmpty()) {
+                                Map<String, Object> ret = new HashMap<>();
+                                ret.put("channel", defaultChannel);
+                                ret.put("status", "default");
+                                logger.info("Channel get to \"" + ret);
+                                callback.callback(ret);
+                                return;
+                            }
+                        }
+
+                        if (!response.isSuccessful()) {
+                            Map<String, Object> retError = new HashMap<>();
+                            retError.put("message", "Server error: " + response.code());
+                            retError.put("error", "response_error");
+                            callback.callback(retError);
+                            return;
+                        }
+
+                        if (responseBody == null) {
+                            Map<String, Object> retError = new HashMap<>();
+                            retError.put("message", "Empty response body");
+                            retError.put("error", "no_response_body");
+                            callback.callback(retError);
+                            return;
+                        }
+                        String responseData = responseBody.string();
+                        JSONObject jsonResponse = new JSONObject(responseData);
+
+                        // Check for server-side errors first
+                        if (jsonResponse.has("error")) {
+                            Map<String, Object> retError = new HashMap<>();
+                            retError.put("error", jsonResponse.getString("error"));
+                            if (jsonResponse.has("message")) {
+                                retError.put("message", jsonResponse.getString("message"));
+                            } else {
+                                retError.put("message", "server did not provide a message");
+                            }
+                            callback.callback(retError);
+                            return;
+                        }
+
+                        Map<String, Object> ret = new HashMap<>();
+
+                        Iterator<String> keys = jsonResponse.keys();
+                        while (keys.hasNext()) {
+                            String key = keys.next();
+                            if (jsonResponse.has(key)) {
+                                ret.put(key, jsonResponse.get(key));
+                            }
+                        }
+                        persistDefaultChannelFromResponse(ret.get("channel"), editor, defaultChannelKey);
+                        logger.info("Channel get to \"" + ret);
+                        callback.callback(ret);
+                    } catch (JSONException e) {
                         Map<String, Object> retError = new HashMap<>();
-                        retError.put("message", "Request failed: " + e.getMessage());
-                        retError.put("error", "network_error");
+                        retError.put("message", "JSON parse error: " + e.getMessage());
+                        retError.put("error", "parse_error");
                         callback.callback(retError);
                     }
-
-                    @Override
-                    public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                        try (ResponseBody responseBody = response.body()) {
-                            // Check for 429 rate limit
-                            if (checkAndHandleRateLimitResponse(response)) {
-                                Map<String, Object> retError = new HashMap<>();
-                                retError.put("message", "Rate limit exceeded");
-                                retError.put("error", "rate_limit_exceeded");
-                                callback.callback(retError);
-                                return;
-                            }
-
-                            if (response.code() == 400) {
-                                assert responseBody != null;
-                                String data = responseBody.string();
-                                if (data.contains("channel_not_found") && !defaultChannel.isEmpty()) {
-                                    Map<String, Object> ret = new HashMap<>();
-                                    ret.put("channel", defaultChannel);
-                                    ret.put("status", "default");
-                                    logger.info("Channel get to \"" + ret);
-                                    callback.callback(ret);
-                                    return;
-                                }
-                            }
-
-                            if (!response.isSuccessful()) {
-                                Map<String, Object> retError = new HashMap<>();
-                                retError.put("message", "Server error: " + response.code());
-                                retError.put("error", "response_error");
-                                callback.callback(retError);
-                                return;
-                            }
-
-                            assert responseBody != null;
-                            String responseData = responseBody.string();
-                            JSONObject jsonResponse = new JSONObject(responseData);
-
-                            // Check for server-side errors first
-                            if (jsonResponse.has("error")) {
-                                Map<String, Object> retError = new HashMap<>();
-                                retError.put("error", jsonResponse.getString("error"));
-                                if (jsonResponse.has("message")) {
-                                    retError.put("message", jsonResponse.getString("message"));
-                                } else {
-                                    retError.put("message", "server did not provide a message");
-                                }
-                                callback.callback(retError);
-                                return;
-                            }
-
-                            Map<String, Object> ret = new HashMap<>();
-
-                            Iterator<String> keys = jsonResponse.keys();
-                            while (keys.hasNext()) {
-                                String key = keys.next();
-                                if (jsonResponse.has(key)) {
-                                    ret.put(key, jsonResponse.get(key));
-                                }
-                            }
-                            logger.info("Channel get to \"" + ret);
-                            callback.callback(ret);
-                        } catch (JSONException e) {
-                            Map<String, Object> retError = new HashMap<>();
-                            retError.put("message", "JSON parse error: " + e.getMessage());
-                            retError.put("error", "parse_error");
-                            callback.callback(retError);
-                        }
-                    }
                 }
-            );
+            }
+        );
+    }
+
+    void persistDefaultChannelFromResponse(final Object channel, final SharedPreferences.Editor editor, final String defaultChannelKey) {
+        if (!(channel instanceof String)) {
+            return;
+        }
+
+        final String channelName = ((String) channel).trim();
+        if (channelName.isEmpty() || BundleInfo.ID_BUILTIN.equals(channelName)) {
+            return;
+        }
+
+        this.defaultChannel = channelName;
+        if (editor != null && defaultChannelKey != null && !defaultChannelKey.isEmpty()) {
+            editor.putString(defaultChannelKey, channelName);
+            editor.apply();
+        }
+        logger.info("defaultChannel synchronized from getChannel(): " + channelName);
     }
 
     public void listChannels(final Callback callback) {
@@ -1608,94 +2030,106 @@ public class CapgoUpdater {
 
         Request request = new Request.Builder().url(urlBuilder.build()).get().build();
 
-        DownloadService.sharedClient
-            .newCall(request)
-            .enqueue(
-                new okhttp3.Callback() {
-                    @Override
-                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                        Map<String, Object> retError = new HashMap<>();
-                        retError.put("message", "Request failed: " + e.getMessage());
-                        retError.put("error", "network_error");
-                        callback.callback(retError);
-                    }
+        DownloadService.sharedClient.newCall(request).enqueue(
+            new okhttp3.Callback() {
+                @Override
+                public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                    Map<String, Object> retError = new HashMap<>();
+                    retError.put("message", "Request failed: " + e.getMessage());
+                    retError.put("error", "network_error");
+                    callback.callback(retError);
+                }
 
-                    @Override
-                    public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                        try (ResponseBody responseBody = response.body()) {
-                            // Check for 429 rate limit
-                            if (checkAndHandleRateLimitResponse(response)) {
-                                Map<String, Object> retError = new HashMap<>();
-                                retError.put("message", "Rate limit exceeded");
-                                retError.put("error", "rate_limit_exceeded");
-                                callback.callback(retError);
-                                return;
-                            }
+                @Override
+                public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                    try (ResponseBody responseBody = response.body()) {
+                        // Check for 429 rate limit
+                        if (checkAndHandleRateLimitResponse(response)) {
+                            Map<String, Object> retError = new HashMap<>();
+                            retError.put("message", "Rate limit exceeded");
+                            retError.put("error", "rate_limit_exceeded");
+                            callback.callback(retError);
+                            return;
+                        }
 
-                            if (!response.isSuccessful()) {
-                                Map<String, Object> retError = new HashMap<>();
-                                retError.put("message", "Server error: " + response.code());
-                                retError.put("error", "response_error");
-                                callback.callback(retError);
-                                return;
-                            }
+                        if (!response.isSuccessful()) {
+                            Map<String, Object> retError = new HashMap<>();
+                            retError.put("message", "Server error: " + response.code());
+                            retError.put("error", "response_error");
+                            callback.callback(retError);
+                            return;
+                        }
 
-                            assert responseBody != null;
-                            String data = responseBody.string();
+                        if (responseBody == null) {
+                            Map<String, Object> retError = new HashMap<>();
+                            retError.put("message", "Empty response body");
+                            retError.put("error", "no_response_body");
+                            callback.callback(retError);
+                            return;
+                        }
+                        String data = responseBody.string();
 
+                        try {
+                            Map<String, Object> ret = parseListChannelsResponse(data);
+
+                            logger.info("Channels listed successfully");
+                            callback.callback(ret);
+                        } catch (JSONException arrayException) {
+                            // If not an array, try to parse as error object
                             try {
-                                Map<String, Object> ret = new HashMap<>();
-
-                                try {
-                                    // Try to parse as direct array first
-                                    JSONArray channelsJson = new JSONArray(data);
-                                    List<Map<String, Object>> channelsList = new ArrayList<>();
-
-                                    for (int i = 0; i < channelsJson.length(); i++) {
-                                        JSONObject channelJson = channelsJson.getJSONObject(i);
-                                        Map<String, Object> channel = new HashMap<>();
-                                        channel.put("id", channelJson.optString("id", ""));
-                                        channel.put("name", channelJson.optString("name", ""));
-                                        channel.put("public", channelJson.optBoolean("public", false));
-                                        channel.put("allow_self_set", channelJson.optBoolean("allow_self_set", false));
-                                        channelsList.add(channel);
+                                JSONObject json = new JSONObject(data);
+                                if (json.has("error")) {
+                                    Map<String, Object> retError = new HashMap<>();
+                                    retError.put("error", json.getString("error"));
+                                    if (json.has("message")) {
+                                        retError.put("message", json.getString("message"));
+                                    } else {
+                                        retError.put("message", "server did not provide a message");
                                     }
-
-                                    // Wrap in channels object for JS API
-                                    ret.put("channels", channelsList);
-
-                                    logger.info("Channels listed successfully");
-                                    callback.callback(ret);
-                                } catch (JSONException arrayException) {
-                                    // If not an array, try to parse as error object
-                                    try {
-                                        JSONObject json = new JSONObject(data);
-                                        if (json.has("error")) {
-                                            Map<String, Object> retError = new HashMap<>();
-                                            retError.put("error", json.getString("error"));
-                                            if (json.has("message")) {
-                                                retError.put("message", json.getString("message"));
-                                            } else {
-                                                retError.put("message", "server did not provide a message");
-                                            }
-                                            callback.callback(retError);
-                                            return;
-                                        }
-                                    } catch (JSONException objException) {
-                                        // If neither array nor object, throw parse error
-                                        throw arrayException;
-                                    }
+                                    callback.callback(retError);
+                                    return;
                                 }
-                            } catch (JSONException e) {
                                 Map<String, Object> retError = new HashMap<>();
-                                retError.put("message", "JSON parse error: " + e.getMessage());
+                                retError.put("message", "Unexpected channels response format");
+                                retError.put("error", "parse_error");
+                                callback.callback(retError);
+                                return;
+                            } catch (JSONException objException) {
+                                // If neither array nor object, throw parse error
+                                arrayException.addSuppressed(objException);
+                                Map<String, Object> retError = new HashMap<>();
+                                retError.put("message", "JSON parse error: " + arrayException.getMessage());
                                 retError.put("error", "parse_error");
                                 callback.callback(retError);
                             }
                         }
                     }
                 }
-            );
+            }
+        );
+    }
+
+    static Map<String, Object> parseListChannelsResponse(final String data) throws JSONException {
+        JSONArray channelsJson = new JSONArray(data);
+        List<Map<String, Object>> channelsList = new ArrayList<>();
+
+        for (int i = 0; i < channelsJson.length(); i++) {
+            JSONObject channelJson = channelsJson.getJSONObject(i);
+            Object channelId = channelJson.get("id");
+            if (!(channelId instanceof Number)) {
+                throw new JSONException("Channel id must be a number");
+            }
+            Map<String, Object> channel = new HashMap<>();
+            channel.put("id", channelId);
+            channel.put("name", channelJson.optString("name", ""));
+            channel.put("public", channelJson.optBoolean("public", false));
+            channel.put("allow_self_set", channelJson.optBoolean("allow_self_set", false));
+            channelsList.add(channel);
+        }
+
+        Map<String, Object> ret = new HashMap<>();
+        ret.put("channels", channelsList);
+        return ret;
     }
 
     public void sendStats(final String action) {
@@ -1707,6 +2141,27 @@ public class CapgoUpdater {
     }
 
     public void sendStats(final String action, final String versionName, final String oldVersionName) {
+        this.sendStats(action, versionName, oldVersionName, null);
+    }
+
+    public void sendStats(final String action, final String versionName, final String oldVersionName, final Map<String, String> metadata) {
+        this.sendStats(action, versionName, oldVersionName, metadata, null);
+    }
+
+    public void sendStats(
+        final String action,
+        final String versionName,
+        final String oldVersionName,
+        final Map<String, String> metadata,
+        final Runnable onSent
+    ) {
+        if (this.previewSession) {
+            if (logger != null) {
+                logger.debug("Skipping sendStats during preview session.");
+            }
+            return;
+        }
+
         // Check if rate limit was exceeded
         if (rateLimitExceeded) {
             logger.debug("Skipping sendStats due to rate limit (429). Stats will resume after app restart.");
@@ -1725,13 +2180,16 @@ public class CapgoUpdater {
             json.put("old_version_name", oldVersionName);
             json.put("action", action);
             json.put("timestamp", System.currentTimeMillis());
+            if (metadata != null && !metadata.isEmpty()) {
+                json.put("metadata", new JSONObject(metadata));
+            }
         } catch (JSONException e) {
             logger.error("Error preparing stats");
             logger.debug("JSONException: " + e.getMessage());
             return;
         }
 
-        statsQueue.add(json);
+        statsQueue.add(new QueuedStatsEvent(json, onSent));
         ensureStatsTimerStarted();
     }
 
@@ -1758,7 +2216,7 @@ public class CapgoUpdater {
         }
 
         // Copy and clear the queue atomically using synchronized block
-        List<JSONObject> eventsToSend;
+        List<QueuedStatsEvent> eventsToSend;
         synchronized (statsQueue) {
             if (statsQueue.isEmpty()) {
                 return;
@@ -1768,8 +2226,8 @@ public class CapgoUpdater {
         }
 
         JSONArray jsonArray = new JSONArray();
-        for (JSONObject event : eventsToSend) {
-            jsonArray.put(event);
+        for (QueuedStatsEvent queuedEvent : eventsToSend) {
+            jsonArray.put(queuedEvent.event);
         }
 
         Request request = new Request.Builder()
@@ -1778,35 +2236,51 @@ public class CapgoUpdater {
             .build();
 
         final int eventCount = eventsToSend.size();
-        DownloadService.sharedClient
-            .newCall(request)
-            .enqueue(
-                new okhttp3.Callback() {
-                    @Override
-                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                        logger.error("Failed to send stats batch");
-                        logger.debug("Error: " + e.getMessage());
-                    }
+        DownloadService.sharedClient.newCall(request).enqueue(
+            new okhttp3.Callback() {
+                @Override
+                public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                    logger.error("Failed to send stats batch");
+                    logger.debug("Error: " + e.getMessage());
+                }
 
-                    @Override
-                    public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                        try (ResponseBody responseBody = response.body()) {
-                            // Check for 429 rate limit
-                            if (checkAndHandleRateLimitResponse(response)) {
-                                return;
-                            }
+                @Override
+                public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                    try (ResponseBody responseBody = response.body()) {
+                        // Check for 429 rate limit
+                        if (checkAndHandleRateLimitResponse(response)) {
+                            return;
+                        }
 
-                            if (response.isSuccessful()) {
-                                logger.info("Stats batch sent successfully");
-                                logger.debug("Sent " + eventCount + " events");
-                            } else {
-                                logger.error("Error sending stats batch");
-                                logger.debug("Response code: " + response.code());
-                            }
+                        if (response.isSuccessful()) {
+                            logger.info("Stats batch sent successfully");
+                            logger.debug("Sent " + eventCount + " events");
+                            runStatsCallbacks(eventsToSend);
+                        } else {
+                            logger.error("Error sending stats batch");
+                            logger.debug("Response code: " + response.code());
                         }
                     }
                 }
-            );
+            }
+        );
+    }
+
+    private void runStatsCallbacks(final List<QueuedStatsEvent> sentEvents) {
+        for (final QueuedStatsEvent sentEvent : sentEvents) {
+            if (sentEvent.onSent == null) {
+                continue;
+            }
+
+            try {
+                sentEvent.onSent.run();
+            } catch (Exception e) {
+                if (logger != null) {
+                    logger.error("Error running stats sent callback");
+                    logger.debug("Error: " + e.getMessage());
+                }
+            }
+        }
     }
 
     public BundleInfo getBundleInfo(final String id) {
@@ -1924,6 +2398,31 @@ public class CapgoUpdater {
         final String id = this.prefs.getString(NEXT_VERSION, null);
         if (id == null) return null;
         return this.getBundleInfo(id);
+    }
+
+    public BundleInfo getPreviewFallbackBundle() {
+        final String id = this.prefs.getString(PREVIEW_FALLBACK_VERSION, null);
+        if (id == null) return null;
+        final BundleInfo bundle = this.getBundleInfo(id);
+        if (bundle.isErrorStatus() || (!bundle.isBuiltin() && !this.bundleExists(id))) {
+            this.setPreviewFallbackBundle(null);
+            return null;
+        }
+        return bundle;
+    }
+
+    public boolean setPreviewFallbackBundle(final String fallback) {
+        if (fallback == null) {
+            this.editor.remove(PREVIEW_FALLBACK_VERSION);
+        } else {
+            final BundleInfo newBundle = this.getBundleInfo(fallback);
+            if (newBundle.isErrorStatus() || (!newBundle.isBuiltin() && !this.bundleExists(fallback))) {
+                return false;
+            }
+            this.editor.putString(PREVIEW_FALLBACK_VERSION, fallback);
+        }
+        this.editor.commit();
+        return true;
     }
 
     public boolean setNextBundle(final String next) {

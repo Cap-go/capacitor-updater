@@ -1,0 +1,20 @@
+name: Setup Maestro
+description: Install cached Maestro CLI.
+inputs:
+  maestro-version:
+    description: Maestro CLI release tag.
+    default: cli-2.4.0
+runs:
+  using: composite
+  steps:
+    - name: Cache Maestro runtime
+      uses: actions/cache@v5
+      with:
+        path: ~/.maestro
+        key: ${{ runner.os }}-maestro-${{ inputs.maestro-version }}
+    - name: Install Maestro
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        MAESTRO_VERSION: ${{ inputs.maestro-version }}
+      run: ./scripts/ci/install-maestro.sh

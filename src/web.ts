@@ -20,13 +20,20 @@ import type {
   CurrentBundleResult,
   DeviceId,
   DownloadOptions,
+  GetBundleDownloadSizeOptions,
+  GetBundleDownloadSizeResult,
   GetAppUpdateInfoOptions,
   GetChannelRes,
   LatestVersion,
   ListChannelsResult,
+  GetMissingBundleFilesOptions,
+  GetMissingBundleFilesResult,
   MultiDelayConditions,
   OpenAppStoreOptions,
   PluginVersion,
+  DeletePreviewResult,
+  PreviewListResult,
+  PreviewUpdateResult,
   ResetOptions,
   SetChannelOptions,
   SetCustomIdOptions,
@@ -39,6 +46,8 @@ import type {
   ShakeMenuEnabled,
   SetShakeChannelSelectorOptions,
   ShakeChannelSelectorEnabled,
+  StartPreviewSessionOptions,
+  TriggerUpdateCheckResult,
   UpdateFailedEvent,
 } from './definitions';
 import { AppUpdateAvailability } from './definitions';
@@ -85,6 +94,41 @@ export class CapacitorUpdaterWeb extends WebPlugin implements CapacitorUpdaterPl
   async set(options: BundleId): Promise<void> {
     console.warn('Cannot set active bundle in web', options);
     return;
+  }
+
+  async startPreviewSession(options?: StartPreviewSessionOptions): Promise<void> {
+    console.warn('Cannot start preview session in web', options);
+    return;
+  }
+
+  async listPreviews(): Promise<PreviewListResult> {
+    console.warn('Cannot list previews in web');
+    return { previews: [], currentBundle: BUNDLE_BUILTIN };
+  }
+
+  async setPreview(options: BundleId): Promise<void> {
+    console.warn('Cannot set preview in web', options);
+    return;
+  }
+
+  async resetPreview(): Promise<void> {
+    console.warn('Cannot reset preview in web');
+    return;
+  }
+
+  async deletePreview(options: BundleId): Promise<DeletePreviewResult> {
+    console.warn('Cannot delete preview in web', options);
+    return { removed: false, deleted: false };
+  }
+
+  async checkPreviewUpdate(options: BundleId): Promise<PreviewUpdateResult> {
+    console.warn('Cannot check preview update in web', options);
+    throw this.unimplemented('Preview updates are not available on web platform');
+  }
+
+  async updatePreview(options: BundleId): Promise<PreviewUpdateResult> {
+    console.warn('Cannot update preview in web', options);
+    throw this.unimplemented('Preview updates are not available on web platform');
   }
 
   async getDeviceId(): Promise<DeviceId> {
@@ -135,6 +179,37 @@ export class CapacitorUpdaterWeb extends WebPlugin implements CapacitorUpdaterPl
     return {
       version: '0.0.0',
       message: 'Cannot getLatest current bundle in web',
+    };
+  }
+
+  async triggerUpdateCheck(): Promise<TriggerUpdateCheckResult> {
+    console.warn('Cannot triggerUpdateCheck in web');
+    return { status: 'unavailable', queued: false };
+  }
+
+  async getMissingBundleFiles(options: GetMissingBundleFilesOptions): Promise<GetMissingBundleFilesResult> {
+    console.warn('Cannot inspect missing bundle files in web', { manifestLength: options.manifest?.length ?? 0 });
+    const missing = options.manifest ?? [];
+    return {
+      missing,
+      total: missing.length,
+      missingCount: missing.length,
+      reusableCount: 0,
+    };
+  }
+
+  async getBundleDownloadSize(options: GetBundleDownloadSizeOptions): Promise<GetBundleDownloadSizeResult> {
+    console.warn('Cannot estimate bundle download size in web', { manifestLength: options.manifest?.length ?? 0 });
+    return {
+      totalSize: 0,
+      knownFiles: 0,
+      unknownFiles: options.manifest?.length ?? 0,
+      files: (options.manifest ?? []).map((entry) => ({
+        file_name: entry.file_name,
+        file_hash: entry.file_hash,
+        download_url: entry.download_url,
+        error: 'unavailable',
+      })),
     };
   }
 
@@ -210,7 +285,7 @@ export class CapacitorUpdaterWeb extends WebPlugin implements CapacitorUpdaterPl
   }
 
   async isShakeMenuEnabled(): Promise<ShakeMenuEnabled> {
-    return Promise.resolve({ enabled: false });
+    return Promise.resolve({ enabled: false, gesture: 'shake' });
   }
 
   async setShakeChannelSelector(_options: SetShakeChannelSelectorOptions): Promise<void> {

@@ -153,7 +153,7 @@ function renderConfig(pluginConfigs) {
     const doc = (p.docs || '').replace(/\n+/g, ' ').trim();
     return {
       Prop: `**\`${p.name}\`**`,
-      Type: `\`${p.type.replace(/ \| undefined$/, '')}\``,
+      Type: `\`${escapeMd(p.type.replace(/ \| undefined$/, ''))}\``,
       Description: escapeMd(doc),
       Default: def ? `\`${def}\`` : '',
       Since: since || '',
@@ -202,7 +202,7 @@ function renderMethods(api) {
       out += '**Parameters**\n\n';
       const rows = m.parameters.map((p) => ({
         Name: `\`${p.name}\``,
-        Type: `\`${p.type}\``,
+        Type: `\`${escapeMd(p.type)}\``,
         Description: escapeMd(p.docs || ''),
       }));
       out += mdTable(['Name', 'Type', 'Description'], rows);

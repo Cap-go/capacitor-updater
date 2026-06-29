@@ -6,9 +6,14 @@ on:
 
 jobs:
   github-releases-to-discord:
-    timeout-minutes: 30
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
       - name: Checkout
         uses: actions/checkout@v6
       - name: GitHub Releases to Discord
