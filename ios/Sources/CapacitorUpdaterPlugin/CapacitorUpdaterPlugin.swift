@@ -37,6 +37,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "setStatsUrl", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setChannelUrl", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "set", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "startPreviewSession", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "listPreviews", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setPreview", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "resetPreview", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "deletePreview", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "checkPreviewUpdate", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "updatePreview", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "list", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "delete", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setBundleError", returnType: CAPPluginReturnPromise),
@@ -47,8 +54,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "setMultiDelay", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cancelDelay", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getLatest", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getMissingBundleFiles", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getBundleDownloadSize", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "triggerUpdateCheck", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setChannel", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "unsetChannel", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "reportWebViewError", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getChannel", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "listChannels", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setCustomId", returnType: CAPPluginReturnPromise),
@@ -64,6 +75,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "isShakeMenuEnabled", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setShakeChannelSelector", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "isShakeChannelSelectorEnabled", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getAppId", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setAppId", returnType: CAPPluginReturnPromise),
         // App Store update methods
         CAPPluginMethod(name: "getAppUpdateInfo", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "openAppStore", returnType: CAPPluginReturnPromise),
@@ -72,10 +85,19 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "completeFlexibleUpdate", returnType: CAPPluginReturnPromise)
     ]
     public var implementation = CapgoUpdater()
-    private let pluginVersion: String = "6.45.10"
+    private let pluginVersion: String = "6.50.1"
     static let updateUrlDefault = "https://plugin.capgo.app/updates"
     static let statsUrlDefault = "https://plugin.capgo.app/stats"
     static let channelUrlDefault = "https://plugin.capgo.app/channel_self"
+    static let autoUpdateModeOff = "off"
+    static let autoUpdateModeBackground = "atBackground"
+    static let autoUpdateModeInstall = "atInstall"
+    static let autoUpdateModeLaunch = "onLaunch"
+    static let autoUpdateModeAlways = "always"
+    static let autoUpdateModeOnlyDownload = "onlyDownload"
+    static let shakeMenuGestureShake = "shake"
+    static let shakeMenuGestureThreeFingerPinch = "threeFingerPinch"
+    private static let previewLoaderTimeoutMs = 60000
     private let keepUrlPathFlagKey = "__capgo_keep_url_path_after_reload"
     private let customIdDefaultsKey = "CapacitorUpdater.customId"
     private let updateUrlDefaultsKey = "CapacitorUpdater.updateUrl"
@@ -83,12 +105,36 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private let channelUrlDefaultsKey = "CapacitorUpdater.channelUrl"
     private let defaultChannelDefaultsKey = "CapacitorUpdater.defaultChannel"
     private let lastFailedBundleDefaultsKey = "CapacitorUpdater.lastFailedBundle"
+    private let lastVersionOsDefaultsKey = "CapacitorUpdater.lastVersionOs"
+    private let lastVersionBuildDefaultsKey = "CapacitorUpdater.lastVersionBuild"
+    private let lastVersionCodeDefaultsKey = "CapacitorUpdater.lastVersionCode"
+    private let osVersionChangedAction = "os_version_changed"
+    private let nativeAppVersionChangedAction = "native_app_version_changed"
+    private let previewSessionDefaultsKey = "CapacitorUpdater.previewSession"
+    private let previewPreviousShakeMenuDefaultsKey = "CapacitorUpdater.previewPreviousShakeMenu"
+    private let previewPreviousShakeChannelSelectorDefaultsKey = "CapacitorUpdater.previewPreviousShakeChannelSelector"
+    private let previewPreviousNextBundleDefaultsKey = "CapacitorUpdater.previewPreviousNextBundle"
+    private let previewPreviousAppIdDefaultsKey = "CapacitorUpdater.previewPreviousAppId"
+    private let previewPreviousDefaultChannelDefaultsKey = "CapacitorUpdater.previewPreviousDefaultChannel"
+    private let previewPreviousDefaultChannelWasSetDefaultsKey = "CapacitorUpdater.previewPreviousDefaultChannelWasSet"
+    private let previewAppIdDefaultsKey = "CapacitorUpdater.previewAppId"
+    private let previewPayloadUrlDefaultsKey = "CapacitorUpdater.previewPayloadUrl"
+    private let previewNameDefaultsKey = "CapacitorUpdater.previewName"
+    private let previewSourceDefaultsKey = "CapacitorUpdater.previewSource"
+    private let previewSessionsDefaultsKey = "CapacitorUpdater.previewSessions"
+    private let previewSessionAlertPendingDefaultsKey = "CapacitorUpdater.previewSessionAlertPending"
+    private let previewDeepLinkScheme = "capgo"
+    private let previewDeepLinkRootComponent = "preview"
+    private let previewDeepLinkChannelComponent = "channel"
+    private let previewDeepLinkBundleComponent = "bundle"
+    private let previewPathSeparator = Character(UnicodeScalar(UInt8(47)))
     // Note: DELAY_CONDITION_PREFERENCES is now defined in DelayUpdateUtils.DELAY_CONDITION_PREFERENCES
     private var updateUrl = ""
     private var backgroundTaskID: UIBackgroundTaskIdentifier = UIBackgroundTaskIdentifier.invalid
     private var currentVersionNative: Version = "0.0.0"
     private var currentBuildVersion: String = "0"
     private var autoUpdate = false
+    private var autoUpdateMode = CapacitorUpdaterPlugin.autoUpdateModeOff
     private var appReadyTimeout = 10000
     private var appReadyCheck: DispatchWorkItem?
     private var resetWhenUpdate = true
@@ -102,6 +148,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var autoSplashscreenTimeoutWorkItem: DispatchWorkItem?
     private var splashscreenLoaderView: UIActivityIndicatorView?
     private var splashscreenLoaderContainer: UIView?
+    private var previewTransitionLoaderView: UIActivityIndicatorView?
+    private var previewTransitionLoaderContainer: UIView?
+    private var previewTransitionLoaderTimeoutWorkItem: DispatchWorkItem?
+    private var previewTransitionLoaderRequested = false
     private let splashscreenPluginName = "SplashScreen"
     private let splashscreenRetryDelayMilliseconds = 100
     private let splashscreenMaxRetries = 20
@@ -118,7 +168,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private let onLaunchDirectUpdateStateLock = NSLock()
     private var downloadInProgress = false
     private var downloadStartTime: Date?
-    private let downloadTimeout: TimeInterval = 3600 // 1 hour timeout
+    private let downloadTimeout: TimeInterval = 600 // 10 minute timeout
 
     // Lock to ensure cleanup completes before downloads start
     private let cleanupLock = NSLock()
@@ -127,9 +177,19 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var persistCustomId = false
     private var persistModifyUrl = false
     private var allowManualBundleError = false
+    private var allowPreview = false
     private var keepUrlPathFlagLastValue: Bool?
+    private var appHealthTracker: AppHealthTracker?
+    private var webViewStatsReporter: WebViewStatsReporter?
     public var shakeMenuEnabled = false
     public var shakeChannelSelectorEnabled = false
+    public var shakeMenuGesture = CapacitorUpdaterPlugin.shakeMenuGestureShake
+    var shakeMenuPinchGestureRecognizer: ThreeFingerPinchGestureRecognizer?
+    var shakeMenuPinchGestureTriggered = false
+    public var previewSessionEnabled = false
+    private var previewSessionAlertPending = false
+    private var isLeavingPreviewForIncomingLink = false
+    private var previewTransitionClearWorkItem: DispatchWorkItem?
     let semaphoreReady = DispatchSemaphore(value: 0)
 
     private var delayUpdateUtils: DelayUpdateUtils!
@@ -143,6 +203,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         } else {
             logger.error("Failed to get webView for logging")
         }
+        let webViewStatsReporter = WebViewStatsReporter(implementation: implementation)
+        self.webViewStatsReporter = webViewStatsReporter
+        webViewStatsReporter.install(on: self.bridge?.webView)
         #if targetEnvironment(simulator)
         logger.info("::::: SIMULATOR :::::")
         logger.info("Application directory: \(NSHomeDirectory())")
@@ -162,6 +225,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         persistModifyUrl = getConfig().getBoolean("persistModifyUrl", false)
         allowManualBundleError = getConfig().getBoolean("allowManualBundleError", false)
+        allowPreview = getConfig().getBoolean("allowPreview", false)
         logger.info("init for device \(self.implementation.deviceID)")
         guard let versionName = getConfig().getString("version", Bundle.main.versionName) else {
             logger.error("Cannot get version name")
@@ -181,33 +245,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         keepUrlPathAfterReload = getConfig().getBoolean("keepUrlPathAfterReload", false)
         syncKeepUrlPathFlag(enabled: keepUrlPathAfterReload)
 
-        // Handle directUpdate configuration - support string values and backward compatibility
-        if let directUpdateString = getConfig().getString("directUpdate") {
-            // Handle backward compatibility for boolean true
-            if directUpdateString == "true" {
-                directUpdateMode = "always"
-                directUpdate = true
-            } else {
-                directUpdateMode = directUpdateString
-                directUpdate = directUpdateString == "always" || directUpdateString == "atInstall" || directUpdateString == "onLaunch"
-                // Validate directUpdate value
-                if directUpdateString != "false" && directUpdateString != "always" && directUpdateString != "atInstall" && directUpdateString != "onLaunch" {
-                    logger.error("Invalid directUpdate value: \"\(directUpdateString)\". Supported values are: \"false\", \"true\", \"always\", \"atInstall\", \"onLaunch\". Defaulting to \"false\".")
-                    directUpdateMode = "false"
-                    directUpdate = false
-                }
-            }
-        } else {
-            let directUpdateBool = getConfig().getBoolean("directUpdate", false)
-            if directUpdateBool {
-                directUpdateMode = "always" // backward compatibility: true = always
-                directUpdate = true
-            } else {
-                directUpdateMode = "false"
-                directUpdate = false
-            }
-        }
-
         autoSplashscreen = getConfig().getBoolean("autoSplashscreen", false)
         autoSplashscreenLoader = getConfig().getBoolean("autoSplashscreenLoader", false)
         let splashscreenTimeoutValue = getConfig().getInt("autoSplashscreenTimeout", 10000)
@@ -217,23 +254,39 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             updateUrl = storedUpdateUrl
             logger.info("Loaded persisted updateUrl")
         }
-        autoUpdate = getConfig().getBoolean("autoUpdate", true)
+        configureAutoUpdateModeFromConfig()
         appReadyTimeout = max(1000, getConfig().getInt("appReadyTimeout", 10000))  // Minimum 1 second
         implementation.timeout = Double(getConfig().getInt("responseTimeout", 20))
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
         shakeMenuEnabled = getConfig().getBoolean("shakeMenu", false)
         shakeChannelSelectorEnabled = getConfig().getBoolean("allowShakeChannelSelector", false)
-        let periodCheckDelayValue = getConfig().getInt("periodCheckDelay", 0)
-        if periodCheckDelayValue >= 0 && periodCheckDelayValue > 600 {
-            periodCheckDelay = 600
-        } else {
-            periodCheckDelay = periodCheckDelayValue
+        shakeMenuGesture = Self.normalizedShakeMenuGesture(getConfig().getString("shakeMenuGesture", Self.shakeMenuGestureShake))
+        let storedPreviewSessionEnabled = UserDefaults.standard.bool(forKey: previewSessionDefaultsKey)
+        let shouldClearPreviewSessionBecauseDisabled = !allowPreview && storedPreviewSessionEnabled
+        previewSessionEnabled = allowPreview && storedPreviewSessionEnabled
+        implementation.previewSession = previewSessionEnabled
+        if previewSessionEnabled {
+            previewSessionAlertPending = UserDefaults.standard.object(forKey: previewSessionAlertPendingDefaultsKey) as? Bool ?? true
+            shakeMenuEnabled = true
+            shakeChannelSelectorEnabled = UserDefaults.standard.object(forKey: previewPreviousShakeChannelSelectorDefaultsKey) as? Bool
+                ?? shakeChannelSelectorEnabled
         }
+        syncShakeMenuGestureRecognizer()
+        periodCheckDelay = Self.normalizedPeriodCheckDelaySeconds(getConfig().getInt("periodCheckDelay", 0))
 
         implementation.setPublicKey(getConfig().getString("publicKey") ?? "")
         implementation.notifyDownloadRaw = notifyDownload
         implementation.notifyListeners = { [weak self] eventName, data in
-            self?.notifyListeners(eventName, data: data)
+            let emit = {
+                self?.notifyListeners(eventName, data: data)
+            }
+            if Thread.isMainThread {
+                emit()
+            } else {
+                DispatchQueue.main.async {
+                    emit()
+                }
+            }
         }
         implementation.pluginVersion = self.pluginVersion
 
@@ -255,6 +308,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if implementation.appId == "" {
             // crash the app on purpose it should not happen
             fatalError("appId is missing in capacitor.config.json or plugin config, and cannot be retrieved from the native app, please add it globally or in the plugin config")
+        }
+        if shouldClearPreviewSessionBecauseDisabled {
+            clearPreviewSessionBecauseDisabled()
+        }
+        if previewSessionEnabled,
+           let previewAppId = UserDefaults.standard.string(forKey: previewAppIdDefaultsKey),
+           !previewAppId.isEmpty {
+            implementation.appId = previewAppId
+            logger.info("Using preview appId \(previewAppId)")
         }
         logger.info("appId \(implementation.appId)")
         implementation.statsUrl = getConfig().getString("statsUrl", CapacitorUpdaterPlugin.statsUrlDefault)!
@@ -278,14 +340,24 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             implementation.defaultChannel = getConfig().getString("defaultChannel", "")!
         }
         self.implementation.autoReset()
+        let appHealthTracker = AppHealthTracker(implementation: self.implementation)
+        self.appHealthTracker = appHealthTracker
+        appHealthTracker.reportPreviousUncleanForegroundExit()
+        appHealthTracker.startSession()
 
         // Check if app was recently installed/updated BEFORE cleanup updates the stored native build version.
         self.wasRecentlyInstalledOrUpdated = self.checkIfRecentlyInstalledOrUpdated()
+        let nativeBuildVersionChanged = self.hasNativeBuildVersionChanged()
+        if nativeBuildVersionChanged {
+            self.clearPreviewSessionForNativeBuildChange()
+        }
+        self.leavePreviewSessionForLaunchURLIfNeeded()
 
         if resetWhenUpdate {
             let didResetCurrentBundle = self.resetCurrentBundleForNativeBuildChangeIfNeeded()
             self.cleanupObsoleteVersions(didResetCurrentBundle: didResetCurrentBundle)
         }
+        self.reportNativeVersionStatsIfChanged()
 
         // Load the server
         // This is very much swift specific, android does not do that
@@ -298,9 +370,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             logger.error("unable to force reload, the plugin might fallback to the builtin version")
         }
 
-        let nc = NotificationCenter.default
-        nc.addObserver(self, selector: #selector(appMovedToBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
-        nc.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
+        self.registerNotificationObservers()
 
         // Check for 'kill' delay condition on app launch
         // This handles cases where the app was killed (willTerminateNotification is not reliable for system kills)
@@ -308,6 +378,47 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         self.appMovedToForeground()
         self.checkForUpdateAfterDelay()
+        self.showPreviewSessionNoticeIfNeeded()
+    }
+
+    private func registerNotificationObservers() {
+        let notificationCenter = NotificationCenter.default
+        notificationCenter.addObserver(
+            self,
+            selector: #selector(appMovedToBackground),
+            name: UIApplication.didEnterBackgroundNotification,
+            object: nil
+        )
+        notificationCenter.addObserver(
+            self,
+            selector: #selector(appMovedToForeground),
+            name: UIApplication.willEnterForegroundNotification,
+            object: nil
+        )
+        notificationCenter.addObserver(
+            self,
+            selector: #selector(appWillTerminate),
+            name: UIApplication.willTerminateNotification,
+            object: nil
+        )
+        notificationCenter.addObserver(
+            self,
+            selector: #selector(appDidReceiveMemoryWarning),
+            name: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil
+        )
+        notificationCenter.addObserver(
+            self,
+            selector: #selector(handleOpenURLForPreviewSession(notification:)),
+            name: Notification.Name.capacitorOpenURL,
+            object: nil
+        )
+        notificationCenter.addObserver(
+            self,
+            selector: #selector(handleOpenURLForPreviewSession(notification:)),
+            name: Notification.Name.capacitorOpenUniversalLink,
+            object: nil
+        )
     }
 
     private func syncKeepUrlPathFlag(enabled: Bool) {
@@ -355,6 +466,22 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             UserDefaults.standard.synchronize()
             return nil
         }
+    }
+
+    @objc private func appWillTerminate() {
+        appHealthTracker?.markForeground(false)
+    }
+
+    @objc private func appDidReceiveMemoryWarning() {
+        appHealthTracker?.reportMemoryWarning()
+    }
+
+    @objc func reportWebViewError(_ call: CAPPluginCall) {
+        guard let webViewStatsReporter = webViewStatsReporter else {
+            call.resolve()
+            return
+        }
+        webViewStatsReporter.reportError(call)
     }
 
     private func initialLoad() -> Bool {
@@ -407,6 +534,86 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     func hasNativeBuildVersionChanged() -> Bool {
         let previous = self.storedNativeBuildVersion()
         return previous != "0" && self.currentBuildVersion != previous
+    }
+
+    func reportNativeVersionStatsIfChanged() {
+        self.reportNativeVersionStatsIfChanged(
+            currentVersionBuild: self.implementation.versionBuild,
+            currentVersionCode: self.currentBuildVersion,
+            currentVersionOs: UIDevice.current.systemVersion
+        )
+    }
+
+    func reportNativeVersionStatsIfChanged(currentVersionBuild: String?, currentVersionCode: String?, currentVersionOs: String?) {
+        let normalizedVersionBuild = self.normalizedStatsValue(currentVersionBuild)
+        let normalizedVersionCode = self.normalizedStatsValue(currentVersionCode)
+        let normalizedVersionOs = self.normalizedStatsValue(currentVersionOs)
+        let userDefaults = UserDefaults.standard
+        let previousVersionOs = userDefaults.string(forKey: self.lastVersionOsDefaultsKey) ?? ""
+        let previousVersionBuild = userDefaults.string(forKey: self.lastVersionBuildDefaultsKey) ?? ""
+        let previousVersionCode = userDefaults.string(forKey: self.lastVersionCodeDefaultsKey) ?? ""
+        let osVersionChanged = !normalizedVersionOs.isEmpty && !previousVersionOs.isEmpty && previousVersionOs != normalizedVersionOs
+
+        if osVersionChanged {
+            self.implementation.sendStats(
+                action: self.osVersionChangedAction,
+                versionName: self.implementation.getCurrentBundle().getVersionName(),
+                oldVersionName: "",
+                metadata: [
+                    "previous_version_os": previousVersionOs,
+                    "current_version_os": normalizedVersionOs
+                ],
+                onSent: { [weak self] in
+                    self?.persistLastVersionOs(normalizedVersionOs)
+                }
+            )
+        }
+
+        let hasPreviousNativeVersion = !previousVersionBuild.isEmpty || !previousVersionCode.isEmpty
+        let nativeVersionChanged = hasPreviousNativeVersion &&
+            (previousVersionBuild != normalizedVersionBuild || previousVersionCode != normalizedVersionCode)
+        if nativeVersionChanged {
+            self.implementation.sendStats(
+                action: self.nativeAppVersionChangedAction,
+                versionName: self.implementation.getCurrentBundle().getVersionName(),
+                oldVersionName: "",
+                metadata: [
+                    "previous_version_build": previousVersionBuild,
+                    "current_version_build": normalizedVersionBuild,
+                    "previous_version_code": previousVersionCode,
+                    "current_version_code": normalizedVersionCode
+                ],
+                onSent: { [weak self] in
+                    self?.persistLastNativeAppVersion(build: normalizedVersionBuild, code: normalizedVersionCode)
+                }
+            )
+        }
+
+        if !osVersionChanged || !nativeVersionChanged {
+            if !osVersionChanged {
+                userDefaults.set(normalizedVersionOs, forKey: self.lastVersionOsDefaultsKey)
+            }
+            if !nativeVersionChanged {
+                userDefaults.set(normalizedVersionBuild, forKey: self.lastVersionBuildDefaultsKey)
+                userDefaults.set(normalizedVersionCode, forKey: self.lastVersionCodeDefaultsKey)
+            }
+            userDefaults.synchronize()
+        }
+    }
+
+    private func persistLastVersionOs(_ versionOs: String) {
+        UserDefaults.standard.set(versionOs, forKey: self.lastVersionOsDefaultsKey)
+        UserDefaults.standard.synchronize()
+    }
+
+    private func persistLastNativeAppVersion(build: String, code: String) {
+        UserDefaults.standard.set(build, forKey: self.lastVersionBuildDefaultsKey)
+        UserDefaults.standard.set(code, forKey: self.lastVersionCodeDefaultsKey)
+        UserDefaults.standard.synchronize()
+    }
+
+    private func normalizedStatsValue(_ value: String?) -> String {
+        value ?? ""
     }
 
     @discardableResult
@@ -522,11 +729,88 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         logger.info("Cleanup finished, proceeding with download")
     }
 
+    private func resolveCall(_ call: CAPPluginCall, data: PluginCallResultData? = nil) {
+        let resolve = {
+            let savedCall = self.bridge?.savedCall(withID: call.callbackId)
+            let targetCall = savedCall ?? call
+
+            if let data {
+                targetCall.resolve(data)
+            } else {
+                targetCall.resolve()
+            }
+
+            if savedCall != nil {
+                self.bridge?.releaseCall(withID: call.callbackId)
+            }
+        }
+
+        if Thread.isMainThread {
+            resolve()
+        } else {
+            DispatchQueue.main.async {
+                resolve()
+            }
+        }
+    }
+
+    private func rejectCall(_ call: CAPPluginCall, message: String, code: String? = nil, error: Error? = nil, data: PluginCallResultData? = nil) {
+        let reject = {
+            let savedCall = self.bridge?.savedCall(withID: call.callbackId)
+            let targetCall = savedCall ?? call
+
+            targetCall.reject(message, code, error, data)
+
+            if savedCall != nil {
+                self.bridge?.releaseCall(withID: call.callbackId)
+            }
+        }
+
+        if Thread.isMainThread {
+            reject()
+        } else {
+            DispatchQueue.main.async {
+                reject()
+            }
+        }
+    }
+
+    private func saveCallForAsyncHandling(_ call: CAPPluginCall) {
+        bridge?.saveCall(call)
+    }
+
+    private func notifyListenersOnMain(_ eventName: String, data: JSObject) {
+        let notify = {
+            self.notifyListeners(eventName, data: data)
+        }
+
+        if Thread.isMainThread {
+            notify()
+        } else {
+            DispatchQueue.main.async {
+                notify()
+            }
+        }
+    }
+
+    private func bundlePayload(_ bundleInfo: BundleInfo) -> JSObject {
+        var payload: JSObject = [:]
+        for (key, value) in bundleInfo.toJSON() {
+            payload[key] = value
+        }
+        return payload
+    }
+
     @objc func notifyDownload(id: String, percent: Int, ignoreMultipleOfTen: Bool = false, bundle: BundleInfo? = nil) {
         let bundleInfo = bundle ?? self.implementation.getBundleInfo(id: id)
-        self.notifyListeners("download", data: ["percent": percent, "bundle": bundleInfo.toJSON()])
+        var downloadPayload: JSObject = [:]
+        downloadPayload["percent"] = percent
+        downloadPayload["bundle"] = bundlePayload(bundleInfo)
+        self.notifyListenersOnMain("download", data: downloadPayload)
         if percent == 100 {
-            self.notifyListeners("downloadComplete", data: ["bundle": bundleInfo.toJSON()])
+            var downloadCompletePayload: JSObject = [:]
+            downloadCompletePayload["bundle"] = bundlePayload(bundleInfo)
+            self.notifyListenersOnMain("downloadComplete", data: downloadCompletePayload)
             self.implementation.sendStats(action: "download_complete", versionName: bundleInfo.getVersionName())
         } else if percent.isMultiple(of: 10) || ignoreMultipleOfTen {
             self.implementation.sendStats(action: "download_\(percent)", versionName: bundleInfo.getVersionName())
@@ -606,6 +890,299 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         call.resolve(["version": self.pluginVersion])
     }
 
+    private func manifestEntries(from manifestArray: [Any]?) -> [ManifestEntry]? {
+        guard let manifestArray = manifestArray else {
+            return nil
+        }
+        var manifestEntries: [ManifestEntry] = []
+        for item in manifestArray {
+            if let manifestDict = item as? [String: Any] {
+                manifestEntries.append(ManifestEntry(
+                    file_name: manifestDict["file_name"] as? String,
+                    file_hash: manifestDict["file_hash"] as? String,
+                    download_url: manifestDict["download_url"] as? String
+                ))
+            }
+        }
+        return manifestEntries
+    }
+
+    private struct PreviewPayload: Decodable {
+        let version: String?
+        let url: String?
+        let checksum: String?
+        let sessionKey: String?
+        let manifest: [ManifestEntry]?
+        let message: String?
+        let error: String?
+    }
+
+    private func normalizedPreviewMetadataValue(_ rawValue: String?) -> String? {
+        guard let rawValue else {
+            return nil
+        }
+
+        let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else {
+            return nil
+        }
+
+        let lowercased = value.lowercased()
+        guard lowercased != "undefined", lowercased != "null" else {
+            return nil
+        }
+
+        return value
+    }
+
+    private func previewSessions() -> [String: [String: Any]] {
+        guard let rawSessions = UserDefaults.standard.dictionary(forKey: self.previewSessionsDefaultsKey) else {
+            return [:]
+        }
+
+        var sessions: [String: [String: Any]] = [:]
+        for (id, rawValue) in rawSessions {
+            if let session = rawValue as? [String: Any] {
+                sessions[id] = session
+            }
+        }
+        return sessions
+    }
+
+    private func savePreviewSessions(_ sessions: [String: [String: Any]]) {
+        UserDefaults.standard.set(sessions, forKey: self.previewSessionsDefaultsKey)
+        UserDefaults.standard.synchronize()
+    }
+
+    private func metadataString(_ metadata: [String: Any], _ key: String) -> String? {
+        self.normalizedPreviewMetadataValue(metadata[key] as? String)
+    }
+
+    private func currentPreviewMetadataValue(forKey key: String) -> String? {
+        self.normalizedPreviewMetadataValue(UserDefaults.standard.string(forKey: key))
+    }
+
+    private func previewInfo(
+        id: String,
+        metadata: [String: Any],
+        availableBundleIds: Set<String>,
+        currentBundleId: String
+    ) -> [String: Any]? {
+        let bundle = self.implementation.getBundleInfo(id: id)
+        if !bundle.isBuiltin() && !availableBundleIds.contains(id) {
+            return nil
+        }
+        if bundle.isDeleted() || bundle.isErrorStatus() {
+            return nil
+        }
+
+        var info: [String: Any] = [
+            "id": id,
+            "bundle": bundle.toJSON(),
+            "createdAt": self.metadataString(metadata, "createdAt") ?? Date().iso8601withFractionalSeconds,
+            "updatedAt": self.metadataString(metadata, "updatedAt") ?? Date().iso8601withFractionalSeconds,
+            "lastUsedAt": self.metadataString(metadata, "lastUsedAt") ?? Date().iso8601withFractionalSeconds,
+            "isActive": self.previewSessionEnabled && currentBundleId == id
+        ]
+
+        for key in ["name", "source", "appId", "payloadUrl"] {
+            if let value = self.metadataString(metadata, key) {
+                info[key] = value
+            }
+        }
+
+        return info
+    }
+
+    private func listPreviewInfos(cleanup: Bool = true) -> [[String: Any]] {
+        let availableBundleIds = Set(self.implementation.list().map { $0.getId() })
+        let currentBundleId = self.implementation.getCurrentBundleId()
+        var sessions = self.previewSessions()
+        var previews: [[String: Any]] = []
+        var staleIds: [String] = []
+
+        for (id, metadata) in sessions {
+            if let info = self.previewInfo(
+                id: id,
+                metadata: metadata,
+                availableBundleIds: availableBundleIds,
+                currentBundleId: currentBundleId
+            ) {
+                previews.append(info)
+            } else {
+                staleIds.append(id)
+            }
+        }
+
+        if cleanup && !staleIds.isEmpty {
+            for id in staleIds {
+                sessions.removeValue(forKey: id)
+            }
+            self.savePreviewSessions(sessions)
+        }
+
+        return previews.sorted { first, second in
+            let firstUsed = first["lastUsedAt"] as? String ?? ""
+            let secondUsed = second["lastUsedAt"] as? String ?? ""
+            return firstUsed > secondUsed
+        }
+    }
+
+    private func storedPreviewInfo(id: String) -> [String: Any]? {
+        let sessions = self.previewSessions()
+        guard let metadata = sessions[id] else {
+            return nil
+        }
+        let availableBundleIds = Set(self.implementation.list().map { $0.getId() })
+        return self.previewInfo(
+            id: id,
+            metadata: metadata,
+            availableBundleIds: availableBundleIds,
+            currentBundleId: self.implementation.getCurrentBundleId()
+        )
+    }
+
+    @discardableResult
+    private func recordPreviewBundle(_ bundle: BundleInfo, replacing oldId: String? = nil) -> [String: Any] {
+        let now = Date().iso8601withFractionalSeconds
+        var sessions = self.previewSessions()
+        let id = bundle.getId()
+        let replacingPreview = oldId.map { $0 != id } ?? false
+        var metadata = sessions[id] ?? (replacingPreview ? sessions[oldId ?? ""] ?? [:] : [:])
+
+        if metadata["createdAt"] == nil {
+            metadata["createdAt"] = now
+        }
+        metadata["updatedAt"] = now
+        if metadata["lastUsedAt"] == nil || self.implementation.getCurrentBundleId() == id {
+            metadata["lastUsedAt"] = now
+        }
+        metadata["version"] = bundle.getVersionName()
+
+        if !replacingPreview {
+            if let appId = self.currentPreviewMetadataValue(forKey: self.previewAppIdDefaultsKey) {
+                metadata["appId"] = appId
+            } else {
+                metadata.removeValue(forKey: "appId")
+            }
+
+            if let payloadUrl = self.currentPreviewMetadataValue(forKey: self.previewPayloadUrlDefaultsKey) {
+                metadata["payloadUrl"] = payloadUrl
+            } else {
+                metadata.removeValue(forKey: "payloadUrl")
+            }
+        }
+
+        if !replacingPreview {
+            if let name = self.currentPreviewMetadataValue(forKey: self.previewNameDefaultsKey) {
+                metadata["name"] = name
+            } else {
+                metadata.removeValue(forKey: "name")
+            }
+        }
+        if self.metadataString(metadata, "name") == nil {
+            metadata["name"] = bundle.getVersionName()
+        }
+
+        if !replacingPreview {
+            if let source = self.currentPreviewMetadataValue(forKey: self.previewSourceDefaultsKey) {
+                metadata["source"] = source
+            } else {
+                metadata.removeValue(forKey: "source")
+            }
+        }
+
+        if let oldId, oldId != id {
+            sessions.removeValue(forKey: oldId)
+        }
+        sessions[id] = metadata
+        self.savePreviewSessions(sessions)
+
+        return self.storedPreviewInfo(id: id) ?? [
+            "id": id,
+            "bundle": bundle.toJSON(),
+            "createdAt": now,
+            "updatedAt": now,
+            "lastUsedAt": now,
+            "isActive": self.previewSessionEnabled && self.implementation.getCurrentBundleId() == id
+        ]
+    }
+
+    private func updateCurrentPreviewSessionMetadata(from preview: [String: Any]) {
+        if let appId = self.metadataString(preview, "appId") {
+            self.implementation.appId = appId
+            UserDefaults.standard.set(appId, forKey: self.previewAppIdDefaultsKey)
+        } else {
+            self.restorePreviewPreviousAppId()
+            UserDefaults.standard.removeObject(forKey: self.previewAppIdDefaultsKey)
+        }
+
+        if let payloadUrl = self.metadataString(preview, "payloadUrl") {
+            UserDefaults.standard.set(payloadUrl, forKey: self.previewPayloadUrlDefaultsKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: self.previewPayloadUrlDefaultsKey)
+        }
+
+        if let name = self.metadataString(preview, "name") {
+            UserDefaults.standard.set(name, forKey: self.previewNameDefaultsKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: self.previewNameDefaultsKey)
+        }
+
+        if let source = self.metadataString(preview, "source") {
+            UserDefaults.standard.set(source, forKey: self.previewSourceDefaultsKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: self.previewSourceDefaultsKey)
+        }
+        UserDefaults.standard.synchronize()
+    }
+
+    private func makePreviewError(_ message: String) -> NSError {
+        NSError(domain: "CapacitorUpdaterPreview", code: 0, userInfo: [NSLocalizedDescriptionKey: message])
+    }
+
+    private func downloadBundle(urlString: String, version: String, sessionKey: String, checksum rawChecksum: String, manifestEntries: [ManifestEntry]?) throws -> BundleInfo {
+        guard let url = URL(string: urlString) else {
+            throw makePreviewError("Invalid download URL")
+        }
+
+        var checksum = rawChecksum
+        let next: BundleInfo
+        if let manifestEntries = manifestEntries {
+            next = try self.implementation.downloadManifest(manifest: manifestEntries, version: version, sessionKey: sessionKey)
+        } else {
+            next = try self.implementation.download(url: url, version: version, sessionKey: sessionKey)
+        }
+
+        if self.implementation.publicKey != "" && checksum == "" {
+            self.logger.error("Public key present but no checksum provided")
+            self.implementation.sendStats(action: "checksum_required", versionName: next.getVersionName())
+            let id = next.getId()
+            let resDel = self.implementation.delete(id: id)
+            if !resDel {
+                self.logger.error("Delete failed, id \(id) doesn't exist")
+            }
+            throw ObjectSavableError.checksum
+        }
+
+        checksum = try CryptoCipher.decryptChecksum(checksum: checksum, publicKey: self.implementation.publicKey)
+        CryptoCipher.logChecksumInfo(label: "Bundle checksum", hexChecksum: next.getChecksum())
+        CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: checksum)
+        if (checksum != "" || self.implementation.publicKey != "") && next.getChecksum() != checksum {
+            self.logger.error("Error checksum \(next.getChecksum()) \(checksum)")
+            self.implementation.sendStats(action: "checksum_fail", versionName: next.getVersionName())
+            let id = next.getId()
+            let resDel = self.implementation.delete(id: id)
+            if !resDel {
+                self.logger.error("Delete failed, id \(id) doesn't exist")
+            }
+            throw ObjectSavableError.checksum
+        }
+
+        self.logger.info("Good checksum \(next.getChecksum()) \(checksum)")
+        return next
+    }
+
     @objc func download(_ call: CAPPluginCall) {
         guard let urlString = call.getString("url") else {
             logger.error("Download called without url")
@@ -619,64 +1196,30 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         let sessionKey = call.getString("sessionKey", "")
-        var checksum = call.getString("checksum", "")
+        let checksum = call.getString("checksum", "")
         let manifestArray = call.getArray("manifest")
-        let url = URL(string: urlString)
-        logger.info("Downloading \(String(describing: url))")
-        DispatchQueue.global(qos: .background).async {
+        logger.info("Downloading \(urlString)")
+        self.saveCallForAsyncHandling(call)
+        self.runBackgroundDownloadWork {
             do {
-                let next: BundleInfo
-                if let manifestArray = manifestArray {
-                    // Convert JSArray to [ManifestEntry]
-                    var manifestEntries: [ManifestEntry] = []
-                    for item in manifestArray {
-                        if let manifestDict = item as? [String: Any] {
-                            let entry = ManifestEntry(
-                                file_name: manifestDict["file_name"] as? String,
-                                file_hash: manifestDict["file_hash"] as? String,
-                                download_url: manifestDict["download_url"] as? String
-                            )
-                            manifestEntries.append(entry)
-                        }
-                    }
-                    next = try self.implementation.downloadManifest(manifest: manifestEntries, version: version, sessionKey: sessionKey)
-                } else {
-                    next = try self.implementation.download(url: url!, version: version, sessionKey: sessionKey)
-                }
-                // If public key is present but no checksum provided, refuse installation
-                if self.implementation.publicKey != "" && checksum == "" {
-                    self.logger.error("Public key present but no checksum provided")
-                    self.implementation.sendStats(action: "checksum_required", versionName: next.getVersionName())
-                    let id = next.getId()
-                    let resDel = self.implementation.delete(id: id)
-                    if !resDel {
-                        self.logger.error("Delete failed, id \(id) doesn't exist")
-                    }
-                    throw ObjectSavableError.checksum
-                }
-
-                checksum = try CryptoCipher.decryptChecksum(checksum: checksum, publicKey: self.implementation.publicKey)
-                CryptoCipher.logChecksumInfo(label: "Bundle checksum", hexChecksum: next.getChecksum())
-                CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: checksum)
-                if (checksum != "" || self.implementation.publicKey != "") && next.getChecksum() != checksum {
-                    self.logger.error("Error checksum \(next.getChecksum()) \(checksum)")
-                    self.implementation.sendStats(action: "checksum_fail", versionName: next.getVersionName())
-                    let id = next.getId()
-                    let resDel = self.implementation.delete(id: id)
-                    if !resDel {
-                        self.logger.error("Delete failed, id \(id) doesn't exist")
-                    }
-                    throw ObjectSavableError.checksum
-                } else {
-                    self.logger.info("Good checksum \(next.getChecksum()) \(checksum)")
-                }
-                self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
-                call.resolve(next.toJSON())
+                let next = try self.downloadBundle(
+                    urlString: urlString,
+                    version: version,
+                    sessionKey: sessionKey,
+                    checksum: checksum,
+                    manifestEntries: self.manifestEntries(from: manifestArray)
+                )
+                var updateAvailablePayload: JSObject = [:]
+                updateAvailablePayload["bundle"] = self.bundlePayload(next)
+                self.notifyListenersOnMain("updateAvailable", data: updateAvailablePayload)
+                self.resolveCall(call, data: next.toJSON())
             } catch {
-                self.logger.error("Failed to download from: \(String(describing: url)) \(error.localizedDescription)")
-                self.notifyListeners("downloadFailed", data: ["version": version])
+                self.logger.error("Failed to download from: \(urlString) \(error.localizedDescription)")
+                var downloadFailedPayload: JSObject = [:]
+                downloadFailedPayload["version"] = version
+                self.notifyListenersOnMain("downloadFailed", data: downloadFailedPayload)
                 self.implementation.sendStats(action: "download_fail")
-                call.reject("Failed to download from: \(url!) - \(error.localizedDescription)")
+                self.rejectCall(call, message: "Failed to download from: \(urlString) - \(error.localizedDescription)")
             }
         }
     }
@@ -768,11 +1311,37 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    func reloadWithoutWaitingForAppReady() -> Bool {
+        guard let bridge = self.bridge else { return false }
+
+        let performReload: () -> Bool = {
+            guard self.applyCurrentBundleToBridge(bridge) else {
+                return false
+            }
+            self.checkAppReady()
+            self.notifyListeners("appReloaded", data: [:])
+            return true
+        }
+
+        if Thread.isMainThread {
+            return performReload()
+        } else {
+            var result = false
+            DispatchQueue.main.sync {
+                result = performReload()
+            }
+            return result
+        }
+    }
+
     @objc func reload(_ call: CAPPluginCall) {
         let current: BundleInfo = self.implementation.getCurrentBundle()
         let next: BundleInfo? = self.implementation.getNextBundle()
 
-        if let next = next, !next.isErrorStatus(), next.getId() != current.getId() {
+        if !self.isPreviewSessionStateActive(),
+           let next = next,
+           !next.isErrorStatus(),
+           next.getId() != current.getId() {
             let previousState = self.implementation.captureResetState()
             let previousBundleName = self.implementation.getCurrentBundle().getVersionName()
             logger.info("Applying pending bundle before reload: \(next.toString())")
@@ -791,6 +1360,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
                 self.notifyBundleSet(next)
                 _ = self.implementation.setNextBundle(next: Optional<String>.none)
+                self.showPreviewSessionNoticeIfNeeded()
                 call.resolve()
                 return
             }
@@ -802,11 +1372,34 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         if self._reload() {
+            self.showPreviewSessionNoticeIfNeeded()
             call.resolve()
         } else {
             logger.error("Reload failed")
             call.reject("Reload failed")
         }
+    }
+
+    private func applyDownloadedBundleForDirectUpdate(_ next: BundleInfo) -> Bool {
+        let previousState = self.implementation.captureResetState()
+        let previousBundleName = self.implementation.getCurrentBundle().getVersionName()
+
+        guard self.implementation.stagePendingReload(bundle: next) else {
+            self.implementation.restoreResetState(previousState)
+            logger.error("Direct update failed to stage downloaded bundle: \(next.toString())")
+            return false
+        }
+
+        if self._reload() {
+            self.implementation.finalizePendingReload(bundle: next, previousBundleName: previousBundleName)
+            _ = self.implementation.setNextBundle(next: Optional<String>.none)
+            return true
+        }
+
+        self.implementation.restoreResetState(previousState)
+        self.restoreLiveBundleStateAfterFailedReload()
+        logger.error("Direct update reload failed after staging bundle: \(next.toString())")
+        return false
     }
 
     @objc func next(_ call: CAPPluginCall) {
@@ -835,11 +1428,851 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if !res {
             logger.info("Bundle successfully set to: \(id) ")
             call.reject("Update failed, id \(id) doesn't exist")
+        } else if self.previewSessionEnabled {
+            let bundle = self.implementation.getBundleInfo(id: id)
+            _ = self.recordPreviewBundle(bundle)
+            if !self.reloadWithoutWaitingForAppReady() {
+                call.reject("Reload failed after setting preview bundle \(id)")
+                return
+            }
+            self.notifyBundleSet(bundle)
+            self.showPreviewSessionNoticeIfNeeded()
+            call.resolve()
         } else if !self._reload() {
             call.reject("Reload failed after setting bundle \(id)")
         } else {
             self.notifyBundleSet(self.implementation.getBundleInfo(id: id))
+            self.showPreviewSessionNoticeIfNeeded()
             call.resolve()
+        }
+    }
+
+    private func isPreviewSessionStateActive() -> Bool {
+        self.previewSessionEnabled || self.isLeavingPreviewForIncomingLink || self.implementation.previewSession
+    }
+
+    private func shouldBlockAutoUpdateForPreviewSession() -> Bool {
+        guard self.isPreviewSessionStateActive() else {
+            return false
+        }
+
+        logger.info("Preview session is active. Skipping normal auto-update work.")
+        return true
+    }
+
+    private func clearIncomingPreviewTransition() {
+        self.previewTransitionClearWorkItem?.cancel()
+        self.previewTransitionClearWorkItem = nil
+        self.isLeavingPreviewForIncomingLink = false
+        if !self.previewSessionEnabled {
+            self.implementation.previewSession = false
+        }
+    }
+
+    private func scheduleIncomingPreviewTransitionFallbackClear() {
+        self.previewTransitionClearWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.clearIncomingPreviewTransition()
+        }
+        self.previewTransitionClearWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(self.appReadyTimeout), execute: workItem)
+    }
+
+    private func preparePreviewFallbackIfNeeded() -> Bool {
+        if self.previewSessionEnabled {
+            return true
+        }
+
+        let current = self.implementation.getCurrentBundle()
+        guard self.implementation.setPreviewFallbackBundle(fallback: current.getId()) else {
+            logger.error("Could not save current bundle as preview fallback")
+            return false
+        }
+
+        if let previousNext = self.implementation.getNextBundle(),
+           !previousNext.isDeleted(),
+           !previousNext.isErrorStatus() {
+            UserDefaults.standard.set(previousNext.getId(), forKey: self.previewPreviousNextBundleDefaultsKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: self.previewPreviousNextBundleDefaultsKey)
+        }
+
+        UserDefaults.standard.set(self.implementation.appId, forKey: self.previewPreviousAppIdDefaultsKey)
+        if let previousDefaultChannel = UserDefaults.standard.object(forKey: self.defaultChannelDefaultsKey) as? String {
+            UserDefaults.standard.set(previousDefaultChannel, forKey: self.previewPreviousDefaultChannelDefaultsKey)
+            UserDefaults.standard.set(true, forKey: self.previewPreviousDefaultChannelWasSetDefaultsKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: self.previewPreviousDefaultChannelDefaultsKey)
+            UserDefaults.standard.set(false, forKey: self.previewPreviousDefaultChannelWasSetDefaultsKey)
+        }
+        UserDefaults.standard.set(self.shakeMenuEnabled, forKey: self.previewPreviousShakeMenuDefaultsKey)
+        UserDefaults.standard.set(self.shakeChannelSelectorEnabled, forKey: self.previewPreviousShakeChannelSelectorDefaultsKey)
+        logger.info("Preview session started with fallback bundle: \(current.toString())")
+        return true
+    }
+
+    private func activatePreviewSessionState() {
+        self.clearIncomingPreviewTransition()
+        self.hidePreviewTransitionLoader(reason: "preview-session-started")
+        self.previewSessionEnabled = true
+        self.previewSessionAlertPending = true
+        self.implementation.previewSession = true
+        self.shakeMenuEnabled = true
+        self.syncShakeMenuGestureRecognizer()
+        UserDefaults.standard.set(true, forKey: self.previewSessionDefaultsKey)
+        UserDefaults.standard.set(true, forKey: self.previewSessionAlertPendingDefaultsKey)
+        UserDefaults.standard.synchronize()
+    }
+
+    @objc func startPreviewSession(_ call: CAPPluginCall) {
+        guard self.allowPreview else {
+            self.hidePreviewTransitionLoader(reason: "preview-session-not-allowed")
+            logger.error("startPreviewSession called without allowPreview")
+            call.reject("startPreviewSession not allowed. Set allowPreview to true in your config to enable it.")
+            return
+        }
+        let previewAppId = self.normalizedPreviewAppId(call.getString("appId"))
+        let rawPayloadUrl = call.getString("payloadUrl")
+        let previewPayloadUrl = self.normalizedPreviewPayloadUrl(rawPayloadUrl)
+        if let rawPayloadUrl = rawPayloadUrl, !rawPayloadUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, previewPayloadUrl == nil {
+            self.hidePreviewTransitionLoader(reason: "preview-session-invalid-payload")
+            logger.error("startPreviewSession called with invalid payloadUrl")
+            call.reject("Invalid preview payloadUrl")
+            return
+        }
+
+        guard self.preparePreviewFallbackIfNeeded() else {
+            self.hidePreviewTransitionLoader(reason: "preview-session-fallback-failed")
+            call.reject("Could not save current bundle as preview fallback")
+            return
+        }
+
+        if let previewAppId = previewAppId, !previewAppId.isEmpty {
+            self.implementation.appId = previewAppId
+            UserDefaults.standard.set(previewAppId, forKey: self.previewAppIdDefaultsKey)
+            logger.info("Preview session using appId: \(previewAppId)")
+        }
+
+        if let previewPayloadUrl = previewPayloadUrl {
+            UserDefaults.standard.set(previewPayloadUrl.absoluteString, forKey: self.previewPayloadUrlDefaultsKey)
+            logger.info("Preview session using payload URL")
+        } else {
+            UserDefaults.standard.removeObject(forKey: self.previewPayloadUrlDefaultsKey)
+        }
+
+        if let previewName = self.normalizedPreviewMetadataValue(call.getString("name")) {
+            UserDefaults.standard.set(previewName, forKey: self.previewNameDefaultsKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: self.previewNameDefaultsKey)
+        }
+
+        if let previewSource = self.normalizedPreviewMetadataValue(call.getString("source")) {
+            UserDefaults.standard.set(previewSource, forKey: self.previewSourceDefaultsKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: self.previewSourceDefaultsKey)
+        }
+
+        self.activatePreviewSessionState()
+        call.resolve()
+    }
+
+    @objc func listPreviews(_ call: CAPPluginCall) {
+        guard self.allowPreview else {
+            call.reject("listPreviews not allowed. Set allowPreview to true in your config to enable it.")
+            return
+        }
+
+        let previews = self.listPreviewInfos()
+        var result: [String: Any] = [
+            "previews": previews,
+            "currentBundle": self.implementation.getCurrentBundle().toJSON()
+        ]
+        if let currentPreview = previews.first(where: { ($0["isActive"] as? Bool) == true }) {
+            result["current"] = currentPreview
+        }
+        if let liveBundle = self.implementation.getPreviewFallbackBundle() {
+            result["liveBundle"] = liveBundle.toJSON()
+        }
+        call.resolve(result)
+    }
+
+    @objc func setPreview(_ call: CAPPluginCall) {
+        guard self.allowPreview else {
+            call.reject("setPreview not allowed. Set allowPreview to true in your config to enable it.")
+            return
+        }
+        guard let id = call.getString("id"), !id.isEmpty else {
+            call.reject("setPreview called without id")
+            return
+        }
+        guard let preview = self.storedPreviewInfo(id: id) else {
+            call.reject("Preview \(id) is not available locally")
+            return
+        }
+
+        self.showPreviewTransitionLoader(reason: "set-preview")
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard self.preparePreviewFallbackIfNeeded() else {
+                self.hidePreviewTransitionLoader(reason: "set-preview-fallback-failed")
+                call.reject("Could not save current bundle as preview fallback")
+                return
+            }
+
+            guard self.implementation.set(id: id) else {
+                self.hidePreviewTransitionLoader(reason: "set-preview-failed")
+                call.reject("Preview \(id) cannot be applied")
+                return
+            }
+
+            let bundle = self.implementation.getBundleInfo(id: id)
+            self.updateCurrentPreviewSessionMetadata(from: preview)
+            self.activatePreviewSessionState()
+            _ = self.recordPreviewBundle(bundle)
+            guard self.reloadWithoutWaitingForAppReady() else {
+                self.hidePreviewTransitionLoader(reason: "set-preview-reload-failed")
+                call.reject("Reload failed after setting preview \(id)")
+                return
+            }
+
+            self.notifyBundleSet(bundle)
+            self.showPreviewSessionNoticeIfNeeded()
+            call.resolve()
+        }
+    }
+
+    func previewMenuPreviews() -> [[String: Any]] {
+        self.listPreviewInfos()
+    }
+
+    func setPreviewFromShakeMenu(id: String) -> Bool {
+        guard self.allowPreview, let preview = self.storedPreviewInfo(id: id) else {
+            return false
+        }
+
+        self.showPreviewTransitionLoader(reason: "set-preview-menu")
+        guard self.preparePreviewFallbackIfNeeded() else {
+            self.hidePreviewTransitionLoader(reason: "set-preview-menu-fallback-failed")
+            return false
+        }
+
+        guard self.implementation.set(id: id) else {
+            self.hidePreviewTransitionLoader(reason: "set-preview-menu-failed")
+            return false
+        }
+
+        let bundle = self.implementation.getBundleInfo(id: id)
+        self.updateCurrentPreviewSessionMetadata(from: preview)
+        self.activatePreviewSessionState()
+        _ = self.recordPreviewBundle(bundle)
+        guard self.reloadWithoutWaitingForAppReady() else {
+            self.hidePreviewTransitionLoader(reason: "set-preview-menu-reload-failed")
+            return false
+        }
+
+        self.notifyBundleSet(bundle)
+        self.showPreviewSessionNoticeIfNeeded()
+        return true
+    }
+
+    @objc func resetPreview(_ call: CAPPluginCall) {
+        guard self.previewSessionEnabled else {
+            call.resolve()
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            if self.leavePreviewSessionFromShakeMenu() {
+                call.resolve()
+            } else {
+                call.reject("Could not leave preview session")
+            }
+        }
+    }
+
+    @objc func deletePreview(_ call: CAPPluginCall) {
+        guard self.allowPreview else {
+            call.reject("deletePreview not allowed. Set allowPreview to true in your config to enable it.")
+            return
+        }
+        guard let id = call.getString("id"), !id.isEmpty else {
+            call.reject("deletePreview called without id")
+            return
+        }
+        if self.previewSessionEnabled && self.implementation.getCurrentBundleId() == id {
+            call.reject("Cannot delete the active preview")
+            return
+        }
+
+        var sessions = self.previewSessions()
+        let removed = sessions.removeValue(forKey: id) != nil
+        self.savePreviewSessions(sessions)
+
+        var deleted = false
+        let fallbackId = self.implementation.getPreviewFallbackBundle()?.getId()
+        let nextId = self.implementation.getNextBundle()?.getId()
+        if removed, id != fallbackId, id != nextId, id != BundleInfo.ID_BUILTIN {
+            deleted = self.implementation.delete(id: id, removeInfo: false)
+        }
+
+        call.resolve(["removed": removed, "deleted": deleted])
+    }
+
+    @objc func checkPreviewUpdate(_ call: CAPPluginCall) {
+        self.handlePreviewUpdate(call, shouldDownload: false)
+    }
+
+    @objc func updatePreview(_ call: CAPPluginCall) {
+        self.handlePreviewUpdate(call, shouldDownload: true)
+    }
+
+    private func handlePreviewUpdate(_ call: CAPPluginCall, shouldDownload: Bool) {
+        guard self.allowPreview else {
+            call.reject("Preview updates not allowed. Set allowPreview to true in your config to enable it.")
+            return
+        }
+        guard let id = call.getString("id"), !id.isEmpty else {
+            call.reject("Preview update called without id")
+            return
+        }
+        guard let preview = self.storedPreviewInfo(id: id),
+              let payloadUrlString = preview["payloadUrl"] as? String,
+              let payloadUrl = self.normalizedPreviewPayloadUrl(payloadUrlString) else {
+            call.reject("Preview \(id) has no payloadUrl to update from")
+            return
+        }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let payload = try self.fetchPreviewPayload(payloadUrl)
+                guard let version = payload.version, !version.isEmpty else {
+                    throw self.makePreviewError("Preview payload is missing a version")
+                }
+
+                let currentPreviewBundle = self.implementation.getBundleInfo(id: id)
+                let upToDate = currentPreviewBundle.getVersionName() == version
+                if upToDate || !shouldDownload {
+                    call.resolve([
+                        "preview": preview,
+                        "latestVersion": version,
+                        "upToDate": upToDate,
+                        "updated": false,
+                        "bundle": currentPreviewBundle.toJSON()
+                    ])
+                    return
+                }
+
+                guard payload.url != nil || payload.manifest?.isEmpty == false else {
+                    throw self.makePreviewError("Preview payload is missing download information")
+                }
+
+                let next = try self.downloadBundle(
+                    // Fallback URL is only provided when payload.url is missing; when manifestEntries is present,
+                    // downloadBundle routes through downloadManifest and ignores urlString.
+                    urlString: payload.url ?? "https://404.capgo.app/no.zip",
+                    version: version,
+                    sessionKey: payload.sessionKey ?? "",
+                    checksum: payload.checksum ?? "",
+                    manifestEntries: payload.manifest
+                )
+
+                let wasActive = self.previewSessionEnabled && self.implementation.getCurrentBundleId() == id
+                if wasActive {
+                    guard self.implementation.set(id: next.getId()) else {
+                        throw self.makePreviewError("Downloaded preview bundle cannot be applied")
+                    }
+                }
+
+                let savedPreview = self.recordPreviewBundle(next, replacing: id)
+                if wasActive {
+                    guard self.reloadWithoutWaitingForAppReady() else {
+                        throw self.makePreviewError("Reload failed after updating preview")
+                    }
+                    self.notifyBundleSet(next)
+                    self.showPreviewSessionNoticeIfNeeded()
+                }
+
+                call.resolve([
+                    "preview": savedPreview,
+                    "latestVersion": version,
+                    "upToDate": false,
+                    "updated": true,
+                    "bundle": next.toJSON()
+                ])
+            } catch {
+                self.logger.error("Could not update preview: \(error.localizedDescription)")
+                call.reject("Could not update preview: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func leavePreviewSessionFromShakeMenu() -> Bool {
+        self.showPreviewTransitionLoader(reason: "leave-preview-session")
+        let didReset = self.resetToPreviewFallbackBundle()
+        guard didReset else {
+            self.hidePreviewTransitionLoader(reason: "leave-preview-session-failed")
+            return false
+        }
+
+        self.endPreviewSession(keepPreviewGuard: true)
+        return true
+    }
+
+    private func leavePreviewSessionForLaunchURLIfNeeded() {
+        guard self.previewSessionEnabled,
+              !self.isLeavingPreviewForIncomingLink,
+              let launchUrl = ApplicationDelegateProxy.shared.lastURL,
+              self.isPreviewDeepLink(launchUrl) else {
+            return
+        }
+
+        self.isLeavingPreviewForIncomingLink = true
+        self.showPreviewTransitionLoader(reason: "preview-launch-deeplink")
+        logger.info("Preview deeplink launch detected while preview session is active; restoring fallback before initial load")
+        if !self.leavePreviewSessionWithoutReload() {
+            logger.error("Could not leave preview session before initial preview deeplink routing")
+            self.isLeavingPreviewForIncomingLink = false
+            self.hidePreviewTransitionLoader(reason: "preview-launch-deeplink-failed")
+        }
+    }
+
+    private func leavePreviewSessionWithoutReload(keepPreviewGuard: Bool = false) -> Bool {
+        guard let previewFallbackBundle = self.resolvePreviewFallbackBundle(reason: "preview deeplink launch") else {
+            return false
+        }
+        guard self.implementation.stagePreviewFallbackReload(bundle: previewFallbackBundle) else {
+            logger.error("Could not stage preview fallback bundle")
+            return false
+        }
+
+        self.endPreviewSession(keepPreviewGuard: keepPreviewGuard)
+        return true
+    }
+
+    private func leavePreviewSessionForIncomingPreviewLink() -> Bool {
+        self.showPreviewTransitionLoader(reason: "incoming-preview-deeplink")
+        guard let previewFallbackBundle = self.resolvePreviewFallbackBundle(reason: "incoming preview deeplink") else {
+            self.clearIncomingPreviewTransition()
+            self.hidePreviewTransitionLoader(reason: "incoming-preview-deeplink-failed")
+            return false
+        }
+
+        let previousState = self.implementation.captureResetState()
+        guard self.implementation.stagePreviewFallbackReload(bundle: previewFallbackBundle) else {
+            logger.error("Could not stage preview fallback bundle")
+            self.clearIncomingPreviewTransition()
+            self.hidePreviewTransitionLoader(reason: "incoming-preview-deeplink-failed")
+            return false
+        }
+
+        let didReload = self.reloadWithoutWaitingForAppReady()
+        if didReload {
+            self.endPreviewSession(keepPreviewGuard: true)
+            self.scheduleIncomingPreviewTransitionFallbackClear()
+        } else {
+            self.implementation.restoreResetState(previousState)
+            self.restoreLiveBundleStateAfterFailedReload()
+            self.clearIncomingPreviewTransition()
+            self.hidePreviewTransitionLoader(reason: "incoming-preview-deeplink-reload-failed")
+        }
+        return didReload
+    }
+
+    func reloadPreviewSessionFromShakeMenu() -> Bool {
+        self.showPreviewTransitionLoader(reason: "reload-preview-session")
+        let didReload: Bool
+        if let payloadUrl = self.storedPreviewPayloadUrl() {
+            didReload = self.refreshPreviewSessionFromPayloadUrl(payloadUrl)
+        } else {
+            didReload = self.reloadWithoutWaitingForAppReady()
+        }
+
+        if !didReload {
+            self.hidePreviewTransitionLoader(reason: "reload-preview-session-failed")
+        }
+        return didReload
+    }
+
+    func hasActivePreviewSession() -> Bool {
+        self.previewSessionEnabled
+    }
+
+    func resetToPreviewFallbackBundle() -> Bool {
+        guard self.canPerformResetTransition() else { return false }
+        guard let fallback = self.resolvePreviewFallbackBundle(reason: "leave preview") else {
+            return false
+        }
+
+        let previousState = self.implementation.captureResetState()
+        let previousBundleName = self.implementation.getCurrentBundle().getVersionName()
+        logger.info("Resetting to preview fallback bundle: \(fallback.toString())")
+        if self.implementation.stagePreviewFallbackReload(bundle: fallback) && self.reloadWithoutWaitingForAppReady() {
+            self.implementation.finalizeResetTransition(previousBundleName: previousBundleName, isInternal: false)
+            self.notifyBundleSet(fallback)
+            return true
+        }
+        self.implementation.restoreResetState(previousState)
+        self.restoreLiveBundleStateAfterFailedReload()
+        return false
+    }
+
+    private func resolvePreviewFallbackBundle(reason: String) -> BundleInfo? {
+        let fallback = self.implementation.getPreviewFallbackBundle()
+        if let fallback, !fallback.isErrorStatus(), self.implementation.canSet(bundle: fallback) {
+            return fallback
+        }
+
+        if let fallback {
+            if fallback.isErrorStatus() {
+                logger.warn("Preview fallback bundle is in error state for \(reason). Falling back to builtin bundle.")
+            } else {
+                logger.warn("Preview fallback bundle is not installable for \(reason). Falling back to builtin bundle.")
+            }
+        } else {
+            logger.warn("No preview fallback bundle available for \(reason). Falling back to builtin bundle.")
+        }
+
+        let builtin = self.implementation.getBundleInfo(id: BundleInfo.ID_BUILTIN)
+        if !builtin.isErrorStatus(), self.implementation.canSet(bundle: builtin) {
+            return builtin
+        }
+
+        logger.error("Builtin bundle is not available to leave preview for \(reason)")
+        return nil
+    }
+
+    private func endPreviewSession(keepPreviewGuard: Bool = false) {
+        let previousShakeMenuEnabled = UserDefaults.standard.object(forKey: self.previewPreviousShakeMenuDefaultsKey) as? Bool
+            ?? self.getBooleanConfig("shakeMenu", defaultValue: false)
+        let previousShakeChannelSelectorEnabled = UserDefaults.standard.object(forKey: self.previewPreviousShakeChannelSelectorDefaultsKey) as? Bool
+            ?? self.getBooleanConfig("allowShakeChannelSelector", defaultValue: false)
+        self.restorePreviewPreviousNextBundle()
+        self.restorePreviewPreviousAppId()
+        self.restorePreviewPreviousDefaultChannel()
+
+        self.previewSessionEnabled = false
+        self.previewSessionAlertPending = false
+        if keepPreviewGuard {
+            self.implementation.previewSession = true
+        } else {
+            self.clearIncomingPreviewTransition()
+        }
+        self.shakeMenuEnabled = previousShakeMenuEnabled
+        self.shakeChannelSelectorEnabled = previousShakeChannelSelectorEnabled
+        self.syncShakeMenuGestureRecognizer()
+        _ = self.implementation.setPreviewFallbackBundle(fallback: nil)
+        self.clearPreviewSessionPreferences()
+        logger.info("Preview session ended")
+    }
+
+    private func clearPreviewSessionBecauseDisabled() {
+        logger.info("Preview session disabled by config; restoring preview fallback")
+        if let bundleToRestore = self.resolvePreviewFallbackBundle(reason: "preview disabled") {
+            _ = self.implementation.stagePreviewFallbackReload(bundle: bundleToRestore)
+        } else {
+            logger.warn("Could not restore preview fallback while disabling preview")
+        }
+
+        self.restorePreviewPreviousNextBundle()
+        self.restorePreviewPreviousAppId()
+        self.restorePreviewPreviousDefaultChannel()
+        self.previewSessionEnabled = false
+        self.previewSessionAlertPending = false
+        self.isLeavingPreviewForIncomingLink = false
+        self.implementation.previewSession = false
+        self.hidePreviewTransitionLoader(reason: "preview-session-disabled")
+        self.shakeMenuEnabled = self.getBooleanConfig("shakeMenu", defaultValue: false)
+        self.shakeChannelSelectorEnabled = self.getBooleanConfig("allowShakeChannelSelector", defaultValue: false)
+        self.shakeMenuGesture = Self.normalizedShakeMenuGesture(self.getStringConfig("shakeMenuGesture", defaultValue: Self.shakeMenuGestureShake))
+        self.syncShakeMenuGestureRecognizer()
+        self.clearPreviewSessionPreferences()
+    }
+
+    private func getBooleanConfig(_ key: String, defaultValue: Bool) -> Bool {
+        guard self.bridge != nil else {
+            return defaultValue
+        }
+        return getConfig().getBoolean(key, defaultValue)
+    }
+
+    private func getStringConfig(_ key: String, defaultValue: String) -> String {
+        guard self.bridge != nil else {
+            return defaultValue
+        }
+        return getConfig().getString(key, defaultValue) ?? defaultValue
+    }
+
+    private func clearPreviewSessionPreferences() {
+        _ = self.implementation.setPreviewFallbackBundle(fallback: nil)
+        UserDefaults.standard.removeObject(forKey: self.previewSessionDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: self.previewPreviousShakeMenuDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: self.previewPreviousShakeChannelSelectorDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: self.previewPreviousNextBundleDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: self.previewPreviousAppIdDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: self.previewPreviousDefaultChannelDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: self.previewPreviousDefaultChannelWasSetDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: self.previewAppIdDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: self.previewPayloadUrlDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: self.previewNameDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: self.previewSourceDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: self.previewSessionAlertPendingDefaultsKey)
+        UserDefaults.standard.synchronize()
+    }
+
+    private func restorePreviewPreviousAppId() {
+        guard let previousAppId = UserDefaults.standard.string(forKey: self.previewPreviousAppIdDefaultsKey),
+              !previousAppId.isEmpty else {
+            return
+        }
+        self.implementation.appId = previousAppId
+        logger.info("Restored appId after preview: \(previousAppId)")
+    }
+
+    private func restorePreviewPreviousDefaultChannel() {
+        let configDefaultChannel = self.getStringConfig("defaultChannel", defaultValue: "")
+        let hadPreviousDefaultChannel = UserDefaults.standard.object(forKey: self.previewPreviousDefaultChannelWasSetDefaultsKey) as? Bool ?? false
+
+        guard hadPreviousDefaultChannel,
+              let previousDefaultChannel = UserDefaults.standard.string(forKey: self.previewPreviousDefaultChannelDefaultsKey) else {
+            UserDefaults.standard.removeObject(forKey: self.defaultChannelDefaultsKey)
+            self.implementation.defaultChannel = configDefaultChannel
+            logger.info("Restored defaultChannel after preview to config value")
+            return
+        }
+
+        UserDefaults.standard.set(previousDefaultChannel, forKey: self.defaultChannelDefaultsKey)
+        self.implementation.defaultChannel = previousDefaultChannel
+        logger.info("Restored defaultChannel after preview")
+    }
+
+    private func normalizedPreviewAppId(_ rawAppId: String?) -> String? {
+        guard let rawAppId else {
+            return nil
+        }
+
+        let appId = rawAppId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !appId.isEmpty else {
+            return nil
+        }
+
+        let lowercasedAppId = appId.lowercased()
+        if lowercasedAppId == "undefined" || lowercasedAppId == "null" {
+            return nil
+        }
+
+        return appId
+    }
+
+    private func normalizedPreviewPayloadUrl(_ rawPayloadUrl: String?) -> URL? {
+        guard let rawPayloadUrl else {
+            return nil
+        }
+
+        let payloadUrl = rawPayloadUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !payloadUrl.isEmpty,
+              let url = URL(string: payloadUrl),
+              url.scheme == "https" || url.scheme == "http" else {
+            return nil
+        }
+
+        return url
+    }
+
+    private func storedPreviewPayloadUrl() -> URL? {
+        normalizedPreviewPayloadUrl(UserDefaults.standard.string(forKey: self.previewPayloadUrlDefaultsKey))
+    }
+
+    private func previewPath(from url: URL) -> String {
+        if url.scheme == self.previewDeepLinkScheme {
+            var components: [String] = []
+            if let host = url.host, !host.isEmpty {
+                components.append(host)
+            }
+            components.append(contentsOf: url.path.split(separator: self.previewPathSeparator).map(String.init))
+            return self.normalizedPreviewPath(components)
+        }
+
+        return url.path
+    }
+
+    private func normalizedPreviewPath(_ components: [String]) -> String {
+        let separator = String(self.previewPathSeparator)
+        return separator + components.filter { !$0.isEmpty }.joined(separator: separator)
+    }
+
+    private func previewDeepLinkPath(_ leafComponent: String) -> String {
+        self.normalizedPreviewPath([self.previewDeepLinkRootComponent, leafComponent])
+    }
+
+    private func isPreviewDeepLink(_ url: URL) -> Bool {
+        let path = self.previewPath(from: url)
+        return path == self.previewDeepLinkPath(self.previewDeepLinkChannelComponent) ||
+            path == self.previewDeepLinkPath(self.previewDeepLinkBundleComponent)
+    }
+
+    @objc private func handleOpenURLForPreviewSession(notification: NSNotification) {
+        let rawUrl = (notification.object as? [String: Any])?["url"]
+        let url = rawUrl as? URL ?? (rawUrl as? NSURL).map { $0 as URL }
+        guard self.previewSessionEnabled,
+              !self.isLeavingPreviewForIncomingLink,
+              let url,
+              self.isPreviewDeepLink(url) else {
+            return
+        }
+
+        self.isLeavingPreviewForIncomingLink = true
+        self.showPreviewTransitionLoader(reason: "incoming-preview-deeplink")
+        logger.info("Preview deeplink received while preview session is active; restoring fallback before routing")
+        DispatchQueue.global(qos: .userInitiated).async {
+            let didLeave = self.leavePreviewSessionForIncomingPreviewLink()
+            if !didLeave {
+                self.logger.error("Could not leave preview session before routing incoming preview deeplink")
+                self.isLeavingPreviewForIncomingLink = false
+                self.hidePreviewTransitionLoader(reason: "incoming-preview-deeplink-failed")
+            }
+        }
+    }
+
+    private func fetchPreviewPayload(_ payloadUrl: URL) throws -> PreviewPayload {
+        var request = URLRequest(url: payloadUrl)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let semaphore = DispatchSemaphore(value: 0)
+        var responseData: Data?
+        var response: URLResponse?
+        var responseError: Error?
+
+        URLSession.shared.dataTask(with: request) { data, urlResponse, error in
+            responseData = data
+            response = urlResponse
+            responseError = error
+            semaphore.signal()
+        }.resume()
+
+        if semaphore.wait(timeout: .now() + 60) == .timedOut {
+            throw makePreviewError("Preview payload request timed out")
+        }
+
+        if let responseError = responseError {
+            throw responseError
+        }
+
+        let data = responseData ?? Data()
+        if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+            if let payload = try? JSONDecoder().decode(PreviewPayload.self, from: data) {
+                throw makePreviewError(payload.message ?? payload.error ?? "Preview payload request failed with HTTP \(httpResponse.statusCode)")
+            }
+            let message = String(data: data, encoding: .utf8) ?? "Preview payload request failed with HTTP \(httpResponse.statusCode)"
+            throw makePreviewError(message)
+        }
+
+        return try JSONDecoder().decode(PreviewPayload.self, from: data)
+    }
+
+    private func refreshPreviewSessionFromPayloadUrl(_ payloadUrl: URL) -> Bool {
+        do {
+            let payload = try self.fetchPreviewPayload(payloadUrl)
+            guard let version = payload.version, !version.isEmpty else {
+                throw makePreviewError("Preview payload is missing a version")
+            }
+            guard payload.url != nil || payload.manifest?.isEmpty == false else {
+                throw makePreviewError("Preview payload is missing download information")
+            }
+
+            let current = self.implementation.getCurrentBundle()
+            if current.getVersionName() == version {
+                self.logger.info("Preview payload unchanged, reloading current bundle")
+                return self.reloadWithoutWaitingForAppReady()
+            }
+
+            let next = try self.downloadBundle(
+                // Fallback URL is only provided when payload.url is missing; when manifestEntries is present,
+                // downloadBundle routes through downloadManifest and ignores urlString.
+                urlString: payload.url ?? "https://404.capgo.app/no.zip",
+                version: version,
+                sessionKey: payload.sessionKey ?? "",
+                checksum: payload.checksum ?? "",
+                manifestEntries: payload.manifest
+            )
+
+            guard self.implementation.set(id: next.getId()) else {
+                throw makePreviewError("Downloaded preview bundle cannot be applied")
+            }
+
+            _ = self.recordPreviewBundle(next, replacing: current.getId())
+            self.notifyBundleSet(next)
+            return self.reloadWithoutWaitingForAppReady()
+        } catch {
+            self.logger.error("Could not refresh preview session: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    private func clearPreviewSessionForNativeBuildChange() {
+        guard self.previewSessionEnabled || self.implementation.getPreviewFallbackBundle() != nil || !self.previewSessions().isEmpty else {
+            return
+        }
+        logger.info("Native build changed; clearing preview session state")
+        self.previewSessionEnabled = false
+        self.previewSessionAlertPending = false
+        self.isLeavingPreviewForIncomingLink = false
+        self.implementation.previewSession = false
+        self.shakeMenuEnabled = self.getBooleanConfig("shakeMenu", defaultValue: false)
+        self.shakeChannelSelectorEnabled = self.getBooleanConfig("allowShakeChannelSelector", defaultValue: false)
+        self.shakeMenuGesture = Self.normalizedShakeMenuGesture(self.getStringConfig("shakeMenuGesture", defaultValue: Self.shakeMenuGestureShake))
+        self.syncShakeMenuGestureRecognizer()
+        self.restorePreviewPreviousAppId()
+        self.restorePreviewPreviousDefaultChannel()
+        _ = self.implementation.setPreviewFallbackBundle(fallback: nil)
+        _ = self.implementation.setNextBundle(next: Optional<String>.none)
+        self.clearPreviewSessionPreferences()
+        UserDefaults.standard.removeObject(forKey: self.previewSessionsDefaultsKey)
+        UserDefaults.standard.synchronize()
+    }
+
+    private func restorePreviewPreviousNextBundle() {
+        guard let previousNextBundleId = UserDefaults.standard.string(forKey: self.previewPreviousNextBundleDefaultsKey),
+              !previousNextBundleId.isEmpty else {
+            _ = self.implementation.setNextBundle(next: Optional<String>.none)
+            return
+        }
+        if !self.implementation.setNextBundle(next: previousNextBundleId) {
+            logger.warn("Could not restore pre-preview next bundle: \(previousNextBundleId)")
+            _ = self.implementation.setNextBundle(next: Optional<String>.none)
+        }
+    }
+
+    private func showPreviewSessionNoticeIfNeeded() {
+        guard self.previewSessionEnabled && self.previewSessionAlertPending else {
+            return
+        }
+        self.previewSessionAlertPending = false
+        UserDefaults.standard.set(false, forKey: self.previewSessionAlertPendingDefaultsKey)
+        UserDefaults.standard.synchronize()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(600)) {
+            guard self.previewSessionEnabled else {
+                return
+            }
+            if let topVC = UIApplication.topViewController(),
+               topVC.isKind(of: UIAlertController.self) {
+                self.previewSessionAlertPending = true
+                UserDefaults.standard.set(true, forKey: self.previewSessionAlertPendingDefaultsKey)
+                UserDefaults.standard.synchronize()
+                return
+            }
+
+            let alert = UIAlertController(
+                title: "Preview started",
+                message: "Shake your device anytime to reload or leave the test app.",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "Got it", style: .default))
+            if let topVC = UIApplication.topViewController() {
+                topVC.present(alert, animated: true)
+            } else {
+                self.previewSessionAlertPending = true
+                UserDefaults.standard.set(true, forKey: self.previewSessionAlertPendingDefaultsKey)
+                UserDefaults.standard.synchronize()
+            }
         }
     }
 
@@ -902,45 +2335,132 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func getLatest(_ call: CAPPluginCall) {
         let channel = call.getString("channel")
+        let includeBundleSize = call.getBool("includeBundleSize", false)
+        let appId = self.normalizedPreviewAppId(call.getString("appId"))
+        if appId != nil && !self.allowPreview {
+            logger.error("getLatest preview override called without allowPreview")
+            call.reject("getLatest preview override not allowed. Set allowPreview to true in your config to enable it.")
+            return
+        }
+        self.saveCallForAsyncHandling(call)
         runGetLatestWork {
-            let res = self.implementation.getLatest(url: URL(string: self.updateUrl)!, channel: channel)
+            let res = self.implementation.getLatest(
+                url: URL(string: self.updateUrl)!,
+                channel: channel,
+                appIdOverride: appId
+            )
+            if includeBundleSize {
+                self.attachBundleSize(to: res)
+            }
             if let error = res.error, !error.isEmpty {
                 let responseKind = self.updateResponseKind(kind: res.kind)
                 res.kind = responseKind
+                self.notifyBreakingEventsIfNeeded(response: res, version: res.version)
                 if responseKind == "failed" {
-                    call.reject(error)
+                    self.rejectCall(call, message: error)
                 } else {
                     if res.version.isEmpty {
                         res.version = self.implementation.getCurrentBundle().getVersionName()
                     }
-                    call.resolve(res.toDict())
+                    self.resolveCall(call, data: res.toDict())
                 }
             } else if let kind = res.kind, !kind.isEmpty {
                 let responseKind = self.updateResponseKind(kind: kind)
                 res.kind = responseKind
+                self.notifyBreakingEventsIfNeeded(response: res, version: res.version)
                 if responseKind != "failed" {
                     if res.version.isEmpty {
                         res.version = self.implementation.getCurrentBundle().getVersionName()
                     }
-                    call.resolve(res.toDict())
+                    self.resolveCall(call, data: res.toDict())
                 } else {
-                    call.reject(res.message ?? "server did not provide a message")
+                    self.rejectCall(call, message: res.message ?? "server did not provide a message")
                 }
             } else if let message = res.message, !message.isEmpty {
-                call.reject(message)
+                self.notifyBreakingEventsIfNeeded(response: res, version: res.version)
+                self.rejectCall(call, message: message)
             } else {
-                call.resolve(res.toDict())
+                self.resolveCall(call, data: res.toDict())
             }
         }
     }
 
+    private func attachBundleSize(to res: AppVersion) {
+        guard let manifest = res.manifest, !manifest.isEmpty, let updateUrl = URL(string: self.updateUrl) else {
+            return
+        }
+        let missing = self.implementation.getMissingBundleFiles(manifest: manifest, sessionKey: res.sessionKey ?? "")
+        res.missing = [
+            "missing": missing.map { $0.toDict() },
+            "total": manifest.count,
+            "missingCount": missing.count,
+            "reusableCount": manifest.count - missing.count
+        ]
+        res.downloadSize = self.implementation.getBundleDownloadSize(updateUrl: updateUrl, version: res.version, manifest: missing)
+    }
+
+    @objc func getMissingBundleFiles(_ call: CAPPluginCall) {
+        guard let manifest = manifestEntries(from: call.getArray("manifest")) else {
+            call.reject("getMissingBundleFiles called without manifest")
+            return
+        }
+        let sessionKey = call.getString("sessionKey", "")
+        self.saveCallForAsyncHandling(call)
+        DispatchQueue.global(qos: .utility).async {
+            let res = self.implementation.missingBundleFilesResult(manifest: manifest, sessionKey: sessionKey)
+            self.resolveCall(call, data: res)
+        }
+    }
+
+    @objc func getBundleDownloadSize(_ call: CAPPluginCall) {
+        guard let manifest = manifestEntries(from: call.getArray("manifest")) else {
+            call.reject("getBundleDownloadSize called without manifest")
+            return
+        }
+        guard let updateUrl = URL(string: self.updateUrl) else {
+            call.reject("getBundleDownloadSize called without valid updateUrl")
+            return
+        }
+        let version = call.getString("version")
+        self.saveCallForAsyncHandling(call)
+        DispatchQueue.global(qos: .utility).async {
+            let res = self.implementation.getBundleDownloadSize(updateUrl: updateUrl, version: version, manifest: manifest)
+            self.resolveCall(call, data: res)
+        }
+    }
+
+    public func triggerBackgroundUpdateCheck() -> String {
+        guard !self.updateUrl.isEmpty, URL(string: self.updateUrl) != nil else {
+            logger.error("Error no url or wrong format")
+            return "unavailable"
+        }
+        if self.shouldBlockAutoUpdateForPreviewSession() {
+            return "preview_session"
+        }
+        if self.isDownloadStuckOrTimedOut() {
+            logger.info("Download already in progress, skipping duplicate download request")
+            return "already_running"
+        }
+        self.backgroundDownload()
+        return "queued"
+    }
+
+    @objc func triggerUpdateCheck(_ call: CAPPluginCall) {
+        let status = self.triggerBackgroundUpdateCheck()
+        call.resolve([
+            "status": status,
+            "queued": status == "queued"
+        ])
+    }
+
     @objc func unsetChannel(_ call: CAPPluginCall) {
         let triggerAutoUpdate = call.getBool("triggerAutoUpdate", false)
-        DispatchQueue.global(qos: .background).async {
+        self.saveCallForAsyncHandling(call)
+        DispatchQueue.global(qos: .utility).async {
             let configDefaultChannel = self.getConfig().getString("defaultChannel", "")!
             let res = self.implementation.unsetChannel(defaultChannelKey: self.defaultChannelDefaultsKey, configDefaultChannel: configDefaultChannel)
             if res.error != "" {
-                call.reject(res.error, "UNSETCHANNEL_FAILED", nil, [
+                self.rejectCall(call, message: res.error, code: "UNSETCHANNEL_FAILED", data: [
                     "message": res.error,
                     "error": res.error.contains("Channel URL") ? "missing_config" : "request_failed"
                 ])
@@ -954,7 +2474,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         self.logger.info("Download already in progress, skipping duplicate download request")
                     }
                 }
-                call.resolve(res.toDict())
+                self.resolveCall(call, data: res.toDict())
             }
         }
     }
@@ -969,17 +2489,24 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         let triggerAutoUpdate = call.getBool("triggerAutoUpdate") ?? false
-        DispatchQueue.global(qos: .background).async {
-            let res = self.implementation.setChannel(channel: channel, defaultChannelKey: self.defaultChannelDefaultsKey, allowSetDefaultChannel: self.allowSetDefaultChannel)
+        self.saveCallForAsyncHandling(call)
+        DispatchQueue.global(qos: .utility).async {
+            let configDefaultChannel = self.getConfig().getString("defaultChannel", "")!
+            let res = self.implementation.setChannel(
+                channel: channel,
+                defaultChannelKey: self.defaultChannelDefaultsKey,
+                allowSetDefaultChannel: self.allowSetDefaultChannel,
+                configDefaultChannel: configDefaultChannel
+            )
             if res.error != "" {
                 // Fire channelPrivate event if channel doesn't allow self-assignment
                 if res.error.contains("cannot_update_via_private_channel") || res.error.contains("channel_self_set_not_allowed") {
-                    self.notifyListeners("channelPrivate", data: [
+                    self.notifyListenersOnMain("channelPrivate", data: [
                         "channel": channel,
                         "message": res.error
                     ])
                 }
-                call.reject(res.error, "SETCHANNEL_FAILED", nil, [
+                self.rejectCall(call, message: res.error, code: "SETCHANNEL_FAILED", data: [
                     "message": res.error,
                     "error": res.error.contains("Channel URL") ? "missing_config" : (res.error.contains("cannot_update_via_private_channel") || res.error.contains("channel_self_set_not_allowed")) ? "channel_private" : "request_failed"
                 ])
@@ -993,35 +2520,39 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         self.logger.info("Download already in progress, skipping duplicate download request")
                     }
                 }
-                call.resolve(res.toDict())
+                self.resolveCall(call, data: res.toDict())
             }
         }
     }
 
     @objc func getChannel(_ call: CAPPluginCall) {
-        DispatchQueue.global(qos: .background).async {
-            let res = self.implementation.getChannel()
+        self.saveCallForAsyncHandling(call)
+        DispatchQueue.global(qos: .utility).async {
+            let res = self.implementation.getChannel(defaultChannelKey: self.defaultChannelDefaultsKey)
             if res.error != "" {
-                call.reject(res.error, "GETCHANNEL_FAILED", nil, [
+                self.rejectCall(call, message: res.error, code: "GETCHANNEL_FAILED", data: [
                     "message": res.error,
                     "error": res.error.contains("Channel URL") ? "missing_config" : "request_failed"
                 ])
             } else {
-                call.resolve(res.toDict())
+                self.resolveCall(call, data: res.toDict())
             }
         }
     }
 
     @objc func listChannels(_ call: CAPPluginCall) {
-        DispatchQueue.global(qos: .background).async {
+        self.saveCallForAsyncHandling(call)
+        DispatchQueue.global(qos: .utility).async {
             let res = self.implementation.listChannels()
             if res.error != "" {
-                call.reject(res.error, "LISTCHANNELS_FAILED", nil, [
+                self.rejectCall(call, message: res.error, code: "LISTCHANNELS_FAILED", data: [
                     "message": res.error,
                     "error": res.error.contains("Channel URL") ? "missing_config" : "request_failed"
                 ])
             } else {
-                call.resolve(res.toDict())
+                var payload: JSObject = [:]
+                payload["channels"] = res.channels
+                self.resolveCall(call, data: payload)
             }
         }
     }
@@ -1148,6 +2679,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         let bundle = self.implementation.getCurrentBundle()
         self.implementation.setSuccess(bundle: bundle, autoDeletePrevious: self.autoDeletePrevious)
         logger.info("Current bundle loaded successfully. [notifyAppReady was called] \(bundle.toString())")
+        self.clearIncomingPreviewTransition()
+        self.hidePreviewTransitionLoader(reason: "notify-app-ready")
+
         call.resolve(["bundle": bundle.toJSON()])
     }
 
@@ -1197,6 +2731,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     // Note: _checkCancelDelay method has been moved to DelayUpdateUtils class
 
     private func _isAutoUpdateEnabled() -> Bool {
+        if self.isPreviewSessionStateActive() {
+            return false
+        }
         let instanceDescriptor = (self.bridge?.viewController as? CAPBridgeViewController)?.instanceDescriptor()
         if instanceDescriptor?.serverURL != nil {
             logger.warn("AutoUpdate is automatic disabled when serverUrl is set.")
@@ -1234,10 +2771,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             logger.info("Built-in bundle is active. We skip the check for notifyAppReady.")
             return
         }
+        if self.isPreviewSessionStateActive() {
+            logger.info("Preview session is active. We skip the check for notifyAppReady.")
+            return
+        }
 
         logger.info("Current bundle is: \(current.toString())")
 
-        if BundleStatus.SUCCESS.localizedString != current.getStatus() {
+        if BundleStatus.SUCCESS.storedValue != current.getStatus() {
             logger.error("notifyAppReady was not called, roll back current bundle: \(current.toString())")
             logger.error("Did you forget to call 'notifyAppReady()' in your Capacitor App code?")
             self.notifyListeners("updateFailed", data: [
@@ -1286,6 +2827,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             if self.autoSplashscreen {
                 self.hideSplashscreen()
             }
+            self.hidePreviewTransitionLoader(reason: "app-ready")
         }
     }
 
@@ -1453,6 +2995,51 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    private func createLoaderOverlay(
+        backgroundColor: UIColor,
+        isUserInteractionEnabled: Bool,
+        indicatorColor: UIColor?
+    ) -> (container: UIView, indicator: UIActivityIndicatorView) {
+        let container = UIView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.backgroundColor = backgroundColor
+        container.isUserInteractionEnabled = isUserInteractionEnabled
+
+        let indicatorStyle: UIActivityIndicatorView.Style
+        if #available(iOS 13.0, *) {
+            indicatorStyle = .large
+        } else {
+            indicatorStyle = .whiteLarge
+        }
+
+        let indicator = UIActivityIndicatorView(style: indicatorStyle)
+        indicator.translatesAutoresizingMaskIntoConstraints = false
+        indicator.hidesWhenStopped = false
+        if let indicatorColor = indicatorColor {
+            indicator.color = indicatorColor
+        }
+        indicator.startAnimating()
+
+        return (container, indicator)
+    }
+
+    private func attachLoaderOverlay(
+        _ overlay: (container: UIView, indicator: UIActivityIndicatorView),
+        to rootView: UIView
+    ) {
+        overlay.container.addSubview(overlay.indicator)
+        rootView.addSubview(overlay.container)
+
+        NSLayoutConstraint.activate([
+            overlay.container.leadingAnchor.constraint(equalTo: rootView.leadingAnchor),
+            overlay.container.trailingAnchor.constraint(equalTo: rootView.trailingAnchor),
+            overlay.container.topAnchor.constraint(equalTo: rootView.topAnchor),
+            overlay.container.bottomAnchor.constraint(equalTo: rootView.bottomAnchor),
+            overlay.indicator.centerXAnchor.constraint(equalTo: overlay.container.centerXAnchor),
+            overlay.indicator.centerYAnchor.constraint(equalTo: overlay.container.centerYAnchor)
+        ])
+    }
+
     private func addSplashscreenLoaderIfNeeded() {
         guard self.autoSplashscreenLoader else {
             return
@@ -1467,40 +3054,20 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
 
-            let container = UIView()
-            container.translatesAutoresizingMaskIntoConstraints = false
-            container.backgroundColor = UIColor.clear
-            container.isUserInteractionEnabled = false
-
-            let indicatorStyle: UIActivityIndicatorView.Style
+            let indicatorColor: UIColor?
             if #available(iOS 13.0, *) {
-                indicatorStyle = .large
+                indicatorColor = UIColor.label
             } else {
-                indicatorStyle = .whiteLarge
+                indicatorColor = nil
             }
-
-            let indicator = UIActivityIndicatorView(style: indicatorStyle)
-            indicator.translatesAutoresizingMaskIntoConstraints = false
-            indicator.hidesWhenStopped = false
-            if #available(iOS 13.0, *) {
-                indicator.color = UIColor.label
-            }
-            indicator.startAnimating()
-
-            container.addSubview(indicator)
-            rootView.addSubview(container)
-
-            NSLayoutConstraint.activate([
-                container.leadingAnchor.constraint(equalTo: rootView.leadingAnchor),
-                container.trailingAnchor.constraint(equalTo: rootView.trailingAnchor),
-                container.topAnchor.constraint(equalTo: rootView.topAnchor),
-                container.bottomAnchor.constraint(equalTo: rootView.bottomAnchor),
-                indicator.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-                indicator.centerYAnchor.constraint(equalTo: container.centerYAnchor)
-            ])
-
-            self.splashscreenLoaderContainer = container
-            self.splashscreenLoaderView = indicator
+            let overlay = self.createLoaderOverlay(
+                backgroundColor: UIColor.clear,
+                isUserInteractionEnabled: false,
+                indicatorColor: indicatorColor
+            )
+            self.attachLoaderOverlay(overlay, to: rootView)
+            self.splashscreenLoaderContainer = overlay.container
+            self.splashscreenLoaderView = overlay.indicator
         }
 
         if Thread.isMainThread {
@@ -1527,6 +3094,97 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 removeLoader()
             }
         }
+    }
+
+    private func showPreviewTransitionLoader(reason: String) {
+        self.previewTransitionLoaderRequested = true
+        let showLoader = {
+            guard self.previewTransitionLoaderRequested else {
+                return
+            }
+
+            if let container = self.previewTransitionLoaderContainer {
+                self.previewTransitionLoaderTimeoutWorkItem?.cancel()
+                self.schedulePreviewTransitionLoaderTimeout()
+                container.superview?.bringSubviewToFront(container)
+                return
+            }
+
+            guard let rootView = self.bridge?.viewController?.view else {
+                self.logger.warn("Preview transition loader unavailable: root view missing for \(reason)")
+                self.previewTransitionLoaderRequested = false
+                return
+            }
+
+            self.previewTransitionLoaderTimeoutWorkItem?.cancel()
+            self.schedulePreviewTransitionLoaderTimeout()
+
+            let indicatorColor: UIColor?
+            if #available(iOS 13.0, *) {
+                indicatorColor = UIColor.white
+            } else {
+                indicatorColor = nil
+            }
+            let overlay = self.createLoaderOverlay(
+                backgroundColor: UIColor.black.withAlphaComponent(0.18),
+                isUserInteractionEnabled: true,
+                indicatorColor: indicatorColor
+            )
+            self.attachLoaderOverlay(overlay, to: rootView)
+            self.previewTransitionLoaderContainer = overlay.container
+            self.previewTransitionLoaderView = overlay.indicator
+            self.logger.info("Preview transition loader shown: \(reason)")
+        }
+
+        if Thread.isMainThread {
+            showLoader()
+        } else {
+            DispatchQueue.main.async {
+                showLoader()
+            }
+        }
+    }
+
+    private func hidePreviewTransitionLoader(reason: String) {
+        if !self.previewTransitionLoaderRequested &&
+            self.previewTransitionLoaderContainer == nil &&
+            self.previewTransitionLoaderTimeoutWorkItem == nil {
+            return
+        }
+
+        let hideLoader = {
+            self.previewTransitionLoaderRequested = false
+            self.previewTransitionLoaderTimeoutWorkItem?.cancel()
+            self.previewTransitionLoaderTimeoutWorkItem = nil
+            guard self.previewTransitionLoaderContainer != nil else {
+                return
+            }
+            self.previewTransitionLoaderView?.stopAnimating()
+            self.previewTransitionLoaderContainer?.removeFromSuperview()
+            self.previewTransitionLoaderView = nil
+            self.previewTransitionLoaderContainer = nil
+            self.logger.info("Preview transition loader hidden: \(reason)")
+        }
+
+        if Thread.isMainThread {
+            hideLoader()
+        } else {
+            DispatchQueue.main.async {
+                hideLoader()
+            }
+        }
+    }
+
+    private func schedulePreviewTransitionLoaderTimeout() {
+        self.previewTransitionLoaderTimeoutWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.hidePreviewTransitionLoader(reason: "preview-transition-timeout")
+        }
+        self.previewTransitionLoaderTimeoutWorkItem = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + .milliseconds(Self.previewLoaderTimeoutMs),
+            execute: workItem
+        )
     }
 
     private func scheduleSplashscreenTimeout() {
@@ -1588,6 +3246,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func shouldUseDirectUpdate() -> Bool {
+        if !self.autoUpdate || self.autoUpdateMode == Self.autoUpdateModeOnlyDownload {
+            return false
+        }
         if self.autoSplashscreenTimedOut {
             return false
         }
@@ -1614,8 +3275,130 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    private func configureAutoUpdateModeFromConfig() {
+        if let configuredMode = getConfig().getString("autoUpdate"),
+           configuredMode != "",
+           configuredMode != "true",
+           configuredMode != "false" {
+            autoUpdateMode = Self.normalizedAutoUpdateMode(configuredMode)
+            if autoUpdateMode != configuredMode {
+                logger.error(
+                    "Invalid autoUpdate value: \"\(configuredMode)\". Supported values are: true, false, " +
+                        "\"off\", \"atBackground\", \"atInstall\", \"onLaunch\", \"always\", \"onlyDownload\". Defaulting to \"atBackground\"."
+                )
+            }
+        } else {
+            let configuredMode = getConfig().getString("autoUpdate")
+            let enabled = configuredMode != nil ? configuredMode == "true" : getConfig().getBoolean("autoUpdate", true)
+            autoUpdateMode = enabled
+                ? Self.autoUpdateModeForLegacyDirectUpdateMode(resolveLegacyDirectUpdateModeFromConfig())
+                : Self.autoUpdateModeOff
+        }
+
+        autoUpdate = Self.isAutoUpdateModeEnabled(autoUpdateMode)
+        directUpdateMode = Self.directUpdateModeForAutoUpdateMode(autoUpdateMode)
+        directUpdate = Self.isDirectUpdateMode(directUpdateMode)
+    }
+
+    private func resolveLegacyDirectUpdateModeFromConfig() -> String {
+        if let directUpdateString = getConfig().getString("directUpdate") {
+            if directUpdateString == "true" {
+                return Self.autoUpdateModeAlways
+            }
+            if directUpdateString == "false" || Self.isDirectUpdateMode(directUpdateString) {
+                return directUpdateString
+            }
+            logger.error(
+                "Invalid directUpdate value: \"\(directUpdateString)\". Supported values are: false, true, " +
+                    "\"always\", \"atInstall\", \"onLaunch\". Defaulting to \"false\"."
+            )
+            return "false"
+        }
+
+        return getConfig().getBoolean("directUpdate", false) ? Self.autoUpdateModeAlways : "false"
+    }
+
+    static func normalizedAutoUpdateMode(_ value: String?) -> String {
+        guard let value else {
+            return autoUpdateModeBackground
+        }
+        switch value {
+        case "false", autoUpdateModeOff:
+            return autoUpdateModeOff
+        case "true", autoUpdateModeBackground:
+            return autoUpdateModeBackground
+        case autoUpdateModeInstall, autoUpdateModeLaunch, autoUpdateModeAlways, autoUpdateModeOnlyDownload:
+            return value
+        default:
+            return autoUpdateModeBackground
+        }
+    }
+
+    static func normalizedShakeMenuGesture(_ value: String?) -> String {
+        guard let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return shakeMenuGestureShake
+        }
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalized == shakeMenuGestureThreeFingerPinch {
+            return shakeMenuGestureThreeFingerPinch
+        }
+        return shakeMenuGestureShake
+    }
+
+    static func isSupportedShakeMenuGesture(_ value: String?) -> Bool {
+        guard let value else {
+            return true
+        }
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalized.isEmpty {
+            return false
+        }
+        return normalized == shakeMenuGestureShake || normalized == shakeMenuGestureThreeFingerPinch
+    }
+
+    static func autoUpdateModeForLegacyDirectUpdateMode(_ directUpdateMode: String) -> String {
+        switch directUpdateMode {
+        case autoUpdateModeInstall, autoUpdateModeLaunch, autoUpdateModeAlways:
+            return directUpdateMode
+        default:
+            return autoUpdateModeBackground
+        }
+    }
+
+    static func directUpdateModeForAutoUpdateMode(_ autoUpdateMode: String) -> String {
+        switch autoUpdateMode {
+        case autoUpdateModeInstall, autoUpdateModeLaunch, autoUpdateModeAlways:
+            return autoUpdateMode
+        default:
+            return "false"
+        }
+    }
+
+    static func isAutoUpdateModeEnabled(_ autoUpdateMode: String) -> Bool {
+        autoUpdateMode != autoUpdateModeOff
+    }
+
+    static func shouldAutoUpdateModeSetNextBundle(_ autoUpdateMode: String) -> Bool {
+        isAutoUpdateModeEnabled(autoUpdateMode) && autoUpdateMode != autoUpdateModeOnlyDownload
+    }
+
+    static func isDirectUpdateMode(_ directUpdateMode: String) -> Bool {
+        directUpdateMode == autoUpdateModeInstall || directUpdateMode == autoUpdateModeLaunch || directUpdateMode == autoUpdateModeAlways
+    }
+
+    private func shouldAutoSetNextBundle() -> Bool {
+        Self.shouldAutoUpdateModeSetNextBundle(autoUpdateMode)
+    }
+
     static func shouldConsumeOnLaunchDirectUpdate(directUpdateMode: String, plannedDirectUpdate: Bool) -> Bool {
         plannedDirectUpdate && directUpdateMode == "onLaunch"
+    }
+
+    static func normalizedPeriodCheckDelaySeconds(_ value: Int) -> Int {
+        guard value > 0 else {
+            return 0
+        }
+        return max(600, value)
     }
 
     private func getOnLaunchDirectUpdateUsed() -> Bool {
@@ -1640,11 +3423,21 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     func configureDirectUpdateModeForTesting(_ directUpdateMode: String, onLaunchDirectUpdateUsed: Bool = false) {
         self.directUpdateMode = directUpdateMode
+        self.autoUpdateMode = Self.autoUpdateModeForLegacyDirectUpdateMode(directUpdateMode)
+        self.autoUpdate = Self.isAutoUpdateModeEnabled(self.autoUpdateMode)
+        self.directUpdate = Self.isDirectUpdateMode(self.directUpdateMode)
         self.setOnLaunchDirectUpdateUsed(onLaunchDirectUpdateUsed)
     }
 
     func setUpdateUrlForTesting(_ updateUrl: String) {
         self.updateUrl = updateUrl
+    }
+
+    func setAutoUpdateModeForTesting(_ autoUpdateMode: String) {
+        self.autoUpdateMode = Self.normalizedAutoUpdateMode(autoUpdateMode)
+        self.autoUpdate = Self.isAutoUpdateModeEnabled(self.autoUpdateMode)
+        self.directUpdateMode = Self.directUpdateModeForAutoUpdateMode(self.autoUpdateMode)
+        self.directUpdate = Self.isDirectUpdateMode(self.directUpdateMode)
     }
 
     func setCurrentBuildVersionForTesting(_ currentBuildVersion: String) {
@@ -1668,11 +3461,30 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.notifyListeners("majorAvailable", data: payload)
     }
 
-    private func updateResponseKind(kind: String?) -> String {
+    private func shouldNotifyBreakingEvents(response: AppVersion) -> Bool {
+        if response.breaking == true {
+            return true
+        }
+
+        return response.error == "disable_auto_update_to_major" || response.message == "store_update_required"
+    }
+
+    private func notifyBreakingEventsIfNeeded(response: AppVersion, version: String) {
+        if self.shouldNotifyBreakingEvents(response: response) {
+            let eventVersion = version.isEmpty ? self.implementation.getCurrentBundle().getVersionName() : version
+            self.notifyBreakingEvents(version: eventVersion)
+        }
+    }
+
+    static func normalizedUpdateResponseKind(kind: String?) -> String {
         if let kind, ["up_to_date", "blocked", "failed"].contains(kind) {
             return kind
         }
         return "failed"
+    }
+
+    private func updateResponseKind(kind: String?) -> String {
+        Self.normalizedUpdateResponseKind(kind: kind)
     }
 
     private func endBackgroundDownloadAfterLatestError(
@@ -1694,6 +3506,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             "version": latestVersionName,
             "bundle": current.toJSON()
         ])
+        self.notifyBreakingEventsIfNeeded(response: res, version: res.version)
 
         if responseKind == "up_to_date" {
             self.logger.info("No new version available")
@@ -1722,7 +3535,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         plannedDirectUpdate: Bool = false,
         failureAction: String = "download_fail",
         failureEvent: String = "downloadFailed",
-        sendStats: Bool = true
+        sendStats: Bool = true,
+        notifyNoNeedUpdate: Bool = true
     ) {
         // Clear download in progress flag - this is called at the end of every download attempt
         // whether it succeeds, fails, or is skipped (e.g., already up to date)
@@ -1739,7 +3553,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             self.notifyListeners(failureEvent, data: ["version": latestVersionName])
         }
-        self.notifyListeners("noNeedUpdate", data: ["bundle": current.toJSON()])
+        if notifyNoNeedUpdate {
+            self.notifyListeners("noNeedUpdate", data: ["bundle": current.toJSON()])
+        }
         self.sendReadyToJs(current: current, msg: msg)
         logger.info("endBackGroundTaskWithNotif \(msg) current: \(current.getVersionName()) latestVersionName: \(latestVersionName)")
         self.endBackGroundTask()
@@ -1767,8 +3583,31 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         return true
     }
 
+    private func clearDownloadInProgressState() {
+        downloadLock.lock()
+        defer { downloadLock.unlock() }
+        downloadInProgress = false
+        downloadStartTime = nil
+    }
+
     func runBackgroundDownloadWork(_ work: @escaping () -> Void) {
-        DispatchQueue.global(qos: .background).async(execute: work)
+        // Live update checks/downloads are user-visible work. Using `.background`
+        // lets the scheduler starve them for minutes while the app is active.
+        DispatchQueue.global(qos: .utility).async(execute: work)
+    }
+
+    private func beginDownloadBackgroundTask() {
+        let registerTask = {
+            self.backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "Finish Download Tasks") {
+                self.endBackGroundTask()
+            }
+        }
+
+        if Thread.isMainThread {
+            registerTask()
+        } else {
+            DispatchQueue.main.sync(execute: registerTask)
+        }
     }
 
     func runGetLatestWork(_ work: @escaping () -> Void) {
@@ -1776,6 +3615,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     func backgroundDownload() {
+        if self.shouldBlockAutoUpdateForPreviewSession() {
+            return
+        }
         // Set download in progress flag (thread-safe)
         downloadLock.lock()
         downloadInProgress = true
@@ -1783,7 +3625,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         downloadLock.unlock()
 
         let plannedDirectUpdate = self.shouldUseDirectUpdate()
-        let messageUpdate = plannedDirectUpdate ? "Update will occur now." : "Update will occur next time app moves to background."
+        let messageUpdate: String
+        if plannedDirectUpdate {
+            messageUpdate = "Update will occur now."
+        } else if self.shouldAutoSetNextBundle() {
+            messageUpdate = "Update will occur next time app moves to background."
+        } else {
+            messageUpdate = "Update will be downloaded and made available."
+        }
         guard let url = URL(string: self.updateUrl) else {
             logger.error("Error no url or wrong format")
             // Clear the flag if we return early
@@ -1797,13 +3646,19 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.runBackgroundDownloadWork {
             // Wait for cleanup to complete before starting download
             self.waitForCleanupIfNeeded()
-            self.backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "Finish Download Tasks") {
-                // End the task if time expires.
-                self.endBackGroundTask()
+            if self.shouldBlockAutoUpdateForPreviewSession() {
+                self.clearDownloadInProgressState()
+                return
             }
+            self.beginDownloadBackgroundTask()
             self.logger.info("Check for update via \(self.updateUrl)")
             let res = self.implementation.getLatest(url: url, channel: nil)
             let current = self.implementation.getCurrentBundle()
+            if self.shouldBlockAutoUpdateForPreviewSession() {
+                self.clearDownloadInProgressState()
+                self.endBackGroundTask()
+                return
+            }
 
             // Handle network errors and other failures first
             let backendError = res.error ?? ""
@@ -1830,7 +3685,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         error: false,
                         plannedDirectUpdate: plannedDirectUpdate
                     )
-                } else {
+                } else if self.shouldAutoSetNextBundle() {
                     if plannedDirectUpdate && !directUpdateAllowed {
                         self.logger.info("Direct update skipped because splashscreen timeout occurred. Update will apply later.")
                     }
@@ -1843,21 +3698,37 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         error: false,
                         plannedDirectUpdate: plannedDirectUpdate
                     )
+                } else {
+                    self.logger.info("autoUpdate is set to onlyDownload, builtin version will not be set as next bundle")
+                    let builtinUpdateAvailable = !current.isBuiltin()
+                    if builtinUpdateAvailable {
+                        let builtinBundle = self.implementation.getBundleInfo(id: BundleInfo.ID_BUILTIN)
+                        self.notifyListeners("updateAvailable", data: ["bundle": builtinBundle.toJSON()], retainUntilConsumed: true)
+                    }
+                    self.endBackGroundTaskWithNotif(
+                        msg: "Latest version is builtin, autoUpdate onlyDownload",
+                        latestVersionName: res.version,
+                        current: current,
+                        error: false,
+                        plannedDirectUpdate: plannedDirectUpdate,
+                        notifyNoNeedUpdate: !builtinUpdateAvailable
+                    )
                 }
                 return
             }
             let sessionKey = res.sessionKey ?? ""
+            let latestVersionName = res.version
             guard let downloadUrl = URL(string: res.url) else {
+                self.notifyBreakingEventsIfNeeded(response: res, version: latestVersionName)
                 self.logger.error("Error no url or wrong format")
                 self.endBackGroundTaskWithNotif(
                     msg: "Error no url or wrong format",
-                    latestVersionName: res.version,
+                    latestVersionName: latestVersionName,
                     current: current,
                     plannedDirectUpdate: plannedDirectUpdate
                 )
                 return
             }
-            let latestVersionName = res.version
             if latestVersionName != "" && current.getVersionName() != latestVersionName {
                 do {
                     self.logger.info("New bundle: \(latestVersionName) found. Current is: \(current.getVersionName()). \(messageUpdate)")
@@ -1899,6 +3770,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         )
                         return
                     }
+                    if self.shouldBlockAutoUpdateForPreviewSession() {
+                        self.clearDownloadInProgressState()
+                        self.endBackGroundTask()
+                        return
+                    }
                     res.checksum = try CryptoCipher.decryptChecksum(checksum: res.checksum, publicKey: self.implementation.publicKey)
                     CryptoCipher.logChecksumInfo(label: "Bundle checksum", hexChecksum: next.getChecksum())
                     CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: res.checksum)
@@ -1916,6 +3792,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                             current: current,
                             plannedDirectUpdate: plannedDirectUpdate
                         )
+                        return
+                    }
+                    if self.shouldBlockAutoUpdateForPreviewSession() {
+                        self.clearDownloadInProgressState()
+                        self.endBackGroundTask()
                         return
                     }
                     let directUpdateAllowed = plannedDirectUpdate && !self.autoSplashscreenTimedOut
@@ -1937,7 +3818,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                             )
                             return
                         }
-                        if self.implementation.set(bundle: next) && self._reload() {
+                        if self.applyDownloadedBundleForDirectUpdate(next) {
                             self.notifyBundleSet(next)
                             self.endBackGroundTaskWithNotif(
                                 msg: "update installed",
@@ -1947,14 +3828,17 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                                 plannedDirectUpdate: plannedDirectUpdate
                             )
                         } else {
+                            _ = self.implementation.setNextBundle(next: next.getId())
+                            self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
                             self.endBackGroundTaskWithNotif(
-                                msg: "Update install failed",
+                                msg: "Direct update reload failed, update will install next background",
                                 latestVersionName: latestVersionName,
-                                current: next,
+                                current: self.implementation.getCurrentBundle(),
+                                error: false,
                                 plannedDirectUpdate: plannedDirectUpdate
                             )
                         }
-                    } else {
+                    } else if self.shouldAutoSetNextBundle() {
                         if plannedDirectUpdate && !directUpdateAllowed {
                             self.logger.info("Direct update skipped because splashscreen timeout occurred. Update will install on next app background.")
                         }
@@ -1966,6 +3850,17 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                             current: current,
                             error: false,
                             plannedDirectUpdate: plannedDirectUpdate
+                        )
+                    } else {
+                        self.logger.info("autoUpdate is set to onlyDownload, downloaded update will not be set as next bundle")
+                        self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()], retainUntilConsumed: true)
+                        self.endBackGroundTaskWithNotif(
+                            msg: "update downloaded, autoUpdate onlyDownload",
+                            latestVersionName: latestVersionName,
+                            current: current,
+                            error: false,
+                            plannedDirectUpdate: plannedDirectUpdate,
+                            notifyNoNeedUpdate: false
                         )
                     }
                     return
@@ -1995,6 +3890,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func installNext() {
+        if self.shouldBlockAutoUpdateForPreviewSession() {
+            return
+        }
         let delayUpdatePreferences = UserDefaults.standard.string(forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES) ?? "[]"
         let delayConditionList: [DelayCondition] = fromJsonArr(json: delayUpdatePreferences).map { obj -> DelayCondition in
             let kind: String = obj.value(forKey: "kind") as! String
@@ -2039,6 +3937,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func appMovedToForeground() {
+        appHealthTracker?.markForeground(true)
         let current: BundleInfo = self.implementation.getCurrentBundle()
         self.implementation.sendStats(action: "app_moved_to_foreground", versionName: current.getVersionName())
         self.delayUpdateUtils.checkCancelDelay(source: .foreground)
@@ -2084,9 +3983,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 timer.invalidate()
                 return
             }
-            DispatchQueue.global(qos: .background).async {
+            DispatchQueue.global(qos: .utility).async {
+                if self.shouldBlockAutoUpdateForPreviewSession() {
+                    return
+                }
                 let res = self.implementation.getLatest(url: url, channel: nil)
                 let current = self.implementation.getCurrentBundle()
+                if self.shouldBlockAutoUpdateForPreviewSession() {
+                    return
+                }
 
                 if res.version != current.getVersionName() {
                     self.logger.info("New version found: \(res.version)")
@@ -2105,6 +4010,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func appMovedToBackground() {
         // Reset timeout flag at start of each background cycle
         self.autoSplashscreenTimedOut = false
+        appHealthTracker?.markForeground(false)
 
         let current: BundleInfo = self.implementation.getCurrentBundle()
         self.implementation.sendStats(action: "app_moved_to_background", versionName: current.getVersionName())
@@ -2171,13 +4077,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         self.shakeMenuEnabled = enabled
-        logger.info("Shake menu \(enabled ? "enabled" : "disabled")")
+        self.syncShakeMenuGestureRecognizer()
+        logger.info("Shake menu \(enabled ? "enabled" : "disabled") with \(self.shakeMenuGesture) gesture")
         call.resolve()
     }
 
     @objc func isShakeMenuEnabled(_ call: CAPPluginCall) {
         call.resolve([
-            "enabled": self.shakeMenuEnabled
+            "enabled": self.shakeMenuEnabled,
+            "gesture": self.shakeMenuGesture
         ])
     }
 
@@ -2189,6 +4097,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         self.shakeChannelSelectorEnabled = enabled
+        self.syncShakeMenuGestureRecognizer()
         logger.info("Shake channel selector \(enabled ? "enabled" : "disabled")")
         call.resolve()
     }
@@ -2236,29 +4145,30 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         logger.info("Getting App Store update info for \(bundleId) in country \(country)")
 
+        self.saveCallForAsyncHandling(call)
         DispatchQueue.global(qos: .background).async {
             let urlString = "https://itunes.apple.com/lookup?bundleId=\(bundleId)&country=\(country)"
             guard let url = URL(string: urlString) else {
-                call.reject("Invalid URL for App Store lookup")
+                self.rejectCall(call, message: "Invalid URL for App Store lookup")
                 return
             }
 
             let task = URLSession.shared.dataTask(with: url) { data, _, error in
                 if let error = error {
                     self.logger.error("App Store lookup failed: \(error.localizedDescription)")
-                    call.reject("App Store lookup failed: \(error.localizedDescription)")
+                    self.rejectCall(call, message: "App Store lookup failed: \(error.localizedDescription)")
                     return
                 }
 
                 guard let data = data else {
-                    call.reject("No data received from App Store")
+                    self.rejectCall(call, message: "No data received from App Store")
                     return
                 }
 
                 do {
                     guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                           let resultCount = json["resultCount"] as? Int else {
-                        call.reject("Invalid response from App Store")
+                        self.rejectCall(call, message: "Invalid response from App Store")
                         return
                     }
 
@@ -2315,10 +4225,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         self.logger.info("App not found in App Store for bundleId: \(bundleId)")
                     }
 
-                    call.resolve(result)
+                    self.resolveCall(call, data: result)
                 } catch {
                     self.logger.error("Failed to parse App Store response: \(error.localizedDescription)")
-                    call.reject("Failed to parse App Store response: \(error.localizedDescription)")
+                    self.rejectCall(call, message: "Failed to parse App Store response: \(error.localizedDescription)")
                 }
             }
             task.resume()
@@ -2327,37 +4237,48 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func openAppStore(_ call: CAPPluginCall) {
         let appId = call.getString("appId")
+        let bundleId = implementation.appId
+        self.saveCallForAsyncHandling(call)
 
-        if let appId = appId {
-            // Open App Store with provided app ID
-            let urlString = "https://apps.apple.com/app/id\(appId)"
+        func openAppStorePage(urlString: String, invalidMessage: String = "Invalid App Store URL", failureMessage: String = "Failed to open App Store") {
             guard let url = URL(string: urlString) else {
-                call.reject("Invalid App Store URL")
+                self.rejectCall(call, message: invalidMessage)
                 return
             }
             DispatchQueue.main.async {
                 UIApplication.shared.open(url) { success in
                     if success {
-                        call.resolve()
+                        self.resolveCall(call)
                     } else {
-                        call.reject("Failed to open App Store")
+                        self.rejectCall(call, message: failureMessage)
                     }
                 }
             }
+        }
+
+        func openFallbackAppStorePage() {
+            guard let encodedBundleId = bundleId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+                self.rejectCall(call, message: "Failed to build App Store fallback URL")
+                return
+            }
+            openAppStorePage(urlString: "https://apps.apple.com/app/\(encodedBundleId)")
+        }
+
+        if let appId = appId {
+            openAppStorePage(urlString: "https://apps.apple.com/app/id\(appId)")
         } else {
-            // Look up app ID using bundle identifier
-            let bundleId = implementation.appId
             let lookupUrl = "https://itunes.apple.com/lookup?bundleId=\(bundleId)"
 
             DispatchQueue.global(qos: .background).async {
                 guard let url = URL(string: lookupUrl) else {
-                    call.reject("Invalid lookup URL")
+                    openFallbackAppStorePage()
                     return
                 }
 
                 let task = URLSession.shared.dataTask(with: url) { data, _, error in
                     if let error = error {
-                        call.reject("Failed to lookup app: \(error.localizedDescription)")
+                        self.logger.error("App Store lookup failed: \(error.localizedDescription)")
+                        openFallbackAppStorePage()
                         return
                     }
 
@@ -2366,39 +4287,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                           let results = json["results"] as? [[String: Any]],
                           let appInfo = results.first,
                           let trackId = appInfo["trackId"] as? Int else {
-                        // If lookup fails, try opening the generic App Store app page using bundle ID
-                        let fallbackUrlString = "https://apps.apple.com/app/\(bundleId)"
-                        guard let fallbackUrl = URL(string: fallbackUrlString) else {
-                            call.reject("Failed to find app in App Store and fallback URL is invalid")
-                            return
-                        }
-                        DispatchQueue.main.async {
-                            UIApplication.shared.open(fallbackUrl) { success in
-                                if success {
-                                    call.resolve()
-                                } else {
-                                    call.reject("Failed to open App Store")
-                                }
-                            }
-                        }
+                        openFallbackAppStorePage()
                         return
                     }
 
-                    let appStoreUrl = "https://apps.apple.com/app/id\(trackId)"
-                    guard let url = URL(string: appStoreUrl) else {
-                        call.reject("Invalid App Store URL")
-                        return
-                    }
-
-                    DispatchQueue.main.async {
-                        UIApplication.shared.open(url) { success in
-                            if success {
-                                call.resolve()
-                            } else {
-                                call.reject("Failed to open App Store")
-                            }
-                        }
-                    }
+                    openAppStorePage(urlString: "https://apps.apple.com/app/id\(trackId)")
                 }
                 task.resume()
             }

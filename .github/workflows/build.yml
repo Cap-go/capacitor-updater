@@ -12,7 +12,8 @@ on:
 jobs:
   # Tests already passed before tag was created, so just build and deploy
   deploy:
-    timeout-minutes: 30
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     name: "Build code and npm release"
     permissions:
@@ -45,18 +46,28 @@ jobs:
         with:
           node-version: 24.x
           registry-url: 'https://registry.npmjs.org'
+      - name: Publish lts-v5 to npm
+        if: ${{ startsWith(github.ref, 'refs/tags/5.') }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --tag lts-v5 --provenance --access public
       - name: Publish lts-v6 to npm
         if: ${{ startsWith(github.ref, 'refs/tags/6.') }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --tag lts-v6 --provenance --access public
+      - name: Publish lts-v7 to npm
+        if: ${{ startsWith(github.ref, 'refs/tags/7.') }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --tag lts-v7 --provenance --access public
       - name: Publish to npm
-        if: ${{ !contains(github.ref, '-alpha.') && !startsWith(github.ref, 'refs/tags/6.') }}
+        if: ${{ !contains(github.ref, '-alpha.') && !startsWith(github.ref, 'refs/tags/5.') && !startsWith(github.ref, 'refs/tags/6.') && !startsWith(github.ref, 'refs/tags/7.') }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --tag latest --provenance --access public
       - name: Publish to npm with next tag
-        if: ${{ contains(github.ref, '-alpha.') && !startsWith(github.ref, 'refs/tags/6.')  }}
+        if: ${{ contains(github.ref, '-alpha.') && !startsWith(github.ref, 'refs/tags/5.') && !startsWith(github.ref, 'refs/tags/6.') && !startsWith(github.ref, 'refs/tags/7.') }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --tag next --provenance --access public
@@ -72,6 +83,6 @@ jobs:
             ---
 
             🔗 **Full Changelog**: https://github.com/${{ github.repository }}/compare/${{ steps.changelog.outputs.from_tag }}...${{ steps.changelog.outputs.to_tag }}
-          make_latest: true
+          make_latest: ${{ !contains(github.ref, '-alpha.') && !startsWith(github.ref, 'refs/tags/5.') && !startsWith(github.ref, 'refs/tags/6.') && !startsWith(github.ref, 'refs/tags/7.') }}
           token: '${{ secrets.PERSONAL_ACCESS_TOKEN }}'
           prerelease: ${{ contains(github.ref, '-alpha.') }}

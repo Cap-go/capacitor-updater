@@ -5,7 +5,17 @@ set -euo pipefail
 MAESTRO_VERSION="${MAESTRO_VERSION:-cli-2.4.0}"
 BASE_URL="https://github.com/mobile-dev-inc/Maestro/releases/download/${MAESTRO_VERSION}"
 TMP_DIR="$(mktemp -d)"
+MAESTRO_BIN="$HOME/.maestro/bin/maestro"
+MAESTRO_VERSION_FILE="$HOME/.maestro/.capgo-maestro-version"
 trap 'rm -rf "$TMP_DIR"' EXIT
+
+if [[ -x "$MAESTRO_BIN" && -d "$HOME/.maestro/lib" && -f "$MAESTRO_VERSION_FILE" ]] &&
+  [[ "$(cat "$MAESTRO_VERSION_FILE")" == "$MAESTRO_VERSION" ]]; then
+  if [[ -n "${GITHUB_PATH:-}" ]]; then
+    echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+  fi
+  exit 0
+fi
 
 download_maestro_asset() {
   local asset_name="$1"
@@ -58,4 +68,7 @@ if [[ ! -f "$HOME/.maestro/bin/maestro" || ! -d "$HOME/.maestro/lib" ]]; then
 fi
 
 chmod 0755 "$HOME/.maestro/bin/maestro"
-echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+printf '%s\n' "$MAESTRO_VERSION" > "$MAESTRO_VERSION_FILE"
+if [[ -n "${GITHUB_PATH:-}" ]]; then
+  echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+fi

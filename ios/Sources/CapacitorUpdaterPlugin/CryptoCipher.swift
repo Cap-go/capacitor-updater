@@ -6,7 +6,6 @@
 
 import Foundation
 import CryptoKit
-import BigInt
 
 public struct CryptoCipher {
     private static var logger: Logger!

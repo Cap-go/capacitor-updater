@@ -17,8 +17,8 @@ public class ShakeDetector implements SensorEventListener {
         void onShakeDetected();
     }
 
-    private static final float SHAKE_THRESHOLD = 12.0f; // Acceleration threshold for shake detection
-    private static final int SHAKE_TIMEOUT = 500; // Minimum time between shake events (ms)
+    private static final float SHAKE_THRESHOLD = 16.0f; // Acceleration threshold for shake detection
+    private static final int SHAKE_TIMEOUT = 1000; // Minimum time between shake events (ms)
 
     private Listener listener;
     private SensorManager sensorManager;
@@ -34,7 +34,7 @@ public class ShakeDetector implements SensorEventListener {
         this.accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
 
         if (accelerometer != null) {
-            sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME);
+            sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_UI);
         }
     }
 

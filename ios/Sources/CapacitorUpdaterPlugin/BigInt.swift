@@ -1,21 +1,5 @@
 import BigInt
 
-// Extension to serialize BigInt to bytes array
-extension BigInt {
-    func serializeToBytes() -> [UInt8] {
-        let byteCount = (self.bitWidth + 7) / 8
-        var bytes = [UInt8](repeating: 0, count: byteCount)
-
-        var value = self
-        for index in 0..<byteCount {
-            bytes[byteCount - index - 1] = UInt8(truncatingIfNeeded: value & 0xFF)
-            value >>= 8
-        }
-
-        return bytes
-    }
-}
-
 // Add this custom power function to ensure safer handling of power operations
 
 // Manual exponentiation using the square-and-multiply algorithm
