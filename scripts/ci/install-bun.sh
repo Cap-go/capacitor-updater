@@ -6,6 +6,16 @@ BUN_VERSION="${BUN_VERSION:-1.3.12}"
 NORMALIZED_VERSION="${BUN_VERSION#bun-v}"
 PLATFORM="$(uname -s)"
 ARCH="$(uname -m)"
+BUN_BIN="$HOME/.bun/bin/bun"
+
+if [[ -x "$BUN_BIN" ]] && [[ "$("$BUN_BIN" --version)" == "$NORMALIZED_VERSION" ]]; then
+  ln -sf "$BUN_BIN" "$HOME/.bun/bin/bunx"
+  if [[ -n "${GITHUB_PATH:-}" ]]; then
+    echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+  fi
+  "$BUN_BIN" --revision
+  exit 0
+fi
 
 case "${PLATFORM}-${ARCH}" in
   Linux-x86_64)
@@ -59,5 +69,7 @@ mkdir -p "$HOME/.bun/bin"
 cp "$INSTALL_PATH" "$HOME/.bun/bin/bun"
 chmod 0755 "$HOME/.bun/bin/bun"
 ln -sf "$HOME/.bun/bin/bun" "$HOME/.bun/bin/bunx"
-echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+if [[ -n "${GITHUB_PATH:-}" ]]; then
+  echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+fi
 "$HOME/.bun/bin/bun" --revision

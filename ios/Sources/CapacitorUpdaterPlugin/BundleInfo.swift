@@ -116,13 +116,13 @@ import Foundation
 
     public func getStatus() -> String {
         return self.isBuiltin() ?
-            BundleStatus.SUCCESS.localizedString : self.status.localizedString
+            BundleStatus.SUCCESS.storedValue : self.status.storedValue
     }
 
     public func setStatus(status: String) -> BundleInfo {
         return BundleInfo(
             id: self.id, version: self.version,
-            status: BundleStatus(localizedString: status)!,
+            status: BundleStatus(storedValue: status)!,
             downloaded: self.downloaded, checksum: self.checksum,
             link: self.link, comment: self.comment)
     }

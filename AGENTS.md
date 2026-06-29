@@ -123,3 +123,8 @@ We welcome contributions, including AI-generated pull requests. Every PR must in
 - Keep temporary files clean: delete or mark with `deleteOnExit` after use.
 - `dist/` is fully regenerated on every build — never edit generated files.
 - Use Bun for everything. Do not use npm or npx. Use `bunx` if you need to run a package binary.
+- Maestro can sometimes fail for timeout, WE ENFORCE ` timeout-minutes: 10` if your test fail for timeout make better test augment the timeout is NEVER allowed
+
+## Timeout Policy
+
+- Keep CI, script, and runtime timeouts at 10 minutes or less. Use `timeout-minutes: 10` or lower in GitHub Actions and cap timeout values at `600000` ms, `600` seconds, or `10m` unless explicitly requested.

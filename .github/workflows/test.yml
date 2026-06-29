@@ -13,13 +13,25 @@ on:
   workflow_dispatch:
   workflow_call: # Allow this workflow to be called by other workflows
 
+env:
+  BUN_VERSION: 1.3.12
+  MAESTRO_VERSION: cli-2.4.0
+  CAPGO_MAESTRO_DEVICE_BASE_URL: http://127.0.0.1:3192
+
+permissions: {}
+
 jobs:
   guard_swiftpm_version:
-    timeout-minutes: 30
+    permissions:
+      contents: read
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - name: Check out
         uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - name: Enforce capacitor-swift-pm version
         run: |
           set -euo pipefail
@@ -27,19 +39,24 @@ jobs:
             echo "Expected capacitor-swift-pm to be pinned to 8.0.0 in Package.swift"
             exit 1
           fi
+
   build_android:
-    timeout-minutes: 30
+    permissions:
+      contents: read
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - name: Check out
         uses: actions/checkout@v6
-      - name: Install Bun
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: ./scripts/ci/install-bun.sh
-      - name: Install dependencies
-        id: install_code
-        run: bun i
+        with:
+          persist-credentials: false
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+          dependency-cache-key: ${{ runner.os }}-bun-deps-root-${{ hashFiles('bun.lock', 'package.json') }}
+          dependency-cache-path: node_modules
       - name: Check plugin wiring
         run: bun run check:wiring
       - name: Setup java
@@ -47,141 +64,442 @@ jobs:
         with:
           distribution: 'zulu'
           java-version: '21'
-      - name: Build
+          cache: gradle
+      - name: Build and test Android plugin
         id: build_code
         run: bun run verify:android
-      - name: Run Android Tests
-        id: test_android
-        run: bun run test:android
+      - name: Verify packed package in example app (Android)
+        shell: bash
+        run: bash ./.github/scripts/verify-packed-example.sh android
+
   build_ios:
-    timeout-minutes: 30
+    permissions:
+      contents: read
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
+    timeout-minutes: 10
     runs-on: macOS-latest
     steps:
       - name: Check out
         uses: actions/checkout@v6
-      - name: Install Bun
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: ./scripts/ci/install-bun.sh
-      - name: Install dependencies
-        id: install_code
-        run: bun i
+        with:
+          persist-credentials: false
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+          dependency-cache-key: ${{ runner.os }}-bun-deps-root-${{ hashFiles('bun.lock', 'package.json') }}
+          dependency-cache-path: node_modules
       - name: Check plugin wiring
         run: bun run check:wiring
       - name: Build
         id: build_code
         run: bun run verify:ios
-      - name: Run iOS Tests
+      - name: Verify packed package in example app (iOS)
+        shell: bash
+        run: bash ./.github/scripts/verify-packed-example.sh ios
+      - name: Run iOS native tests
         id: test_ios
-        run: bun run test:ios
-  maestro_android_example_app:
-    timeout-minutes: 30
+        run: bun run native:test:ios
+
+  maestro_web_assets:
+    permissions:
+      contents: read
+    timeout-minutes: 10
     runs-on: ubuntu-latest
-    name: Android example app Maestro smoke
+    name: Build Maestro web assets
     steps:
       - name: Check out
         uses: actions/checkout@v6
-      - name: Install Bun
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: ./scripts/ci/install-bun.sh
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
         with:
-          node-version: 24
-      - name: Install root dependencies
-        run: bun i
+          persist-credentials: false
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+          dependency-cache-key: ${{ runner.os }}-bun-deps-root-example-${{ hashFiles('bun.lock', 'package.json', 'example-app/bun.lock', 'example-app/package.json') }}
+          dependency-cache-path: |
+            node_modules
+            example-app/node_modules
+          install-example: 'true'
+      - name: Build reusable Maestro web assets
+        run: bun scripts/maestro/build-bundles.mjs all
+      - name: Upload reusable Maestro web assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-web-assets
+          path: |
+            dist
+            .maestro-artifacts
+          include-hidden-files: true
+          if-no-files-found: error
+
+  maestro_android_apps:
+    permissions:
+      contents: read
+    needs: maestro_web_assets
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    name: Build Android Maestro app / ${{ matrix.scenario }}
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario:
+          - deferred
+          - always
+          - legacy-true
+          - at-install
+          - on-launch
+          - manual-zip
+          - manual-zip-no-persist
+          - manual-zip-config-guards
+          - manual-manifest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+          dependency-cache-key: ${{ runner.os }}-bun-deps-root-example-${{ hashFiles('bun.lock', 'package.json', 'example-app/bun.lock', 'example-app/package.json') }}
+          dependency-cache-path: |
+            node_modules
+            example-app/node_modules
+          install-example: 'true'
       - name: Setup java
         uses: actions/setup-java@v5
         with:
           distribution: 'zulu'
           java-version: '21'
-      - name: Install Maestro
-        env:
-          GH_TOKEN: ${{ github.token }}
-          MAESTRO_VERSION: cli-2.4.0
-        run: ./scripts/ci/install-maestro.sh
-      - name: Build plugin and example app
+          cache: gradle
+      - name: Download reusable Maestro web assets
+        uses: actions/download-artifact@v7
+        with:
+          name: maestro-web-assets
+          path: .
+      - name: Build Android app
+        run: bun scripts/maestro/prepare-android-scenario.mjs "${{ matrix.scenario }}"
+      - name: Upload Android app
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-android-app-${{ matrix.scenario }}
+          path: example-app/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+  maestro_ios_apps:
+    permissions:
+      contents: read
+    needs: maestro_web_assets
+    timeout-minutes: 10
+    runs-on: macOS-latest
+    name: Build iOS Maestro apps
+    steps:
+      - name: Check out
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+          dependency-cache-key: ${{ runner.os }}-bun-deps-root-example-${{ hashFiles('bun.lock', 'package.json', 'example-app/bun.lock', 'example-app/package.json') }}
+          dependency-cache-path: |
+            node_modules
+            example-app/node_modules
+          install-example: 'true'
+      - name: Download reusable Maestro web assets
+        uses: actions/download-artifact@v7
+        with:
+          name: maestro-web-assets
+          path: .
+      - name: Build iOS app
         run: |
-          bun run build
-          cd example-app
-          bun install
-          bun run build
-          bunx cap sync android
-      - name: Assemble Android example app
-        run: cd example-app/android && ./gradlew assembleDebug
+          set -euo pipefail
+          artifact_root="$RUNNER_TEMP/maestro-ios-apps"
+          derived_data_path="$RUNNER_TEMP/maestro-ios-derived"
+          scenarios=(
+            deferred
+            always
+            legacy-true
+            at-install
+            on-launch
+            manual-zip
+            manual-zip-no-persist
+            manual-zip-config-guards
+            manual-manifest
+          )
+
+          rm -rf "$artifact_root" "$derived_data_path"
+          mkdir -p "$artifact_root"
+
+          for scenario in "${scenarios[@]}"; do
+            app_artifact_path="$artifact_root/$scenario"
+            bun scripts/maestro/prepare-ios-scenario.mjs "$scenario"
+            xcodebuild \
+              -project example-app/ios/App/App.xcodeproj \
+              -scheme App \
+              -configuration Debug \
+              -destination "generic/platform=iOS Simulator" \
+              -derivedDataPath "$derived_data_path" \
+              build
+            mkdir -p "$app_artifact_path"
+            ditto "$derived_data_path/Build/Products/Debug-iphonesimulator/App.app" "$app_artifact_path/App.app"
+          done
+      - name: Upload iOS apps
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-ios-apps
+          path: ${{ runner.temp }}/maestro-ios-apps
+          if-no-files-found: error
+
+  maestro_android_example_app:
+    permissions:
+      contents: read
+    needs:
+      - maestro_web_assets
+      - maestro_android_apps
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    name: Android example app Maestro smoke / ${{ matrix.scenario }}
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario:
+          - manual-zip
+          - manual-zip-no-persist
+          - manual-zip-config-guards
+    steps:
+      - name: Check out
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+          dependency-cache-key: ${{ runner.os }}-bun-deps-root-example-${{ hashFiles('bun.lock', 'package.json', 'example-app/bun.lock', 'example-app/package.json') }}
+          dependency-cache-path: |
+            node_modules
+            example-app/node_modules
+          install-example: 'true'
+      - name: Setup java
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'zulu'
+          java-version: '21'
+          cache: gradle
+      - name: Setup Maestro
+        uses: ./.github/actions/setup-maestro
+        with:
+          maestro-version: ${{ env.MAESTRO_VERSION }}
+      - name: Download reusable Maestro web assets
+        uses: actions/download-artifact@v7
+        with:
+          name: maestro-web-assets
+          path: .
+      - name: Download Android app
+        uses: actions/download-artifact@v7
+        with:
+          name: maestro-android-app-${{ matrix.scenario }}
+          path: example-app/android/app/build/outputs/apk/debug
+      - name: Enable KVM group perms
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
       - name: Run Maestro smoke tests
-        uses: reactivecircus/android-emulator-runner@e89f39f1abbbd05b1113a29cf4db69e7540cae5a # v2
+        uses: reactivecircus/android-emulator-runner@v2.37.0 # NOSONAR version tag required by repo policy
         with:
           api-level: 30
           arch: x86_64
           profile: pixel_7
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
-          script: CAPGO_MAESTRO_SKIP_BUILD=1 CAPGO_MAESTRO_TIMEOUT_SECONDS=600 MAESTRO_DRIVER_STARTUP_TIMEOUT=300000 bun run test:maestro:android
+          script: >-
+            CAPGO_MAESTRO_SKIP_BUILD=1
+            CAPGO_MAESTRO_SKIP_BUNDLE_BUILD=1
+            CAPGO_MAESTRO_TIMEOUT_SECONDS=600
+            CAPGO_MAESTRO_TEST_RETRIES=2
+            CAPGO_MAESTRO_APP_UI_TIMEOUT_SECONDS=150
+            CAPGO_MAESTRO_APP_LAUNCH_RETRIES=2
+            MAESTRO_DRIVER_STARTUP_TIMEOUT=300000
+            CAPGO_MAESTRO_SMOKE_SCENARIO=${{ matrix.scenario }}
+            bun run test:maestro:android
       - name: Upload Maestro artifacts
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: maestro-results-android
+          name: maestro-results-android-${{ matrix.scenario }}
           path: maestro-results
+
   maestro_ios_example_app:
-    timeout-minutes: 30
+    permissions:
+      contents: read
+    needs:
+      - maestro_web_assets
+      - maestro_ios_apps
+    timeout-minutes: 10
     runs-on: macOS-latest
-    name: iOS example app Maestro smoke
+    name: iOS example app Maestro smoke / ${{ matrix.scenario }}
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario:
+          - manual-zip
+          - manual-zip-no-persist
+          - manual-zip-config-guards
     steps:
       - name: Check out
         uses: actions/checkout@v6
-      - name: Install Bun
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: ./scripts/ci/install-bun.sh
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
         with:
-          node-version: 24
-      - name: Install root dependencies
-        run: bun i
-      - name: Install Maestro
-        env:
-          GH_TOKEN: ${{ github.token }}
-          MAESTRO_VERSION: cli-2.4.0
-        run: ./scripts/ci/install-maestro.sh
+          persist-credentials: false
+      - name: Boot iOS simulator early
+        run: |
+          set -euo pipefail
+          simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
+          echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
+          xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+          install-dependencies: 'false'
+      - name: Setup Maestro
+        uses: ./.github/actions/setup-maestro
+        with:
+          maestro-version: ${{ env.MAESTRO_VERSION }}
+      - name: Download reusable Maestro web assets
+        uses: actions/download-artifact@v7
+        with:
+          name: maestro-web-assets
+          path: .
+      - name: Download iOS app
+        uses: actions/download-artifact@v7
+        with:
+          name: maestro-ios-apps
+          path: maestro-ios-apps
       - name: Run Maestro smoke tests
-        run: bun run test:maestro:ios
+        run: >-
+          CAPGO_MAESTRO_SKIP_BUILD=1
+          CAPGO_MAESTRO_SKIP_BUNDLE_BUILD=1
+          CAPGO_MAESTRO_IOS_ASSUME_CLEAN_INSTALL=1
+          CAPGO_MAESTRO_IOS_APP_PATH=maestro-ios-apps/${{ matrix.scenario }}/App.app
+          CAPGO_MAESTRO_SMOKE_SCENARIO=${{ matrix.scenario }}
+          CAPGO_MAESTRO_TEST_RETRIES=2
+          CAPGO_MAESTRO_IOS_REINSTALL_ON_RETRY=1
+          CAPGO_MAESTRO_TIMEOUT_SECONDS=300
+          MAESTRO_DRIVER_STARTUP_TIMEOUT=90000
+          bun run test:maestro:ios:smoke
       - name: Upload Maestro artifacts
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: maestro-results-ios
+          name: maestro-results-ios-${{ matrix.scenario }}
           path: maestro-results-ios
-  web:
-    timeout-minutes: 30
-    runs-on: ubuntu-latest
-    name: 'Build code and test'
+
+  maestro_ios_live_update:
+    permissions:
+      contents: read
+    needs:
+      - maestro_web_assets
+      - maestro_ios_apps
+    timeout-minutes: 10
+    runs-on: macOS-latest
+    name: iOS example app Maestro live update / ${{ matrix.scenario }}
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario:
+          - always
+          - legacy-true
+          - on-launch
     steps:
       - name: Check out
         uses: actions/checkout@v6
-      - name: Install Bun
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: ./scripts/ci/install-bun.sh
-      - name: Install dependencies
-        id: install_code
-        run: bun i
+        with:
+          persist-credentials: false
+      - name: Boot iOS simulator early
+        run: |
+          set -euo pipefail
+          simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
+          echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
+          xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+          install-dependencies: 'false'
+      - name: Setup Maestro
+        uses: ./.github/actions/setup-maestro
+        with:
+          maestro-version: ${{ env.MAESTRO_VERSION }}
+      - name: Download reusable Maestro web assets
+        uses: actions/download-artifact@v7
+        with:
+          name: maestro-web-assets
+          path: .
+      - name: Download iOS app
+        uses: actions/download-artifact@v7
+        with:
+          name: maestro-ios-apps
+          path: maestro-ios-apps
+      - name: Run live update Maestro flows
+        run: |
+          set -euo pipefail
+          CAPGO_MAESTRO_SKIP_BUILD=1 \
+          CAPGO_MAESTRO_SKIP_BUNDLE_BUILD=1 \
+          CAPGO_MAESTRO_IOS_ASSUME_CLEAN_INSTALL=1 \
+          CAPGO_MAESTRO_IOS_APP_PATH=maestro-ios-apps/${{ matrix.scenario }}/App.app \
+          CAPGO_MAESTRO_RESULTS_DIR=maestro-results-ios-live-update/${{ matrix.scenario }} \
+          CAPGO_MAESTRO_TIMEOUT_SECONDS=300 \
+          CAPGO_MAESTRO_TEST_RETRIES=2 \
+          MAESTRO_DRIVER_STARTUP_TIMEOUT=180000 \
+          ./scripts/maestro/run-ios-live-update.sh "${{ matrix.scenario }}"
+      - name: Upload live update Maestro artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-results-ios-live-update-${{ matrix.scenario }}
+          path: maestro-results-ios-live-update/${{ matrix.scenario }}
+
+  web:
+    permissions:
+      contents: read
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    name: Build code and test
+    steps:
+      - name: Check out
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+          dependency-cache-key: ${{ runner.os }}-bun-deps-root-${{ hashFiles('bun.lock', 'package.json') }}
+          dependency-cache-path: node_modules
       - name: Check plugin wiring
         run: bun run check:wiring
       - name: Lint
         id: lint_code
-        run: bun run lint
+        run: bun run eslint && bun run prettier -- --check
       - name: Build
         id: build_code
         run: bun run build
-      - name: Verify
-        id: verify_code
-        run: bun run verify:web
+      - name: Verify packed package in example app (Web)
+        shell: bash
+        run: CAPGO_VERIFY_PACKED_SKIP_BUILD=1 bash ./.github/scripts/verify-packed-example.sh web
+
   maestro_android_scenarios:
-    timeout-minutes: 30
+    permissions:
+      contents: read
+    needs:
+      - maestro_web_assets
+      - maestro_android_apps
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     name: maestro_android / ${{ matrix.scenario }}
     strategy:
@@ -190,45 +508,74 @@ jobs:
         scenario:
           - deferred
           - always
+          - legacy-true
           - at-install
           - on-launch
+          - manual-zip-config-guards
+          - manual-manifest
     steps:
       - name: Check out
         uses: actions/checkout@v6
-      - name: Install Bun
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: ./scripts/ci/install-bun.sh
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
         with:
-          node-version: 24
-      - name: Install dependencies
-        run: bun i
+          persist-credentials: false
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+          dependency-cache-key: ${{ runner.os }}-bun-deps-root-example-${{ hashFiles('bun.lock', 'package.json', 'example-app/bun.lock', 'example-app/package.json') }}
+          dependency-cache-path: |
+            node_modules
+            example-app/node_modules
+          install-example: 'true'
       - name: Setup java
         uses: actions/setup-java@v5
         with:
           distribution: 'zulu'
           java-version: '21'
-      - name: Install Maestro
-        env:
-          GH_TOKEN: ${{ github.token }}
-          MAESTRO_VERSION: cli-2.4.0
-        run: ./scripts/ci/install-maestro.sh
+          cache: gradle
+      - name: Setup Maestro
+        uses: ./.github/actions/setup-maestro
+        with:
+          maestro-version: ${{ env.MAESTRO_VERSION }}
+      - name: Download reusable Maestro web assets
+        uses: actions/download-artifact@v7
+        with:
+          name: maestro-web-assets
+          path: .
+      - name: Download Android app
+        uses: actions/download-artifact@v7
+        with:
+          name: maestro-android-app-${{ matrix.scenario }}
+          path: example-app/android/app/build/outputs/apk/debug
+      - name: Enable KVM group perms
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
       - name: Run live update Maestro flow
-        uses: reactivecircus/android-emulator-runner@e89f39f1abbbd05b1113a29cf4db69e7540cae5a # v2
+        uses: reactivecircus/android-emulator-runner@v2.37.0 # NOSONAR version tag required by repo policy
         with:
           api-level: 30
           arch: x86_64
           profile: pixel_7
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
-          script: ./scripts/maestro/run-android-live-update.sh "${{ matrix.scenario }}"
+          script: >-
+            CAPGO_MAESTRO_SKIP_BUILD=1
+            CAPGO_MAESTRO_SKIP_BUNDLE_BUILD=1
+            CAPGO_MAESTRO_FLOW_TIMEOUT_SECONDS=600
+            CAPGO_MAESTRO_FLOW_RETRIES=2
+            CAPGO_MAESTRO_SPLIT_RETRIES=2
+            CAPGO_MAESTRO_UI_STATE_TIMEOUT_SECONDS=180
+            CAPGO_MAESTRO_DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS=180
+            bash ./scripts/maestro/run-android-live-update-ci.sh "${{ matrix.scenario }}"
+
   maestro_android:
     if: always()
     needs:
       - maestro_android_scenarios
-    timeout-minutes: 30
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - name: Fail when any live update scenario fails

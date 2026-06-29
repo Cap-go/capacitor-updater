@@ -21,6 +21,7 @@ import UIKit
     private let INFO_SUFFIX: String = "_info"
     private let FALLBACK_VERSION: String = "pastVersion"
     private let NEXT_VERSION: String = "nextVersion"
+    private let PREVIEW_FALLBACK_VERSION: String = "previewFallbackVersion"
     private var unzipPercent = 0
     private let TEMP_UNZIP_PREFIX: String = "capgo_unzip_"
 
@@ -37,6 +38,7 @@ import UIKit
     public var defaultChannel: String = ""
     public var appId: String = ""
     public var deviceID = ""
+    public var previewSession = false
     public var publicKey: String = ""
 
     // Cached key ID calculated once from publicKey
@@ -49,10 +51,15 @@ import UIKit
     private static var rateLimitStatisticSent = false
 
     // Stats batching - queue events and send max once per second
-    private var statsQueue: [StatsEvent] = []
+    private var statsQueue: [QueuedStatsEvent] = []
     private let statsQueueLock = NSLock()
     private var statsFlushTimer: Timer?
     private static let statsFlushInterval: TimeInterval = 1.0
+
+    private struct QueuedStatsEvent {
+        let event: StatsEvent
+        let onSent: (() -> Void)?
+    }
 
     private static func sanitizeHeaderValue(_ value: String) -> String {
         if value.isEmpty {
@@ -81,21 +88,233 @@ import UIKit
         CapgoUpdater.buildUserAgent(appId: appId, pluginVersion: pluginVersion, versionOs: versionOs)
     }
 
+    struct RequestResult {
+        let data: Data?
+        let response: HTTPURLResponse?
+        let error: Error?
+        let timedOut: Bool
+    }
+
+    private struct DownloadRequestResult {
+        let fileURL: URL?
+        let response: HTTPURLResponse?
+        let error: Error?
+        let timedOut: Bool
+    }
+
+    enum SecurePathError: Error {
+        case emptyPath
+        case windowsPath
+        case absolutePath
+        case pathTraversal
+    }
+
+    static func resolvePathInsideDirectory(baseDirectory: URL, relativePath: String) throws -> URL {
+        if relativePath.isEmpty {
+            throw SecurePathError.emptyPath
+        }
+        if relativePath.contains("\\") || relativePath.contains("\0") {
+            throw SecurePathError.windowsPath
+        }
+        if (relativePath as NSString).isAbsolutePath {
+            throw SecurePathError.absolutePath
+        }
+
+        let canonicalBase = baseDirectory.standardizedFileURL
+        let canonicalBasePath = canonicalBase.path
+        let normalizedBasePath = canonicalBasePath.hasSuffix("/") ? canonicalBasePath : "\(canonicalBasePath)/"
+        let canonicalTarget = canonicalBase.appendingPathComponent(relativePath).standardizedFileURL
+        let canonicalTargetPath = canonicalTarget.path
+
+        if canonicalTargetPath != canonicalBasePath && !canonicalTargetPath.hasPrefix(normalizedBasePath) {
+            throw SecurePathError.pathTraversal
+        }
+
+        return canonicalTarget
+    }
+
+    static func resolveManifestTargetPath(baseDirectory: URL, fileName: String) throws -> URL {
+        let isBrotli = fileName.hasSuffix(".br")
+        let targetFileName = isBrotli ? String(fileName.dropLast(3)) : fileName
+        return try resolvePathInsideDirectory(baseDirectory: baseDirectory, relativePath: targetFileName)
+    }
+
+    private func isTimedOutError(_ error: Error?) -> Bool {
+        guard let nsError = error as NSError? else {
+            return false
+        }
+
+        return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorTimedOut
+    }
+
     private lazy var alamofireSession: Session = {
-        let configuration = URLSessionConfiguration.default
+        let configuration = URLSessionConfiguration.ephemeral
         configuration.httpAdditionalHeaders = ["User-Agent": self.userAgent]
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.urlCache = nil
         return Session(configuration: configuration)
     }()
+    private let networkResponseQueue = DispatchQueue(label: "ee.forgr.capacitor-updater.network-response", qos: .utility)
 
     public var notifyDownloadRaw: (String, Int, Bool, BundleInfo?) -> Void = { _, _, _, _  in }
     public func notifyDownload(id: String, percent: Int, ignoreMultipleOfTen: Bool = false, bundle: BundleInfo? = nil) {
-        notifyDownloadRaw(id, percent, ignoreMultipleOfTen, bundle)
+        let emit = {
+            self.notifyDownloadRaw(id, percent, ignoreMultipleOfTen, bundle)
+        }
+        if Thread.isMainThread {
+            emit()
+        } else {
+            DispatchQueue.main.async {
+                emit()
+            }
+        }
     }
     public var notifyDownload: (String, Int) -> Void = { _, _  in }
     public var notifyListeners: (String, [String: Any]) -> Void = { _, _ in }
 
     public func setLogger(_ logger: Logger) {
         self.logger = logger
+    }
+
+    private func createRequest(url: URL, method: String, parameters: [String: Any]? = nil, expectsJSONResponse: Bool = false) -> URLRequest? {
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.timeoutInterval = self.timeout
+        request.setValue(self.userAgent, forHTTPHeaderField: "User-Agent")
+        if expectsJSONResponse || parameters != nil {
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+        }
+
+        guard let parameters else {
+            return request
+        }
+
+        guard JSONSerialization.isValidJSONObject(parameters) else {
+            logger.error("Invalid JSON body for \(method) \(url.absoluteString)")
+            return nil
+        }
+
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: parameters)
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            return request
+        } catch {
+            logger.error("Error encoding request body for \(method) \(url.absoluteString)")
+            logger.debug("Error: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    func performRequest(_ request: URLRequest, label: String) -> RequestResult {
+        let waitTimeout = max(self.timeout + 5, 10)
+        let semaphore = DispatchSemaphore(value: 0)
+        var responseData: Data?
+        var httpResponse: HTTPURLResponse?
+        var requestError: Error?
+        let dataRequest = self.alamofireSession.request(request).responseData(queue: self.networkResponseQueue) { response in
+            responseData = response.data
+            httpResponse = response.response
+            requestError = response.error
+            semaphore.signal()
+        }
+        dataRequest.resume()
+
+        if semaphore.wait(timeout: .now() + waitTimeout) == .timedOut {
+            dataRequest.cancel()
+            logger.error("\(label) timed out after \(Int(waitTimeout))s")
+            return RequestResult(data: responseData, response: httpResponse, error: requestError, timedOut: true)
+        }
+
+        return RequestResult(data: responseData, response: httpResponse, error: requestError, timedOut: false)
+    }
+
+    private func performDownloadRequest(_ request: URLRequest, label: String) -> DownloadRequestResult {
+        let waitTimeout = max(self.timeout + 5, 10)
+        let semaphore = DispatchSemaphore(value: 0)
+        var tempFileURL: URL?
+        var httpResponse: HTTPURLResponse?
+        var requestError: Error?
+        let temporaryDownloadURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let destination: DownloadRequest.Destination = { _, _ in
+            (temporaryDownloadURL, [.removePreviousFile, .createIntermediateDirectories])
+        }
+        let downloadRequest = self.alamofireSession.download(request, to: destination).response(queue: self.networkResponseQueue) { response in
+            tempFileURL = response.fileURL
+            httpResponse = response.response
+            requestError = response.error
+            semaphore.signal()
+        }
+        downloadRequest.resume()
+
+        if semaphore.wait(timeout: .now() + waitTimeout) == .timedOut {
+            downloadRequest.cancel()
+            logger.error("\(label) timed out after \(Int(waitTimeout))s")
+            return DownloadRequestResult(
+                fileURL: existingDownloadFileURL(tempFileURL, fallback: temporaryDownloadURL),
+                response: httpResponse,
+                error: requestError,
+                timedOut: true
+            )
+        }
+
+        if isTimedOutError(requestError) {
+            logger.error("\(label) timed out after \(Int(waitTimeout))s")
+        }
+
+        return DownloadRequestResult(
+            fileURL: existingDownloadFileURL(tempFileURL, fallback: temporaryDownloadURL),
+            response: httpResponse,
+            error: requestError,
+            timedOut: isTimedOutError(requestError)
+        )
+    }
+
+    private func existingDownloadFileURL(_ fileURL: URL?, fallback: URL) -> URL? {
+        let fileManager = FileManager.default
+        if let fileURL, fileManager.fileExists(atPath: fileURL.path) {
+            return fileURL
+        }
+        return fileManager.fileExists(atPath: fallback.path) ? fallback : nil
+    }
+
+    private func storeDownloadedFile(_ downloadedFileURL: URL, at tempPath: URL, existingBytes: Int64, response: HTTPURLResponse?) throws {
+        let fileManager = FileManager.default
+        if existingBytes > 0 && (response?.statusCode == 206 || response == nil) {
+            let resumedData = try Data(contentsOf: downloadedFileURL)
+            let fileHandle = try FileHandle(forWritingTo: tempPath)
+            fileHandle.seek(toFileOffset: UInt64(existingBytes))
+            fileHandle.write(resumedData)
+            try fileHandle.close()
+            try? fileManager.removeItem(at: downloadedFileURL)
+            return
+        }
+
+        if fileManager.fileExists(atPath: tempPath.path) {
+            try fileManager.removeItem(at: tempPath)
+        }
+        try fileManager.moveItem(at: downloadedFileURL, to: tempPath)
+    }
+
+    private func persistPartialDownload(_ downloadResult: DownloadRequestResult, id: String, tempPath: URL, existingBytes: Int64) {
+        guard let downloadedFileURL = downloadResult.fileURL else {
+            return
+        }
+        guard FileManager.default.fileExists(atPath: downloadedFileURL.path) else {
+            return
+        }
+        if let statusCode = downloadResult.response?.statusCode, statusCode < 200 || statusCode >= 300 {
+            return
+        }
+
+        do {
+            try storeDownloadedFile(downloadedFileURL, at: tempPath, existingBytes: existingBytes, response: downloadResult.response)
+            logger.info("Stored partial download for retry")
+        } catch {
+            logger.error("Failed to store partial download")
+            logger.debug("Path: \(downloadedFileURL.path), Error: \(error)")
+        }
     }
 
     deinit {
@@ -149,6 +368,22 @@ import UIKit
         return !self.isDevEnvironment && !self.isAppStoreReceiptSandbox() && !self.hasEmbeddedMobileProvision()
     }
 
+    private func installSource() -> String? {
+        if isEmulator() || self.isDevEnvironment || self.hasEmbeddedMobileProvision() {
+            return nil
+        }
+        guard let receiptURL = Bundle.main.appStoreReceiptURL else {
+            return nil
+        }
+        if receiptURL.lastPathComponent == "sandboxReceipt" {
+            return "testflight"
+        }
+        guard FileManager.default.fileExists(atPath: receiptURL.path) else {
+            return nil
+        }
+        return "app_store"
+    }
+
     /**
      * Checks if there is sufficient disk space for a download.
      * Matches Android behavior: 2x safety margin, throws "insufficient_disk_space"
@@ -188,7 +423,7 @@ import UIKit
         if statusCode == 429 {
             // Send a statistic about the rate limit BEFORE setting the flag
             // Only send once to prevent infinite loop if the stat request itself gets rate limited
-            if !CapgoUpdater.rateLimitExceeded && !CapgoUpdater.rateLimitStatisticSent {
+            if !previewSession && !CapgoUpdater.rateLimitExceeded && !CapgoUpdater.rateLimitStatisticSent {
                 CapgoUpdater.rateLimitStatisticSent = true
 
                 // Dispatch to background queue to avoid blocking the main thread
@@ -224,8 +459,8 @@ import UIKit
         self.alamofireSession.request(
             self.statsUrl,
             method: .post,
-            parameters: parameters,
-            encoder: JSONParameterEncoder.default,
+            parameters: parameters.toParameters(),
+            encoding: JSONEncoding.default,
             requestModifier: { $0.timeoutInterval = self.timeout }
         ).responseData { response in
             switch response.result {
@@ -314,23 +549,76 @@ import UIKit
         }
     }
 
-    private func validateZipEntry(path: String, destUnZip: URL) throws {
-        // Check for Windows paths
-        if path.contains("\\") {
+    private func resolveZipEntry(path: String, destUnZip: URL) throws -> URL {
+        do {
+            return try Self.resolvePathInsideDirectory(baseDirectory: destUnZip, relativePath: path)
+        } catch SecurePathError.windowsPath {
             logger.error("Unzip failed: Windows path not supported")
             logger.debug("Invalid path: \(path)")
             self.sendStats(action: "windows_path_fail")
             throw CustomError.cannotUnzip
-        }
-
-        // Check for path traversal
-        let fileURL = destUnZip.appendingPathComponent(path)
-        let canonicalPath = fileURL.standardizedFileURL.path
-        let canonicalDir = destUnZip.standardizedFileURL.path
-
-        if !canonicalPath.hasPrefix(canonicalDir) {
+        } catch {
             self.sendStats(action: "canonical_path_fail")
             throw CustomError.cannotUnzip
+        }
+    }
+
+    private func extractZipEntry(_ archive: Archive, entry: Entry, to destPath: URL) throws {
+        let fileManager = FileManager.default
+
+        switch entry.type {
+        case .directory:
+            try fileManager.createDirectory(at: destPath, withIntermediateDirectories: true, attributes: nil)
+        case .file:
+            let parentDir = destPath.deletingLastPathComponent()
+            try fileManager.createDirectory(at: parentDir, withIntermediateDirectories: true, attributes: nil)
+
+            if fileManager.fileExists(atPath: destPath.path) {
+                try fileManager.removeItem(at: destPath)
+            }
+
+            guard fileManager.createFile(atPath: destPath.path, contents: nil) else {
+                throw CustomError.cannotUnzip
+            }
+
+            let fileHandle = try FileHandle(forWritingTo: destPath)
+            defer {
+                fileHandle.closeFile()
+            }
+
+            _ = try archive.extract(entry, bufferSize: 16 * 1024, skipCRC32: true) { data in
+                if !data.isEmpty {
+                    fileHandle.write(data)
+                }
+            }
+        case .symlink:
+            var linkData = Data()
+            _ = try archive.extract(entry, bufferSize: 16 * 1024, skipCRC32: true) { data in
+                linkData.append(data)
+            }
+
+            guard let linkPath = String(data: linkData, encoding: .utf8) else {
+                throw CustomError.cannotUnzip
+            }
+
+            let parentDir = destPath.deletingLastPathComponent()
+            try fileManager.createDirectory(at: parentDir, withIntermediateDirectories: true, attributes: nil)
+
+            let isAbsolutePath = (linkPath as NSString).isAbsolutePath
+            let linkURL = URL(fileURLWithPath: linkPath, relativeTo: isAbsolutePath ? nil : parentDir)
+            let canonicalPath = linkURL.standardizedFileURL.path
+            let canonicalDir = parentDir.standardizedFileURL.path
+            let normalizedDir = canonicalDir.hasSuffix("/") ? canonicalDir : "\(canonicalDir)/"
+
+            if canonicalPath != canonicalDir && !canonicalPath.hasPrefix(normalizedDir) {
+                throw CustomError.cannotUnzip
+            }
+
+            if fileManager.fileExists(atPath: destPath.path) {
+                try fileManager.removeItem(at: destPath)
+            }
+
+            try fileManager.createSymbolicLink(atPath: destPath.path, withDestinationPath: linkPath)
         }
     }
 
@@ -360,10 +648,20 @@ import UIKit
 
         do {
             for entry in archive {
-                // Validate entry path for security
-                try validateZipEntry(path: entry.path, destUnZip: destUnZip)
+                let destPath = try resolveZipEntry(path: entry.path, destUnZip: destUnZip)
 
-                let destPath = destUnZip.appendingPathComponent(entry.path)
+                if entry.type == .directory {
+                    try FileManager.default.createDirectory(at: destPath, withIntermediateDirectories: true, attributes: nil)
+                    processedEntries += 1
+                    if notify && totalEntries > 0 {
+                        let newPercent = self.calcTotalPercent(percent: Int(Double(processedEntries) / Double(totalEntries) * 100), min: 75, max: 81)
+                        if newPercent != self.unzipPercent {
+                            self.unzipPercent = newPercent
+                            self.notifyDownload(id: id, percent: newPercent)
+                        }
+                    }
+                    continue
+                }
 
                 // Create parent directories if needed
                 let parentDir = destPath.deletingLastPathComponent()
@@ -371,8 +669,7 @@ import UIKit
                     try FileManager.default.createDirectory(at: parentDir, withIntermediateDirectories: true, attributes: nil)
                 }
 
-                // Extract the entry
-                _ = try archive.extract(entry, to: destPath, skipCRC32: true)
+                try self.extractZipEntry(archive, entry: entry, to: destPath)
 
                 // Update progress
                 processedEntries += 1
@@ -455,11 +752,11 @@ import UIKit
         }
     }
 
-    private func createInfoObject() -> InfoObject {
+    private func createInfoObject(appIdOverride: String? = nil) -> InfoObject {
         return InfoObject(
             platform: "ios",
             device_id: self.deviceID,
-            app_id: self.appId,
+            app_id: appIdOverride ?? self.appId,
             custom_id: self.customId,
             version_build: self.versionBuild,
             version_code: self.versionCode,
@@ -468,6 +765,7 @@ import UIKit
             plugin_version: self.pluginVersion,
             is_emulator: self.isEmulator(),
             is_prod: self.isProd(),
+            installSource: self.installSource(),
             action: nil,
             channel: nil,
             defaultChannel: self.defaultChannel,
@@ -475,8 +773,7 @@ import UIKit
         )
     }
 
-    public func getLatest(url: URL, channel: String?) -> AppVersion {
-        let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
+    public func getLatest(url: URL, channel: String?, appIdOverride: String? = nil) -> AppVersion {
         let latest: AppVersion = AppVersion()
         func applyLatestResponse(_ value: AppVersionDec?) {
             if let url = value?.url {
@@ -519,47 +816,75 @@ import UIKit
                 latest.comment = comment
             }
         }
-        var parameters: InfoObject = self.createInfoObject()
+
+        var parameters: InfoObject = self.createInfoObject(appIdOverride: appIdOverride)
         if let channel = channel {
             parameters.defaultChannel = channel
         }
-        logger.info("Auto-update parameters: \(parameters)")
-        let request = alamofireSession.request(url, method: .post, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
-
-        request.validate().responseDecodable(of: AppVersionDec.self) { response in
-            switch response.result {
-            case .success:
-                latest.statusCode = response.response?.statusCode ?? 0
-                applyLatestResponse(response.value)
-            case let .failure(error):
-                self.logger.error("Error getting latest version")
-                self.logger.debug("Response: \(response.value.debugDescription), Error: \(error)")
-                latest.statusCode = response.response?.statusCode ?? 0
-                if let data = response.data,
-                   let decoded = try? JSONDecoder().decode(AppVersionDec.self, from: data) {
-                    applyLatestResponse(decoded)
-                    let decodedError = decoded.error ?? ""
-                    let decodedKind = decoded.kind ?? ""
-                    if decodedError.isEmpty && decodedKind.isEmpty {
-                        if latest.message == nil || latest.message?.isEmpty == true {
-                            latest.message = "Error getting Latest"
-                        }
-                        if latest.error == nil || latest.error?.isEmpty == true {
-                            latest.error = "response_error"
-                        }
-                        if latest.kind == nil || latest.kind?.isEmpty == true {
-                            latest.kind = "failed"
-                        }
-                    }
-                } else {
-                    latest.message = "Error getting Latest"
-                    latest.error = "response_error"
-                    latest.kind = "failed"
-                }
-            }
-            semaphore.signal()
+        guard let request = createRequest(url: url, method: "POST", parameters: parameters.toParameters()) else {
+            latest.message = "Error getting Latest"
+            latest.error = "request_error"
+            latest.kind = "failed"
+            return latest
         }
-        semaphore.wait()
+
+        let result = performRequest(request, label: "getLatest")
+        latest.statusCode = result.response?.statusCode ?? 0
+
+        if result.timedOut {
+            latest.message = "Error getting Latest"
+            latest.error = "timeout_error"
+            latest.kind = "failed"
+            return latest
+        }
+
+        if let error = result.error {
+            self.logger.error("Error getting latest version")
+            self.logger.debug("Error: \(error.localizedDescription)")
+            latest.message = "Error getting Latest"
+            latest.error = "response_error"
+            latest.kind = "failed"
+            return latest
+        }
+
+        guard let data = result.data else {
+            self.logger.error("Missing latest version response data")
+            latest.message = "Error getting Latest"
+            latest.error = "response_error"
+            latest.kind = "failed"
+            return latest
+        }
+
+        if self.checkAndHandleRateLimitResponse(statusCode: latest.statusCode) {
+            latest.message = "Rate limit exceeded"
+            latest.error = "rate_limit_exceeded"
+            latest.kind = "failed"
+            return latest
+        }
+
+        guard let responseValue = try? JSONDecoder().decode(AppVersionDec.self, from: data) else {
+            self.logger.error("Error decoding latest version")
+            latest.message = "Error getting Latest"
+            latest.error = "decode_error"
+            latest.kind = "failed"
+            return latest
+        }
+
+        applyLatestResponse(responseValue)
+
+        if latest.statusCode < 200 || latest.statusCode >= 300 {
+            if latest.message == nil || latest.message?.isEmpty == true {
+                latest.message = responseValue.message ?? "Server error: \(latest.statusCode)"
+            }
+            if latest.error == nil || latest.error?.isEmpty == true {
+                latest.error = responseValue.error ?? "response_error"
+            }
+            if latest.kind == nil || latest.kind?.isEmpty == true {
+                latest.kind = responseValue.kind ?? "failed"
+            }
+            return latest
+        }
+
         return latest
     }
 
@@ -601,6 +926,132 @@ import UIKit
         return actualHash == expectedHash
     }
 
+    private func resolveManifestFileHash(entry: ManifestEntry, sessionKey: String) -> String? {
+        guard var fileHash = entry.file_hash, !fileHash.isEmpty else {
+            return nil
+        }
+        if !self.publicKey.isEmpty && !sessionKey.isEmpty {
+            do {
+                fileHash = try CryptoCipher.decryptChecksum(checksum: fileHash, publicKey: self.publicKey)
+            } catch {
+                logger.error("Checksum decryption failed while checking missing manifest files")
+                logger.debug("File: \(entry.file_name ?? "unknown"), Error: \(error.localizedDescription)")
+                return nil
+            }
+        }
+        return fileHash
+    }
+
+    private func isManifestEntryAvailableLocally(entry: ManifestEntry, sessionKey: String) -> Bool {
+        guard let fileName = entry.file_name,
+              let fileHash = resolveManifestFileHash(entry: entry, sessionKey: sessionKey) else {
+            return false
+        }
+
+        let builtinFolder = Bundle.main.bundleURL.appendingPathComponent("public")
+        let builtinFilePath = builtinFolder.appendingPathComponent(fileName)
+        if FileManager.default.fileExists(atPath: builtinFilePath.path) && verifyChecksum(file: builtinFilePath, expectedHash: fileHash) {
+            return true
+        }
+
+        let fileNameWithoutPath = (fileName as NSString).lastPathComponent
+        let isBrotli = fileName.hasSuffix(".br")
+        let cacheBaseName = isBrotli ? String(fileNameWithoutPath.dropLast(3)) : fileNameWithoutPath
+        let cacheFilePath = cacheFolder.appendingPathComponent("\(fileHash)_\(cacheBaseName)")
+        if FileManager.default.fileExists(atPath: cacheFilePath.path) && verifyChecksum(file: cacheFilePath, expectedHash: fileHash) {
+            return true
+        }
+
+        if isBrotli {
+            let legacyCacheFilePath = cacheFolder.appendingPathComponent("\(fileHash)_\(fileNameWithoutPath)")
+            if FileManager.default.fileExists(atPath: legacyCacheFilePath.path) && verifyChecksum(file: legacyCacheFilePath, expectedHash: fileHash) {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    public func getMissingBundleFiles(manifest: [ManifestEntry], sessionKey: String) -> [ManifestEntry] {
+        return manifest.filter { entry in
+            !isManifestEntryAvailableLocally(entry: entry, sessionKey: sessionKey)
+        }
+    }
+
+    public func missingBundleFilesResult(manifest: [ManifestEntry], sessionKey: String) -> [String: Any] {
+        let missing = getMissingBundleFiles(manifest: manifest, sessionKey: sessionKey)
+        return [
+            "missing": missing.map { $0.toDict() },
+            "total": manifest.count,
+            "missingCount": missing.count,
+            "reusableCount": manifest.count - missing.count
+        ]
+    }
+
+    private func manifestSizeUrl(from updateUrl: URL) -> URL {
+        var components = URLComponents(url: updateUrl, resolvingAgainstBaseURL: false)
+        let path = components?.path ?? updateUrl.path
+        let trimmedPath = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        components?.path = trimmedPath == ""
+            ? "/manifest_size"
+            : "/\(trimmedPath)/manifest_size"
+        components?.query = nil
+        return components?.url ?? updateUrl.appendingPathComponent("manifest_size")
+    }
+
+    private func unavailableBundleSizeResult(manifest: [ManifestEntry], error: String) -> [String: Any] {
+        return [
+            "totalSize": 0,
+            "knownFiles": 0,
+            "unknownFiles": manifest.count,
+            "files": manifest.map {
+                var dict = $0.toDict()
+                dict["error"] = error
+                return dict
+            }
+        ]
+    }
+
+    public func getBundleDownloadSize(updateUrl: URL, version: String?, manifest: [ManifestEntry]) -> [String: Any] {
+        if manifest.isEmpty {
+            return [
+                "totalSize": 0,
+                "knownFiles": 0,
+                "unknownFiles": 0,
+                "files": []
+            ]
+        }
+
+        var parameters = self.createInfoObject().toParameters()
+        parameters["version"] = version ?? ""
+        parameters["manifest"] = manifest.map { $0.toDict() }
+
+        guard let request = createRequest(url: manifestSizeUrl(from: updateUrl), method: "POST", parameters: parameters) else {
+            return unavailableBundleSizeResult(manifest: manifest, error: "request_error")
+        }
+
+        let result = performRequest(request, label: "getBundleDownloadSize")
+        if result.timedOut {
+            return unavailableBundleSizeResult(manifest: manifest, error: "timeout_error")
+        }
+        if let error = result.error {
+            logger.error("Error getting bundle download size")
+            logger.debug("Error: \(error.localizedDescription)")
+            return unavailableBundleSizeResult(manifest: manifest, error: "response_error")
+        }
+        guard let data = result.data,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return unavailableBundleSizeResult(manifest: manifest, error: "parse_error")
+        }
+
+        let statusCode = result.response?.statusCode ?? 0
+        if statusCode < 200 || statusCode >= 300 {
+            return unavailableBundleSizeResult(manifest: manifest, error: "response_error")
+        }
+
+        return json
+    }
+
     public func downloadManifest(manifest: [ManifestEntry], version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
         let id = self.randomString(length: 10)
         logger.info("downloadManifest start \(id)")
@@ -626,8 +1077,8 @@ import UIKit
 
         let totalFiles = manifest.count
 
-        // Configure concurrent operation count similar to Android: min(64, max(32, totalFiles))
-        manifestDownloadQueue.maxConcurrentOperationCount = min(64, max(32, totalFiles))
+        // Keep this bounded because each manifest operation waits on a URLSession callback.
+        manifestDownloadQueue.maxConcurrentOperationCount = min(8, max(1, totalFiles))
 
         // Thread-safe counters for concurrent operations
         let completedFiles = AtomicCounter()
@@ -699,8 +1150,22 @@ import UIKit
             let legacyCacheFilePath: URL? = isBrotli ? cacheFolder.appendingPathComponent("\(finalFileHash)_\(fileNameWithoutPath)") : nil
 
             let destFileName = isBrotli ? String(fileName.dropLast(3)) : fileName
-            let destFilePath = destFolder.appendingPathComponent(destFileName)
-            let builtinFilePath = builtinFolder.appendingPathComponent(fileName)
+            let destFilePath: URL
+            let builtinFilePath: URL
+            do {
+                destFilePath = try Self.resolveManifestTargetPath(baseDirectory: destFolder, fileName: fileName)
+                builtinFilePath = try Self.resolvePathInsideDirectory(baseDirectory: builtinFolder, relativePath: fileName)
+            } catch {
+                logger.error("Invalid manifest file path: \(fileName)")
+                self.sendStats(action: "manifest_path_fail", versionName: "\(version):\(fileName)")
+                errorLock.lock()
+                if downloadError == nil {
+                    downloadError = error
+                }
+                errorLock.unlock()
+                hasError.value = true
+                continue
+            }
 
             // Create parent directories synchronously (before operations start)
             try? FileManager.default.createDirectory(at: destFilePath.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
@@ -712,7 +1177,7 @@ import UIKit
                 do {
                     // Try builtin first
                     if FileManager.default.fileExists(atPath: builtinFilePath.path) && self.verifyChecksum(file: builtinFilePath, expectedHash: finalFileHash) {
-                        try FileManager.default.copyItem(at: builtinFilePath, to: destFilePath)
+                        try self.copyItemReplacing(from: builtinFilePath, to: destFilePath)
                         self.logger.info("downloadManifest \(fileName) using builtin file \(id)")
                     }
                     // Try cache
@@ -766,13 +1231,13 @@ import UIKit
                 userInfo: [NSLocalizedDescriptionKey: "Manifest download failed due to invalid or missing entries"]
             )
             // Update bundle status to ERROR if download failed
-            let errorBundle = bundleInfo.setStatus(status: BundleStatus.ERROR.localizedString)
+            let errorBundle = bundleInfo.setStatus(status: BundleStatus.ERROR.storedValue)
             self.saveBundleInfo(id: id, bundle: errorBundle)
             throw resolvedError
         }
 
         // Update bundle status to PENDING after successful download
-        let updatedBundle = bundleInfo.setStatus(status: BundleStatus.PENDING.localizedString)
+        let updatedBundle = bundleInfo.setStatus(status: BundleStatus.PENDING.storedValue)
         self.saveBundleInfo(id: id, bundle: updatedBundle)
 
         // Send stats for manifest download complete
@@ -797,105 +1262,152 @@ import UIKit
         version: String,
         bundleId: String
     ) throws {
-        let semaphore = DispatchSemaphore(value: 0)
-        var downloadError: Error?
+        guard let url = URL(string: downloadUrl) else {
+            throw NSError(
+                domain: "ManifestDownloadError",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Invalid manifest download URL for file \(fileName): \(downloadUrl)"]
+            )
+        }
 
-        self.alamofireSession.download(downloadUrl).responseData { response in
-            defer { semaphore.signal() }
+        guard let request = createRequest(url: url, method: "GET") else {
+            throw NSError(
+                domain: "ManifestDownloadError",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Invalid manifest request for file \(fileName): \(downloadUrl)"]
+            )
+        }
 
-            switch response.result {
-            case .success(let data):
-                do {
-                    let statusCode = response.response?.statusCode ?? 200
-                    if statusCode < 200 || statusCode >= 300 {
-                        self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
-                        if let stringData = String(data: data, encoding: .utf8) {
-                            throw NSError(domain: "StatusCodeError", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid. Data: \(stringData) for file \(fileName) at url \(downloadUrl)"])
-                        } else {
-                            throw NSError(domain: "StatusCodeError", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid for file \(fileName) at url \(downloadUrl)"])
-                        }
-                    }
+        let result = performRequest(request, label: "downloadManifestFile \(fileName)")
 
-                    // Add decryption step if public key is set and sessionKey is provided
-                    var finalData = data
-                    if !self.publicKey.isEmpty && !sessionKey.isEmpty {
-                        let tempFile = self.cacheFolder.appendingPathComponent("temp_\(UUID().uuidString)")
-                        try finalData.write(to: tempFile)
-                        do {
-                            try CryptoCipher.decryptFile(filePath: tempFile, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
-                        } catch {
-                            self.sendStats(action: "decrypt_fail", versionName: version)
-                            throw error
-                        }
-                        finalData = try Data(contentsOf: tempFile)
-                        try FileManager.default.removeItem(at: tempFile)
-                    }
+        if result.timedOut {
+            self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
+            throw NSError(
+                domain: NSURLErrorDomain,
+                code: NSURLErrorTimedOut,
+                userInfo: [NSLocalizedDescriptionKey: "Timed out downloading manifest file \(fileName) at url \(downloadUrl)"]
+            )
+        }
 
-                    // Decompress Brotli if needed
-                    if isBrotli {
-                        guard let decompressedData = self.decompressBrotli(data: finalData, fileName: fileName) else {
-                            self.sendStats(action: "download_manifest_brotli_fail", versionName: "\(version):\(destFileName)")
-                            throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data for file \(fileName) at url \(downloadUrl)"])
-                        }
-                        finalData = decompressedData
-                    }
+        if let error = result.error {
+            self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
+            self.logger.error("Manifest file download network error")
+            self.logger.debug("Bundle: \(bundleId), File: \(fileName), Error: \(error.localizedDescription)")
+            throw error
+        }
 
-                    // Write to destination
-                    try finalData.write(to: destFilePath)
+        guard let data = result.data else {
+            self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
+            throw NSError(
+                domain: "ManifestDownloadError",
+                code: 3,
+                userInfo: [NSLocalizedDescriptionKey: "Manifest file response was empty for \(fileName) at url \(downloadUrl)"]
+            )
+        }
 
-                    // Always verify checksum when file_hash is present
-                    let calculatedChecksum = CryptoCipher.calcChecksum(filePath: destFilePath)
-                    CryptoCipher.logChecksumInfo(label: "Calculated checksum", hexChecksum: calculatedChecksum)
-                    CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: fileHash)
-                    if calculatedChecksum != fileHash {
-                        try? FileManager.default.removeItem(at: destFilePath)
-                        self.sendStats(action: "download_manifest_checksum_fail", versionName: "\(version):\(destFileName)")
-                        throw NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash)) for file \(fileName) at url \(downloadUrl)"])
-                    }
-
-                    // Save to cache
-                    try finalData.write(to: cacheFilePath)
-
-                    self.logger.info("Manifest file downloaded and cached")
-                    self.logger.debug("Bundle: \(bundleId), File: \(fileName), Brotli: \(isBrotli), Encrypted: \(!self.publicKey.isEmpty && !sessionKey.isEmpty)")
-
-                } catch {
-                    downloadError = error
-                    self.logger.error("Manifest file download failed")
-                    self.logger.debug("Bundle: \(bundleId), File: \(fileName), Error: \(error.localizedDescription)")
-                }
-
-            case .failure(let error):
-                downloadError = error
-                self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
-                self.logger.error("Manifest file download network error")
-                self.logger.debug("Bundle: \(bundleId), File: \(fileName), Error: \(error.localizedDescription), Response: \(response.debugDescription)")
+        let statusCode = result.response?.statusCode ?? 200
+        if statusCode < 200 || statusCode >= 300 {
+            self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
+            if let stringData = String(data: data, encoding: .utf8) {
+                throw NSError(domain: "StatusCodeError", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid. Data: \(stringData) for file \(fileName) at url \(downloadUrl)"])
+            } else {
+                throw NSError(domain: "StatusCodeError", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid for file \(fileName) at url \(downloadUrl)"])
             }
         }
 
-        semaphore.wait()
+        do {
+            // Add decryption step if public key is set and sessionKey is provided
+            var finalData = data
+            if !self.publicKey.isEmpty && !sessionKey.isEmpty {
+                let tempFile = self.cacheFolder.appendingPathComponent("temp_\(UUID().uuidString)")
+                try finalData.write(to: tempFile)
+                do {
+                    try CryptoCipher.decryptFile(filePath: tempFile, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
+                } catch {
+                    self.sendStats(action: "decrypt_fail", versionName: version)
+                    throw error
+                }
+                finalData = try Data(contentsOf: tempFile)
+                try FileManager.default.removeItem(at: tempFile)
+            }
 
-        if let error = downloadError {
+            // Decompress Brotli if needed
+            if isBrotli {
+                guard let decompressedData = self.decompressBrotli(data: finalData, fileName: fileName) else {
+                    self.sendStats(action: "download_manifest_brotli_fail", versionName: "\(version):\(destFileName)")
+                    throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data for file \(fileName) at url \(downloadUrl)"])
+                }
+                finalData = decompressedData
+            }
+
+            // Write to destination (replace if leftover from a previous failed download)
+            try writeDataAtomically(finalData, to: destFilePath)
+
+            // Always verify checksum when file_hash is present
+            let calculatedChecksum = CryptoCipher.calcChecksum(filePath: destFilePath)
+            CryptoCipher.logChecksumInfo(label: "Calculated checksum", hexChecksum: calculatedChecksum)
+            CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: fileHash)
+            if calculatedChecksum != fileHash {
+                try? FileManager.default.removeItem(at: destFilePath)
+                self.sendStats(action: "download_manifest_checksum_fail", versionName: "\(version):\(destFileName)")
+                throw NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash)) for file \(fileName) at url \(downloadUrl)"])
+            }
+
+            // Save to cache (replace stale cache entries from partial or concurrent downloads)
+            try writeDataAtomically(finalData, to: cacheFilePath)
+
+            self.logger.info("Manifest file downloaded and cached")
+            self.logger.debug("Bundle: \(bundleId), File: \(fileName), Brotli: \(isBrotli), Encrypted: \(!self.publicKey.isEmpty && !sessionKey.isEmpty)")
+        } catch {
+            self.logger.error("Manifest file download failed")
+            self.logger.debug("Bundle: \(bundleId), File: \(fileName), Error: \(error.localizedDescription)")
             throw error
         }
+    }
+
+    /// Atomically write data to a file, replacing any existing file at the destination.
+    private func writeDataAtomically(_ data: Data, to destination: URL) throws {
+        let fileManager = FileManager.default
+        let tempURL = destination.deletingLastPathComponent().appendingPathComponent("\(destination.lastPathComponent).\(UUID().uuidString).tmp")
+        defer {
+            try? fileManager.removeItem(at: tempURL)
+        }
+
+        try data.write(to: tempURL, options: .atomic)
+        if fileManager.fileExists(atPath: destination.path) {
+            try fileManager.removeItem(at: destination)
+        }
+        try fileManager.moveItem(at: tempURL, to: destination)
+    }
+
+    /// Copy a file to the destination, replacing any existing file.
+    private func copyItemReplacing(from source: URL, to destination: URL) throws {
+        let fileManager = FileManager.default
+        if fileManager.fileExists(atPath: destination.path) {
+            try fileManager.removeItem(at: destination)
+        }
+        try fileManager.copyItem(at: source, to: destination)
     }
 
     /// Atomically try to copy a file from cache - returns true if successful, false if file doesn't exist or copy failed
     /// This handles the race condition where OS can delete cache files between exists() check and copy
     private func tryCopyFromCache(from source: URL, to destination: URL, expectedHash: String) -> Bool {
+        let fileManager = FileManager.default
+
         // First quick check - if file doesn't exist, don't bother
-        guard FileManager.default.fileExists(atPath: source.path) else {
+        guard fileManager.fileExists(atPath: source.path) else {
             return false
         }
 
-        // Verify checksum before copy
+        // Verify checksum before copy; remove stale cache entries that would block re-download
         guard verifyChecksum(file: source, expectedHash: expectedHash) else {
+            try? fileManager.removeItem(at: source)
             return false
         }
 
         // Try to copy - if it fails (file deleted by OS between check and copy), return false
         do {
-            try FileManager.default.copyItem(at: source, to: destination)
+            try copyItemReplacing(from: source, to: destination)
             return true
         } catch {
             // File was deleted between check and copy, or other IO error - caller should download instead
@@ -1024,7 +1536,6 @@ import UIKit
 
     public func download(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
         let id: String = self.randomString(length: 10)
-        let semaphore = DispatchSemaphore(value: 0)
         // Each download uses its own temp files keyed by bundle ID to prevent collisions
         if version != getLocalUpdateVersion(for: id) {
             cleanDownloadData(for: id)
@@ -1036,10 +1547,11 @@ import UIKit
         try checkDiskSpace()
 
         var checksum = ""
-        var targetSize = -1
         var lastSentProgress = 0
-        var totalReceivedBytes: Int64 = loadDownloadProgress(for: id) // Retrieving the amount of already downloaded data if exist, defined at 0 otherwise
-        let requestHeaders: HTTPHeaders = ["Range": "bytes=\(totalReceivedBytes)-"]
+        let totalReceivedBytes: Int64 = loadDownloadProgress(for: id) // Retrieving the amount of already downloaded data if exist, defined at 0 otherwise
+        let tempPath = tempDataPath(for: id)
+        let bundleInfo = BundleInfo(id: id, version: version, status: BundleStatus.DOWNLOADING, downloaded: Date(), checksum: checksum, link: link, comment: comment)
+        self.saveBundleInfo(id: id, bundle: bundleInfo)
 
         // Send stats for zip download start
         self.sendStats(action: "download_zip_start", versionName: version)
@@ -1049,66 +1561,61 @@ import UIKit
             self.notifyDownload(id: id, percent: 0, ignoreMultipleOfTen: true)
         }
         var mainError: NSError?
-        let monitor = ClosureEventMonitor()
-        monitor.requestDidCompleteTaskWithError = { (_, _, error) in
-            if error != nil {
-                self.logger.error("Downloading failed - ClosureEventMonitor activated")
-                mainError = error as NSError?
-            }
+
+        guard var request = createRequest(url: url, method: "GET") else {
+            self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum, link: link, comment: comment))
+            throw NSError(
+                domain: "DownloadError",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Invalid download request for \(url.absoluteString)"]
+            )
         }
-        let configuration = URLSessionConfiguration.default
-        configuration.httpAdditionalHeaders = ["User-Agent": self.userAgent]
-        let session = Session(configuration: configuration, eventMonitors: [monitor])
 
-        let request = session.streamRequest(url, headers: requestHeaders).validate().onHTTPResponse(perform: { response  in
-            if let contentLength = response.headers.value(for: "Content-Length") {
-                targetSize = (Int(contentLength) ?? -1) + Int(totalReceivedBytes)
-            }
-        }).responseStream { [weak self] streamResponse in
-            guard let self = self else { return }
-            switch streamResponse.event {
-            case .stream(let result):
-                if case .success(let data) = result {
-                    self.tempData.append(data)
+        if totalReceivedBytes > 0 {
+            request.setValue("bytes=\(totalReceivedBytes)-", forHTTPHeaderField: "Range")
+        }
 
-                    self.savePartialData(startingAt: UInt64(totalReceivedBytes), for: id) // Saving the received data in the package_<id>.tmp file
-                    totalReceivedBytes += Int64(data.count)
+        let downloadResult = performDownloadRequest(request, label: "download \(version)")
 
-                    let percent = max(10, Int((Double(totalReceivedBytes) / Double(targetSize)) * 70.0))
+        if downloadResult.timedOut {
+            persistPartialDownload(downloadResult, id: id, tempPath: tempPath, existingBytes: totalReceivedBytes)
+            mainError = NSError(
+                domain: NSURLErrorDomain,
+                code: NSURLErrorTimedOut,
+                userInfo: [NSLocalizedDescriptionKey: "Timed out downloading bundle from \(url.absoluteString)"]
+            )
+        } else if let error = downloadResult.error {
+            logger.error("Download failed")
+            persistPartialDownload(downloadResult, id: id, tempPath: tempPath, existingBytes: totalReceivedBytes)
+            mainError = error as NSError
+        } else if let statusCode = downloadResult.response?.statusCode, statusCode < 200 || statusCode >= 300 {
+            logger.error("Download failed")
+            mainError = NSError(
+                domain: "DownloadError",
+                code: statusCode,
+                userInfo: [NSLocalizedDescriptionKey: "Download request failed with status code \(statusCode)"]
+            )
+        } else if let downloadedFileURL = downloadResult.fileURL {
+            do {
+                try storeDownloadedFile(downloadedFileURL, at: tempPath, existingBytes: totalReceivedBytes, response: downloadResult.response)
 
-                    let currentMilestone = (percent / 10) * 10
-                    if currentMilestone > lastSentProgress && currentMilestone <= 70 {
-                        for milestone in stride(from: lastSentProgress + 10, through: currentMilestone, by: 10) {
-                            self.notifyDownload(id: id, percent: milestone, ignoreMultipleOfTen: false)
-                        }
-                        lastSentProgress = currentMilestone
-                    }
-
-                } else {
-                    self.logger.error("Download failed")
+                if lastSentProgress < 70 {
+                    self.notifyDownload(id: id, percent: 70, ignoreMultipleOfTen: true)
+                    lastSentProgress = 70
                 }
-
-            case .complete:
-                self.logger.info("Download complete, total received bytes: \(totalReceivedBytes)")
-                self.notifyDownload(id: id, percent: 70, ignoreMultipleOfTen: true)
-                semaphore.signal()
+                self.logger.info("Download complete")
+            } catch let error as NSError {
+                mainError = error
+            } catch {
+                mainError = error as NSError
             }
+        } else {
+            mainError = NSError(
+                domain: "DownloadError",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Downloaded file is missing at \(tempPath.path)"]
+            )
         }
-        self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.DOWNLOADING, downloaded: Date(), checksum: checksum, link: link, comment: comment))
-        let reachabilityManager = NetworkReachabilityManager()
-        reachabilityManager?.startListening { status in
-            switch status {
-            case .notReachable:
-                // Stop the download request if the network is not reachable
-                request.cancel()
-                mainError = NSError(domain: NSURLErrorDomain, code: NSURLErrorNotConnectedToInternet, userInfo: nil)
-                semaphore.signal()
-            default:
-                break
-            }
-        }
-        semaphore.wait()
-        reachabilityManager?.stopListening()
 
         if mainError != nil {
             logger.error("Failed to download bundle")
@@ -1117,7 +1624,6 @@ import UIKit
             throw mainError!
         }
 
-        let tempPath = tempDataPath(for: id)
         let finalPath = tempPath.deletingLastPathComponent().appendingPathComponent("\(id)")
         do {
             try CryptoCipher.decryptFile(filePath: tempPath, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
@@ -1312,6 +1818,15 @@ import UIKit
             return false
         }
 
+        if let previewFallback = self.getPreviewFallbackBundle(),
+           !previewFallback.isDeleted(),
+           !previewFallback.isErrorStatus(),
+           previewFallback.getId() == id {
+            logger.info("Cannot delete the preview fallback bundle")
+            logger.debug("Bundle ID: \(id)")
+            return false
+        }
+
         // Check if this is the next bundle and prevent deletion if it is
         if let next = self.getNextBundle(),
            !next.isDeleted() &&
@@ -1338,7 +1853,7 @@ import UIKit
         if removeInfo {
             self.removeBundleInfo(id: id)
         } else {
-            self.saveBundleInfo(id: id, bundle: deleted.setStatus(status: BundleStatus.DELETED.localizedString))
+            self.saveBundleInfo(id: id, bundle: deleted.setStatus(status: BundleStatus.DELETED.storedValue))
         }
         logger.info("Bundle deleted successfully")
         logger.debug("Version: \(deleted.getVersionName())")
@@ -1596,6 +2111,21 @@ import UIKit
         return true
     }
 
+    func stagePreviewFallbackReload(bundle: BundleInfo) -> Bool {
+        guard !bundle.isErrorStatus() else {
+            return false
+        }
+        if bundle.isBuiltin() {
+            self.setCurrentBundle(bundle: self.DEFAULT_FOLDER)
+            return true
+        }
+        guard bundleExists(id: bundle.getId()) else {
+            return false
+        }
+        self.setCurrentBundle(bundle: self.getBundleDirectory(id: bundle.getId()).path)
+        return true
+    }
+
     func finalizePendingReload(bundle: BundleInfo, previousBundleName: String) {
         guard !bundle.isBuiltin() else {
             return
@@ -1635,9 +2165,11 @@ import UIKit
     public func setSuccess(bundle: BundleInfo, autoDeletePrevious: Bool) {
         self.setBundleStatus(id: bundle.getId(), status: BundleStatus.SUCCESS)
         let fallback: BundleInfo = self.getFallbackBundle()
+        let previewFallback = self.getPreviewFallbackBundle()
+        let fallbackIsPreviewFallback = previewFallback?.getId() == fallback.getId()
         logger.info("Fallback bundle is: \(fallback.toString())")
         logger.info("Version successfully loaded: \(bundle.toString())")
-        if autoDeletePrevious && !fallback.isBuiltin() && fallback.getId() != bundle.getId() {
+        if autoDeletePrevious && !fallback.isBuiltin() && fallback.getId() != bundle.getId() && !fallbackIsPreviewFallback {
             let res = self.delete(id: fallback.getId())
             if res {
                 logger.info("Deleted previous bundle")
@@ -1668,7 +2200,12 @@ import UIKit
         return setChannel
     }
 
-    func setChannel(channel: String, defaultChannelKey: String, allowSetDefaultChannel: Bool) -> SetChannel {
+    func setChannel(
+        channel: String,
+        defaultChannelKey: String,
+        allowSetDefaultChannel: Bool,
+        configDefaultChannel: String = ""
+    ) -> SetChannel {
         let setChannel: SetChannel = SetChannel()
 
         // Check if setting defaultChannel is allowed
@@ -1693,58 +2230,79 @@ import UIKit
             setChannel.error = "missing_config"
             return setChannel
         }
-        let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
+        guard let channelURL = URL(string: self.channelUrl) else {
+            logger.error("Invalid channel URL")
+            setChannel.message = "Channel URL is invalid"
+            setChannel.error = "invalid_config"
+            return setChannel
+        }
         var parameters: InfoObject = self.createInfoObject()
         parameters.channel = channel
-
-        let request = alamofireSession.request(self.channelUrl, method: .post, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
-
-        request.validate().responseDecodable(of: SetChannelDec.self) { response in
-            // Check for 429 rate limit
-            if self.checkAndHandleRateLimitResponse(statusCode: response.response?.statusCode) {
-                setChannel.message = "Rate limit exceeded"
-                setChannel.error = "rate_limit_exceeded"
-                semaphore.signal()
-                return
-            }
-
-            switch response.result {
-            case .success:
-                if let responseValue = response.value {
-                    if let error = responseValue.error {
-                        setChannel.error = error
-                    } else if responseValue.unset == true {
-                        // Server requested to unset channel (public channel was requested)
-                        // Clear persisted defaultChannel and revert to config value
-                        UserDefaults.standard.removeObject(forKey: defaultChannelKey)
-                        UserDefaults.standard.synchronize()
-                        self.logger.info("Public channel requested, channel override removed")
-
-                        setChannel.status = responseValue.status ?? "ok"
-                        setChannel.message = responseValue.message ?? "Public channel requested, channel override removed. Device will use public channel automatically."
-                    } else {
-                        // Success - persist defaultChannel
-                        self.defaultChannel = channel
-                        UserDefaults.standard.set(channel, forKey: defaultChannelKey)
-                        UserDefaults.standard.synchronize()
-                        self.logger.info("defaultChannel persisted locally: \(channel)")
-
-                        setChannel.status = responseValue.status ?? ""
-                        setChannel.message = responseValue.message ?? ""
-                    }
-                }
-            case let .failure(error):
-                self.logger.error("Error setting channel")
-                self.logger.debug("Error: \(error)")
-                setChannel.error = "Request failed: \(error.localizedDescription)"
-            }
-            semaphore.signal()
+        guard let request = createRequest(url: channelURL, method: "POST", parameters: parameters.toParameters()) else {
+            setChannel.error = "Request failed: invalid request"
+            return setChannel
         }
-        semaphore.wait()
+
+        let result = performRequest(request, label: "setChannel")
+
+        if self.checkAndHandleRateLimitResponse(statusCode: result.response?.statusCode) {
+            setChannel.message = "Rate limit exceeded"
+            setChannel.error = "rate_limit_exceeded"
+            return setChannel
+        }
+
+        if result.timedOut {
+            setChannel.error = "Request timed out"
+            return setChannel
+        }
+
+        if let error = result.error {
+            self.logger.error("Error setting channel")
+            self.logger.debug("Error: \(error.localizedDescription)")
+            setChannel.error = "Request failed: \(error.localizedDescription)"
+            return setChannel
+        }
+
+        guard let data = result.data else {
+            setChannel.error = "Request failed: empty response"
+            return setChannel
+        }
+
+        guard let responseValue = try? JSONDecoder().decode(SetChannelDec.self, from: data) else {
+            setChannel.error = "decode_error"
+            return setChannel
+        }
+
+        let statusCode = result.response?.statusCode ?? 0
+        if statusCode < 200 || statusCode >= 300 {
+            setChannel.message = responseValue.message ?? "Server error: \(statusCode)"
+            setChannel.error = responseValue.error ?? "response_error"
+            return setChannel
+        }
+
+        if let error = responseValue.error {
+            setChannel.error = error
+        } else if responseValue.unset == true {
+            UserDefaults.standard.removeObject(forKey: defaultChannelKey)
+            UserDefaults.standard.synchronize()
+            self.defaultChannel = configDefaultChannel
+            self.logger.info("Public channel requested, channel override removed")
+
+            setChannel.status = responseValue.status ?? "ok"
+            setChannel.message = responseValue.message ?? "Public channel requested, channel override removed. Device will use public channel automatically."
+        } else {
+            self.defaultChannel = channel
+            UserDefaults.standard.set(channel, forKey: defaultChannelKey)
+            UserDefaults.standard.synchronize()
+            self.logger.info("defaultChannel persisted locally: \(channel)")
+
+            setChannel.status = responseValue.status ?? ""
+            setChannel.message = responseValue.message ?? ""
+        }
         return setChannel
     }
 
-    func getChannel() -> GetChannel {
+    func getChannel(defaultChannelKey: String? = nil) -> GetChannel {
         let getChannel: GetChannel = GetChannel()
 
         // Check if rate limit was exceeded
@@ -1761,50 +2319,94 @@ import UIKit
             getChannel.error = "missing_config"
             return getChannel
         }
-        let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
-        let parameters: InfoObject = self.createInfoObject()
-        let request = alamofireSession.request(self.channelUrl, method: .put, parameters: parameters, encoder: JSONParameterEncoder.default, requestModifier: { $0.timeoutInterval = self.timeout })
-
-        request.validate().responseDecodable(of: GetChannelDec.self) { response in
-            defer {
-                semaphore.signal()
-            }
-
-            // Check for 429 rate limit
-            if self.checkAndHandleRateLimitResponse(statusCode: response.response?.statusCode) {
-                getChannel.message = "Rate limit exceeded"
-                getChannel.error = "rate_limit_exceeded"
-                return
-            }
-
-            switch response.result {
-            case .success:
-                if let responseValue = response.value {
-                    if let error = responseValue.error {
-                        getChannel.error = error
-                    } else {
-                        getChannel.status = responseValue.status ?? ""
-                        getChannel.message = responseValue.message ?? ""
-                        getChannel.channel = responseValue.channel ?? ""
-                        getChannel.allowSet = responseValue.allowSet ?? true
-                    }
-                }
-            case let .failure(error):
-                if let data = response.data, let bodyString = String(data: data, encoding: .utf8) {
-                    if bodyString.contains("channel_not_found") && response.response?.statusCode == 400 && !self.defaultChannel.isEmpty {
-                        getChannel.channel = self.defaultChannel
-                        getChannel.status = "default"
-                        return
-                    }
-                }
-
-                self.logger.error("Error getting channel")
-                self.logger.debug("Error: \(error)")
-                getChannel.error = "Request failed: \(error.localizedDescription)"
-            }
+        guard let channelURL = URL(string: self.channelUrl) else {
+            logger.error("Invalid channel URL")
+            getChannel.message = "Channel URL is invalid"
+            getChannel.error = "invalid_config"
+            return getChannel
         }
-        semaphore.wait()
+        let parameters: InfoObject = self.createInfoObject()
+        guard let request = createRequest(url: channelURL, method: "PUT", parameters: parameters.toParameters()) else {
+            getChannel.error = "Request failed: invalid request"
+            return getChannel
+        }
+
+        let result = performRequest(request, label: "getChannel")
+
+        if self.checkAndHandleRateLimitResponse(statusCode: result.response?.statusCode) {
+            getChannel.message = "Rate limit exceeded"
+            getChannel.error = "rate_limit_exceeded"
+            return getChannel
+        }
+
+        if result.timedOut {
+            getChannel.error = "Request timed out"
+            return getChannel
+        }
+
+        if let error = result.error {
+            if let data = result.data, let bodyString = String(data: data, encoding: .utf8) {
+                if bodyString.contains("channel_not_found") && result.response?.statusCode == 400 && !self.defaultChannel.isEmpty {
+                    getChannel.channel = self.defaultChannel
+                    getChannel.status = "default"
+                    return getChannel
+                }
+            }
+
+            self.logger.error("Error getting channel")
+            self.logger.debug("Error: \(error.localizedDescription)")
+            getChannel.error = "Request failed: \(error.localizedDescription)"
+            return getChannel
+        }
+
+        guard let data = result.data else {
+            getChannel.error = "Request failed: empty response"
+            return getChannel
+        }
+
+        guard let responseValue = try? JSONDecoder().decode(GetChannelDec.self, from: data) else {
+            getChannel.error = "decode_error"
+            return getChannel
+        }
+
+        let statusCode = result.response?.statusCode ?? 0
+        if let error = responseValue.error {
+            if error == "channel_not_found", statusCode == 400, !self.defaultChannel.isEmpty {
+                getChannel.channel = self.defaultChannel
+                getChannel.status = "default"
+                return getChannel
+            }
+            getChannel.error = error
+            getChannel.message = responseValue.message ?? ""
+            return getChannel
+        }
+
+        if statusCode < 200 || statusCode >= 300 {
+            getChannel.message = responseValue.message ?? "Server error: \(statusCode)"
+            getChannel.error = "response_error"
+        } else {
+            getChannel.status = responseValue.status ?? ""
+            getChannel.message = responseValue.message ?? ""
+            getChannel.channel = responseValue.channel ?? ""
+            getChannel.allowSet = responseValue.allowSet ?? true
+            persistDefaultChannelFromResponse(channel: responseValue.channel, defaultChannelKey: defaultChannelKey)
+        }
         return getChannel
+    }
+
+    func persistDefaultChannelFromResponse(channel: String?, defaultChannelKey: String?) {
+        guard let channelName = channel?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !channelName.isEmpty,
+              channelName != BundleInfo.ID_BUILTIN else {
+            return
+        }
+
+        self.defaultChannel = channelName
+        if let defaultChannelKey, !defaultChannelKey.isEmpty {
+            UserDefaults.standard.set(channelName, forKey: defaultChannelKey)
+            UserDefaults.standard.synchronize()
+        }
+        logger.info("defaultChannel synchronized from getChannel(): \(channelName)")
     }
 
     func listChannels() -> ListChannels {
@@ -1823,27 +2425,13 @@ import UIKit
             return listChannels
         }
 
-        let semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
-
         // Create info object and convert to query parameters
         let infoObject = self.createInfoObject()
-
-        // Create query parameters from InfoObject
         var urlComponents = URLComponents(string: self.channelUrl)
-        var queryItems: [URLQueryItem] = []
+        var queryItems: [URLQueryItem] = urlComponents?.queryItems ?? []
 
-        // Convert InfoObject to dictionary using Mirror
-        let mirror = Mirror(reflecting: infoObject)
-        for child in mirror.children {
-            if let key = child.label, let value = child.value as? CustomStringConvertible {
-                queryItems.append(URLQueryItem(name: key, value: String(describing: value)))
-            } else if let key = child.label {
-                // Handle optional values
-                let mirror = Mirror(reflecting: child.value)
-                if let value = mirror.children.first?.value {
-                    queryItems.append(URLQueryItem(name: key, value: String(describing: value)))
-                }
-            }
+        for (key, value) in infoObject.toParameters() {
+            queryItems.append(URLQueryItem(name: key, value: String(describing: value)))
         }
 
         urlComponents?.queryItems = queryItems
@@ -1854,47 +2442,62 @@ import UIKit
             return listChannels
         }
 
-        let request = alamofireSession.request(url, method: .get, requestModifier: { $0.timeoutInterval = self.timeout })
+        guard let request = createRequest(url: url, method: "GET", expectsJSONResponse: true) else {
+            listChannels.error = "Invalid channel URL"
+            return listChannels
+        }
 
-        request.validate().responseDecodable(of: ListChannelsDec.self) { response in
-            defer {
-                semaphore.signal()
-            }
+        let result = performRequest(request, label: "listChannels")
 
-            // Check for 429 rate limit
-            if self.checkAndHandleRateLimitResponse(statusCode: response.response?.statusCode) {
-                listChannels.error = "rate_limit_exceeded"
-                return
-            }
+        if self.checkAndHandleRateLimitResponse(statusCode: result.response?.statusCode) {
+            listChannels.error = "rate_limit_exceeded"
+            return listChannels
+        }
 
-            switch response.result {
-            case .success:
-                if let responseValue = response.value {
-                    // Check for server-side errors
-                    if let error = responseValue.error {
-                        listChannels.error = error
-                        return
-                    }
+        if result.timedOut {
+            listChannels.error = "Request timed out"
+            return listChannels
+        }
 
-                    // Backend returns direct array, so channels should be populated by our custom decoder
-                    if let channels = responseValue.channels {
-                        listChannels.channels = channels.map { channel in
-                            var channelDict: [String: Any] = [:]
-                            channelDict["id"] = channel.id ?? ""
-                            channelDict["name"] = channel.name ?? ""
-                            channelDict["public"] = channel.public ?? false
-                            channelDict["allow_self_set"] = channel.allow_self_set ?? false
-                            return channelDict
-                        }
-                    }
-                }
-            case let .failure(error):
-                self.logger.error("Error listing channels")
-                self.logger.debug("Error: \(error)")
-                listChannels.error = "Request failed: \(error.localizedDescription)"
+        if let error = result.error {
+            self.logger.error("Error listing channels")
+            self.logger.debug("Error: \(error.localizedDescription)")
+            listChannels.error = "Request failed: \(error.localizedDescription)"
+            return listChannels
+        }
+
+        guard let data = result.data else {
+            listChannels.error = "Request failed: empty response"
+            return listChannels
+        }
+
+        guard let responseValue = try? JSONDecoder().decode(ListChannelsDec.self, from: data) else {
+            listChannels.error = "decode_error"
+            return listChannels
+        }
+
+        let statusCode = result.response?.statusCode ?? 0
+        if let error = responseValue.error {
+            listChannels.error = error
+            return listChannels
+        }
+
+        if statusCode < 200 || statusCode >= 300 {
+            listChannels.error = "response_error"
+            return listChannels
+        }
+
+        if let channels = responseValue.channels {
+            listChannels.channels = channels.map { channel in
+                var channelDict: [String: Any] = [:]
+                channelDict["id"] = channel.id
+                channelDict["name"] = channel.name ?? ""
+                channelDict["public"] = channel.public ?? false
+                channelDict["allow_self_set"] = channel.allow_self_set ?? false
+                return channelDict
             }
         }
-        semaphore.wait()
+
         return listChannels
     }
 
@@ -1908,6 +2511,29 @@ import UIKit
     }()
 
     func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {
+        sendStatsWithMetadata(action: action, versionName: versionName, oldVersionName: oldVersionName, metadata: nil, onSent: nil)
+    }
+
+    func sendStats(action: String, versionName: String?, oldVersionName: String?, metadata: [String: String]) {
+        sendStatsWithMetadata(action: action, versionName: versionName, oldVersionName: oldVersionName, metadata: metadata, onSent: nil)
+    }
+
+    func sendStats(action: String, versionName: String?, oldVersionName: String?, metadata: [String: String], onSent: @escaping () -> Void) {
+        sendStatsWithMetadata(action: action, versionName: versionName, oldVersionName: oldVersionName, metadata: metadata, onSent: onSent)
+    }
+
+    private func sendStatsWithMetadata(
+        action: String,
+        versionName: String?,
+        oldVersionName: String?,
+        metadata: [String: String]?,
+        onSent: (() -> Void)?
+    ) {
+        if previewSession {
+            logger.debug("Skipping sendStats during preview session.")
+            return
+        }
+
         // Check if rate limit was exceeded
         if CapgoUpdater.rateLimitExceeded {
             logger.debug("Skipping sendStats due to rate limit (429). Stats will resume after app restart.")
@@ -1934,15 +2560,17 @@ import UIKit
             plugin_version: info.plugin_version,
             is_emulator: info.is_emulator,
             is_prod: info.is_prod,
+            installSource: info.installSource,
             action: action,
             channel: info.channel,
             defaultChannel: info.defaultChannel,
             key_id: info.key_id,
+            metadata: metadata,
             timestamp: Int64(Date().timeIntervalSince1970 * 1000)
         )
 
         statsQueueLock.lock()
-        statsQueue.append(event)
+        statsQueue.append(QueuedStatsEvent(event: event, onSent: onSent))
         statsQueueLock.unlock()
 
         ensureStatsTimerStarted()
@@ -1969,9 +2597,12 @@ import UIKit
             statsQueueLock.unlock()
             return
         }
-        let eventsToSend = statsQueue
+        let queuedEvents = statsQueue
         statsQueue.removeAll()
         statsQueueLock.unlock()
+
+        let eventsToSend = queuedEvents.map(\.event)
+        let onSentCallbacks = queuedEvents.compactMap(\.onSent)
 
         operationQueue.maxConcurrentOperationCount = 1
 
@@ -1990,10 +2621,18 @@ import UIKit
                     return
                 }
 
+                if let statusCode = response.response?.statusCode, !(200...299).contains(statusCode) {
+                    self.logger.error("Error sending stats batch")
+                    self.logger.debug("Response code: \(statusCode)")
+                    semaphore.signal()
+                    return
+                }
+
                 switch response.result {
                 case .success:
                     self.logger.info("Stats batch sent successfully")
                     self.logger.debug("Sent \(eventsToSend.count) events")
+                    onSentCallbacks.forEach { $0() }
                 case let .failure(error):
                     self.logger.error("Error sending stats batch")
                     self.logger.debug("Response: \(response.value?.debugDescription ?? "nil"), Error: \(error.localizedDescription)")
@@ -2059,13 +2698,12 @@ import UIKit
                 logger.debug("Bundle ID: \(id), Error: \(error.localizedDescription)")
             }
         }
-        UserDefaults.standard.synchronize()
     }
 
     private func setBundleStatus(id: String, status: BundleStatus) {
         logger.info("Setting status for bundle [\(id)] to \(status)")
         let info = self.getBundleInfo(id: id)
-        self.saveBundleInfo(id: id, bundle: info.setStatus(status: status.localizedString))
+        self.saveBundleInfo(id: id, bundle: info.setStatus(status: status.storedValue))
     }
 
     public func getCurrentBundle() -> BundleInfo {
@@ -2100,6 +2738,33 @@ import UIKit
     public func getNextBundle() -> BundleInfo? {
         let id: String? = UserDefaults.standard.string(forKey: self.NEXT_VERSION)
         return self.getBundleInfo(id: id)
+    }
+
+    public func getPreviewFallbackBundle() -> BundleInfo? {
+        guard let id = UserDefaults.standard.string(forKey: self.PREVIEW_FALLBACK_VERSION) else {
+            return nil
+        }
+        let bundle = self.getBundleInfo(id: id)
+        if !bundle.isBuiltin() && !self.bundleExists(id: id) {
+            _ = self.setPreviewFallbackBundle(fallback: nil)
+            return nil
+        }
+        return bundle
+    }
+
+    public func setPreviewFallbackBundle(fallback: String?) -> Bool {
+        guard let fallbackId = fallback else {
+            UserDefaults.standard.removeObject(forKey: self.PREVIEW_FALLBACK_VERSION)
+            UserDefaults.standard.synchronize()
+            return true
+        }
+        let newBundle: BundleInfo = self.getBundleInfo(id: fallbackId)
+        if !newBundle.isBuiltin() && !self.bundleExists(id: fallbackId) {
+            return false
+        }
+        UserDefaults.standard.set(fallbackId, forKey: self.PREVIEW_FALLBACK_VERSION)
+        UserDefaults.standard.synchronize()
+        return true
     }
 
     public func setNextBundle(next: String?) -> Bool {

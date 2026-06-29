@@ -1,0 +1,3 @@
+appId: app.capgo.updater
+---
+- runFlow: ../example-app-api-smoke-no-persist-ios.yaml

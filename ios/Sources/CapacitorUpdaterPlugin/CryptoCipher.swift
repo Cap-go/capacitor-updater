@@ -6,7 +6,6 @@
 
 import Foundation
 import CryptoKit
-import BigInt
 
 public struct CryptoCipher {
     private static var logger: Logger!
@@ -166,14 +165,7 @@ public struct CryptoCipher {
             }
 
             while autoreleasepool(invoking: {
-                let fileData: Data
-                do {
-                    fileData = try fileHandle.read(upToCount: bufferSize) ?? Data()
-                } catch {
-                    logger.error("Error reading file during checksum")
-                    logger.debug("Error: \(error)")
-                    return false
-                }
+                let fileData = fileHandle.readData(ofLength: bufferSize)
 
                 if fileData.count > 0 {
                     sha256.update(data: fileData)

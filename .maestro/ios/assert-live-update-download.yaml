@@ -1,0 +1,93 @@
+appId: app.capgo.updater
+---
+- launchApp
+- extendedWaitUntil:
+    visible: '@capgo/capacitor-updater'
+    timeout: 180000
+- repeat:
+    times: 12
+    commands:
+      - swipe:
+          direction: DOWN
+          duration: 300
+          waitToSettleTimeoutMs: 500
+- scrollUntilVisible:
+    element:
+      text: "${BUILD_LABEL}"
+    direction: DOWN
+    timeout: 60000
+    centerElement: true
+    visibilityPercentage: 1
+- assertVisible: "${BUILD_LABEL}"
+- scrollUntilVisible:
+    element:
+      text: "${SCENARIO_LINE}"
+    direction: DOWN
+    timeout: 60000
+    centerElement: true
+    visibilityPercentage: 1
+- assertVisible: "${SCENARIO_LINE}"
+- scrollUntilVisible:
+    element:
+      text: "${DIRECT_UPDATE_LINE}"
+    direction: DOWN
+    timeout: 60000
+    centerElement: true
+    visibilityPercentage: 1
+- assertVisible: "${DIRECT_UPDATE_LINE}"
+- scrollUntilVisible:
+    element:
+      text: "${AUTO_UPDATE_ENABLED_LINE}"
+    direction: DOWN
+    timeout: 60000
+    centerElement: true
+    visibilityPercentage: 1
+- assertVisible: "${AUTO_UPDATE_ENABLED_LINE}"
+- scrollUntilVisible:
+    element:
+      text: "${AUTO_UPDATE_AVAILABLE_LINE}"
+    direction: DOWN
+    timeout: 60000
+    centerElement: true
+    visibilityPercentage: 1
+- assertVisible: "${AUTO_UPDATE_AVAILABLE_LINE}"
+- scrollUntilVisible:
+    element:
+      text: "${NOTIFY_READY_LINE}"
+    direction: DOWN
+    timeout: 60000
+    centerElement: true
+    visibilityPercentage: 1
+- assertVisible: "${NOTIFY_READY_LINE}"
+- scrollUntilVisible:
+    element:
+      text: "${CURRENT_SOURCE_LINE}"
+    direction: DOWN
+    timeout: 60000
+    centerElement: true
+    visibilityPercentage: 1
+- assertVisible: "${CURRENT_SOURCE_LINE}"
+- scrollUntilVisible:
+    element:
+      text: "${CURRENT_VERSION_LINE}"
+    direction: DOWN
+    timeout: 60000
+    centerElement: true
+    visibilityPercentage: 1
+- assertVisible: "${CURRENT_VERSION_LINE}"
+- scrollUntilVisible:
+    element:
+      text: "${NEXT_VERSION_LINE}"
+    direction: DOWN
+    timeout: 60000
+    centerElement: true
+    visibilityPercentage: 1
+- assertVisible: "${NEXT_VERSION_LINE}"
+- scrollUntilVisible:
+    element:
+      text: "${LAST_DOWNLOAD_LINE}"
+    direction: DOWN
+    timeout: 60000
+    centerElement: true
+    visibilityPercentage: 1
+- assertVisible: "${LAST_DOWNLOAD_LINE}"
