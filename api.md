@@ -293,7 +293,9 @@ For multi-file delta updates, provide the `manifest` array.
 **Android Background Runner note:** `@capacitor/background-runner` loads its
 configured runner script from native APK assets. Live updates cannot replace
 that runner script. Keep it stable across OTA updates and ship a native app
-update when the runner code changes.
+update when the runner code changes. When a bundle switch happens, Capacitor
+Updater cancels and reschedules configured Background Runner WorkManager jobs
+and syncs the bundled runner script into native `public/` storage when present.
 
 **Parameters**
 
