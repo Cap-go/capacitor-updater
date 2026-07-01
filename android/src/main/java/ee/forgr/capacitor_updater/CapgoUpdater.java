@@ -17,8 +17,8 @@ import androidx.work.Constraints;
 import androidx.work.Data;
 import androidx.work.ExistingPeriodicWorkPolicy;
 import androidx.work.ExistingWorkPolicy;
-import androidx.work.NetworkType;
 import androidx.work.ListenableWorker;
+import androidx.work.NetworkType;
 import androidx.work.OneTimeWorkRequest;
 import androidx.work.PeriodicWorkRequest;
 import androidx.work.WorkInfo;
@@ -1002,6 +1002,7 @@ public class CapgoUpdater {
     }
 
     static final class BackgroundRunnerWorkConfig {
+
         final String label;
         final String src;
         final String event;
@@ -1090,10 +1091,7 @@ public class CapgoUpdater {
         }
 
         final File tempFile = new File(parent, dest.getName() + ".capgo_tmp");
-        try (
-            final FileInputStream input = new FileInputStream(source);
-            final FileOutputStream output = new FileOutputStream(tempFile)
-        ) {
+        try (final FileInputStream input = new FileInputStream(source); final FileOutputStream output = new FileOutputStream(tempFile)) {
             final byte[] buffer = new byte[1024 * 1024];
             int length;
             while ((length = input.read(buffer)) != -1) {
