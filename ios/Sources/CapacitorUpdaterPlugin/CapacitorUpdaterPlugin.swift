@@ -86,6 +86,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     ]
     public var implementation = CapgoUpdater()
     private let pluginVersion: String = "8.50.2"
+    private let launchStartedAtMs = Int64(Date().timeIntervalSince1970 * 1000)
     static let updateUrlDefault = "https://plugin.capgo.app/updates"
     static let statsUrlDefault = "https://plugin.capgo.app/stats"
     static let channelUrlDefault = "https://plugin.capgo.app/channel_self"
@@ -135,6 +136,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var currentBuildVersion: String = "0"
     private var autoUpdate = false
     private var autoUpdateMode = CapacitorUpdaterPlugin.autoUpdateModeOff
+    private var launchStartReported = false
+    private var launchReadyReported = false
     private var appReadyTimeout = 10000
     private var appReadyCheck: DispatchWorkItem?
     private var resetWhenUpdate = true
@@ -339,6 +342,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         } else {
             implementation.defaultChannel = getConfig().getString("defaultChannel", "")!
         }
+        self.reportAppLaunchStart()
         self.implementation.autoReset()
         let appHealthTracker = AppHealthTracker(implementation: self.implementation)
         self.appHealthTracker = appHealthTracker
@@ -2674,10 +2678,67 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         ])
     }
 
+    private func reportAppLaunchStart() {
+        guard !self.implementation.statsUrl.isEmpty, !launchStartReported else {
+            return
+        }
+
+        launchStartReported = true
+        let current = self.implementation.getCurrentBundle()
+        self.implementation.sendStats(
+            action: "app_launch_start",
+            versionName: current.getVersionName(),
+            oldVersionName: "",
+            metadata: [
+                "launch_started_at": String(launchStartedAtMs),
+                "source": "plugin_load"
+            ]
+        )
+    }
+
+    private func reportAppLaunchReady(_ bundle: BundleInfo) {
+        guard !self.implementation.statsUrl.isEmpty, !launchReadyReported else {
+            return
+        }
+
+        launchReadyReported = true
+        let duration = max(0, Int64(Date().timeIntervalSince1970 * 1000) - launchStartedAtMs)
+        self.implementation.sendStats(
+            action: "app_launch_ready",
+            versionName: bundle.getVersionName(),
+            oldVersionName: "",
+            metadata: [
+                "duration_ms": String(duration),
+                "launch_started_at": String(launchStartedAtMs),
+                "source": "notify_app_ready"
+            ]
+        )
+    }
+
+    private func reportAppLaunchTimeout(_ bundle: BundleInfo) {
+        guard !self.implementation.statsUrl.isEmpty else {
+            return
+        }
+
+        let duration = max(0, Int64(Date().timeIntervalSince1970 * 1000) - launchStartedAtMs)
+        self.implementation.sendStats(
+            action: "app_launch_timeout",
+            versionName: bundle.getVersionName(),
+            oldVersionName: "",
+            metadata: [
+                "duration_ms": String(duration),
+                "launch_started_at": String(launchStartedAtMs),
+                "timeout_ms": String(appReadyTimeout),
+                "source": "app_ready_timeout"
+            ]
+        )
+    }
+
     @objc func notifyAppReady(_ call: CAPPluginCall) {
         self.semaphoreDown()
         let bundle = self.implementation.getCurrentBundle()
         self.implementation.setSuccess(bundle: bundle, autoDeletePrevious: self.autoDeletePrevious)
+        self.reportAppLaunchReady(bundle)
         logger.info("Current bundle loaded successfully. [notifyAppReady was called] \(bundle.toString())")
         self.clearIncomingPreviewTransition()
         self.hidePreviewTransitionLoader(reason: "notify-app-ready")
@@ -2785,6 +2846,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 "bundle": current.toJSON()
             ])
             self.persistLastFailedBundle(current)
+            self.reportAppLaunchTimeout(current)
             self.implementation.sendStats(action: "update_fail", versionName: current.getVersionName())
             self.implementation.setError(bundle: current)
             _ = self.performReset(toLastSuccessful: true, usePendingBundle: false, isInternal: true)

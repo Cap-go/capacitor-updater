@@ -581,6 +581,8 @@ class CapacitorUpdaterTests: XCTestCase {
             WebViewStatsReporter.statsAction(for: "web_content_process_terminated"),
             "webview_content_process_terminated"
         )
+        XCTAssertEqual(WebViewStatsReporter.statsAction(for: "webview_dom_content_loaded"), "webview_dom_content_loaded")
+        XCTAssertEqual(WebViewStatsReporter.statsAction(for: "webview_page_loaded"), "webview_page_loaded")
         XCTAssertEqual(WebViewStatsReporter.statsAction(for: "unknown"), "webview_javascript_error")
     }
 
@@ -593,7 +595,9 @@ class CapacitorUpdaterTests: XCTestCase {
             "column": "20",
             "stack": String(repeating: "x", count: 3_000),
             "href": "capacitor://localhost",
-            "session_id": "session-1"
+            "session_id": "session-1",
+            "duration_ms": "123",
+            "page_started_at": "456"
         ])
 
         XCTAssertEqual(metadata["error_type"], "javascript_error")
@@ -603,8 +607,41 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(metadata["column"], "20")
         XCTAssertEqual(metadata["href"], "capacitor://localhost")
         XCTAssertEqual(metadata["session_id"], "session-1")
+        XCTAssertEqual(metadata["duration_ms"], "123")
+        XCTAssertEqual(metadata["page_started_at"], "456")
         XCTAssertEqual(metadata["stack"]?.count, 2_048)
         XCTAssertNil(metadata["tag_name"])
+    }
+
+    func testReportWebViewLoadStatsForwardsTimingMetadata() throws {
+        let implementation = HealthStatsCapgoUpdater()
+        let reporter = WebViewStatsReporter(implementation: implementation)
+        var resolved = false
+        let call = try XCTUnwrap(CAPPluginCall(
+            callbackId: "webview-load-stat",
+            options: [
+                "type": "webview_dom_content_loaded",
+                "message": "WebView DOM content loaded",
+                "duration_ms": "123",
+                "page_started_at": "456",
+                "session_id": "session-1"
+            ],
+            success: { _, _ in
+                resolved = true
+            },
+            error: { _ in
+                XCTFail("reportError should resolve successful WebView load stats")
+            }
+        ))
+
+        reporter.reportError(call)
+
+        XCTAssertTrue(resolved)
+        XCTAssertEqual(implementation.sentStatsActions, ["webview_dom_content_loaded"])
+        XCTAssertEqual(implementation.lastStatsVersionName, "1.0.0")
+        XCTAssertEqual(implementation.lastStatsMetadata?["duration_ms"], "123")
+        XCTAssertEqual(implementation.lastStatsMetadata?["page_started_at"], "456")
+        XCTAssertEqual(implementation.lastStatsMetadata?["session_id"], "session-1")
     }
 
     func testBuildWebViewErrorMetadataSanitizesUrlValues() {
@@ -633,6 +670,8 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertTrue(script.contains("resource_error"))
         XCTAssertTrue(script.contains("securitypolicyviolation"))
         XCTAssertTrue(script.contains("webview_unclean_restart"))
+        XCTAssertTrue(script.contains("webview_dom_content_loaded"))
+        XCTAssertTrue(script.contains("webview_page_loaded"))
         XCTAssertTrue(script.contains("reportWebViewError"))
     }
 

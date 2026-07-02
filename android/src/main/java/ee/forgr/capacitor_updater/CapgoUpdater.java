@@ -664,6 +664,9 @@ public class CapgoUpdater {
                                 if ("low_mem_fail".equals(error)) {
                                     sendStats("low_mem_fail", failedVersion);
                                 }
+                                if ("insufficient_disk_space".equals(error)) {
+                                    sendStats("insufficient_disk_space", failedVersion);
+                                }
                                 ret.put("error", error != null ? error : "download_fail");
                                 sendStats("download_fail", failedVersion);
                                 notifyListeners("downloadFailed", ret);

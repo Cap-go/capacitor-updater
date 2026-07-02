@@ -1148,6 +1148,8 @@ public class CapacitorUpdaterUnitTest {
             "webview_content_process_terminated",
             CapacitorUpdaterPlugin.statsActionForWebViewErrorType("web_content_process_terminated")
         );
+        assertEquals("webview_dom_content_loaded", CapacitorUpdaterPlugin.statsActionForWebViewErrorType("webview_dom_content_loaded"));
+        assertEquals("webview_page_loaded", CapacitorUpdaterPlugin.statsActionForWebViewErrorType("webview_page_loaded"));
         assertEquals("webview_javascript_error", CapacitorUpdaterPlugin.statsActionForWebViewErrorType("unknown"));
     }
 
@@ -1162,6 +1164,8 @@ public class CapacitorUpdaterUnitTest {
         data.put("stack", "x".repeat(3000));
         data.put("href", "capacitor://localhost");
         data.put("session_id", "session-1");
+        data.put("duration_ms", "123");
+        data.put("page_started_at", "456");
 
         final Map<String, String> metadata = CapacitorUpdaterPlugin.buildWebViewErrorMetadata(data);
 
@@ -1172,6 +1176,8 @@ public class CapacitorUpdaterUnitTest {
         assertEquals("20", metadata.get("column"));
         assertEquals("capacitor://localhost", metadata.get("href"));
         assertEquals("session-1", metadata.get("session_id"));
+        assertEquals("123", metadata.get("duration_ms"));
+        assertEquals("456", metadata.get("page_started_at"));
         assertEquals(2048, metadata.get("stack").length());
     }
 
@@ -1204,6 +1210,7 @@ public class CapacitorUpdaterUnitTest {
         assertTrue(script.contains("resource_error"));
         assertTrue(script.contains("securitypolicyviolation"));
         assertTrue(script.contains("webview_unclean_restart"));
+        assertTrue(script.contains("webview_dom_content_loaded"));
         assertTrue(script.contains("reportWebViewError"));
     }
 
