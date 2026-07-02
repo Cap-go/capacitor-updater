@@ -1432,6 +1432,22 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testGetBackgroundRunnerWorkConfigFromConfigParsesScheduleFields() {
+        final String config =
+            "{\"plugins\":{\"BackgroundRunner\":{\"label\":\"com.example.runner\",\"src\":\"runner.js\",\"event\":\"myEvent\",\"autoStart\":true,\"repeat\":true,\"interval\":15}}}";
+
+        final CapgoUpdater.BackgroundRunnerWorkConfig parsed = CapgoUpdater.getBackgroundRunnerWorkConfigFromConfig(config);
+
+        assertNotNull(parsed);
+        assertEquals("com.example.runner", parsed.label);
+        assertEquals("runner.js", parsed.src);
+        assertEquals("myEvent", parsed.event);
+        assertTrue(parsed.autoStart);
+        assertTrue(parsed.repeat);
+        assertEquals(15, parsed.interval);
+    }
+
+    @Test
     public void testGetBundleInfoBuiltinReturnsVersionBuildWhenPresent() {
         CapgoUpdater updater = new CapgoUpdater(null);
         updater.versionBuild = "1.2.3";
@@ -2928,6 +2944,17 @@ public class CapacitorUpdaterUnitTest {
 
         assertThrows(IOException.class, () -> invokeUnzip(updater, "bundle-id", zipPath, "bundle"));
         assertFalse(Files.exists(escapedPath));
+    }
+
+    @Test
+    public void testManifestBuiltinStripsBrotliSuffixBeforeResolvingPath() throws Exception {
+        final Path builtinFolder = Files.createTempDirectory("capgo-builtin");
+        try {
+            final File resolved = DownloadService.resolveManifestBuiltinFile(builtinFolder.toFile(), "background-runner.js.br");
+            assertEquals("background-runner.js", resolved.getName());
+        } finally {
+            Files.deleteIfExists(builtinFolder);
+        }
     }
 
     @Test

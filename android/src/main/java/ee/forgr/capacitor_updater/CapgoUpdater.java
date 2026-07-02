@@ -13,7 +13,14 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 import androidx.annotation.NonNull;
 import androidx.lifecycle.LifecycleOwner;
+import androidx.work.Constraints;
 import androidx.work.Data;
+import androidx.work.ExistingPeriodicWorkPolicy;
+import androidx.work.ExistingWorkPolicy;
+import androidx.work.ListenableWorker;
+import androidx.work.NetworkType;
+import androidx.work.OneTimeWorkRequest;
+import androidx.work.PeriodicWorkRequest;
 import androidx.work.WorkInfo;
 import androidx.work.WorkManager;
 import com.google.common.util.concurrent.Futures;
@@ -69,6 +76,7 @@ public class CapgoUpdater {
     private static final String TEMP_UNZIP_PREFIX = "capgo_unzip_";
     private static final String CAPACITOR_CONFIG_ASSET = "capacitor.config.json";
     private static final String BACKGROUND_RUNNER_CONFIG_KEY = "BackgroundRunner";
+    private static final String BACKGROUND_RUNNER_WORKER_CLASS = "io.ionic.backgroundrunner.plugin.RunnerWorker";
 
     public static final String TAG = "Capacitor-updater";
     public SharedPreferences.Editor editor;
@@ -983,7 +991,7 @@ public class CapgoUpdater {
     }
 
     private void setCurrentBundle(final File bundle) {
-        this.cancelBackgroundRunnerWorkBeforeBundleSwitch();
+        this.resetBackgroundRunnerWorkForBundleSwitch(bundle);
         this.editor.putString(this.CAP_SERVER_PATH, bundle.getPath());
         logger.info("Current bundle set to: " + bundle);
         this.editor.commit();
@@ -993,7 +1001,33 @@ public class CapgoUpdater {
         return bundlePath != null && !bundlePath.trim().isEmpty() && !isBuiltin && !hasStoredBundleInfo;
     }
 
-    static String getBackgroundRunnerLabelFromConfig(final String configJson) {
+    static final class BackgroundRunnerWorkConfig {
+
+        final String label;
+        final String src;
+        final String event;
+        final boolean autoStart;
+        final boolean repeat;
+        final int interval;
+
+        BackgroundRunnerWorkConfig(
+            final String label,
+            final String src,
+            final String event,
+            final boolean autoStart,
+            final boolean repeat,
+            final int interval
+        ) {
+            this.label = label;
+            this.src = src;
+            this.event = event;
+            this.autoStart = autoStart;
+            this.repeat = repeat;
+            this.interval = interval;
+        }
+    }
+
+    static BackgroundRunnerWorkConfig getBackgroundRunnerWorkConfigFromConfig(final String configJson) {
         if (configJson == null || configJson.trim().isEmpty()) {
             return null;
         }
@@ -1011,10 +1045,28 @@ public class CapgoUpdater {
             }
 
             final String label = backgroundRunner.optString("label", "").trim();
-            return label.isEmpty() ? null : label;
+            if (label.isEmpty()) {
+                return null;
+            }
+
+            final String src = backgroundRunner.optString("src", "").trim();
+            final String event = backgroundRunner.optString("event", "").trim();
+            return new BackgroundRunnerWorkConfig(
+                label,
+                src,
+                event,
+                backgroundRunner.optBoolean("autoStart", false),
+                backgroundRunner.optBoolean("repeat", false),
+                backgroundRunner.optInt("interval", 0)
+            );
         } catch (JSONException ignored) {
             return null;
         }
+    }
+
+    static String getBackgroundRunnerLabelFromConfig(final String configJson) {
+        final BackgroundRunnerWorkConfig config = getBackgroundRunnerWorkConfigFromConfig(configJson);
+        return config == null ? null : config.label;
     }
 
     private String readAssetAsString(final String assetPath) throws IOException {
@@ -1032,31 +1084,127 @@ public class CapgoUpdater {
         return buffer.toString();
     }
 
-    private void cancelBackgroundRunnerWorkBeforeBundleSwitch() {
+    private void copyFileAtomically(final File source, final File dest) throws IOException {
+        final File parent = dest.getParentFile();
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            throw new IOException("Failed to create parent directory: " + parent.getAbsolutePath());
+        }
+
+        final File tempFile = new File(parent, dest.getName() + ".capgo_tmp");
+        try (final FileInputStream input = new FileInputStream(source); final FileOutputStream output = new FileOutputStream(tempFile)) {
+            final byte[] buffer = new byte[1024 * 1024];
+            int length;
+            while ((length = input.read(buffer)) != -1) {
+                output.write(buffer, 0, length);
+            }
+        }
+
+        if (!tempFile.renameTo(dest)) {
+            if (!dest.delete() || !tempFile.renameTo(dest)) {
+                tempFile.delete();
+                throw new IOException("Failed to replace file: " + dest.getAbsolutePath());
+            }
+        }
+    }
+
+    private void syncBackgroundRunnerScriptFromBundle(final File bundle, final BackgroundRunnerWorkConfig config) {
+        if (this.activity == null || bundle == null || config == null || config.src == null || config.src.isEmpty()) {
+            return;
+        }
+
+        if (bundle.getPath().endsWith("/public") || "public".equals(bundle.getName())) {
+            return;
+        }
+
+        try {
+            final File source = resolvePathInsideDirectory(bundle, config.src);
+            if (!source.isFile()) {
+                return;
+            }
+
+            final File publicDir = new File(this.activity.getFilesDir(), "public");
+            final File dest = resolvePathInsideDirectory(publicDir, config.src);
+            this.copyFileAtomically(source, dest);
+            logger.info("Synced Background Runner script into native public storage before bundle switch.");
+            logger.debug("Background Runner script path: " + dest.getAbsolutePath());
+        } catch (Exception e) {
+            logger.debug("Background Runner script sync skipped: " + e.getMessage());
+        }
+    }
+
+    private void resetBackgroundRunnerWorkForBundleSwitch(final File bundle) {
         if (this.activity == null) {
             return;
         }
 
-        final String label;
+        final BackgroundRunnerWorkConfig config;
         try {
-            label = getBackgroundRunnerLabelFromConfig(this.readAssetAsString(CAPACITOR_CONFIG_ASSET));
+            config = getBackgroundRunnerWorkConfigFromConfig(this.readAssetAsString(CAPACITOR_CONFIG_ASSET));
         } catch (IOException ignored) {
             return;
         }
 
-        if (label == null) {
+        if (config == null) {
             return;
         }
 
         try {
             final WorkManager workManager = WorkManager.getInstance(this.activity.getApplicationContext());
-            workManager.cancelUniqueWork(label);
-            workManager.cancelAllWorkByTag(label);
+            workManager.cancelUniqueWork(config.label);
+            workManager.cancelAllWorkByTag(config.label);
             logger.info("Cancelled Background Runner work before bundle switch.");
-            logger.debug("Background Runner label: " + label);
+            logger.debug("Background Runner label: " + config.label);
         } catch (Exception e) {
             logger.warn("Failed to cancel Background Runner work before bundle switch.");
             logger.debug("Background Runner cancellation error: " + e.getMessage());
+        }
+
+        this.syncBackgroundRunnerScriptFromBundle(bundle, config);
+        this.rescheduleBackgroundRunnerWork(config);
+    }
+
+    private void rescheduleBackgroundRunnerWork(final BackgroundRunnerWorkConfig config) {
+        if (!config.autoStart || config.interval <= 0 || config.src.isEmpty()) {
+            return;
+        }
+
+        try {
+            @SuppressWarnings("unchecked")
+            final Class<? extends ListenableWorker> workerClass = (Class<? extends ListenableWorker>) Class.forName(
+                BACKGROUND_RUNNER_WORKER_CLASS
+            );
+            final Data data = new Data.Builder()
+                .putString("label", config.label)
+                .putString("src", config.src)
+                .putString("event", config.event)
+                .build();
+            final Constraints constraints = new Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build();
+            final WorkManager workManager = WorkManager.getInstance(this.activity.getApplicationContext());
+
+            if (!config.repeat) {
+                final OneTimeWorkRequest work = new OneTimeWorkRequest.Builder(workerClass)
+                    .setInitialDelay(config.interval, TimeUnit.MINUTES)
+                    .setInputData(data)
+                    .addTag(config.label)
+                    .setConstraints(constraints)
+                    .build();
+                workManager.enqueueUniqueWork(config.label, ExistingWorkPolicy.REPLACE, work);
+            } else {
+                final PeriodicWorkRequest work = new PeriodicWorkRequest.Builder(workerClass, config.interval, TimeUnit.MINUTES)
+                    .setInitialDelay(config.interval, TimeUnit.MINUTES)
+                    .setInputData(data)
+                    .addTag(config.label)
+                    .setConstraints(constraints)
+                    .build();
+                workManager.enqueueUniquePeriodicWork(config.label, ExistingPeriodicWorkPolicy.UPDATE, work);
+            }
+
+            logger.info("Rescheduled Background Runner work after bundle switch.");
+        } catch (ClassNotFoundException ignored) {
+            logger.debug("Background Runner plugin not installed, skipping reschedule.");
+        } catch (Exception e) {
+            logger.warn("Failed to reschedule Background Runner work after bundle switch.");
+            logger.debug("Background Runner reschedule error: " + e.getMessage());
         }
     }
 
