@@ -56,8 +56,9 @@ declare module '@capacitor/cli' {
       /**
        * Configure how the plugin checks for, downloads, and applies live updates.
        *
-       * The plugin checks for updates when the app moves to the foreground and, if
-       * {@link periodCheckDelay} is set, on a repeating timer while the app stays open.
+       * The plugin checks for updates when the app moves to the foreground. When
+       * {@link periodCheckDelay} is greater than 0, it also checks on a repeating timer
+       * while the app stays open.
        *
        * Boolean values keep their existing behavior:
        * - `true`: Same as `"atBackground"`.
@@ -149,10 +150,10 @@ declare module '@capacitor/cli' {
        * @deprecated Use {@link PluginsConfig.CapacitorUpdater.autoUpdate} string modes instead.
        * Works well for apps less than 10MB and with uploads done using --delta flag.
        * Zip or apps more than 10MB will be relatively slow for users to update.
-       * - false: Never do direct updates (use default behavior: download on foreground check, apply when backgrounded)
-       * - atInstall: Direct update only after app install or native app store update, otherwise act as directUpdate = false
-       * - onLaunch: Direct update only when the app is brought to the foreground from a killed state, otherwise act as directUpdate = false
-       * - always: Direct update on every foreground check whenever an update is available, never act as directUpdate = false
+       * - false: Never do direct updates
+       * - atInstall: Same as `"atInstall"` for {@link autoUpdate}
+       * - onLaunch: Same as `"onLaunch"` for {@link autoUpdate}
+       * - always: Same as `"always"` for {@link autoUpdate}
        * - true: (deprecated) Same as "always" for backward compatibility
        *
        * Activate this flag will automatically make the CLI upload delta in CICD envs and will ask for confirmation in local uploads.
@@ -204,7 +205,8 @@ declare module '@capacitor/cli' {
       autoSplashscreenTimeout?: number;
 
       /**
-       * Configure the delay period for period update check. the unit is in seconds.
+       * Configure the interval in seconds for repeating update checks while the app stays open.
+       * Foreground checks still run when this is 0. Values below 600 are normalized to 600.
        *
        * Only available for Android and iOS.
        * Cannot be less than 600 seconds (10 minutes).
