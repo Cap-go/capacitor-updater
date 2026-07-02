@@ -51,10 +51,15 @@ import UIKit
     private static var rateLimitStatisticSent = false
 
     // Stats batching - queue events and send max once per second
-    private var statsQueue: [StatsEvent] = []
+    private var statsQueue: [QueuedStatsEvent] = []
     private let statsQueueLock = NSLock()
     private var statsFlushTimer: Timer?
     private static let statsFlushInterval: TimeInterval = 1.0
+
+    private struct QueuedStatsEvent {
+        let event: StatsEvent
+        let onSent: (() -> Void)?
+    }
 
     private static func sanitizeHeaderValue(_ value: String) -> String {
         if value.isEmpty {
@@ -361,6 +366,22 @@ import UIKit
 
     private func isProd() -> Bool {
         return !self.isDevEnvironment && !self.isAppStoreReceiptSandbox() && !self.hasEmbeddedMobileProvision()
+    }
+
+    private func installSource() -> String? {
+        if isEmulator() || self.isDevEnvironment || self.hasEmbeddedMobileProvision() {
+            return nil
+        }
+        guard let receiptURL = Bundle.main.appStoreReceiptURL else {
+            return nil
+        }
+        if receiptURL.lastPathComponent == "sandboxReceipt" {
+            return "testflight"
+        }
+        guard FileManager.default.fileExists(atPath: receiptURL.path) else {
+            return nil
+        }
+        return "app_store"
     }
 
     /**
@@ -744,6 +765,7 @@ import UIKit
             plugin_version: self.pluginVersion,
             is_emulator: self.isEmulator(),
             is_prod: self.isProd(),
+            installSource: self.installSource(),
             action: nil,
             channel: nil,
             defaultChannel: self.defaultChannel,
@@ -1055,8 +1077,8 @@ import UIKit
 
         let totalFiles = manifest.count
 
-        // Keep this bounded because each manifest operation waits on a URLSession callback.
-        manifestDownloadQueue.maxConcurrentOperationCount = min(8, max(1, totalFiles))
+        // Configure concurrent operation count similar to Android: min(64, max(32, totalFiles))
+        manifestDownloadQueue.maxConcurrentOperationCount = min(64, max(32, totalFiles))
 
         // Thread-safe counters for concurrent operations
         let completedFiles = AtomicCounter()
@@ -1155,7 +1177,7 @@ import UIKit
                 do {
                     // Try builtin first
                     if FileManager.default.fileExists(atPath: builtinFilePath.path) && self.verifyChecksum(file: builtinFilePath, expectedHash: finalFileHash) {
-                        try FileManager.default.copyItem(at: builtinFilePath, to: destFilePath)
+                        try self.copyItemReplacing(from: builtinFilePath, to: destFilePath)
                         self.logger.info("downloadManifest \(fileName) using builtin file \(id)")
                     }
                     // Try cache
@@ -1318,8 +1340,8 @@ import UIKit
                 finalData = decompressedData
             }
 
-            // Write to destination
-            try finalData.write(to: destFilePath)
+            // Write to destination (replace if leftover from a previous failed download)
+            try writeDataAtomically(finalData, to: destFilePath)
 
             // Always verify checksum when file_hash is present
             let calculatedChecksum = CryptoCipher.calcChecksum(filePath: destFilePath)
@@ -1331,8 +1353,8 @@ import UIKit
                 throw NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash)) for file \(fileName) at url \(downloadUrl)"])
             }
 
-            // Save to cache
-            try finalData.write(to: cacheFilePath)
+            // Save to cache (replace stale cache entries from partial or concurrent downloads)
+            try writeDataAtomically(finalData, to: cacheFilePath)
 
             self.logger.info("Manifest file downloaded and cached")
             self.logger.debug("Bundle: \(bundleId), File: \(fileName), Brotli: \(isBrotli), Encrypted: \(!self.publicKey.isEmpty && !sessionKey.isEmpty)")
@@ -1343,22 +1365,49 @@ import UIKit
         }
     }
 
+    /// Atomically write data to a file, replacing any existing file at the destination.
+    private func writeDataAtomically(_ data: Data, to destination: URL) throws {
+        let fileManager = FileManager.default
+        let tempURL = destination.deletingLastPathComponent().appendingPathComponent("\(destination.lastPathComponent).\(UUID().uuidString).tmp")
+        defer {
+            try? fileManager.removeItem(at: tempURL)
+        }
+
+        try data.write(to: tempURL, options: .atomic)
+        if fileManager.fileExists(atPath: destination.path) {
+            try fileManager.removeItem(at: destination)
+        }
+        try fileManager.moveItem(at: tempURL, to: destination)
+    }
+
+    /// Copy a file to the destination, replacing any existing file.
+    private func copyItemReplacing(from source: URL, to destination: URL) throws {
+        let fileManager = FileManager.default
+        if fileManager.fileExists(atPath: destination.path) {
+            try fileManager.removeItem(at: destination)
+        }
+        try fileManager.copyItem(at: source, to: destination)
+    }
+
     /// Atomically try to copy a file from cache - returns true if successful, false if file doesn't exist or copy failed
     /// This handles the race condition where OS can delete cache files between exists() check and copy
     private func tryCopyFromCache(from source: URL, to destination: URL, expectedHash: String) -> Bool {
+        let fileManager = FileManager.default
+
         // First quick check - if file doesn't exist, don't bother
-        guard FileManager.default.fileExists(atPath: source.path) else {
+        guard fileManager.fileExists(atPath: source.path) else {
             return false
         }
 
-        // Verify checksum before copy
+        // Verify checksum before copy; remove stale cache entries that would block re-download
         guard verifyChecksum(file: source, expectedHash: expectedHash) else {
+            try? fileManager.removeItem(at: source)
             return false
         }
 
         // Try to copy - if it fails (file deleted by OS between check and copy), return false
         do {
-            try FileManager.default.copyItem(at: source, to: destination)
+            try copyItemReplacing(from: source, to: destination)
             return true
         } catch {
             // File was deleted between check and copy, or other IO error - caller should download instead
@@ -2151,7 +2200,12 @@ import UIKit
         return setChannel
     }
 
-    func setChannel(channel: String, defaultChannelKey: String, allowSetDefaultChannel: Bool) -> SetChannel {
+    func setChannel(
+        channel: String,
+        defaultChannelKey: String,
+        allowSetDefaultChannel: Bool,
+        configDefaultChannel: String = ""
+    ) -> SetChannel {
         let setChannel: SetChannel = SetChannel()
 
         // Check if setting defaultChannel is allowed
@@ -2231,6 +2285,7 @@ import UIKit
         } else if responseValue.unset == true {
             UserDefaults.standard.removeObject(forKey: defaultChannelKey)
             UserDefaults.standard.synchronize()
+            self.defaultChannel = configDefaultChannel
             self.logger.info("Public channel requested, channel override removed")
 
             setChannel.status = responseValue.status ?? "ok"
@@ -2247,7 +2302,7 @@ import UIKit
         return setChannel
     }
 
-    func getChannel() -> GetChannel {
+    func getChannel(defaultChannelKey: String? = nil) -> GetChannel {
         let getChannel: GetChannel = GetChannel()
 
         // Check if rate limit was exceeded
@@ -2334,8 +2389,24 @@ import UIKit
             getChannel.message = responseValue.message ?? ""
             getChannel.channel = responseValue.channel ?? ""
             getChannel.allowSet = responseValue.allowSet ?? true
+            persistDefaultChannelFromResponse(channel: responseValue.channel, defaultChannelKey: defaultChannelKey)
         }
         return getChannel
+    }
+
+    func persistDefaultChannelFromResponse(channel: String?, defaultChannelKey: String?) {
+        guard let channelName = channel?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !channelName.isEmpty,
+              channelName != BundleInfo.ID_BUILTIN else {
+            return
+        }
+
+        self.defaultChannel = channelName
+        if let defaultChannelKey, !defaultChannelKey.isEmpty {
+            UserDefaults.standard.set(channelName, forKey: defaultChannelKey)
+            UserDefaults.standard.synchronize()
+        }
+        logger.info("defaultChannel synchronized from getChannel(): \(channelName)")
     }
 
     func listChannels() -> ListChannels {
@@ -2356,23 +2427,11 @@ import UIKit
 
         // Create info object and convert to query parameters
         let infoObject = self.createInfoObject()
-
-        // Create query parameters from InfoObject
         var urlComponents = URLComponents(string: self.channelUrl)
         var queryItems: [URLQueryItem] = urlComponents?.queryItems ?? []
 
-        // Convert InfoObject to dictionary using Mirror
-        let mirror = Mirror(reflecting: infoObject)
-        for child in mirror.children {
-            if let key = child.label, let value = child.value as? CustomStringConvertible {
-                queryItems.append(URLQueryItem(name: key, value: String(describing: value)))
-            } else if let key = child.label {
-                // Handle optional values
-                let mirror = Mirror(reflecting: child.value)
-                if let value = mirror.children.first?.value {
-                    queryItems.append(URLQueryItem(name: key, value: String(describing: value)))
-                }
-            }
+        for (key, value) in infoObject.toParameters() {
+            queryItems.append(URLQueryItem(name: key, value: String(describing: value)))
         }
 
         urlComponents?.queryItems = queryItems
@@ -2431,7 +2490,7 @@ import UIKit
         if let channels = responseValue.channels {
             listChannels.channels = channels.map { channel in
                 var channelDict: [String: Any] = [:]
-                channelDict["id"] = channel.id ?? ""
+                channelDict["id"] = channel.id
                 channelDict["name"] = channel.name ?? ""
                 channelDict["public"] = channel.public ?? false
                 channelDict["allow_self_set"] = channel.allow_self_set ?? false
@@ -2452,14 +2511,24 @@ import UIKit
     }()
 
     func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {
-        sendStatsWithMetadata(action: action, versionName: versionName, oldVersionName: oldVersionName, metadata: nil)
+        sendStatsWithMetadata(action: action, versionName: versionName, oldVersionName: oldVersionName, metadata: nil, onSent: nil)
     }
 
     func sendStats(action: String, versionName: String?, oldVersionName: String?, metadata: [String: String]) {
-        sendStatsWithMetadata(action: action, versionName: versionName, oldVersionName: oldVersionName, metadata: metadata)
+        sendStatsWithMetadata(action: action, versionName: versionName, oldVersionName: oldVersionName, metadata: metadata, onSent: nil)
     }
 
-    private func sendStatsWithMetadata(action: String, versionName: String?, oldVersionName: String?, metadata: [String: String]?) {
+    func sendStats(action: String, versionName: String?, oldVersionName: String?, metadata: [String: String], onSent: @escaping () -> Void) {
+        sendStatsWithMetadata(action: action, versionName: versionName, oldVersionName: oldVersionName, metadata: metadata, onSent: onSent)
+    }
+
+    private func sendStatsWithMetadata(
+        action: String,
+        versionName: String?,
+        oldVersionName: String?,
+        metadata: [String: String]?,
+        onSent: (() -> Void)?
+    ) {
         if previewSession {
             logger.debug("Skipping sendStats during preview session.")
             return
@@ -2491,6 +2560,7 @@ import UIKit
             plugin_version: info.plugin_version,
             is_emulator: info.is_emulator,
             is_prod: info.is_prod,
+            installSource: info.installSource,
             action: action,
             channel: info.channel,
             defaultChannel: info.defaultChannel,
@@ -2500,7 +2570,7 @@ import UIKit
         )
 
         statsQueueLock.lock()
-        statsQueue.append(event)
+        statsQueue.append(QueuedStatsEvent(event: event, onSent: onSent))
         statsQueueLock.unlock()
 
         ensureStatsTimerStarted()
@@ -2527,9 +2597,12 @@ import UIKit
             statsQueueLock.unlock()
             return
         }
-        let eventsToSend = statsQueue
+        let queuedEvents = statsQueue
         statsQueue.removeAll()
         statsQueueLock.unlock()
+
+        let eventsToSend = queuedEvents.map(\.event)
+        let onSentCallbacks = queuedEvents.compactMap(\.onSent)
 
         operationQueue.maxConcurrentOperationCount = 1
 
@@ -2548,10 +2621,18 @@ import UIKit
                     return
                 }
 
+                if let statusCode = response.response?.statusCode, !(200...299).contains(statusCode) {
+                    self.logger.error("Error sending stats batch")
+                    self.logger.debug("Response code: \(statusCode)")
+                    semaphore.signal()
+                    return
+                }
+
                 switch response.result {
                 case .success:
                     self.logger.info("Stats batch sent successfully")
                     self.logger.debug("Sent \(eventsToSend.count) events")
+                    onSentCallbacks.forEach { $0() }
                 case let .failure(error):
                     self.logger.error("Error sending stats batch")
                     self.logger.debug("Response: \(response.value?.debugDescription ?? "nil"), Error: \(error.localizedDescription)")

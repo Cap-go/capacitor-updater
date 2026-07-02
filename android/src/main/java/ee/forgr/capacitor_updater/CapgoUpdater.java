@@ -9,21 +9,32 @@ package ee.forgr.capacitor_updater;
 import android.app.Activity;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.os.Build;
 import androidx.annotation.NonNull;
 import androidx.lifecycle.LifecycleOwner;
+import androidx.work.Constraints;
 import androidx.work.Data;
+import androidx.work.ExistingPeriodicWorkPolicy;
+import androidx.work.ExistingWorkPolicy;
+import androidx.work.ListenableWorker;
+import androidx.work.NetworkType;
+import androidx.work.OneTimeWorkRequest;
+import androidx.work.PeriodicWorkRequest;
 import androidx.work.WorkInfo;
 import androidx.work.WorkManager;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import java.io.BufferedInputStream;
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.FilenameFilter;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Date;
@@ -63,6 +74,9 @@ public class CapgoUpdater {
     private static final String PREVIEW_FALLBACK_VERSION = "previewFallbackVersion";
     private static final String bundleDirectory = "versions";
     private static final String TEMP_UNZIP_PREFIX = "capgo_unzip_";
+    private static final String CAPACITOR_CONFIG_ASSET = "capacitor.config.json";
+    private static final String BACKGROUND_RUNNER_CONFIG_KEY = "BackgroundRunner";
+    private static final String BACKGROUND_RUNNER_WORKER_CLASS = "io.ionic.backgroundrunner.plugin.RunnerWorker";
 
     public static final String TAG = "Capacitor-updater";
     public SharedPreferences.Editor editor;
@@ -82,7 +96,7 @@ public class CapgoUpdater {
     public String channelUrl = "";
     public String defaultChannel = "";
     public String appId = "";
-    public boolean previewSession = false;
+    public volatile boolean previewSession = false;
     public String publicKey = "";
     public String deviceID = "";
     public int timeout = 20000;
@@ -97,10 +111,21 @@ public class CapgoUpdater {
     private static volatile boolean rateLimitStatisticSent = false;
 
     // Stats batching - queue events and send max once per second
-    private final List<JSONObject> statsQueue = new CopyOnWriteArrayList<>();
+    private final List<QueuedStatsEvent> statsQueue = new CopyOnWriteArrayList<>();
     private final ScheduledExecutorService statsScheduler = Executors.newSingleThreadScheduledExecutor();
     private ScheduledFuture<?> statsFlushTask = null;
     private static final long STATS_FLUSH_INTERVAL_MS = 1000;
+
+    private static final class QueuedStatsEvent {
+
+        private final JSONObject event;
+        private final Runnable onSent;
+
+        private QueuedStatsEvent(final JSONObject event, final Runnable onSent) {
+            this.event = event;
+            this.onSent = onSent;
+        }
+    }
 
     private final Map<String, CompletableFuture<BundleInfo>> downloadFutures = new ConcurrentHashMap<>();
     private final ExecutorService io = Executors.newSingleThreadExecutor();
@@ -122,6 +147,51 @@ public class CapgoUpdater {
             return (activity.getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) == 0;
         } catch (Exception e) {
             return true; // Default to production if we can't determine
+        }
+    }
+
+    static String installSourceForInstallerPackage(final String installerPackageName) {
+        if (installerPackageName == null || installerPackageName.trim().isEmpty()) {
+            return "";
+        }
+
+        switch (installerPackageName) {
+            case "com.android.vending":
+                // Android exposes the Google Play installer package, but not whether the app came from production, alpha, beta, or internal testing.
+                return "google_play";
+            case "com.amazon.venezia":
+                return "amazon_appstore";
+            case "com.sec.android.app.samsungapps":
+                return "samsung_galaxy_store";
+            case "com.huawei.appmarket":
+                return "huawei_appgallery";
+            default:
+                return "";
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    private String getInstallSource() {
+        if (activity == null) {
+            return "";
+        }
+
+        try {
+            PackageManager packageManager = activity.getPackageManager();
+            String packageName = activity.getPackageName();
+            String installerPackageName;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                android.content.pm.InstallSourceInfo installSourceInfo = packageManager.getInstallSourceInfo(packageName);
+                installerPackageName = installSourceInfo.getInstallingPackageName();
+                if (installerPackageName == null || installerPackageName.trim().isEmpty()) {
+                    installerPackageName = installSourceInfo.getInitiatingPackageName();
+                }
+            } else {
+                installerPackageName = packageManager.getInstallerPackageName(packageName);
+            }
+            return installSourceForInstallerPackage(installerPackageName);
+        } catch (Exception e) {
+            return "";
         }
     }
 
@@ -644,6 +714,7 @@ public class CapgoUpdater {
             this.appId,
             this.pluginVersion,
             this.isProd(),
+            this.getInstallSource(),
             this.statsUrl,
             this.deviceID,
             this.versionBuild,
@@ -745,11 +816,15 @@ public class CapgoUpdater {
             CapgoUpdater.this.notifyListeners("updateAvailable", ret);
             logger.info("setNext: " + setNext);
             if (setNext) {
-                logger.info("directUpdate: " + this.directUpdate);
-                if (this.directUpdate) {
+                if (this.previewSession) {
+                    logger.info("Preview session is active, skipping automatic install of downloaded bundle");
+                    this.directUpdate = false;
+                } else if (this.directUpdate) {
+                    logger.info("directUpdate: " + this.directUpdate);
                     CapgoUpdater.this.directUpdateFinish(next);
                     this.directUpdate = false;
                 } else {
+                    logger.info("directUpdate: " + this.directUpdate);
                     this.setNextBundle(next.getId());
                 }
             }
@@ -919,6 +994,7 @@ public class CapgoUpdater {
     }
 
     private void setCurrentBundle(final File bundle) {
+        this.resetBackgroundRunnerWorkForBundleSwitch(bundle);
         this.editor.putString(this.CAP_SERVER_PATH, bundle.getPath());
         logger.info("Current bundle set to: " + bundle);
         this.editor.commit();
@@ -926,6 +1002,213 @@ public class CapgoUpdater {
 
     static boolean shouldResetForForeignBundle(final String bundlePath, final boolean isBuiltin, final boolean hasStoredBundleInfo) {
         return bundlePath != null && !bundlePath.trim().isEmpty() && !isBuiltin && !hasStoredBundleInfo;
+    }
+
+    static final class BackgroundRunnerWorkConfig {
+
+        final String label;
+        final String src;
+        final String event;
+        final boolean autoStart;
+        final boolean repeat;
+        final int interval;
+
+        BackgroundRunnerWorkConfig(
+            final String label,
+            final String src,
+            final String event,
+            final boolean autoStart,
+            final boolean repeat,
+            final int interval
+        ) {
+            this.label = label;
+            this.src = src;
+            this.event = event;
+            this.autoStart = autoStart;
+            this.repeat = repeat;
+            this.interval = interval;
+        }
+    }
+
+    static BackgroundRunnerWorkConfig getBackgroundRunnerWorkConfigFromConfig(final String configJson) {
+        if (configJson == null || configJson.trim().isEmpty()) {
+            return null;
+        }
+
+        try {
+            final JSONObject config = new JSONObject(configJson);
+            final JSONObject plugins = config.optJSONObject("plugins");
+            if (plugins == null) {
+                return null;
+            }
+
+            final JSONObject backgroundRunner = plugins.optJSONObject(BACKGROUND_RUNNER_CONFIG_KEY);
+            if (backgroundRunner == null) {
+                return null;
+            }
+
+            final String label = backgroundRunner.optString("label", "").trim();
+            if (label.isEmpty()) {
+                return null;
+            }
+
+            final String src = backgroundRunner.optString("src", "").trim();
+            final String event = backgroundRunner.optString("event", "").trim();
+            return new BackgroundRunnerWorkConfig(
+                label,
+                src,
+                event,
+                backgroundRunner.optBoolean("autoStart", false),
+                backgroundRunner.optBoolean("repeat", false),
+                backgroundRunner.optInt("interval", 0)
+            );
+        } catch (JSONException ignored) {
+            return null;
+        }
+    }
+
+    static String getBackgroundRunnerLabelFromConfig(final String configJson) {
+        final BackgroundRunnerWorkConfig config = getBackgroundRunnerWorkConfigFromConfig(configJson);
+        return config == null ? null : config.label;
+    }
+
+    private String readAssetAsString(final String assetPath) throws IOException {
+        final StringBuilder buffer = new StringBuilder();
+        try (
+            final BufferedReader reader = new BufferedReader(
+                new InputStreamReader(this.activity.getAssets().open(assetPath), StandardCharsets.UTF_8)
+            )
+        ) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                buffer.append(line).append('\n');
+            }
+        }
+        return buffer.toString();
+    }
+
+    private void copyFileAtomically(final File source, final File dest) throws IOException {
+        final File parent = dest.getParentFile();
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            throw new IOException("Failed to create parent directory: " + parent.getAbsolutePath());
+        }
+
+        final File tempFile = new File(parent, dest.getName() + ".capgo_tmp");
+        try (final FileInputStream input = new FileInputStream(source); final FileOutputStream output = new FileOutputStream(tempFile)) {
+            final byte[] buffer = new byte[1024 * 1024];
+            int length;
+            while ((length = input.read(buffer)) != -1) {
+                output.write(buffer, 0, length);
+            }
+        }
+
+        if (!tempFile.renameTo(dest)) {
+            if (!dest.delete() || !tempFile.renameTo(dest)) {
+                tempFile.delete();
+                throw new IOException("Failed to replace file: " + dest.getAbsolutePath());
+            }
+        }
+    }
+
+    private void syncBackgroundRunnerScriptFromBundle(final File bundle, final BackgroundRunnerWorkConfig config) {
+        if (this.activity == null || bundle == null || config == null || config.src == null || config.src.isEmpty()) {
+            return;
+        }
+
+        if (bundle.getPath().endsWith("/public") || "public".equals(bundle.getName())) {
+            return;
+        }
+
+        try {
+            final File source = resolvePathInsideDirectory(bundle, config.src);
+            if (!source.isFile()) {
+                return;
+            }
+
+            final File publicDir = new File(this.activity.getFilesDir(), "public");
+            final File dest = resolvePathInsideDirectory(publicDir, config.src);
+            this.copyFileAtomically(source, dest);
+            logger.info("Synced Background Runner script into native public storage before bundle switch.");
+            logger.debug("Background Runner script path: " + dest.getAbsolutePath());
+        } catch (Exception e) {
+            logger.debug("Background Runner script sync skipped: " + e.getMessage());
+        }
+    }
+
+    private void resetBackgroundRunnerWorkForBundleSwitch(final File bundle) {
+        if (this.activity == null) {
+            return;
+        }
+
+        final BackgroundRunnerWorkConfig config;
+        try {
+            config = getBackgroundRunnerWorkConfigFromConfig(this.readAssetAsString(CAPACITOR_CONFIG_ASSET));
+        } catch (IOException ignored) {
+            return;
+        }
+
+        if (config == null) {
+            return;
+        }
+
+        try {
+            final WorkManager workManager = WorkManager.getInstance(this.activity.getApplicationContext());
+            workManager.cancelUniqueWork(config.label);
+            workManager.cancelAllWorkByTag(config.label);
+            logger.info("Cancelled Background Runner work before bundle switch.");
+            logger.debug("Background Runner label: " + config.label);
+        } catch (Exception e) {
+            logger.warn("Failed to cancel Background Runner work before bundle switch.");
+            logger.debug("Background Runner cancellation error: " + e.getMessage());
+        }
+
+        this.syncBackgroundRunnerScriptFromBundle(bundle, config);
+        this.rescheduleBackgroundRunnerWork(config);
+    }
+
+    private void rescheduleBackgroundRunnerWork(final BackgroundRunnerWorkConfig config) {
+        if (!config.autoStart || config.interval <= 0 || config.src.isEmpty()) {
+            return;
+        }
+
+        try {
+            @SuppressWarnings("unchecked")
+            final Class<? extends ListenableWorker> workerClass = (Class<? extends ListenableWorker>) Class.forName(
+                BACKGROUND_RUNNER_WORKER_CLASS
+            );
+            final Data data = new Data.Builder()
+                .putString("label", config.label)
+                .putString("src", config.src)
+                .putString("event", config.event)
+                .build();
+            final Constraints constraints = new Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build();
+            final WorkManager workManager = WorkManager.getInstance(this.activity.getApplicationContext());
+
+            if (!config.repeat) {
+                final OneTimeWorkRequest work = new OneTimeWorkRequest.Builder(workerClass)
+                    .setInitialDelay(config.interval, TimeUnit.MINUTES)
+                    .setInputData(data)
+                    .addTag(config.label)
+                    .setConstraints(constraints)
+                    .build();
+                workManager.enqueueUniqueWork(config.label, ExistingWorkPolicy.REPLACE, work);
+            } else {
+                final PeriodicWorkRequest work = new PeriodicWorkRequest.Builder(workerClass, config.interval, TimeUnit.MINUTES)
+                    .setInitialDelay(config.interval, TimeUnit.MINUTES)
+                    .setInputData(data)
+                    .addTag(config.label)
+                    .setConstraints(constraints)
+                    .build();
+                workManager.enqueueUniquePeriodicWork(config.label, ExistingPeriodicWorkPolicy.UPDATE, work);
+            }
+
+            logger.info("Rescheduled Background Runner work after bundle switch.");
+        } catch (ClassNotFoundException ignored) {
+            logger.debug("Background Runner plugin not installed, skipping reschedule.");
+        } catch (Exception e) {
+            logger.warn("Failed to reschedule Background Runner work after bundle switch.");
+            logger.debug("Background Runner reschedule error: " + e.getMessage());
+        }
     }
 
     private boolean hasStoredBundleInfo(final String id) {
@@ -1389,6 +1672,7 @@ public class CapgoUpdater {
         json.put("plugin_version", this.pluginVersion);
         json.put("is_emulator", this.isEmulator());
         json.put("is_prod", this.isProd());
+        json.put("install_source", this.getInstallSource());
         json.put("defaultChannel", this.defaultChannel);
 
         // Add encryption key ID if encryption is enabled (use cached value)
@@ -1614,6 +1898,17 @@ public class CapgoUpdater {
         final boolean allowSetDefaultChannel,
         final Callback callback
     ) {
+        this.setChannel(channel, editor, defaultChannelKey, allowSetDefaultChannel, "", callback);
+    }
+
+    public void setChannel(
+        final String channel,
+        final SharedPreferences.Editor editor,
+        final String defaultChannelKey,
+        final boolean allowSetDefaultChannel,
+        final String configDefaultChannel,
+        final Callback callback
+    ) {
         // Check if setting defaultChannel is allowed
         if (!allowSetDefaultChannel) {
             logger.error("setChannel is disabled by allowSetDefaultChannel config");
@@ -1665,6 +1960,7 @@ public class CapgoUpdater {
                 // Clear persisted defaultChannel and revert to config value
                 editor.remove(defaultChannelKey);
                 editor.apply();
+                this.defaultChannel = configDefaultChannel;
                 logger.info("Public channel requested, channel override removed");
                 callback.callback(res);
             } else {
@@ -1679,6 +1975,10 @@ public class CapgoUpdater {
     }
 
     public void getChannel(final Callback callback) {
+        this.getChannel(callback, null, null);
+    }
+
+    public void getChannel(final Callback callback, final SharedPreferences.Editor editor, final String defaultChannelKey) {
         // Check if rate limit was exceeded
         if (rateLimitExceeded) {
             logger.debug("Skipping getChannel due to rate limit (429). Requests will resume after app restart.");
@@ -1797,6 +2097,7 @@ public class CapgoUpdater {
                                 ret.put(key, jsonResponse.get(key));
                             }
                         }
+                        persistDefaultChannelFromResponse(ret.get("channel"), editor, defaultChannelKey);
                         logger.info("Channel get to \"" + ret);
                         callback.callback(ret);
                     } catch (JSONException e) {
@@ -1808,6 +2109,24 @@ public class CapgoUpdater {
                 }
             }
         );
+    }
+
+    void persistDefaultChannelFromResponse(final Object channel, final SharedPreferences.Editor editor, final String defaultChannelKey) {
+        if (!(channel instanceof String)) {
+            return;
+        }
+
+        final String channelName = ((String) channel).trim();
+        if (channelName.isEmpty() || BundleInfo.ID_BUILTIN.equals(channelName)) {
+            return;
+        }
+
+        this.defaultChannel = channelName;
+        if (editor != null && defaultChannelKey != null && !defaultChannelKey.isEmpty()) {
+            editor.putString(defaultChannelKey, channelName);
+            editor.apply();
+        }
+        logger.info("defaultChannel synchronized from getChannel(): " + channelName);
     }
 
     public void listChannels(final Callback callback) {
@@ -1902,64 +2221,66 @@ public class CapgoUpdater {
                         String data = responseBody.string();
 
                         try {
-                            Map<String, Object> ret = new HashMap<>();
+                            Map<String, Object> ret = parseListChannelsResponse(data);
 
+                            logger.info("Channels listed successfully");
+                            callback.callback(ret);
+                        } catch (JSONException arrayException) {
+                            // If not an array, try to parse as error object
                             try {
-                                // Try to parse as direct array first
-                                JSONArray channelsJson = new JSONArray(data);
-                                List<Map<String, Object>> channelsList = new ArrayList<>();
-
-                                for (int i = 0; i < channelsJson.length(); i++) {
-                                    JSONObject channelJson = channelsJson.getJSONObject(i);
-                                    Map<String, Object> channel = new HashMap<>();
-                                    channel.put("id", channelJson.optString("id", ""));
-                                    channel.put("name", channelJson.optString("name", ""));
-                                    channel.put("public", channelJson.optBoolean("public", false));
-                                    channel.put("allow_self_set", channelJson.optBoolean("allow_self_set", false));
-                                    channelsList.add(channel);
-                                }
-
-                                // Wrap in channels object for JS API
-                                ret.put("channels", channelsList);
-
-                                logger.info("Channels listed successfully");
-                                callback.callback(ret);
-                            } catch (JSONException arrayException) {
-                                // If not an array, try to parse as error object
-                                try {
-                                    JSONObject json = new JSONObject(data);
-                                    if (json.has("error")) {
-                                        Map<String, Object> retError = new HashMap<>();
-                                        retError.put("error", json.getString("error"));
-                                        if (json.has("message")) {
-                                            retError.put("message", json.getString("message"));
-                                        } else {
-                                            retError.put("message", "server did not provide a message");
-                                        }
-                                        callback.callback(retError);
-                                        return;
-                                    }
+                                JSONObject json = new JSONObject(data);
+                                if (json.has("error")) {
                                     Map<String, Object> retError = new HashMap<>();
-                                    retError.put("message", "Unexpected channels response format");
-                                    retError.put("error", "parse_error");
+                                    retError.put("error", json.getString("error"));
+                                    if (json.has("message")) {
+                                        retError.put("message", json.getString("message"));
+                                    } else {
+                                        retError.put("message", "server did not provide a message");
+                                    }
                                     callback.callback(retError);
                                     return;
-                                } catch (JSONException objException) {
-                                    // If neither array nor object, throw parse error
-                                    arrayException.addSuppressed(objException);
-                                    throw arrayException;
                                 }
+                                Map<String, Object> retError = new HashMap<>();
+                                retError.put("message", "Unexpected channels response format");
+                                retError.put("error", "parse_error");
+                                callback.callback(retError);
+                                return;
+                            } catch (JSONException objException) {
+                                // If neither array nor object, throw parse error
+                                arrayException.addSuppressed(objException);
+                                Map<String, Object> retError = new HashMap<>();
+                                retError.put("message", "JSON parse error: " + arrayException.getMessage());
+                                retError.put("error", "parse_error");
+                                callback.callback(retError);
                             }
-                        } catch (JSONException e) {
-                            Map<String, Object> retError = new HashMap<>();
-                            retError.put("message", "JSON parse error: " + e.getMessage());
-                            retError.put("error", "parse_error");
-                            callback.callback(retError);
                         }
                     }
                 }
             }
         );
+    }
+
+    static Map<String, Object> parseListChannelsResponse(final String data) throws JSONException {
+        JSONArray channelsJson = new JSONArray(data);
+        List<Map<String, Object>> channelsList = new ArrayList<>();
+
+        for (int i = 0; i < channelsJson.length(); i++) {
+            JSONObject channelJson = channelsJson.getJSONObject(i);
+            Object channelId = channelJson.get("id");
+            if (!(channelId instanceof Number)) {
+                throw new JSONException("Channel id must be a number");
+            }
+            Map<String, Object> channel = new HashMap<>();
+            channel.put("id", channelId);
+            channel.put("name", channelJson.optString("name", ""));
+            channel.put("public", channelJson.optBoolean("public", false));
+            channel.put("allow_self_set", channelJson.optBoolean("allow_self_set", false));
+            channelsList.add(channel);
+        }
+
+        Map<String, Object> ret = new HashMap<>();
+        ret.put("channels", channelsList);
+        return ret;
     }
 
     public void sendStats(final String action) {
@@ -1975,6 +2296,16 @@ public class CapgoUpdater {
     }
 
     public void sendStats(final String action, final String versionName, final String oldVersionName, final Map<String, String> metadata) {
+        this.sendStats(action, versionName, oldVersionName, metadata, null);
+    }
+
+    public void sendStats(
+        final String action,
+        final String versionName,
+        final String oldVersionName,
+        final Map<String, String> metadata,
+        final Runnable onSent
+    ) {
         if (this.previewSession) {
             if (logger != null) {
                 logger.debug("Skipping sendStats during preview session.");
@@ -2009,7 +2340,7 @@ public class CapgoUpdater {
             return;
         }
 
-        statsQueue.add(json);
+        statsQueue.add(new QueuedStatsEvent(json, onSent));
         ensureStatsTimerStarted();
     }
 
@@ -2036,7 +2367,7 @@ public class CapgoUpdater {
         }
 
         // Copy and clear the queue atomically using synchronized block
-        List<JSONObject> eventsToSend;
+        List<QueuedStatsEvent> eventsToSend;
         synchronized (statsQueue) {
             if (statsQueue.isEmpty()) {
                 return;
@@ -2046,8 +2377,8 @@ public class CapgoUpdater {
         }
 
         JSONArray jsonArray = new JSONArray();
-        for (JSONObject event : eventsToSend) {
-            jsonArray.put(event);
+        for (QueuedStatsEvent queuedEvent : eventsToSend) {
+            jsonArray.put(queuedEvent.event);
         }
 
         Request request = new Request.Builder()
@@ -2075,6 +2406,7 @@ public class CapgoUpdater {
                         if (response.isSuccessful()) {
                             logger.info("Stats batch sent successfully");
                             logger.debug("Sent " + eventCount + " events");
+                            runStatsCallbacks(eventsToSend);
                         } else {
                             logger.error("Error sending stats batch");
                             logger.debug("Response code: " + response.code());
@@ -2083,6 +2415,23 @@ public class CapgoUpdater {
                 }
             }
         );
+    }
+
+    private void runStatsCallbacks(final List<QueuedStatsEvent> sentEvents) {
+        for (final QueuedStatsEvent sentEvent : sentEvents) {
+            if (sentEvent.onSent == null) {
+                continue;
+            }
+
+            try {
+                sentEvent.onSent.run();
+            } catch (Exception e) {
+                if (logger != null) {
+                    logger.error("Error running stats sent callback");
+                    logger.debug("Error: " + e.getMessage());
+                }
+            }
+        }
     }
 
     public BundleInfo getBundleInfo(final String id) {

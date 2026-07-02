@@ -19,42 +19,78 @@ import android.widget.ListView;
 import android.widget.ProgressBar;
 import com.getcapacitor.Bridge;
 import com.getcapacitor.BridgeActivity;
+import com.getcapacitor.JSArray;
+import com.getcapacitor.JSObject;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.json.JSONArray;
+import org.json.JSONObject;
 
-public class ShakeMenu implements ShakeDetector.Listener {
+public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetector.Listener {
+
+    private interface PreviewMenuAction {
+        boolean run();
+    }
 
     private CapacitorUpdaterPlugin plugin;
     private BridgeActivity activity;
     private ShakeDetector shakeDetector;
+    private ThreeFingerPinchDetector pinchDetector;
     private boolean isShowing = false;
     private Logger logger;
+    private String gesture;
 
-    public ShakeMenu(CapacitorUpdaterPlugin plugin, BridgeActivity activity, Logger logger) {
+    public ShakeMenu(CapacitorUpdaterPlugin plugin, BridgeActivity activity, Logger logger, String gesture) {
         this.plugin = plugin;
         this.activity = activity;
         this.logger = logger;
+        this.gesture = gesture;
 
-        SensorManager sensorManager = (SensorManager) activity.getSystemService(Activity.SENSOR_SERVICE);
-        this.shakeDetector = new ShakeDetector(this);
-        this.shakeDetector.start(sensorManager);
+        if (CapacitorUpdaterPlugin.SHAKE_MENU_GESTURE_THREE_FINGER_PINCH.equals(gesture)) {
+            this.pinchDetector = new ThreeFingerPinchDetector(this, logger);
+            this.pinchDetector.start(activity);
+        } else {
+            SensorManager sensorManager = (SensorManager) activity.getSystemService(Activity.SENSOR_SERVICE);
+            this.shakeDetector = new ShakeDetector(this);
+            this.shakeDetector.start(sensorManager);
+        }
+    }
+
+    public boolean usesGesture(String gesture) {
+        return this.gesture != null && this.gesture.equals(gesture);
     }
 
     public void stop() {
         if (shakeDetector != null) {
             shakeDetector.stop();
         }
+        if (pinchDetector != null) {
+            pinchDetector.stop();
+        }
     }
 
     @Override
     public void onShakeDetected() {
-        logger.info("Shake detected");
+        onMenuGestureDetected("Shake");
+    }
 
-        // Check if shake menu is enabled
-        if (!plugin.shakeMenuEnabled) {
-            logger.info("Shake menu is disabled");
+    @Override
+    public void onThreeFingerPinchDetected() {
+        onMenuGestureDetected("Three finger pinch");
+    }
+
+    private void onMenuGestureDetected(String gestureName) {
+        logger.info(gestureName + " detected");
+
+        boolean canShowPreviewMenu = Boolean.TRUE.equals(plugin.shakeMenuEnabled) && plugin.hasActivePreviewSession();
+        boolean canShowChannelSelector = Boolean.TRUE.equals(plugin.shakeChannelSelectorEnabled);
+        if (!canShowPreviewMenu && !canShowChannelSelector) {
+            if (Boolean.TRUE.equals(plugin.shakeMenuEnabled)) {
+                logger.info("Shake preview menu ignored because no preview session is active");
+            } else {
+                logger.info("Shake menu is disabled");
+            }
             return;
         }
 
@@ -66,12 +102,10 @@ public class ShakeMenu implements ShakeDetector.Listener {
 
         isShowing = true;
 
-        if (plugin.hasActivePreviewSession()) {
+        if (canShowPreviewMenu) {
             showDefaultMenu();
-        } else if (plugin.shakeChannelSelectorEnabled) {
-            showChannelSelector();
         } else {
-            showDefaultMenu();
+            showChannelSelector();
         }
     }
 
@@ -79,26 +113,53 @@ public class ShakeMenu implements ShakeDetector.Listener {
         activity.runOnUiThread(() -> {
             try {
                 if (!plugin.hasActivePreviewSession()) {
-                    showConfiguredDefaultMenu();
+                    logger.info("Shake preview menu ignored because no preview session is active");
+                    isShowing = false;
+                    return;
+                }
+                if (Boolean.TRUE.equals(plugin.shakeChannelSelectorEnabled)) {
+                    showCombinedPreviewMenu();
                     return;
                 }
                 String appName = activity.getPackageManager().getApplicationLabel(activity.getApplicationInfo()).toString();
                 String title = "Preview " + appName + " Menu";
-                String message = "Reload the current preview or leave the test app.";
-                String okButtonTitle = "Leave test app";
-                String reloadButtonTitle = "Reload app";
-                String cancelButtonTitle = "Close menu";
+                String message = "Reload, switch, or leave the current preview.";
+                List<String> actions = new ArrayList<>();
+                actions.add("Reload preview");
+                if (plugin.previewMenuPreviews().length() > 0) {
+                    actions.add("Switch preview");
+                }
+                actions.add("Leave test app");
+                final boolean[] openingNestedSelector = { false };
+                final boolean[] previewActionRunning = { false };
 
                 AlertDialog.Builder builder = new AlertDialog.Builder(activity);
                 builder.setTitle(title);
                 builder.setMessage(message);
-
-                builder.setPositiveButton(okButtonTitle, null);
-                builder.setNeutralButton(reloadButtonTitle, null);
+                builder.setItems(actions.toArray(new String[0]), (dialogInterface, which) -> {
+                    AlertDialog dialog = (AlertDialog) dialogInterface;
+                    String action = actions.get(which);
+                    if ("Reload preview".equals(action)) {
+                        previewActionRunning[0] = true;
+                        logger.info("Reloading webview");
+                        runPreviewMenuAction(dialog, "Could not reload the test app.", "Error reloading test app: ", () ->
+                            plugin.reloadPreviewSessionFromShakeMenu()
+                        );
+                    } else if ("Switch preview".equals(action)) {
+                        openingNestedSelector[0] = true;
+                        dialog.dismiss();
+                        showPreviewSelector();
+                    } else {
+                        previewActionRunning[0] = true;
+                        runPreviewMenuAction(dialog, "Could not leave the test app.", "Error leaving test app: ", () ->
+                            plugin.leavePreviewSessionFromShakeMenu()
+                        );
+                    }
+                });
 
                 // Cancel button
                 builder.setNegativeButton(
-                    cancelButtonTitle,
+                    "Close menu",
                     new DialogInterface.OnClickListener() {
                         public void onClick(DialogInterface dialog, int id) {
                             logger.info("Shake menu cancelled");
@@ -109,45 +170,12 @@ public class ShakeMenu implements ShakeDetector.Listener {
                 );
 
                 AlertDialog dialog = builder.create();
-                dialog.setOnDismissListener((dialogInterface) -> isShowing = false);
+                dialog.setOnDismissListener((dialogInterface) -> {
+                    if (!openingNestedSelector[0] && !previewActionRunning[0]) {
+                        isShowing = false;
+                    }
+                });
                 dialog.show();
-                dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener((view) -> {
-                    setPreviewMenuButtonsEnabled(dialog, false);
-                    new Thread(() -> {
-                        try {
-                            if (!plugin.leavePreviewSessionFromShakeMenu()) {
-                                activity.runOnUiThread(() -> showError("Could not leave the test app."));
-                            }
-                        } catch (Exception e) {
-                            logger.error("Error leaving test app: " + e.getMessage());
-                            activity.runOnUiThread(() -> showError("Error leaving test app: " + e.getMessage()));
-                        } finally {
-                            activity.runOnUiThread(() -> {
-                                dialog.dismiss();
-                                isShowing = false;
-                            });
-                        }
-                    }).start();
-                });
-                dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener((view) -> {
-                    setPreviewMenuButtonsEnabled(dialog, false);
-                    new Thread(() -> {
-                        try {
-                            logger.info("Reloading webview");
-                            if (!plugin.reloadPreviewSessionFromShakeMenu()) {
-                                activity.runOnUiThread(() -> showError("Could not reload the test app."));
-                            }
-                        } catch (Exception e) {
-                            logger.error("Error in Reload action: " + e.getMessage());
-                            activity.runOnUiThread(() -> showError("Error reloading test app: " + e.getMessage()));
-                        } finally {
-                            activity.runOnUiThread(() -> {
-                                dialog.dismiss();
-                                isShowing = false;
-                            });
-                        }
-                    }).start();
-                });
             } catch (Exception e) {
                 logger.error("Error showing shake menu: " + e.getMessage());
                 isShowing = false;
@@ -155,10 +183,229 @@ public class ShakeMenu implements ShakeDetector.Listener {
         });
     }
 
+    private void showCombinedPreviewMenu() {
+        try {
+            String appName = activity.getPackageManager().getApplicationLabel(activity.getApplicationInfo()).toString();
+            String title = "Preview " + appName + " Menu";
+            String message = "Reload, switch, or leave the current preview.";
+            List<String> actions = new ArrayList<>();
+            actions.add("Reload preview");
+            if (plugin.previewMenuPreviews().length() > 0) {
+                actions.add("Switch preview");
+            }
+            actions.add("Leave test app");
+            actions.add("Switch channel");
+            final boolean[] openingNestedSelector = { false };
+            final boolean[] previewActionRunning = { false };
+
+            AlertDialog.Builder builder = new AlertDialog.Builder(activity);
+            builder.setTitle(title);
+            builder.setMessage(message);
+            builder.setItems(actions.toArray(new String[0]), (dialogInterface, which) -> {
+                AlertDialog dialog = (AlertDialog) dialogInterface;
+                String action = actions.get(which);
+                if ("Reload preview".equals(action)) {
+                    previewActionRunning[0] = true;
+                    logger.info("Reloading webview");
+                    runPreviewMenuAction(dialog, "Could not reload the test app.", "Error reloading test app: ", () ->
+                        plugin.reloadPreviewSessionFromShakeMenu()
+                    );
+                } else if ("Leave test app".equals(action)) {
+                    previewActionRunning[0] = true;
+                    runPreviewMenuAction(dialog, "Could not leave the test app.", "Error leaving test app: ", () ->
+                        plugin.leavePreviewSessionFromShakeMenu()
+                    );
+                } else if ("Switch preview".equals(action)) {
+                    openingNestedSelector[0] = true;
+                    dialog.dismiss();
+                    showPreviewSelector();
+                } else {
+                    openingNestedSelector[0] = true;
+                    dialog.dismiss();
+                    showChannelSelector();
+                }
+            });
+            builder.setNegativeButton("Close menu", (dialog, id) -> {
+                logger.info("Shake menu cancelled");
+                dialog.dismiss();
+                isShowing = false;
+            });
+
+            AlertDialog dialog = builder.create();
+            dialog.setOnDismissListener((dialogInterface) -> {
+                if (!openingNestedSelector[0] && !previewActionRunning[0]) {
+                    isShowing = false;
+                }
+            });
+            dialog.show();
+        } catch (Exception e) {
+            logger.error("Error showing combined shake menu: " + e.getMessage());
+            isShowing = false;
+        }
+    }
+
+    private void runPreviewMenuAction(AlertDialog dialog, String failureMessage, String errorPrefix, PreviewMenuAction action) {
+        new Thread(() -> {
+            try {
+                if (!action.run()) {
+                    activity.runOnUiThread(() -> showError(failureMessage));
+                }
+            } catch (Exception e) {
+                logger.error(errorPrefix + e.getMessage());
+                activity.runOnUiThread(() -> showError(errorPrefix + e.getMessage()));
+            } finally {
+                activity.runOnUiThread(() -> {
+                    dialog.dismiss();
+                    isShowing = false;
+                });
+            }
+        }).start();
+    }
+
     private void setPreviewMenuButtonsEnabled(AlertDialog dialog, boolean enabled) {
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(enabled);
         dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setEnabled(enabled);
         dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setEnabled(enabled);
+    }
+
+    private void showPreviewSelector() {
+        activity.runOnUiThread(() -> {
+            try {
+                JSArray previewsRaw = plugin.previewMenuPreviews();
+                List<JSObject> previews = new ArrayList<>();
+                for (int i = 0; i < previewsRaw.length(); i++) {
+                    Object raw = previewsRaw.opt(i);
+                    if (raw instanceof JSObject preview) {
+                        previews.add(preview);
+                    } else if (raw instanceof JSONObject json) {
+                        previews.add(JSObject.fromJSONObject(json));
+                    }
+                }
+
+                if (previews.isEmpty()) {
+                    showError("No saved previews available on this device.");
+                    return;
+                }
+
+                presentPreviewPicker(previews);
+            } catch (Exception e) {
+                logger.error("Error showing preview selector: " + e.getMessage());
+                isShowing = false;
+            }
+        });
+    }
+
+    private String previewLabel(JSObject preview) {
+        String name = preview.optString("name", "");
+        JSObject bundle = preview.getJSObject("bundle");
+        String version = bundle == null ? "" : bundle.optString("version", "");
+        String label = !name.isEmpty() ? name : (!version.isEmpty() ? version : preview.optString("id", "Preview"));
+        if (preview.optBoolean("isActive", false)) {
+            label += " (current)";
+        }
+        return label;
+    }
+
+    private void presentPreviewPicker(List<JSObject> previews) {
+        try {
+            AlertDialog.Builder builder = new AlertDialog.Builder(activity);
+            builder.setTitle("Select Preview");
+
+            LinearLayout layout = new LinearLayout(activity);
+            layout.setOrientation(LinearLayout.VERTICAL);
+            int padding = dpToPx(16);
+            layout.setPadding(padding, padding, padding, padding);
+
+            EditText searchField = new EditText(activity);
+            searchField.setHint("Search previews...");
+            searchField.setSingleLine(true);
+            layout.addView(searchField);
+
+            final List<JSObject> displayedPreviews = new ArrayList<>();
+            displayedPreviews.addAll(previews.subList(0, Math.min(5, previews.size())));
+            final ArrayAdapter<String> adapter = new ArrayAdapter<>(
+                activity,
+                android.R.layout.simple_list_item_1,
+                previewLabels(displayedPreviews)
+            );
+
+            ListView listView = new ListView(activity);
+            listView.setAdapter(adapter);
+            LinearLayout.LayoutParams listParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(250));
+            listView.setLayoutParams(listParams);
+            layout.addView(listView);
+
+            builder.setView(layout);
+            builder.setNegativeButton("Cancel", (dialog, which) -> {
+                dialog.dismiss();
+                isShowing = false;
+            });
+
+            AlertDialog dialog = builder.create();
+            dialog.setOnDismissListener((d) -> isShowing = false);
+
+            searchField.addTextChangedListener(
+                new TextWatcher() {
+                    @Override
+                    public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+                    @Override
+                    public void onTextChanged(CharSequence s, int start, int before, int count) {}
+
+                    @Override
+                    public void afterTextChanged(Editable s) {
+                        String query = s.toString().toLowerCase();
+                        displayedPreviews.clear();
+
+                        for (JSObject preview : previews) {
+                            if (previewLabel(preview).toLowerCase().contains(query)) {
+                                displayedPreviews.add(preview);
+                                if (displayedPreviews.size() >= 5) break;
+                            }
+                        }
+
+                        adapter.clear();
+                        adapter.addAll(previewLabels(displayedPreviews));
+                        adapter.notifyDataSetChanged();
+                    }
+                }
+            );
+
+            listView.setOnItemClickListener((parent, view, position, id) -> {
+                JSObject selectedPreview = displayedPreviews.get(position);
+                String previewId = selectedPreview.optString("id", "");
+                dialog.dismiss();
+                selectPreview(previewId);
+            });
+
+            dialog.show();
+        } catch (Exception e) {
+            logger.error("Error presenting preview picker: " + e.getMessage());
+            isShowing = false;
+        }
+    }
+
+    private List<String> previewLabels(List<JSObject> previews) {
+        List<String> labels = new ArrayList<>();
+        for (JSObject preview : previews) {
+            labels.add(previewLabel(preview));
+        }
+        return labels;
+    }
+
+    private void selectPreview(String previewId) {
+        new Thread(() -> {
+            try {
+                if (!plugin.setPreviewFromShakeMenu(previewId)) {
+                    activity.runOnUiThread(() -> showError("Could not switch preview."));
+                }
+            } catch (Exception e) {
+                logger.error("Error switching preview: " + e.getMessage());
+                activity.runOnUiThread(() -> showError("Error switching preview: " + e.getMessage()));
+            } finally {
+                isShowing = false;
+            }
+        }).start();
     }
 
     private void showConfiguredDefaultMenu() {
@@ -486,6 +733,7 @@ public class ShakeMenu implements ShakeDetector.Listener {
                 new Thread(() -> {
                     final CapgoUpdater updater = plugin.implementation;
                     final Bridge bridge = activity.getBridge();
+                    final String configDefaultChannel = plugin.getConfig().getString("defaultChannel", "");
 
                     // Set the channel - respect plugin's allowSetDefaultChannel config
                     updater.setChannel(
@@ -493,6 +741,7 @@ public class ShakeMenu implements ShakeDetector.Listener {
                         updater.editor,
                         "CapacitorUpdater.defaultChannel",
                         plugin.allowSetDefaultChannel,
+                        configDefaultChannel,
                         (setRes) -> {
                             if (setRes == null) {
                                 activity.runOnUiThread(() -> {

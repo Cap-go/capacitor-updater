@@ -1,6 +1,6 @@
 {
   "name": "@capgo/capacitor-updater",
-  "version": "8.47.5",
+  "version": "8.50.1",
   "license": "MPL-2.0",
   "description": "Live update for capacitor apps",
   "main": "dist/plugin.cjs.js",
@@ -71,7 +71,14 @@
     "clean": "rimraf ./dist",
     "watch": "tsc --watch",
     "prepublishOnly": "bun run build",
-    "check:wiring": "node scripts/check-capacitor-plugin-wiring.mjs"
+    "check:wiring": "node scripts/check-capacitor-plugin-wiring.mjs",
+    "changelog:ai": "node scripts/generate-ai-changelog.mjs",
+    "example:install": "cd example-app && bun install --frozen-lockfile",
+    "example:build": "bun run build && cd example-app && bun install --frozen-lockfile && bun run build",
+    "native:contract:crypto": "bun run native:contract:crypto:ios && bun run native:contract:crypto:android",
+    "native:contract:crypto:ios": "./scripts/test-ios.sh -only-testing:CapacitorUpdaterPluginTests/RsaContractTests",
+    "native:contract:crypto:android": "cd android && ./gradlew testDebugUnitTest --tests ee.forgr.capacitor_updater.RsaContractTest && cd ..",
+    "generate:rsa-contract": "bun scripts/generate-rsa-contract-fixtures.mjs"
   },
   "devDependencies": {
     "@capacitor/android": "^8.0.0",

@@ -36,11 +36,11 @@ jobs:
         run: bun run build
       - name: Generate AI changelog
         id: changelog
-        uses: mistricky/ccc@v0.2.6
-        with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          model: claude-sonnet-4-5-20250929 
+        continue-on-error: true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: bun run changelog:ai
       - name: Setup Node.js for npm publish
         uses: actions/setup-node@v6
         with:
@@ -68,11 +68,11 @@ jobs:
           body: |
             ## 🆕 Changelog
             
-            ${{ steps.changelog.outputs.result }}
+            ${{ steps.changelog.outputs.result || '_Changelog was not generated automatically for this release._' }}
             
             ---
 
-            🔗 **Full Changelog**: https://github.com/${{ github.repository }}/compare/${{ steps.changelog.outputs.from_tag }}...${{ steps.changelog.outputs.to_tag }}
+            🔗 **Full Changelog**: https://github.com/${{ github.repository }}/compare/${{ steps.changelog.outputs.from_tag || github.ref_name }}...${{ steps.changelog.outputs.to_tag || github.ref_name }}
           make_latest: true
           token: '${{ secrets.PERSONAL_ACCESS_TOKEN }}'
           prerelease: ${{ contains(github.ref, '-alpha.') }}

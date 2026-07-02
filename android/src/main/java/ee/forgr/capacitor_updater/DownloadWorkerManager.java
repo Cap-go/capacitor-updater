@@ -63,6 +63,7 @@ public class DownloadWorkerManager {
         String appId,
         String pluginVersion,
         boolean isProd,
+        String installSource,
         String statsUrl,
         String deviceId,
         String versionBuild,
@@ -89,6 +90,7 @@ public class DownloadWorkerManager {
             .putString(DownloadService.PUBLIC_KEY, publicKey)
             .putString(DownloadService.APP_ID, appId)
             .putString(DownloadService.pluginVersion, pluginVersion)
+            .putString(DownloadService.INSTALL_SOURCE, installSource)
             .putString(DownloadService.STATS_URL, statsUrl)
             .putString(DownloadService.DEVICE_ID, deviceId)
             .putString(DownloadService.VERSION_BUILD, versionBuild)

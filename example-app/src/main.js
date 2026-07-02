@@ -35,7 +35,8 @@ const runtimeSmokeAppId = 'app.capgo.updater.e2e';
 const runtimeSmokeCustomId = 'qa-user-42';
 const runtimeStoreAppId = '361309726';
 const bootActionFromStorage = window.localStorage.getItem(pendingBootActionStorageKey) ?? 'none';
-const reloadActionFromStorage = window.localStorage.getItem(pendingReloadActionStorageKey) ?? 'none';
+const reloadActionFromStorage =
+  window.localStorage.getItem(pendingReloadActionStorageKey) ?? 'none';
 
 if (bootActionFromStorage === 'none' && reloadActionFromStorage === 'none') {
   window.localStorage.removeItem(lastActionStorageKey);
@@ -53,7 +54,8 @@ const lastActionMarkerFromStorage =
   window.localStorage.getItem(lastActionMarkerStorageKey) ??
   window.localStorage.getItem(lastActionResultStorageKey) ??
   'none';
-const lastActionResultFromStorage = window.localStorage.getItem(lastActionResultStorageKey) ?? 'idle';
+const lastActionResultFromStorage =
+  window.localStorage.getItem(lastActionResultStorageKey) ?? 'idle';
 
 function requireElement(id) {
   const element = document.getElementById(id);
@@ -200,8 +202,55 @@ const smokeSequenceExtendedSettleActionIds = new Set([
 const manualZipStoreContractSmokeActionIds =
   platform === 'ios'
     ? []
-    : ['get-app-update-info', 'perform-immediate-update', 'start-flexible-update', 'complete-flexible-update', 'get-latest'];
-const manualZipChannelSmokeActionIds = platform === 'ios' ? [] : ['set-channel-beta', 'get-channel', 'unset-channel'];
+    : [
+        'get-app-update-info',
+        'perform-immediate-update',
+        'start-flexible-update',
+        'complete-flexible-update',
+        'get-latest',
+      ];
+const manualZipChannelSmokeActionIds =
+  platform === 'ios' ? [] : ['set-channel-beta', 'get-channel', 'unset-channel'];
+const manualZipSmokeActionIds =
+  platform === 'ios'
+    ? [
+        'set-app-id',
+        'set-custom-id',
+        'set-update-url',
+        'set-stats-url',
+        'notify-app-ready',
+        'set-channel-url',
+        'set-channel-beta',
+        'unset-channel',
+        'queue-boot-verify-persisted-config',
+      ]
+    : [
+        'notify-app-ready',
+        'current-bundle',
+        'list-bundles',
+        'get-plugin-version',
+        'get-builtin-version',
+        'get-device-id',
+        'is-auto-update-enabled',
+        'is-auto-update-available',
+        'get-app-id',
+        'set-app-id',
+        'set-custom-id',
+        'set-update-url',
+        'set-stats-url',
+        'set-channel-url',
+        'get-latest',
+        ...manualZipChannelSmokeActionIds,
+        'get-next-bundle',
+        'get-failed-update',
+        'set-shake-menu',
+        'is-shake-menu-enabled',
+        'set-shake-channel-selector',
+        'is-shake-channel-selector-enabled',
+        'queue-boot-verify-persisted-config',
+        'remove-all-listeners',
+        ...manualZipStoreContractSmokeActionIds,
+      ];
 const coreSmokeExcludedActionIds = new Set([
   'get-app-update-info',
   'open-app-store',
@@ -214,33 +263,7 @@ const coreSmokeExcludedActionIds = new Set([
   'is-shake-channel-selector-enabled',
 ]);
 const smokeSequenceActionIdsByScenario = {
-  'manual-zip': [
-    'notify-app-ready',
-    'current-bundle',
-    'list-bundles',
-    'get-plugin-version',
-    'get-builtin-version',
-    'get-device-id',
-    'is-auto-update-enabled',
-    'is-auto-update-available',
-    'get-app-id',
-    'set-app-id',
-    'set-custom-id',
-    'set-update-url',
-    'set-stats-url',
-    'set-channel-url',
-    'get-latest',
-    ...manualZipChannelSmokeActionIds,
-    'get-next-bundle',
-    'get-failed-update',
-    'set-shake-menu',
-    'is-shake-menu-enabled',
-    'set-shake-channel-selector',
-    'is-shake-channel-selector-enabled',
-    'queue-boot-verify-persisted-config',
-    'remove-all-listeners',
-    ...manualZipStoreContractSmokeActionIds,
-  ],
+  'manual-zip': manualZipSmokeActionIds,
   'manual-zip-no-persist': [
     'set-custom-id',
     'set-app-id',
@@ -464,18 +487,23 @@ function sortBundlesByDownloadDate(left, right) {
 }
 
 function getLastDownloadedBundle(bundles) {
-  return [...bundles]
-    .filter((bundle) => bundle?.id !== 'builtin')
-    .sort(sortBundlesByDownloadDate)[0] ?? null;
+  return (
+    [...bundles].filter((bundle) => bundle?.id !== 'builtin').sort(sortBundlesByDownloadDate)[0] ??
+    null
+  );
 }
 
 function getLatestInactiveBundle(bundles) {
   const currentId = state.currentBundle?.id;
   const nextId = state.nextBundle?.id;
 
-  return [...bundles]
-    .filter((bundle) => bundle?.id !== 'builtin' && bundle?.id !== currentId && bundle?.id !== nextId)
-    .sort(sortBundlesByDownloadDate)[0] ?? null;
+  return (
+    [...bundles]
+      .filter(
+        (bundle) => bundle?.id !== 'builtin' && bundle?.id !== currentId && bundle?.id !== nextId,
+      )
+      .sort(sortBundlesByDownloadDate)[0] ?? null
+  );
 }
 
 function formatAvailableChannels(result) {
@@ -656,11 +684,7 @@ async function refreshServerState() {
   }
 
   try {
-    const response = await withTimeout(
-      'refreshServerState()',
-      () => fetch(controlStateUrl),
-      15000,
-    );
+    const response = await withTimeout('refreshServerState()', () => fetch(controlStateUrl), 15000);
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
@@ -698,12 +722,15 @@ async function performRefreshState() {
 
     state.lastPhase = 'refresh-state:probes';
     renderState();
-    const [autoUpdateEnabled, autoUpdateAvailable, shakeMenu, shakeChannelSelector] = await Promise.allSettled([
-      withTimeout('refreshState isAutoUpdateEnabled()', () => plugin.isAutoUpdateEnabled()),
-      withTimeout('refreshState isAutoUpdateAvailable()', () => plugin.isAutoUpdateAvailable()),
-      withTimeout('refreshState isShakeMenuEnabled()', () => plugin.isShakeMenuEnabled()),
-      withTimeout('refreshState isShakeChannelSelectorEnabled()', () => plugin.isShakeChannelSelectorEnabled()),
-    ]);
+    const [autoUpdateEnabled, autoUpdateAvailable, shakeMenu, shakeChannelSelector] =
+      await Promise.allSettled([
+        withTimeout('refreshState isAutoUpdateEnabled()', () => plugin.isAutoUpdateEnabled()),
+        withTimeout('refreshState isAutoUpdateAvailable()', () => plugin.isAutoUpdateAvailable()),
+        withTimeout('refreshState isShakeMenuEnabled()', () => plugin.isShakeMenuEnabled()),
+        withTimeout('refreshState isShakeChannelSelectorEnabled()', () =>
+          plugin.isShakeChannelSelectorEnabled(),
+        ),
+      ]);
 
     if (autoUpdateEnabled.status === 'fulfilled') {
       state.autoUpdateEnabled = String(autoUpdateEnabled.value?.enabled ?? 'unknown');
@@ -757,7 +784,10 @@ function renderState() {
   const lastChannelPayload = serverDebug?.lastChannelRequest?.payload ?? {};
   const serverStatsActions = serverDebug?.statsActions ?? [];
   const serverUpdateUrl = formatObservedRequestUrl(serverDebug?.lastUpdateRequest?.url);
-  const serverChannelUrl = formatObservedRequestUrl(serverDebug?.lastChannelRequest?.url, ['scenario', 'source']);
+  const serverChannelUrl = formatObservedRequestUrl(serverDebug?.lastChannelRequest?.url, [
+    'scenario',
+    'source',
+  ]);
   const serverStatsUrl = formatObservedRequestUrl(serverDebug?.lastStatsRequest?.url);
   const harnessSnapshot = createHarnessSnapshot();
 
@@ -808,16 +838,13 @@ function renderState() {
   elements.serverActiveRelease.textContent = `Server active release: ${state.serverDebug?.activeRelease ?? 'none'}`;
   elements.serverLastVersion.textContent = `Server saw version_name: ${lastUpdatePayload.version_name ?? 'none'}`;
   elements.serverLastAppId.textContent = `Server saw app_id: ${lastUpdatePayload.app_id ?? lastChannelPayload.app_id ?? 'none'}`;
-  elements.serverLastCustomId.textContent =
-    `Server saw custom_id: ${lastUpdatePayload.custom_id ?? lastChannelPayload.custom_id ?? 'none'}`;
+  elements.serverLastCustomId.textContent = `Server saw custom_id: ${lastUpdatePayload.custom_id ?? lastChannelPayload.custom_id ?? 'none'}`;
   elements.serverLastChannel.textContent = `Server saw channel request: ${lastChannelPayload.channel ?? 'none'}`;
-  elements.serverLastDefaultChannel.textContent =
-    `Server saw defaultChannel: ${lastUpdatePayload.defaultChannel ?? lastChannelPayload.defaultChannel ?? 'none'}`;
+  elements.serverLastDefaultChannel.textContent = `Server saw defaultChannel: ${lastUpdatePayload.defaultChannel ?? lastChannelPayload.defaultChannel ?? 'none'}`;
   elements.serverUpdateUrl.textContent = `Server update URL: ${serverUpdateUrl}`;
   elements.serverChannelUrl.textContent = `Server channel URL: ${serverChannelUrl}`;
   elements.serverStatsUrl.textContent = `Server stats URL: ${serverStatsUrl}`;
-  elements.serverStatsActions.textContent =
-    `Server stats actions: ${serverStatsActions.length ? serverStatsActions.join(', ') : 'none'}`;
+  elements.serverStatsActions.textContent = `Server stats actions: ${serverStatsActions.length ? serverStatsActions.join(', ') : 'none'}`;
   elements.appReadyEvent.textContent = `appReady event: ${state.eventMarkers.appReady}`;
   elements.setEvent.textContent = `set event: ${state.eventMarkers.set}`;
   elements.setNextEvent.textContent = `setNext event: ${state.eventMarkers.setNext}`;
@@ -930,7 +957,8 @@ async function waitForBundleVersion(version, timeoutMs = 45000) {
   return waitForCondition(async () => {
     const result = await plugin.list();
     const bundle = (result?.bundles ?? []).find(
-      (candidate) => getBundleVersion(candidate) === version && getBundleStatus(candidate) !== 'downloading',
+      (candidate) =>
+        getBundleVersion(candidate) === version && getBundleStatus(candidate) !== 'downloading',
     );
 
     if (!bundle) {
@@ -946,10 +974,14 @@ async function waitForBundleVersion(version, timeoutMs = 45000) {
 }
 
 async function waitForEventMarker(markerKey, expectedFragment, timeoutMs = 8000) {
-  return waitForCondition(async () => {
-    const value = state.eventMarkers[markerKey];
-    return value && value.includes(expectedFragment) ? value : null;
-  }, timeoutMs, 250);
+  return waitForCondition(
+    async () => {
+      const value = state.eventMarkers[markerKey];
+      return value && value.includes(expectedFragment) ? value : null;
+    },
+    timeoutMs,
+    250,
+  );
 }
 
 async function getBundleByVersion(version) {
@@ -1035,7 +1067,7 @@ async function performNotifyAppReady() {
     const result = await plugin.notifyAppReady();
     state.notifyStatus = result?.bundle
       ? `ok (${getBundleVersion(result.bundle)})`
-      : result?.message ?? 'ok';
+      : (result?.message ?? 'ok');
     addEvent('notifyAppReady()', result ?? { status: 'ok' });
     state.lastError = null;
     return result;
@@ -1064,7 +1096,10 @@ async function expectConfiguredRejection(label, operation, fragments) {
   try {
     await operation();
   } catch (error) {
-    invariant(errorMatches(error, fragments), `${label} rejected unexpectedly: ${normalizeError(error).message}`);
+    invariant(
+      errorMatches(error, fragments),
+      `${label} rejected unexpectedly: ${normalizeError(error).message}`,
+    );
     return {
       outcome: 'expected-rejection',
       ...normalizeError(error),
@@ -1144,7 +1179,10 @@ function expectListChannelsResult(result) {
 }
 
 function expectChannel(channelResult, expectedChannel, label) {
-  invariant(channelResult && typeof channelResult === 'object', `${label} did not return a channel result`);
+  invariant(
+    channelResult && typeof channelResult === 'object',
+    `${label} did not return a channel result`,
+  );
   invariant(
     (channelResult.channel ?? '') === expectedChannel,
     `${label} expected channel ${expectedChannel || 'none'}, received ${channelResult.channel || 'none'}`,
@@ -1161,7 +1199,8 @@ function expectEnabledResult(result, label) {
 function expectGetLatestResult(result) {
   expectString(result?.version ?? '', 'getLatest() did not return version');
   invariant(
-    Array.isArray(result?.manifest) || (typeof result?.url === 'string' && result.url.trim().length > 0),
+    Array.isArray(result?.manifest) ||
+      (typeof result?.url === 'string' && result.url.trim().length > 0),
     'getLatest() did not return a download target',
   );
   return result;
@@ -1217,26 +1256,50 @@ function validateGetAppUpdateInfoContract(contractResult) {
   }
 
   const result = expectResolvedContract(contractResult, 'getAppUpdateInfo()');
-  expectString(result?.currentVersionName ?? '', 'getAppUpdateInfo() did not return currentVersionName');
-  expectString(result?.currentVersionCode ?? '', 'getAppUpdateInfo() did not return currentVersionCode');
+  expectString(
+    result?.currentVersionName ?? '',
+    'getAppUpdateInfo() did not return currentVersionName',
+  );
+  expectString(
+    result?.currentVersionCode ?? '',
+    'getAppUpdateInfo() did not return currentVersionCode',
+  );
   expectNumber(result?.updateAvailability, 'getAppUpdateInfo() did not return updateAvailability');
 
   if (platform === 'ios') {
     if (result.immediateUpdateAllowed !== undefined) {
-      expectBoolean(result.immediateUpdateAllowed, 'getAppUpdateInfo() returned an invalid immediateUpdateAllowed');
-      invariant(result.immediateUpdateAllowed === false, 'getAppUpdateInfo() reported iOS immediate updates as allowed');
+      expectBoolean(
+        result.immediateUpdateAllowed,
+        'getAppUpdateInfo() returned an invalid immediateUpdateAllowed',
+      );
+      invariant(
+        result.immediateUpdateAllowed === false,
+        'getAppUpdateInfo() reported iOS immediate updates as allowed',
+      );
     }
 
     if (result.flexibleUpdateAllowed !== undefined) {
-      expectBoolean(result.flexibleUpdateAllowed, 'getAppUpdateInfo() returned an invalid flexibleUpdateAllowed');
-      invariant(result.flexibleUpdateAllowed === false, 'getAppUpdateInfo() reported iOS flexible updates as allowed');
+      expectBoolean(
+        result.flexibleUpdateAllowed,
+        'getAppUpdateInfo() returned an invalid flexibleUpdateAllowed',
+      );
+      invariant(
+        result.flexibleUpdateAllowed === false,
+        'getAppUpdateInfo() reported iOS flexible updates as allowed',
+      );
     }
 
     return contractResult;
   }
 
-  expectBoolean(result?.immediateUpdateAllowed, 'getAppUpdateInfo() did not return immediateUpdateAllowed');
-  expectBoolean(result?.flexibleUpdateAllowed, 'getAppUpdateInfo() did not return flexibleUpdateAllowed');
+  expectBoolean(
+    result?.immediateUpdateAllowed,
+    'getAppUpdateInfo() did not return immediateUpdateAllowed',
+  );
+  expectBoolean(
+    result?.flexibleUpdateAllowed,
+    'getAppUpdateInfo() did not return flexibleUpdateAllowed',
+  );
 
   return contractResult;
 }
@@ -1278,7 +1341,10 @@ function validateCompleteFlexibleUpdateContract(contractResult) {
     return contractResult;
   }
 
-  expectString(contractResult.message ?? '', 'completeFlexibleUpdate() rejected without an error message');
+  expectString(
+    contractResult.message ?? '',
+    'completeFlexibleUpdate() rejected without an error message',
+  );
   return contractResult;
 }
 
@@ -1306,11 +1372,7 @@ async function fetchJson(url, options = {}) {
   const method = options.method ?? 'GET';
 
   try {
-    const response = await withTimeout(
-      `${method} ${url}`,
-      () => fetch(url, options),
-      15000,
-    );
+    const response = await withTimeout(`${method} ${url}`, () => fetch(url, options), 15000);
 
     if (!response.ok) {
       throw new Error(`${method} ${url} returned HTTP ${response.status}`);
@@ -1395,7 +1457,10 @@ async function verifyPersistedRuntimeConfig(options = {}) {
   const lastChannelRequest = serverDebug.lastChannelRequest ?? {};
   const lastStatsRequest = serverDebug.lastStatsRequest ?? {};
   const observedUpdateUrl = formatObservedRequestUrl(lastUpdateRequest.url);
-  const observedChannelUrl = formatObservedRequestUrl(lastChannelRequest.url, ['scenario', 'source']);
+  const observedChannelUrl = formatObservedRequestUrl(lastChannelRequest.url, [
+    'scenario',
+    'source',
+  ]);
   const observedStatsUrl = formatObservedRequestUrl(lastStatsRequest.url);
   const shouldVerifyUpdateUrl = shouldProbeLatest || Boolean(lastUpdateRequest.url);
   const expectedUsesRuntimeUrls = allowModifyUrl && persistModifyUrl;
@@ -1409,7 +1474,8 @@ async function verifyPersistedRuntimeConfig(options = {}) {
   const expectedStatsUrl = formatObservedRequestUrl(
     expectedUsesRuntimeUrls ? getRuntimeStatsUrl() : getDefaultStatsUrl(),
   );
-  const observedAppId = lastUpdateRequest.payload?.app_id || lastChannelRequest.payload?.app_id || 'none';
+  const observedAppId =
+    lastUpdateRequest.payload?.app_id || lastChannelRequest.payload?.app_id || 'none';
   const expectedCustomId = persistCustomId ? runtimeSmokeCustomId : 'none';
   const observedUpdateCustomId = lastUpdateRequest.payload?.custom_id || 'none';
   const observedChannelCustomId = lastChannelRequest.payload?.custom_id || 'none';
@@ -1515,7 +1581,8 @@ const actions = [
     buttonLabel: 'Run getPluginVersion()',
     description: 'Return the installed native plugin version.',
     includeInSmokeSequence: true,
-    run: async () => expectStringFieldResult(await plugin.getPluginVersion(), 'version', 'getPluginVersion()'),
+    run: async () =>
+      expectStringFieldResult(await plugin.getPluginVersion(), 'version', 'getPluginVersion()'),
   },
   {
     id: 'get-builtin-version',
@@ -1523,7 +1590,8 @@ const actions = [
     buttonLabel: 'Run getBuiltinVersion()',
     description: 'Return the builtin bundle version shipped with the native app.',
     includeInSmokeSequence: true,
-    run: async () => expectStringFieldResult(await plugin.getBuiltinVersion(), 'version', 'getBuiltinVersion()'),
+    run: async () =>
+      expectStringFieldResult(await plugin.getBuiltinVersion(), 'version', 'getBuiltinVersion()'),
   },
   {
     id: 'get-device-id',
@@ -1531,7 +1599,8 @@ const actions = [
     buttonLabel: 'Run getDeviceId()',
     description: 'Return the secure device identifier used by the updater.',
     includeInSmokeSequence: true,
-    run: async () => expectStringFieldResult(await plugin.getDeviceId(), 'deviceId', 'getDeviceId()'),
+    run: async () =>
+      expectStringFieldResult(await plugin.getDeviceId(), 'deviceId', 'getDeviceId()'),
   },
   {
     id: 'is-auto-update-enabled',
@@ -1539,7 +1608,12 @@ const actions = [
     buttonLabel: 'Run isAutoUpdateEnabled()',
     description: 'Read whether the native plugin is in automatic update mode.',
     includeInSmokeSequence: true,
-    run: async () => expectBooleanFieldResult(await plugin.isAutoUpdateEnabled(), 'enabled', 'isAutoUpdateEnabled()'),
+    run: async () =>
+      expectBooleanFieldResult(
+        await plugin.isAutoUpdateEnabled(),
+        'enabled',
+        'isAutoUpdateEnabled()',
+      ),
   },
   {
     id: 'is-auto-update-available',
@@ -1548,7 +1622,11 @@ const actions = [
     description: 'Read whether the current configuration still supports auto update.',
     includeInSmokeSequence: true,
     run: async () =>
-      expectBooleanFieldResult(await plugin.isAutoUpdateAvailable(), 'available', 'isAutoUpdateAvailable()'),
+      expectBooleanFieldResult(
+        await plugin.isAutoUpdateAvailable(),
+        'available',
+        'isAutoUpdateAvailable()',
+      ),
   },
   {
     id: 'get-app-id',
@@ -1581,16 +1659,20 @@ const actions = [
       const nextAppId = values.appId ?? runtimeSmokeAppId;
 
       if (!allowModifyAppId) {
-        return expectConfiguredRejection('setAppId()', () => plugin.setAppId({ appId: nextAppId }), [
-          'allowmodifyappid',
-          'not allowed',
-        ]);
+        return expectConfiguredRejection(
+          'setAppId()',
+          () => plugin.setAppId({ appId: nextAppId }),
+          ['allowmodifyappid', 'not allowed'],
+        );
       }
 
       await plugin.setAppId({ appId: nextAppId });
       const result = await plugin.getAppId();
       expectStringFieldResult(result, 'appId', 'setAppId()');
-      invariant(result.appId === nextAppId, `setAppId() expected ${nextAppId}, received ${result.appId}`);
+      invariant(
+        result.appId === nextAppId,
+        `setAppId() expected ${nextAppId}, received ${result.appId}`,
+      );
       return result;
     },
   },
@@ -1670,10 +1752,11 @@ const actions = [
     ],
     run: async (values) => {
       if (!allowModifyUrl) {
-        return expectConfiguredRejection('setUpdateUrl()', () => plugin.setUpdateUrl({ url: values.updateUrl }), [
-          'allowmodifyurl',
-          'not allowed',
-        ]);
+        return expectConfiguredRejection(
+          'setUpdateUrl()',
+          () => plugin.setUpdateUrl({ url: values.updateUrl }),
+          ['allowmodifyurl', 'not allowed'],
+        );
       }
 
       await plugin.setUpdateUrl({ url: values.updateUrl });
@@ -1703,10 +1786,11 @@ const actions = [
     ],
     run: async (values) => {
       if (!allowModifyUrl) {
-        return expectConfiguredRejection('setStatsUrl()', () => plugin.setStatsUrl({ url: values.statsUrl }), [
-          'allowmodifyurl',
-          'not allowed',
-        ]);
+        return expectConfiguredRejection(
+          'setStatsUrl()',
+          () => plugin.setStatsUrl({ url: values.statsUrl }),
+          ['allowmodifyurl', 'not allowed'],
+        );
       }
 
       await plugin.setStatsUrl({ url: values.statsUrl });
@@ -1736,10 +1820,11 @@ const actions = [
     ],
     run: async (values) => {
       if (!allowModifyUrl) {
-        return expectConfiguredRejection('setChannelUrl()', () => plugin.setChannelUrl({ url: values.channelUrl }), [
-          'allowmodifyurl',
-          'not allowed',
-        ]);
+        return expectConfiguredRejection(
+          'setChannelUrl()',
+          () => plugin.setChannelUrl({ url: values.channelUrl }),
+          ['allowmodifyurl', 'not allowed'],
+        );
       }
 
       await plugin.setChannelUrl({ url: values.channelUrl });
@@ -1779,10 +1864,11 @@ const actions = [
         : 'Action marker: set-channel-beta:success',
     run: async () => {
       if (!allowSetDefaultChannel) {
-        const result = await expectConfiguredRejection('setChannel(beta)', () => plugin.setChannel({ channel: 'beta' }), [
-          'disabled_by_config',
-          'configuration',
-        ]);
+        const result = await expectConfiguredRejection(
+          'setChannel(beta)',
+          () => plugin.setChannel({ channel: 'beta' }),
+          ['disabled_by_config', 'configuration'],
+        );
         state.lastSetChannelBetaCheck = 'expected-rejection';
         return result;
       }
@@ -1804,7 +1890,11 @@ const actions = [
     showWhen: () => serverUrl.startsWith('http'),
     successMarker: (result) => `Action marker: get-channel:${result?.channel || 'none'}`,
     run: async () => {
-      const result = expectChannel(await plugin.getChannel(), allowSetDefaultChannel ? 'beta' : '', 'getChannel()');
+      const result = expectChannel(
+        await plugin.getChannel(),
+        allowSetDefaultChannel ? 'beta' : '',
+        'getChannel()',
+      );
       state.getChannelResult = result;
       state.getChannelReadMarker = result?.channel || 'none';
       return result;
@@ -1830,10 +1920,7 @@ const actions = [
         const result = await expectConfiguredRejection(
           'setChannel(private-alpha)',
           () => plugin.setChannel({ channel: 'private-alpha' }),
-          [
-          'disabled_by_config',
-          'configuration',
-          ],
+          ['disabled_by_config', 'configuration'],
         );
         state.lastPrivateChannelCheck = 'expected-rejection';
         return result;
@@ -1888,7 +1975,10 @@ const actions = [
     includeInSmokeSequence: true,
     markerId: 'failed',
     run: async () => {
-      const result = expectOptionalBundleResult(await plugin.getFailedUpdate(), 'getFailedUpdate()');
+      const result = expectOptionalBundleResult(
+        await plugin.getFailedUpdate(),
+        'getFailedUpdate()',
+      );
       state.failedUpdate = result;
       return result;
     },
@@ -1933,7 +2023,10 @@ const actions = [
     description: 'Read the current shake channel selector state.',
     includeInSmokeSequence: true,
     run: async () =>
-      expectEnabledResult(await plugin.isShakeChannelSelectorEnabled(), 'isShakeChannelSelectorEnabled()'),
+      expectEnabledResult(
+        await plugin.isShakeChannelSelectorEnabled(),
+        'isShakeChannelSelectorEnabled()',
+      ),
   },
   {
     id: 'remove-all-listeners',
@@ -1957,7 +2050,12 @@ const actions = [
     quickButtonLabel: 'Quick get store info',
     description: 'Read the App Store or Play Store update contract for the example app.',
     includeInSmokeSequence: true,
-    run: async () => invokeContractMethod('getAppUpdateInfo', () => plugin.getAppUpdateInfo(), validateGetAppUpdateInfoContract),
+    run: async () =>
+      invokeContractMethod(
+        'getAppUpdateInfo',
+        () => plugin.getAppUpdateInfo(),
+        validateGetAppUpdateInfoContract,
+      ),
   },
   {
     id: 'open-app-store',
@@ -1969,7 +2067,10 @@ const actions = [
     run: async () =>
       invokeContractMethod(
         'openAppStore',
-        () => (platform === 'ios' ? plugin.openAppStore({ appId: runtimeStoreAppId }) : plugin.openAppStore()),
+        () =>
+          platform === 'ios'
+            ? plugin.openAppStore({ appId: runtimeStoreAppId })
+            : plugin.openAppStore(),
         validateOpenAppStoreContract,
       ),
   },
@@ -1981,7 +2082,11 @@ const actions = [
     description: 'Exercise the platform contract for immediate store updates.',
     includeInSmokeSequence: true,
     run: async () =>
-      invokeContractMethod('performImmediateUpdate', () => plugin.performImmediateUpdate(), validateImmediateUpdateContract),
+      invokeContractMethod(
+        'performImmediateUpdate',
+        () => plugin.performImmediateUpdate(),
+        validateImmediateUpdateContract,
+      ),
   },
   {
     id: 'start-flexible-update',
@@ -1991,7 +2096,11 @@ const actions = [
     description: 'Exercise the platform contract for flexible store updates.',
     includeInSmokeSequence: true,
     run: async () =>
-      invokeContractMethod('startFlexibleUpdate', () => plugin.startFlexibleUpdate(), validateFlexibleUpdateContract),
+      invokeContractMethod(
+        'startFlexibleUpdate',
+        () => plugin.startFlexibleUpdate(),
+        validateFlexibleUpdateContract,
+      ),
   },
   {
     id: 'complete-flexible-update',
@@ -2012,7 +2121,8 @@ const actions = [
     label: 'Queue boot persisted config check',
     buttonLabel: 'Queue persisted config check on next boot',
     quickButtonLabel: 'Quick queue persisted check',
-    description: 'Persist a verify-persisted-config check that runs automatically on the next cold launch.',
+    description:
+      'Persist a verify-persisted-config check that runs automatically on the next cold launch.',
     showWhen: () => serverUrl.startsWith('http'),
     markerId: 'boot-persisted',
     run: async () => {
@@ -2039,7 +2149,9 @@ const actions = [
       verifyPersistedRuntimeConfig({
         includePluginAppId: false,
         probeLatest:
-          platform !== 'ios' && scenarioId !== 'manual-zip-config-guards' && scenarioId !== 'manual-zip-no-persist',
+          platform !== 'ios' &&
+          scenarioId !== 'manual-zip-config-guards' &&
+          scenarioId !== 'manual-zip-no-persist',
       }),
   },
   {
@@ -2075,7 +2187,8 @@ const actions = [
     showWhen: () => serverUrl.startsWith('http'),
     markerId: 'persisted',
     skipRefresh: true,
-    run: async () => verifyPersistedRuntimeConfig({ probeLatest: scenarioId !== 'manual-zip-config-guards' }),
+    run: async () =>
+      verifyPersistedRuntimeConfig({ probeLatest: scenarioId !== 'manual-zip-config-guards' }),
   },
   {
     id: 'refresh-server-state',
@@ -2142,7 +2255,8 @@ const actions = [
     label: 'Assert no OTA update available',
     buttonLabel: 'Assert no update available',
     quickButtonLabel: 'Quick confirm no update',
-    description: 'Call getLatest() when the current bundle already matches the server and assert the expected rejection.',
+    description:
+      'Call getLatest() when the current bundle already matches the server and assert the expected rejection.',
     showWhen: () => serverUrl.startsWith('http'),
     markerId: 'no-update',
     run: async () => {
@@ -2156,7 +2270,12 @@ const actions = [
         await plugin.getLatest();
       } catch (error) {
         invariant(
-          errorMatches(error, ['no new version available', 'no_new_version_available', 'no_need_update', 'no need update']),
+          errorMatches(error, [
+            'no new version available',
+            'no_new_version_available',
+            'no_need_update',
+            'no need update',
+          ]),
           `getLatest() rejected unexpectedly: ${normalizeError(error).message}`,
         );
         return {
@@ -2232,7 +2351,8 @@ const actions = [
     label: 'Observe downloaded OTA bundle',
     buttonLabel: 'Observe downloaded bundle',
     quickButtonLabel: 'Quick observe downloaded bundle',
-    description: 'Start a download, then confirm that the native bundle store lands the bundle without waiting on JS event delivery.',
+    description:
+      'Start a download, then confirm that the native bundle store lands the bundle without waiting on JS event delivery.',
     showWhen: () => serverUrl.startsWith('http'),
     markerId: 'download-store',
     run: async () => {
@@ -2275,7 +2395,9 @@ const actions = [
 
         const result = await plugin.list();
         const bundle = (result?.bundles ?? []).find(
-          (candidate) => getBundleVersion(candidate) === latest.version && getBundleStatus(candidate) !== 'downloading',
+          (candidate) =>
+            getBundleVersion(candidate) === latest.version &&
+            getBundleStatus(candidate) !== 'downloading',
         );
 
         if (!bundle) {
@@ -2404,10 +2526,11 @@ const actions = [
       const bundle = await getLatestInactiveBundleOrThrow();
 
       if (!allowManualBundleError) {
-        return expectConfiguredRejection('setBundleError()', () => plugin.setBundleError({ id: bundle.id }), [
-          'allowmanualbundleerror',
-          'not allowed',
-        ]);
+        return expectConfiguredRejection(
+          'setBundleError()',
+          () => plugin.setBundleError({ id: bundle.id }),
+          ['allowmanualbundleerror', 'not allowed'],
+        );
       }
 
       return plugin.setBundleError({ id: bundle.id });
@@ -2482,11 +2605,20 @@ function getActionMarkerId(action) {
 }
 
 function shouldIgnoreNonSequenceActionTrigger() {
-  return sequenceInProgress || Boolean(smokeSequencePromise) || Date.now() < suppressNonSequenceActionsUntil;
+  return (
+    sequenceInProgress ||
+    Boolean(smokeSequencePromise) ||
+    Date.now() < suppressNonSequenceActionsUntil
+  );
 }
 
 function shouldIgnoreActionTrigger() {
-  return actionInProgress || sequenceInProgress || Boolean(smokeSequencePromise) || Date.now() < suppressActionTriggersUntil;
+  return (
+    actionInProgress ||
+    sequenceInProgress ||
+    Boolean(smokeSequencePromise) ||
+    Date.now() < suppressActionTriggersUntil
+  );
 }
 
 function getActionTriggerCooldown(action) {
@@ -2518,7 +2650,8 @@ async function runAction(action, values, options = {}) {
 
   try {
     const result = await action.run(values ?? {});
-    const actionOutcome = result?.outcome === 'expected-rejection' ? 'expected-rejection' : 'success';
+    const actionOutcome =
+      result?.outcome === 'expected-rejection' ? 'expected-rejection' : 'success';
     elements.output.textContent = formatResult(result);
 
     if (action.reloadsApp) {
@@ -2680,11 +2813,15 @@ function getSmokeSequenceActions() {
   const isExcludedFromCoreSmoke = (action) => action && coreSmokeExcludedActionIds.has(action.id);
 
   if (!overrideIds) {
-    return visibleActions.filter((action) => action.includeInSmokeSequence && !isExcludedFromCoreSmoke(action));
+    return visibleActions.filter(
+      (action) => action.includeInSmokeSequence && !isExcludedFromCoreSmoke(action),
+    );
   }
 
   const visibleActionsById = new Map(visibleActions.map((action) => [action.id, action]));
-  return overrideIds.map((id) => visibleActionsById.get(id)).filter((action) => action && !isExcludedFromCoreSmoke(action));
+  return overrideIds
+    .map((id) => visibleActionsById.get(id))
+    .filter((action) => action && !isExcludedFromCoreSmoke(action));
 }
 
 function createInputField(card, input) {
@@ -2761,7 +2898,9 @@ function renderActions() {
 }
 
 function getVisibleQuickActions() {
-  return quickActionIds.map((id) => getActionById(id)).filter((action) => !action.showWhen || action.showWhen());
+  return quickActionIds
+    .map((id) => getActionById(id))
+    .filter((action) => !action.showWhen || action.showWhen());
 }
 
 function bindActionButton(button, handler) {
@@ -2858,7 +2997,9 @@ function createQuickActionButton(action) {
     if (shouldIgnoreNonSequenceActionTrigger()) {
       return;
     }
-    const values = Object.fromEntries((action.inputs || []).map((input) => [input.name, input.value || '']));
+    const values = Object.fromEntries(
+      (action.inputs || []).map((input) => [input.name, input.value || '']),
+    );
     void runAction(action, values).catch((error) => {
       console.error(`Quick action ${action.id} failed`, error);
     });
@@ -2889,7 +3030,11 @@ async function attachListeners() {
     { eventName: 'downloadFailed', label: 'Download failed', refreshAfter: true },
     { eventName: 'majorAvailable', label: 'Major update event', refreshAfter: false },
     { eventName: 'noNeedUpdate', label: 'No need update event', refreshAfter: false },
-    { eventName: 'onFlexibleUpdateStateChange', label: 'Flexible update event', refreshAfter: false },
+    {
+      eventName: 'onFlexibleUpdateStateChange',
+      label: 'Flexible update event',
+      refreshAfter: false,
+    },
     { eventName: 'set', label: 'Set event', refreshAfter: true },
     { eventName: 'setNext', label: 'Set next event', refreshAfter: true },
     { eventName: 'updateAvailable', label: 'Update available event', refreshAfter: false },
@@ -2969,13 +3114,16 @@ async function bootstrap() {
     } catch (error) {
       console.error('notifyAppReady() bootstrap failed', error);
     }
-    } else {
-      addEvent('notifyAppReady skipped', { message: 'disabled by VITE_CAPGO_SKIP_NOTIFY_APP_READY' });
-    }
+  } else {
+    addEvent('notifyAppReady skipped', { message: 'disabled by VITE_CAPGO_SKIP_NOTIFY_APP_READY' });
+  }
 
   await refreshState();
   const shouldRunAndroidBootProbe =
-    platform === 'android' && scenarioId.startsWith('manual-zip') && buildLabel.endsWith('-builtin') && state.bootCount > 1;
+    platform === 'android' &&
+    scenarioId.startsWith('manual-zip') &&
+    buildLabel.endsWith('-builtin') &&
+    state.bootCount > 1;
   if (shouldRunAndroidBootProbe) {
     state.bootProbe = 'running';
     renderState();
@@ -2986,10 +3134,7 @@ async function bootstrap() {
     }
     renderState();
   }
-  const bootActionIds =
-    bootActionFromStorage !== 'none'
-      ? [bootActionFromStorage]
-      : [];
+  const bootActionIds = bootActionFromStorage !== 'none' ? [bootActionFromStorage] : [];
   startStateRefreshWatchers();
   if (bootActionIds.length) {
     await pause(platform === 'ios' ? 500 : 100);

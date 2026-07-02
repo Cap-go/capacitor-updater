@@ -68,6 +68,7 @@ public class DownloadService extends Worker {
     public static final String IS_MANIFEST = "is_manifest";
     public static final String APP_ID = "app_id";
     public static final String pluginVersion = "plugin_version";
+    public static final String INSTALL_SOURCE = "install_source";
     public static final String STATS_URL = "stats_url";
     public static final String DEVICE_ID = "device_id";
     public static final String CUSTOM_ID = "custom_id";
@@ -173,7 +174,9 @@ public class DownloadService extends Worker {
     }
 
     static File resolveManifestBuiltinFile(final File builtinFolder, final String fileName) throws IOException {
-        return CapgoUpdater.resolvePathInsideDirectory(builtinFolder, fileName);
+        final boolean isBrotli = fileName.endsWith(".br");
+        final String resolvedName = isBrotli ? fileName.substring(0, fileName.length() - 3) : fileName;
+        return CapgoUpdater.resolvePathInsideDirectory(builtinFolder, resolvedName);
     }
 
     private String getInputString(String key, String fallback) {
@@ -236,6 +239,7 @@ public class DownloadService extends Worker {
             json.put("platform", "android");
             json.put("app_id", getInputString(APP_ID, "unknown"));
             json.put("plugin_version", getInputString(pluginVersion, "unknown"));
+            json.put("install_source", getInputString(INSTALL_SOURCE, ""));
             json.put("version_name", version != null ? version : "");
             json.put("old_version_name", "");
             json.put("action", action);
@@ -640,13 +644,28 @@ public class DownloadService extends Worker {
     }
 
     private void copyFile(File source, File dest) throws IOException {
+        final File parent = dest.getParentFile();
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            throw new IOException("Failed to create parent directory: " + parent.getAbsolutePath());
+        }
+
+        final File tempFile = new File(parent, dest.getName() + ".capgo_tmp");
         try (
             FileInputStream inStream = new FileInputStream(source);
-            FileOutputStream outStream = new FileOutputStream(dest);
+            FileOutputStream outStream = new FileOutputStream(tempFile);
             FileChannel inChannel = inStream.getChannel();
             FileChannel outChannel = outStream.getChannel()
         ) {
             inChannel.transferTo(0, inChannel.size(), outChannel);
+        }
+
+        try {
+            Files.move(tempFile.toPath(), dest.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            if (tempFile.exists()) {
+                tempFile.delete();
+            }
+            throw e;
         }
     }
 

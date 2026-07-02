@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@v6
         with:
           persist-credentials: false
       - name: Enforce capacitor-swift-pm version
@@ -48,7 +48,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@v6
         with:
           persist-credentials: false
       - name: Setup Bun
@@ -60,7 +60,7 @@ jobs:
       - name: Check plugin wiring
         run: bun run check:wiring
       - name: Setup java
-        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654
+        uses: actions/setup-java@v5
         with:
           distribution: 'zulu'
           java-version: '21'
@@ -80,7 +80,7 @@ jobs:
     runs-on: macOS-latest
     steps:
       - name: Check out
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@v6
         with:
           persist-credentials: false
       - name: Setup Bun
@@ -109,7 +109,7 @@ jobs:
     name: Build Maestro web assets
     steps:
       - name: Check out
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@v6
         with:
           persist-credentials: false
       - name: Setup Bun
@@ -124,7 +124,7 @@ jobs:
       - name: Build reusable Maestro web assets
         run: bun scripts/maestro/build-bundles.mjs all
       - name: Upload reusable Maestro web assets
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@v7
         with:
           name: maestro-web-assets
           path: |
@@ -155,7 +155,7 @@ jobs:
           - manual-manifest
     steps:
       - name: Check out
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@v6
         with:
           persist-credentials: false
       - name: Setup Bun
@@ -168,20 +168,20 @@ jobs:
             example-app/node_modules
           install-example: 'true'
       - name: Setup java
-        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654
+        uses: actions/setup-java@v5
         with:
           distribution: 'zulu'
           java-version: '21'
           cache: gradle
       - name: Download reusable Maestro web assets
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        uses: actions/download-artifact@v8
         with:
           name: maestro-web-assets
           path: .
       - name: Build Android app
         run: bun scripts/maestro/prepare-android-scenario.mjs "${{ matrix.scenario }}"
       - name: Upload Android app
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@v7
         with:
           name: maestro-android-app-${{ matrix.scenario }}
           path: example-app/android/app/build/outputs/apk/debug/app-debug.apk
@@ -196,7 +196,7 @@ jobs:
     name: Build iOS Maestro apps
     steps:
       - name: Check out
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@v6
         with:
           persist-credentials: false
       - name: Setup Bun
@@ -209,7 +209,7 @@ jobs:
             example-app/node_modules
           install-example: 'true'
       - name: Download reusable Maestro web assets
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        uses: actions/download-artifact@v8
         with:
           name: maestro-web-assets
           path: .
@@ -247,7 +247,7 @@ jobs:
             ditto "$derived_data_path/Build/Products/Debug-iphonesimulator/App.app" "$app_artifact_path/App.app"
           done
       - name: Upload iOS apps
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@v7
         with:
           name: maestro-ios-apps
           path: ${{ runner.temp }}/maestro-ios-apps
@@ -271,7 +271,7 @@ jobs:
           - manual-zip-config-guards
     steps:
       - name: Check out
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@v6
         with:
           persist-credentials: false
       - name: Setup Bun
@@ -284,7 +284,7 @@ jobs:
             example-app/node_modules
           install-example: 'true'
       - name: Setup java
-        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654
+        uses: actions/setup-java@v5
         with:
           distribution: 'zulu'
           java-version: '21'
@@ -294,12 +294,12 @@ jobs:
         with:
           maestro-version: ${{ env.MAESTRO_VERSION }}
       - name: Download reusable Maestro web assets
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        uses: actions/download-artifact@v8
         with:
           name: maestro-web-assets
           path: .
       - name: Download Android app
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        uses: actions/download-artifact@v8
         with:
           name: maestro-android-app-${{ matrix.scenario }}
           path: example-app/android/app/build/outputs/apk/debug
@@ -309,7 +309,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: Run Maestro smoke tests
-        uses: reactivecircus/android-emulator-runner@e89f39f1abbbd05b1113a29cf4db69e7540cae5a # v2
+        uses: reactivecircus/android-emulator-runner@v2.37.0 # NOSONAR version tag required by repo policy
         with:
           api-level: 30
           arch: x86_64
@@ -328,7 +328,7 @@ jobs:
             bun run test:maestro:android
       - name: Upload Maestro artifacts
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@v7
         with:
           name: maestro-results-android-${{ matrix.scenario }}
           path: maestro-results
@@ -351,21 +351,13 @@ jobs:
           - manual-zip-config-guards
     steps:
       - name: Check out
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@v6
         with:
           persist-credentials: false
       - name: Boot iOS simulator early
         run: |
           set -euo pipefail
-          simulator_id="$(
-            xcrun simctl list devices available |
-              sed -nE 's/^[[:space:]]*iPhone.*\(([0-9A-F-]{36})\) \([^)]*\)[[:space:]]*$/\1/p' |
-              head -n 1
-          )"
-          if [[ -z "$simulator_id" ]]; then
-            echo "No available iPhone simulator found." >&2
-            exit 1
-          fi
+          simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
           echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
           xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
       - name: Setup Bun
@@ -378,12 +370,12 @@ jobs:
         with:
           maestro-version: ${{ env.MAESTRO_VERSION }}
       - name: Download reusable Maestro web assets
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        uses: actions/download-artifact@v8
         with:
           name: maestro-web-assets
           path: .
       - name: Download iOS app
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        uses: actions/download-artifact@v8
         with:
           name: maestro-ios-apps
           path: maestro-ios-apps
@@ -395,12 +387,13 @@ jobs:
           CAPGO_MAESTRO_IOS_APP_PATH=maestro-ios-apps/${{ matrix.scenario }}/App.app
           CAPGO_MAESTRO_SMOKE_SCENARIO=${{ matrix.scenario }}
           CAPGO_MAESTRO_TEST_RETRIES=2
-          CAPGO_MAESTRO_TIMEOUT_SECONDS=420
-          MAESTRO_DRIVER_STARTUP_TIMEOUT=180000
+          CAPGO_MAESTRO_IOS_REINSTALL_ON_RETRY=1
+          CAPGO_MAESTRO_TIMEOUT_SECONDS=300
+          MAESTRO_DRIVER_STARTUP_TIMEOUT=90000
           bun run test:maestro:ios:smoke
       - name: Upload Maestro artifacts
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@v7
         with:
           name: maestro-results-ios-${{ matrix.scenario }}
           path: maestro-results-ios
@@ -423,21 +416,13 @@ jobs:
           - on-launch
     steps:
       - name: Check out
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@v6
         with:
           persist-credentials: false
       - name: Boot iOS simulator early
         run: |
           set -euo pipefail
-          simulator_id="$(
-            xcrun simctl list devices available |
-              sed -nE 's/^[[:space:]]*iPhone.*\(([0-9A-F-]{36})\) \([^)]*\)[[:space:]]*$/\1/p' |
-              head -n 1
-          )"
-          if [[ -z "$simulator_id" ]]; then
-            echo "No available iPhone simulator found." >&2
-            exit 1
-          fi
+          simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
           echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
           xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
       - name: Setup Bun
@@ -450,12 +435,12 @@ jobs:
         with:
           maestro-version: ${{ env.MAESTRO_VERSION }}
       - name: Download reusable Maestro web assets
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        uses: actions/download-artifact@v8
         with:
           name: maestro-web-assets
           path: .
       - name: Download iOS app
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        uses: actions/download-artifact@v8
         with:
           name: maestro-ios-apps
           path: maestro-ios-apps
@@ -468,12 +453,12 @@ jobs:
           CAPGO_MAESTRO_IOS_APP_PATH=maestro-ios-apps/${{ matrix.scenario }}/App.app \
           CAPGO_MAESTRO_RESULTS_DIR=maestro-results-ios-live-update/${{ matrix.scenario }} \
           CAPGO_MAESTRO_TIMEOUT_SECONDS=300 \
-          CAPGO_MAESTRO_TEST_RETRIES=1 \
+          CAPGO_MAESTRO_TEST_RETRIES=2 \
           MAESTRO_DRIVER_STARTUP_TIMEOUT=180000 \
           ./scripts/maestro/run-ios-live-update.sh "${{ matrix.scenario }}"
       - name: Upload live update Maestro artifacts
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@v7
         with:
           name: maestro-results-ios-live-update-${{ matrix.scenario }}
           path: maestro-results-ios-live-update/${{ matrix.scenario }}
@@ -487,7 +472,7 @@ jobs:
     name: Build code and test
     steps:
       - name: Check out
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@v6
         with:
           persist-credentials: false
       - name: Setup Bun
@@ -530,7 +515,7 @@ jobs:
           - manual-manifest
     steps:
       - name: Check out
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@v6
         with:
           persist-credentials: false
       - name: Setup Bun
@@ -543,7 +528,7 @@ jobs:
             example-app/node_modules
           install-example: 'true'
       - name: Setup java
-        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654
+        uses: actions/setup-java@v5
         with:
           distribution: 'zulu'
           java-version: '21'
@@ -553,12 +538,12 @@ jobs:
         with:
           maestro-version: ${{ env.MAESTRO_VERSION }}
       - name: Download reusable Maestro web assets
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        uses: actions/download-artifact@v8
         with:
           name: maestro-web-assets
           path: .
       - name: Download Android app
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        uses: actions/download-artifact@v8
         with:
           name: maestro-android-app-${{ matrix.scenario }}
           path: example-app/android/app/build/outputs/apk/debug
@@ -568,7 +553,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: Run live update Maestro flow
-        uses: reactivecircus/android-emulator-runner@e89f39f1abbbd05b1113a29cf4db69e7540cae5a # v2
+        uses: reactivecircus/android-emulator-runner@v2.37.0 # NOSONAR version tag required by repo policy
         with:
           api-level: 30
           arch: x86_64
@@ -583,7 +568,7 @@ jobs:
             CAPGO_MAESTRO_SPLIT_RETRIES=2
             CAPGO_MAESTRO_UI_STATE_TIMEOUT_SECONDS=180
             CAPGO_MAESTRO_DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS=180
-            ./scripts/maestro/run-android-live-update.sh "${{ matrix.scenario }}"
+            bash ./scripts/maestro/run-android-live-update-ci.sh "${{ matrix.scenario }}"
 
   maestro_android:
     if: always()

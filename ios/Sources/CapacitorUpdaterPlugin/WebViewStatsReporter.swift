@@ -184,6 +184,8 @@ final class WebViewStatsReporter {
                 "href": call.getString("href"),
                 "user_agent": call.getString("user_agent"),
                 "session_id": call.getString("session_id"),
+                "duration_ms": call.getString("duration_ms"),
+                "page_started_at": call.getString("page_started_at"),
                 "previous_session_id": call.getString("previous_session_id"),
                 "previous_href": call.getString("previous_href"),
                 "previous_started_at": call.getString("previous_started_at"),
