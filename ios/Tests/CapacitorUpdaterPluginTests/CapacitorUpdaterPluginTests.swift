@@ -891,6 +891,54 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertNil(UserDefaults.standard.string(forKey: defaultsKey))
     }
 
+    func testDefaultChannelCleanupRunsWhenPersistenceDisabledDuringNativeBuildCleanup() {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.persistDefaultChannelOnReinstall = false
+
+        XCTAssertTrue(
+            testPlugin.shouldClearPersistedDefaultChannelOnNativeBuildChange(
+                nativeBuildVersionChanged: true,
+                resetWhenUpdate: true
+            )
+        )
+    }
+
+    func testDefaultChannelCleanupKeepsChannelWhenPersistenceEnabled() {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.persistDefaultChannelOnReinstall = true
+
+        XCTAssertFalse(
+            testPlugin.shouldClearPersistedDefaultChannelOnNativeBuildChange(
+                nativeBuildVersionChanged: true,
+                resetWhenUpdate: true
+            )
+        )
+    }
+
+    func testDefaultChannelCleanupKeepsChannelWhenNativeBuildDoesNotChange() {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.persistDefaultChannelOnReinstall = false
+
+        XCTAssertFalse(
+            testPlugin.shouldClearPersistedDefaultChannelOnNativeBuildChange(
+                nativeBuildVersionChanged: false,
+                resetWhenUpdate: true
+            )
+        )
+    }
+
+    func testDefaultChannelCleanupKeepsChannelWhenNativeCleanupIsDisabled() {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.persistDefaultChannelOnReinstall = false
+
+        XCTAssertFalse(
+            testPlugin.shouldClearPersistedDefaultChannelOnNativeBuildChange(
+                nativeBuildVersionChanged: true,
+                resetWhenUpdate: false
+            )
+        )
+    }
+
     func testGetChannelPersistsServerChannelAsDefaultChannel() throws {
         let updater = ChannelRequestCapgoUpdater()
         updater.setLogger(Logger(withTag: "TestLogger"))

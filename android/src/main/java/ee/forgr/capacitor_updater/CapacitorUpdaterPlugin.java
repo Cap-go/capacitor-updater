@@ -151,6 +151,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     protected CapgoUpdater implementation;
     private Boolean persistCustomId = false;
     private Boolean persistModifyUrl = false;
+    private Boolean persistDefaultChannelOnReinstall = true;
 
     private Integer appReadyTimeout = 10000;
     private Integer periodCheckDelay = 0;
@@ -751,6 +752,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
         this.persistCustomId = this.getConfig().getBoolean("persistCustomId", false);
         this.persistModifyUrl = this.getConfig().getBoolean("persistModifyUrl", false);
+        this.persistDefaultChannelOnReinstall = this.getConfig().getBoolean("persistDefaultChannelOnReinstall", true);
         this.allowSetDefaultChannel = this.getConfig().getBoolean("allowSetDefaultChannel", true);
         this.implementation.setPublicKey(this.getConfig().getString("publicKey", ""));
         // Log public key prefix if encryption is enabled
@@ -777,6 +779,23 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
         }
 
+        final boolean resetWhenUpdate = this.getConfig().getBoolean("resetWhenUpdate", true);
+        final boolean nativeBuildVersionChanged = this.hasNativeBuildVersionChanged();
+        if (
+            shouldClearPersistedDefaultChannelOnNativeBuildChange(
+                Boolean.TRUE.equals(this.persistDefaultChannelOnReinstall),
+                resetWhenUpdate,
+                nativeBuildVersionChanged
+            )
+        ) {
+            this.editor.remove(DEFAULT_CHANNEL_PREF_KEY);
+            this.editor.apply();
+            logger.info(
+                "Cleared persisted defaultChannel during native build cleanup because persistDefaultChannelOnReinstall is disabled"
+            );
+        }
+
+        final String configDefaultChannel = this.getConfig().getString("defaultChannel", "");
         // Load defaultChannel: first try from persistent storage (set via setChannel), then fall back to config
         if (this.prefs.contains(DEFAULT_CHANNEL_PREF_KEY)) {
             final String storedDefaultChannel = this.prefs.getString(DEFAULT_CHANNEL_PREF_KEY, "");
@@ -784,10 +803,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 this.implementation.defaultChannel = storedDefaultChannel;
                 logger.info("Loaded persisted defaultChannel from setChannel()");
             } else {
-                this.implementation.defaultChannel = this.getConfig().getString("defaultChannel", "");
+                this.implementation.defaultChannel = configDefaultChannel;
             }
         } else {
-            this.implementation.defaultChannel = this.getConfig().getString("defaultChannel", "");
+            this.implementation.defaultChannel = configDefaultChannel;
         }
 
         this.periodCheckDelay = normalizedPeriodCheckDelayMs(this.getConfig().getInt("periodCheckDelay", 0));
@@ -856,11 +875,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 ? this.prefs.getBoolean(PREVIEW_PREVIOUS_SHAKE_CHANNEL_SELECTOR_PREF_KEY, false)
                 : this.shakeChannelSelectorEnabled;
         }
-        boolean resetWhenUpdate = this.getConfig().getBoolean("resetWhenUpdate", true);
 
         // Check if app was recently installed/updated BEFORE cleanupObsoleteVersions updates LatestVersionNative
         this.wasRecentlyInstalledOrUpdated = this.checkIfRecentlyInstalledOrUpdated();
-        final boolean nativeBuildVersionChanged = this.hasNativeBuildVersionChanged();
 
         this.implementation.autoReset(this.currentBuildVersion, resetWhenUpdate);
         if (nativeBuildVersionChanged) {
@@ -1303,6 +1320,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
 
         return false;
+    }
+
+    static boolean shouldClearPersistedDefaultChannelOnNativeBuildChange(
+        final boolean persistDefaultChannelOnReinstall,
+        final boolean resetWhenUpdate,
+        final boolean nativeBuildVersionChanged
+    ) {
+        return !persistDefaultChannelOnReinstall && resetWhenUpdate && nativeBuildVersionChanged;
     }
 
     private boolean hasNativeBuildVersionChanged() {

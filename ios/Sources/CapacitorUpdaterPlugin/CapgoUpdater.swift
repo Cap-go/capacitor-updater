@@ -2289,7 +2289,8 @@ import UIKit
             self.logger.info("Public channel requested, channel override removed")
 
             setChannel.status = responseValue.status ?? "ok"
-            setChannel.message = responseValue.message ?? "Public channel requested, channel override removed. Device will use public channel automatically."
+            setChannel.message = responseValue.message
+                ?? "Public channel requested, channel override removed. Device will use public channel automatically."
         } else {
             self.defaultChannel = channel
             UserDefaults.standard.set(channel, forKey: defaultChannelKey)
@@ -2304,7 +2305,6 @@ import UIKit
 
     func getChannel(defaultChannelKey: String? = nil) -> GetChannel {
         let getChannel: GetChannel = GetChannel()
-
         // Check if rate limit was exceeded
         if CapgoUpdater.rateLimitExceeded {
             logger.debug("Skipping getChannel due to rate limit (429). Requests will resume after app restart.")

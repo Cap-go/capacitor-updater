@@ -3013,6 +3013,26 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void defaultChannelCleanupRunsWhenPersistenceDisabledDuringNativeBuildCleanup() {
+        assertTrue(CapacitorUpdaterPlugin.shouldClearPersistedDefaultChannelOnNativeBuildChange(false, true, true));
+    }
+
+    @Test
+    public void defaultChannelCleanupKeepsChannelWhenPersistenceEnabled() {
+        assertFalse(CapacitorUpdaterPlugin.shouldClearPersistedDefaultChannelOnNativeBuildChange(true, true, true));
+    }
+
+    @Test
+    public void defaultChannelCleanupKeepsChannelWhenNativeBuildDoesNotChange() {
+        assertFalse(CapacitorUpdaterPlugin.shouldClearPersistedDefaultChannelOnNativeBuildChange(false, true, false));
+    }
+
+    @Test
+    public void defaultChannelCleanupKeepsChannelWhenNativeCleanupIsDisabled() {
+        assertFalse(CapacitorUpdaterPlugin.shouldClearPersistedDefaultChannelOnNativeBuildChange(false, false, true));
+    }
+
+    @Test
     public void persistDefaultChannelFromResponseIgnoresBuiltinVersionName() {
         final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
         final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);

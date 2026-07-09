@@ -163,6 +163,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var autoDeleteFailed = false
     private var autoDeletePrevious = false
     var allowSetDefaultChannel = true
+    var persistDefaultChannelOnReinstall = true
     private var keepUrlPathAfterReload = false
     private var backgroundWork: DispatchWorkItem?
     private var taskRunning = false
@@ -219,6 +220,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.implementation.deviceID = DeviceIdHelper.getOrCreateDeviceId()
         persistCustomId = getConfig().getBoolean("persistCustomId", false)
         allowSetDefaultChannel = getConfig().getBoolean("allowSetDefaultChannel", true)
+        persistDefaultChannelOnReinstall = getConfig().getBoolean("persistDefaultChannelOnReinstall", true)
         if persistCustomId {
             let storedCustomId = UserDefaults.standard.string(forKey: customIdDefaultsKey) ?? ""
             if !storedCustomId.isEmpty {
@@ -335,12 +337,23 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
         }
 
+        let nativeBuildVersionChanged = self.hasNativeBuildVersionChanged()
+        if shouldClearPersistedDefaultChannelOnNativeBuildChange(
+            nativeBuildVersionChanged: nativeBuildVersionChanged,
+            resetWhenUpdate: resetWhenUpdate
+        ) {
+            UserDefaults.standard.removeObject(forKey: defaultChannelDefaultsKey)
+            UserDefaults.standard.synchronize()
+            logger.info("Cleared persisted defaultChannel during native build cleanup because persistDefaultChannelOnReinstall is disabled")
+        }
+
+        let configDefaultChannel = getConfig().getString("defaultChannel", "")!
         // Load defaultChannel: first try from persistent storage (set via setChannel), then fall back to config
         if let storedDefaultChannel = UserDefaults.standard.object(forKey: defaultChannelDefaultsKey) as? String {
             implementation.defaultChannel = storedDefaultChannel
             logger.info("Loaded persisted defaultChannel from setChannel()")
         } else {
-            implementation.defaultChannel = getConfig().getString("defaultChannel", "")!
+            implementation.defaultChannel = configDefaultChannel
         }
         self.reportAppLaunchStart()
         self.implementation.autoReset()
@@ -351,7 +364,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         // Check if app was recently installed/updated BEFORE cleanup updates the stored native build version.
         self.wasRecentlyInstalledOrUpdated = self.checkIfRecentlyInstalledOrUpdated()
-        let nativeBuildVersionChanged = self.hasNativeBuildVersionChanged()
         if nativeBuildVersionChanged {
             self.clearPreviewSessionForNativeBuildChange()
         }
@@ -533,6 +545,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     func storedNativeBuildVersion() -> String {
         UserDefaults.standard.string(forKey: "LatestNativeBuildVersion") ?? UserDefaults.standard.string(forKey: "LatestVersionNative") ?? "0"
+    }
+
+    func shouldClearPersistedDefaultChannelOnNativeBuildChange(
+        nativeBuildVersionChanged: Bool,
+        resetWhenUpdate: Bool
+    ) -> Bool {
+        !persistDefaultChannelOnReinstall && resetWhenUpdate && nativeBuildVersionChanged
     }
 
     func hasNativeBuildVersionChanged() -> Bool {
