@@ -1500,17 +1500,28 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 CapacitorUpdaterPlugin.this.reportWebViewPageLoaded(view);
                 CapacitorUpdaterPlugin.this.evaluateWebViewStatsReporterScript(view, script);
             }
-
-            @Override
-            public boolean onRenderProcessGone(final android.webkit.WebView view, final RenderProcessGoneDetail detail) {
-                final Map<String, String> metadata = CapacitorUpdaterPlugin.this.buildWebViewRenderProcessGoneMetadata(detail);
-                CapacitorUpdaterPlugin.this.persistPendingWebViewRenderProcessGone(metadata);
-                return false;
-            }
         };
 
         this.bridge.addWebViewListener(this.webViewStatsListener);
+        // Keep RenderProcessGoneDetail off the Plugin class method table and off this
+        // listener so Android < 8 (API 26) does not crash during plugin reflection.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            this.installWebViewRenderProcessGoneReporter();
+        }
         this.evaluateWebViewStatsReporterScript(webView, script);
+    }
+
+    private void installWebViewRenderProcessGoneReporter() {
+        this.bridge.addWebViewListener(
+            new WebViewListener() {
+                @Override
+                public boolean onRenderProcessGone(final android.webkit.WebView view, final RenderProcessGoneDetail detail) {
+                    final Map<String, String> metadata = CapacitorUpdaterPlugin.this.buildWebViewRenderProcessGoneMetadata(detail);
+                    CapacitorUpdaterPlugin.this.persistPendingWebViewRenderProcessGone(metadata);
+                    return false;
+                }
+            }
+        );
     }
 
     private void installDocumentStartWebViewStatsReporter(final android.webkit.WebView webView, final String script) {
@@ -1619,16 +1630,17 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.reportWebViewStats("webview_page_loaded", metadata);
     }
 
-    private Map<String, String> buildWebViewRenderProcessGoneMetadata(final RenderProcessGoneDetail detail) {
+    private Map<String, String> buildWebViewRenderProcessGoneMetadata(final Object detailObj) {
         final Map<String, String> metadata = new HashMap<>();
         metadata.put("error_type", "render_process_gone");
         metadata.put("source", "android_on_render_process_gone");
         metadata.put("timestamp", Long.toString(System.currentTimeMillis()));
-        if (detail != null) {
+        // Parameter typed as Object so Android < 8 ART does not resolve
+        // RenderProcessGoneDetail while reflecting CapacitorUpdaterPlugin methods.
+        if (detailObj != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            final RenderProcessGoneDetail detail = (RenderProcessGoneDetail) detailObj;
             metadata.put("did_crash", Boolean.toString(detail.didCrash()));
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                metadata.put("renderer_priority_at_exit", Integer.toString(detail.rendererPriorityAtExit()));
-            }
+            metadata.put("renderer_priority_at_exit", Integer.toString(detail.rendererPriorityAtExit()));
         }
         return metadata;
     }
