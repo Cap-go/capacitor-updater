@@ -4547,8 +4547,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final String messageUpdate = initialDirectUpdateAllowed
             ? "Update will occur now."
             : this.shouldAutoSetNextBundle()
-              ? "Update will occur next time app moves to background."
-              : "Update will be downloaded and made available.";
+                ? "Update will occur next time app moves to background."
+                : "Update will be downloaded and made available.";
         Thread newTask = startNewThread(() -> {
             // Wait for cleanup to complete before starting download
             waitForCleanupIfNeeded();

@@ -763,10 +763,10 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
                                     latestMessage != null && !latestMessage.isEmpty()
                                         ? latestMessage
                                         : latestError != null && !latestError.isEmpty()
-                                          ? latestError
-                                          : latestKind != null && !latestKind.isEmpty()
-                                            ? latestKind
-                                            : "server did not provide a message";
+                                            ? latestError
+                                            : latestKind != null && !latestKind.isEmpty()
+                                                ? latestKind
+                                                : "server did not provide a message";
 
                                 // Handle update errors first (before "no new version" check)
                                 if (
