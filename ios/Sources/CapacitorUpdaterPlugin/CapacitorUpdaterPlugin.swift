@@ -1302,6 +1302,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         let performReload: () -> Bool = {
             guard self.applyCurrentBundleToBridge(bridge) else {
+                self.clearAppReadyWaitArm()
                 return false
             }
             self.checkAppReady()
@@ -2909,6 +2910,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         appReadyWaitArmed = false
         appReadyWaitLock.unlock()
         return shouldWait
+    }
+
+    private func clearAppReadyWaitArm() {
+        appReadyWaitLock.lock()
+        appReadyWaitArmed = false
+        appReadyWaitLock.unlock()
     }
 
     private func hideSplashscreen() {
