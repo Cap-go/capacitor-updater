@@ -976,12 +976,8 @@ public class CapacitorUpdaterUnitTest {
         return updater;
     }
 
-
-    private static void invokeSendReadyToJs(
-        final CapacitorUpdaterPlugin plugin,
-        final BundleInfo bundle,
-        final String msg
-    ) throws Exception {
+    private static void invokeSendReadyToJs(final CapacitorUpdaterPlugin plugin, final BundleInfo bundle, final String msg)
+        throws Exception {
         final Method method = CapacitorUpdaterPlugin.class.getDeclaredMethod(
             "sendReadyToJs",
             BundleInfo.class,
