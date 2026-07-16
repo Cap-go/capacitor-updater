@@ -37,7 +37,7 @@ private final class RealSendReadyCapacitorUpdaterPlugin: CapacitorUpdaterPlugin 
     private(set) var notifiedEventNames: [String] = []
     private(set) var notifiedEventPayloads: [String: [String: Any]] = [:]
 
-    override func notifyListeners(_ eventName: String, data: [String: Any]?, retainUntilConsumed retain: Bool) {
+    override func notifyListeners(_ eventName: String, data: [String: Any]?, retainUntilConsumed _: Bool) {
         notifiedEventNames.append(eventName)
         if let data {
             notifiedEventPayloads[eventName] = data
