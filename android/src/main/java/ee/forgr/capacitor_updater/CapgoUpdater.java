@@ -41,6 +41,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -73,6 +74,7 @@ public class CapgoUpdater {
     private static final String FALLBACK_VERSION = "pastVersion";
     private static final String NEXT_VERSION = "nextVersion";
     private static final String PREVIEW_FALLBACK_VERSION = "previewFallbackVersion";
+    private static final String PENDING_DELETE_IDS = "pendingDeleteIds";
     private static final String bundleDirectory = "versions";
     private static final String TEMP_UNZIP_PREFIX = "capgo_unzip_";
     private static final long DELETE_PACE_MS = 75L;
@@ -1540,6 +1542,7 @@ public class CapgoUpdater {
                 return false;
             }
             this.sendStats("delete", deleted.getVersionName());
+            this.dequeuePendingDelete(id);
             logger.info("Bundle deleted and confirmed gone");
             logger.debug("Bundle ID: " + id);
             return true;
@@ -1561,17 +1564,19 @@ public class CapgoUpdater {
      * delete() marks DELETING before disk work and only clears registry after confirm.
      */
     public void drainPendingDeletes() {
-        final List<BundleInfo> pending = new ArrayList<>();
+        final LinkedHashSet<String> pendingIds = new LinkedHashSet<>();
         for (final BundleInfo info : this.list(true)) {
-            if (info != null && info.isDeleting()) {
-                pending.add(info);
+            if (info != null && info.isDeleting() && info.getId() != null && !info.getId().isEmpty()) {
+                pendingIds.add(info.getId());
             }
         }
-        for (final BundleInfo info : pending) {
-            final String id = info.getId();
+        pendingIds.addAll(this.getPendingDeleteIds());
+        for (final String id : pendingIds) {
             try {
                 logger.info("Resuming pending delete for bundle: " + id);
-                this.delete(id, true);
+                if (Boolean.TRUE.equals(this.delete(id, true))) {
+                    this.dequeuePendingDelete(id);
+                }
             } catch (final Exception e) {
                 logger.error("Pending delete failed, will retry next launch");
                 logger.debug("Bundle ID: " + id + ", Error: " + e.getMessage());
@@ -1583,6 +1588,51 @@ public class CapgoUpdater {
                 return;
             }
         }
+    }
+
+    private Set<String> getPendingDeleteIds() {
+        final Set<String> ids = new LinkedHashSet<>();
+        if (this.prefs == null) {
+            return ids;
+        }
+        final String raw = this.prefs.getString(PENDING_DELETE_IDS, "");
+        if (raw == null || raw.isEmpty()) {
+            return ids;
+        }
+        for (final String part : raw.split(",")) {
+            if (part != null && !part.isEmpty()) {
+                ids.add(part);
+            }
+        }
+        return ids;
+    }
+
+    private void enqueuePendingDelete(final String id) {
+        if (id == null || id.isEmpty() || this.editor == null || this.prefs == null) {
+            return;
+        }
+        final Set<String> ids = this.getPendingDeleteIds();
+        if (!ids.add(id)) {
+            return;
+        }
+        this.editor.putString(PENDING_DELETE_IDS, String.join(",", ids));
+        this.editor.commit();
+    }
+
+    private void dequeuePendingDelete(final String id) {
+        if (id == null || id.isEmpty() || this.editor == null || this.prefs == null) {
+            return;
+        }
+        final Set<String> ids = this.getPendingDeleteIds();
+        if (!ids.remove(id)) {
+            return;
+        }
+        if (ids.isEmpty()) {
+            this.editor.remove(PENDING_DELETE_IDS);
+        } else {
+            this.editor.putString(PENDING_DELETE_IDS, String.join(",", ids));
+        }
+        this.editor.commit();
     }
 
     private File getBundleDirectory(final String id) {
@@ -1802,8 +1852,9 @@ public class CapgoUpdater {
             }
             // Mark durable intent before fallback switch so a kill mid-flight still retries.
             if (!this.saveBundleInfo(previousFallbackId, fallback.setStatus(BundleStatus.DELETING))) {
-                logger.error("Failed to persist DELETING for previous bundle; async delete will retry marker");
+                logger.error("Failed to persist DELETING for previous bundle; queueing durable retry");
                 logger.debug("Bundle ID: " + previousFallbackId);
+                this.enqueuePendingDelete(previousFallbackId);
             }
         }
         this.setFallbackBundle(bundle);

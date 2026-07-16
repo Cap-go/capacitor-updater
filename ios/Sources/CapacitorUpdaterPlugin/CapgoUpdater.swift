@@ -22,6 +22,7 @@ import UIKit
     private let FALLBACK_VERSION: String = "pastVersion"
     private let NEXT_VERSION: String = "nextVersion"
     private let PREVIEW_FALLBACK_VERSION: String = "previewFallbackVersion"
+    private let PENDING_DELETE_IDS: String = "pendingDeleteIds"
     private var unzipPercent = 0
     private let TEMP_UNZIP_PREFIX: String = "capgo_unzip_"
     private let deletePaceSeconds: TimeInterval = 0.075
@@ -1900,6 +1901,7 @@ import UIKit
             return false
         }
         UserDefaults.standard.synchronize()
+        self.dequeuePendingDelete(id: id)
         logger.info("Bundle deleted and confirmed gone")
         logger.debug("Version: \(deleted.getVersionName())")
         self.sendStats(action: "delete", versionName: deleted.getVersionName())
@@ -1913,13 +1915,42 @@ import UIKit
     /// Resume incomplete deletes one-by-one. Safe across app kill / OOM because
     /// delete() marks DELETING before disk work and only clears registry after confirm.
     public func drainPendingDeletes() {
-        let pending = self.list(raw: true).filter { $0.isDeleting() }
-        for info in pending {
-            let id = info.getId()
+        var pendingIds = Set(self.list(raw: true).filter { $0.isDeleting() }.map { $0.getId() }.filter { !$0.isEmpty })
+        pendingIds.formUnion(self.getPendingDeleteIds())
+        for id in pendingIds {
             logger.info("Resuming pending delete for bundle: \(id)")
-            _ = self.delete(id: id, removeInfo: true)
+            if self.delete(id: id, removeInfo: true) {
+                self.dequeuePendingDelete(id: id)
+            }
             Thread.sleep(forTimeInterval: self.deletePaceSeconds)
         }
+    }
+
+    private func getPendingDeleteIds() -> Set<String> {
+        guard let raw = UserDefaults.standard.string(forKey: self.PENDING_DELETE_IDS), !raw.isEmpty else {
+            return []
+        }
+        return Set(raw.split(separator: ",").map { String($0) }.filter { !$0.isEmpty })
+    }
+
+    private func enqueuePendingDelete(id: String) {
+        guard !id.isEmpty else { return }
+        var ids = self.getPendingDeleteIds()
+        guard ids.insert(id).inserted else { return }
+        UserDefaults.standard.set(ids.sorted().joined(separator: ","), forKey: self.PENDING_DELETE_IDS)
+        UserDefaults.standard.synchronize()
+    }
+
+    private func dequeuePendingDelete(id: String) {
+        guard !id.isEmpty else { return }
+        var ids = self.getPendingDeleteIds()
+        guard ids.remove(id) != nil else { return }
+        if ids.isEmpty {
+            UserDefaults.standard.removeObject(forKey: self.PENDING_DELETE_IDS)
+        } else {
+            UserDefaults.standard.set(ids.sorted().joined(separator: ","), forKey: self.PENDING_DELETE_IDS)
+        }
+        UserDefaults.standard.synchronize()
     }
 
     public func cleanupDeltaCache() {
@@ -2280,8 +2311,9 @@ import UIKit
         if shouldDeletePrevious {
             // Mark durable intent before fallback switch so a kill mid-flight still retries.
             if !self.saveBundleInfo(id: previousFallbackId, bundle: fallback.setStatus(status: BundleStatus.DELETING.storedValue)) {
-                self.logger.error("Failed to persist DELETING for previous bundle; async delete will retry marker")
+                self.logger.error("Failed to persist DELETING for previous bundle; queueing durable retry")
                 self.logger.debug("Bundle ID: \(previousFallbackId)")
+                self.enqueuePendingDelete(id: previousFallbackId)
             }
             UserDefaults.standard.synchronize()
         }
