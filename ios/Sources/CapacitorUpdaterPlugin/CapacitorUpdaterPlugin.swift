@@ -638,10 +638,21 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func cleanupObsoleteVersions(resetWhenUpdate: Bool = true, didResetCurrentBundle: Bool = false) {
         cleanupThread = Thread {
+            var cleanupBackgroundTask = UIBackgroundTaskIdentifier.invalid
+            cleanupBackgroundTask = UIApplication.shared.beginBackgroundTask(withName: "CapgoBundleCleanup") {
+                if cleanupBackgroundTask != .invalid {
+                    UIApplication.shared.endBackgroundTask(cleanupBackgroundTask)
+                    cleanupBackgroundTask = .invalid
+                }
+            }
             self.cleanupLock.lock()
             defer {
                 self.cleanupComplete = true
                 self.cleanupLock.unlock()
+                if cleanupBackgroundTask != .invalid {
+                    UIApplication.shared.endBackgroundTask(cleanupBackgroundTask)
+                    cleanupBackgroundTask = .invalid
+                }
                 self.logger.info("Cleanup complete")
             }
 
@@ -685,9 +696,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     if !deleted {
                         self.logger.error("Delete failed, id \(version.getId()) doesn't exist")
                     }
+                    Thread.sleep(forTimeInterval: 0.075)
                 }
                 self.implementation.cleanupDeltaCache()
             }
+
+            // Resume any DELETING leftovers from prior kills, one-by-one.
+            self.implementation.drainPendingDeletes()
 
             // Always sweep orphan directories so incomplete prior cleanups (or failed deletes)
             // cannot leave hundreds of MB behind across launches.
@@ -2835,6 +2850,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             if self.autoDeleteFailed && !current.isBuiltin() {
                 let failedId = current.getId()
                 logger.info("Deleting failing bundle: \(current.toString())")
+                // Mark before async work so kill/OOM still resumes via drainPendingDeletes.
+                self.implementation.saveBundleInfo(
+                    id: failedId,
+                    bundle: current.setStatus(status: BundleStatus.DELETING.storedValue)
+                )
+                UserDefaults.standard.synchronize()
                 DispatchQueue.global(qos: .utility).async {
                     let res = self.implementation.delete(id: failedId, removeInfo: false)
                     if res {

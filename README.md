@@ -2857,7 +2857,7 @@ downloading: The bundle is being downloaded.
 success: The bundle has been downloaded and is ready to be **SET** as the next bundle.
 error: The bundle has failed to download.
 
-<code>'success' | 'error' | 'pending' | 'downloading'</code>
+<code>'success' | 'error' | 'pending' | 'downloading' | 'deleted' | 'deleting'</code>
 
 
 ##### DelayUntilNext

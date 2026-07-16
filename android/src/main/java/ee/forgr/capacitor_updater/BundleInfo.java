@@ -94,8 +94,12 @@ public class BundleInfo {
         return BundleStatus.DELETED == this.status;
     }
 
+    public Boolean isDeleting() {
+        return BundleStatus.DELETING == this.status;
+    }
+
     public boolean isDownloaded() {
-        return !this.isBuiltin() && this.downloaded != null && !this.downloaded.isEmpty() && !this.isDeleted();
+        return (!this.isBuiltin() && this.downloaded != null && !this.downloaded.isEmpty() && !this.isDeleted() && !this.isDeleting());
     }
 
     public String getDownloaded() {

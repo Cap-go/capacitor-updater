@@ -2237,11 +2237,20 @@ public class CapacitorUpdaterPlugin extends Plugin {
                             } catch (final Exception e) {
                                 logger.error("Failed to delete: " + bundle.getId() + " " + e.getMessage());
                             }
+                            try {
+                                Thread.sleep(75L);
+                            } catch (final InterruptedException ie) {
+                                Thread.currentThread().interrupt();
+                                return;
+                            }
                         }
                         this.implementation.cleanupDeltaCache();
                     }
 
-                    // Always sweep orphan directories so incomplete prior cleanups (or failed deletes)
+                    // Resume any DELETING leftovers from prior kills, one-by-one.
+                    this.implementation.drainPendingDeletes();
+
+                    // Always sweep orphan folders so incomplete prior cleanups (or failed deletes)
                     // cannot leave hundreds of MB behind across launches.
                     final Set<String> allowedIds = this.implementation.allowedBundleIdsForCleanup();
                     this.implementation.cleanupDownloadDirectories(allowedIds);
@@ -4936,6 +4945,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 final String failedId = current.getId();
                 final String failedVersion = current.getVersionName();
                 logger.info("Deleting failing bundle: " + failedVersion);
+                // Mark before async work so kill/OOM still resumes via drainPendingDeletes.
+                CapacitorUpdaterPlugin.this.implementation.saveBundleInfo(failedId, current.setStatus(BundleStatus.DELETING));
                 startNewThread(() -> {
                     try {
                         final Boolean res = CapacitorUpdaterPlugin.this.implementation.delete(failedId, false);

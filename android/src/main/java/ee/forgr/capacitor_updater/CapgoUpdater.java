@@ -75,6 +75,8 @@ public class CapgoUpdater {
     private static final String PREVIEW_FALLBACK_VERSION = "previewFallbackVersion";
     private static final String bundleDirectory = "versions";
     private static final String TEMP_UNZIP_PREFIX = "capgo_unzip_";
+    private static final long DELETE_PACE_MS = 75L;
+    private final Object deleteLock = new Object();
     private static final String CAPACITOR_CONFIG_ASSET = "capacitor.config.json";
     private static final String BACKGROUND_RUNNER_CONFIG_KEY = "BackgroundRunner";
     private static final String BACKGROUND_RUNNER_WORKER_CLASS = "io.ionic.backgroundrunner.plugin.RunnerWorker";
@@ -928,6 +930,11 @@ public class CapgoUpdater {
 
                 try {
                     this.deleteDirectory(entry, threadToCheck);
+                    if (entry.exists()) {
+                        logger.error("Orphan bundle directory still present after delete");
+                        logger.debug("Bundle ID: " + id);
+                        continue;
+                    }
                     this.removeBundleInfo(id);
                     logger.info("Deleted orphan bundle directory");
                     logger.debug("Bundle ID: " + id);
@@ -942,24 +949,35 @@ public class CapgoUpdater {
     public Set<String> allowedBundleIdsForCleanup() {
         final Set<String> allowedIds = new HashSet<>();
         for (final BundleInfo info : this.list(true)) {
-            if (info != null && info.getId() != null && !info.getId().isEmpty()) {
-                allowedIds.add(info.getId());
+            if (info == null || info.getId() == null || info.getId().isEmpty()) {
+                continue;
             }
+            // DELETED tombstones must not protect leftover folders.
+            // DELETING stays protected so drainPendingDeletes owns the removal.
+            if (info.isDeleted()) {
+                continue;
+            }
+            allowedIds.add(info.getId());
         }
         final String currentId = this.getCurrentBundleId();
         if (currentId != null && !currentId.isEmpty()) {
             allowedIds.add(currentId);
         }
         final BundleInfo fallback = this.getFallbackBundle();
-        if (fallback != null && fallback.getId() != null && !fallback.getId().isEmpty()) {
+        if (fallback != null && fallback.getId() != null && !fallback.getId().isEmpty() && !fallback.isDeleting()) {
             allowedIds.add(fallback.getId());
         }
         final BundleInfo next = this.getNextBundle();
-        if (next != null && next.getId() != null && !next.getId().isEmpty()) {
+        if (next != null && next.getId() != null && !next.getId().isEmpty() && !next.isDeleting()) {
             allowedIds.add(next.getId());
         }
         final BundleInfo previewFallback = this.getPreviewFallbackBundle();
-        if (previewFallback != null && previewFallback.getId() != null && !previewFallback.getId().isEmpty()) {
+        if (
+            previewFallback != null &&
+            previewFallback.getId() != null &&
+            !previewFallback.getId().isEmpty() &&
+            !previewFallback.isDeleting()
+        ) {
             allowedIds.add(previewFallback.getId());
         }
         return allowedIds;
@@ -1292,7 +1310,7 @@ public class CapgoUpdater {
     public BundleInfo download(final String url, final String version, final String sessionKey, final String checksum) throws IOException {
         // Check for existing bundle with same version and clean up if in error state
         BundleInfo existingBundle = this.getBundleInfoByName(version);
-        if (existingBundle != null && (existingBundle.isErrorStatus() || existingBundle.isDeleted())) {
+        if (existingBundle != null && (existingBundle.isErrorStatus() || existingBundle.isDeleted() || existingBundle.isDeleting())) {
             logger.info("Found existing failed bundle for version " + version + ", deleting before retry");
             this.delete(existingBundle.getId(), true);
         }
@@ -1344,7 +1362,7 @@ public class CapgoUpdater {
 
         // Check for existing bundle with same version and clean up if in error state
         BundleInfo existingBundle = this.getBundleInfoByName(version);
-        if (existingBundle != null && (existingBundle.isErrorStatus() || existingBundle.isDeleted())) {
+        if (existingBundle != null && (existingBundle.isErrorStatus() || existingBundle.isDeleted() || existingBundle.isDeleting())) {
             logger.info("Found existing failed bundle for version " + version + ", deleting before retry");
             this.delete(existingBundle.getId(), true);
         }
@@ -1411,51 +1429,69 @@ public class CapgoUpdater {
     }
 
     public Boolean delete(final String id, final Boolean removeInfo) throws IOException {
-        final BundleInfo deleted = this.getBundleInfo(id);
-        if (deleted.isBuiltin() || this.getCurrentBundleId().equals(id)) {
-            logger.error("Cannot delete current or builtin bundle");
-            logger.debug("Bundle ID: " + id);
-            return false;
-        }
-        final BundleInfo previewFallback = this.getPreviewFallbackBundle();
-        if (
-            previewFallback != null &&
-            !previewFallback.isDeleted() &&
-            !previewFallback.isErrorStatus() &&
-            previewFallback.getId().equals(id)
-        ) {
-            logger.error("Cannot delete the preview fallback bundle");
-            logger.debug("Bundle ID: " + id);
-            return false;
-        }
-        final BundleInfo next = this.getNextBundle();
-        if (next != null && !next.isDeleted() && !next.isErrorStatus() && next.getId().equals(id)) {
-            logger.error("Cannot delete the next bundle");
-            logger.debug("Bundle ID: " + id);
-            return false;
-        }
-        // Cancel download for this version if active
-        if (this.activity != null) {
-            DownloadWorkerManager.cancelVersionDownload(this.activity, deleted.getVersionName());
-        }
-        final File bundle = new File(this.documentsDir, bundleDirectory + "/" + id);
-        if (bundle.exists()) {
-            this.deleteDirectory(bundle);
-            if (!removeInfo) {
+        synchronized (this.deleteLock) {
+            final BundleInfo deleted = this.getBundleInfo(id);
+            if (deleted.isBuiltin() || this.getCurrentBundleId().equals(id)) {
+                logger.error("Cannot delete current or builtin bundle");
+                logger.debug("Bundle ID: " + id);
+                return false;
+            }
+            final BundleInfo previewFallback = this.getPreviewFallbackBundle();
+            if (
+                previewFallback != null &&
+                !previewFallback.isDeleted() &&
+                !previewFallback.isErrorStatus() &&
+                previewFallback.getId().equals(id)
+            ) {
+                logger.error("Cannot delete the preview fallback bundle");
+                logger.debug("Bundle ID: " + id);
+                return false;
+            }
+            final BundleInfo next = this.getNextBundle();
+            if (next != null && !next.isDeleted() && !next.isErrorStatus() && next.getId().equals(id)) {
+                logger.error("Cannot delete the next bundle");
+                logger.debug("Bundle ID: " + id);
+                return false;
+            }
+
+            // Persist DELETING before touching disk so kill/OOM can resume on next launch.
+            if (!deleted.isDeleting()) {
+                this.saveBundleInfo(id, deleted.setStatus(BundleStatus.DELETING));
+            }
+
+            // Cancel download for this version if active
+            if (this.activity != null) {
+                DownloadWorkerManager.cancelVersionDownload(this.activity, deleted.getVersionName());
+            }
+
+            final File bundle = this.getBundleDirectory(id);
+            if (bundle.exists()) {
+                try {
+                    this.deleteDirectory(bundle);
+                } catch (final IOException e) {
+                    logger.error("Failed to delete bundle folder, will retry later");
+                    logger.debug("Bundle ID: " + id + ", Error: " + e.getMessage());
+                    return false;
+                }
+            }
+
+            // Only drop registry after the folder is confirmed gone.
+            if (bundle.exists()) {
+                logger.error("Bundle folder still present after delete, will retry later");
+                logger.debug("Bundle ID: " + id);
+                return false;
+            }
+
+            if (Boolean.FALSE.equals(removeInfo)) {
                 this.saveBundleInfo(id, deleted.setStatus(BundleStatus.DELETED));
             } else {
                 this.removeBundleInfo(id);
             }
+            this.sendStats("delete", deleted.getVersionName());
+            logger.info("Bundle deleted and confirmed gone");
+            logger.debug("Bundle ID: " + id);
             return true;
         }
-        logger.info("Bundle not found on disk");
-        logger.debug("Version: " + deleted.getVersionName());
-        // perhaps we did not find the bundle in the files, but if the user requested a delete, we delete
-        if (removeInfo) {
-            this.removeBundleInfo(id);
-        }
-        this.sendStats("delete", deleted.getVersionName());
-        return false;
     }
 
     public Boolean delete(final String id) {
@@ -1468,6 +1504,35 @@ public class CapgoUpdater {
         }
     }
 
+    /**
+     * Resume incomplete deletes one-by-one. Safe across app kill / OOM because
+     * delete() marks DELETING before disk work and only clears registry after confirm.
+     */
+    public void drainPendingDeletes() {
+        final List<BundleInfo> pending = new ArrayList<>();
+        for (final BundleInfo info : this.list(true)) {
+            if (info != null && info.isDeleting()) {
+                pending.add(info);
+            }
+        }
+        for (final BundleInfo info : pending) {
+            final String id = info.getId();
+            try {
+                logger.info("Resuming pending delete for bundle: " + id);
+                this.delete(id, true);
+            } catch (final Exception e) {
+                logger.error("Pending delete failed, will retry next launch");
+                logger.debug("Bundle ID: " + id + ", Error: " + e.getMessage());
+            }
+            try {
+                Thread.sleep(DELETE_PACE_MS);
+            } catch (final InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+    }
+
     private File getBundleDirectory(final String id) {
         return new File(this.documentsDir, bundleDirectory + "/" + id);
     }
@@ -1475,7 +1540,13 @@ public class CapgoUpdater {
     private boolean bundleExists(final String id) {
         final File bundle = this.getBundleDirectory(id);
         final BundleInfo bundleInfo = this.getBundleInfo(id);
-        return bundle.isDirectory() && bundle.exists() && new File(bundle.getPath(), "/index.html").exists() && !bundleInfo.isDeleted();
+        return (
+            bundle.isDirectory() &&
+            bundle.exists() &&
+            new File(bundle.getPath(), "/index.html").exists() &&
+            !bundleInfo.isDeleted() &&
+            !bundleInfo.isDeleting()
+        );
     }
 
     static final class ResetState {
@@ -1664,13 +1735,14 @@ public class CapgoUpdater {
             !fallbackIsPreviewFallback;
         this.setFallbackBundle(bundle);
         if (shouldDeletePrevious) {
-            // Delete previous bundle off the calling thread so notifyAppReady stays non-blocking.
+            // Mark durable intent before spawning work so a kill mid-flight still retries.
+            this.saveBundleInfo(previousFallbackId, fallback.setStatus(BundleStatus.DELETING));
             new Thread(() -> {
                 final Boolean res = this.delete(previousFallbackId);
                 if (Boolean.TRUE.equals(res)) {
                     logger.info("Deleted previous bundle: " + previousFallbackVersion);
                 } else {
-                    logger.debug("Skip deleting previous bundle (same as current or protected): " + previousFallbackId);
+                    logger.debug("Previous bundle delete incomplete, will retry: " + previousFallbackId);
                 }
             }, "CapgoUpdater-autoDeletePrevious").start();
         }
