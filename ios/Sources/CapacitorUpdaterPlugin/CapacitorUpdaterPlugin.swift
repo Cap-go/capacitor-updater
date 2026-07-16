@@ -194,8 +194,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var isLeavingPreviewForIncomingLink = false
     private var previewTransitionClearWorkItem: DispatchWorkItem?
     let semaphoreReady = DispatchSemaphore(value: 0)
-    private var appReadyWaitArmed = false
-    private let appReadyWaitLock = NSLock()
+    // Best-effort flag: set before we expect notifyAppReady (load/reload).
+    // No lock — never held across waits; a rare race only mis-times one wait.
+    private var pendingNotifyAppReady = false
 
     private var delayUpdateUtils: DelayUpdateUtils!
 
@@ -524,9 +525,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func semaphoreUp() {
-        appReadyWaitLock.lock()
-        appReadyWaitArmed = true
-        appReadyWaitLock.unlock()
+        pendingNotifyAppReady = true
         DispatchQueue.global().async {
             self.semaphoreWait(waitTime: 0)
         }
@@ -1302,7 +1301,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         let performReload: () -> Bool = {
             guard self.applyCurrentBundleToBridge(bridge) else {
-                self.clearAppReadyWaitArm()
+                self.clearPendingNotifyAppReady()
                 return false
             }
             self.checkAppReady()
@@ -2890,7 +2889,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             // Only wait after load()/reload() armed the semaphore. Foreground resumes
             // with autoUpdate disabled call sendReadyToJs again without a fresh
             // notifyAppReady(), so waiting there always timed out after appReadyTimeout.
-            if self.consumeAppReadyWaitArm() {
+            if self.consumePendingNotifyAppReady() {
                 self.semaphoreWait(waitTime: self.appReadyTimeout)
             }
             self.notifyListeners("appReady", data: ["bundle": current.toJSON(), "status": msg], retainUntilConsumed: true)
@@ -2904,18 +2903,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    private func consumeAppReadyWaitArm() -> Bool {
-        appReadyWaitLock.lock()
-        let shouldWait = appReadyWaitArmed
-        appReadyWaitArmed = false
-        appReadyWaitLock.unlock()
+    private func consumePendingNotifyAppReady() -> Bool {
+        let shouldWait = pendingNotifyAppReady
+        pendingNotifyAppReady = false
         return shouldWait
     }
 
-    private func clearAppReadyWaitArm() {
-        appReadyWaitLock.lock()
-        appReadyWaitArmed = false
-        appReadyWaitLock.unlock()
+    private func clearPendingNotifyAppReady() {
+        pendingNotifyAppReady = false
     }
 
     private func hideSplashscreen() {
@@ -3535,16 +3530,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.appReadyTimeout = timeout
     }
 
-    func armAppReadyWaitForTesting() {
-        appReadyWaitLock.lock()
-        appReadyWaitArmed = true
-        appReadyWaitLock.unlock()
+    func armPendingNotifyAppReadyForTesting() {
+        pendingNotifyAppReady = true
     }
 
-    var isAppReadyWaitArmedForTesting: Bool {
-        appReadyWaitLock.lock()
-        defer { appReadyWaitLock.unlock() }
-        return appReadyWaitArmed
+    func clearPendingNotifyAppReadyForTesting() {
+        clearPendingNotifyAppReady()
+    }
+
+    var isPendingNotifyAppReadyForTesting: Bool {
+        pendingNotifyAppReady
     }
 
     func shouldUseDirectUpdateForTesting() -> Bool {
