@@ -215,6 +215,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private volatile Thread backgroundDownloadTask;
     private volatile Thread appReadyCheck;
+    // When true, sendReadyToJs should wait for notifyAppReady before hiding splash.
+    private volatile boolean pendingNotifyAppReadyWait = false;
+    private volatile int pendingNotifyAppReadyPhase = -1;
     private volatile long downloadStartTimeMs = 0;
     private static final long DOWNLOAD_TIMEOUT_MS = 600000; // 10 minute timeout
 
@@ -909,6 +912,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
         } else {
             logger.info("Using activity lifecycle callbacks for foreground/background detection (Android <14)");
         }
+
+        // Expect notifyAppReady before the first appReady/splash hide (same idea as iOS).
+        this.armPendingNotifyAppReadyWait();
     }
 
     private boolean semaphoreWait(final int phase, Number waitTime) {
@@ -951,6 +957,32 @@ public class CapacitorUpdaterPlugin extends Plugin {
         semaphoreReady.arriveAndDeregister();
     }
 
+    private void armPendingNotifyAppReadyWait() {
+        this.clearPendingNotifyAppReadyWait();
+        this.pendingNotifyAppReadyPhase = this.semaphoreUp();
+        this.pendingNotifyAppReadyWait = true;
+    }
+
+    private void clearPendingNotifyAppReadyWait() {
+        if (!this.pendingNotifyAppReadyWait) {
+            return;
+        }
+        final int phase = this.pendingNotifyAppReadyPhase;
+        this.pendingNotifyAppReadyWait = false;
+        this.pendingNotifyAppReadyPhase = -1;
+        this.cleanupTimedOutSemaphoreWait(phase);
+    }
+
+    private boolean consumePendingNotifyAppReadyWait(final int[] phaseOut) {
+        if (!this.pendingNotifyAppReadyWait) {
+            return false;
+        }
+        phaseOut[0] = this.pendingNotifyAppReadyPhase;
+        this.pendingNotifyAppReadyWait = false;
+        this.pendingNotifyAppReadyPhase = -1;
+        return true;
+    }
+
     protected long getMinimumPendingBundleAppReadyTimeoutMs() {
         return PENDING_BUNDLE_APP_READY_MIN_TIMEOUT_MS;
     }
@@ -989,19 +1021,40 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private void sendReadyToJs(final BundleInfo current, final String msg, final boolean isDirectUpdate) {
         logger.info("sendReadyToJs: " + msg);
-        final JSObject ret = new JSObject();
-        ret.put("bundle", InternalUtils.mapToJSObject(current.toJSONMap()));
-        ret.put("status", msg);
+        final int[] pendingPhase = new int[] { -1 };
+        final boolean shouldWait = this.consumePendingNotifyAppReadyWait(pendingPhase);
 
-        // No need to wait for semaphore anymore since _reload() has already waited
-        this.notifyListeners("appReady", ret, true);
+        final Runnable emitReady = () -> {
+            final JSObject ret = new JSObject();
+            ret.put("bundle", InternalUtils.mapToJSObject(current.toJSONMap()));
+            ret.put("status", msg);
 
-        // Auto hide splashscreen if enabled
-        // We show it on background when conditions are met, so we should hide it on foreground regardless of update outcome
-        if (this.autoSplashscreen) {
-            this.hideSplashscreen();
+            this.notifyListeners("appReady", ret, true);
+
+            // Auto hide splashscreen if enabled
+            // We show it on background when conditions are met, so we should hide it on foreground regardless of update outcome
+            if (this.autoSplashscreen) {
+                this.hideSplashscreen();
+            }
+            this.hidePreviewTransitionLoader("app-ready");
+        };
+
+        if (!shouldWait) {
+            emitReady.run();
+            return;
         }
-        this.hidePreviewTransitionLoader("app-ready");
+
+        // Never block the UI thread waiting for notifyAppReady (JS needs it).
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            startNewThread(() -> {
+                this.semaphoreWait(pendingPhase[0], this.appReadyTimeout);
+                emitReady.run();
+            });
+            return;
+        }
+
+        this.semaphoreWait(pendingPhase[0], this.appReadyTimeout);
+        emitReady.run();
     }
 
     private void hideSplashscreen() {
@@ -2821,6 +2874,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     protected boolean _reload() {
+        // Drop any launch pending wait; this reload owns notifyAppReady synchronization.
+        this.clearPendingNotifyAppReadyWait();
         final int phase = this.semaphoreUp();
         this.applyCurrentBundleToBridge();
 

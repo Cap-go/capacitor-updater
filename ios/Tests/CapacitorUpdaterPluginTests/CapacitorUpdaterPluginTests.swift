@@ -33,6 +33,37 @@ private class TestableCapacitorUpdaterPlugin: CapacitorUpdaterPlugin {
     }
 }
 
+private final class RealSendReadyCapacitorUpdaterPlugin: CapacitorUpdaterPlugin {
+    private let eventLock = NSLock()
+    private var _notifiedEventNames: [String] = []
+    private var _notifiedEventPayloads: [String: [String: Any]] = [:]
+
+    var notifiedEventNames: [String] {
+        eventLock.lock()
+        defer { eventLock.unlock() }
+        return _notifiedEventNames
+    }
+
+    var notifiedEventPayloads: [String: [String: Any]] {
+        eventLock.lock()
+        defer { eventLock.unlock() }
+        return _notifiedEventPayloads
+    }
+
+    override func notifyListeners(_ eventName: String, data: [String: Any]?, retainUntilConsumed _: Bool) {
+        eventLock.lock()
+        _notifiedEventNames.append(eventName)
+        if let data {
+            _notifiedEventPayloads[eventName] = data
+        }
+        eventLock.unlock()
+    }
+
+    override func endBackGroundTask() {
+        // Intentionally blank: tests avoid touching UIApplication background-task APIs.
+    }
+}
+
 private final class FreshDownloadCapgoUpdater: CapgoUpdater {
     var currentBundleValue: BundleInfo!
     var latestResponse = AppVersion()
@@ -2424,4 +2455,133 @@ class CapacitorUpdaterTests: XCTestCase {
             }
         }
     }
+
+    func testSendReadyToJsSkipsSemaphoreWaitWhenNotArmed() {
+        let testPlugin = RealSendReadyCapacitorUpdaterPlugin()
+        testPlugin.setAppReadyTimeoutForTesting(2000)
+        let bundle = BundleInfo(
+            id: BundleInfo.ID_BUILTIN,
+            version: "builtin",
+            status: .SUCCESS,
+            downloaded: BundleInfo.DOWNLOADED_BUILTIN,
+            checksum: ""
+        )
+
+        let expectation = expectation(description: "appReady without wait")
+        let start = Date()
+        testPlugin.sendReadyToJs(current: bundle, msg: "disabled")
+
+        DispatchQueue.global().async {
+            for _ in 0..<40 {
+                if testPlugin.notifiedEventNames.contains("appReady") {
+                    expectation.fulfill()
+                    return
+                }
+                Thread.sleep(forTimeInterval: 0.025)
+            }
+        }
+
+        wait(for: [expectation], timeout: 1.0)
+        XCTAssertLessThan(Date().timeIntervalSince(start), 1.0)
+        XCTAssertEqual(testPlugin.notifiedEventPayloads["appReady"]?["status"] as? String, "disabled")
+        XCTAssertFalse(testPlugin.isPendingNotifyAppReadyForTesting)
+    }
+
+    func testSendReadyToJsWaitsOnlyWhenArmed() {
+        let testPlugin = RealSendReadyCapacitorUpdaterPlugin()
+        testPlugin.setAppReadyTimeoutForTesting(200)
+        testPlugin.armPendingNotifyAppReadyForTesting()
+        let bundle = BundleInfo(
+            id: BundleInfo.ID_BUILTIN,
+            version: "builtin",
+            status: .SUCCESS,
+            downloaded: BundleInfo.DOWNLOADED_BUILTIN,
+            checksum: ""
+        )
+
+        let expectation = expectation(description: "appReady after armed wait timeout")
+        let start = Date()
+        testPlugin.sendReadyToJs(current: bundle, msg: "update installed")
+
+        DispatchQueue.global().async {
+            for _ in 0..<40 {
+                if testPlugin.notifiedEventNames.contains("appReady") {
+                    expectation.fulfill()
+                    return
+                }
+                Thread.sleep(forTimeInterval: 0.025)
+            }
+        }
+
+        wait(for: [expectation], timeout: 2.0)
+        XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(start), 0.15)
+        XCTAssertFalse(testPlugin.isPendingNotifyAppReadyForTesting)
+    }
+
+    func testSendReadyToJsUnblocksWhenNotifyAppReadySignals() {
+        let testPlugin = RealSendReadyCapacitorUpdaterPlugin()
+        testPlugin.setAppReadyTimeoutForTesting(2000)
+        testPlugin.armPendingNotifyAppReadyForTesting()
+        let bundle = BundleInfo(
+            id: BundleInfo.ID_BUILTIN,
+            version: "builtin",
+            status: .SUCCESS,
+            downloaded: BundleInfo.DOWNLOADED_BUILTIN,
+            checksum: ""
+        )
+
+        let expectation = expectation(description: "appReady after notify")
+        let start = Date()
+        testPlugin.sendReadyToJs(current: bundle, msg: "update installed")
+
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.05) {
+            // Simulate notifyAppReady signalling the semaphore.
+            testPlugin.semaphoreReady.signal()
+        }
+
+        DispatchQueue.global().async {
+            for _ in 0..<80 {
+                if testPlugin.notifiedEventNames.contains("appReady") {
+                    expectation.fulfill()
+                    return
+                }
+                Thread.sleep(forTimeInterval: 0.025)
+            }
+        }
+
+        wait(for: [expectation], timeout: 2.0)
+        XCTAssertLessThan(Date().timeIntervalSince(start), 1.0)
+        XCTAssertFalse(testPlugin.isPendingNotifyAppReadyForTesting)
+    }
+
+    func testClearPendingNotifyAppReadyPreventsWait() {
+        let testPlugin = RealSendReadyCapacitorUpdaterPlugin()
+        testPlugin.setAppReadyTimeoutForTesting(2000)
+        testPlugin.armPendingNotifyAppReadyForTesting()
+        testPlugin.clearPendingNotifyAppReadyForTesting()
+        XCTAssertFalse(testPlugin.isPendingNotifyAppReadyForTesting)
+
+        let bundle = BundleInfo(
+            id: BundleInfo.ID_BUILTIN,
+            version: "builtin",
+            status: .SUCCESS,
+            downloaded: BundleInfo.DOWNLOADED_BUILTIN,
+            checksum: ""
+        )
+        let expectation = expectation(description: "appReady after clear is immediate")
+        let start = Date()
+        testPlugin.sendReadyToJs(current: bundle, msg: "disabled")
+        DispatchQueue.global().async {
+            for _ in 0..<40 {
+                if testPlugin.notifiedEventNames.contains("appReady") {
+                    expectation.fulfill()
+                    return
+                }
+                Thread.sleep(forTimeInterval: 0.025)
+            }
+        }
+        wait(for: [expectation], timeout: 1.0)
+        XCTAssertLessThan(Date().timeIntervalSince(start), 1.0)
+    }
+
 }
