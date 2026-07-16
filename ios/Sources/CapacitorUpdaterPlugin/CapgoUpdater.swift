@@ -24,7 +24,7 @@ import UIKit
     private let PREVIEW_FALLBACK_VERSION: String = "previewFallbackVersion"
     private var unzipPercent = 0
     private let TEMP_UNZIP_PREFIX: String = "capgo_unzip_"
-    private let deletePaceNs: UInt64 = 75_000_000
+    private let deletePaceSeconds: TimeInterval = 0.075
     private let deleteLock = NSLock()
 
     // Add this line to declare cacheFolder
@@ -1810,6 +1810,8 @@ import UIKit
             }
         }
 
+    }
+
     public func delete(id: String, removeInfo: Bool) -> Bool {
         self.deleteLock.lock()
         defer { self.deleteLock.unlock() }
@@ -1888,7 +1890,7 @@ import UIKit
             let id = info.getId()
             logger.info("Resuming pending delete for bundle: \(id)")
             _ = self.delete(id: id, removeInfo: true)
-            Thread.sleep(forTimeInterval: Double(self.deletePaceNs) / 1_000_000_000.0)
+            Thread.sleep(forTimeInterval: self.deletePaceSeconds)
         }
     }
 
@@ -2125,6 +2127,17 @@ import UIKit
     func finalizeResetTransition(previousBundleName: String, isInternal: Bool) {
         if !isInternal {
             self.sendStats(action: "reset", versionName: self.getCurrentBundle().getVersionName(), oldVersionName: previousBundleName)
+        }
+    }
+
+    func canSet(bundle: BundleInfo) -> Bool {
+        bundle.isBuiltin() || self.bundleExists(id: bundle.getId())
+    }
+
+    public func set(bundle: BundleInfo) -> Bool {
+        return self.set(id: bundle.getId())
+    }
+
     private func bundleExists(id: String) -> Bool {
         let destPersist: URL = self.getBundleDirectory(id: id)
         let indexPersist: URL = destPersist.appendingPathComponent("index.html")
@@ -2136,17 +2149,6 @@ import UIKit
                 indexPersist.exist &&
                 !bundleIndo.isDeleted() &&
                 !bundleIndo.isDeleting() {
-            return true
-        }
-        return false
-    }
-        let bundleIndo: BundleInfo = self.getBundleInfo(id: id)
-        if
-            destPersist.exist &&
-                destPersist.isDirectory &&
-                !indexPersist.isDirectory &&
-                indexPersist.exist &&
-                !bundleIndo.isDeleted() {
             return true
         }
         return false
@@ -2229,6 +2231,18 @@ import UIKit
         self.finalizeResetTransition(previousBundleName: currentBundleName, isInternal: isInternal)
     }
 
+    public func setSuccess(bundle: BundleInfo, autoDeletePrevious: Bool) {
+        self.setBundleStatus(id: bundle.getId(), status: BundleStatus.SUCCESS)
+        let fallback: BundleInfo = self.getFallbackBundle()
+        let previewFallback = self.getPreviewFallbackBundle()
+        let fallbackIsPreviewFallback = previewFallback?.getId() == fallback.getId()
+        logger.info("Fallback bundle is: \(fallback.toString())")
+        logger.info("Version successfully loaded: \(bundle.toString())")
+        let previousFallbackId = fallback.getId()
+        let shouldDeletePrevious = autoDeletePrevious &&
+            !fallback.isBuiltin() &&
+            previousFallbackId != bundle.getId() &&
+            !fallbackIsPreviewFallback
         self.setFallbackBundle(fallback: bundle)
         if shouldDeletePrevious {
             // Mark durable intent before spawning work so a kill mid-flight still retries.
@@ -2241,18 +2255,6 @@ import UIKit
                     self.logger.debug("Bundle ID: \(previousFallbackId)")
                 } else {
                     self.logger.info("Previous bundle delete incomplete, will retry")
-                    self.logger.debug("Bundle ID: \(previousFallbackId)")
-                }
-            }
-        }
-            // Delete previous bundle off the calling thread so notifyAppReady stays non-blocking.
-            DispatchQueue.global(qos: .utility).async {
-                let res = self.delete(id: previousFallbackId)
-                if res {
-                    self.logger.info("Deleted previous bundle")
-                    self.logger.debug("Bundle ID: \(previousFallbackId)")
-                } else {
-                    self.logger.error("Failed to delete previous bundle")
                     self.logger.debug("Bundle ID: \(previousFallbackId)")
                 }
             }
