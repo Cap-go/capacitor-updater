@@ -774,8 +774,9 @@ public class CapacitorUpdaterUnitTest {
         }
 
         @Override
-        public void saveBundleInfo(final String id, final BundleInfo info) {
+        public boolean saveBundleInfo(final String id, final BundleInfo info) {
             this.bundleInfos.put(id, info);
+            return true;
         }
 
         @Override
@@ -1318,6 +1319,7 @@ public class CapacitorUpdaterUnitTest {
         assertEquals("error", BundleStatus.ERROR.toString());
         assertEquals("pending", BundleStatus.PENDING.toString());
         assertEquals("deleted", BundleStatus.DELETED.toString());
+        assertEquals("deleting", BundleStatus.DELETING.toString());
         assertEquals("downloading", BundleStatus.DOWNLOADING.toString());
     }
 
@@ -1327,6 +1329,7 @@ public class CapacitorUpdaterUnitTest {
         assertEquals(BundleStatus.ERROR, BundleStatus.fromString("error"));
         assertEquals(BundleStatus.PENDING, BundleStatus.fromString("pending"));
         assertEquals(BundleStatus.DELETED, BundleStatus.fromString("deleted"));
+        assertEquals(BundleStatus.DELETING, BundleStatus.fromString("deleting"));
         assertEquals(BundleStatus.DOWNLOADING, BundleStatus.fromString("downloading"));
 
         // Test null/empty string returns PENDING
@@ -3116,7 +3119,6 @@ public class CapacitorUpdaterUnitTest {
         updater.cleanupDownloadDirectories(allowedIds);
 
         assertTrue("Kept bundle folder should remain", Files.exists(tempDir.resolve("versions").resolve(keptId)));
-        assertTrue("Kept bundle folder should remain", Files.exists(tempDir.resolve("versions").resolve(keptId)));
         assertFalse("Orphan bundle folder should be deleted", Files.exists(orphanDir));
     }
 
@@ -3143,6 +3145,7 @@ public class CapacitorUpdaterUnitTest {
         when(prefs.getString(eq("nextVersion"), isNull())).thenReturn(null);
         when(prefs.getString(eq("previewFallbackVersion"), isNull())).thenReturn(null);
         when(prefs.getString(eq(id + "_info"), anyString())).thenAnswer((inv) -> store.getOrDefault(id + "_info", ""));
+        when(prefs.contains(eq(id + "_info"))).thenAnswer((inv) -> store.containsKey(id + "_info"));
         when(prefs.getAll()).thenAnswer((inv) -> {
             final Map<String, Object> all = new HashMap<>();
             all.putAll(store);
@@ -3186,6 +3189,7 @@ public class CapacitorUpdaterUnitTest {
         when(prefs.getString(eq("nextVersion"), isNull())).thenReturn(null);
         when(prefs.getString(eq("previewFallbackVersion"), isNull())).thenReturn(null);
         when(prefs.getString(eq(id + "_info"), anyString())).thenAnswer((inv) -> store.getOrDefault(id + "_info", ""));
+        when(prefs.contains(eq(id + "_info"))).thenAnswer((inv) -> store.containsKey(id + "_info"));
         when(prefs.getAll()).thenAnswer((inv) -> {
             final Map<String, Object> all = new HashMap<>();
             all.putAll(store);

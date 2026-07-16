@@ -1842,13 +1842,25 @@ import UIKit
             return false
         }
 
+        let destPersist: URL = libraryDir.appendingPathComponent(bundleDirectory).appendingPathComponent(id)
+        let hadRegistry = self.hasStoredBundleInfo(id: id)
+        let hadFolder = FileManager.default.fileExists(atPath: destPersist.path)
+        if !hadRegistry && !hadFolder {
+            logger.error("Cannot delete unknown bundle")
+            logger.debug("Bundle ID: \(id)")
+            return false
+        }
+
         // Persist DELETING before touching disk so kill/OOM can resume on next launch.
         if !deleted.isDeleting() {
-            self.saveBundleInfo(id: id, bundle: deleted.setStatus(status: BundleStatus.DELETING.storedValue))
+            if !self.saveBundleInfo(id: id, bundle: deleted.setStatus(status: BundleStatus.DELETING.storedValue)) {
+                logger.error("Failed to persist DELETING marker, aborting disk delete")
+                logger.debug("Bundle ID: \(id)")
+                return false
+            }
             UserDefaults.standard.synchronize()
         }
 
-        let destPersist: URL = libraryDir.appendingPathComponent(bundleDirectory).appendingPathComponent(id)
         if FileManager.default.fileExists(atPath: destPersist.path) {
             do {
                 try FileManager.default.removeItem(atPath: destPersist.path)
@@ -2243,11 +2255,13 @@ import UIKit
             !fallback.isBuiltin() &&
             previousFallbackId != bundle.getId() &&
             !fallbackIsPreviewFallback
+        if shouldDeletePrevious {
+            // Mark durable intent before fallback switch so a kill mid-flight still retries.
+            _ = self.saveBundleInfo(id: previousFallbackId, bundle: fallback.setStatus(status: BundleStatus.DELETING.storedValue))
+            UserDefaults.standard.synchronize()
+        }
         self.setFallbackBundle(fallback: bundle)
         if shouldDeletePrevious {
-            // Mark durable intent before spawning work so a kill mid-flight still retries.
-            self.saveBundleInfo(id: previousFallbackId, bundle: fallback.setStatus(status: BundleStatus.DELETING.storedValue))
-            UserDefaults.standard.synchronize()
             DispatchQueue.global(qos: .utility).async {
                 let res = self.delete(id: previousFallbackId)
                 if res {
@@ -2759,25 +2773,29 @@ import UIKit
         self.saveBundleInfo(id: id, bundle: nil)
     }
 
-    public func saveBundleInfo(id: String, bundle: BundleInfo?) {
+    @discardableResult
+    public func saveBundleInfo(id: String, bundle: BundleInfo?) -> Bool {
         if bundle != nil && (bundle!.isBuiltin() || bundle!.isUnknown()) {
             logger.info("Not saving info for bundle [\(id)] \(bundle?.toString() ?? "")")
-            return
+            return false
         }
         if bundle == nil {
             logger.info("Removing info for bundle [\(id)]")
             UserDefaults.standard.removeObject(forKey: "\(id)\(self.INFO_SUFFIX)")
-        } else {
-            let update = bundle!.setId(id: id)
-            logger.info("Storing info for bundle [\(id)] \(update.toString())")
-            do {
-                try UserDefaults.standard.setObj(update, forKey: "\(id)\(self.INFO_SUFFIX)")
-            } catch {
-                logger.error("Failed to save bundle info")
-                logger.debug("Bundle ID: \(id), Error: \(error.localizedDescription)")
-            }
+            return true
+        }
+        let update = bundle!.setId(id: id)
+        logger.info("Storing info for bundle [\(id)] \(update.toString())")
+        do {
+            try UserDefaults.standard.setObj(update, forKey: "\(id)\(self.INFO_SUFFIX)")
+            return true
+        } catch {
+            logger.error("Failed to save bundle info")
+            logger.debug("Bundle ID: \(id), Error: \(error.localizedDescription)")
+            return false
         }
     }
+
 
     private func setBundleStatus(id: String, status: BundleStatus) {
         logger.info("Setting status for bundle [\(id)] to \(status)")

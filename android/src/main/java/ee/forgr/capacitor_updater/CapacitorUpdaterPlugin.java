@@ -68,6 +68,7 @@ import java.util.Set;
 import java.util.TimeZone;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
@@ -227,6 +228,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     // Lock to ensure cleanup completes before downloads start
     private final Object cleanupLock = new Object();
+    private volatile CountDownLatch cleanupLatch = new CountDownLatch(0);
     private volatile boolean cleanupComplete = false;
     private volatile Thread cleanupThread = null;
 
@@ -873,6 +875,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.installWebViewStatsReporter();
         // Always run async cleanup: delete obsolete bundles on native update (when enabled)
         // and sweep orphan directories every launch. Must not block app startup.
+        if (!resetWhenUpdate) {
+            this.persistCurrentNativeBuildVersion();
+        }
         this.cleanupObsoleteVersions(resetWhenUpdate);
 
         // Check for 'kill' delay condition on app launch
@@ -2221,7 +2226,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void cleanupObsoleteVersions(final boolean resetWhenUpdate) {
+        // Latch created before start so waiters never race past an unstarted cleanup thread.
+        final CountDownLatch latch = new CountDownLatch(1);
+        this.cleanupComplete = false;
+        this.cleanupLatch = latch;
         cleanupThread = startNewThread(() -> {
+            try {
             synchronized (cleanupLock) {
                 try {
                     final String previous = this.getStoredNativeBuildVersion();
@@ -2265,6 +2275,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     logger.info("Cleanup complete");
                 }
             }
+            } finally {
+                latch.countDown();
+            }
         });
     }
 
@@ -2287,11 +2300,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
 
         logger.info("Waiting for cleanup to complete before starting download...");
-
-        // Wait for cleanup to complete - blocks until lock is released
-        synchronized (cleanupLock) {
-            logger.info("Cleanup finished, proceeding with download");
+        try {
+            this.cleanupLatch.await();
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.warn("Interrupted while waiting for cleanup");
         }
+        logger.info("Cleanup finished, proceeding with download");
     }
 
     public void notifyDownload(final String id, final int percent) {
@@ -2629,6 +2644,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final String checksum,
         final JSONArray manifest
     ) throws IOException {
+        // Manual/preview downloads must wait too — launch orphan sweep can delete their temps.
+        waitForCleanupIfNeeded();
         if (manifest != null) {
             return this.implementation.downloadManifest(url, version, sessionKey, checksum, manifest);
         }
@@ -4949,7 +4966,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 CapacitorUpdaterPlugin.this.implementation.saveBundleInfo(failedId, current.setStatus(BundleStatus.DELETING));
                 startNewThread(() -> {
                     try {
-                        final Boolean res = CapacitorUpdaterPlugin.this.implementation.delete(failedId, false);
+                        final Boolean res = CapacitorUpdaterPlugin.this.implementation.delete(failedId, false, false);
                         if (Boolean.TRUE.equals(res)) {
                             logger.info("Failed bundle deleted: " + failedVersion);
                         }

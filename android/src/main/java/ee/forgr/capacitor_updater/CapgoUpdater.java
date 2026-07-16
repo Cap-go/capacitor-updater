@@ -1429,6 +1429,10 @@ public class CapgoUpdater {
     }
 
     public Boolean delete(final String id, final Boolean removeInfo) throws IOException {
+        return this.delete(id, removeInfo, true);
+    }
+
+    public Boolean delete(final String id, final Boolean removeInfo, final boolean cancelActiveDownload) throws IOException {
         synchronized (this.deleteLock) {
             final BundleInfo deleted = this.getBundleInfo(id);
             if (deleted.isBuiltin() || this.getCurrentBundleId().equals(id)) {
@@ -1454,17 +1458,29 @@ public class CapgoUpdater {
                 return false;
             }
 
+            final File bundle = this.getBundleDirectory(id);
+            final boolean hadRegistry = this.hasStoredBundleInfo(id);
+            final boolean hadFolder = bundle.exists();
+            if (!hadRegistry && !hadFolder) {
+                logger.error("Cannot delete unknown bundle");
+                logger.debug("Bundle ID: " + id);
+                return false;
+            }
+
             // Persist DELETING before touching disk so kill/OOM can resume on next launch.
             if (!deleted.isDeleting()) {
-                this.saveBundleInfo(id, deleted.setStatus(BundleStatus.DELETING));
+                if (!this.saveBundleInfo(id, deleted.setStatus(BundleStatus.DELETING))) {
+                    logger.error("Failed to persist DELETING marker, aborting disk delete");
+                    logger.debug("Bundle ID: " + id);
+                    return false;
+                }
             }
 
             // Cancel download for this version if active
-            if (this.activity != null) {
+            if (cancelActiveDownload && this.activity != null) {
                 DownloadWorkerManager.cancelVersionDownload(this.activity, deleted.getVersionName());
             }
 
-            final File bundle = this.getBundleDirectory(id);
             if (bundle.exists()) {
                 try {
                     this.deleteDirectory(bundle);
@@ -1733,16 +1749,27 @@ public class CapgoUpdater {
             previousFallbackId != null &&
             !previousFallbackId.equals(bundle.getId()) &&
             !fallbackIsPreviewFallback;
+        if (shouldDeletePrevious) {
+            // Cancel any in-flight download for the old version before the async boundary
+            // so a later download of the same version name is not cancelled mid-flight.
+            if (this.activity != null) {
+                DownloadWorkerManager.cancelVersionDownload(this.activity, previousFallbackVersion);
+            }
+            // Mark durable intent before fallback switch so a kill mid-flight still retries.
+            this.saveBundleInfo(previousFallbackId, fallback.setStatus(BundleStatus.DELETING));
+        }
         this.setFallbackBundle(bundle);
         if (shouldDeletePrevious) {
-            // Mark durable intent before spawning work so a kill mid-flight still retries.
-            this.saveBundleInfo(previousFallbackId, fallback.setStatus(BundleStatus.DELETING));
             new Thread(() -> {
-                final Boolean res = this.delete(previousFallbackId);
-                if (Boolean.TRUE.equals(res)) {
-                    logger.info("Deleted previous bundle: " + previousFallbackVersion);
-                } else {
-                    logger.debug("Previous bundle delete incomplete, will retry: " + previousFallbackId);
+                try {
+                    final Boolean res = this.delete(previousFallbackId, true, false);
+                    if (Boolean.TRUE.equals(res)) {
+                        logger.info("Deleted previous bundle: " + previousFallbackVersion);
+                    } else {
+                        logger.debug("Previous bundle delete incomplete, will retry: " + previousFallbackId);
+                    }
+                } catch (final IOException e) {
+                    logger.error("Failed to delete previous bundle: " + previousFallbackId + " " + e.getMessage());
                 }
             }, "CapgoUpdater-autoDeletePrevious").start();
         }
@@ -2588,10 +2615,10 @@ public class CapgoUpdater {
         this.saveBundleInfo(id, null);
     }
 
-    public void saveBundleInfo(final String id, final BundleInfo info) {
+    public boolean saveBundleInfo(final String id, final BundleInfo info) {
         if (id == null || (info != null && (info.isBuiltin() || info.isUnknown()))) {
             logger.debug("Not saving info for bundle: [" + id + "] " + info);
-            return;
+            return false;
         }
 
         if (info == null) {
@@ -2603,7 +2630,7 @@ public class CapgoUpdater {
             logger.debug("Storing info for bundle [" + id + "] " + update.getClass().getName() + " -> " + jsonString);
             this.editor.putString(id + INFO_SUFFIX, jsonString);
         }
-        this.editor.commit();
+        return this.editor.commit();
     }
 
     private void setBundleStatus(final String id, final BundleStatus status) {

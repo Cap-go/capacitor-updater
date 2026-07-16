@@ -175,6 +175,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     // Lock to ensure cleanup completes before downloads start
     private let cleanupLock = NSLock()
+    private let cleanupGroup = DispatchGroup()
     private var cleanupComplete = false
     private var cleanupThread: Thread?
     private var persistCustomId = false
@@ -359,6 +360,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         // Always run async cleanup: delete obsolete bundles on native update (when enabled)
         // and sweep orphan directories every launch. Must not block app startup.
+        if !resetWhenUpdate {
+            UserDefaults.standard.set(self.currentBuildVersion, forKey: "LatestNativeBuildVersion")
+            UserDefaults.standard.synchronize()
+        }
         let didResetCurrentBundle = resetWhenUpdate ? self.resetCurrentBundleForNativeBuildChangeIfNeeded() : false
         self.cleanupObsoleteVersions(
             resetWhenUpdate: resetWhenUpdate,
@@ -637,22 +642,29 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func cleanupObsoleteVersions(resetWhenUpdate: Bool = true, didResetCurrentBundle: Bool = false) {
+        // Enter before start so waiters never race past an unstarted cleanup thread.
+        self.cleanupComplete = false
+        self.cleanupGroup.enter()
         cleanupThread = Thread {
+            let bgTaskLock = NSLock()
             var cleanupBackgroundTask = UIBackgroundTaskIdentifier.invalid
-            cleanupBackgroundTask = UIApplication.shared.beginBackgroundTask(withName: "CapgoBundleCleanup") {
+            let endCleanupBackgroundTask = {
+                bgTaskLock.lock()
+                defer { bgTaskLock.unlock() }
                 if cleanupBackgroundTask != .invalid {
                     UIApplication.shared.endBackgroundTask(cleanupBackgroundTask)
                     cleanupBackgroundTask = .invalid
                 }
             }
+            cleanupBackgroundTask = UIApplication.shared.beginBackgroundTask(withName: "CapgoBundleCleanup") {
+                endCleanupBackgroundTask()
+            }
             self.cleanupLock.lock()
             defer {
                 self.cleanupComplete = true
                 self.cleanupLock.unlock()
-                if cleanupBackgroundTask != .invalid {
-                    UIApplication.shared.endBackgroundTask(cleanupBackgroundTask)
-                    cleanupBackgroundTask = .invalid
-                }
+                self.cleanupGroup.leave()
+                endCleanupBackgroundTask()
                 self.logger.info("Cleanup complete")
             }
 
@@ -722,11 +734,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         logger.info("Waiting for cleanup to complete before starting download...")
-
-        // Wait for cleanup to complete - blocks until lock is released
-        cleanupLock.lock()
-        cleanupLock.unlock()
-
+        cleanupGroup.wait()
         logger.info("Cleanup finished, proceeding with download")
     }
 
@@ -1143,6 +1151,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func downloadBundle(urlString: String, version: String, sessionKey: String, checksum rawChecksum: String, manifestEntries: [ManifestEntry]?) throws -> BundleInfo {
+        // Manual/preview downloads must wait too - launch orphan sweep can delete their temps.
+        self.waitForCleanupIfNeeded()
         guard let url = URL(string: urlString) else {
             throw makePreviewError("Invalid download URL")
         }
