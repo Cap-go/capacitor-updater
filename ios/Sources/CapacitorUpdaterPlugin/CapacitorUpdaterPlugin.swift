@@ -357,10 +357,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         self.leavePreviewSessionForLaunchURLIfNeeded()
 
-        if resetWhenUpdate {
-            let didResetCurrentBundle = self.resetCurrentBundleForNativeBuildChangeIfNeeded()
-            self.cleanupObsoleteVersions(didResetCurrentBundle: didResetCurrentBundle)
-        }
+        // Always run async cleanup: delete obsolete bundles on native update (when enabled)
+        // and sweep orphan directories every launch. Must not block app startup.
+        let didResetCurrentBundle = resetWhenUpdate ? self.resetCurrentBundleForNativeBuildChangeIfNeeded() : false
+        self.cleanupObsoleteVersions(
+            resetWhenUpdate: resetWhenUpdate,
+            didResetCurrentBundle: didResetCurrentBundle
+        )
         self.reportNativeVersionStatsIfChanged()
 
         // Load the server
@@ -633,7 +636,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         return true
     }
 
-    private func cleanupObsoleteVersions(didResetCurrentBundle: Bool = false) {
+    private func cleanupObsoleteVersions(resetWhenUpdate: Bool = true, didResetCurrentBundle: Bool = false) {
         cleanupThread = Thread {
             self.cleanupLock.lock()
             defer {
@@ -669,54 +672,33 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             // 2. Compare both keys. If any is not equal to "currentBuildVersion", then revert to builtin version. This fixes the part 2 of this bug
 
             let previous = self.storedNativeBuildVersion()
-            if previous != "0" && self.currentBuildVersion != previous {
+            let nativeVersionChanged = previous != "0" && self.currentBuildVersion != previous
+            if resetWhenUpdate && nativeVersionChanged {
                 if !didResetCurrentBundle {
                     self.logger.info("Native build version changed from \(previous) to \(self.currentBuildVersion). Resetting current bundle to builtin.")
                     self.implementation.reset(isInternal: true)
                 }
                 let res = self.implementation.list()
                 for version in res {
-                    // Check if thread was cancelled
-                    if Thread.current.isCancelled {
-                        self.logger.warn("Cleanup was cancelled, stopping")
-                        return
-                    }
                     self.logger.info("Deleting obsolete bundle: \(version.getId())")
-                    let res = self.implementation.delete(id: version.getId())
-                    if !res {
+                    let deleted = self.implementation.delete(id: version.getId())
+                    if !deleted {
                         self.logger.error("Delete failed, id \(version.getId()) doesn't exist")
                     }
                 }
-
-                let storedBundles = self.implementation.list(raw: true)
-                let allowedIds = Set(storedBundles.compactMap { info -> String? in
-                    let id = info.getId()
-                    return id.isEmpty ? nil : id
-                })
-                self.implementation.cleanupDownloadDirectories(allowedIds: allowedIds, threadToCheck: Thread.current)
-                self.implementation.cleanupOrphanedTempFolders(threadToCheck: Thread.current)
-
-                // Check again before the expensive delta cache cleanup
-                if Thread.current.isCancelled {
-                    self.logger.warn("Cleanup was cancelled before delta cache cleanup")
-                    return
-                }
-                self.implementation.cleanupDeltaCache(threadToCheck: Thread.current)
+                self.implementation.cleanupDeltaCache()
             }
+
+            // Always sweep orphan directories so incomplete prior cleanups (or failed deletes)
+            // cannot leave hundreds of MB behind across launches.
+            let allowedIds = self.implementation.allowedBundleIdsForCleanup()
+            self.implementation.cleanupDownloadDirectories(allowedIds: allowedIds)
+            self.implementation.cleanupOrphanedTempFolders(threadToCheck: nil)
+
             UserDefaults.standard.set(self.currentBuildVersion, forKey: "LatestNativeBuildVersion")
             UserDefaults.standard.synchronize()
         }
         cleanupThread?.start()
-
-        // Start a timeout watchdog thread to cancel cleanup if it takes too long
-        let timeout = Double(self.appReadyTimeout / 2) / 1000.0
-        Thread.detachNewThread {
-            Thread.sleep(forTimeInterval: timeout)
-            if let thread = self.cleanupThread, !thread.isFinished && !self.cleanupComplete {
-                self.logger.warn("Cleanup timeout exceeded (\(timeout)s), cancelling cleanup thread")
-                thread.cancel()
-            }
-        }
     }
 
     private func waitForCleanupIfNeeded() {
@@ -2851,12 +2833,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             self.implementation.setError(bundle: current)
             _ = self.performReset(toLastSuccessful: true, usePendingBundle: false, isInternal: true)
             if self.autoDeleteFailed && !current.isBuiltin() {
+                let failedId = current.getId()
                 logger.info("Deleting failing bundle: \(current.toString())")
-                let res = self.implementation.delete(id: current.getId(), removeInfo: false)
-                if !res {
-                    logger.info("Delete version deleted: \(current.toString())")
-                } else {
-                    logger.error("Failed to delete failed bundle: \(current.toString())")
+                DispatchQueue.global(qos: .utility).async {
+                    let res = self.implementation.delete(id: failedId, removeInfo: false)
+                    if res {
+                        self.logger.info("Failed bundle deleted: \(failedId)")
+                    } else {
+                        self.logger.error("Failed to delete failed bundle: \(failedId)")
+                    }
                 }
             }
         } else {

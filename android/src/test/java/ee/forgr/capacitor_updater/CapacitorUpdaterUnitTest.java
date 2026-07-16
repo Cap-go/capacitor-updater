@@ -31,6 +31,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
@@ -3084,5 +3085,37 @@ public class CapacitorUpdaterUnitTest {
         assertTrue(CapacitorUpdaterPlugin.isSupportedShakeMenuGesture("threeFingerPinch"));
         assertFalse(CapacitorUpdaterPlugin.isSupportedShakeMenuGesture(" "));
         assertFalse(CapacitorUpdaterPlugin.isSupportedShakeMenuGesture("pinch"));
+    }
+
+    @Test
+    public void cleanupDownloadDirectoriesRemovesOrphanBundleFolders() throws Exception {
+        final String keptId = "keptBundle1";
+        final String orphanId = "orphanBndl1";
+        final Path tempDir = createExistingBundleDirectory("capgo-orphan-kept", keptId);
+        final Path orphanDir = tempDir.resolve("versions").resolve(orphanId);
+        Files.createDirectories(orphanDir);
+        Files.write(orphanDir.resolve("index.html"), "<html></html>".getBytes(StandardCharsets.UTF_8));
+        orphanDir.toFile().deleteOnExit();
+
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        final SharedPreferences prefs = mock(SharedPreferences.class);
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+        updater.documentsDir = tempDir.toFile();
+        updater.CAP_SERVER_PATH = "server-path";
+        updater.prefs = prefs;
+        updater.editor = editor;
+
+        when(prefs.getString("server-path", "public")).thenReturn("public");
+        when(prefs.getString("pastVersion", BundleInfo.ID_BUILTIN)).thenReturn(BundleInfo.ID_BUILTIN);
+        when(prefs.getString("nextVersion", null)).thenReturn(null);
+        when(prefs.getString("previewFallbackVersion", null)).thenReturn(null);
+        when(prefs.getAll()).thenReturn(Map.of());
+        when(editor.remove(anyString())).thenReturn(editor);
+
+        final Set<String> allowedIds = Set.of(keptId);
+        updater.cleanupDownloadDirectories(allowedIds);
+
+        assertTrue("Kept bundle folder should remain", Files.exists(tempDir.resolve("versions").resolve(keptId)));
+        assertFalse("Orphan bundle folder should be deleted", Files.exists(orphanDir));
     }
 }

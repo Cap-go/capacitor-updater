@@ -1843,8 +1843,9 @@ import UIKit
         } catch {
             logger.error("Bundle folder not removed")
             logger.debug("Path: \(destPersist.path)")
-            // even if, we don;t care. Android doesn't care
-            if removeInfo {
+            // Keep registry entry when the folder is still on disk so cleanup can retry
+            // and list() can still see the bundle. Removing info here creates orphans.
+            if removeInfo && !FileManager.default.fileExists(atPath: destPersist.path) {
                 self.removeBundleInfo(id: id)
             }
             self.sendStats(action: "delete", versionName: deleted.getVersionName())
@@ -1936,6 +1937,34 @@ import UIKit
             logger.error("Failed to enumerate bundle directory for cleanup")
             logger.debug("Error: \(error.localizedDescription)")
         }
+    }
+
+    public func allowedBundleIdsForCleanup() -> Set<String> {
+        var allowedIds = Set(self.list(raw: true).compactMap { info -> String? in
+            let id = info.getId()
+            return id.isEmpty ? nil : id
+        })
+        let currentId = self.getCurrentBundleId()
+        if !currentId.isEmpty {
+            allowedIds.insert(currentId)
+        }
+        let fallbackId = self.getFallbackBundle().getId()
+        if !fallbackId.isEmpty {
+            allowedIds.insert(fallbackId)
+        }
+        if let next = self.getNextBundle() {
+            let nextId = next.getId()
+            if !nextId.isEmpty {
+                allowedIds.insert(nextId)
+            }
+        }
+        if let previewFallback = self.getPreviewFallbackBundle() {
+            let previewId = previewFallback.getId()
+            if !previewId.isEmpty {
+                allowedIds.insert(previewId)
+            }
+        }
+        return allowedIds
     }
 
     public func cleanupOrphanedTempFolders(threadToCheck: Thread?) {
@@ -2169,17 +2198,25 @@ import UIKit
         let fallbackIsPreviewFallback = previewFallback?.getId() == fallback.getId()
         logger.info("Fallback bundle is: \(fallback.toString())")
         logger.info("Version successfully loaded: \(bundle.toString())")
-        if autoDeletePrevious && !fallback.isBuiltin() && fallback.getId() != bundle.getId() && !fallbackIsPreviewFallback {
-            let res = self.delete(id: fallback.getId())
-            if res {
-                logger.info("Deleted previous bundle")
-                logger.debug("Bundle: \(fallback.toString())")
-            } else {
-                logger.error("Failed to delete previous bundle")
-                logger.debug("Bundle: \(fallback.toString())")
+        let previousFallbackId = fallback.getId()
+        let shouldDeletePrevious = autoDeletePrevious &&
+            !fallback.isBuiltin() &&
+            previousFallbackId != bundle.getId() &&
+            !fallbackIsPreviewFallback
+        self.setFallbackBundle(fallback: bundle)
+        if shouldDeletePrevious {
+            // Delete previous bundle off the calling thread so notifyAppReady stays non-blocking.
+            DispatchQueue.global(qos: .utility).async {
+                let res = self.delete(id: previousFallbackId)
+                if res {
+                    self.logger.info("Deleted previous bundle")
+                    self.logger.debug("Bundle ID: \(previousFallbackId)")
+                } else {
+                    self.logger.error("Failed to delete previous bundle")
+                    self.logger.debug("Bundle ID: \(previousFallbackId)")
+                }
             }
         }
-        self.setFallbackBundle(fallback: bundle)
     }
 
     public func setError(bundle: BundleInfo) {
