@@ -358,6 +358,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         self.leavePreviewSessionForLaunchURLIfNeeded()
 
+        // Downloads (including shake-menu / CapgoUpdater entry points) wait on this gate.
+        self.implementation.beforeDownload = { [weak self] in
+            self?.waitForCleanupIfNeeded()
+        }
         // Always run async cleanup: delete obsolete bundles on native update (when enabled)
         // and sweep orphan directories every launch. Must not block app startup.
         if !resetWhenUpdate {

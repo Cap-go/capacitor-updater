@@ -83,6 +83,9 @@ public class CapgoUpdater {
 
     public static final String TAG = "Capacitor-updater";
     public SharedPreferences.Editor editor;
+
+    /** Optional gate run before any download touches disk (e.g. wait for launch cleanup). */
+    public Runnable downloadGate = null;
     public SharedPreferences prefs;
 
     public File documentsDir;
@@ -1266,6 +1269,27 @@ public class CapgoUpdater {
         );
     }
 
+    private void runDownloadGate() throws IOException {
+        if (this.downloadGate == null) {
+            return;
+        }
+        try {
+            this.downloadGate.run();
+        } catch (final RuntimeException e) {
+            throw new IOException(e.getMessage() == null ? "Download gate failed" : e.getMessage(), e);
+        }
+    }
+
+    private boolean runDownloadGateQuiet() {
+        try {
+            this.runDownloadGate();
+            return true;
+        } catch (final IOException e) {
+            logger.error("Download blocked by cleanup gate: " + e.getMessage());
+            return false;
+        }
+    }
+
     public void downloadBackground(
         final String url,
         final String version,
@@ -1284,6 +1308,9 @@ public class CapgoUpdater {
         final JSONArray manifest,
         final boolean setNext
     ) {
+        if (!this.runDownloadGateQuiet()) {
+            return;
+        }
         final String id = this.randomString();
 
         // Check if version is already downloading, but allow retry if previous download failed
@@ -1308,6 +1335,7 @@ public class CapgoUpdater {
     }
 
     public BundleInfo download(final String url, final String version, final String sessionKey, final String checksum) throws IOException {
+        this.runDownloadGate();
         // Check for existing bundle with same version and clean up if in error state
         BundleInfo existingBundle = this.getBundleInfoByName(version);
         if (existingBundle != null && (existingBundle.isErrorStatus() || existingBundle.isDeleted() || existingBundle.isDeleting())) {
@@ -1356,6 +1384,7 @@ public class CapgoUpdater {
         final String checksum,
         final JSONArray manifest
     ) throws IOException {
+        this.runDownloadGate();
         if (manifest == null) {
             return download(url, version, sessionKey, checksum);
         }
@@ -1445,6 +1474,7 @@ public class CapgoUpdater {
                 previewFallback != null &&
                 !previewFallback.isDeleted() &&
                 !previewFallback.isErrorStatus() &&
+                !previewFallback.isDeleting() &&
                 previewFallback.getId().equals(id)
             ) {
                 logger.error("Cannot delete the preview fallback bundle");
@@ -1452,7 +1482,7 @@ public class CapgoUpdater {
                 return false;
             }
             final BundleInfo next = this.getNextBundle();
-            if (next != null && !next.isDeleted() && !next.isErrorStatus() && next.getId().equals(id)) {
+            if (next != null && !next.isDeleted() && !next.isErrorStatus() && !next.isDeleting() && next.getId().equals(id)) {
                 logger.error("Cannot delete the next bundle");
                 logger.debug("Bundle ID: " + id);
                 return false;
@@ -1498,10 +1528,16 @@ public class CapgoUpdater {
                 return false;
             }
 
+            final boolean finalized;
             if (Boolean.FALSE.equals(removeInfo)) {
-                this.saveBundleInfo(id, deleted.setStatus(BundleStatus.DELETED));
+                finalized = this.saveBundleInfo(id, deleted.setStatus(BundleStatus.DELETED));
             } else {
-                this.removeBundleInfo(id);
+                finalized = this.saveBundleInfo(id, null);
+            }
+            if (!finalized) {
+                logger.error("Failed to finalize delete registry update, will retry later");
+                logger.debug("Bundle ID: " + id);
+                return false;
             }
             this.sendStats("delete", deleted.getVersionName());
             logger.info("Bundle deleted and confirmed gone");
@@ -1743,12 +1779,21 @@ public class CapgoUpdater {
         // because delete() protects the current bundle from removal.
         final String previousFallbackId = fallback.getId();
         final String previousFallbackVersion = fallback.getVersionName();
+        final BundleInfo nextBundle = this.getNextBundle();
+        final boolean previousIsNext =
+            nextBundle != null &&
+            previousFallbackId != null &&
+            previousFallbackId.equals(nextBundle.getId()) &&
+            !nextBundle.isDeleted() &&
+            !nextBundle.isErrorStatus() &&
+            !nextBundle.isDeleting();
         final boolean shouldDeletePrevious =
             Boolean.TRUE.equals(autoDeletePrevious) &&
             !fallback.isBuiltin() &&
             previousFallbackId != null &&
             !previousFallbackId.equals(bundle.getId()) &&
-            !fallbackIsPreviewFallback;
+            !fallbackIsPreviewFallback &&
+            !previousIsNext;
         if (shouldDeletePrevious) {
             // Cancel any in-flight download for the old version before the async boundary
             // so a later download of the same version name is not cancelled mid-flight.
@@ -1756,7 +1801,10 @@ public class CapgoUpdater {
                 DownloadWorkerManager.cancelVersionDownload(this.activity, previousFallbackVersion);
             }
             // Mark durable intent before fallback switch so a kill mid-flight still retries.
-            this.saveBundleInfo(previousFallbackId, fallback.setStatus(BundleStatus.DELETING));
+            if (!this.saveBundleInfo(previousFallbackId, fallback.setStatus(BundleStatus.DELETING))) {
+                logger.error("Failed to persist DELETING for previous bundle; async delete will retry marker");
+                logger.debug("Bundle ID: " + previousFallbackId);
+            }
         }
         this.setFallbackBundle(bundle);
         if (shouldDeletePrevious) {

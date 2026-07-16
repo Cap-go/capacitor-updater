@@ -36,6 +36,8 @@ import UIKit
     public var pluginVersion: String = ""
     public var timeout: Double = 20
     public var statsUrl: String = ""
+    /// Optional gate run before any download touches disk (e.g. wait for launch cleanup).
+    public var beforeDownload: (() -> Void)?
     public var channelUrl: String = ""
     public var defaultChannel: String = ""
     public var appId: String = ""
@@ -1054,7 +1056,12 @@ import UIKit
         return json
     }
 
+    private func runBeforeDownload() {
+        beforeDownload?()
+    }
+
     public func downloadManifest(manifest: [ManifestEntry], version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
+        self.runBeforeDownload()
         let id = self.randomString(length: 10)
         logger.info("downloadManifest start \(id)")
         let destFolder = self.getBundleDirectory(id: id)
@@ -1537,6 +1544,7 @@ import UIKit
     }
 
     public func download(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
+        self.runBeforeDownload()
         let id: String = self.randomString(length: 10)
         // Each download uses its own temp files keyed by bundle ID to prevent collisions
         if version != getLocalUpdateVersion(for: id) {
@@ -1826,6 +1834,7 @@ import UIKit
         if let previewFallback = self.getPreviewFallbackBundle(),
            !previewFallback.isDeleted(),
            !previewFallback.isErrorStatus(),
+           !previewFallback.isDeleting(),
            previewFallback.getId() == id {
             logger.info("Cannot delete the preview fallback bundle")
             logger.debug("Bundle ID: \(id)")
@@ -1836,6 +1845,7 @@ import UIKit
         if let next = self.getNextBundle(),
            !next.isDeleted() &&
             !next.isErrorStatus() &&
+            !next.isDeleting() &&
             next.getId() == id {
             logger.info("Cannot delete the next bundle")
             logger.debug("Bundle ID: \(id)")
@@ -1878,10 +1888,16 @@ import UIKit
             return false
         }
 
+        let finalized: Bool
         if removeInfo {
-            self.removeBundleInfo(id: id)
+            finalized = self.saveBundleInfo(id: id, bundle: nil)
         } else {
-            self.saveBundleInfo(id: id, bundle: deleted.setStatus(status: BundleStatus.DELETED.storedValue))
+            finalized = self.saveBundleInfo(id: id, bundle: deleted.setStatus(status: BundleStatus.DELETED.storedValue))
+        }
+        guard finalized else {
+            logger.error("Failed to finalize delete registry update, will retry later")
+            logger.debug("Bundle ID: \(id)")
+            return false
         }
         UserDefaults.standard.synchronize()
         logger.info("Bundle deleted and confirmed gone")
@@ -2251,13 +2267,22 @@ import UIKit
         logger.info("Fallback bundle is: \(fallback.toString())")
         logger.info("Version successfully loaded: \(bundle.toString())")
         let previousFallbackId = fallback.getId()
+        let nextBundle = self.getNextBundle()
+        let previousIsNext = nextBundle?.getId() == previousFallbackId &&
+            !(nextBundle?.isDeleted() ?? true) &&
+            !(nextBundle?.isErrorStatus() ?? true) &&
+            !(nextBundle?.isDeleting() ?? true)
         let shouldDeletePrevious = autoDeletePrevious &&
             !fallback.isBuiltin() &&
             previousFallbackId != bundle.getId() &&
-            !fallbackIsPreviewFallback
+            !fallbackIsPreviewFallback &&
+            !previousIsNext
         if shouldDeletePrevious {
             // Mark durable intent before fallback switch so a kill mid-flight still retries.
-            _ = self.saveBundleInfo(id: previousFallbackId, bundle: fallback.setStatus(status: BundleStatus.DELETING.storedValue))
+            if !self.saveBundleInfo(id: previousFallbackId, bundle: fallback.setStatus(status: BundleStatus.DELETING.storedValue)) {
+                self.logger.error("Failed to persist DELETING for previous bundle; async delete will retry marker")
+                self.logger.debug("Bundle ID: \(previousFallbackId)")
+            }
             UserDefaults.standard.synchronize()
         }
         self.setFallbackBundle(fallback: bundle)

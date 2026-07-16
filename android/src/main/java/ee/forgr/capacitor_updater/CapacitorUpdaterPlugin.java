@@ -873,8 +873,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.reportPreviousAppExitReasons();
         this.reportPreviousWebViewRenderProcessGone();
         this.installWebViewStatsReporter();
+        // Downloads (including shake-menu / CapgoUpdater entry points) wait on this gate.
+        this.implementation.downloadGate = this::waitForCleanupIfNeeded;
         // Always run async cleanup: delete obsolete bundles on native update (when enabled)
-        // and sweep orphan directories every launch. Must not block app startup.
+        // and sweep orphan folders every launch. Must not block app startup.
         if (!resetWhenUpdate) {
             this.persistCurrentNativeBuildVersion();
         }
@@ -2305,6 +2307,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();
             logger.warn("Interrupted while waiting for cleanup");
+            throw new IllegalStateException("Interrupted while waiting for cleanup");
         }
         logger.info("Cleanup finished, proceeding with download");
     }
