@@ -22,8 +22,11 @@ import UIKit
     private let FALLBACK_VERSION: String = "pastVersion"
     private let NEXT_VERSION: String = "nextVersion"
     private let PREVIEW_FALLBACK_VERSION: String = "previewFallbackVersion"
+    private let PENDING_DELETE_IDS: String = "pendingDeleteIds"
     private var unzipPercent = 0
     private let TEMP_UNZIP_PREFIX: String = "capgo_unzip_"
+    private let deletePaceSeconds: TimeInterval = 0.075
+    private let deleteLock = NSLock()
 
     // Add this line to declare cacheFolder
     private let cacheFolder: URL = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!.appendingPathComponent("capgo_downloads")
@@ -34,6 +37,8 @@ import UIKit
     public var pluginVersion: String = ""
     public var timeout: Double = 20
     public var statsUrl: String = ""
+    /// Optional gate run before any download touches disk (e.g. wait for launch cleanup).
+    public var beforeDownload: (() -> Void)?
     public var channelUrl: String = ""
     public var defaultChannel: String = ""
     public var appId: String = ""
@@ -1052,7 +1057,12 @@ import UIKit
         return json
     }
 
+    private func runBeforeDownload() {
+        beforeDownload?()
+    }
+
     public func downloadManifest(manifest: [ManifestEntry], version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
+        self.runBeforeDownload()
         let id = self.randomString(length: 10)
         logger.info("downloadManifest start \(id)")
         let destFolder = self.getBundleDirectory(id: id)
@@ -1535,6 +1545,7 @@ import UIKit
     }
 
     public func download(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
+        self.runBeforeDownload()
         let id: String = self.randomString(length: 10)
         // Each download uses its own temp files keyed by bundle ID to prevent collisions
         if version != getLocalUpdateVersion(for: id) {
@@ -1811,6 +1822,9 @@ import UIKit
     }
 
     public func delete(id: String, removeInfo: Bool) -> Bool {
+        self.deleteLock.lock()
+        defer { self.deleteLock.unlock() }
+
         let deleted: BundleInfo = self.getBundleInfo(id: id)
         if deleted.isBuiltin() || self.getCurrentBundleId() == id {
             logger.info("Cannot delete current or builtin bundle")
@@ -1821,6 +1835,7 @@ import UIKit
         if let previewFallback = self.getPreviewFallbackBundle(),
            !previewFallback.isDeleted(),
            !previewFallback.isErrorStatus(),
+           !previewFallback.isDeleting(),
            previewFallback.getId() == id {
             logger.info("Cannot delete the preview fallback bundle")
             logger.debug("Bundle ID: \(id)")
@@ -1831,6 +1846,7 @@ import UIKit
         if let next = self.getNextBundle(),
            !next.isDeleted() &&
             !next.isErrorStatus() &&
+            !next.isDeleting() &&
             next.getId() == id {
             logger.info("Cannot delete the next bundle")
             logger.debug("Bundle ID: \(id)")
@@ -1838,24 +1854,55 @@ import UIKit
         }
 
         let destPersist: URL = libraryDir.appendingPathComponent(bundleDirectory).appendingPathComponent(id)
-        do {
-            try FileManager.default.removeItem(atPath: destPersist.path)
-        } catch {
-            logger.error("Bundle folder not removed")
-            logger.debug("Path: \(destPersist.path)")
-            // even if, we don;t care. Android doesn't care
-            if removeInfo {
-                self.removeBundleInfo(id: id)
-            }
-            self.sendStats(action: "delete", versionName: deleted.getVersionName())
+        let hadRegistry = self.hasStoredBundleInfo(id: id)
+        let hadFolder = FileManager.default.fileExists(atPath: destPersist.path)
+        if !hadRegistry && !hadFolder {
+            logger.error("Cannot delete unknown bundle")
+            logger.debug("Bundle ID: \(id)")
             return false
         }
-        if removeInfo {
-            self.removeBundleInfo(id: id)
-        } else {
-            self.saveBundleInfo(id: id, bundle: deleted.setStatus(status: BundleStatus.DELETED.storedValue))
+
+        // Persist DELETING before touching disk so kill/OOM can resume on next launch.
+        if !deleted.isDeleting() {
+            if !self.saveBundleInfo(id: id, bundle: deleted.setStatus(status: BundleStatus.DELETING.storedValue)) {
+                logger.error("Failed to persist DELETING marker, aborting disk delete")
+                logger.debug("Bundle ID: \(id)")
+                return false
+            }
+            UserDefaults.standard.synchronize()
         }
-        logger.info("Bundle deleted successfully")
+
+        if FileManager.default.fileExists(atPath: destPersist.path) {
+            do {
+                try FileManager.default.removeItem(atPath: destPersist.path)
+            } catch {
+                logger.error("Bundle folder not removed, will retry later")
+                logger.debug("Path: \(destPersist.path), Error: \(error.localizedDescription)")
+                return false
+            }
+        }
+
+        // Only drop registry after the folder is confirmed gone.
+        if FileManager.default.fileExists(atPath: destPersist.path) {
+            logger.error("Bundle folder still present after delete, will retry later")
+            logger.debug("Bundle ID: \(id)")
+            return false
+        }
+
+        let finalized: Bool
+        if removeInfo {
+            finalized = self.saveBundleInfo(id: id, bundle: nil)
+        } else {
+            finalized = self.saveBundleInfo(id: id, bundle: deleted.setStatus(status: BundleStatus.DELETED.storedValue))
+        }
+        guard finalized else {
+            logger.error("Failed to finalize delete registry update, will retry later")
+            logger.debug("Bundle ID: \(id)")
+            return false
+        }
+        UserDefaults.standard.synchronize()
+        self.dequeuePendingDelete(id: id)
+        logger.info("Bundle deleted and confirmed gone")
         logger.debug("Version: \(deleted.getVersionName())")
         self.sendStats(action: "delete", versionName: deleted.getVersionName())
         return true
@@ -1863,6 +1910,47 @@ import UIKit
 
     public func delete(id: String) -> Bool {
         return self.delete(id: id, removeInfo: true)
+    }
+
+    /// Resume incomplete deletes one-by-one. Safe across app kill / OOM because
+    /// delete() marks DELETING before disk work and only clears registry after confirm.
+    public func drainPendingDeletes() {
+        var pendingIds = Set(self.list(raw: true).filter { $0.isDeleting() }.map { $0.getId() }.filter { !$0.isEmpty })
+        pendingIds.formUnion(self.getPendingDeleteIds())
+        for id in pendingIds {
+            logger.info("Resuming pending delete for bundle: \(id)")
+            if self.delete(id: id, removeInfo: true) {
+                self.dequeuePendingDelete(id: id)
+            }
+            Thread.sleep(forTimeInterval: self.deletePaceSeconds)
+        }
+    }
+
+    private func getPendingDeleteIds() -> Set<String> {
+        guard let raw = UserDefaults.standard.string(forKey: self.PENDING_DELETE_IDS), !raw.isEmpty else {
+            return []
+        }
+        return Set(raw.split(separator: ",").map { String($0) }.filter { !$0.isEmpty })
+    }
+
+    private func enqueuePendingDelete(id: String) {
+        guard !id.isEmpty else { return }
+        var ids = self.getPendingDeleteIds()
+        guard ids.insert(id).inserted else { return }
+        UserDefaults.standard.set(ids.sorted().joined(separator: ","), forKey: self.PENDING_DELETE_IDS)
+        UserDefaults.standard.synchronize()
+    }
+
+    private func dequeuePendingDelete(id: String) {
+        guard !id.isEmpty else { return }
+        var ids = self.getPendingDeleteIds()
+        guard ids.remove(id) != nil else { return }
+        if ids.isEmpty {
+            UserDefaults.standard.removeObject(forKey: self.PENDING_DELETE_IDS)
+        } else {
+            UserDefaults.standard.set(ids.sorted().joined(separator: ","), forKey: self.PENDING_DELETE_IDS)
+        }
+        UserDefaults.standard.synchronize()
     }
 
     public func cleanupDeltaCache() {
@@ -1924,6 +2012,11 @@ import UIKit
 
                 do {
                     try fileManager.removeItem(at: url)
+                    if fileManager.fileExists(atPath: url.path) {
+                        logger.error("Orphan bundle directory still present after delete")
+                        logger.debug("Bundle ID: \(id)")
+                        continue
+                    }
                     self.removeBundleInfo(id: id)
                     logger.info("Deleted orphan bundle directory")
                     logger.debug("Bundle ID: \(id)")
@@ -1936,6 +2029,40 @@ import UIKit
             logger.error("Failed to enumerate bundle directory for cleanup")
             logger.debug("Error: \(error.localizedDescription)")
         }
+    }
+
+    public func allowedBundleIdsForCleanup() -> Set<String> {
+        var allowedIds = Set(self.list(raw: true).compactMap { info -> String? in
+            let id = info.getId()
+            // DELETED tombstones must not protect leftover folders.
+            // DELETING stays protected so drainPendingDeletes owns the removal.
+            if id.isEmpty || info.isDeleted() {
+                return nil
+            }
+            return id
+        })
+        let currentId = self.getCurrentBundleId()
+        if !currentId.isEmpty {
+            allowedIds.insert(currentId)
+        }
+        let fallback = self.getFallbackBundle()
+        let fallbackId = fallback.getId()
+        if !fallbackId.isEmpty && !fallback.isDeleting() {
+            allowedIds.insert(fallbackId)
+        }
+        if let next = self.getNextBundle() {
+            let nextId = next.getId()
+            if !nextId.isEmpty && !next.isDeleting() {
+                allowedIds.insert(nextId)
+            }
+        }
+        if let previewFallback = self.getPreviewFallbackBundle() {
+            let previewId = previewFallback.getId()
+            if !previewId.isEmpty && !previewFallback.isDeleting() {
+                allowedIds.insert(previewId)
+            }
+        }
+        return allowedIds
     }
 
     public func cleanupOrphanedTempFolders(threadToCheck: Thread?) {
@@ -2079,7 +2206,8 @@ import UIKit
                 destPersist.isDirectory &&
                 !indexPersist.isDirectory &&
                 indexPersist.exist &&
-                !bundleIndo.isDeleted() {
+                !bundleIndo.isDeleted() &&
+                !bundleIndo.isDeleting() {
             return true
         }
         return false
@@ -2169,17 +2297,39 @@ import UIKit
         let fallbackIsPreviewFallback = previewFallback?.getId() == fallback.getId()
         logger.info("Fallback bundle is: \(fallback.toString())")
         logger.info("Version successfully loaded: \(bundle.toString())")
-        if autoDeletePrevious && !fallback.isBuiltin() && fallback.getId() != bundle.getId() && !fallbackIsPreviewFallback {
-            let res = self.delete(id: fallback.getId())
-            if res {
-                logger.info("Deleted previous bundle")
-                logger.debug("Bundle: \(fallback.toString())")
-            } else {
-                logger.error("Failed to delete previous bundle")
-                logger.debug("Bundle: \(fallback.toString())")
+        let previousFallbackId = fallback.getId()
+        let nextBundle = self.getNextBundle()
+        let previousIsNext = nextBundle?.getId() == previousFallbackId &&
+            !(nextBundle?.isDeleted() ?? true) &&
+            !(nextBundle?.isErrorStatus() ?? true) &&
+            !(nextBundle?.isDeleting() ?? true)
+        let shouldDeletePrevious = autoDeletePrevious &&
+            !fallback.isBuiltin() &&
+            previousFallbackId != bundle.getId() &&
+            !fallbackIsPreviewFallback &&
+            !previousIsNext
+        if shouldDeletePrevious {
+            // Mark durable intent before fallback switch so a kill mid-flight still retries.
+            if !self.saveBundleInfo(id: previousFallbackId, bundle: fallback.setStatus(status: BundleStatus.DELETING.storedValue)) {
+                self.logger.error("Failed to persist DELETING for previous bundle; queueing durable retry")
+                self.logger.debug("Bundle ID: \(previousFallbackId)")
+                self.enqueuePendingDelete(id: previousFallbackId)
             }
+            UserDefaults.standard.synchronize()
         }
         self.setFallbackBundle(fallback: bundle)
+        if shouldDeletePrevious {
+            DispatchQueue.global(qos: .utility).async {
+                let res = self.delete(id: previousFallbackId)
+                if res {
+                    self.logger.info("Deleted previous bundle")
+                    self.logger.debug("Bundle ID: \(previousFallbackId)")
+                } else {
+                    self.logger.info("Previous bundle delete incomplete, will retry")
+                    self.logger.debug("Bundle ID: \(previousFallbackId)")
+                }
+            }
+        }
     }
 
     public func setError(bundle: BundleInfo) {
@@ -2680,25 +2830,29 @@ import UIKit
         self.saveBundleInfo(id: id, bundle: nil)
     }
 
-    public func saveBundleInfo(id: String, bundle: BundleInfo?) {
+    @discardableResult
+    public func saveBundleInfo(id: String, bundle: BundleInfo?) -> Bool {
         if bundle != nil && (bundle!.isBuiltin() || bundle!.isUnknown()) {
             logger.info("Not saving info for bundle [\(id)] \(bundle?.toString() ?? "")")
-            return
+            return false
         }
         if bundle == nil {
             logger.info("Removing info for bundle [\(id)]")
             UserDefaults.standard.removeObject(forKey: "\(id)\(self.INFO_SUFFIX)")
-        } else {
-            let update = bundle!.setId(id: id)
-            logger.info("Storing info for bundle [\(id)] \(update.toString())")
-            do {
-                try UserDefaults.standard.setObj(update, forKey: "\(id)\(self.INFO_SUFFIX)")
-            } catch {
-                logger.error("Failed to save bundle info")
-                logger.debug("Bundle ID: \(id), Error: \(error.localizedDescription)")
-            }
+            return true
+        }
+        let update = bundle!.setId(id: id)
+        logger.info("Storing info for bundle [\(id)] \(update.toString())")
+        do {
+            try UserDefaults.standard.setObj(update, forKey: "\(id)\(self.INFO_SUFFIX)")
+            return true
+        } catch {
+            logger.error("Failed to save bundle info")
+            logger.debug("Bundle ID: \(id), Error: \(error.localizedDescription)")
+            return false
         }
     }
+
 
     private func setBundleStatus(id: String, status: BundleStatus) {
         logger.info("Setting status for bundle [\(id)] to \(status)")

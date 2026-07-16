@@ -68,6 +68,7 @@ import java.util.Set;
 import java.util.TimeZone;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
@@ -230,6 +231,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     // Lock to ensure cleanup completes before downloads start
     private final Object cleanupLock = new Object();
+    private volatile CountDownLatch cleanupLatch = new CountDownLatch(0);
     private volatile boolean cleanupComplete = false;
     private volatile Thread cleanupThread = null;
 
@@ -874,11 +876,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.reportPreviousAppExitReasons();
         this.reportPreviousWebViewRenderProcessGone();
         this.installWebViewStatsReporter();
-        if (resetWhenUpdate) {
-            this.cleanupObsoleteVersions();
-        } else {
+        // Downloads (including shake-menu / CapgoUpdater entry points) wait on this gate.
+        this.implementation.downloadGate = this::waitForCleanupIfNeeded;
+        // Always run async cleanup: delete obsolete bundles on native update (when enabled)
+        // and sweep orphan folders every launch. Must not block app startup.
+        if (!resetWhenUpdate) {
             this.persistCurrentNativeBuildVersion();
         }
+        this.cleanupObsoleteVersions(resetWhenUpdate);
 
         // Check for 'kill' delay condition on app launch
         // This handles cases where the app was killed by the system (onDestroy is not reliable)
@@ -2275,67 +2280,58 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return false;
     }
 
-    private void cleanupObsoleteVersions() {
+    private void cleanupObsoleteVersions(final boolean resetWhenUpdate) {
+        // Latch created before start so waiters never race past an unstarted cleanup thread.
+        final CountDownLatch latch = new CountDownLatch(1);
+        this.cleanupComplete = false;
+        this.cleanupLatch = latch;
         cleanupThread = startNewThread(() -> {
-            synchronized (cleanupLock) {
-                try {
-                    final String previous = this.getStoredNativeBuildVersion();
-                    if (!"".equals(previous) && !Objects.equals(this.currentBuildVersion, previous)) {
-                        logger.info("New native build version detected: " + this.currentBuildVersion);
-                        this.implementation.reset(true);
-                        final List<BundleInfo> installed = this.implementation.list(false);
-                        for (final BundleInfo bundle : installed) {
-                            // Check if thread was interrupted (cancelled)
-                            if (Thread.currentThread().isInterrupted()) {
-                                logger.warn("Cleanup was cancelled, stopping");
-                                return;
-                            }
-                            try {
-                                logger.info("Deleting obsolete bundle: " + bundle.getId());
-                                this.implementation.delete(bundle.getId());
-                            } catch (final Exception e) {
-                                logger.error("Failed to delete: " + bundle.getId() + " " + e.getMessage());
-                            }
-                        }
-                        final List<BundleInfo> storedBundles = this.implementation.list(true);
-                        final Set<String> allowedIds = new HashSet<>();
-                        for (final BundleInfo info : storedBundles) {
-                            if (info != null && info.getId() != null && !info.getId().isEmpty()) {
-                                allowedIds.add(info.getId());
-                            }
-                        }
-                        this.implementation.cleanupDownloadDirectories(allowedIds, Thread.currentThread());
-                        this.implementation.cleanupOrphanedTempFolders(Thread.currentThread());
-
-                        // Check again before the expensive delta cache cleanup
-                        if (Thread.currentThread().isInterrupted()) {
-                            logger.warn("Cleanup was cancelled before delta cache cleanup");
-                            return;
-                        }
-                        this.implementation.cleanupDeltaCache(Thread.currentThread());
-                    }
-                    this.editor.putString("LatestNativeBuildVersion", this.currentBuildVersion);
-                    this.editor.apply();
-                } catch (Exception e) {
-                    logger.error("Error during cleanupObsoleteVersions: " + e.getMessage());
-                } finally {
-                    cleanupComplete = true;
-                    logger.info("Cleanup complete");
-                }
-            }
-        });
-
-        // Start a timeout watchdog thread to cancel cleanup if it takes too long
-        final long timeout = this.appReadyTimeout / 2;
-        startNewThread(() -> {
             try {
-                Thread.sleep(timeout);
-                if (cleanupThread != null && cleanupThread.isAlive() && !cleanupComplete) {
-                    logger.warn("Cleanup timeout exceeded (" + timeout + "ms), interrupting cleanup thread");
-                    cleanupThread.interrupt();
+                synchronized (cleanupLock) {
+                    try {
+                        final String previous = this.getStoredNativeBuildVersion();
+                        final boolean nativeVersionChanged = !"".equals(previous) && !Objects.equals(this.currentBuildVersion, previous);
+                        if (resetWhenUpdate && nativeVersionChanged) {
+                            logger.info("New native build version detected: " + this.currentBuildVersion);
+                            this.implementation.reset(true);
+                            final List<BundleInfo> installed = this.implementation.list(false);
+                            for (final BundleInfo bundle : installed) {
+                                try {
+                                    logger.info("Deleting obsolete bundle: " + bundle.getId());
+                                    this.implementation.delete(bundle.getId());
+                                } catch (final Exception e) {
+                                    logger.error("Failed to delete: " + bundle.getId() + " " + e.getMessage());
+                                }
+                                try {
+                                    Thread.sleep(75L);
+                                } catch (final InterruptedException ie) {
+                                    Thread.currentThread().interrupt();
+                                    return;
+                                }
+                            }
+                            this.implementation.cleanupDeltaCache();
+                        }
+
+                        // Resume any DELETING leftovers from prior kills, one-by-one.
+                        this.implementation.drainPendingDeletes();
+
+                        // Always sweep orphan folders so incomplete prior cleanups (or failed deletes)
+                        // cannot leave hundreds of MB behind across launches.
+                        final Set<String> allowedIds = this.implementation.allowedBundleIdsForCleanup();
+                        this.implementation.cleanupDownloadDirectories(allowedIds);
+                        this.implementation.cleanupOrphanedTempFolders(null);
+
+                        this.editor.putString("LatestNativeBuildVersion", this.currentBuildVersion);
+                        this.editor.apply();
+                    } catch (Exception e) {
+                        logger.error("Error during cleanupObsoleteVersions: " + e.getMessage());
+                    } finally {
+                        cleanupComplete = true;
+                        logger.info("Cleanup complete");
+                    }
                 }
-            } catch (InterruptedException e) {
-                // Watchdog thread was interrupted, that's fine
+            } finally {
+                latch.countDown();
             }
         });
     }
@@ -2359,11 +2355,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
 
         logger.info("Waiting for cleanup to complete before starting download...");
-
-        // Wait for cleanup to complete - blocks until lock is released
-        synchronized (cleanupLock) {
-            logger.info("Cleanup finished, proceeding with download");
+        try {
+            this.cleanupLatch.await();
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.warn("Interrupted while waiting for cleanup");
+            throw new IllegalStateException("Interrupted while waiting for cleanup");
         }
+        logger.info("Cleanup finished, proceeding with download");
     }
 
     public void notifyDownload(final String id, final int percent) {
@@ -2701,6 +2700,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final String checksum,
         final JSONArray manifest
     ) throws IOException {
+        // Manual/preview downloads must wait too — launch orphan sweep can delete their temps.
+        waitForCleanupIfNeeded();
         if (manifest != null) {
             return this.implementation.downloadManifest(url, version, sessionKey, checksum, manifest);
         }
@@ -5016,15 +5017,21 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.implementation.setError(current);
             this.performReset(true, false, true);
             if (CapacitorUpdaterPlugin.this.autoDeleteFailed && !current.isBuiltin()) {
-                logger.info("Deleting failing bundle: " + current.getVersionName());
-                try {
-                    final Boolean res = this.implementation.delete(current.getId(), false);
-                    if (res) {
-                        logger.info("Failed bundle deleted: " + current.getVersionName());
+                final String failedId = current.getId();
+                final String failedVersion = current.getVersionName();
+                logger.info("Deleting failing bundle: " + failedVersion);
+                // Mark before async work so kill/OOM still resumes via drainPendingDeletes.
+                CapacitorUpdaterPlugin.this.implementation.saveBundleInfo(failedId, current.setStatus(BundleStatus.DELETING));
+                startNewThread(() -> {
+                    try {
+                        final Boolean res = CapacitorUpdaterPlugin.this.implementation.delete(failedId, false, false);
+                        if (Boolean.TRUE.equals(res)) {
+                            logger.info("Failed bundle deleted: " + failedVersion);
+                        }
+                    } catch (final IOException e) {
+                        logger.error("Failed to delete failed bundle: " + failedVersion + " " + e.getMessage());
                     }
-                } catch (final IOException e) {
-                    logger.error("Failed to delete failed bundle: " + current.getVersionName() + " " + e.getMessage());
-                }
+                });
             }
         } else {
             logger.info("notifyAppReady was called. This is fine: " + current.getId());

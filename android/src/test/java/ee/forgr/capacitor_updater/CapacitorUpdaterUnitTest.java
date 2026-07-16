@@ -31,6 +31,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
@@ -773,8 +774,9 @@ public class CapacitorUpdaterUnitTest {
         }
 
         @Override
-        public void saveBundleInfo(final String id, final BundleInfo info) {
+        public boolean saveBundleInfo(final String id, final BundleInfo info) {
             this.bundleInfos.put(id, info);
+            return true;
         }
 
         @Override
@@ -1329,6 +1331,7 @@ public class CapacitorUpdaterUnitTest {
         assertEquals("error", BundleStatus.ERROR.toString());
         assertEquals("pending", BundleStatus.PENDING.toString());
         assertEquals("deleted", BundleStatus.DELETED.toString());
+        assertEquals("deleting", BundleStatus.DELETING.toString());
         assertEquals("downloading", BundleStatus.DOWNLOADING.toString());
     }
 
@@ -1338,6 +1341,7 @@ public class CapacitorUpdaterUnitTest {
         assertEquals(BundleStatus.ERROR, BundleStatus.fromString("error"));
         assertEquals(BundleStatus.PENDING, BundleStatus.fromString("pending"));
         assertEquals(BundleStatus.DELETED, BundleStatus.fromString("deleted"));
+        assertEquals(BundleStatus.DELETING, BundleStatus.fromString("deleting"));
         assertEquals(BundleStatus.DOWNLOADING, BundleStatus.fromString("downloading"));
 
         // Test null/empty string returns PENDING
@@ -3252,5 +3256,126 @@ public class CapacitorUpdaterUnitTest {
         assertTrue(CapacitorUpdaterPlugin.isSupportedShakeMenuGesture("threeFingerPinch"));
         assertFalse(CapacitorUpdaterPlugin.isSupportedShakeMenuGesture(" "));
         assertFalse(CapacitorUpdaterPlugin.isSupportedShakeMenuGesture("pinch"));
+    }
+
+    @Test
+    public void cleanupDownloadDirectoriesRemovesOrphanBundleFolders() throws Exception {
+        final String keptId = "keptBundle1";
+        final String orphanId = "orphanBndl1";
+        final Path tempDir = createExistingBundleDirectory("capgo-orphan-kept", keptId);
+        final Path orphanDir = tempDir.resolve("versions").resolve(orphanId);
+        Files.createDirectories(orphanDir);
+        Files.write(orphanDir.resolve("index.html"), "<html></html>".getBytes(StandardCharsets.UTF_8));
+        orphanDir.toFile().deleteOnExit();
+
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        final SharedPreferences prefs = mock(SharedPreferences.class);
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+        updater.documentsDir = tempDir.toFile();
+        updater.CAP_SERVER_PATH = "server-path";
+        updater.prefs = prefs;
+        updater.editor = editor;
+
+        when(prefs.getString("server-path", "public")).thenReturn("public");
+        when(prefs.getString("pastVersion", BundleInfo.ID_BUILTIN)).thenReturn(BundleInfo.ID_BUILTIN);
+        when(prefs.getString("nextVersion", null)).thenReturn(null);
+        when(prefs.getString("previewFallbackVersion", null)).thenReturn(null);
+        when(prefs.getAll()).thenReturn(Map.of());
+        when(editor.remove(anyString())).thenReturn(editor);
+
+        final Set<String> allowedIds = Set.of(keptId);
+        updater.cleanupDownloadDirectories(allowedIds);
+
+        assertTrue("Kept bundle folder should remain", Files.exists(tempDir.resolve("versions").resolve(keptId)));
+        assertFalse("Orphan bundle folder should be deleted", Files.exists(orphanDir));
+    }
+
+    @Test
+    public void deleteMarksDeletingThenRemovesRegistryOnlyAfterFolderGone() throws Exception {
+        final String id = "delBundle1";
+        final Path tempDir = createExistingBundleDirectory("capgo-safe-delete", id);
+
+        final Map<String, String> store = new HashMap<>();
+        final BundleInfo initial = new BundleInfo(id, "9.9.9", BundleStatus.SUCCESS, new Date(), "checksum1");
+        store.put(id + "_info", initial.toString());
+
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        final SharedPreferences prefs = mock(SharedPreferences.class);
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+        updater.documentsDir = tempDir.toFile();
+        updater.CAP_SERVER_PATH = "server-path";
+        updater.prefs = prefs;
+        updater.editor = editor;
+        updater.statsUrl = "";
+
+        when(prefs.getString(eq("server-path"), anyString())).thenReturn("public");
+        when(prefs.getString(eq("pastVersion"), anyString())).thenReturn(BundleInfo.ID_BUILTIN);
+        when(prefs.getString(eq("nextVersion"), isNull())).thenReturn(null);
+        when(prefs.getString(eq("previewFallbackVersion"), isNull())).thenReturn(null);
+        when(prefs.getString(eq(id + "_info"), anyString())).thenAnswer((inv) -> store.getOrDefault(id + "_info", ""));
+        when(prefs.contains(eq(id + "_info"))).thenAnswer((inv) -> store.containsKey(id + "_info"));
+        when(prefs.getAll()).thenAnswer((inv) -> {
+            final Map<String, Object> all = new HashMap<>();
+            all.putAll(store);
+            return all;
+        });
+        when(editor.putString(anyString(), anyString())).thenAnswer((inv) -> {
+            store.put(inv.getArgument(0), inv.getArgument(1));
+            return editor;
+        });
+        when(editor.remove(anyString())).thenAnswer((inv) -> {
+            store.remove((String) inv.getArgument(0));
+            return editor;
+        });
+        when(editor.commit()).thenReturn(true);
+
+        assertTrue(Boolean.TRUE.equals(updater.delete(id, true)));
+        assertFalse("Folder must be gone after confirmed delete", Files.exists(tempDir.resolve("versions").resolve(id)));
+        assertFalse("Registry entry must be removed after confirmed delete", store.containsKey(id + "_info"));
+    }
+
+    @Test
+    public void drainPendingDeletesFinishesDeletingBundles() throws Exception {
+        final String id = "pendDelete";
+        final Path tempDir = createExistingBundleDirectory("capgo-drain-delete", id);
+
+        final Map<String, String> store = new HashMap<>();
+        final BundleInfo deleting = new BundleInfo(id, "8.8.8", BundleStatus.DELETING, new Date(), "checksum2");
+        store.put(id + "_info", deleting.toString());
+
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        final SharedPreferences prefs = mock(SharedPreferences.class);
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+        updater.documentsDir = tempDir.toFile();
+        updater.CAP_SERVER_PATH = "server-path";
+        updater.prefs = prefs;
+        updater.editor = editor;
+        updater.statsUrl = "";
+
+        when(prefs.getString(eq("server-path"), anyString())).thenReturn("public");
+        when(prefs.getString(eq("pastVersion"), anyString())).thenReturn(BundleInfo.ID_BUILTIN);
+        when(prefs.getString(eq("nextVersion"), isNull())).thenReturn(null);
+        when(prefs.getString(eq("previewFallbackVersion"), isNull())).thenReturn(null);
+        when(prefs.getString(eq(id + "_info"), anyString())).thenAnswer((inv) -> store.getOrDefault(id + "_info", ""));
+        when(prefs.contains(eq(id + "_info"))).thenAnswer((inv) -> store.containsKey(id + "_info"));
+        when(prefs.getAll()).thenAnswer((inv) -> {
+            final Map<String, Object> all = new HashMap<>();
+            all.putAll(store);
+            return all;
+        });
+        when(editor.putString(anyString(), anyString())).thenAnswer((inv) -> {
+            store.put(inv.getArgument(0), inv.getArgument(1));
+            return editor;
+        });
+        when(editor.remove(anyString())).thenAnswer((inv) -> {
+            store.remove((String) inv.getArgument(0));
+            return editor;
+        });
+        when(editor.commit()).thenReturn(true);
+
+        updater.drainPendingDeletes();
+
+        assertFalse("Folder must be gone after drain", Files.exists(tempDir.resolve("versions").resolve(id)));
+        assertFalse("DELETING registry entry must be cleared after drain", store.containsKey(id + "_info"));
     }
 }

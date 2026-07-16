@@ -36,6 +36,7 @@ enum BundleStatus: LocalizedString, CaseIterable, Decodable, Encodable {
     case ERROR = "error"
     case PENDING  = "pending"
     case DELETED  = "deleted"
+    case DELETING = "deleting"
     case DOWNLOADING  = "downloading"
 
     var storedValue: String {
@@ -48,6 +49,8 @@ enum BundleStatus: LocalizedString, CaseIterable, Decodable, Encodable {
             return "pending"
         case .DELETED:
             return "deleted"
+        case .DELETING:
+            return "deleting"
         case .DOWNLOADING:
             return "downloading"
         }

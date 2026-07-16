@@ -428,8 +428,9 @@ private final class PendingReloadFinalizeCapgoUpdater: CapgoUpdater {
         bundleInfos[id!]!
     }
 
-    override func saveBundleInfo(id: String, bundle: BundleInfo?) {
+    override func saveBundleInfo(id: String, bundle: BundleInfo?) -> Bool {
         bundleInfos[id] = bundle
+        return true
     }
 
     override func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {
@@ -848,6 +849,7 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(BundleStatus.ERROR.localizedString, "error")
         XCTAssertEqual(BundleStatus.PENDING.localizedString, "pending")
         XCTAssertEqual(BundleStatus.DELETED.localizedString, "deleted")
+        XCTAssertEqual(BundleStatus.DELETING.localizedString, "deleting")
         XCTAssertEqual(BundleStatus.DOWNLOADING.localizedString, "downloading")
     }
 
@@ -856,6 +858,7 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(BundleStatus.ERROR.storedValue, "error")
         XCTAssertEqual(BundleStatus.PENDING.storedValue, "pending")
         XCTAssertEqual(BundleStatus.DELETED.storedValue, "deleted")
+        XCTAssertEqual(BundleStatus.DELETING.storedValue, "deleting")
         XCTAssertEqual(BundleStatus.DOWNLOADING.storedValue, "downloading")
     }
 
@@ -864,6 +867,7 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(BundleStatus(localizedString: "error"), BundleStatus.ERROR)
         XCTAssertEqual(BundleStatus(localizedString: "pending"), BundleStatus.PENDING)
         XCTAssertEqual(BundleStatus(localizedString: "deleted"), BundleStatus.DELETED)
+        XCTAssertEqual(BundleStatus(localizedString: "deleting"), BundleStatus.DELETING)
         XCTAssertEqual(BundleStatus(localizedString: "downloading"), BundleStatus.DOWNLOADING)
         XCTAssertNil(BundleStatus(localizedString: "invalid"))
     }
@@ -871,6 +875,13 @@ class CapacitorUpdaterTests: XCTestCase {
     func testBundleStatusEncodesStableStoredValue() throws {
         let data = try JSONEncoder().encode(BundleStatus.SUCCESS)
         XCTAssertEqual(String(data: data, encoding: .utf8), "\"success\"")
+    }
+
+    func testBundleStatusEncodesDeletingStoredValue() throws {
+        let data = try JSONEncoder().encode(BundleStatus.DELETING)
+        let decoded = try JSONDecoder().decode(BundleStatus.self, from: data)
+        XCTAssertEqual(decoded, BundleStatus.DELETING)
+        XCTAssertEqual(decoded.storedValue, "deleting")
     }
 
     func testBundleStatusDecodesLegacyCaseKeyObject() throws {
