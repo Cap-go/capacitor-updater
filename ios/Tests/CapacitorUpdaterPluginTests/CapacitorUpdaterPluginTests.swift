@@ -977,6 +977,20 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertNil(UserDefaults.standard.object(forKey: previewChannelWasSetKey))
     }
 
+    func testDefaultChannelCleanupFailurePreservesInstallMarkerRetry() throws {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        let marker = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)")
+        try Data().write(to: marker)
+        defer {
+            try? FileManager.default.removeItem(at: marker)
+        }
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
+        try testPlugin.invalidateDefaultChannelInstallMarker(marker: marker)
+        XCTAssertTrue(testPlugin.isRestoredReinstall(marker: marker, markerWasCreated: true))
+    }
+
     func testDefaultChannelInstallMarkerFailureIsHandledOnce() throws {
         let testPlugin = TestableCapacitorUpdaterPlugin()
         let markerDefaultsKey = "CapacitorUpdater.defaultChannelInstallMarkerCreated"

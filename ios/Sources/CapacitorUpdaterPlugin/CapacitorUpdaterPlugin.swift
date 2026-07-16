@@ -180,6 +180,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private let cleanupLock = NSLock()
     private var cleanupComplete = false
     private var cleanupThread: Thread?
+    private var defaultChannelCleanupMustRetry = false
     private var persistCustomId = false
     private var persistModifyUrl = false
     private var allowManualBundleError = false
@@ -353,9 +354,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 logger.info("Cleared persisted defaultChannel because reinstall persistence is disabled")
             } else {
                 logger.warn("Cannot durably clear persisted defaultChannel")
+                self.defaultChannelCleanupMustRetry = true
+                self.invalidateDefaultChannelInstallMarker()
             }
         }
-        if defaultChannelPersistenceDisabled && (!restoredReinstall || installMarkerCanBePrepared) {
+        if defaultChannelPersistenceDisabled && installMarkerCanBePrepared {
             self.prepareDefaultChannelInstallMarker()
         }
 
@@ -579,6 +582,24 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             .appendingPathComponent(defaultChannelInstallMarkerFilename)
     }
 
+    private func invalidateDefaultChannelInstallMarker() {
+        guard let marker = self.defaultChannelInstallMarker() else {
+            return
+        }
+        do {
+            try self.invalidateDefaultChannelInstallMarker(marker: marker)
+        } catch {
+            logger.warn("Cannot invalidate default channel install marker for cleanup retry: \(error.localizedDescription)")
+        }
+    }
+
+    func invalidateDefaultChannelInstallMarker(marker: URL) throws {
+        let fileManager = FileManager.default
+        if fileManager.fileExists(atPath: marker.path) {
+            try fileManager.removeItem(at: marker)
+        }
+    }
+
     func isRestoredReinstall() -> Bool {
         guard let marker = self.defaultChannelInstallMarker() else {
             return false
@@ -797,8 +818,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
                 self.implementation.cleanupDeltaCache(threadToCheck: Thread.current)
             }
-            UserDefaults.standard.set(self.currentBuildVersion, forKey: "LatestNativeBuildVersion")
-            UserDefaults.standard.synchronize()
+            if self.defaultChannelCleanupMustRetry {
+                self.logger.warn("Keeping the previous native build version so default channel cleanup retries")
+            } else {
+                UserDefaults.standard.set(self.currentBuildVersion, forKey: "LatestNativeBuildVersion")
+                UserDefaults.standard.synchronize()
+            }
         }
         cleanupThread?.start()
 

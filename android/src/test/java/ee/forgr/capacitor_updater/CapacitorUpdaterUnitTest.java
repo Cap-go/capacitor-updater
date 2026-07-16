@@ -1514,6 +1514,25 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testPersistCurrentNativeBuildVersionSkipsPendingDefaultChannelCleanup() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+
+            setPrivateField(plugin, "editor", editor);
+            setPrivateField(plugin, "currentBuildVersion", "8");
+            setPrivateField(plugin, "defaultChannelCleanupMustRetry", true);
+
+            plugin.persistCurrentNativeBuildVersion();
+
+            verify(editor, never()).putString(anyString(), anyString());
+            verify(editor, never()).apply();
+        }
+    }
+
+    @Test
     public void testReportNativeVersionStatsPersistsFirstSnapshotWithoutEvent() throws Exception {
         try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
             looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
@@ -3048,6 +3067,16 @@ public class CapacitorUpdaterUnitTest {
         verify(editor).remove("CapacitorUpdater.previewPreviousDefaultChannel");
         verify(editor).remove("CapacitorUpdater.previewPreviousDefaultChannelWasSet");
         verify(editor).commit();
+    }
+
+    @Test
+    public void defaultChannelCleanupFailurePreservesInstallMarkerRetry() throws IOException {
+        final File marker = File.createTempFile("capgo-install-marker", ".tmp");
+        marker.deleteOnExit();
+
+        assertTrue(marker.exists());
+        assertTrue(CapacitorUpdaterPlugin.invalidateDefaultChannelInstallMarker(marker));
+        assertTrue(CapacitorUpdaterPlugin.isRestoredReinstall(marker, true));
     }
 
     @Test

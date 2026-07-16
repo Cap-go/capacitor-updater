@@ -233,6 +233,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private final Object cleanupLock = new Object();
     private volatile boolean cleanupComplete = false;
     private volatile Thread cleanupThread = null;
+    private volatile boolean defaultChannelCleanupMustRetry = false;
 
     private int lastNotifiedStatPercent = 0;
 
@@ -800,9 +801,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 logger.info("Cleared persisted defaultChannel because reinstall persistence is disabled");
             } else {
                 logger.warn("Cannot durably clear persisted defaultChannel");
+                this.defaultChannelCleanupMustRetry = true;
+                if (!invalidateDefaultChannelInstallMarker(this.defaultChannelInstallMarker())) {
+                    logger.warn("Cannot invalidate default channel install marker for cleanup retry");
+                }
             }
         }
-        if (defaultChannelPersistenceDisabled && (!restoredReinstall || installMarkerCanBePrepared)) {
+        if (defaultChannelPersistenceDisabled && installMarkerCanBePrepared) {
             this.prepareDefaultChannelInstallMarker();
         }
 
@@ -1353,6 +1358,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return new File(this.getContext().getNoBackupFilesDir(), DEFAULT_CHANNEL_INSTALL_MARKER_FILE);
     }
 
+    static boolean invalidateDefaultChannelInstallMarker(final File marker) {
+        return !marker.exists() || marker.delete();
+    }
+
     private boolean isRestoredReinstall() {
         return isRestoredReinstall(
             this.defaultChannelInstallMarker(),
@@ -1393,7 +1402,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         if (!markerWasCreated) {
             editor.putBoolean(DEFAULT_CHANNEL_INSTALL_MARKER_PREF_KEY, true);
-            editor.commit();
+            editor.apply();
         }
     }
 
@@ -2341,8 +2350,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         }
                         this.implementation.cleanupDeltaCache(Thread.currentThread());
                     }
-                    this.editor.putString("LatestNativeBuildVersion", this.currentBuildVersion);
-                    this.editor.apply();
+                    this.persistCurrentNativeBuildVersion();
                 } catch (Exception e) {
                     logger.error("Error during cleanupObsoleteVersions: " + e.getMessage());
                 } finally {
@@ -2376,6 +2384,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     void persistCurrentNativeBuildVersion() {
+        if (this.defaultChannelCleanupMustRetry) {
+            logger.warn("Keeping the previous native build version so default channel cleanup retries");
+            return;
+        }
         this.editor.putString("LatestNativeBuildVersion", this.currentBuildVersion);
         this.editor.apply();
     }
