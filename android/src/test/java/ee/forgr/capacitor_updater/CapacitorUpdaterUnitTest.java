@@ -3014,22 +3014,27 @@ public class CapacitorUpdaterUnitTest {
 
     @Test
     public void defaultChannelCleanupRunsWhenPersistenceDisabledDuringNativeBuildCleanup() {
-        assertTrue(CapacitorUpdaterPlugin.shouldClearPersistedDefaultChannelOnNativeBuildChange(false, true, true));
+        assertTrue(CapacitorUpdaterPlugin.shouldClearPersistedDefaultChannel(false, true, true, false));
+    }
+
+    @Test
+    public void defaultChannelCleanupRunsForRestoredSameVersionReinstall() {
+        assertTrue(CapacitorUpdaterPlugin.shouldClearPersistedDefaultChannel(false, false, false, true));
     }
 
     @Test
     public void defaultChannelCleanupKeepsChannelWhenPersistenceEnabled() {
-        assertFalse(CapacitorUpdaterPlugin.shouldClearPersistedDefaultChannelOnNativeBuildChange(true, true, true));
+        assertFalse(CapacitorUpdaterPlugin.shouldClearPersistedDefaultChannel(true, true, true, true));
     }
 
     @Test
     public void defaultChannelCleanupKeepsChannelWhenNativeBuildDoesNotChange() {
-        assertFalse(CapacitorUpdaterPlugin.shouldClearPersistedDefaultChannelOnNativeBuildChange(false, true, false));
+        assertFalse(CapacitorUpdaterPlugin.shouldClearPersistedDefaultChannel(false, true, false, false));
     }
 
     @Test
     public void defaultChannelCleanupKeepsChannelWhenNativeCleanupIsDisabled() {
-        assertFalse(CapacitorUpdaterPlugin.shouldClearPersistedDefaultChannelOnNativeBuildChange(false, false, true));
+        assertFalse(CapacitorUpdaterPlugin.shouldClearPersistedDefaultChannel(false, false, true, false));
     }
 
     @Test

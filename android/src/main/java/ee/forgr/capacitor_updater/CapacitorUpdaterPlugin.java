@@ -50,6 +50,7 @@ import com.google.android.play.core.install.model.InstallStatus;
 import com.google.android.play.core.install.model.UpdateAvailability;
 import io.github.g00fy2.versioncompare.Version;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
@@ -103,6 +104,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final String CHANNEL_URL_PREF_KEY = "CapacitorUpdater.channelUrl";
     private static final String DEFAULT_CHANNEL_PREF_KEY = "CapacitorUpdater.defaultChannel";
     private static final String PREVIEW_SESSION_PREF_KEY = "CapacitorUpdater.previewSession";
+    private static final String DEFAULT_CHANNEL_INSTALL_MARKER_PREF_KEY = "CapacitorUpdater.defaultChannelInstallMarkerCreated";
+    private static final String DEFAULT_CHANNEL_INSTALL_MARKER_FILE = "CapacitorUpdater.defaultChannelInstallMarker";
     private static final String PREVIEW_PREVIOUS_SHAKE_MENU_PREF_KEY = "CapacitorUpdater.previewPreviousShakeMenu";
     private static final String PREVIEW_PREVIOUS_SHAKE_CHANNEL_SELECTOR_PREF_KEY = "CapacitorUpdater.previewPreviousShakeChannelSelector";
     private static final String PREVIEW_PREVIOUS_NEXT_BUNDLE_PREF_KEY = "CapacitorUpdater.previewPreviousNextBundle";
@@ -781,18 +784,18 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
         final boolean resetWhenUpdate = this.getConfig().getBoolean("resetWhenUpdate", true);
         final boolean nativeBuildVersionChanged = this.hasNativeBuildVersionChanged();
+        final boolean restoredReinstall = this.isRestoredReinstall();
         if (
-            shouldClearPersistedDefaultChannelOnNativeBuildChange(
+            shouldClearPersistedDefaultChannel(
                 Boolean.TRUE.equals(this.persistDefaultChannelOnReinstall),
                 resetWhenUpdate,
-                nativeBuildVersionChanged
+                nativeBuildVersionChanged,
+                restoredReinstall
             )
         ) {
             this.editor.remove(DEFAULT_CHANNEL_PREF_KEY);
             this.editor.apply();
-            logger.info(
-                "Cleared persisted defaultChannel during native build cleanup because persistDefaultChannelOnReinstall is disabled"
-            );
+            logger.info("Cleared persisted defaultChannel because reinstall persistence is disabled");
         }
 
         final String configDefaultChannel = this.getConfig().getString("defaultChannel", "");
@@ -1322,12 +1325,32 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return false;
     }
 
-    static boolean shouldClearPersistedDefaultChannelOnNativeBuildChange(
+    static boolean shouldClearPersistedDefaultChannel(
         final boolean persistDefaultChannelOnReinstall,
         final boolean resetWhenUpdate,
-        final boolean nativeBuildVersionChanged
+        final boolean nativeBuildVersionChanged,
+        final boolean restoredReinstall
     ) {
-        return !persistDefaultChannelOnReinstall && resetWhenUpdate && nativeBuildVersionChanged;
+        return !persistDefaultChannelOnReinstall && (restoredReinstall || (resetWhenUpdate && nativeBuildVersionChanged));
+    }
+
+    private boolean isRestoredReinstall() {
+        final File marker = new File(this.getContext().getNoBackupFilesDir(), DEFAULT_CHANNEL_INSTALL_MARKER_FILE);
+        final boolean markerWasCreated = this.prefs.getBoolean(DEFAULT_CHANNEL_INSTALL_MARKER_PREF_KEY, false);
+        final boolean restoredReinstall = markerWasCreated && !marker.exists();
+
+        if (!marker.exists()) {
+            try {
+                marker.createNewFile();
+            } catch (final IOException e) {
+                logger.warn("Cannot create default channel install marker: " + e.getMessage());
+            }
+        }
+        if (!markerWasCreated && marker.exists()) {
+            this.editor.putBoolean(DEFAULT_CHANNEL_INSTALL_MARKER_PREF_KEY, true);
+            this.editor.apply();
+        }
+        return restoredReinstall;
     }
 
     private boolean hasNativeBuildVersionChanged() {

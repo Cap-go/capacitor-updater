@@ -353,9 +353,9 @@ declare module '@capacitor/cli' {
        * {@link CapacitorUpdaterPlugin.getChannel} when app data is restored into a new app install.
        *
        * `setChannel()` and a successful `getChannel()` still persist the selected channel across app
-       * restarts. When this option is `false`, native startup clears that persisted channel during
-       * native build cleanup, so Android backup-restored shared preferences do not carry a previous
-       * install's channel into a new native app version.
+       * restarts. When this option is `false`, native startup clears that persisted channel when it
+       * detects app data restored into a new installation. Native build cleanup also clears it when
+       * `resetWhenUpdate` is enabled.
        *
        * Only available for Android and iOS.
        *

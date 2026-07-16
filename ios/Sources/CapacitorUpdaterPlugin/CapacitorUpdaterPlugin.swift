@@ -124,6 +124,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private let previewSourceDefaultsKey = "CapacitorUpdater.previewSource"
     private let previewSessionsDefaultsKey = "CapacitorUpdater.previewSessions"
     private let previewSessionAlertPendingDefaultsKey = "CapacitorUpdater.previewSessionAlertPending"
+    private let defaultChannelInstallMarkerDefaultsKey = "CapacitorUpdater.defaultChannelInstallMarkerCreated"
+    private let defaultChannelInstallMarkerFilename = "CapacitorUpdater.defaultChannelInstallMarker"
     private let previewDeepLinkScheme = "capgo"
     private let previewDeepLinkRootComponent = "preview"
     private let previewDeepLinkChannelComponent = "channel"
@@ -338,13 +340,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         let nativeBuildVersionChanged = self.hasNativeBuildVersionChanged()
-        if shouldClearPersistedDefaultChannelOnNativeBuildChange(
+        let restoredReinstall = self.isRestoredReinstall()
+        if shouldClearPersistedDefaultChannel(
             nativeBuildVersionChanged: nativeBuildVersionChanged,
-            resetWhenUpdate: resetWhenUpdate
+            resetWhenUpdate: resetWhenUpdate,
+            restoredReinstall: restoredReinstall
         ) {
             UserDefaults.standard.removeObject(forKey: defaultChannelDefaultsKey)
             UserDefaults.standard.synchronize()
-            logger.info("Cleared persisted defaultChannel during native build cleanup because persistDefaultChannelOnReinstall is disabled")
+            logger.info("Cleared persisted defaultChannel because reinstall persistence is disabled")
         }
 
         let configDefaultChannel = getConfig().getString("defaultChannel", "")!
@@ -547,11 +551,40 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         UserDefaults.standard.string(forKey: "LatestNativeBuildVersion") ?? UserDefaults.standard.string(forKey: "LatestVersionNative") ?? "0"
     }
 
-    func shouldClearPersistedDefaultChannelOnNativeBuildChange(
+    func shouldClearPersistedDefaultChannel(
         nativeBuildVersionChanged: Bool,
-        resetWhenUpdate: Bool
+        resetWhenUpdate: Bool,
+        restoredReinstall: Bool
     ) -> Bool {
-        !persistDefaultChannelOnReinstall && resetWhenUpdate && nativeBuildVersionChanged
+        !persistDefaultChannelOnReinstall && (restoredReinstall || (resetWhenUpdate && nativeBuildVersionChanged))
+    }
+
+    func isRestoredReinstall() -> Bool {
+        let markerWasCreated = UserDefaults.standard.bool(forKey: defaultChannelInstallMarkerDefaultsKey)
+        let fileManager = FileManager.default
+        guard let applicationSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            return false
+        }
+        let marker = applicationSupport.appendingPathComponent(defaultChannelInstallMarkerFilename)
+        let markerExists = fileManager.fileExists(atPath: marker.path)
+
+        if !markerExists {
+            do {
+                try fileManager.createDirectory(at: applicationSupport, withIntermediateDirectories: true)
+                try Data().write(to: marker, options: .atomic)
+                var resourceValues = URLResourceValues()
+                resourceValues.isExcludedFromBackup = true
+                var mutableMarker = marker
+                try mutableMarker.setResourceValues(resourceValues)
+            } catch {
+                try? fileManager.removeItem(at: marker)
+                logger.warn("Cannot create default channel install marker: \(error.localizedDescription)")
+            }
+        }
+        if !markerWasCreated && fileManager.fileExists(atPath: marker.path) {
+            UserDefaults.standard.set(true, forKey: defaultChannelInstallMarkerDefaultsKey)
+        }
+        return markerWasCreated && !markerExists
     }
 
     func hasNativeBuildVersionChanged() -> Bool {

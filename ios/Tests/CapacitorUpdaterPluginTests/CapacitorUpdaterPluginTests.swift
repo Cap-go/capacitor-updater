@@ -896,9 +896,23 @@ class CapacitorUpdaterTests: XCTestCase {
         testPlugin.persistDefaultChannelOnReinstall = false
 
         XCTAssertTrue(
-            testPlugin.shouldClearPersistedDefaultChannelOnNativeBuildChange(
+            testPlugin.shouldClearPersistedDefaultChannel(
                 nativeBuildVersionChanged: true,
-                resetWhenUpdate: true
+                resetWhenUpdate: true,
+                restoredReinstall: false
+            )
+        )
+    }
+
+    func testDefaultChannelCleanupRunsForRestoredSameVersionReinstall() {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.persistDefaultChannelOnReinstall = false
+
+        XCTAssertTrue(
+            testPlugin.shouldClearPersistedDefaultChannel(
+                nativeBuildVersionChanged: false,
+                resetWhenUpdate: false,
+                restoredReinstall: true
             )
         )
     }
@@ -908,9 +922,10 @@ class CapacitorUpdaterTests: XCTestCase {
         testPlugin.persistDefaultChannelOnReinstall = true
 
         XCTAssertFalse(
-            testPlugin.shouldClearPersistedDefaultChannelOnNativeBuildChange(
+            testPlugin.shouldClearPersistedDefaultChannel(
                 nativeBuildVersionChanged: true,
-                resetWhenUpdate: true
+                resetWhenUpdate: true,
+                restoredReinstall: true
             )
         )
     }
@@ -920,9 +935,10 @@ class CapacitorUpdaterTests: XCTestCase {
         testPlugin.persistDefaultChannelOnReinstall = false
 
         XCTAssertFalse(
-            testPlugin.shouldClearPersistedDefaultChannelOnNativeBuildChange(
+            testPlugin.shouldClearPersistedDefaultChannel(
                 nativeBuildVersionChanged: false,
-                resetWhenUpdate: true
+                resetWhenUpdate: true,
+                restoredReinstall: false
             )
         )
     }
@@ -932,9 +948,10 @@ class CapacitorUpdaterTests: XCTestCase {
         testPlugin.persistDefaultChannelOnReinstall = false
 
         XCTAssertFalse(
-            testPlugin.shouldClearPersistedDefaultChannelOnNativeBuildChange(
+            testPlugin.shouldClearPersistedDefaultChannel(
                 nativeBuildVersionChanged: true,
-                resetWhenUpdate: false
+                resetWhenUpdate: false,
+                restoredReinstall: false
             )
         )
     }
