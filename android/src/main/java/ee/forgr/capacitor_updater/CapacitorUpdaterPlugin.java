@@ -2232,49 +2232,49 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.cleanupLatch = latch;
         cleanupThread = startNewThread(() -> {
             try {
-            synchronized (cleanupLock) {
-                try {
-                    final String previous = this.getStoredNativeBuildVersion();
-                    final boolean nativeVersionChanged = !"".equals(previous) && !Objects.equals(this.currentBuildVersion, previous);
-                    if (resetWhenUpdate && nativeVersionChanged) {
-                        logger.info("New native build version detected: " + this.currentBuildVersion);
-                        this.implementation.reset(true);
-                        final List<BundleInfo> installed = this.implementation.list(false);
-                        for (final BundleInfo bundle : installed) {
-                            try {
-                                logger.info("Deleting obsolete bundle: " + bundle.getId());
-                                this.implementation.delete(bundle.getId());
-                            } catch (final Exception e) {
-                                logger.error("Failed to delete: " + bundle.getId() + " " + e.getMessage());
+                synchronized (cleanupLock) {
+                    try {
+                        final String previous = this.getStoredNativeBuildVersion();
+                        final boolean nativeVersionChanged = !"".equals(previous) && !Objects.equals(this.currentBuildVersion, previous);
+                        if (resetWhenUpdate && nativeVersionChanged) {
+                            logger.info("New native build version detected: " + this.currentBuildVersion);
+                            this.implementation.reset(true);
+                            final List<BundleInfo> installed = this.implementation.list(false);
+                            for (final BundleInfo bundle : installed) {
+                                try {
+                                    logger.info("Deleting obsolete bundle: " + bundle.getId());
+                                    this.implementation.delete(bundle.getId());
+                                } catch (final Exception e) {
+                                    logger.error("Failed to delete: " + bundle.getId() + " " + e.getMessage());
+                                }
+                                try {
+                                    Thread.sleep(75L);
+                                } catch (final InterruptedException ie) {
+                                    Thread.currentThread().interrupt();
+                                    return;
+                                }
                             }
-                            try {
-                                Thread.sleep(75L);
-                            } catch (final InterruptedException ie) {
-                                Thread.currentThread().interrupt();
-                                return;
-                            }
+                            this.implementation.cleanupDeltaCache();
                         }
-                        this.implementation.cleanupDeltaCache();
+
+                        // Resume any DELETING leftovers from prior kills, one-by-one.
+                        this.implementation.drainPendingDeletes();
+
+                        // Always sweep orphan folders so incomplete prior cleanups (or failed deletes)
+                        // cannot leave hundreds of MB behind across launches.
+                        final Set<String> allowedIds = this.implementation.allowedBundleIdsForCleanup();
+                        this.implementation.cleanupDownloadDirectories(allowedIds);
+                        this.implementation.cleanupOrphanedTempFolders(null);
+
+                        this.editor.putString("LatestNativeBuildVersion", this.currentBuildVersion);
+                        this.editor.apply();
+                    } catch (Exception e) {
+                        logger.error("Error during cleanupObsoleteVersions: " + e.getMessage());
+                    } finally {
+                        cleanupComplete = true;
+                        logger.info("Cleanup complete");
                     }
-
-                    // Resume any DELETING leftovers from prior kills, one-by-one.
-                    this.implementation.drainPendingDeletes();
-
-                    // Always sweep orphan folders so incomplete prior cleanups (or failed deletes)
-                    // cannot leave hundreds of MB behind across launches.
-                    final Set<String> allowedIds = this.implementation.allowedBundleIdsForCleanup();
-                    this.implementation.cleanupDownloadDirectories(allowedIds);
-                    this.implementation.cleanupOrphanedTempFolders(null);
-
-                    this.editor.putString("LatestNativeBuildVersion", this.currentBuildVersion);
-                    this.editor.apply();
-                } catch (Exception e) {
-                    logger.error("Error during cleanupObsoleteVersions: " + e.getMessage());
-                } finally {
-                    cleanupComplete = true;
-                    logger.info("Cleanup complete");
                 }
-            }
             } finally {
                 latch.countDown();
             }
