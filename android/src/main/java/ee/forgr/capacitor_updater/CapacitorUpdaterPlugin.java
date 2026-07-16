@@ -784,7 +784,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
         final boolean resetWhenUpdate = this.getConfig().getBoolean("resetWhenUpdate", true);
         final boolean nativeBuildVersionChanged = this.hasNativeBuildVersionChanged();
-        final boolean restoredReinstall = this.isRestoredReinstall();
+        final boolean defaultChannelPersistenceDisabled = !Boolean.TRUE.equals(this.persistDefaultChannelOnReinstall);
+        final boolean restoredReinstall = defaultChannelPersistenceDisabled && this.isRestoredReinstall();
+        boolean installMarkerCanBePrepared = true;
         if (
             shouldClearPersistedDefaultChannel(
                 Boolean.TRUE.equals(this.persistDefaultChannelOnReinstall),
@@ -793,9 +795,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 restoredReinstall
             )
         ) {
-            this.editor.remove(DEFAULT_CHANNEL_PREF_KEY);
-            this.editor.apply();
-            logger.info("Cleared persisted defaultChannel because reinstall persistence is disabled");
+            installMarkerCanBePrepared = clearPersistedDefaultChannel(this.editor);
+            if (installMarkerCanBePrepared) {
+                logger.info("Cleared persisted defaultChannel because reinstall persistence is disabled");
+            } else {
+                logger.warn("Cannot durably clear persisted defaultChannel");
+            }
+        }
+        if (defaultChannelPersistenceDisabled && (!restoredReinstall || installMarkerCanBePrepared)) {
+            this.prepareDefaultChannelInstallMarker();
         }
 
         final String configDefaultChannel = this.getConfig().getString("defaultChannel", "");
@@ -1334,23 +1342,59 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return !persistDefaultChannelOnReinstall && (restoredReinstall || (resetWhenUpdate && nativeBuildVersionChanged));
     }
 
-    private boolean isRestoredReinstall() {
-        final File marker = new File(this.getContext().getNoBackupFilesDir(), DEFAULT_CHANNEL_INSTALL_MARKER_FILE);
-        final boolean markerWasCreated = this.prefs.getBoolean(DEFAULT_CHANNEL_INSTALL_MARKER_PREF_KEY, false);
-        final boolean restoredReinstall = markerWasCreated && !marker.exists();
+    static boolean clearPersistedDefaultChannel(final SharedPreferences.Editor editor) {
+        editor.remove(DEFAULT_CHANNEL_PREF_KEY);
+        editor.remove(PREVIEW_PREVIOUS_DEFAULT_CHANNEL_PREF_KEY);
+        editor.remove(PREVIEW_PREVIOUS_DEFAULT_CHANNEL_WAS_SET_PREF_KEY);
+        return editor.commit();
+    }
 
+    private File defaultChannelInstallMarker() {
+        return new File(this.getContext().getNoBackupFilesDir(), DEFAULT_CHANNEL_INSTALL_MARKER_FILE);
+    }
+
+    private boolean isRestoredReinstall() {
+        return isRestoredReinstall(
+            this.defaultChannelInstallMarker(),
+            this.prefs.getBoolean(DEFAULT_CHANNEL_INSTALL_MARKER_PREF_KEY, false)
+        );
+    }
+
+    static boolean isRestoredReinstall(final File marker, final boolean markerWasCreated) {
+        return markerWasCreated && !marker.exists();
+    }
+
+    private void prepareDefaultChannelInstallMarker() {
+        prepareDefaultChannelInstallMarker(
+            this.defaultChannelInstallMarker(),
+            this.prefs.getBoolean(DEFAULT_CHANNEL_INSTALL_MARKER_PREF_KEY, false),
+            this.editor,
+            this.logger
+        );
+    }
+
+    static void prepareDefaultChannelInstallMarker(
+        final File marker,
+        final boolean markerWasCreated,
+        final SharedPreferences.Editor editor,
+        final Logger logger
+    ) {
         if (!marker.exists()) {
             try {
-                marker.createNewFile();
+                if (!marker.createNewFile() && !marker.exists()) {
+                    throw new IOException("Marker file was not created");
+                }
             } catch (final IOException e) {
                 logger.warn("Cannot create default channel install marker: " + e.getMessage());
+                editor.remove(DEFAULT_CHANNEL_INSTALL_MARKER_PREF_KEY);
+                editor.commit();
+                return;
             }
         }
-        if (!markerWasCreated && marker.exists()) {
-            this.editor.putBoolean(DEFAULT_CHANNEL_INSTALL_MARKER_PREF_KEY, true);
-            this.editor.apply();
+        if (!markerWasCreated) {
+            editor.putBoolean(DEFAULT_CHANNEL_INSTALL_MARKER_PREF_KEY, true);
+            editor.commit();
         }
-        return restoredReinstall;
     }
 
     private boolean hasNativeBuildVersionChanged() {

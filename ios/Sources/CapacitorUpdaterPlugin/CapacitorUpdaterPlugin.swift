@@ -340,15 +340,23 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         let nativeBuildVersionChanged = self.hasNativeBuildVersionChanged()
-        let restoredReinstall = self.isRestoredReinstall()
+        let defaultChannelPersistenceDisabled = !persistDefaultChannelOnReinstall
+        let restoredReinstall = defaultChannelPersistenceDisabled && self.isRestoredReinstall()
+        var installMarkerCanBePrepared = true
         if shouldClearPersistedDefaultChannel(
             nativeBuildVersionChanged: nativeBuildVersionChanged,
             resetWhenUpdate: resetWhenUpdate,
             restoredReinstall: restoredReinstall
         ) {
-            UserDefaults.standard.removeObject(forKey: defaultChannelDefaultsKey)
-            UserDefaults.standard.synchronize()
-            logger.info("Cleared persisted defaultChannel because reinstall persistence is disabled")
+            installMarkerCanBePrepared = clearPersistedDefaultChannel()
+            if installMarkerCanBePrepared {
+                logger.info("Cleared persisted defaultChannel because reinstall persistence is disabled")
+            } else {
+                logger.warn("Cannot durably clear persisted defaultChannel")
+            }
+        }
+        if defaultChannelPersistenceDisabled && (!restoredReinstall || installMarkerCanBePrepared) {
+            self.prepareDefaultChannelInstallMarker()
         }
 
         let configDefaultChannel = getConfig().getString("defaultChannel", "")!
@@ -559,32 +567,66 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         !persistDefaultChannelOnReinstall && (restoredReinstall || (resetWhenUpdate && nativeBuildVersionChanged))
     }
 
+    func clearPersistedDefaultChannel() -> Bool {
+        UserDefaults.standard.removeObject(forKey: defaultChannelDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: previewPreviousDefaultChannelDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: previewPreviousDefaultChannelWasSetDefaultsKey)
+        return UserDefaults.standard.synchronize()
+    }
+
+    private func defaultChannelInstallMarker() -> URL? {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent(defaultChannelInstallMarkerFilename)
+    }
+
     func isRestoredReinstall() -> Bool {
-        let markerWasCreated = UserDefaults.standard.bool(forKey: defaultChannelInstallMarkerDefaultsKey)
-        let fileManager = FileManager.default
-        guard let applicationSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+        guard let marker = self.defaultChannelInstallMarker() else {
             return false
         }
-        let marker = applicationSupport.appendingPathComponent(defaultChannelInstallMarkerFilename)
-        let markerExists = fileManager.fileExists(atPath: marker.path)
+        return self.isRestoredReinstall(
+            marker: marker,
+            markerWasCreated: UserDefaults.standard.bool(forKey: defaultChannelInstallMarkerDefaultsKey)
+        )
+    }
 
-        if !markerExists {
-            do {
-                try fileManager.createDirectory(at: applicationSupport, withIntermediateDirectories: true)
+    func isRestoredReinstall(marker: URL, markerWasCreated: Bool) -> Bool {
+        markerWasCreated && !FileManager.default.fileExists(atPath: marker.path)
+    }
+
+    private func prepareDefaultChannelInstallMarker() {
+        guard let marker = self.defaultChannelInstallMarker() else {
+            return
+        }
+        self.prepareDefaultChannelInstallMarker(
+            marker: marker,
+            markerWasCreated: UserDefaults.standard.bool(forKey: defaultChannelInstallMarkerDefaultsKey)
+        )
+    }
+
+    func prepareDefaultChannelInstallMarker(marker: URL, markerWasCreated: Bool) {
+        let fileManager = FileManager.default
+        do {
+            if !fileManager.fileExists(atPath: marker.path) {
+                try fileManager.createDirectory(at: marker.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try Data().write(to: marker, options: .atomic)
+            }
+            let currentResourceValues = try marker.resourceValues(forKeys: [.isExcludedFromBackupKey])
+            if currentResourceValues.isExcludedFromBackup != true {
                 var resourceValues = URLResourceValues()
                 resourceValues.isExcludedFromBackup = true
                 var mutableMarker = marker
                 try mutableMarker.setResourceValues(resourceValues)
-            } catch {
-                try? fileManager.removeItem(at: marker)
-                logger.warn("Cannot create default channel install marker: \(error.localizedDescription)")
             }
+            if !markerWasCreated {
+                UserDefaults.standard.set(true, forKey: defaultChannelInstallMarkerDefaultsKey)
+                UserDefaults.standard.synchronize()
+            }
+        } catch {
+            try? fileManager.removeItem(at: marker)
+            UserDefaults.standard.set(false, forKey: defaultChannelInstallMarkerDefaultsKey)
+            UserDefaults.standard.synchronize()
+            logger.warn("Cannot prepare default channel install marker: \(error.localizedDescription)")
         }
-        if !markerWasCreated && fileManager.fileExists(atPath: marker.path) {
-            UserDefaults.standard.set(true, forKey: defaultChannelInstallMarkerDefaultsKey)
-        }
-        return markerWasCreated && !markerExists
     }
 
     func hasNativeBuildVersionChanged() -> Bool {

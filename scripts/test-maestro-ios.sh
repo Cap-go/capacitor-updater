@@ -449,16 +449,14 @@ if [[ ! -d "$APP_PATH" ]]; then
 fi
 
 xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
-if [[ "$ASSUME_CLEAN_INSTALL" != "1" ]]; then
-  if run_with_timeout "$SIMULATOR_BOOT_TIMEOUT_SECONDS" xcrun simctl bootstatus "$SIMULATOR_ID" -b; then
-    :
-  else
-    status=$?
-    if [[ $status -eq 124 ]]; then
-      echo "Simulator failed to boot within ${SIMULATOR_BOOT_TIMEOUT_SECONDS} seconds." >&2
-    fi
-    exit "$status"
+if run_with_timeout "$SIMULATOR_BOOT_TIMEOUT_SECONDS" xcrun simctl bootstatus "$SIMULATOR_ID" -b; then
+  :
+else
+  status=$?
+  if [[ $status -eq 124 ]]; then
+    echo "Simulator failed to boot within ${SIMULATOR_BOOT_TIMEOUT_SECONDS} seconds." >&2
   fi
+  exit "$status"
 fi
 
 install_example_app

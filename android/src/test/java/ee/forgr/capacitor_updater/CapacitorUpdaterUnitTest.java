@@ -3038,6 +3038,36 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void defaultChannelCleanupClearsRestoredPreviewSnapshot() {
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+        when(editor.commit()).thenReturn(true);
+
+        assertTrue(CapacitorUpdaterPlugin.clearPersistedDefaultChannel(editor));
+
+        verify(editor).remove("CapacitorUpdater.defaultChannel");
+        verify(editor).remove("CapacitorUpdater.previewPreviousDefaultChannel");
+        verify(editor).remove("CapacitorUpdater.previewPreviousDefaultChannelWasSet");
+        verify(editor).commit();
+    }
+
+    @Test
+    public void defaultChannelInstallMarkerFailureIsHandledOnce() throws IOException {
+        final File nonDirectory = File.createTempFile("capgo-install-marker-parent", ".tmp");
+        nonDirectory.deleteOnExit();
+        final File marker = new File(nonDirectory, "marker");
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+        final Logger logger = mock(Logger.class);
+        when(editor.commit()).thenReturn(true);
+
+        assertTrue(CapacitorUpdaterPlugin.isRestoredReinstall(marker, true));
+        CapacitorUpdaterPlugin.prepareDefaultChannelInstallMarker(marker, true, editor, logger);
+
+        verify(editor).remove("CapacitorUpdater.defaultChannelInstallMarkerCreated");
+        verify(editor).commit();
+        assertFalse(CapacitorUpdaterPlugin.isRestoredReinstall(marker, false));
+    }
+
+    @Test
     public void persistDefaultChannelFromResponseIgnoresBuiltinVersionName() {
         final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
         final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);

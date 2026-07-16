@@ -956,6 +956,71 @@ class CapacitorUpdaterTests: XCTestCase {
         )
     }
 
+    func testDefaultChannelCleanupClearsRestoredPreviewSnapshot() {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        let defaultChannelKey = "CapacitorUpdater.defaultChannel"
+        let previewChannelKey = "CapacitorUpdater.previewPreviousDefaultChannel"
+        let previewChannelWasSetKey = "CapacitorUpdater.previewPreviousDefaultChannelWasSet"
+        defer {
+            UserDefaults.standard.removeObject(forKey: defaultChannelKey)
+            UserDefaults.standard.removeObject(forKey: previewChannelKey)
+            UserDefaults.standard.removeObject(forKey: previewChannelWasSetKey)
+        }
+        UserDefaults.standard.set("stale", forKey: defaultChannelKey)
+        UserDefaults.standard.set("stale", forKey: previewChannelKey)
+        UserDefaults.standard.set(true, forKey: previewChannelWasSetKey)
+
+        XCTAssertTrue(testPlugin.clearPersistedDefaultChannel())
+
+        XCTAssertNil(UserDefaults.standard.object(forKey: defaultChannelKey))
+        XCTAssertNil(UserDefaults.standard.object(forKey: previewChannelKey))
+        XCTAssertNil(UserDefaults.standard.object(forKey: previewChannelWasSetKey))
+    }
+
+    func testDefaultChannelInstallMarkerFailureIsHandledOnce() throws {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        let markerDefaultsKey = "CapacitorUpdater.defaultChannelInstallMarkerCreated"
+        let nonDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)")
+        let marker = nonDirectory.appendingPathComponent("marker")
+        try Data().write(to: nonDirectory)
+        defer {
+            try? FileManager.default.removeItem(at: nonDirectory)
+            UserDefaults.standard.removeObject(forKey: markerDefaultsKey)
+        }
+        UserDefaults.standard.set(true, forKey: markerDefaultsKey)
+
+        XCTAssertTrue(testPlugin.isRestoredReinstall(marker: marker, markerWasCreated: true))
+        testPlugin.prepareDefaultChannelInstallMarker(marker: marker, markerWasCreated: true)
+
+        XCTAssertFalse(UserDefaults.standard.bool(forKey: markerDefaultsKey))
+        XCTAssertFalse(testPlugin.isRestoredReinstall(marker: marker, markerWasCreated: false))
+    }
+
+    func testDefaultChannelInstallMarkerReappliesBackupExclusion() throws {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        let markerDefaultsKey = "CapacitorUpdater.defaultChannelInstallMarkerCreated"
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)", isDirectory: true)
+        let marker = directory.appendingPathComponent("marker")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data().write(to: marker)
+        var markerResourceValues = URLResourceValues()
+        markerResourceValues.isExcludedFromBackup = false
+        var mutableMarker = marker
+        try mutableMarker.setResourceValues(markerResourceValues)
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            UserDefaults.standard.removeObject(forKey: markerDefaultsKey)
+        }
+        UserDefaults.standard.set(true, forKey: markerDefaultsKey)
+
+        testPlugin.prepareDefaultChannelInstallMarker(marker: marker, markerWasCreated: true)
+
+        let resourceValues = try marker.resourceValues(forKeys: [.isExcludedFromBackupKey])
+        XCTAssertEqual(resourceValues.isExcludedFromBackup, true)
+    }
+
     func testGetChannelPersistsServerChannelAsDefaultChannel() throws {
         let updater = ChannelRequestCapgoUpdater()
         updater.setLogger(Logger(withTag: "TestLogger"))
