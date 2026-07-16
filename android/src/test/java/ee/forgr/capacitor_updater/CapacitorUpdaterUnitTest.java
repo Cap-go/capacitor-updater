@@ -1519,6 +1519,7 @@ public class CapacitorUpdaterUnitTest {
             looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
 
             final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            plugin.setLoggerForTesting(mock(Logger.class));
             final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
 
             setPrivateField(plugin, "editor", editor);
