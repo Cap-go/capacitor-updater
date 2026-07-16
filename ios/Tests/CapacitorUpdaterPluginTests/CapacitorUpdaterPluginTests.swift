@@ -34,14 +34,29 @@ private class TestableCapacitorUpdaterPlugin: CapacitorUpdaterPlugin {
 }
 
 private final class RealSendReadyCapacitorUpdaterPlugin: CapacitorUpdaterPlugin {
-    private(set) var notifiedEventNames: [String] = []
-    private(set) var notifiedEventPayloads: [String: [String: Any]] = [:]
+    private let eventLock = NSLock()
+    private var _notifiedEventNames: [String] = []
+    private var _notifiedEventPayloads: [String: [String: Any]] = [:]
+
+    var notifiedEventNames: [String] {
+        eventLock.lock()
+        defer { eventLock.unlock() }
+        return _notifiedEventNames
+    }
+
+    var notifiedEventPayloads: [String: [String: Any]] {
+        eventLock.lock()
+        defer { eventLock.unlock() }
+        return _notifiedEventPayloads
+    }
 
     override func notifyListeners(_ eventName: String, data: [String: Any]?, retainUntilConsumed _: Bool) {
-        notifiedEventNames.append(eventName)
+        eventLock.lock()
+        _notifiedEventNames.append(eventName)
         if let data {
-            notifiedEventPayloads[eventName] = data
+            _notifiedEventPayloads[eventName] = data
         }
+        eventLock.unlock()
     }
 
     override func endBackGroundTask() {
