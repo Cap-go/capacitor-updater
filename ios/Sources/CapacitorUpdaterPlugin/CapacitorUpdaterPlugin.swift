@@ -194,6 +194,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var isLeavingPreviewForIncomingLink = false
     private var previewTransitionClearWorkItem: DispatchWorkItem?
     let semaphoreReady = DispatchSemaphore(value: 0)
+    private var appReadyWaitArmed = false
+    private let appReadyWaitLock = NSLock()
 
     private var delayUpdateUtils: DelayUpdateUtils!
 
@@ -522,6 +524,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func semaphoreUp() {
+        appReadyWaitLock.lock()
+        appReadyWaitArmed = true
+        appReadyWaitLock.unlock()
         DispatchQueue.global().async {
             self.semaphoreWait(waitTime: 0)
         }
@@ -2881,7 +2886,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     func sendReadyToJs(current: BundleInfo, msg: String) {
         logger.info("sendReadyToJs")
         DispatchQueue.global().async {
-            self.semaphoreWait(waitTime: self.appReadyTimeout)
+            // Only wait after load()/reload() armed the semaphore. Foreground resumes
+            // with autoUpdate disabled call sendReadyToJs again without a fresh
+            // notifyAppReady(), so waiting there always timed out after appReadyTimeout.
+            if self.consumeAppReadyWaitArm() {
+                self.semaphoreWait(waitTime: self.appReadyTimeout)
+            }
             self.notifyListeners("appReady", data: ["bundle": current.toJSON(), "status": msg], retainUntilConsumed: true)
 
             // Auto hide splashscreen if enabled
@@ -2891,6 +2901,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             self.hidePreviewTransitionLoader(reason: "app-ready")
         }
+    }
+
+    private func consumeAppReadyWaitArm() -> Bool {
+        appReadyWaitLock.lock()
+        let shouldWait = appReadyWaitArmed
+        appReadyWaitArmed = false
+        appReadyWaitLock.unlock()
+        return shouldWait
     }
 
     private func hideSplashscreen() {
@@ -3504,6 +3522,22 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     func setCurrentBuildVersionForTesting(_ currentBuildVersion: String) {
         self.currentBuildVersion = currentBuildVersion
+    }
+
+    func setAppReadyTimeoutForTesting(_ timeout: Int) {
+        self.appReadyTimeout = timeout
+    }
+
+    func armAppReadyWaitForTesting() {
+        appReadyWaitLock.lock()
+        appReadyWaitArmed = true
+        appReadyWaitLock.unlock()
+    }
+
+    var isAppReadyWaitArmedForTesting: Bool {
+        appReadyWaitLock.lock()
+        defer { appReadyWaitLock.unlock() }
+        return appReadyWaitArmed
     }
 
     func shouldUseDirectUpdateForTesting() -> Bool {
