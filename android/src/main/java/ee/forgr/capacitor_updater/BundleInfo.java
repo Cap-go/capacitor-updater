@@ -95,11 +95,11 @@ public class BundleInfo {
     }
 
     public boolean isDownloaded() {
-        return (!this.isBuiltin() && this.downloaded != null && !this.downloaded.isEmpty() && !this.isDeleted());
+        return !this.isBuiltin() && this.downloaded != null && !this.downloaded.isEmpty() && !this.isDeleted();
     }
 
     public String getDownloaded() {
-        return this.isBuiltin() ? DOWNLOADED_BUILTIN : (this.downloaded != null ? this.downloaded : "");
+        return this.isBuiltin() ? DOWNLOADED_BUILTIN : this.downloaded != null ? this.downloaded : "";
     }
 
     public BundleInfo setDownloaded(Date downloaded) {
@@ -107,7 +107,7 @@ public class BundleInfo {
     }
 
     public String getChecksum() {
-        return this.isBuiltin() ? "" : (this.checksum != null ? this.checksum : "");
+        return this.isBuiltin() ? "" : this.checksum != null ? this.checksum : "";
     }
 
     public BundleInfo setChecksum(String checksum) {

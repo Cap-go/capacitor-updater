@@ -273,7 +273,7 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
         String name = preview.optString("name", "");
         JSObject bundle = preview.getJSObject("bundle");
         String version = bundle == null ? "" : bundle.optString("version", "");
-        String label = !name.isEmpty() ? name : (!version.isEmpty() ? version : preview.optString("id", "Preview"));
+        String label = !name.isEmpty() ? name : !version.isEmpty() ? version : preview.optString("id", "Preview");
         if (preview.optBoolean("isActive", false)) {
             label += " (current)";
         }
@@ -763,10 +763,10 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
                                     latestMessage != null && !latestMessage.isEmpty()
                                         ? latestMessage
                                         : latestError != null && !latestError.isEmpty()
-                                            ? latestError
-                                            : latestKind != null && !latestKind.isEmpty()
-                                                ? latestKind
-                                                : "server did not provide a message";
+                                          ? latestError
+                                          : latestKind != null && !latestKind.isEmpty()
+                                            ? latestKind
+                                            : "server did not provide a message";
 
                                 // Handle update errors first (before "no new version" check)
                                 if (
