@@ -397,8 +397,9 @@ private final class PendingReloadFinalizeCapgoUpdater: CapgoUpdater {
         bundleInfos[id!]!
     }
 
-    override func saveBundleInfo(id: String, bundle: BundleInfo?) {
+    override func saveBundleInfo(id: String, bundle: BundleInfo?) -> Bool {
         bundleInfos[id] = bundle
+        return true
     }
 
     override func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {
