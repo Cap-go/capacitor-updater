@@ -354,8 +354,9 @@ declare module '@capacitor/cli' {
        *
        * `setChannel()` and a successful `getChannel()` still persist the selected channel across app
        * restarts. When this option is `false`, native startup clears that persisted channel when it
-       * detects app data restored into a new installation. Native build cleanup also clears it when
-       * `resetWhenUpdate` is enabled.
+       * detects app data restored into a new installation. Native build cleanup clears the persisted
+       * channel only when `persistDefaultChannelOnReinstall` is `false`, `resetWhenUpdate` is `true`,
+       * and the native build version has changed.
        *
        * Only available for Android and iOS.
        *

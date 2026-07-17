@@ -16,6 +16,13 @@ import Version
  */
 @objc(CapacitorUpdaterPlugin)
 public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
+    enum DefaultChannelPreviewSnapshot: Equatable {
+        case missing
+        case invalidated
+        case snapshot(String?)
+        case unreadable
+    }
+
     lazy var logger: Logger = {
         // Default to true for OS logging. In test environments without a bridge,
         // this will default to true. In production, it reads from config.
@@ -126,6 +133,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private let previewSessionAlertPendingDefaultsKey = "CapacitorUpdater.previewSessionAlertPending"
     private let defaultChannelInstallMarkerDefaultsKey = "CapacitorUpdater.defaultChannelInstallMarkerCreated"
     private let defaultChannelInstallMarkerFilename = "CapacitorUpdater.defaultChannelInstallMarker"
+    private let defaultChannelStateFilename = "CapacitorUpdater.defaultChannelState"
+    private let defaultChannelPreviewSnapshotFilename = "CapacitorUpdater.defaultChannelPreviewSnapshot"
     private let previewDeepLinkScheme = "capgo"
     private let previewDeepLinkRootComponent = "preview"
     private let previewDeepLinkChannelComponent = "channel"
@@ -178,6 +187,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     // Lock to ensure cleanup completes before downloads start
     private let cleanupLock = NSLock()
+    private let defaultChannelStateLock = NSLock()
     private var cleanupComplete = false
     private var cleanupThread: Thread?
     private var defaultChannelCleanupMustRetry = false
@@ -361,14 +371,36 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if defaultChannelPersistenceDisabled && installMarkerCanBePrepared {
             self.prepareDefaultChannelInstallMarker()
         }
+        if !previewSessionEnabled,
+           !defaultChannelCleanupMustRetry,
+           self.hasPendingDefaultChannelPreviewSnapshot(),
+           !self.restorePreviewPreviousDefaultChannel() {
+            logger.warn("Default channel preview restore remains pending")
+        }
 
         let configDefaultChannel = getConfig().getString("defaultChannel", "")!
-        // Load defaultChannel: first try from persistent storage (set via setChannel), then fall back to config
-        if let storedDefaultChannel = UserDefaults.standard.object(forKey: defaultChannelDefaultsKey) as? String {
+        let storedDefaultChannel = UserDefaults.standard.string(forKey: defaultChannelDefaultsKey)
+        let stateFile = self.defaultChannelStateFile()
+        let state = stateFile.map { self.defaultChannelState(file: $0) }
+        if defaultChannelCleanupMustRetry {
+            implementation.defaultChannel = configDefaultChannel
+            logger.warn("Using configured defaultChannel until persisted cleanup can retry")
+        } else if let state = state, state.exists, state.isReadable {
+            self.reconcileDefaultChannelDefaults(with: state.channel)
+            implementation.defaultChannel = state.channel ?? configDefaultChannel
+            logger.info("Loaded persisted defaultChannel from local state")
+        } else if defaultChannelPersistenceDisabled, state?.exists == true {
+            implementation.defaultChannel = configDefaultChannel
+            logger.warn("Ignoring unreadable persisted defaultChannel while reinstall persistence is disabled")
+        } else if let storedDefaultChannel = storedDefaultChannel {
             implementation.defaultChannel = storedDefaultChannel
             logger.info("Loaded persisted defaultChannel from setChannel()")
         } else {
             implementation.defaultChannel = configDefaultChannel
+        }
+        if !defaultChannelCleanupMustRetry,
+           state?.exists != true || (!defaultChannelPersistenceDisabled && state?.isReadable != true) {
+            _ = self.persistDefaultChannelStateFromDefaults()
         }
         self.reportAppLaunchStart()
         self.implementation.autoReset()
@@ -571,10 +603,239 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     func clearPersistedDefaultChannel() -> Bool {
-        UserDefaults.standard.removeObject(forKey: defaultChannelDefaultsKey)
-        UserDefaults.standard.removeObject(forKey: previewPreviousDefaultChannelDefaultsKey)
-        UserDefaults.standard.removeObject(forKey: previewPreviousDefaultChannelWasSetDefaultsKey)
-        return UserDefaults.standard.synchronize()
+        guard let stateFile = self.defaultChannelStateFile(),
+              let previewSnapshotFile = self.defaultChannelPreviewSnapshotFile() else {
+            return false
+        }
+        return self.clearPersistedDefaultChannel(
+            stateFile: stateFile,
+            previewSnapshotFile: previewSnapshotFile
+        )
+    }
+
+    func clearPersistedDefaultChannel(stateFile: URL, previewSnapshotFile: URL) -> Bool {
+        defaultChannelStateLock.lock()
+        defer { defaultChannelStateLock.unlock() }
+        do {
+            try self.persistDefaultChannelStateWithoutLock(channel: nil, file: stateFile)
+            try self.persistDefaultChannelPreviewSnapshotWithoutLock(
+                channel: nil,
+                isValid: false,
+                file: previewSnapshotFile
+            )
+            UserDefaults.standard.removeObject(forKey: defaultChannelDefaultsKey)
+            UserDefaults.standard.removeObject(forKey: previewPreviousDefaultChannelDefaultsKey)
+            UserDefaults.standard.removeObject(forKey: previewPreviousDefaultChannelWasSetDefaultsKey)
+            return true
+        } catch {
+            logger.warn("Cannot persist cleared default channel state: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    private func defaultChannelStateFile() -> URL? {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent(defaultChannelStateFilename)
+    }
+
+    private func defaultChannelPreviewSnapshotFile() -> URL? {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent(defaultChannelPreviewSnapshotFilename)
+    }
+
+    func defaultChannelState(file: URL) -> (exists: Bool, channel: String?, isReadable: Bool) {
+        defaultChannelStateLock.lock()
+        defer { defaultChannelStateLock.unlock() }
+        return self.defaultChannelStateWithoutLock(file: file)
+    }
+
+    private func defaultChannelStateWithoutLock(file: URL) -> (exists: Bool, channel: String?, isReadable: Bool) {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: file.path) else {
+            return (false, nil, true)
+        }
+        do {
+            let data = try Data(contentsOf: file)
+            guard !data.isEmpty else {
+                return (true, nil, true)
+            }
+            guard let channel = String(data: data, encoding: .utf8) else {
+                logger.warn("Cannot decode persisted default channel state")
+                return (true, nil, false)
+            }
+            return (true, channel, true)
+        } catch {
+            logger.warn("Cannot read persisted default channel state: \(error.localizedDescription)")
+            return (true, nil, false)
+        }
+    }
+
+    func persistDefaultChannelState(channel: String?, file: URL) throws {
+        defaultChannelStateLock.lock()
+        defer { defaultChannelStateLock.unlock() }
+        try self.persistDefaultChannelStateWithoutLock(channel: channel, file: file)
+    }
+
+    private func persistDefaultChannelStateWithoutLock(channel: String?, file: URL) throws {
+        let data = channel.map { Data($0.utf8) } ?? Data()
+        try self.persistBackupExcludedFile(file: file, data: data, overwrite: true)
+    }
+
+    func defaultChannelPreviewSnapshot(file: URL) -> DefaultChannelPreviewSnapshot {
+        defaultChannelStateLock.lock()
+        defer { defaultChannelStateLock.unlock() }
+        return self.defaultChannelPreviewSnapshotWithoutLock(file: file)
+    }
+
+    private func defaultChannelPreviewSnapshotWithoutLock(file: URL) -> DefaultChannelPreviewSnapshot {
+        guard FileManager.default.fileExists(atPath: file.path) else {
+            return .missing
+        }
+        do {
+            let data = try Data(contentsOf: file)
+            guard let kind = data.first else {
+                return .unreadable
+            }
+            switch kind {
+            case 0 where data.count == 1:
+                return .invalidated
+            case 1 where data.count == 1:
+                return .snapshot(nil)
+            case 2:
+                guard let channel = String(data: Data(data.dropFirst()), encoding: .utf8) else {
+                    return .unreadable
+                }
+                return .snapshot(channel)
+            default:
+                return .unreadable
+            }
+        } catch {
+            logger.warn("Cannot read default channel preview snapshot: \(error.localizedDescription)")
+            return .unreadable
+        }
+    }
+
+    func persistDefaultChannelPreviewSnapshot(channel: String?, file: URL) throws {
+        defaultChannelStateLock.lock()
+        defer { defaultChannelStateLock.unlock() }
+        try self.persistDefaultChannelPreviewSnapshotWithoutLock(
+            channel: channel,
+            isValid: true,
+            file: file
+        )
+    }
+
+    func invalidateDefaultChannelPreviewSnapshot(file: URL) throws {
+        defaultChannelStateLock.lock()
+        defer { defaultChannelStateLock.unlock() }
+        try self.persistDefaultChannelPreviewSnapshotWithoutLock(
+            channel: nil,
+            isValid: false,
+            file: file
+        )
+    }
+
+    private func persistDefaultChannelPreviewSnapshotWithoutLock(
+        channel: String?,
+        isValid: Bool,
+        file: URL
+    ) throws {
+        var data = Data()
+        if !isValid {
+            data.append(0)
+        } else if let channel = channel {
+            data.append(2)
+            data.append(contentsOf: channel.utf8)
+        } else {
+            data.append(1)
+        }
+        try self.persistBackupExcludedFile(file: file, data: data, overwrite: true)
+    }
+
+    private func persistDefaultChannelPreviewSnapshot(channel: String?) -> Bool {
+        guard let file = self.defaultChannelPreviewSnapshotFile() else {
+            return false
+        }
+        do {
+            try self.persistDefaultChannelPreviewSnapshot(channel: channel, file: file)
+            return true
+        } catch {
+            logger.warn("Cannot persist default channel preview snapshot: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    private func hasPendingDefaultChannelPreviewSnapshot() -> Bool {
+        guard let file = self.defaultChannelPreviewSnapshotFile() else {
+            return false
+        }
+        switch self.defaultChannelPreviewSnapshot(file: file) {
+        case .snapshot, .unreadable:
+            return true
+        case .missing, .invalidated:
+            return false
+        }
+    }
+
+    @discardableResult
+    func persistDefaultChannelStateFromDefaults() -> Bool {
+        guard let file = self.defaultChannelStateFile() else {
+            logger.warn("Cannot locate default channel state file")
+            return false
+        }
+        return self.persistDefaultChannelStateFromDefaults(stateFile: file)
+    }
+
+    @discardableResult
+    func persistDefaultChannelStateFromDefaults(stateFile: URL) -> Bool {
+        defaultChannelStateLock.lock()
+        defer { defaultChannelStateLock.unlock() }
+        do {
+            try self.persistDefaultChannelStateWithoutLock(
+                channel: UserDefaults.standard.string(forKey: defaultChannelDefaultsKey),
+                file: stateFile
+            )
+            return true
+        } catch {
+            do {
+                if FileManager.default.fileExists(atPath: stateFile.path) {
+                    try FileManager.default.removeItem(at: stateFile)
+                }
+                logger.warn("Cannot persist default channel state; falling back to UserDefaults: \(error.localizedDescription)")
+                return true
+            } catch let invalidationError {
+                logger.warn("Cannot persist or invalidate default channel state: \(invalidationError.localizedDescription)")
+                return false
+            }
+        }
+    }
+
+    private func persistedDefaultChannel() -> String? {
+        guard let file = self.defaultChannelStateFile() else {
+            return UserDefaults.standard.string(forKey: defaultChannelDefaultsKey)
+        }
+        return self.persistedDefaultChannel(stateFile: file)
+    }
+
+    func persistedDefaultChannel(stateFile: URL) -> String? {
+        let state = self.defaultChannelState(file: stateFile)
+        if state.exists {
+            if state.isReadable {
+                return state.channel
+            }
+            if !persistDefaultChannelOnReinstall {
+                return nil
+            }
+        }
+        return UserDefaults.standard.string(forKey: defaultChannelDefaultsKey)
+    }
+
+    private func reconcileDefaultChannelDefaults(with channel: String?) {
+        if let channel = channel {
+            UserDefaults.standard.set(channel, forKey: defaultChannelDefaultsKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: defaultChannelDefaultsKey)
+        }
     }
 
     private func defaultChannelInstallMarker() -> URL? {
@@ -625,28 +886,32 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     func prepareDefaultChannelInstallMarker(marker: URL, markerWasCreated: Bool) {
-        let fileManager = FileManager.default
         do {
-            if !fileManager.fileExists(atPath: marker.path) {
-                try fileManager.createDirectory(at: marker.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try Data().write(to: marker, options: .atomic)
-            }
-            let currentResourceValues = try marker.resourceValues(forKeys: [.isExcludedFromBackupKey])
-            if currentResourceValues.isExcludedFromBackup != true {
-                var resourceValues = URLResourceValues()
-                resourceValues.isExcludedFromBackup = true
-                var mutableMarker = marker
-                try mutableMarker.setResourceValues(resourceValues)
-            }
+            try self.persistBackupExcludedFile(file: marker, data: Data())
             if !markerWasCreated {
                 UserDefaults.standard.set(true, forKey: defaultChannelInstallMarkerDefaultsKey)
                 UserDefaults.standard.synchronize()
             }
         } catch {
-            try? fileManager.removeItem(at: marker)
+            try? FileManager.default.removeItem(at: marker)
             UserDefaults.standard.set(false, forKey: defaultChannelInstallMarkerDefaultsKey)
             UserDefaults.standard.synchronize()
             logger.warn("Cannot prepare default channel install marker: \(error.localizedDescription)")
+        }
+    }
+
+    private func persistBackupExcludedFile(file: URL, data: Data, overwrite: Bool = false) throws {
+        let fileManager = FileManager.default
+        if overwrite || !fileManager.fileExists(atPath: file.path) {
+            try fileManager.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try data.write(to: file, options: .atomic)
+        }
+        let currentResourceValues = try file.resourceValues(forKeys: [.isExcludedFromBackupKey])
+        if currentResourceValues.isExcludedFromBackup != true {
+            var resourceValues = URLResourceValues()
+            resourceValues.isExcludedFromBackup = true
+            var mutableFile = file
+            try mutableFile.setResourceValues(resourceValues)
         }
     }
 
@@ -1620,8 +1885,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             UserDefaults.standard.removeObject(forKey: self.previewPreviousNextBundleDefaultsKey)
         }
 
+        let previousDefaultChannel = self.persistedDefaultChannel()
+        guard self.persistDefaultChannelPreviewSnapshot(channel: previousDefaultChannel) else {
+            logger.error("Could not durably save the default channel preview snapshot")
+            return false
+        }
         UserDefaults.standard.set(self.implementation.appId, forKey: self.previewPreviousAppIdDefaultsKey)
-        if let previousDefaultChannel = UserDefaults.standard.object(forKey: self.defaultChannelDefaultsKey) as? String {
+        if let previousDefaultChannel = previousDefaultChannel {
             UserDefaults.standard.set(previousDefaultChannel, forKey: self.previewPreviousDefaultChannelDefaultsKey)
             UserDefaults.standard.set(true, forKey: self.previewPreviousDefaultChannelWasSetDefaultsKey)
         } else {
@@ -2069,7 +2339,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             ?? self.getBooleanConfig("allowShakeChannelSelector", defaultValue: false)
         self.restorePreviewPreviousNextBundle()
         self.restorePreviewPreviousAppId()
-        self.restorePreviewPreviousDefaultChannel()
+        if !self.restorePreviewPreviousDefaultChannel() {
+            logger.warn("Default channel preview restore will retry on next launch")
+        }
 
         self.previewSessionEnabled = false
         self.previewSessionAlertPending = false
@@ -2096,7 +2368,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         self.restorePreviewPreviousNextBundle()
         self.restorePreviewPreviousAppId()
-        self.restorePreviewPreviousDefaultChannel()
+        if !self.restorePreviewPreviousDefaultChannel() {
+            logger.warn("Default channel preview restore will retry on next launch")
+        }
         self.previewSessionEnabled = false
         self.previewSessionAlertPending = false
         self.isLeavingPreviewForIncomingLink = false
@@ -2124,14 +2398,17 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func clearPreviewSessionPreferences() {
+        let keepDefaultChannelSnapshotFallback = self.hasPendingDefaultChannelPreviewSnapshot()
         _ = self.implementation.setPreviewFallbackBundle(fallback: nil)
         UserDefaults.standard.removeObject(forKey: self.previewSessionDefaultsKey)
         UserDefaults.standard.removeObject(forKey: self.previewPreviousShakeMenuDefaultsKey)
         UserDefaults.standard.removeObject(forKey: self.previewPreviousShakeChannelSelectorDefaultsKey)
         UserDefaults.standard.removeObject(forKey: self.previewPreviousNextBundleDefaultsKey)
         UserDefaults.standard.removeObject(forKey: self.previewPreviousAppIdDefaultsKey)
-        UserDefaults.standard.removeObject(forKey: self.previewPreviousDefaultChannelDefaultsKey)
-        UserDefaults.standard.removeObject(forKey: self.previewPreviousDefaultChannelWasSetDefaultsKey)
+        if !keepDefaultChannelSnapshotFallback {
+            UserDefaults.standard.removeObject(forKey: self.previewPreviousDefaultChannelDefaultsKey)
+            UserDefaults.standard.removeObject(forKey: self.previewPreviousDefaultChannelWasSetDefaultsKey)
+        }
         UserDefaults.standard.removeObject(forKey: self.previewAppIdDefaultsKey)
         UserDefaults.standard.removeObject(forKey: self.previewPayloadUrlDefaultsKey)
         UserDefaults.standard.removeObject(forKey: self.previewNameDefaultsKey)
@@ -2149,21 +2426,95 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         logger.info("Restored appId after preview: \(previousAppId)")
     }
 
-    private func restorePreviewPreviousDefaultChannel() {
-        let configDefaultChannel = self.getStringConfig("defaultChannel", defaultValue: "")
-        let hadPreviousDefaultChannel = UserDefaults.standard.object(forKey: self.previewPreviousDefaultChannelWasSetDefaultsKey) as? Bool ?? false
+    private func restorePreviewPreviousDefaultChannel() -> Bool {
+        guard !defaultChannelCleanupMustRetry else {
+            logger.warn("Skipping default channel preview restore until cleanup retries")
+            return false
+        }
+        guard let stateFile = self.defaultChannelStateFile(),
+              let previewSnapshotFile = self.defaultChannelPreviewSnapshotFile() else {
+            return false
+        }
 
-        guard hadPreviousDefaultChannel,
-              let previousDefaultChannel = UserDefaults.standard.string(forKey: self.previewPreviousDefaultChannelDefaultsKey) else {
+        let previousDefaultChannel: String?
+        switch self.defaultChannelPreviewSnapshot(file: previewSnapshotFile) {
+        case .invalidated:
+            return true
+        case let .snapshot(channel):
+            previousDefaultChannel = channel
+        case .missing:
+            let hadPreviousDefaultChannel = UserDefaults.standard.object(
+                forKey: self.previewPreviousDefaultChannelWasSetDefaultsKey
+            ) as? Bool ?? false
+            previousDefaultChannel = hadPreviousDefaultChannel
+                ? UserDefaults.standard.string(forKey: self.previewPreviousDefaultChannelDefaultsKey)
+                : nil
+            do {
+                try self.persistDefaultChannelPreviewSnapshot(
+                    channel: previousDefaultChannel,
+                    file: previewSnapshotFile
+                )
+            } catch {
+                logger.warn("Cannot migrate default channel preview snapshot: \(error.localizedDescription)")
+                return false
+            }
+        case .unreadable:
+            logger.warn("Cannot restore default channel from an unreadable preview snapshot")
+            return false
+        }
+
+        return self.persistRestoredDefaultChannelFromPreview(
+            channel: previousDefaultChannel,
+            stateFile: stateFile,
+            previewSnapshotFile: previewSnapshotFile
+        )
+    }
+
+    private func applyRestoredDefaultChannelFromPreview(_ channel: String?) {
+        let configDefaultChannel = self.getStringConfig("defaultChannel", defaultValue: "")
+        if let channel = channel {
+            UserDefaults.standard.set(channel, forKey: self.defaultChannelDefaultsKey)
+            self.implementation.defaultChannel = channel
+            logger.info("Restored defaultChannel after preview")
+        } else {
             UserDefaults.standard.removeObject(forKey: self.defaultChannelDefaultsKey)
             self.implementation.defaultChannel = configDefaultChannel
             logger.info("Restored defaultChannel after preview to config value")
-            return
         }
+    }
 
-        UserDefaults.standard.set(previousDefaultChannel, forKey: self.defaultChannelDefaultsKey)
-        self.implementation.defaultChannel = previousDefaultChannel
-        logger.info("Restored defaultChannel after preview")
+    private func persistRestoredDefaultChannelFromPreview(
+        channel: String?,
+        stateFile: URL,
+        previewSnapshotFile: URL
+    ) -> Bool {
+        defaultChannelStateLock.lock()
+        defer { defaultChannelStateLock.unlock() }
+        let didPersist: Bool
+        do {
+            try self.persistDefaultChannelStateWithoutLock(channel: channel, file: stateFile)
+            try self.persistDefaultChannelPreviewSnapshotWithoutLock(
+                channel: nil,
+                isValid: false,
+                file: previewSnapshotFile
+            )
+            didPersist = true
+        } catch {
+            let persistedState = self.defaultChannelStateWithoutLock(file: stateFile)
+            let persistedSnapshot = self.defaultChannelPreviewSnapshotWithoutLock(file: previewSnapshotFile)
+            if persistedState.exists,
+               persistedState.isReadable,
+               persistedState.channel == channel,
+               persistedSnapshot == .invalidated {
+                logger.warn("Default channel preview restore committed before metadata update failed")
+                didPersist = true
+            } else {
+                logger.warn("Cannot durably restore default channel after preview: \(error.localizedDescription)")
+                didPersist = false
+            }
+        }
+        self.applyRestoredDefaultChannelFromPreview(channel)
+        return didPersist
     }
 
     private func normalizedPreviewAppId(_ rawAppId: String?) -> String? {
@@ -2343,7 +2694,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.shakeMenuGesture = Self.normalizedShakeMenuGesture(self.getStringConfig("shakeMenuGesture", defaultValue: Self.shakeMenuGestureShake))
         self.syncShakeMenuGestureRecognizer()
         self.restorePreviewPreviousAppId()
-        self.restorePreviewPreviousDefaultChannel()
+        if !self.restorePreviewPreviousDefaultChannel() {
+            logger.warn("Default channel preview restore will retry on next launch")
+        }
         _ = self.implementation.setPreviewFallbackBundle(fallback: nil)
         _ = self.implementation.setNextBundle(next: Optional<String>.none)
         self.clearPreviewSessionPreferences()
@@ -2588,6 +2941,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     "error": res.error.contains("Channel URL") ? "missing_config" : "request_failed"
                 ])
             } else {
+                guard self.persistDefaultChannelStateFromDefaults() else {
+                    self.rejectCall(call, message: "Channel override removed but local persistence failed", code: "UNSETCHANNEL_PERSISTENCE_FAILED")
+                    return
+                }
                 if self._isAutoUpdateEnabled() && triggerAutoUpdate {
                     self.logger.info("Calling autoupdater after channel change!")
                     // Check if download is already in progress (with timeout protection)
@@ -2634,6 +2991,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     "error": res.error.contains("Channel URL") ? "missing_config" : (res.error.contains("cannot_update_via_private_channel") || res.error.contains("channel_self_set_not_allowed")) ? "channel_private" : "request_failed"
                 ])
             } else {
+                guard self.persistDefaultChannelStateFromDefaults() else {
+                    self.rejectCall(call, message: "Channel changed but local persistence failed", code: "SETCHANNEL_PERSISTENCE_FAILED")
+                    return
+                }
                 if self._isAutoUpdateEnabled() && triggerAutoUpdate {
                     self.logger.info("Calling autoupdater after channel change!")
                     // Check if download is already in progress (with timeout protection)
@@ -2658,6 +3019,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     "error": res.error.contains("Channel URL") ? "missing_config" : "request_failed"
                 ])
             } else {
+                guard self.persistDefaultChannelStateFromDefaults() else {
+                    self.rejectCall(call, message: "Channel synchronized but local persistence failed", code: "GETCHANNEL_PERSISTENCE_FAILED")
+                    return
+                }
                 self.resolveCall(call, data: res.toDict())
             }
         }

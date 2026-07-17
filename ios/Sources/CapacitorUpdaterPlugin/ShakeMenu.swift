@@ -668,6 +668,14 @@ extension UIWindow {
                             }
                             return
                         }
+                        guard plugin.persistDefaultChannelStateFromDefaults() else {
+                            DispatchQueue.main.async {
+                                progressAlert.dismiss(animated: true) {
+                                    self.showError(message: "Channel set to \(name), but local persistence failed.", plugin: plugin)
+                                }
+                            }
+                            return
+                        }
 
                         // Update progress message
                         DispatchQueue.main.async {
