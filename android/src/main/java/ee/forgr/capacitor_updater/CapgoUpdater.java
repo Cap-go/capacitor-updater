@@ -2194,7 +2194,6 @@ public class CapgoUpdater {
                 logger.info("Public channel requested, channel override removed");
                 callback.callback(res);
             } else {
-                // Success - persist defaultChannel
                 this.defaultChannel = channel;
                 editor.putString(defaultChannelKey, channel);
                 editor.apply();

@@ -1530,6 +1530,26 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testPersistCurrentNativeBuildVersionSkipsPendingDefaultChannelCleanup() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            plugin.setLoggerForTesting(mock(Logger.class));
+            final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+
+            setPrivateField(plugin, "editor", editor);
+            setPrivateField(plugin, "currentBuildVersion", "8");
+            setPrivateField(plugin, "defaultChannelCleanupMustRetry", true);
+
+            plugin.persistCurrentNativeBuildVersion();
+
+            verify(editor, never()).putString(anyString(), anyString());
+            verify(editor, never()).apply();
+        }
+    }
+
+    @Test
     public void testReportNativeVersionStatsPersistsFirstSnapshotWithoutEvent() throws Exception {
         try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
             looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
@@ -3182,6 +3202,71 @@ public class CapacitorUpdaterUnitTest {
         assertEquals("company-a", updater.defaultChannel);
         verify(editor).putString("CapacitorUpdater.defaultChannel", "company-a");
         verify(editor).apply();
+    }
+
+    @Test
+    public void defaultChannelCleanupRunsWhenPersistenceDisabledDuringNativeBuildCleanup() {
+        assertTrue(CapacitorUpdaterPlugin.shouldClearPersistedDefaultChannel(false, true, true, false));
+    }
+
+    @Test
+    public void defaultChannelCleanupRunsForRestoredSameVersionReinstall() {
+        assertTrue(CapacitorUpdaterPlugin.shouldClearPersistedDefaultChannel(false, false, false, true));
+    }
+
+    @Test
+    public void defaultChannelCleanupKeepsChannelWhenPersistenceEnabled() {
+        assertFalse(CapacitorUpdaterPlugin.shouldClearPersistedDefaultChannel(true, true, true, true));
+    }
+
+    @Test
+    public void defaultChannelCleanupKeepsChannelWhenNativeBuildDoesNotChange() {
+        assertFalse(CapacitorUpdaterPlugin.shouldClearPersistedDefaultChannel(false, true, false, false));
+    }
+
+    @Test
+    public void defaultChannelCleanupKeepsChannelWhenNativeCleanupIsDisabled() {
+        assertFalse(CapacitorUpdaterPlugin.shouldClearPersistedDefaultChannel(false, false, true, false));
+    }
+
+    @Test
+    public void defaultChannelCleanupClearsRestoredPreviewSnapshot() {
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+        when(editor.commit()).thenReturn(true);
+
+        assertTrue(CapacitorUpdaterPlugin.clearPersistedDefaultChannel(editor));
+
+        verify(editor).remove("CapacitorUpdater.defaultChannel");
+        verify(editor).remove("CapacitorUpdater.previewPreviousDefaultChannel");
+        verify(editor).remove("CapacitorUpdater.previewPreviousDefaultChannelWasSet");
+        verify(editor).commit();
+    }
+
+    @Test
+    public void defaultChannelCleanupFailurePreservesInstallMarkerRetry() throws IOException {
+        final File marker = File.createTempFile("capgo-install-marker", ".tmp");
+        marker.deleteOnExit();
+
+        assertTrue(marker.exists());
+        assertTrue(CapacitorUpdaterPlugin.invalidateDefaultChannelInstallMarker(marker));
+        assertTrue(CapacitorUpdaterPlugin.isRestoredReinstall(marker, true));
+    }
+
+    @Test
+    public void defaultChannelInstallMarkerFailureIsHandledOnce() throws IOException {
+        final File nonDirectory = File.createTempFile("capgo-install-marker-parent", ".tmp");
+        nonDirectory.deleteOnExit();
+        final File marker = new File(nonDirectory, "marker");
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+        final Logger logger = mock(Logger.class);
+        when(editor.commit()).thenReturn(true);
+
+        assertTrue(CapacitorUpdaterPlugin.isRestoredReinstall(marker, true));
+        CapacitorUpdaterPlugin.prepareDefaultChannelInstallMarker(marker, true, editor, logger);
+
+        verify(editor).remove("CapacitorUpdater.defaultChannelInstallMarkerCreated");
+        verify(editor).commit();
+        assertFalse(CapacitorUpdaterPlugin.isRestoredReinstall(marker, false));
     }
 
     @Test

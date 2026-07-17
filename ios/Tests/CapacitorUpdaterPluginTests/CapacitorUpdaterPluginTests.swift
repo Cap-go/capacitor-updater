@@ -933,6 +933,310 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertNil(UserDefaults.standard.string(forKey: defaultsKey))
     }
 
+    func testDefaultChannelCleanupRunsWhenPersistenceDisabledDuringNativeBuildCleanup() {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.persistDefaultChannelOnReinstall = false
+
+        XCTAssertTrue(
+            testPlugin.shouldClearPersistedDefaultChannel(
+                nativeBuildVersionChanged: true,
+                resetWhenUpdate: true,
+                restoredReinstall: false
+            )
+        )
+    }
+
+    func testDefaultChannelCleanupRunsForRestoredSameVersionReinstall() {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.persistDefaultChannelOnReinstall = false
+
+        XCTAssertTrue(
+            testPlugin.shouldClearPersistedDefaultChannel(
+                nativeBuildVersionChanged: false,
+                resetWhenUpdate: false,
+                restoredReinstall: true
+            )
+        )
+    }
+
+    func testDefaultChannelCleanupKeepsChannelWhenPersistenceEnabled() {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.persistDefaultChannelOnReinstall = true
+
+        XCTAssertFalse(
+            testPlugin.shouldClearPersistedDefaultChannel(
+                nativeBuildVersionChanged: true,
+                resetWhenUpdate: true,
+                restoredReinstall: true
+            )
+        )
+    }
+
+    func testDefaultChannelCleanupKeepsChannelWhenNativeBuildDoesNotChange() {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.persistDefaultChannelOnReinstall = false
+
+        XCTAssertFalse(
+            testPlugin.shouldClearPersistedDefaultChannel(
+                nativeBuildVersionChanged: false,
+                resetWhenUpdate: true,
+                restoredReinstall: false
+            )
+        )
+    }
+
+    func testDefaultChannelCleanupKeepsChannelWhenNativeCleanupIsDisabled() {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.persistDefaultChannelOnReinstall = false
+
+        XCTAssertFalse(
+            testPlugin.shouldClearPersistedDefaultChannel(
+                nativeBuildVersionChanged: true,
+                resetWhenUpdate: false,
+                restoredReinstall: false
+            )
+        )
+    }
+
+    func testDefaultChannelCleanupClearsRestoredPreviewSnapshot() throws {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        let defaultChannelKey = "CapacitorUpdater.defaultChannel"
+        let previewChannelKey = "CapacitorUpdater.previewPreviousDefaultChannel"
+        let previewChannelWasSetKey = "CapacitorUpdater.previewPreviousDefaultChannelWasSet"
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)", isDirectory: true)
+        let stateFile = directory.appendingPathComponent("state")
+        let previewSnapshotFile = directory.appendingPathComponent("preview")
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            UserDefaults.standard.removeObject(forKey: defaultChannelKey)
+            UserDefaults.standard.removeObject(forKey: previewChannelKey)
+            UserDefaults.standard.removeObject(forKey: previewChannelWasSetKey)
+        }
+        UserDefaults.standard.set("stale", forKey: defaultChannelKey)
+        UserDefaults.standard.set("stale", forKey: previewChannelKey)
+        UserDefaults.standard.set(true, forKey: previewChannelWasSetKey)
+
+        XCTAssertTrue(testPlugin.clearPersistedDefaultChannel(
+            stateFile: stateFile,
+            previewSnapshotFile: previewSnapshotFile
+        ))
+        let state = testPlugin.defaultChannelState(file: stateFile)
+        XCTAssertTrue(state.exists)
+        XCTAssertNil(state.channel)
+        XCTAssertEqual(testPlugin.defaultChannelPreviewSnapshot(file: previewSnapshotFile), .invalidated)
+
+        XCTAssertNil(UserDefaults.standard.object(forKey: defaultChannelKey))
+        XCTAssertNil(UserDefaults.standard.object(forKey: previewChannelKey))
+        XCTAssertNil(UserDefaults.standard.object(forKey: previewChannelWasSetKey))
+    }
+
+    func testDefaultChannelCleanupReportsStateWriteFailure() throws {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        let defaultChannelKey = "CapacitorUpdater.defaultChannel"
+        let nonDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)")
+        let stateFile = nonDirectory.appendingPathComponent("state")
+        let previewSnapshotFile = nonDirectory.appendingPathComponent("preview")
+        try Data().write(to: nonDirectory)
+        defer {
+            try? FileManager.default.removeItem(at: nonDirectory)
+            UserDefaults.standard.removeObject(forKey: defaultChannelKey)
+        }
+        UserDefaults.standard.set("stale", forKey: defaultChannelKey)
+
+        XCTAssertFalse(testPlugin.clearPersistedDefaultChannel(
+            stateFile: stateFile,
+            previewSnapshotFile: previewSnapshotFile
+        ))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stateFile.path))
+        XCTAssertEqual(UserDefaults.standard.string(forKey: defaultChannelKey), "stale")
+    }
+
+    func testDefaultChannelStatePersistsNewChannel() throws {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)", isDirectory: true)
+        let stateFile = directory.appendingPathComponent("state")
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        try testPlugin.persistDefaultChannelState(channel: "beta", file: stateFile)
+        let state = testPlugin.defaultChannelState(file: stateFile)
+        XCTAssertTrue(state.exists)
+        XCTAssertEqual(state.channel, "beta")
+    }
+
+    func testDefaultChannelPreviewSnapshotStatesRoundTrip() throws {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)", isDirectory: true)
+        let snapshotFile = directory.appendingPathComponent("preview")
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        XCTAssertEqual(testPlugin.defaultChannelPreviewSnapshot(file: snapshotFile), .missing)
+
+        try testPlugin.persistDefaultChannelPreviewSnapshot(channel: nil, file: snapshotFile)
+        XCTAssertEqual(testPlugin.defaultChannelPreviewSnapshot(file: snapshotFile), .snapshot(nil))
+
+        try testPlugin.persistDefaultChannelPreviewSnapshot(channel: "beta", file: snapshotFile)
+        XCTAssertEqual(testPlugin.defaultChannelPreviewSnapshot(file: snapshotFile), .snapshot("beta"))
+
+        try testPlugin.invalidateDefaultChannelPreviewSnapshot(file: snapshotFile)
+        XCTAssertEqual(testPlugin.defaultChannelPreviewSnapshot(file: snapshotFile), .invalidated)
+    }
+
+    func testUnreadableDefaultChannelStateFallsBackToUserDefaults() throws {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        let defaultChannelKey = "CapacitorUpdater.defaultChannel"
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)", isDirectory: true)
+        let stateFile = directory.appendingPathComponent("state")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data([0xFF]).write(to: stateFile)
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            UserDefaults.standard.removeObject(forKey: defaultChannelKey)
+        }
+        UserDefaults.standard.set("beta", forKey: defaultChannelKey)
+
+        let state = testPlugin.defaultChannelState(file: stateFile)
+        XCTAssertFalse(state.isReadable)
+        XCTAssertEqual(testPlugin.persistedDefaultChannel(stateFile: stateFile), "beta")
+    }
+
+    func testUnreadableDefaultChannelStateDoesNotRestoreWhenPersistenceDisabled() throws {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.persistDefaultChannelOnReinstall = false
+        let defaultChannelKey = "CapacitorUpdater.defaultChannel"
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)", isDirectory: true)
+        let stateFile = directory.appendingPathComponent("state")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data([0xFF]).write(to: stateFile)
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            UserDefaults.standard.removeObject(forKey: defaultChannelKey)
+        }
+        UserDefaults.standard.set("stale", forKey: defaultChannelKey)
+
+        XCTAssertNil(testPlugin.persistedDefaultChannel(stateFile: stateFile))
+    }
+
+    func testDefaultChannelStateOverridesStaleUserDefaults() throws {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        let defaultChannelKey = "CapacitorUpdater.defaultChannel"
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)", isDirectory: true)
+        let stateFile = directory.appendingPathComponent("state")
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            UserDefaults.standard.removeObject(forKey: defaultChannelKey)
+        }
+        UserDefaults.standard.set("stale", forKey: defaultChannelKey)
+
+        try testPlugin.persistDefaultChannelState(channel: nil, file: stateFile)
+
+        XCTAssertNil(testPlugin.persistedDefaultChannel(stateFile: stateFile))
+    }
+
+    func testDefaultChannelStateMirrorsDefaultsWithReinstallPersistenceEnabled() throws {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.persistDefaultChannelOnReinstall = true
+        let defaultChannelKey = "CapacitorUpdater.defaultChannel"
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)", isDirectory: true)
+        let stateFile = directory.appendingPathComponent("state")
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            UserDefaults.standard.removeObject(forKey: defaultChannelKey)
+        }
+        try testPlugin.persistDefaultChannelState(channel: nil, file: stateFile)
+        UserDefaults.standard.set("beta", forKey: defaultChannelKey)
+
+        XCTAssertTrue(testPlugin.persistDefaultChannelStateFromDefaults(stateFile: stateFile))
+        XCTAssertEqual(testPlugin.defaultChannelState(file: stateFile).channel, "beta")
+    }
+
+    func testDefaultChannelStateWriteFailureInvalidatesAuthoritativeState() throws {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        let defaultChannelKey = "CapacitorUpdater.defaultChannel"
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)", isDirectory: true)
+        let stateFile = directory.appendingPathComponent("state", isDirectory: true)
+        try FileManager.default.createDirectory(at: stateFile, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            UserDefaults.standard.removeObject(forKey: defaultChannelKey)
+        }
+        UserDefaults.standard.set("beta", forKey: defaultChannelKey)
+
+        XCTAssertTrue(testPlugin.persistDefaultChannelStateFromDefaults(stateFile: stateFile))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stateFile.path))
+        XCTAssertEqual(UserDefaults.standard.string(forKey: defaultChannelKey), "beta")
+    }
+
+    func testDefaultChannelCleanupFailurePreservesInstallMarkerRetry() throws {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        let marker = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)")
+        try Data().write(to: marker)
+        defer {
+            try? FileManager.default.removeItem(at: marker)
+        }
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
+        try testPlugin.invalidateDefaultChannelInstallMarker(marker: marker)
+        XCTAssertTrue(testPlugin.isRestoredReinstall(marker: marker, markerWasCreated: true))
+    }
+
+    func testDefaultChannelInstallMarkerFailureIsHandledOnce() throws {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        let markerDefaultsKey = "CapacitorUpdater.defaultChannelInstallMarkerCreated"
+        let nonDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)")
+        let marker = nonDirectory.appendingPathComponent("marker")
+        try Data().write(to: nonDirectory)
+        defer {
+            try? FileManager.default.removeItem(at: nonDirectory)
+            UserDefaults.standard.removeObject(forKey: markerDefaultsKey)
+        }
+        UserDefaults.standard.set(true, forKey: markerDefaultsKey)
+
+        XCTAssertTrue(testPlugin.isRestoredReinstall(marker: marker, markerWasCreated: true))
+        testPlugin.prepareDefaultChannelInstallMarker(marker: marker, markerWasCreated: true)
+
+        XCTAssertFalse(UserDefaults.standard.bool(forKey: markerDefaultsKey))
+        XCTAssertFalse(testPlugin.isRestoredReinstall(marker: marker, markerWasCreated: false))
+    }
+
+    func testDefaultChannelInstallMarkerReappliesBackupExclusion() throws {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        let markerDefaultsKey = "CapacitorUpdater.defaultChannelInstallMarkerCreated"
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)", isDirectory: true)
+        let marker = directory.appendingPathComponent("marker")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data().write(to: marker)
+        var markerResourceValues = URLResourceValues()
+        markerResourceValues.isExcludedFromBackup = false
+        var mutableMarker = marker
+        try mutableMarker.setResourceValues(markerResourceValues)
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            UserDefaults.standard.removeObject(forKey: markerDefaultsKey)
+        }
+        UserDefaults.standard.set(true, forKey: markerDefaultsKey)
+
+        testPlugin.prepareDefaultChannelInstallMarker(marker: marker, markerWasCreated: true)
+
+        let resourceValues = try marker.resourceValues(forKeys: [.isExcludedFromBackupKey])
+        XCTAssertEqual(resourceValues.isExcludedFromBackup, true)
+    }
+
     func testGetChannelPersistsServerChannelAsDefaultChannel() throws {
         let updater = ChannelRequestCapgoUpdater()
         updater.setLogger(Logger(withTag: "TestLogger"))

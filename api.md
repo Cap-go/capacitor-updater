@@ -44,6 +44,7 @@ CapacitorUpdater can be configured with these options:
 | **`persistCustomId`** | `boolean` | Persist the customId set through {@link CapacitorUpdaterPlugin.setCustomId} across app restarts. Only available for Android and iOS. | `false (will be true by default in a future major release v8.x.x)` | 7.17.3 |
 | **`persistModifyUrl`** | `boolean` | Persist the updateUrl, statsUrl and channelUrl set through {@link CapacitorUpdaterPlugin.setUpdateUrl}, {@link CapacitorUpdaterPlugin.setStatsUrl} and {@link CapacitorUpdaterPlugin.setChannelUrl} across app restarts. Only available for Android and iOS. | `false` | 7.20.0 |
 | **`allowSetDefaultChannel`** | `boolean` | Allow or disallow the {@link CapacitorUpdaterPlugin.setChannel} method to modify the defaultChannel. When set to `false`, calling `setChannel()` will return an error with code `disabled_by_config`. | `true` | 7.34.0 |
+| **`persistDefaultChannelOnReinstall`** | `boolean` | Keep the default channel stored by {@link CapacitorUpdaterPlugin.setChannel} or refreshed by {@link CapacitorUpdaterPlugin.getChannel} when app data is restored into a new app install. `setChannel()` and a successful `getChannel()` still persist the selected channel across app restarts. When this option is `false`, native startup clears that persisted channel when it detects app data restored into a new installation. Native build cleanup clears the persisted channel only when `persistDefaultChannelOnReinstall` is `false`, `resetWhenUpdate` is `true`, and the native build version has changed. Only available for Android and iOS. | `true` | 8.51.0 |
 | **`defaultChannel`** | `string` | Set the default channel for the app in the config. Case sensitive. This will setting will override the default channel set in the cloud, but will still respect overrides made in the cloud. This requires the channel to allow devices to self dissociate/associate in the channel settings. https://capgo.app/docs/public-api/channels/#channel-configuration-options | `undefined` | 5.5.0 |
 | **`appId`** | `string` | Configure the app id for the app in the config. | `undefined` | 6.0.0 |
 | **`keepUrlPathAfterReload`** | `boolean` | Configure the plugin to keep the URL path after a reload. WARNING: When a reload is triggered, 'window.history' will be cleared. | `false` | 6.8.0 |
@@ -1094,9 +1095,9 @@ Channels allow you to distribute different bundle versions to different groups o
 (e.g., "production", "beta", "staging"). This method switches the device to a new channel.
 
 **Device Override UI:** `setChannel()` validates the channel with the backend, then stores the
-selected channel locally on the device. It does not create or update a backend Device Override,
-so the device will not appear as overridden in the Capgo dashboard. Only assignments created
-from the dashboard or the Public API are shown in the Device Override UI.
+selected channel locally on the device for future app restarts. It does not create or update
+a backend Device Override, so the device will not appear as overridden in the Capgo dashboard.
+Only assignments created from the dashboard or the Public API are shown in the Device Override UI.
 
 **Requirements:**
 - The target channel must allow self-assignment (configured in your Capgo dashboard or backend)
@@ -1125,7 +1126,7 @@ CapacitorUpdater.addListener('channelPrivate', (data) => {
 ```
 
 This sends a request to the Capgo backend to validate the specified channel, then stores the
-channel locally on the device.
+channel locally on the device for future app restarts.
 
 **Parameters**
 
@@ -1200,8 +1201,8 @@ Use this to:
 - Check if a device is on a specific channel before showing features
 - Verify channel assignment after calling {@link setChannel}
 
-On native platforms, a successful response also refreshes the locally persisted
-default channel used by update checks.
+On native platforms, a successful response also refreshes the default channel used by update checks.
+This refresh is persisted across app restarts.
 
 **Returns**
 
