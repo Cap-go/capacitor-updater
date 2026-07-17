@@ -69,6 +69,7 @@ import java.util.Set;
 import java.util.TimeZone;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
@@ -145,7 +146,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     static final int APPLICATION_EXIT_REASON_USER_REQUESTED = 10;
     static final int APPLICATION_EXIT_REASON_DEPENDENCY_DIED = 12;
 
-    private final String pluginVersion = "8.50.2";
+    private final String pluginVersion = "8.51.1";
     private static final String DELAY_CONDITION_PREFERENCES = "";
 
     private SharedPreferences.Editor editor;
@@ -219,6 +220,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private volatile Thread backgroundDownloadTask;
     private volatile Thread appReadyCheck;
+    // When true, sendReadyToJs should wait for notifyAppReady before hiding splash.
+    private volatile boolean pendingNotifyAppReadyWait = false;
+    private volatile int pendingNotifyAppReadyPhase = -1;
     private volatile long downloadStartTimeMs = 0;
     private static final long DOWNLOAD_TIMEOUT_MS = 600000; // 10 minute timeout
 
@@ -231,6 +235,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     // Lock to ensure cleanup completes before downloads start
     private final Object cleanupLock = new Object();
+    private volatile CountDownLatch cleanupLatch = new CountDownLatch(0);
     private volatile boolean cleanupComplete = false;
     private volatile Thread cleanupThread = null;
     private volatile boolean defaultChannelCleanupMustRetry = false;
@@ -904,11 +909,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.reportPreviousAppExitReasons();
         this.reportPreviousWebViewRenderProcessGone();
         this.installWebViewStatsReporter();
-        if (resetWhenUpdate) {
-            this.cleanupObsoleteVersions();
-        } else {
+        // Downloads (including shake-menu / CapgoUpdater entry points) wait on this gate.
+        this.implementation.downloadGate = this::waitForCleanupIfNeeded;
+        // Always run async cleanup: delete obsolete bundles on native update (when enabled)
+        // and sweep orphan folders every launch. Must not block app startup.
+        if (!resetWhenUpdate) {
             this.persistCurrentNativeBuildVersion();
         }
+        this.cleanupObsoleteVersions(resetWhenUpdate);
 
         // Check for 'kill' delay condition on app launch
         // This handles cases where the app was killed by the system (onDestroy is not reliable)
@@ -942,6 +950,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
         } else {
             logger.info("Using activity lifecycle callbacks for foreground/background detection (Android <14)");
         }
+
+        // Expect notifyAppReady before the first appReady/splash hide (same idea as iOS).
+        this.armPendingNotifyAppReadyWait();
     }
 
     private boolean semaphoreWait(final int phase, Number waitTime) {
@@ -984,6 +995,32 @@ public class CapacitorUpdaterPlugin extends Plugin {
         semaphoreReady.arriveAndDeregister();
     }
 
+    private void armPendingNotifyAppReadyWait() {
+        this.clearPendingNotifyAppReadyWait();
+        this.pendingNotifyAppReadyPhase = this.semaphoreUp();
+        this.pendingNotifyAppReadyWait = true;
+    }
+
+    private void clearPendingNotifyAppReadyWait() {
+        if (!this.pendingNotifyAppReadyWait) {
+            return;
+        }
+        final int phase = this.pendingNotifyAppReadyPhase;
+        this.pendingNotifyAppReadyWait = false;
+        this.pendingNotifyAppReadyPhase = -1;
+        this.cleanupTimedOutSemaphoreWait(phase);
+    }
+
+    private boolean consumePendingNotifyAppReadyWait(final int[] phaseOut) {
+        if (!this.pendingNotifyAppReadyWait) {
+            return false;
+        }
+        phaseOut[0] = this.pendingNotifyAppReadyPhase;
+        this.pendingNotifyAppReadyWait = false;
+        this.pendingNotifyAppReadyPhase = -1;
+        return true;
+    }
+
     protected long getMinimumPendingBundleAppReadyTimeoutMs() {
         return PENDING_BUNDLE_APP_READY_MIN_TIMEOUT_MS;
     }
@@ -1022,19 +1059,40 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private void sendReadyToJs(final BundleInfo current, final String msg, final boolean isDirectUpdate) {
         logger.info("sendReadyToJs: " + msg);
-        final JSObject ret = new JSObject();
-        ret.put("bundle", InternalUtils.mapToJSObject(current.toJSONMap()));
-        ret.put("status", msg);
+        final int[] pendingPhase = new int[] { -1 };
+        final boolean shouldWait = this.consumePendingNotifyAppReadyWait(pendingPhase);
 
-        // No need to wait for semaphore anymore since _reload() has already waited
-        this.notifyListeners("appReady", ret, true);
+        final Runnable emitReady = () -> {
+            final JSObject ret = new JSObject();
+            ret.put("bundle", InternalUtils.mapToJSObject(current.toJSONMap()));
+            ret.put("status", msg);
 
-        // Auto hide splashscreen if enabled
-        // We show it on background when conditions are met, so we should hide it on foreground regardless of update outcome
-        if (this.autoSplashscreen) {
-            this.hideSplashscreen();
+            this.notifyListeners("appReady", ret, true);
+
+            // Auto hide splashscreen if enabled
+            // We show it on background when conditions are met, so we should hide it on foreground regardless of update outcome
+            if (this.autoSplashscreen) {
+                this.hideSplashscreen();
+            }
+            this.hidePreviewTransitionLoader("app-ready");
+        };
+
+        if (!shouldWait) {
+            emitReady.run();
+            return;
         }
-        this.hidePreviewTransitionLoader("app-ready");
+
+        // Never block the UI thread waiting for notifyAppReady (JS needs it).
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            startNewThread(() -> {
+                this.semaphoreWait(pendingPhase[0], this.appReadyTimeout);
+                emitReady.run();
+            });
+            return;
+        }
+
+        this.semaphoreWait(pendingPhase[0], this.appReadyTimeout);
+        emitReady.run();
     }
 
     private void hideSplashscreen() {
@@ -1601,17 +1659,28 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 CapacitorUpdaterPlugin.this.reportWebViewPageLoaded(view);
                 CapacitorUpdaterPlugin.this.evaluateWebViewStatsReporterScript(view, script);
             }
-
-            @Override
-            public boolean onRenderProcessGone(final android.webkit.WebView view, final RenderProcessGoneDetail detail) {
-                final Map<String, String> metadata = CapacitorUpdaterPlugin.this.buildWebViewRenderProcessGoneMetadata(detail);
-                CapacitorUpdaterPlugin.this.persistPendingWebViewRenderProcessGone(metadata);
-                return false;
-            }
         };
 
         this.bridge.addWebViewListener(this.webViewStatsListener);
+        // Keep RenderProcessGoneDetail off the Plugin class method table and off this
+        // listener so Android < 8 (API 26) does not crash during plugin reflection.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            this.installWebViewRenderProcessGoneReporter();
+        }
         this.evaluateWebViewStatsReporterScript(webView, script);
+    }
+
+    private void installWebViewRenderProcessGoneReporter() {
+        this.bridge.addWebViewListener(
+            new WebViewListener() {
+                @Override
+                public boolean onRenderProcessGone(final android.webkit.WebView view, final RenderProcessGoneDetail detail) {
+                    final Map<String, String> metadata = CapacitorUpdaterPlugin.this.buildWebViewRenderProcessGoneMetadata(detail);
+                    CapacitorUpdaterPlugin.this.persistPendingWebViewRenderProcessGone(metadata);
+                    return false;
+                }
+            }
+        );
     }
 
     private void installDocumentStartWebViewStatsReporter(final android.webkit.WebView webView, final String script) {
@@ -1720,16 +1789,17 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.reportWebViewStats("webview_page_loaded", metadata);
     }
 
-    private Map<String, String> buildWebViewRenderProcessGoneMetadata(final RenderProcessGoneDetail detail) {
+    private Map<String, String> buildWebViewRenderProcessGoneMetadata(final Object detailObj) {
         final Map<String, String> metadata = new HashMap<>();
         metadata.put("error_type", "render_process_gone");
         metadata.put("source", "android_on_render_process_gone");
         metadata.put("timestamp", Long.toString(System.currentTimeMillis()));
-        if (detail != null) {
+        // Parameter typed as Object so Android < 8 ART does not resolve
+        // RenderProcessGoneDetail while reflecting CapacitorUpdaterPlugin methods.
+        if (detailObj != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            final RenderProcessGoneDetail detail = (RenderProcessGoneDetail) detailObj;
             metadata.put("did_crash", Boolean.toString(detail.didCrash()));
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                metadata.put("renderer_priority_at_exit", Integer.toString(detail.rendererPriorityAtExit()));
-            }
+            metadata.put("renderer_priority_at_exit", Integer.toString(detail.rendererPriorityAtExit()));
         }
         return metadata;
     }
@@ -2311,66 +2381,57 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return false;
     }
 
-    private void cleanupObsoleteVersions() {
+    private void cleanupObsoleteVersions(final boolean resetWhenUpdate) {
+        // Latch created before start so waiters never race past an unstarted cleanup thread.
+        final CountDownLatch latch = new CountDownLatch(1);
+        this.cleanupComplete = false;
+        this.cleanupLatch = latch;
         cleanupThread = startNewThread(() -> {
-            synchronized (cleanupLock) {
-                try {
-                    final String previous = this.getStoredNativeBuildVersion();
-                    if (!"".equals(previous) && !Objects.equals(this.currentBuildVersion, previous)) {
-                        logger.info("New native build version detected: " + this.currentBuildVersion);
-                        this.implementation.reset(true);
-                        final List<BundleInfo> installed = this.implementation.list(false);
-                        for (final BundleInfo bundle : installed) {
-                            // Check if thread was interrupted (cancelled)
-                            if (Thread.currentThread().isInterrupted()) {
-                                logger.warn("Cleanup was cancelled, stopping");
-                                return;
-                            }
-                            try {
-                                logger.info("Deleting obsolete bundle: " + bundle.getId());
-                                this.implementation.delete(bundle.getId());
-                            } catch (final Exception e) {
-                                logger.error("Failed to delete: " + bundle.getId() + " " + e.getMessage());
-                            }
-                        }
-                        final List<BundleInfo> storedBundles = this.implementation.list(true);
-                        final Set<String> allowedIds = new HashSet<>();
-                        for (final BundleInfo info : storedBundles) {
-                            if (info != null && info.getId() != null && !info.getId().isEmpty()) {
-                                allowedIds.add(info.getId());
-                            }
-                        }
-                        this.implementation.cleanupDownloadDirectories(allowedIds, Thread.currentThread());
-                        this.implementation.cleanupOrphanedTempFolders(Thread.currentThread());
-
-                        // Check again before the expensive delta cache cleanup
-                        if (Thread.currentThread().isInterrupted()) {
-                            logger.warn("Cleanup was cancelled before delta cache cleanup");
-                            return;
-                        }
-                        this.implementation.cleanupDeltaCache(Thread.currentThread());
-                    }
-                    this.persistCurrentNativeBuildVersion();
-                } catch (Exception e) {
-                    logger.error("Error during cleanupObsoleteVersions: " + e.getMessage());
-                } finally {
-                    cleanupComplete = true;
-                    logger.info("Cleanup complete");
-                }
-            }
-        });
-
-        // Start a timeout watchdog thread to cancel cleanup if it takes too long
-        final long timeout = this.appReadyTimeout / 2;
-        startNewThread(() -> {
             try {
-                Thread.sleep(timeout);
-                if (cleanupThread != null && cleanupThread.isAlive() && !cleanupComplete) {
-                    logger.warn("Cleanup timeout exceeded (" + timeout + "ms), interrupting cleanup thread");
-                    cleanupThread.interrupt();
+                synchronized (cleanupLock) {
+                    try {
+                        final String previous = this.getStoredNativeBuildVersion();
+                        final boolean nativeVersionChanged = !"".equals(previous) && !Objects.equals(this.currentBuildVersion, previous);
+                        if (resetWhenUpdate && nativeVersionChanged) {
+                            logger.info("New native build version detected: " + this.currentBuildVersion);
+                            this.implementation.reset(true);
+                            final List<BundleInfo> installed = this.implementation.list(false);
+                            for (final BundleInfo bundle : installed) {
+                                try {
+                                    logger.info("Deleting obsolete bundle: " + bundle.getId());
+                                    this.implementation.delete(bundle.getId());
+                                } catch (final Exception e) {
+                                    logger.error("Failed to delete: " + bundle.getId() + " " + e.getMessage());
+                                }
+                                try {
+                                    Thread.sleep(75L);
+                                } catch (final InterruptedException ie) {
+                                    Thread.currentThread().interrupt();
+                                    return;
+                                }
+                            }
+                            this.implementation.cleanupDeltaCache();
+                        }
+
+                        // Resume any DELETING leftovers from prior kills, one-by-one.
+                        this.implementation.drainPendingDeletes();
+
+                        // Always sweep orphan folders so incomplete prior cleanups (or failed deletes)
+                        // cannot leave hundreds of MB behind across launches.
+                        final Set<String> allowedIds = this.implementation.allowedBundleIdsForCleanup();
+                        this.implementation.cleanupDownloadDirectories(allowedIds);
+                        this.implementation.cleanupOrphanedTempFolders(null);
+
+                        this.persistCurrentNativeBuildVersion();
+                    } catch (Exception e) {
+                        logger.error("Error during cleanupObsoleteVersions: " + e.getMessage());
+                    } finally {
+                        cleanupComplete = true;
+                        logger.info("Cleanup complete");
+                    }
                 }
-            } catch (InterruptedException e) {
-                // Watchdog thread was interrupted, that's fine
+            } finally {
+                latch.countDown();
             }
         });
     }
@@ -2398,11 +2459,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
 
         logger.info("Waiting for cleanup to complete before starting download...");
-
-        // Wait for cleanup to complete - blocks until lock is released
-        synchronized (cleanupLock) {
-            logger.info("Cleanup finished, proceeding with download");
+        try {
+            this.cleanupLatch.await();
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.warn("Interrupted while waiting for cleanup");
+            throw new IllegalStateException("Interrupted while waiting for cleanup");
         }
+        logger.info("Cleanup finished, proceeding with download");
     }
 
     public void notifyDownload(final String id, final int percent) {
@@ -2740,6 +2804,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final String checksum,
         final JSONArray manifest
     ) throws IOException {
+        // Manual/preview downloads must wait too — launch orphan sweep can delete their temps.
+        waitForCleanupIfNeeded();
         if (manifest != null) {
             return this.implementation.downloadManifest(url, version, sessionKey, checksum, manifest);
         }
@@ -2913,6 +2979,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     protected boolean _reload() {
+        // Drop any launch pending wait; this reload owns notifyAppReady synchronization.
+        this.clearPendingNotifyAppReadyWait();
         final int phase = this.semaphoreUp();
         this.applyCurrentBundleToBridge();
 
@@ -5053,15 +5121,21 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.implementation.setError(current);
             this.performReset(true, false, true);
             if (CapacitorUpdaterPlugin.this.autoDeleteFailed && !current.isBuiltin()) {
-                logger.info("Deleting failing bundle: " + current.getVersionName());
-                try {
-                    final Boolean res = this.implementation.delete(current.getId(), false);
-                    if (res) {
-                        logger.info("Failed bundle deleted: " + current.getVersionName());
+                final String failedId = current.getId();
+                final String failedVersion = current.getVersionName();
+                logger.info("Deleting failing bundle: " + failedVersion);
+                // Mark before async work so kill/OOM still resumes via drainPendingDeletes.
+                CapacitorUpdaterPlugin.this.implementation.saveBundleInfo(failedId, current.setStatus(BundleStatus.DELETING));
+                startNewThread(() -> {
+                    try {
+                        final Boolean res = CapacitorUpdaterPlugin.this.implementation.delete(failedId, false, false);
+                        if (Boolean.TRUE.equals(res)) {
+                            logger.info("Failed bundle deleted: " + failedVersion);
+                        }
+                    } catch (final IOException e) {
+                        logger.error("Failed to delete failed bundle: " + failedVersion + " " + e.getMessage());
                     }
-                } catch (final IOException e) {
-                    logger.error("Failed to delete failed bundle: " + current.getVersionName() + " " + e.getMessage());
-                }
+                });
             }
         } else {
             logger.info("notifyAppReady was called. This is fine: " + current.getId());

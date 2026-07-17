@@ -92,7 +92,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "completeFlexibleUpdate", returnType: CAPPluginReturnPromise)
     ]
     public var implementation = CapgoUpdater()
-    private let pluginVersion: String = "8.50.2"
+    private let pluginVersion: String = "8.51.1"
     private let launchStartedAtMs = Int64(Date().timeIntervalSince1970 * 1000)
     static let updateUrlDefault = "https://plugin.capgo.app/updates"
     static let statsUrlDefault = "https://plugin.capgo.app/stats"
@@ -188,6 +188,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     // Lock to ensure cleanup completes before downloads start
     private let cleanupLock = NSLock()
     private let defaultChannelStateLock = NSLock()
+    private let cleanupGroup = DispatchGroup()
     private var cleanupComplete = false
     private var cleanupThread: Thread?
     private var defaultChannelCleanupMustRetry = false
@@ -208,6 +209,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var isLeavingPreviewForIncomingLink = false
     private var previewTransitionClearWorkItem: DispatchWorkItem?
     let semaphoreReady = DispatchSemaphore(value: 0)
+    // Best-effort flag: set before we expect notifyAppReady (load/reload).
+    // No lock — never held across waits; a rare race only mis-times one wait.
+    private var pendingNotifyAppReady = false
 
     private var delayUpdateUtils: DelayUpdateUtils!
 
@@ -416,10 +420,21 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         self.leavePreviewSessionForLaunchURLIfNeeded()
 
-        if resetWhenUpdate {
-            let didResetCurrentBundle = self.resetCurrentBundleForNativeBuildChangeIfNeeded()
-            self.cleanupObsoleteVersions(didResetCurrentBundle: didResetCurrentBundle)
+        // Downloads (including shake-menu / CapgoUpdater entry points) wait on this gate.
+        self.implementation.beforeDownload = { [weak self] in
+            self?.waitForCleanupIfNeeded()
         }
+        // Always run async cleanup: delete obsolete bundles on native update (when enabled)
+        // and sweep orphan directories every launch. Must not block app startup.
+        if !resetWhenUpdate {
+            UserDefaults.standard.set(self.currentBuildVersion, forKey: "LatestNativeBuildVersion")
+            UserDefaults.standard.synchronize()
+        }
+        let didResetCurrentBundle = resetWhenUpdate ? self.resetCurrentBundleForNativeBuildChangeIfNeeded() : false
+        self.cleanupObsoleteVersions(
+            resetWhenUpdate: resetWhenUpdate,
+            didResetCurrentBundle: didResetCurrentBundle
+        )
         self.reportNativeVersionStatsIfChanged()
 
         // Load the server
@@ -581,6 +596,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func semaphoreUp() {
+        pendingNotifyAppReady = true
         DispatchQueue.global().async {
             self.semaphoreWait(waitTime: 0)
         }
@@ -1013,12 +1029,30 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         return true
     }
 
-    private func cleanupObsoleteVersions(didResetCurrentBundle: Bool = false) {
+    private func cleanupObsoleteVersions(resetWhenUpdate: Bool = true, didResetCurrentBundle: Bool = false) {
+        // Enter before start so waiters never race past an unstarted cleanup thread.
+        self.cleanupComplete = false
+        self.cleanupGroup.enter()
         cleanupThread = Thread {
+            let bgTaskLock = NSLock()
+            var cleanupBackgroundTask = UIBackgroundTaskIdentifier.invalid
+            let endCleanupBackgroundTask = {
+                bgTaskLock.lock()
+                defer { bgTaskLock.unlock() }
+                if cleanupBackgroundTask != .invalid {
+                    UIApplication.shared.endBackgroundTask(cleanupBackgroundTask)
+                    cleanupBackgroundTask = .invalid
+                }
+            }
+            cleanupBackgroundTask = UIApplication.shared.beginBackgroundTask(withName: "CapgoBundleCleanup") {
+                endCleanupBackgroundTask()
+            }
             self.cleanupLock.lock()
             defer {
                 self.cleanupComplete = true
                 self.cleanupLock.unlock()
+                self.cleanupGroup.leave()
+                endCleanupBackgroundTask()
                 self.logger.info("Cleanup complete")
             }
 
@@ -1049,40 +1083,33 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             // 2. Compare both keys. If any is not equal to "currentBuildVersion", then revert to builtin version. This fixes the part 2 of this bug
 
             let previous = self.storedNativeBuildVersion()
-            if previous != "0" && self.currentBuildVersion != previous {
+            let nativeVersionChanged = previous != "0" && self.currentBuildVersion != previous
+            if resetWhenUpdate && nativeVersionChanged {
                 if !didResetCurrentBundle {
                     self.logger.info("Native build version changed from \(previous) to \(self.currentBuildVersion). Resetting current bundle to builtin.")
                     self.implementation.reset(isInternal: true)
                 }
                 let res = self.implementation.list()
                 for version in res {
-                    // Check if thread was cancelled
-                    if Thread.current.isCancelled {
-                        self.logger.warn("Cleanup was cancelled, stopping")
-                        return
-                    }
                     self.logger.info("Deleting obsolete bundle: \(version.getId())")
-                    let res = self.implementation.delete(id: version.getId())
-                    if !res {
+                    let deleted = self.implementation.delete(id: version.getId())
+                    if !deleted {
                         self.logger.error("Delete failed, id \(version.getId()) doesn't exist")
                     }
+                    Thread.sleep(forTimeInterval: 0.075)
                 }
-
-                let storedBundles = self.implementation.list(raw: true)
-                let allowedIds = Set(storedBundles.compactMap { info -> String? in
-                    let id = info.getId()
-                    return id.isEmpty ? nil : id
-                })
-                self.implementation.cleanupDownloadDirectories(allowedIds: allowedIds, threadToCheck: Thread.current)
-                self.implementation.cleanupOrphanedTempFolders(threadToCheck: Thread.current)
-
-                // Check again before the expensive delta cache cleanup
-                if Thread.current.isCancelled {
-                    self.logger.warn("Cleanup was cancelled before delta cache cleanup")
-                    return
-                }
-                self.implementation.cleanupDeltaCache(threadToCheck: Thread.current)
+                self.implementation.cleanupDeltaCache()
             }
+
+            // Resume any DELETING leftovers from prior kills, one-by-one.
+            self.implementation.drainPendingDeletes()
+
+            // Always sweep orphan directories so incomplete prior cleanups (or failed deletes)
+            // cannot leave hundreds of MB behind across launches.
+            let allowedIds = self.implementation.allowedBundleIdsForCleanup()
+            self.implementation.cleanupDownloadDirectories(allowedIds: allowedIds)
+            self.implementation.cleanupOrphanedTempFolders(threadToCheck: nil)
+
             if self.defaultChannelCleanupMustRetry {
                 self.logger.warn("Keeping the previous native build version so default channel cleanup retries")
             } else {
@@ -1091,16 +1118,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
         }
         cleanupThread?.start()
-
-        // Start a timeout watchdog thread to cancel cleanup if it takes too long
-        let timeout = Double(self.appReadyTimeout / 2) / 1000.0
-        Thread.detachNewThread {
-            Thread.sleep(forTimeInterval: timeout)
-            if let thread = self.cleanupThread, !thread.isFinished && !self.cleanupComplete {
-                self.logger.warn("Cleanup timeout exceeded (\(timeout)s), cancelling cleanup thread")
-                thread.cancel()
-            }
-        }
     }
 
     private func waitForCleanupIfNeeded() {
@@ -1109,11 +1126,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         logger.info("Waiting for cleanup to complete before starting download...")
-
-        // Wait for cleanup to complete - blocks until lock is released
-        cleanupLock.lock()
-        cleanupLock.unlock()
-
+        cleanupGroup.wait()
         logger.info("Cleanup finished, proceeding with download")
     }
 
@@ -1530,6 +1543,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func downloadBundle(urlString: String, version: String, sessionKey: String, checksum rawChecksum: String, manifestEntries: [ManifestEntry]?) throws -> BundleInfo {
+        // Manual/preview downloads must wait too - launch orphan sweep can delete their temps.
+        self.waitForCleanupIfNeeded()
         guard let url = URL(string: urlString) else {
             throw makePreviewError("Invalid download URL")
         }
@@ -1681,6 +1696,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         let performReload: () -> Bool = {
             guard self.applyCurrentBundleToBridge(bridge) else {
+                self.clearPendingNotifyAppReady()
                 return false
             }
             self.checkAppReady()
@@ -3335,12 +3351,21 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             self.implementation.setError(bundle: current)
             _ = self.performReset(toLastSuccessful: true, usePendingBundle: false, isInternal: true)
             if self.autoDeleteFailed && !current.isBuiltin() {
+                let failedId = current.getId()
                 logger.info("Deleting failing bundle: \(current.toString())")
-                let res = self.implementation.delete(id: current.getId(), removeInfo: false)
-                if !res {
-                    logger.info("Delete version deleted: \(current.toString())")
-                } else {
-                    logger.error("Failed to delete failed bundle: \(current.toString())")
+                // Mark before async work so kill/OOM still resumes via drainPendingDeletes.
+                self.implementation.saveBundleInfo(
+                    id: failedId,
+                    bundle: current.setStatus(status: BundleStatus.DELETING.storedValue)
+                )
+                UserDefaults.standard.synchronize()
+                DispatchQueue.global(qos: .utility).async {
+                    let res = self.implementation.delete(id: failedId, removeInfo: false)
+                    if res {
+                        self.logger.info("Failed bundle deleted: \(failedId)")
+                    } else {
+                        self.logger.error("Failed to delete failed bundle: \(failedId)")
+                    }
                 }
             }
         } else {
@@ -3365,7 +3390,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     func sendReadyToJs(current: BundleInfo, msg: String) {
         logger.info("sendReadyToJs")
         DispatchQueue.global().async {
-            self.semaphoreWait(waitTime: self.appReadyTimeout)
+            // Only wait after load()/reload() armed the semaphore. Foreground resumes
+            // with autoUpdate disabled call sendReadyToJs again without a fresh
+            // notifyAppReady(), so waiting there always timed out after appReadyTimeout.
+            if self.consumePendingNotifyAppReady() {
+                self.semaphoreWait(waitTime: self.appReadyTimeout)
+            }
             self.notifyListeners("appReady", data: ["bundle": current.toJSON(), "status": msg], retainUntilConsumed: true)
 
             // Auto hide splashscreen if enabled
@@ -3375,6 +3405,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             self.hidePreviewTransitionLoader(reason: "app-ready")
         }
+    }
+
+    private func consumePendingNotifyAppReady() -> Bool {
+        let shouldWait = pendingNotifyAppReady
+        pendingNotifyAppReady = false
+        return shouldWait
+    }
+
+    private func clearPendingNotifyAppReady() {
+        pendingNotifyAppReady = false
     }
 
     private func hideSplashscreen() {
@@ -3988,6 +4028,22 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     func setCurrentBuildVersionForTesting(_ currentBuildVersion: String) {
         self.currentBuildVersion = currentBuildVersion
+    }
+
+    func setAppReadyTimeoutForTesting(_ timeout: Int) {
+        self.appReadyTimeout = timeout
+    }
+
+    func armPendingNotifyAppReadyForTesting() {
+        pendingNotifyAppReady = true
+    }
+
+    func clearPendingNotifyAppReadyForTesting() {
+        clearPendingNotifyAppReady()
+    }
+
+    var isPendingNotifyAppReadyForTesting: Bool {
+        pendingNotifyAppReady
     }
 
     func shouldUseDirectUpdateForTesting() -> Bool {

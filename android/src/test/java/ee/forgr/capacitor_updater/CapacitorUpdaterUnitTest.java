@@ -31,6 +31,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
@@ -773,8 +774,9 @@ public class CapacitorUpdaterUnitTest {
         }
 
         @Override
-        public void saveBundleInfo(final String id, final BundleInfo info) {
+        public boolean saveBundleInfo(final String id, final BundleInfo info) {
             this.bundleInfos.put(id, info);
+            return true;
         }
 
         @Override
@@ -974,6 +976,18 @@ public class CapacitorUpdaterUnitTest {
         };
 
         return updater;
+    }
+
+    private static void invokeSendReadyToJs(final CapacitorUpdaterPlugin plugin, final BundleInfo bundle, final String msg)
+        throws Exception {
+        final Method method = CapacitorUpdaterPlugin.class.getDeclaredMethod(
+            "sendReadyToJs",
+            BundleInfo.class,
+            String.class,
+            boolean.class
+        );
+        method.setAccessible(true);
+        method.invoke(plugin, bundle, msg, false);
     }
 
     private static void invokePrivateVoidMethod(final CapacitorUpdaterPlugin plugin, final String methodName) throws Exception {
@@ -1317,6 +1331,7 @@ public class CapacitorUpdaterUnitTest {
         assertEquals("error", BundleStatus.ERROR.toString());
         assertEquals("pending", BundleStatus.PENDING.toString());
         assertEquals("deleted", BundleStatus.DELETED.toString());
+        assertEquals("deleting", BundleStatus.DELETING.toString());
         assertEquals("downloading", BundleStatus.DOWNLOADING.toString());
     }
 
@@ -1326,6 +1341,7 @@ public class CapacitorUpdaterUnitTest {
         assertEquals(BundleStatus.ERROR, BundleStatus.fromString("error"));
         assertEquals(BundleStatus.PENDING, BundleStatus.fromString("pending"));
         assertEquals(BundleStatus.DELETED, BundleStatus.fromString("deleted"));
+        assertEquals(BundleStatus.DELETING, BundleStatus.fromString("deleting"));
         assertEquals(BundleStatus.DOWNLOADING, BundleStatus.fromString("downloading"));
 
         // Test null/empty string returns PENDING
@@ -2413,6 +2429,162 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testSendReadyToJsWithoutPendingEmitsImmediately() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            final Looper mainLooper = mock(Looper.class);
+            looperMock.when(Looper::getMainLooper).thenReturn(mainLooper);
+            looperMock.when(Looper::myLooper).thenReturn(null);
+
+            final ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
+            final CapgoUpdater updater = mock(CapgoUpdater.class);
+            final BundleInfo bundle = new BundleInfo("id", "1.0.0", BundleStatus.SUCCESS, new Date(), "checksum");
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+            setPrivateField(plugin, "appReadyTimeout", 2000);
+            setPrivateField(plugin, "autoSplashscreen", false);
+            when(updater.getCurrentBundle()).thenReturn(bundle);
+
+            final long start = System.currentTimeMillis();
+            invokeSendReadyToJs(plugin, bundle, "disabled");
+            final long elapsed = System.currentTimeMillis() - start;
+
+            assertTrue(plugin.hasNotifiedEvent("appReady"));
+            assertEquals("disabled", plugin.getNotifiedEventPayload("appReady").getString("status"));
+            assertTrue("expected immediate emit, took " + elapsed + "ms", elapsed < 500);
+            assertFalse((Boolean) getPrivateField(plugin, "pendingNotifyAppReadyWait"));
+        }
+    }
+
+    @Test
+    public void testSendReadyToJsWithPendingUnblocksAfterNotifyAppReady() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            final Looper mainLooper = mock(Looper.class);
+            looperMock.when(Looper::getMainLooper).thenReturn(mainLooper);
+            looperMock.when(Looper::myLooper).thenReturn(null);
+
+            final ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
+            final CapgoUpdater updater = mock(CapgoUpdater.class);
+            final PluginCall call = mock(PluginCall.class);
+            final BundleInfo bundle = new BundleInfo("id", "1.0.0", BundleStatus.SUCCESS, new Date(), "checksum");
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+            setPrivateField(plugin, "appReadyTimeout", 5000);
+            setPrivateField(plugin, "autoSplashscreen", false);
+            when(updater.getCurrentBundle()).thenReturn(bundle);
+
+            invokePrivateVoidMethod(plugin, "armPendingNotifyAppReadyWait");
+            assertTrue((Boolean) getPrivateField(plugin, "pendingNotifyAppReadyWait"));
+
+            // Signal before sendReadyToJs waits — proves pending wait observes notifyAppReady.
+            plugin.notifyAppReady(call);
+
+            final long start = System.currentTimeMillis();
+            invokeSendReadyToJs(plugin, bundle, "update installed");
+            final long elapsed = System.currentTimeMillis() - start;
+
+            assertTrue(plugin.hasNotifiedEvent("appReady"));
+            assertEquals("update installed", plugin.getNotifiedEventPayload("appReady").getString("status"));
+            assertTrue("expected quick unblock after notifyAppReady, took " + elapsed + "ms", elapsed < 500);
+            assertFalse((Boolean) getPrivateField(plugin, "pendingNotifyAppReadyWait"));
+            assertEquals(0, ((Phaser) getPrivateField(plugin, "semaphoreReady")).getRegisteredParties());
+        }
+    }
+
+    @Test
+    public void testSendReadyToJsWithPendingTimesOutAndStillEmits() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            final Looper mainLooper = mock(Looper.class);
+            looperMock.when(Looper::getMainLooper).thenReturn(mainLooper);
+            looperMock.when(Looper::myLooper).thenReturn(null);
+
+            final ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
+            final CapgoUpdater updater = mock(CapgoUpdater.class);
+            final BundleInfo bundle = new BundleInfo("id", "1.0.0", BundleStatus.SUCCESS, new Date(), "checksum");
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+            setPrivateField(plugin, "appReadyTimeout", 50);
+            setPrivateField(plugin, "autoSplashscreen", false);
+            when(updater.getCurrentBundle()).thenReturn(bundle);
+
+            invokePrivateVoidMethod(plugin, "armPendingNotifyAppReadyWait");
+
+            final long start = System.currentTimeMillis();
+            invokeSendReadyToJs(plugin, bundle, "disabled");
+            final long elapsed = System.currentTimeMillis() - start;
+
+            assertTrue(plugin.hasNotifiedEvent("appReady"));
+            assertTrue("expected timeout wait, took " + elapsed + "ms", elapsed >= 40);
+            assertFalse((Boolean) getPrivateField(plugin, "pendingNotifyAppReadyWait"));
+            assertEquals(0, ((Phaser) getPrivateField(plugin, "semaphoreReady")).getRegisteredParties());
+        }
+    }
+
+    @Test
+    public void testReloadClearsLaunchPendingNotifyWait() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+            looperMock.when(Looper::myLooper).thenReturn(null);
+
+            final NoOpThreadCapacitorUpdaterPlugin plugin = new NoOpThreadCapacitorUpdaterPlugin();
+            final Bridge bridge = mock(Bridge.class);
+            final WebView webView = mock(WebView.class);
+
+            plugin.implementation = new FixedPathCapgoUpdater("/tmp/capgo-bundle", false);
+            plugin.setLoggerForTesting(mock(Logger.class));
+            plugin.setBridge(bridge);
+            setPrivateField(plugin, "appReadyTimeout", 1);
+
+            when(bridge.getWebView()).thenReturn(webView);
+            when(bridge.getAppUrl()).thenReturn("https://local-app-domain.com");
+            when(webView.post(any(Runnable.class))).thenReturn(true);
+
+            invokePrivateVoidMethod(plugin, "armPendingNotifyAppReadyWait");
+            assertTrue((Boolean) getPrivateField(plugin, "pendingNotifyAppReadyWait"));
+
+            plugin._reload();
+
+            assertFalse((Boolean) getPrivateField(plugin, "pendingNotifyAppReadyWait"));
+            assertEquals(-1, (int) getPrivateField(plugin, "pendingNotifyAppReadyPhase"));
+        }
+    }
+
+    @Test
+    public void testSendReadyToJsOnMainThreadDoesNotBlockCaller() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            final Looper mainLooper = mock(Looper.class);
+            looperMock.when(Looper::getMainLooper).thenReturn(mainLooper);
+            looperMock.when(Looper::myLooper).thenReturn(mainLooper);
+
+            final ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
+            final CapgoUpdater updater = mock(CapgoUpdater.class);
+            final PluginCall call = mock(PluginCall.class);
+            final BundleInfo bundle = new BundleInfo("id", "1.0.0", BundleStatus.SUCCESS, new Date(), "checksum");
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+            setPrivateField(plugin, "appReadyTimeout", 5000);
+            setPrivateField(plugin, "autoSplashscreen", false);
+            when(updater.getCurrentBundle()).thenReturn(bundle);
+
+            invokePrivateVoidMethod(plugin, "armPendingNotifyAppReadyWait");
+            plugin.notifyAppReady(call);
+
+            final long start = System.currentTimeMillis();
+            invokeSendReadyToJs(plugin, bundle, "disabled");
+            final long elapsed = System.currentTimeMillis() - start;
+
+            assertTrue(plugin.hasNotifiedEvent("appReady"));
+            assertTrue("main-thread caller should not block on wait, took " + elapsed + "ms", elapsed < 1000);
+        }
+    }
+
+    @Test
     public void testInstallNextDispatchesReloadOffLifecycleThread() throws Exception {
         try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
             looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
@@ -3169,5 +3341,126 @@ public class CapacitorUpdaterUnitTest {
         assertTrue(CapacitorUpdaterPlugin.isSupportedShakeMenuGesture("threeFingerPinch"));
         assertFalse(CapacitorUpdaterPlugin.isSupportedShakeMenuGesture(" "));
         assertFalse(CapacitorUpdaterPlugin.isSupportedShakeMenuGesture("pinch"));
+    }
+
+    @Test
+    public void cleanupDownloadDirectoriesRemovesOrphanBundleFolders() throws Exception {
+        final String keptId = "keptBundle1";
+        final String orphanId = "orphanBndl1";
+        final Path tempDir = createExistingBundleDirectory("capgo-orphan-kept", keptId);
+        final Path orphanDir = tempDir.resolve("versions").resolve(orphanId);
+        Files.createDirectories(orphanDir);
+        Files.write(orphanDir.resolve("index.html"), "<html></html>".getBytes(StandardCharsets.UTF_8));
+        orphanDir.toFile().deleteOnExit();
+
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        final SharedPreferences prefs = mock(SharedPreferences.class);
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+        updater.documentsDir = tempDir.toFile();
+        updater.CAP_SERVER_PATH = "server-path";
+        updater.prefs = prefs;
+        updater.editor = editor;
+
+        when(prefs.getString("server-path", "public")).thenReturn("public");
+        when(prefs.getString("pastVersion", BundleInfo.ID_BUILTIN)).thenReturn(BundleInfo.ID_BUILTIN);
+        when(prefs.getString("nextVersion", null)).thenReturn(null);
+        when(prefs.getString("previewFallbackVersion", null)).thenReturn(null);
+        when(prefs.getAll()).thenReturn(Map.of());
+        when(editor.remove(anyString())).thenReturn(editor);
+
+        final Set<String> allowedIds = Set.of(keptId);
+        updater.cleanupDownloadDirectories(allowedIds);
+
+        assertTrue("Kept bundle folder should remain", Files.exists(tempDir.resolve("versions").resolve(keptId)));
+        assertFalse("Orphan bundle folder should be deleted", Files.exists(orphanDir));
+    }
+
+    @Test
+    public void deleteMarksDeletingThenRemovesRegistryOnlyAfterFolderGone() throws Exception {
+        final String id = "delBundle1";
+        final Path tempDir = createExistingBundleDirectory("capgo-safe-delete", id);
+
+        final Map<String, String> store = new HashMap<>();
+        final BundleInfo initial = new BundleInfo(id, "9.9.9", BundleStatus.SUCCESS, new Date(), "checksum1");
+        store.put(id + "_info", initial.toString());
+
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        final SharedPreferences prefs = mock(SharedPreferences.class);
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+        updater.documentsDir = tempDir.toFile();
+        updater.CAP_SERVER_PATH = "server-path";
+        updater.prefs = prefs;
+        updater.editor = editor;
+        updater.statsUrl = "";
+
+        when(prefs.getString(eq("server-path"), anyString())).thenReturn("public");
+        when(prefs.getString(eq("pastVersion"), anyString())).thenReturn(BundleInfo.ID_BUILTIN);
+        when(prefs.getString(eq("nextVersion"), isNull())).thenReturn(null);
+        when(prefs.getString(eq("previewFallbackVersion"), isNull())).thenReturn(null);
+        when(prefs.getString(eq(id + "_info"), anyString())).thenAnswer((inv) -> store.getOrDefault(id + "_info", ""));
+        when(prefs.contains(eq(id + "_info"))).thenAnswer((inv) -> store.containsKey(id + "_info"));
+        when(prefs.getAll()).thenAnswer((inv) -> {
+            final Map<String, Object> all = new HashMap<>();
+            all.putAll(store);
+            return all;
+        });
+        when(editor.putString(anyString(), anyString())).thenAnswer((inv) -> {
+            store.put(inv.getArgument(0), inv.getArgument(1));
+            return editor;
+        });
+        when(editor.remove(anyString())).thenAnswer((inv) -> {
+            store.remove((String) inv.getArgument(0));
+            return editor;
+        });
+        when(editor.commit()).thenReturn(true);
+
+        assertTrue(Boolean.TRUE.equals(updater.delete(id, true)));
+        assertFalse("Folder must be gone after confirmed delete", Files.exists(tempDir.resolve("versions").resolve(id)));
+        assertFalse("Registry entry must be removed after confirmed delete", store.containsKey(id + "_info"));
+    }
+
+    @Test
+    public void drainPendingDeletesFinishesDeletingBundles() throws Exception {
+        final String id = "pendDelete";
+        final Path tempDir = createExistingBundleDirectory("capgo-drain-delete", id);
+
+        final Map<String, String> store = new HashMap<>();
+        final BundleInfo deleting = new BundleInfo(id, "8.8.8", BundleStatus.DELETING, new Date(), "checksum2");
+        store.put(id + "_info", deleting.toString());
+
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        final SharedPreferences prefs = mock(SharedPreferences.class);
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+        updater.documentsDir = tempDir.toFile();
+        updater.CAP_SERVER_PATH = "server-path";
+        updater.prefs = prefs;
+        updater.editor = editor;
+        updater.statsUrl = "";
+
+        when(prefs.getString(eq("server-path"), anyString())).thenReturn("public");
+        when(prefs.getString(eq("pastVersion"), anyString())).thenReturn(BundleInfo.ID_BUILTIN);
+        when(prefs.getString(eq("nextVersion"), isNull())).thenReturn(null);
+        when(prefs.getString(eq("previewFallbackVersion"), isNull())).thenReturn(null);
+        when(prefs.getString(eq(id + "_info"), anyString())).thenAnswer((inv) -> store.getOrDefault(id + "_info", ""));
+        when(prefs.contains(eq(id + "_info"))).thenAnswer((inv) -> store.containsKey(id + "_info"));
+        when(prefs.getAll()).thenAnswer((inv) -> {
+            final Map<String, Object> all = new HashMap<>();
+            all.putAll(store);
+            return all;
+        });
+        when(editor.putString(anyString(), anyString())).thenAnswer((inv) -> {
+            store.put(inv.getArgument(0), inv.getArgument(1));
+            return editor;
+        });
+        when(editor.remove(anyString())).thenAnswer((inv) -> {
+            store.remove((String) inv.getArgument(0));
+            return editor;
+        });
+        when(editor.commit()).thenReturn(true);
+
+        updater.drainPendingDeletes();
+
+        assertFalse("Folder must be gone after drain", Files.exists(tempDir.resolve("versions").resolve(id)));
+        assertFalse("DELETING registry entry must be cleared after drain", store.containsKey(id + "_info"));
     }
 }
