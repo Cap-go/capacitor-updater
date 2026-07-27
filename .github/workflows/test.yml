@@ -309,7 +309,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: Run Maestro smoke tests
-        uses: reactivecircus/android-emulator-runner@v2.37.0 # NOSONAR version tag required by repo policy
+        uses: reactivecircus/android-emulator-runner@v2.38.0 # NOSONAR version tag required by repo policy
         with:
           api-level: 30
           arch: x86_64
@@ -553,7 +553,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: Run live update Maestro flow
-        uses: reactivecircus/android-emulator-runner@v2.37.0 # NOSONAR version tag required by repo policy
+        uses: reactivecircus/android-emulator-runner@v2.38.0 # NOSONAR version tag required by repo policy
         with:
           api-level: 30
           arch: x86_64
