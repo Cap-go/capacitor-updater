@@ -707,13 +707,33 @@ import UIKit
         }
     }
 
-    private func populateDeltaCacheAsync(for id: String) {
+    private func populateDeltaCacheAsync(for id: String, manifest: [ManifestEntry]? = nil, sessionKey: String = "") {
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            self?.populateDeltaCache(for: id)
+            self?.populateDeltaCache(for: id, manifest: manifest, sessionKey: sessionKey)
         }
     }
 
-    private func populateDeltaCache(for id: String) {
+    /// Keys are stripped of the `.br` suffix so they match the extracted file names on
+    /// disk, not the manifest's (possibly brotli-compressed) original file names.
+    func manifestHashLookup(manifest: [ManifestEntry]?, sessionKey: String) -> [String: String] {
+        guard let manifest else {
+            return [:]
+        }
+        var lookup: [String: String] = [:]
+        for entry in manifest {
+            guard let fileName = entry.file_name,
+                  let hash = resolveManifestFileHash(entry: entry, sessionKey: sessionKey) else {
+                continue
+            }
+            let destFileName = fileName.hasSuffix(".br") ? String(fileName.dropLast(3)) : fileName
+            lookup[destFileName] = hash
+        }
+        return lookup
+    }
+
+    /// `manifest` must only contain entries the caller already checksum-verified
+    /// (as `downloadManifest` does) — the hashes are trusted as-is, not re-checked.
+    func populateDeltaCache(for id: String, manifest: [ManifestEntry]? = nil, sessionKey: String = "") {
         let bundleDir = self.getBundleDirectory(id: id)
         let fileManager = FileManager.default
 
@@ -733,14 +753,28 @@ import UIKit
             return
         }
 
+        let knownHashes = manifestHashLookup(manifest: manifest, sessionKey: sessionKey)
+        let builtinFolder = self.builtinFolderURL()
+
         for case let fileURL as URL in enumerator {
             let resourceValues = try? fileURL.resourceValues(forKeys: [.isDirectoryKey])
             if resourceValues?.isDirectory == true {
                 continue
             }
 
-            let checksum = CryptoCipher.calcChecksum(filePath: fileURL)
+            let relativePath = String(fileURL.path.dropFirst(bundleDir.path.count + 1))
+
+            let checksum = knownHashes[relativePath] ?? CryptoCipher.calcChecksum(filePath: fileURL)
             if checksum.isEmpty {
+                continue
+            }
+
+            // Builtin is already a permanent reuse source (see isManifestEntryAvailableLocally),
+            // so there's no need to also duplicate this file into the delta cache.
+            let builtinFilePath = builtinFolder.appendingPathComponent(relativePath)
+            let isBuiltinOrigin = fileManager.fileExists(atPath: builtinFilePath.path) &&
+                verifyChecksum(file: builtinFilePath, expectedHash: checksum)
+            if isBuiltinOrigin {
                 continue
             }
 
@@ -931,6 +965,12 @@ import UIKit
         return actualHash == expectedHash
     }
 
+    /// Overridable so tests can point it at a writable directory instead of the
+    /// real (read-only) app bundle.
+    func builtinFolderURL() -> URL {
+        Bundle.main.bundleURL.appendingPathComponent("public")
+    }
+
     private func resolveManifestFileHash(entry: ManifestEntry, sessionKey: String) -> String? {
         guard var fileHash = entry.file_hash, !fileHash.isEmpty else {
             return nil
@@ -953,7 +993,7 @@ import UIKit
             return false
         }
 
-        let builtinFolder = Bundle.main.bundleURL.appendingPathComponent("public")
+        let builtinFolder = self.builtinFolderURL()
         let builtinFilePath = builtinFolder.appendingPathComponent(fileName)
         if FileManager.default.fileExists(atPath: builtinFilePath.path) && verifyChecksum(file: builtinFilePath, expectedHash: fileHash) {
             return true
@@ -1066,7 +1106,7 @@ import UIKit
         let id = self.randomString(length: 10)
         logger.info("downloadManifest start \(id)")
         let destFolder = self.getBundleDirectory(id: id)
-        let builtinFolder = Bundle.main.bundleURL.appendingPathComponent("public")
+        let builtinFolder = self.builtinFolderURL()
 
         // Check disk space before starting manifest download (estimate 100KB per file, minimum 50MB)
         let estimatedSize = Int64(max(manifest.count * 100 * 1024, 50 * 1024 * 1024))
@@ -1252,6 +1292,8 @@ import UIKit
 
         // Send stats for manifest download complete
         self.sendStats(action: "download_manifest_complete", versionName: version)
+
+        self.populateDeltaCacheAsync(for: id, manifest: manifest, sessionKey: sessionKey)
 
         self.notifyDownload(id: id, percent: 100, bundle: updatedBundle)
         logger.info("downloadManifest done \(id)")
