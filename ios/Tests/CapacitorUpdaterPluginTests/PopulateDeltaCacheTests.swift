@@ -17,6 +17,7 @@ final class PopulateDeltaCacheTests: XCTestCase {
     private var implementation: TestableCapgoUpdater!
     private var bundleId: String!
     private var bundleDir: URL!
+    private var registeredCacheFiles: [URL] = []
     private let cacheFolder = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!.appendingPathComponent("capgo_downloads")
     private var builtinFolder: URL {
         implementation.builtinFolderOverride
@@ -88,19 +89,41 @@ final class PopulateDeltaCacheTests: XCTestCase {
     override func tearDown() {
         try? FileManager.default.removeItem(at: bundleDir)
         try? FileManager.default.removeItem(at: builtinFolder)
+        for file in registeredCacheFiles {
+            try? FileManager.default.removeItem(at: file)
+        }
+        registeredCacheFiles = []
         implementation = nil
+        // CryptoCipher's logger is shared/static with no getter to snapshot the prior
+        // value, so restore a normal (non-silent) default rather than leaving other
+        // test suites silenced by this one.
+        CryptoCipher.setLogger(Logger(withTag: "TestLogger"))
         super.tearDown()
     }
 
-    private func write(_ content: String, named name: String, in directory: URL) -> URL {
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    private enum FixtureError: Error {
+        case writeFailed(String)
+    }
+
+    @discardableResult
+    private func write(_ content: String, named name: String, in directory: URL) throws -> URL {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let url = directory.appendingPathComponent(name)
-        try? content.data(using: .utf8)?.write(to: url)
+        guard let data = content.data(using: .utf8) else {
+            throw FixtureError.writeFailed("Could not encode fixture content for \(name)")
+        }
+        try data.write(to: url)
         return url
     }
 
-    private func cacheFile(hash: String, name: String) -> URL {
-        cacheFolder.appendingPathComponent("\(hash)_\(name)")
+    /// Computes the cache path for (hash, name), clears any stale entry left over from
+    /// an unrelated run (content/hash is deterministic, so paths can collide across
+    /// runs), and registers it for teardown cleanup regardless of test outcome.
+    private func expectedCacheFile(hash: String, name: String) -> URL {
+        let file = cacheFolder.appendingPathComponent("\(hash)_\(name)")
+        try? FileManager.default.removeItem(at: file)
+        registeredCacheFiles.append(file)
+        return file
     }
 
     // MARK: - manifestHashLookup
@@ -142,61 +165,54 @@ final class PopulateDeltaCacheTests: XCTestCase {
 
     // MARK: - populateDeltaCache: (a) reuse manifest hashes instead of re-hashing
 
-    func testPopulateDeltaCacheReusesManifestHashInsteadOfRecomputing() {
-        let fileURL = write("hello world", named: "app.js", in: bundleDir)
+    func testPopulateDeltaCacheReusesManifestHashInsteadOfRecomputing() throws {
+        let fileURL = try write("hello world", named: "app.js", in: bundleDir)
         let realHash = CryptoCipher.calcChecksum(filePath: fileURL)
         let manifestHash = "deliberately-different-\(realHash)"
         let manifest = [
             ManifestEntry(file_name: "app.js", file_hash: manifestHash, download_url: nil)
         ]
+        let manifestCacheFile = expectedCacheFile(hash: manifestHash, name: "app.js")
+        let realCacheFile = expectedCacheFile(hash: realHash, name: "app.js")
 
         implementation.populateDeltaCache(for: bundleId, manifest: manifest, sessionKey: "")
 
-        XCTAssertTrue(FileManager.default.fileExists(atPath: cacheFile(hash: manifestHash, name: "app.js").path))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: cacheFile(hash: realHash, name: "app.js").path))
-
-        try? FileManager.default.removeItem(at: cacheFile(hash: manifestHash, name: "app.js"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: manifestCacheFile.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: realCacheFile.path))
     }
 
-    func testPopulateDeltaCacheFallsBackToRealHashWhenNoManifestEntry() {
-        let fileURL = write("hello world", named: "app.js", in: bundleDir)
+    func testPopulateDeltaCacheFallsBackToRealHashWhenNoManifestEntry() throws {
+        let fileURL = try write("hello world", named: "app.js", in: bundleDir)
         let realHash = CryptoCipher.calcChecksum(filePath: fileURL)
+        let realCacheFile = expectedCacheFile(hash: realHash, name: "app.js")
 
         implementation.populateDeltaCache(for: bundleId)
 
-        XCTAssertTrue(FileManager.default.fileExists(atPath: cacheFile(hash: realHash, name: "app.js").path))
-
-        try? FileManager.default.removeItem(at: cacheFile(hash: realHash, name: "app.js"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: realCacheFile.path))
     }
 
     // MARK: - populateDeltaCache: (b) skip caching builtin-origin files
 
-    func testPopulateDeltaCacheSkipsFilesAlreadyAvailableFromBuiltin() {
+    func testPopulateDeltaCacheSkipsFilesAlreadyAvailableFromBuiltin() throws {
         let content = "shared builtin content"
-        let fileURL = write(content, named: "shared.js", in: bundleDir)
+        let fileURL = try write(content, named: "shared.js", in: bundleDir)
         let realHash = CryptoCipher.calcChecksum(filePath: fileURL)
-        _ = write(content, named: "shared.js", in: builtinFolder)
-        let expectedCacheFile = cacheFile(hash: realHash, name: "shared.js")
-        // Guard against a stale cache entry left over from an unrelated run
-        // (content/hash is deterministic, so the path can collide across runs).
-        try? FileManager.default.removeItem(at: expectedCacheFile)
+        try write(content, named: "shared.js", in: builtinFolder)
+        let cacheFile = expectedCacheFile(hash: realHash, name: "shared.js")
 
         implementation.populateDeltaCache(for: bundleId)
 
-        XCTAssertFalse(FileManager.default.fileExists(atPath: expectedCacheFile.path))
-
-        try? FileManager.default.removeItem(at: expectedCacheFile)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: cacheFile.path))
     }
 
-    func testPopulateDeltaCacheStillCachesFilesNotPresentInBuiltin() {
-        let fileURL = write("only in this bundle", named: "new.js", in: bundleDir)
+    func testPopulateDeltaCacheStillCachesFilesNotPresentInBuiltin() throws {
+        let fileURL = try write("only in this bundle", named: "new.js", in: bundleDir)
         let realHash = CryptoCipher.calcChecksum(filePath: fileURL)
+        let cacheFile = expectedCacheFile(hash: realHash, name: "new.js")
 
         implementation.populateDeltaCache(for: bundleId)
 
-        XCTAssertTrue(FileManager.default.fileExists(atPath: cacheFile(hash: realHash, name: "new.js").path))
-
-        try? FileManager.default.removeItem(at: cacheFile(hash: realHash, name: "new.js"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: cacheFile.path))
     }
 
     /// Regression test: the built-in bundle stores brotli manifest entries under
@@ -204,21 +220,18 @@ final class PopulateDeltaCacheTests: XCTestCase {
     /// is always named without it. The builtin lookup must resolve against the
     /// manifest's original name, not the extracted file's own path, or this match
     /// silently never fires for any compressed asset.
-    func testPopulateDeltaCacheSkipsBrotliFilesAlreadyAvailableFromBuiltin() {
+    func testPopulateDeltaCacheSkipsBrotliFilesAlreadyAvailableFromBuiltin() throws {
         let content = "shared builtin content"
-        let extractedFileURL = write(content, named: "app.js", in: bundleDir.appendingPathComponent("assets"))
+        let extractedFileURL = try write(content, named: "app.js", in: bundleDir.appendingPathComponent("assets"))
         let realHash = CryptoCipher.calcChecksum(filePath: extractedFileURL)
-        _ = write(content, named: "app.js.br", in: builtinFolder.appendingPathComponent("assets"))
+        try write(content, named: "app.js.br", in: builtinFolder.appendingPathComponent("assets"))
         let manifest = [
             ManifestEntry(file_name: "assets/app.js.br", file_hash: realHash, download_url: nil)
         ]
-        let expectedCacheFile = cacheFile(hash: realHash, name: "app.js")
-        try? FileManager.default.removeItem(at: expectedCacheFile)
+        let cacheFile = expectedCacheFile(hash: realHash, name: "app.js")
 
         implementation.populateDeltaCache(for: bundleId, manifest: manifest, sessionKey: "")
 
-        XCTAssertFalse(FileManager.default.fileExists(atPath: expectedCacheFile.path))
-
-        try? FileManager.default.removeItem(at: expectedCacheFile)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: cacheFile.path))
     }
 }
