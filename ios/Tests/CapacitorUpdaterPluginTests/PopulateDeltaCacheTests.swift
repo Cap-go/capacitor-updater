@@ -166,7 +166,7 @@ final class PopulateDeltaCacheTests: XCTestCase {
     // MARK: - populateDeltaCache: (a) reuse manifest hashes instead of re-hashing
 
     func testPopulateDeltaCacheReusesManifestHashInsteadOfRecomputing() throws {
-        let fileURL = try write("hello world", named: "app.js", in: bundleDir)
+        let fileURL = try write("hello world \(bundleId!)", named: "app.js", in: bundleDir)
         let realHash = CryptoCipher.calcChecksum(filePath: fileURL)
         let manifestHash = "deliberately-different-\(realHash)"
         let manifest = [
@@ -182,7 +182,7 @@ final class PopulateDeltaCacheTests: XCTestCase {
     }
 
     func testPopulateDeltaCacheFallsBackToRealHashWhenNoManifestEntry() throws {
-        let fileURL = try write("hello world", named: "app.js", in: bundleDir)
+        let fileURL = try write("hello world \(bundleId!)", named: "app.js", in: bundleDir)
         let realHash = CryptoCipher.calcChecksum(filePath: fileURL)
         let realCacheFile = expectedCacheFile(hash: realHash, name: "app.js")
 
@@ -194,7 +194,7 @@ final class PopulateDeltaCacheTests: XCTestCase {
     // MARK: - populateDeltaCache: (b) skip caching builtin-origin files
 
     func testPopulateDeltaCacheSkipsFilesAlreadyAvailableFromBuiltin() throws {
-        let content = "shared builtin content"
+        let content = "shared builtin content \(bundleId!)"
         let fileURL = try write(content, named: "shared.js", in: bundleDir)
         let realHash = CryptoCipher.calcChecksum(filePath: fileURL)
         try write(content, named: "shared.js", in: builtinFolder)
@@ -206,7 +206,7 @@ final class PopulateDeltaCacheTests: XCTestCase {
     }
 
     func testPopulateDeltaCacheStillCachesFilesNotPresentInBuiltin() throws {
-        let fileURL = try write("only in this bundle", named: "new.js", in: bundleDir)
+        let fileURL = try write("only in this bundle \(bundleId!)", named: "new.js", in: bundleDir)
         let realHash = CryptoCipher.calcChecksum(filePath: fileURL)
         let cacheFile = expectedCacheFile(hash: realHash, name: "new.js")
 
@@ -221,7 +221,7 @@ final class PopulateDeltaCacheTests: XCTestCase {
     /// manifest's original name, not the extracted file's own path, or this match
     /// silently never fires for any compressed asset.
     func testPopulateDeltaCacheSkipsBrotliFilesAlreadyAvailableFromBuiltin() throws {
-        let content = "shared builtin content"
+        let content = "shared builtin content \(bundleId!)"
         let extractedFileURL = try write(content, named: "app.js", in: bundleDir.appendingPathComponent("assets"))
         let realHash = CryptoCipher.calcChecksum(filePath: extractedFileURL)
         try write(content, named: "app.js.br", in: builtinFolder.appendingPathComponent("assets"))
