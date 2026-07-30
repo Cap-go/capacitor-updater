@@ -112,7 +112,10 @@ final class PopulateDeltaCacheTests: XCTestCase {
 
         let lookup = implementation.manifestHashLookup(manifest: manifest, sessionKey: "")
 
-        XCTAssertEqual(lookup["assets/app.js"], "plainhash")
+        XCTAssertEqual(lookup["assets/app.js"]?.hash, "plainhash")
+        // The original (unstripped) manifest name must be preserved — it's what the
+        // built-in bundle actually stores the file under.
+        XCTAssertEqual(lookup["assets/app.js"]?.originalFileName, "assets/app.js.br")
         XCTAssertNil(lookup["assets/app.js.br"])
     }
 
@@ -125,7 +128,7 @@ final class PopulateDeltaCacheTests: XCTestCase {
 
         let lookup = implementation.manifestHashLookup(manifest: manifest, sessionKey: "session-key")
 
-        XCTAssertEqual(lookup["index.html"], decryptedHex)
+        XCTAssertEqual(lookup["index.html"]?.hash, decryptedHex)
     }
 
     func testManifestHashLookupSkipsEntriesMissingFileNameOrHash() {
@@ -194,5 +197,28 @@ final class PopulateDeltaCacheTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: cacheFile(hash: realHash, name: "new.js").path))
 
         try? FileManager.default.removeItem(at: cacheFile(hash: realHash, name: "new.js"))
+    }
+
+    /// Regression test: the built-in bundle stores brotli manifest entries under
+    /// their original (`.br`-suffixed) name, while the extracted bundle file on disk
+    /// is always named without it. The builtin lookup must resolve against the
+    /// manifest's original name, not the extracted file's own path, or this match
+    /// silently never fires for any compressed asset.
+    func testPopulateDeltaCacheSkipsBrotliFilesAlreadyAvailableFromBuiltin() {
+        let content = "shared builtin content"
+        let extractedFileURL = write(content, named: "app.js", in: bundleDir.appendingPathComponent("assets"))
+        let realHash = CryptoCipher.calcChecksum(filePath: extractedFileURL)
+        _ = write(content, named: "app.js.br", in: builtinFolder.appendingPathComponent("assets"))
+        let manifest = [
+            ManifestEntry(file_name: "assets/app.js.br", file_hash: realHash, download_url: nil)
+        ]
+        let expectedCacheFile = cacheFile(hash: realHash, name: "app.js")
+        try? FileManager.default.removeItem(at: expectedCacheFile)
+
+        implementation.populateDeltaCache(for: bundleId, manifest: manifest, sessionKey: "")
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: expectedCacheFile.path))
+
+        try? FileManager.default.removeItem(at: expectedCacheFile)
     }
 }

@@ -713,20 +713,29 @@ import UIKit
         }
     }
 
+    struct ManifestLookupEntry {
+        let hash: String
+        /// The manifest's own file name, `.br` suffix included when present. The
+        /// built-in bundle stores files under this exact name (see
+        /// isManifestEntryAvailableLocally), unlike the extracted/cached copy which
+        /// is always named without the suffix.
+        let originalFileName: String
+    }
+
     /// Keys are stripped of the `.br` suffix so they match the extracted file names on
     /// disk, not the manifest's (possibly brotli-compressed) original file names.
-    func manifestHashLookup(manifest: [ManifestEntry]?, sessionKey: String) -> [String: String] {
+    func manifestHashLookup(manifest: [ManifestEntry]?, sessionKey: String) -> [String: ManifestLookupEntry] {
         guard let manifest else {
             return [:]
         }
-        var lookup: [String: String] = [:]
+        var lookup: [String: ManifestLookupEntry] = [:]
         for entry in manifest {
             guard let fileName = entry.file_name,
                   let hash = resolveManifestFileHash(entry: entry, sessionKey: sessionKey) else {
                 continue
             }
             let destFileName = fileName.hasSuffix(".br") ? String(fileName.dropLast(3)) : fileName
-            lookup[destFileName] = hash
+            lookup[destFileName] = ManifestLookupEntry(hash: hash, originalFileName: fileName)
         }
         return lookup
     }
@@ -753,7 +762,7 @@ import UIKit
             return
         }
 
-        let knownHashes = manifestHashLookup(manifest: manifest, sessionKey: sessionKey)
+        let knownEntries = manifestHashLookup(manifest: manifest, sessionKey: sessionKey)
         let builtinFolder = self.builtinFolderURL()
 
         for case let fileURL as URL in enumerator {
@@ -763,15 +772,17 @@ import UIKit
             }
 
             let relativePath = String(fileURL.path.dropFirst(bundleDir.path.count + 1))
+            let knownEntry = knownEntries[relativePath]
 
-            let checksum = knownHashes[relativePath] ?? CryptoCipher.calcChecksum(filePath: fileURL)
+            let checksum = knownEntry?.hash ?? CryptoCipher.calcChecksum(filePath: fileURL)
             if checksum.isEmpty {
                 continue
             }
 
             // Builtin is already a permanent reuse source (see isManifestEntryAvailableLocally),
-            // so there's no need to also duplicate this file into the delta cache.
-            let builtinFilePath = builtinFolder.appendingPathComponent(relativePath)
+            // so there's no need to also duplicate this file into the delta cache
+            let builtinRelativePath = knownEntry?.originalFileName ?? relativePath
+            let builtinFilePath = builtinFolder.appendingPathComponent(builtinRelativePath)
             let isBuiltinOrigin = fileManager.fileExists(atPath: builtinFilePath.path) &&
                 verifyChecksum(file: builtinFilePath, expectedHash: checksum)
             if isBuiltinOrigin {
