@@ -49,11 +49,10 @@ import UIKit
     // Cached key ID calculated once from publicKey
     private var cachedKeyId: String?
 
-    // Sticky block for on_premise_app 429s — stops stats/channel/getLatest until process restart.
-    private static var rateLimitExceeded = false
-
-    // Temporary too_many_requests block until this epoch ms (Retry-After / rateLimitResetAt).
+    // Temporary 429 block until this epoch ms (Retry-After / rateLimitResetAt). No sticky latch.
     private static var rateLimitBlockedUntilMs: Double = 0
+    private static var rateLimitBlockedError: String = "too_many_requests"
+    private static var rateLimitBlockedMessage: String = "Too many requests"
 
     // Flag to track if we've already sent the rate limit statistic - prevents infinite loop
     private static var rateLimitStatisticSent = false
@@ -431,9 +430,8 @@ import UIKit
     }
 
     /**
-     * Handle HTTP 429 responses.
-     * - on_premise_app: sticky latch until process restart
-     * - too_many_requests: temporary block honouring Retry-After / rateLimitResetAt
+     * Handle HTTP 429 responses by honouring Retry-After / rateLimitResetAt.
+     * All 429s use the same temporary client block — no sticky latch until restart.
      */
     private func checkAndHandleRateLimitResponse(
         statusCode: Int?,
@@ -448,18 +446,14 @@ import UIKit
         let errorCode = parsed.error.isEmpty ? "too_many_requests" : parsed.error
         let message = parsed.message.isEmpty ? "Too many requests" : parsed.message
 
-        if errorCode == "on_premise_app" {
-            if !CapgoUpdater.rateLimitExceeded {
-                CapgoUpdater.rateLimitExceeded = true
-                CapgoUpdater.rateLimitBlockedUntilMs = 0
-                logger.warn("On-premise app detected (429). Stopping stats, channel, and getLatest requests until app restart.")
-            }
-            return RemoteBlockResult(blocked: true, error: errorCode, message: message)
-        }
-
         let retryUntilMs = resolveRateLimitBlockedUntilMs(data: data, response: response)
         if retryUntilMs > CapgoUpdater.rateLimitBlockedUntilMs {
             CapgoUpdater.rateLimitBlockedUntilMs = retryUntilMs
+            CapgoUpdater.rateLimitBlockedError = errorCode
+            CapgoUpdater.rateLimitBlockedMessage = message
+        } else if CapgoUpdater.rateLimitBlockedUntilMs <= 0 {
+            CapgoUpdater.rateLimitBlockedError = errorCode
+            CapgoUpdater.rateLimitBlockedMessage = message
         }
 
         if errorCode == "too_many_requests" {
@@ -469,12 +463,11 @@ import UIKit
                     self.sendRateLimitStatistic()
                 }
             }
-            let retryAfter = max(0, Int(ceil((max(retryUntilMs, Date().timeIntervalSince1970 * 1000) - Date().timeIntervalSince1970 * 1000) / 1000)))
-            logger.warn("Rate limit exceeded (429 too_many_requests). Retry after \(retryAfter)s.")
-            return RemoteBlockResult(blocked: true, error: errorCode, message: message)
         }
 
-        logger.warn("Received 429 (\(errorCode)). Honouring retry window when provided; not sticky-latching.")
+        let nowMs = Date().timeIntervalSince1970 * 1000
+        let retryAfter = max(0, Int(ceil((max(retryUntilMs, nowMs) - nowMs) / 1000)))
+        logger.warn("Received 429 (\(errorCode)). Honouring Retry-After: \(retryAfter)s.")
         return RemoteBlockResult(blocked: true, error: errorCode, message: message)
     }
 
@@ -516,9 +509,6 @@ import UIKit
     }
 
     private func isRemoteBlocked() -> Bool {
-        if CapgoUpdater.rateLimitExceeded {
-            return true
-        }
         let until = CapgoUpdater.rateLimitBlockedUntilMs
         if until <= 0 {
             return false
@@ -532,10 +522,7 @@ import UIKit
     }
 
     private func remoteBlockedClientError() -> (error: String, message: String) {
-        if CapgoUpdater.rateLimitExceeded {
-            return ("on_premise_app", "On-premise app detected")
-        }
-        return ("too_many_requests", "Too many requests")
+        return (CapgoUpdater.rateLimitBlockedError, CapgoUpdater.rateLimitBlockedMessage)
     }
 
     /**
@@ -2862,12 +2849,6 @@ import UIKit
             return
         }
 
-        // Check if rate limit was exceeded
-        if isRemoteBlocked() {
-            logger.debug("Skipping sendStats due to remote block.")
-            return
-        }
-
         guard !statsUrl.isEmpty else {
             return
         }
@@ -2920,6 +2901,12 @@ import UIKit
     }
 
     private func flushStatsQueue() {
+        // While Retry-After is active, keep stats queued and skip the network call.
+        if isRemoteBlocked() {
+            logger.debug("Deferring stats flush until Retry-After expires.")
+            return
+        }
+
         statsQueueLock.lock()
         guard !statsQueue.isEmpty else {
             statsQueueLock.unlock()
@@ -2930,7 +2917,6 @@ import UIKit
         statsQueueLock.unlock()
 
         let eventsToSend = queuedEvents.map(\.event)
-        let onSentCallbacks = queuedEvents.compactMap(\.onSent)
 
         operationQueue.maxConcurrentOperationCount = 1
 
@@ -2943,13 +2929,15 @@ import UIKit
                 encoder: JSONParameterEncoder.default,
                 requestModifier: { $0.timeoutInterval = self.timeout }
             ).responseData { response in
-                // Check for 429 rate limit
+                // Check for 429 rate limit — requeue so events are not lost.
                 if self.checkAndHandleRateLimitResponse(statusCode: response.response?.statusCode, data: response.data, response: response.response).blocked {
+                    self.requeueStatsEvents(queuedEvents)
                     semaphore.signal()
                     return
                 }
 
                 if let statusCode = response.response?.statusCode, !(200...299).contains(statusCode) {
+                    self.requeueStatsEvents(queuedEvents)
                     self.logger.error("Error sending stats batch")
                     self.logger.debug("Response code: \(statusCode)")
                     semaphore.signal()
@@ -2960,8 +2948,9 @@ import UIKit
                 case .success:
                     self.logger.info("Stats batch sent successfully")
                     self.logger.debug("Sent \(eventsToSend.count) events")
-                    onSentCallbacks.forEach { $0() }
+                    queuedEvents.compactMap(\.onSent).forEach { $0() }
                 case let .failure(error):
+                    self.requeueStatsEvents(queuedEvents)
                     self.logger.error("Error sending stats batch")
                     self.logger.debug("Response: \(response.value?.debugDescription ?? "nil"), Error: \(error.localizedDescription)")
                 }
@@ -2970,6 +2959,14 @@ import UIKit
             semaphore.wait()
         }
         operationQueue.addOperation(operation)
+    }
+
+    private func requeueStatsEvents(_ events: [QueuedStatsEvent]) {
+        guard !events.isEmpty else { return }
+        statsQueueLock.lock()
+        statsQueue.insert(contentsOf: events, at: 0)
+        statsQueueLock.unlock()
+        ensureStatsTimerStarted()
     }
 
     public func getBundleInfo(id: String?) -> BundleInfo {

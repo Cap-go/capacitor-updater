@@ -112,11 +112,10 @@ public class CapgoUpdater {
     // Cached key ID calculated once from publicKey
     private String cachedKeyId = "";
 
-    // Sticky block for on_premise_app 429s — stops stats/channel/getLatest until process restart.
-    private static volatile boolean rateLimitExceeded = false;
-
-    // Temporary too_many_requests block until this epoch ms (Retry-After / rateLimitResetAt).
+    // Temporary 429 block until this epoch ms (Retry-After / rateLimitResetAt). No sticky latch.
     private static volatile long rateLimitBlockedUntilMs = 0L;
+    private static volatile String rateLimitBlockedError = "too_many_requests";
+    private static volatile String rateLimitBlockedMessage = "Too many requests";
 
     // Flag to track if we've already sent the rate limit statistic - prevents infinite loop
     private static volatile boolean rateLimitStatisticSent = false;
@@ -1929,9 +1928,8 @@ public class CapgoUpdater {
     }
 
     /**
-     * Handle HTTP 429 responses.
-     * - on_premise_app: sticky latch until process restart
-     * - too_many_requests: temporary block honouring Retry-After / rateLimitResetAt
+     * Handle HTTP 429 responses by honouring Retry-After / rateLimitResetAt.
+     * All 429s use the same temporary client block — no sticky latch until restart.
      */
     private RemoteBlockResult checkAndHandleRateLimitResponse(Response response, String responseData) {
         if (response == null || response.code() != 429) {
@@ -1943,18 +1941,14 @@ public class CapgoUpdater {
         final String errorCode = parsedError.isEmpty() ? "too_many_requests" : parsedError;
         final String message = parsedMessage.isEmpty() ? "Too many requests" : parsedMessage;
 
-        if ("on_premise_app".equals(errorCode)) {
-            if (!rateLimitExceeded) {
-                rateLimitExceeded = true;
-                rateLimitBlockedUntilMs = 0L;
-                logger.warn("On-premise app detected (429). Stopping stats, channel, and getLatest requests until app restart.");
-            }
-            return new RemoteBlockResult(true, errorCode, message);
-        }
-
         final long retryUntilMs = resolveRateLimitBlockedUntilMs(response, responseData);
         if (retryUntilMs > rateLimitBlockedUntilMs) {
             rateLimitBlockedUntilMs = retryUntilMs;
+            rateLimitBlockedError = errorCode;
+            rateLimitBlockedMessage = message;
+        } else if (rateLimitBlockedUntilMs <= 0L) {
+            rateLimitBlockedError = errorCode;
+            rateLimitBlockedMessage = message;
         }
 
         if ("too_many_requests".equals(errorCode)) {
@@ -1962,12 +1956,11 @@ public class CapgoUpdater {
                 rateLimitStatisticSent = true;
                 sendRateLimitStatistic();
             }
-            final long retryAfter = Math.max(0L, (Math.max(retryUntilMs, System.currentTimeMillis()) - System.currentTimeMillis() + 999L) / 1000L);
-            logger.warn("Rate limit exceeded (429 too_many_requests). Retry after " + retryAfter + "s.");
-            return new RemoteBlockResult(true, errorCode, message);
         }
 
-        logger.warn("Received 429 (" + errorCode + "). Honouring retry window when provided; not sticky-latching.");
+        final long nowMs = System.currentTimeMillis();
+        final long retryAfter = Math.max(0L, (Math.max(retryUntilMs, nowMs) - nowMs + 999L) / 1000L);
+        logger.warn("Received 429 (" + errorCode + "). Honouring Retry-After: " + retryAfter + "s.");
         return new RemoteBlockResult(true, errorCode, message);
     }
 
@@ -2046,9 +2039,6 @@ public class CapgoUpdater {
     }
 
     private boolean isRemoteBlocked() {
-        if (rateLimitExceeded) {
-            return true;
-        }
         final long until = rateLimitBlockedUntilMs;
         if (until <= 0L) {
             return false;
@@ -2062,10 +2052,7 @@ public class CapgoUpdater {
     }
 
     private RemoteBlockResult remoteBlockedClientError() {
-        if (rateLimitExceeded) {
-            return new RemoteBlockResult(true, "on_premise_app", "On-premise app detected");
-        }
-        return new RemoteBlockResult(true, "too_many_requests", "Too many requests");
+        return new RemoteBlockResult(true, rateLimitBlockedError, rateLimitBlockedMessage);
     }
 
     /**
@@ -2696,11 +2683,6 @@ public class CapgoUpdater {
             return;
         }
 
-        if (isRemoteBlocked()) {
-            logger.debug("Skipping sendStats due to remote block.");
-            return;
-        }
-
         String statsUrl = this.statsUrl;
         if (statsUrl == null || statsUrl.isEmpty()) {
             return;
@@ -2742,6 +2724,12 @@ public class CapgoUpdater {
             return;
         }
 
+        // While Retry-After is active, keep stats queued and skip the network call.
+        if (isRemoteBlocked()) {
+            logger.debug("Deferring stats flush until Retry-After expires.");
+            return;
+        }
+
         String statsUrl = this.statsUrl;
         if (statsUrl == null || statsUrl.isEmpty()) {
             statsQueue.clear();
@@ -2773,6 +2761,8 @@ public class CapgoUpdater {
             new okhttp3.Callback() {
                 @Override
                 public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                    // Keep events for a later flush attempt.
+                    requeueStatsEvents(eventsToSend);
                     logger.error("Failed to send stats batch");
                     logger.debug("Error: " + e.getMessage());
                 }
@@ -2782,6 +2772,7 @@ public class CapgoUpdater {
                     try (ResponseBody responseBody = response.body()) {
                         final String responseData = responseBody != null ? responseBody.string() : "";
                         if (checkAndHandleRateLimitResponse(response, responseData).blocked) {
+                            requeueStatsEvents(eventsToSend);
                             return;
                         }
 
@@ -2790,6 +2781,7 @@ public class CapgoUpdater {
                             logger.debug("Sent " + eventCount + " events");
                             runStatsCallbacks(eventsToSend);
                         } else {
+                            requeueStatsEvents(eventsToSend);
                             logger.error("Error sending stats batch");
                             logger.debug("Response code: " + response.code());
                         }
@@ -2797,6 +2789,16 @@ public class CapgoUpdater {
                 }
             }
         );
+    }
+
+    private void requeueStatsEvents(final List<QueuedStatsEvent> events) {
+        if (events == null || events.isEmpty()) {
+            return;
+        }
+        synchronized (statsQueue) {
+            statsQueue.addAll(0, events);
+        }
+        ensureStatsTimerStarted();
     }
 
     private void runStatsCallbacks(final List<QueuedStatsEvent> sentEvents) {
