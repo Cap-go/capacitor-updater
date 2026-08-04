@@ -112,8 +112,10 @@ public class CapgoUpdater {
     // Cached key ID calculated once from publicKey
     private String cachedKeyId = "";
 
-    // Flag to track if we received a 429 response - stops requests until app restart
-    private static volatile boolean rateLimitExceeded = false;
+    // Temporary 429 block until this epoch ms (Retry-After / rateLimitResetAt). No sticky latch.
+    private static volatile long rateLimitBlockedUntilMs = 0L;
+    private static volatile String rateLimitBlockedError = "too_many_requests";
+    private static volatile String rateLimitBlockedMessage = "Too many requests";
 
     // Flag to track if we've already sent the rate limit statistic - prevents infinite loop
     private static volatile boolean rateLimitStatisticSent = false;
@@ -1913,22 +1915,144 @@ public class CapgoUpdater {
         return json;
     }
 
+    private static final class RemoteBlockResult {
+        final boolean blocked;
+        final String error;
+        final String message;
+
+        RemoteBlockResult(final boolean blocked, final String error, final String message) {
+            this.blocked = blocked;
+            this.error = error;
+            this.message = message;
+        }
+    }
+
     /**
-     * Check if a 429 (Too Many Requests) response was received and set the flag
+     * Handle HTTP 429 responses by honouring Retry-After / rateLimitResetAt.
+     * All 429s use the same temporary client block — no sticky latch until restart.
      */
-    private boolean checkAndHandleRateLimitResponse(Response response) {
-        if (response.code() == 429) {
-            // Send a statistic about the rate limit BEFORE setting the flag
-            // Only send once to prevent infinite loop if the stat request itself gets rate limited
-            if (!this.previewSession && !rateLimitExceeded && !rateLimitStatisticSent) {
+    private RemoteBlockResult checkAndHandleRateLimitResponse(Response response, String responseData) {
+        if (response == null || response.code() != 429) {
+            return new RemoteBlockResult(false, "", "");
+        }
+
+        final String parsedError = parseRemoteError(responseData);
+        final String parsedMessage = parseRemoteMessage(responseData);
+        final String errorCode = parsedError.isEmpty() ? "too_many_requests" : parsedError;
+        final String message = parsedMessage.isEmpty() ? "Too many requests" : parsedMessage;
+
+        final long retryUntilMs = resolveRateLimitBlockedUntilMs(response, responseData);
+        if (retryUntilMs > rateLimitBlockedUntilMs) {
+            rateLimitBlockedUntilMs = retryUntilMs;
+            rateLimitBlockedError = errorCode;
+            rateLimitBlockedMessage = message;
+        } else if (rateLimitBlockedUntilMs <= 0L) {
+            rateLimitBlockedError = errorCode;
+            rateLimitBlockedMessage = message;
+        }
+
+        if ("too_many_requests".equals(errorCode)) {
+            if (!this.previewSession && !rateLimitStatisticSent) {
                 rateLimitStatisticSent = true;
                 sendRateLimitStatistic();
             }
-            rateLimitExceeded = true;
-            logger.warn("Rate limit exceeded (429). Stopping all stats and channel requests until app restart.");
-            return true;
         }
-        return false;
+
+        final long nowMs = System.currentTimeMillis();
+        final long retryAfter = Math.max(0L, (Math.max(retryUntilMs, nowMs) - nowMs + 999L) / 1000L);
+        logger.warn("Received 429 (" + errorCode + "). Honouring Retry-After: " + retryAfter + "s.");
+        return new RemoteBlockResult(true, errorCode, message);
+    }
+
+    private String parseRemoteError(final String responseData) {
+        if (responseData == null || responseData.isEmpty()) {
+            return "";
+        }
+        try {
+            final JSONObject json = new JSONObject(responseData);
+            return json.optString("error", "");
+        } catch (JSONException ignored) {
+            return "";
+        }
+    }
+
+    private String parseRemoteMessage(final String responseData) {
+        if (responseData == null || responseData.isEmpty()) {
+            return "";
+        }
+        try {
+            final JSONObject json = new JSONObject(responseData);
+            return json.optString("message", "");
+        } catch (JSONException ignored) {
+            return "";
+        }
+    }
+
+    private long resolveRateLimitBlockedUntilMs(final Response response, final String responseData) {
+        final long nowMs = System.currentTimeMillis();
+
+        final String header = response.header("Retry-After");
+        if (header != null) {
+            try {
+                final double seconds = Double.parseDouble(header.trim());
+                if (seconds >= 0) {
+                    return nowMs + (long) (seconds * 1000L);
+                }
+            } catch (NumberFormatException ignored) {
+                // Fall through to body fields
+            }
+        }
+
+        if (responseData != null && !responseData.isEmpty()) {
+            try {
+                final JSONObject json = new JSONObject(responseData);
+                final JSONObject moreInfo = json.optJSONObject("moreInfo");
+                if (moreInfo != null && moreInfo.has("retryAfterSeconds")) {
+                    final double retryAfter = moreInfo.getDouble("retryAfterSeconds");
+                    if (retryAfter >= 0) {
+                        return nowMs + (long) (retryAfter * 1000L);
+                    }
+                } else if (json.has("retryAfterSeconds")) {
+                    final double retryAfter = json.getDouble("retryAfterSeconds");
+                    if (retryAfter >= 0) {
+                        return nowMs + (long) (retryAfter * 1000L);
+                    }
+                }
+                if (moreInfo != null && moreInfo.has("rateLimitResetAt")) {
+                    final long resetAt = moreInfo.getLong("rateLimitResetAt");
+                    if (resetAt > nowMs) {
+                        return resetAt;
+                    }
+                } else if (json.has("rateLimitResetAt")) {
+                    final long resetAt = json.getLong("rateLimitResetAt");
+                    if (resetAt > nowMs) {
+                        return resetAt;
+                    }
+                }
+            } catch (JSONException ignored) {
+                // No retry hint
+            }
+        }
+
+        // No retry hint — do not hold a client-side block; allow immediate retry to the worker
+        return 0L;
+    }
+
+    private boolean isRemoteBlocked() {
+        final long until = rateLimitBlockedUntilMs;
+        if (until <= 0L) {
+            return false;
+        }
+        final long nowMs = System.currentTimeMillis();
+        if (nowMs >= until) {
+            rateLimitBlockedUntilMs = 0L;
+            return false;
+        }
+        return true;
+    }
+
+    private RemoteBlockResult remoteBlockedClientError() {
+        return new RemoteBlockResult(true, rateLimitBlockedError, rateLimitBlockedMessage);
     }
 
     /**
@@ -2001,7 +2125,21 @@ public class CapgoUpdater {
 
                         if (jsonResponse != null && (jsonResponse.has("error") || jsonResponse.has("kind"))) {
                             if (statusCode == 429) {
-                                checkAndHandleRateLimitResponse(response);
+                                final RemoteBlockResult rateLimit = checkAndHandleRateLimitResponse(response, responseData);
+                                Map<String, Object> retError = new HashMap<>();
+                                retError.put("error", rateLimit.error.isEmpty() ? jsonResponse.optString("error", "too_many_requests") : rateLimit.error);
+                                retError.put("message", rateLimit.message.isEmpty() ? jsonResponse.optString("message", "Too many requests") : rateLimit.message);
+                                if (jsonResponse.has("kind") && !jsonResponse.isNull("kind")) {
+                                    retError.put("kind", jsonResponse.getString("kind"));
+                                } else {
+                                    retError.put("kind", "failed");
+                                }
+                                if (jsonResponse.has("version") && !jsonResponse.isNull("version")) {
+                                    retError.put("version", jsonResponse.getString("version"));
+                                }
+                                retError.put("statusCode", statusCode);
+                                callback.callback(retError);
+                                return;
                             }
                             Map<String, Object> retError = new HashMap<>();
                             if (jsonResponse.has("error") && !jsonResponse.isNull("error")) {
@@ -2023,11 +2161,12 @@ public class CapgoUpdater {
                             return;
                         }
 
-                        // Check for 429 rate limit
-                        if (checkAndHandleRateLimitResponse(response)) {
+                        // Check for 429 rate limit without JSON body
+                        final RemoteBlockResult rateLimit = checkAndHandleRateLimitResponse(response, responseData);
+                        if (rateLimit.blocked) {
                             Map<String, Object> retError = new HashMap<>();
-                            retError.put("message", "Rate limit exceeded");
-                            retError.put("error", "rate_limit_exceeded");
+                            retError.put("message", rateLimit.message);
+                            retError.put("error", rateLimit.error);
                             retError.put("kind", "failed");
                             retError.put("statusCode", statusCode);
                             callback.callback(retError);
@@ -2080,6 +2219,16 @@ public class CapgoUpdater {
     }
 
     public void getLatest(final String updateUrl, final String channel, final String appIdOverride, final Callback callback) {
+        if (isRemoteBlocked()) {
+            final RemoteBlockResult blocked = remoteBlockedClientError();
+            logger.debug("Skipping getLatest due to remote block (" + blocked.error + ").");
+            final Map<String, Object> retError = new HashMap<>();
+            retError.put("message", blocked.message);
+            retError.put("error", blocked.error);
+            retError.put("kind", "failed");
+            callback.callback(retError);
+            return;
+        }
         JSONObject json;
         try {
             json = this.createInfoObject(appIdOverride);
@@ -2149,12 +2298,12 @@ public class CapgoUpdater {
             return;
         }
 
-        // Check if rate limit was exceeded
-        if (rateLimitExceeded) {
-            logger.debug("Skipping setChannel due to rate limit (429). Requests will resume after app restart.");
+        if (isRemoteBlocked()) {
+            final RemoteBlockResult blocked = remoteBlockedClientError();
+            logger.debug("Skipping setChannel due to remote block (" + blocked.error + ").");
             final Map<String, Object> retError = new HashMap<>();
-            retError.put("message", "Rate limit exceeded");
-            retError.put("error", "rate_limit_exceeded");
+            retError.put("message", blocked.message);
+            retError.put("error", blocked.error);
             callback.callback(retError);
             return;
         }
@@ -2208,12 +2357,12 @@ public class CapgoUpdater {
     }
 
     public void getChannel(final Callback callback, final SharedPreferences.Editor editor, final String defaultChannelKey) {
-        // Check if rate limit was exceeded
-        if (rateLimitExceeded) {
-            logger.debug("Skipping getChannel due to rate limit (429). Requests will resume after app restart.");
+        if (isRemoteBlocked()) {
+            final RemoteBlockResult blocked = remoteBlockedClientError();
+            logger.debug("Skipping getChannel due to remote block (" + blocked.error + ").");
             final Map<String, Object> retError = new HashMap<>();
-            retError.put("message", "Rate limit exceeded");
-            retError.put("error", "rate_limit_exceeded");
+            retError.put("message", blocked.message);
+            retError.put("error", blocked.error);
             callback.callback(retError);
             return;
         }
@@ -2258,25 +2407,18 @@ public class CapgoUpdater {
                 @Override
                 public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
                     try (ResponseBody responseBody = response.body()) {
-                        // Check for 429 rate limit
-                        if (checkAndHandleRateLimitResponse(response)) {
+                        final String responseData = responseBody != null ? responseBody.string() : "";
+                        final RemoteBlockResult rateLimit = checkAndHandleRateLimitResponse(response, responseData);
+                        if (rateLimit.blocked) {
                             Map<String, Object> retError = new HashMap<>();
-                            retError.put("message", "Rate limit exceeded");
-                            retError.put("error", "rate_limit_exceeded");
+                            retError.put("message", rateLimit.message);
+                            retError.put("error", rateLimit.error);
                             callback.callback(retError);
                             return;
                         }
 
                         if (response.code() == 400) {
-                            if (responseBody == null) {
-                                Map<String, Object> retError = new HashMap<>();
-                                retError.put("message", "Empty response body");
-                                retError.put("error", "no_response_body");
-                                callback.callback(retError);
-                                return;
-                            }
-                            String data = responseBody.string();
-                            if (data.contains("channel_not_found") && !defaultChannel.isEmpty()) {
+                            if (responseData.contains("channel_not_found") && !defaultChannel.isEmpty()) {
                                 Map<String, Object> ret = new HashMap<>();
                                 ret.put("channel", defaultChannel);
                                 ret.put("status", "default");
@@ -2294,14 +2436,13 @@ public class CapgoUpdater {
                             return;
                         }
 
-                        if (responseBody == null) {
+                        if (responseData.isEmpty()) {
                             Map<String, Object> retError = new HashMap<>();
                             retError.put("message", "Empty response body");
                             retError.put("error", "no_response_body");
                             callback.callback(retError);
                             return;
                         }
-                        String responseData = responseBody.string();
                         JSONObject jsonResponse = new JSONObject(responseData);
 
                         // Check for server-side errors first
@@ -2359,12 +2500,12 @@ public class CapgoUpdater {
     }
 
     public void listChannels(final Callback callback) {
-        // Check if rate limit was exceeded
-        if (rateLimitExceeded) {
-            logger.debug("Skipping listChannels due to rate limit (429). Requests will resume after app restart.");
+        if (isRemoteBlocked()) {
+            final RemoteBlockResult blocked = remoteBlockedClientError();
+            logger.debug("Skipping listChannels due to remote block (" + blocked.error + ").");
             final Map<String, Object> retError = new HashMap<>();
-            retError.put("message", "Rate limit exceeded");
-            retError.put("error", "rate_limit_exceeded");
+            retError.put("message", blocked.message);
+            retError.put("error", blocked.error);
             callback.callback(retError);
             return;
         }
@@ -2423,11 +2564,12 @@ public class CapgoUpdater {
                 @Override
                 public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
                     try (ResponseBody responseBody = response.body()) {
-                        // Check for 429 rate limit
-                        if (checkAndHandleRateLimitResponse(response)) {
+                        final String data = responseBody != null ? responseBody.string() : "";
+                        final RemoteBlockResult rateLimit = checkAndHandleRateLimitResponse(response, data);
+                        if (rateLimit.blocked) {
                             Map<String, Object> retError = new HashMap<>();
-                            retError.put("message", "Rate limit exceeded");
-                            retError.put("error", "rate_limit_exceeded");
+                            retError.put("message", rateLimit.message);
+                            retError.put("error", rateLimit.error);
                             callback.callback(retError);
                             return;
                         }
@@ -2440,14 +2582,13 @@ public class CapgoUpdater {
                             return;
                         }
 
-                        if (responseBody == null) {
+                        if (data.isEmpty()) {
                             Map<String, Object> retError = new HashMap<>();
                             retError.put("message", "Empty response body");
                             retError.put("error", "no_response_body");
                             callback.callback(retError);
                             return;
                         }
-                        String data = responseBody.string();
 
                         try {
                             Map<String, Object> ret = parseListChannelsResponse(data);
@@ -2542,12 +2683,6 @@ public class CapgoUpdater {
             return;
         }
 
-        // Check if rate limit was exceeded
-        if (rateLimitExceeded) {
-            logger.debug("Skipping sendStats due to rate limit (429). Stats will resume after app restart.");
-            return;
-        }
-
         String statsUrl = this.statsUrl;
         if (statsUrl == null || statsUrl.isEmpty()) {
             return;
@@ -2589,6 +2724,12 @@ public class CapgoUpdater {
             return;
         }
 
+        // While Retry-After is active, keep stats queued and skip the network call.
+        if (isRemoteBlocked()) {
+            logger.debug("Deferring stats flush until Retry-After expires.");
+            return;
+        }
+
         String statsUrl = this.statsUrl;
         if (statsUrl == null || statsUrl.isEmpty()) {
             statsQueue.clear();
@@ -2620,6 +2761,8 @@ public class CapgoUpdater {
             new okhttp3.Callback() {
                 @Override
                 public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                    // Keep events for a later flush attempt.
+                    requeueStatsEvents(eventsToSend);
                     logger.error("Failed to send stats batch");
                     logger.debug("Error: " + e.getMessage());
                 }
@@ -2627,8 +2770,9 @@ public class CapgoUpdater {
                 @Override
                 public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
                     try (ResponseBody responseBody = response.body()) {
-                        // Check for 429 rate limit
-                        if (checkAndHandleRateLimitResponse(response)) {
+                        final String responseData = responseBody != null ? responseBody.string() : "";
+                        if (checkAndHandleRateLimitResponse(response, responseData).blocked) {
+                            requeueStatsEvents(eventsToSend);
                             return;
                         }
 
@@ -2637,6 +2781,7 @@ public class CapgoUpdater {
                             logger.debug("Sent " + eventCount + " events");
                             runStatsCallbacks(eventsToSend);
                         } else {
+                            requeueStatsEvents(eventsToSend);
                             logger.error("Error sending stats batch");
                             logger.debug("Response code: " + response.code());
                         }
@@ -2644,6 +2789,16 @@ public class CapgoUpdater {
                 }
             }
         );
+    }
+
+    private void requeueStatsEvents(final List<QueuedStatsEvent> events) {
+        if (events == null || events.isEmpty()) {
+            return;
+        }
+        synchronized (statsQueue) {
+            statsQueue.addAll(0, events);
+        }
+        ensureStatsTimerStarted();
     }
 
     private void runStatsCallbacks(final List<QueuedStatsEvent> sentEvents) {
