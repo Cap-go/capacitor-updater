@@ -3463,4 +3463,66 @@ public class CapacitorUpdaterUnitTest {
         assertFalse("Folder must be gone after drain", Files.exists(tempDir.resolve("versions").resolve(id)));
         assertFalse("DELETING registry entry must be cleared after drain", store.containsKey(id + "_info"));
     }
+
+    private CapgoUpdater newDeltaCacheUpdater(final Path docsDir, final File filesDir, final File cacheDir) {
+        final AppCompatActivity activity = mock(AppCompatActivity.class);
+        when(activity.getFilesDir()).thenReturn(filesDir);
+        when(activity.getCacheDir()).thenReturn(cacheDir);
+
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        updater.documentsDir = docsDir.toFile();
+        updater.activity = activity;
+        return updater;
+    }
+
+    @Test
+    public void cacheBundleFilesSkipsFilesAlreadyAvailableFromBuiltin() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path docsDir = Files.createTempDirectory("capgo-delta-docs");
+        final File filesDir = Files.createTempDirectory("capgo-delta-files").toFile();
+        final File cacheDir = Files.createTempDirectory("capgo-delta-cache").toFile();
+
+        final String id = "deltaCacheBundle";
+        final Path bundleDir = docsDir.resolve("versions").resolve(id);
+        Files.createDirectories(bundleDir);
+        final byte[] shared = "<html>shared builtin content</html>".getBytes(StandardCharsets.UTF_8);
+        final File sharedFile = bundleDir.resolve("index.html").toFile();
+        Files.write(sharedFile.toPath(), shared);
+
+        // Same relative path and byte-identical content in the built-in bundle.
+        final Path builtinDir = filesDir.toPath().resolve("public");
+        Files.createDirectories(builtinDir);
+        Files.write(builtinDir.resolve("index.html"), shared);
+
+        final CapgoUpdater updater = newDeltaCacheUpdater(docsDir, filesDir, cacheDir);
+        updater.cacheBundleFiles(id);
+
+        final String checksum = CryptoCipher.calcChecksum(sharedFile);
+        final File cacheFile = new File(new File(cacheDir, "capgo_downloads"), checksum + "_index.html");
+        assertFalse("Builtin-origin file must not be duplicated into the delta cache", cacheFile.exists());
+    }
+
+    @Test
+    public void cacheBundleFilesStillCachesFilesNotPresentInBuiltin() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path docsDir = Files.createTempDirectory("capgo-delta-docs2");
+        final File filesDir = Files.createTempDirectory("capgo-delta-files2").toFile();
+        final File cacheDir = Files.createTempDirectory("capgo-delta-cache2").toFile();
+
+        final String id = "deltaCacheBundle2";
+        final Path bundleDir = docsDir.resolve("versions").resolve(id);
+        Files.createDirectories(bundleDir);
+        final File newFile = bundleDir.resolve("new.js").toFile();
+        Files.write(newFile.toPath(), "only in this bundle".getBytes(StandardCharsets.UTF_8));
+
+        // Built-in exists but does not contain this file.
+        Files.createDirectories(filesDir.toPath().resolve("public"));
+
+        final CapgoUpdater updater = newDeltaCacheUpdater(docsDir, filesDir, cacheDir);
+        updater.cacheBundleFiles(id);
+
+        final String checksum = CryptoCipher.calcChecksum(newFile);
+        final File cacheFile = new File(new File(cacheDir, "capgo_downloads"), checksum + "_new.js");
+        assertTrue("Non-builtin file must be copied into the delta cache", cacheFile.exists());
+    }
 }
