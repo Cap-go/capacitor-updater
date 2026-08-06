@@ -832,7 +832,8 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
 
                                 // A manifest-only response has no zip URL; downloadManifest
                                 // tolerates the placeholder URL the plugin already uses.
-                                final String downloadUrl = latestUrl == null || latestUrl.isEmpty() ? "https://404.capgo.app/no.zip" : latestUrl;
+                                final String downloadUrl =
+                                    latestUrl == null || latestUrl.isEmpty() ? "https://404.capgo.app/no.zip" : latestUrl;
 
                                 // Download the update
                                 try {
