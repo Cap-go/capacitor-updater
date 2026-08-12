@@ -2754,7 +2754,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
             let alert = UIAlertController(
                 title: "Preview started",
-                message: "Shake your device anytime to reload or leave the test app.",
+                message: self.shakeMenuGesture == Self.shakeMenuGestureThreeFingerPinch ? "Three-finger pinch to open menu." : "Shake to open menu.",
                 preferredStyle: .alert
             )
             alert.addAction(UIAlertAction(title: "Got it", style: .default))
