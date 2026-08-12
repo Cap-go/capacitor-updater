@@ -3990,7 +3990,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
                 new AlertDialog.Builder(getActivity())
                     .setTitle("Preview started")
-                    .setMessage("Shake your device anytime to reload or leave the test app.")
+                    .setMessage("shake".equals(this.shakeMenuGesture) ? "Shake to open menu." : "Three-finger pinch to open menu.")
                     .setPositiveButton("Got it", (dialog, which) -> dialog.dismiss())
                     .show();
             } catch (final Exception e) {
