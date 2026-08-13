@@ -218,10 +218,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
     // Used for activity-based foreground/background detection on Android < 14
     private Boolean isPreviousMainActivity = true;
 
-    private boolean isProcessLifecycleObserverActive() {
-        return this.appLifecycleObserver != null && this.appLifecycleObserver.isRegistered();
-    }
-
     private volatile Thread backgroundDownloadTask;
     private volatile Thread appReadyCheck;
     // When true, sendReadyToJs should wait for notifyAppReady before hiding splash.
@@ -285,6 +281,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     // App lifecycle observer using ProcessLifecycleOwner for reliable foreground/background detection
     private AppLifecycleObserver appLifecycleObserver;
+
+    private boolean isProcessLifecycleObserverActive() {
+        return this.appLifecycleObserver != null && this.appLifecycleObserver.isRegistered();
+    }
 
     // Play Store In-App Updates
     private AppUpdateManager appUpdateManager;
