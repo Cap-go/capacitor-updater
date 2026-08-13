@@ -52,17 +52,17 @@ public class AppLifecycleObserver implements DefaultLifecycleObserver {
         if (isRegistered) {
             return;
         }
-        if (addObserver()) {
+        if (context == null) {
+            logger.error("Cannot register AppLifecycleObserver without context");
             return;
         }
-        // Apps that remove androidx.startup's InitializationProvider (common with custom
-        // WorkManager init) never create ProcessLifecycleOwner. Initialize it ourselves.
-        if (context != null) {
-            try {
-                AppInitializer.getInstance(context.getApplicationContext()).initializeComponent(ProcessLifecycleInitializer.class);
-            } catch (Exception e) {
-                logger.error("Failed to initialize ProcessLifecycleOwner: " + e.getMessage());
-            }
+        // get()/addObserver() succeed even when ProcessLifecycleOwner.init() never ran.
+        // Initialize first; if that fails, leave isRegistered false so activity fallback runs.
+        try {
+            AppInitializer.getInstance(context.getApplicationContext()).initializeComponent(ProcessLifecycleInitializer.class);
+        } catch (Exception e) {
+            logger.error("Failed to initialize ProcessLifecycleOwner: " + e.getMessage());
+            return;
         }
         if (!addObserver()) {
             logger.error("Failed to register AppLifecycleObserver with ProcessLifecycleOwner");

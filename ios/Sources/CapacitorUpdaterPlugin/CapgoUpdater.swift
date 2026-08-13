@@ -65,7 +65,9 @@ import UIKit
 
     // Stats batching - queue events and send max once per second
     private var statsQueue: [QueuedStatsEvent] = []
+    private var statsInFlight: [QueuedStatsEvent] = []
     private let statsQueueLock = NSLock()
+    private let statsPersistLock = NSLock()
     private var statsFlushTimer: Timer?
     private static let statsFlushInterval: TimeInterval = 1.0
     private static let maxPendingStats = 200
@@ -2980,8 +2982,11 @@ import UIKit
 
     private func persistStatsQueue() {
         statsQueueLock.lock()
-        let events = statsQueue.map(\.event)
+        let events = statsInFlight.map(\.event) + statsQueue.map(\.event)
         statsQueueLock.unlock()
+
+        statsPersistLock.lock()
+        defer { statsPersistLock.unlock() }
 
         let fileURL = pendingStatsFileURL()
         if events.isEmpty {
@@ -2992,6 +2997,10 @@ import UIKit
         do {
             let data = try JSONEncoder().encode(events)
             try data.write(to: fileURL, options: .atomic)
+            var resourceURL = fileURL
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            try resourceURL.setResourceValues(values)
         } catch {
             logger.error("Failed to persist stats queue")
             logger.debug("Error: \(error.localizedDescription)")
@@ -3021,13 +3030,15 @@ import UIKit
         }
 
         statsQueueLock.lock()
-        guard !statsQueue.isEmpty else {
+        guard statsInFlight.isEmpty, !statsQueue.isEmpty else {
             statsQueueLock.unlock()
             return
         }
         let queuedEvents = statsQueue
         statsQueue.removeAll()
+        statsInFlight = queuedEvents
         statsQueueLock.unlock()
+        persistStatsQueue()
 
         let eventsToSend = queuedEvents.map(\.event)
 
@@ -3054,6 +3065,7 @@ import UIKit
                         self.logger.error("Error sending stats batch")
                         self.logger.debug("Retrying later, response code: \(statusCode)")
                     } else {
+                        self.clearStatsInFlight()
                         self.logger.error("Dropping stats batch after permanent error")
                         self.logger.debug("Response code: \(statusCode)")
                     }
@@ -3063,6 +3075,7 @@ import UIKit
 
                 switch response.result {
                 case .success:
+                    self.clearStatsInFlight()
                     self.logger.info("Stats batch sent successfully")
                     self.logger.debug("Sent \(eventsToSend.count) events")
                     self.runStatsCallbacks(queuedEvents)
@@ -3093,10 +3106,20 @@ import UIKit
     private func requeueStatsEvents(_ events: [QueuedStatsEvent]) {
         guard !events.isEmpty else { return }
         statsQueueLock.lock()
+        statsInFlight.removeAll()
         statsQueue.insert(contentsOf: events, at: 0)
+        if statsQueue.count > CapgoUpdater.maxPendingStats {
+            statsQueue.removeFirst(statsQueue.count - CapgoUpdater.maxPendingStats)
+        }
         statsQueueLock.unlock()
         persistStatsQueue()
         ensureStatsTimerStarted()
+    }
+
+    private func clearStatsInFlight() {
+        statsQueueLock.lock()
+        statsInFlight.removeAll()
+        statsQueueLock.unlock()
     }
 
     public func getBundleInfo(id: String?) -> BundleInfo {

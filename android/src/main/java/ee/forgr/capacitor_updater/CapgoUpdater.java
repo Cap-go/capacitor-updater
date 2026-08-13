@@ -35,8 +35,6 @@ import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Date;
@@ -131,6 +129,8 @@ public class CapgoUpdater {
 
     // Stats batching - queue events and send max once per second
     private final List<QueuedStatsEvent> statsQueue = new CopyOnWriteArrayList<>();
+    private final List<QueuedStatsEvent> statsInFlight = new ArrayList<>();
+    private final Object pendingStatsPersistLock = new Object();
     private final ScheduledExecutorService statsScheduler = Executors.newSingleThreadScheduledExecutor();
     private ScheduledFuture<?> statsFlushTask = null;
     private final AtomicBoolean statsFlushInFlight = new AtomicBoolean(false);
@@ -2800,7 +2800,7 @@ public class CapgoUpdater {
             return;
         }
         try {
-            String raw = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+            String raw = readFileUtf8(file);
             JSONArray arr = new JSONArray(raw);
             synchronized (statsQueue) {
                 for (int i = 0; i < arr.length(); i++) {
@@ -2846,27 +2846,63 @@ public class CapgoUpdater {
         }
         JSONArray arr = new JSONArray();
         synchronized (statsQueue) {
+            for (QueuedStatsEvent queuedEvent : statsInFlight) {
+                arr.put(queuedEvent.event);
+            }
             for (QueuedStatsEvent queuedEvent : statsQueue) {
                 arr.put(queuedEvent.event);
             }
         }
-        try {
-            if (arr.length() == 0) {
-                Files.deleteIfExists(file.toPath());
-                return;
-            }
-            File tmp = new File(file.getAbsolutePath() + ".tmp");
-            Files.write(tmp.toPath(), arr.toString().getBytes(StandardCharsets.UTF_8));
+        synchronized (pendingStatsPersistLock) {
             try {
-                Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            } catch (java.nio.file.AtomicMoveNotSupportedException e) {
-                Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                if (arr.length() == 0) {
+                    if (file.exists() && !file.delete()) {
+                        if (logger != null) {
+                            logger.error("Failed to delete empty stats queue file");
+                        }
+                    }
+                    return;
+                }
+                writeFileAtomically(file, arr.toString().getBytes(StandardCharsets.UTF_8));
+            } catch (Exception e) {
+                if (logger != null) {
+                    logger.error("Failed to persist stats queue");
+                    logger.debug("Error: " + e.getMessage());
+                }
             }
-        } catch (Exception e) {
-            if (logger != null) {
-                logger.error("Failed to persist stats queue");
-                logger.debug("Error: " + e.getMessage());
+        }
+    }
+
+    private static String readFileUtf8(final File file) throws IOException {
+        final long length = file.length();
+        final byte[] buf = new byte[length > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) length];
+        try (FileInputStream in = new FileInputStream(file)) {
+            int offset = 0;
+            while (offset < buf.length) {
+                final int read = in.read(buf, offset, buf.length - offset);
+                if (read < 0) {
+                    break;
+                }
+                offset += read;
             }
+            return new String(buf, 0, offset, StandardCharsets.UTF_8);
+        }
+    }
+
+    private static void writeFileAtomically(final File file, final byte[] bytes) throws IOException {
+        final File tmp = new File(file.getAbsolutePath() + ".tmp");
+        try (FileOutputStream out = new FileOutputStream(tmp)) {
+            out.write(bytes);
+            out.flush();
+        }
+        if (tmp.renameTo(file)) {
+            return;
+        }
+        if (file.exists() && !file.delete()) {
+            throw new IOException("Failed to replace " + file.getAbsolutePath());
+        }
+        if (!tmp.renameTo(file)) {
+            throw new IOException("Failed to persist " + file.getAbsolutePath());
         }
     }
 
@@ -2896,6 +2932,7 @@ public class CapgoUpdater {
         if (statsUrl == null || statsUrl.isEmpty()) {
             synchronized (statsQueue) {
                 statsQueue.clear();
+                statsInFlight.clear();
             }
             persistStatsQueue();
             return;
@@ -2913,7 +2950,10 @@ public class CapgoUpdater {
             }
             eventsToSend = new ArrayList<>(statsQueue);
             statsQueue.clear();
+            statsInFlight.clear();
+            statsInFlight.addAll(eventsToSend);
         }
+        persistStatsQueue();
 
         JSONArray jsonArray = new JSONArray();
         for (QueuedStatsEvent queuedEvent : eventsToSend) {
@@ -2948,6 +2988,9 @@ public class CapgoUpdater {
                         }
 
                         if (response.isSuccessful()) {
+                            synchronized (statsQueue) {
+                                statsInFlight.clear();
+                            }
                             persistStatsQueue();
                             if (logger != null) {
                                 logger.info("Stats batch sent successfully");
@@ -2961,6 +3004,9 @@ public class CapgoUpdater {
                                 logger.debug("Retrying later, response code: " + response.code());
                             }
                         } else {
+                            synchronized (statsQueue) {
+                                statsInFlight.clear();
+                            }
                             persistStatsQueue();
                             if (logger != null) {
                                 logger.error("Dropping stats batch after permanent error");
@@ -2987,7 +3033,11 @@ public class CapgoUpdater {
             return;
         }
         synchronized (statsQueue) {
+            statsInFlight.clear();
             statsQueue.addAll(0, events);
+            while (statsQueue.size() > MAX_PENDING_STATS) {
+                statsQueue.remove(0);
+            }
         }
         persistStatsQueue();
         ensureStatsTimerStarted();
