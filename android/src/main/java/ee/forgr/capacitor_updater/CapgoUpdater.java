@@ -92,6 +92,7 @@ public class CapgoUpdater {
     public SharedPreferences prefs;
 
     public File documentsDir;
+    public File noBackupDir;
     public Boolean directUpdate = false;
     public Activity activity;
     public String pluginVersion = "";
@@ -2841,10 +2842,11 @@ public class CapgoUpdater {
     }
 
     private File pendingStatsFile() {
-        if (this.documentsDir == null) {
+        final File dir = this.noBackupDir != null ? this.noBackupDir : this.documentsDir;
+        if (dir == null) {
             return null;
         }
-        return new File(this.documentsDir, PENDING_STATS_FILE);
+        return new File(dir, PENDING_STATS_FILE);
     }
 
     private void persistStatsQueue() {
@@ -2852,14 +2854,14 @@ public class CapgoUpdater {
     }
 
     private void persistStatsQueue(final boolean force) {
-        if (statsStopped.get() && !force) {
-            return;
-        }
         File file = pendingStatsFile();
         if (file == null) {
             return;
         }
         synchronized (pendingStatsPersistLock) {
+            if (statsStopped.get() && !force) {
+                return;
+            }
             JSONArray arr = new JSONArray();
             synchronized (statsQueue) {
                 final List<QueuedStatsEvent> combined = new ArrayList<>(statsInFlight.size() + statsQueue.size());

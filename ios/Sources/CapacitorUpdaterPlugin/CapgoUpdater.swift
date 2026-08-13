@@ -340,7 +340,9 @@ import UIKit
     }
 
     public func shutdown() {
+        statsPersistLock.lock()
         statsStopped = true
+        statsPersistLock.unlock()
         statsFlushTimer?.invalidate()
         statsFlushTimer = nil
         persistStatsQueue(force: true)
@@ -2993,11 +2995,11 @@ import UIKit
     }
 
     private func persistStatsQueue(force: Bool = false) {
+        statsPersistLock.lock()
+        defer { statsPersistLock.unlock() }
         if statsStopped && !force {
             return
         }
-        statsPersistLock.lock()
-        defer { statsPersistLock.unlock() }
 
         statsQueueLock.lock()
         var events = statsInFlight.map(\.event) + statsQueue.map(\.event)

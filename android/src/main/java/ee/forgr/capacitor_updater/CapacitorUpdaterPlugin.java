@@ -837,6 +837,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.periodCheckDelay = normalizedPeriodCheckDelayMs(this.getConfig().getInt("periodCheckDelay", 0));
 
         this.implementation.documentsDir = this.getContext().getFilesDir();
+        this.implementation.noBackupDir = this.getContext().getNoBackupFilesDir();
         this.implementation.prefs = this.prefs;
         this.implementation.editor = this.editor;
         this.implementation.versionOs = Build.VERSION.RELEASE;
