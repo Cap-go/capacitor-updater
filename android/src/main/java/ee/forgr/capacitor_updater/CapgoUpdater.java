@@ -2791,6 +2791,9 @@ public class CapgoUpdater {
         }
 
         synchronized (statsQueue) {
+            if (statsStopped.get()) {
+                return;
+            }
             while (statsQueue.size() >= MAX_PENDING_STATS) {
                 statsQueue.remove(0);
             }

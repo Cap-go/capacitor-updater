@@ -2947,6 +2947,10 @@ import UIKit
         )
 
         statsQueueLock.lock()
+        if statsStopped {
+            statsQueueLock.unlock()
+            return
+        }
         if statsQueue.count >= CapgoUpdater.maxPendingStats {
             statsQueue.removeFirst(statsQueue.count - CapgoUpdater.maxPendingStats + 1)
         }
