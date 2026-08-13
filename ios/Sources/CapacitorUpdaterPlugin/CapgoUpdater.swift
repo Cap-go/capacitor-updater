@@ -69,6 +69,7 @@ import UIKit
     private let statsQueueLock = NSLock()
     private let statsPersistLock = NSLock()
     private var statsFlushTimer: Timer?
+    private var statsStopped = false
     private static let statsFlushInterval: TimeInterval = 1.0
     private static let maxPendingStats = 200
     private let pendingStatsFileName = "capgo_pending_stats.json"
@@ -335,11 +336,10 @@ import UIKit
     }
 
     deinit {
-        // Invalidate the stats timer to prevent memory leaks
+        statsStopped = true
         statsFlushTimer?.invalidate()
         statsFlushTimer = nil
-        persistStatsQueue()
-        flushStatsQueue()
+        persistStatsQueue(force: true)
     }
 
     private func calcTotalPercent(percent: Int, min: Int, max: Int) -> Int {
@@ -2980,7 +2980,10 @@ import UIKit
         libraryDir.appendingPathComponent(pendingStatsFileName)
     }
 
-    private func persistStatsQueue() {
+    private func persistStatsQueue(force: Bool = false) {
+        if statsStopped && !force {
+            return
+        }
         statsPersistLock.lock()
         defer { statsPersistLock.unlock() }
 
@@ -3011,8 +3014,11 @@ import UIKit
     }
 
     private func ensureStatsTimerStarted() {
+        if statsStopped {
+            return
+        }
         DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
+            guard let self = self, !self.statsStopped else { return }
             if self.statsFlushTimer == nil || !self.statsFlushTimer!.isValid {
                 // Use closure-based timer to avoid strong reference cycle
                 self.statsFlushTimer = Timer.scheduledTimer(
@@ -3026,6 +3032,9 @@ import UIKit
     }
 
     private func flushStatsQueue() {
+        if statsStopped {
+            return
+        }
         // While Retry-After is active, keep stats queued and skip the network call.
         if isRemoteBlocked() {
             logger.debug("Deferring stats flush until Retry-After expires.")
@@ -3056,6 +3065,10 @@ import UIKit
                 encoder: JSONParameterEncoder.default,
                 requestModifier: { $0.timeoutInterval = self.timeout }
             ).responseData { response in
+                if self.abandonStoppedStatsFlush() {
+                    semaphore.signal()
+                    return
+                }
                 if self.checkAndHandleRateLimitResponse(statusCode: response.response?.statusCode, data: response.data, response: response.response).blocked {
                     self.requeueStatsEvents(queuedEvents)
                     semaphore.signal()
@@ -3090,9 +3103,19 @@ import UIKit
                 semaphore.signal()
             }
             semaphore.wait()
-            self.persistStatsQueue()
+            if !self.statsStopped {
+                self.persistStatsQueue()
+            }
         }
         operationQueue.addOperation(operation)
+    }
+
+    private func abandonStoppedStatsFlush() -> Bool {
+        guard statsStopped else { return false }
+        statsQueueLock.lock()
+        statsInFlight.removeAll()
+        statsQueueLock.unlock()
+        return true
     }
 
     /// Only 429, request timeout and 5xx are worth retrying; other 4xx are permanent rejections.
@@ -3107,7 +3130,7 @@ import UIKit
     }
 
     private func requeueStatsEvents(_ events: [QueuedStatsEvent]) {
-        guard !events.isEmpty else { return }
+        guard !statsStopped, !events.isEmpty else { return }
         statsQueueLock.lock()
         statsInFlight.removeAll()
         statsQueue.insert(contentsOf: events, at: 0)

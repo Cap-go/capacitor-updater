@@ -134,6 +134,7 @@ public class CapgoUpdater {
     private final ScheduledExecutorService statsScheduler = Executors.newSingleThreadScheduledExecutor();
     private ScheduledFuture<?> statsFlushTask = null;
     private final AtomicBoolean statsFlushInFlight = new AtomicBoolean(false);
+    private final AtomicBoolean statsStopped = new AtomicBoolean(false);
     private static final long STATS_FLUSH_INTERVAL_MS = 1000;
     private static final String PENDING_STATS_FILE = "capgo_pending_stats.json";
     private static final int MAX_PENDING_STATS = 200;
@@ -2840,6 +2841,13 @@ public class CapgoUpdater {
     }
 
     private void persistStatsQueue() {
+        persistStatsQueue(false);
+    }
+
+    private void persistStatsQueue(final boolean force) {
+        if (statsStopped.get() && !force) {
+            return;
+        }
         File file = pendingStatsFile();
         if (file == null) {
             return;
@@ -2908,6 +2916,9 @@ public class CapgoUpdater {
     }
 
     private synchronized void ensureStatsTimerStarted() {
+        if (statsStopped.get()) {
+            return;
+        }
         if (statsFlushTask == null || statsFlushTask.isCancelled() || statsFlushTask.isDone()) {
             statsFlushTask = statsScheduler.scheduleAtFixedRate(
                 this::flushStatsQueue,
@@ -2919,6 +2930,9 @@ public class CapgoUpdater {
     }
 
     private void flushStatsQueue() {
+        if (statsStopped.get()) {
+            return;
+        }
         if (statsQueue.isEmpty()) {
             return;
         }
@@ -2971,6 +2985,9 @@ public class CapgoUpdater {
             new okhttp3.Callback() {
                 @Override
                 public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                    if (abandonStoppedStatsFlush()) {
+                        return;
+                    }
                     requeueStatsEvents(eventsToSend);
                     if (logger != null) {
                         logger.error("Failed to send stats batch");
@@ -2982,6 +2999,9 @@ public class CapgoUpdater {
                 @Override
                 public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
                     try (ResponseBody responseBody = response.body()) {
+                        if (abandonStoppedStatsFlush()) {
+                            return;
+                        }
                         final String responseData = responseBody != null ? responseBody.string() : "";
                         if (checkAndHandleRateLimitResponse(response, responseData).blocked) {
                             requeueStatsEvents(eventsToSend);
@@ -3022,6 +3042,17 @@ public class CapgoUpdater {
         );
     }
 
+    private boolean abandonStoppedStatsFlush() {
+        if (!statsStopped.get()) {
+            return false;
+        }
+        synchronized (statsQueue) {
+            statsInFlight.clear();
+        }
+        statsFlushInFlight.set(false);
+        return true;
+    }
+
     /**
      * Only 429, request timeout and 5xx are worth retrying; other 4xx are permanent rejections.
      */
@@ -3030,7 +3061,7 @@ public class CapgoUpdater {
     }
 
     private void requeueStatsEvents(final List<QueuedStatsEvent> events) {
-        if (events == null || events.isEmpty()) {
+        if (statsStopped.get() || events == null || events.isEmpty()) {
             return;
         }
         synchronized (statsQueue) {
@@ -3231,15 +3262,15 @@ public class CapgoUpdater {
      * Should be called when the plugin is destroyed to prevent resource leaks.
      */
     public void shutdown() {
+        statsStopped.set(true);
         // Cancel the scheduled task
         if (statsFlushTask != null) {
             statsFlushTask.cancel(false);
             statsFlushTask = null;
         }
 
-        // Keep unsent events on disk in case destroy races the async flush.
-        persistStatsQueue();
-        flushStatsQueue();
+        // Write once, then ignore later callbacks so they cannot delete a newer instance's file.
+        persistStatsQueue(true);
 
         // Shutdown the scheduler
         statsScheduler.shutdown();
