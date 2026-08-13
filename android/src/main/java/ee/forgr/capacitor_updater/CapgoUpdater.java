@@ -1960,8 +1960,7 @@ public class CapgoUpdater {
         }
 
         if ("too_many_requests".equals(errorCode) && !this.previewSession && claimRateLimitStatistic()) {
-            // sendRateLimitStatistic() blocks on execute(); keep this callback thread free.
-            io.execute(this::sendRateLimitStatistic);
+            sendRateLimitStatistic();
         }
 
         final long nowMs = System.currentTimeMillis();
@@ -2077,7 +2076,7 @@ public class CapgoUpdater {
 
     /**
      * Send a statistic about rate limiting.
-     * Blocks on the calling thread, so it must be dispatched to the io executor.
+     * Dispatched through OkHttp so no caller thread waits on the request.
      */
     private void sendRateLimitStatistic() {
         String statsUrl = this.statsUrl;
@@ -2098,14 +2097,27 @@ public class CapgoUpdater {
                 .build();
 
             // User-Agent header is automatically added by DownloadService.sharedClient interceptor
-            try (Response response = DownloadService.sharedClient.newCall(request).execute()) {
-                if (response.isSuccessful()) {
-                    logger.info("Rate limit statistic sent");
-                } else {
-                    logger.error("Error sending rate limit statistic");
-                    logger.debug("Response code: " + response.code());
+            DownloadService.sharedClient.newCall(request).enqueue(
+                new okhttp3.Callback() {
+                    @Override
+                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                        logger.error("Failed to send rate limit statistic");
+                        logger.debug("Error: " + e.getMessage());
+                    }
+
+                    @Override
+                    public void onResponse(@NonNull Call call, @NonNull Response response) {
+                        try (ResponseBody responseBody = response.body()) {
+                            if (response.isSuccessful()) {
+                                logger.info("Rate limit statistic sent");
+                            } else {
+                                logger.error("Error sending rate limit statistic");
+                                logger.debug("Response code: " + response.code());
+                            }
+                        }
+                    }
                 }
-            }
+            );
         } catch (final Exception e) {
             logger.error("Failed to send rate limit statistic");
             logger.debug("Error: " + e.getMessage());
