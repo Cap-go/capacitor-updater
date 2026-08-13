@@ -2844,16 +2844,17 @@ public class CapgoUpdater {
         if (file == null) {
             return;
         }
-        JSONArray arr = new JSONArray();
-        synchronized (statsQueue) {
-            for (QueuedStatsEvent queuedEvent : statsInFlight) {
-                arr.put(queuedEvent.event);
-            }
-            for (QueuedStatsEvent queuedEvent : statsQueue) {
-                arr.put(queuedEvent.event);
-            }
-        }
         synchronized (pendingStatsPersistLock) {
+            JSONArray arr = new JSONArray();
+            synchronized (statsQueue) {
+                final List<QueuedStatsEvent> combined = new ArrayList<>(statsInFlight.size() + statsQueue.size());
+                combined.addAll(statsInFlight);
+                combined.addAll(statsQueue);
+                final int start = Math.max(0, combined.size() - MAX_PENDING_STATS);
+                for (int i = start; i < combined.size(); i++) {
+                    arr.put(combined.get(i).event);
+                }
+            }
             try {
                 if (arr.length() == 0) {
                     if (file.exists() && !file.delete()) {

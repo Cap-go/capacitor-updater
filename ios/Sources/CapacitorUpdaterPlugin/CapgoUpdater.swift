@@ -2981,12 +2981,15 @@ import UIKit
     }
 
     private func persistStatsQueue() {
-        statsQueueLock.lock()
-        let events = statsInFlight.map(\.event) + statsQueue.map(\.event)
-        statsQueueLock.unlock()
-
         statsPersistLock.lock()
         defer { statsPersistLock.unlock() }
+
+        statsQueueLock.lock()
+        var events = statsInFlight.map(\.event) + statsQueue.map(\.event)
+        statsQueueLock.unlock()
+        if events.count > CapgoUpdater.maxPendingStats {
+            events = Array(events.suffix(CapgoUpdater.maxPendingStats))
+        }
 
         let fileURL = pendingStatsFileURL()
         if events.isEmpty {
