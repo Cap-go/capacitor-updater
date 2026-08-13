@@ -3011,7 +3011,7 @@ import UIKit
                 case .success:
                     self.logger.info("Stats batch sent successfully")
                     self.logger.debug("Sent \(eventsToSend.count) events")
-                    queuedEvents.compactMap(\.onSent).forEach { $0() }
+                    self.runStatsCallbacks(queuedEvents)
                 case let .failure(error):
                     self.requeueStatsEvents(queuedEvents)
                     self.logger.error("Error sending stats batch")
@@ -3027,6 +3027,12 @@ import UIKit
     /// Only 429, request timeout and 5xx are worth retrying; other 4xx are permanent rejections.
     private static func isTransientStatsFailure(_ statusCode: Int) -> Bool {
         return statusCode == 429 || statusCode == 408 || statusCode >= 500
+    }
+
+    private func runStatsCallbacks(_ sentEvents: [QueuedStatsEvent]) {
+        for sentEvent in sentEvents {
+            sentEvent.onSent?()
+        }
     }
 
     private func requeueStatsEvents(_ events: [QueuedStatsEvent]) {

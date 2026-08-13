@@ -262,6 +262,8 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     name: Android example app Maestro smoke / ${{ matrix.scenario }}
+    env:
+      CAPGO_MAESTRO_SUCCESS_MARKER: ${{ github.workspace }}/maestro-android-smoke.pass
     strategy:
       fail-fast: false
       matrix:
@@ -308,14 +310,18 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      # Same emulator teardown hazard as the live update job: bound the step below the job cap
+      # and let the success marker decide the result.
       - name: Run Maestro smoke tests
+        timeout-minutes: 8
+        continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2.38.0 # NOSONAR version tag required by repo policy
         with:
           api-level: 30
           arch: x86_64
           profile: pixel_7
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -no-metrics
           script: >-
             CAPGO_MAESTRO_SKIP_BUILD=1
             CAPGO_MAESTRO_SKIP_BUNDLE_BUILD=1
@@ -325,7 +331,14 @@ jobs:
             CAPGO_MAESTRO_APP_LAUNCH_RETRIES=2
             MAESTRO_DRIVER_STARTUP_TIMEOUT=300000
             CAPGO_MAESTRO_SMOKE_SCENARIO=${{ matrix.scenario }}
-            bun run test:maestro:android
+            bun run test:maestro:android && : > "$CAPGO_MAESTRO_SUCCESS_MARKER"
+      - name: Verify smoke scenario passed
+        run: |
+          if [[ ! -f "$CAPGO_MAESTRO_SUCCESS_MARKER" ]]; then
+            echo "Android smoke Maestro scenario '${{ matrix.scenario }}' did not pass."
+            exit 1
+          fi
+          echo "Android smoke Maestro scenario '${{ matrix.scenario }}' passed."
       - name: Upload Maestro artifacts
         if: always()
         uses: actions/upload-artifact@v7
@@ -502,6 +515,8 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     name: maestro_android / ${{ matrix.scenario }}
+    env:
+      CAPGO_MAESTRO_SUCCESS_MARKER: ${{ github.workspace }}/maestro-android-live-update.pass
     strategy:
       fail-fast: false
       matrix:
@@ -552,23 +567,36 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      # The runner action tears the emulator down inside this step, and that teardown can hang
+      # for minutes after the flow already passed (an orphaned crashpad_handler keeps the pipe
+      # open). Bound the step below the job cap and let the success marker decide the result,
+      # so a hung teardown cannot burn the whole 10 minutes or fail a passing scenario.
       - name: Run live update Maestro flow
+        timeout-minutes: 8
+        continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2.38.0 # NOSONAR version tag required by repo policy
         with:
           api-level: 30
           arch: x86_64
           profile: pixel_7
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -no-metrics
           script: >-
             CAPGO_MAESTRO_SKIP_BUILD=1
             CAPGO_MAESTRO_SKIP_BUNDLE_BUILD=1
-            CAPGO_MAESTRO_FLOW_TIMEOUT_SECONDS=600
+            MAESTRO_FLOW_TIMEOUT_SECONDS=300
             CAPGO_MAESTRO_FLOW_RETRIES=2
             CAPGO_MAESTRO_SPLIT_RETRIES=2
             CAPGO_MAESTRO_UI_STATE_TIMEOUT_SECONDS=180
             CAPGO_MAESTRO_DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS=180
             bash ./scripts/maestro/run-android-live-update-ci.sh "${{ matrix.scenario }}"
+      - name: Verify live update scenario passed
+        run: |
+          if [[ ! -f "$CAPGO_MAESTRO_SUCCESS_MARKER" ]]; then
+            echo "Android live update Maestro scenario '${{ matrix.scenario }}' did not pass."
+            exit 1
+          fi
+          echo "Android live update Maestro scenario '${{ matrix.scenario }}' passed."
 
   maestro_android:
     if: always()
