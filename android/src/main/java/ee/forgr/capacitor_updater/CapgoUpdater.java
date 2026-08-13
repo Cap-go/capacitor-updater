@@ -1960,7 +1960,9 @@ public class CapgoUpdater {
             }
         }
 
-        if ("too_many_requests".equals(errorCode) && !this.previewSession && claimRateLimitStatistic()) {
+        // Claim last, and only when there is somewhere to send it, so a 429 burst with no
+        // stats URL does not claim and release the latch once per response.
+        if ("too_many_requests".equals(errorCode) && !this.previewSession && this.hasStatsUrl() && claimRateLimitStatistic()) {
             sendRateLimitStatistic();
         }
 
@@ -2065,6 +2067,11 @@ public class CapgoUpdater {
         }
     }
 
+    private boolean hasStatsUrl() {
+        final String url = this.statsUrl;
+        return url != null && !url.isEmpty();
+    }
+
     private boolean isRemoteBlocked() {
         synchronized (rateLimitStateLock) {
             if (rateLimitBlockedUntilMs <= 0L) {
@@ -2091,6 +2098,7 @@ public class CapgoUpdater {
     private void sendRateLimitStatistic() {
         String statsUrl = this.statsUrl;
         if (statsUrl == null || statsUrl.isEmpty()) {
+            // The URL was cleared after the claim was taken; nothing went out, so hand it back.
             releaseRateLimitStatisticClaim();
             return;
         }

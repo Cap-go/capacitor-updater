@@ -455,7 +455,9 @@ import UIKit
         let retryUntilMs = resolveRateLimitBlockedUntilMs(data: data, response: response)
         CapgoUpdater.recordRateLimitBlock(untilMs: retryUntilMs, error: errorCode, message: message)
 
-        if errorCode == "too_many_requests" && !previewSession && CapgoUpdater.claimRateLimitStatistic() {
+        // Claim last, and only when there is somewhere to send it, so a 429 burst with no
+        // stats URL does not claim and release the latch once per response.
+        if errorCode == "too_many_requests" && !previewSession && !statsUrl.isEmpty && CapgoUpdater.claimRateLimitStatistic() {
             DispatchQueue.global(qos: .utility).async {
                 self.sendRateLimitStatistic()
             }
@@ -579,6 +581,7 @@ import UIKit
      */
     private func sendRateLimitStatistic() {
         guard !statsUrl.isEmpty else {
+            // The URL was cleared after the claim was taken; nothing went out, so hand it back.
             CapgoUpdater.releaseRateLimitStatisticClaim()
             return
         }
