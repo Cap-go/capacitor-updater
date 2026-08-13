@@ -336,6 +336,10 @@ import UIKit
     }
 
     deinit {
+        shutdown()
+    }
+
+    public func shutdown() {
         statsStopped = true
         statsFlushTimer?.invalidate()
         statsFlushTimer = nil
@@ -2904,6 +2908,10 @@ import UIKit
         metadata: [String: String]?,
         onSent: (() -> Void)?
     ) {
+        if statsStopped {
+            return
+        }
+
         if previewSession {
             logger.debug("Skipping sendStats during preview session.")
             return
@@ -3111,11 +3119,7 @@ import UIKit
     }
 
     private func abandonStoppedStatsFlush() -> Bool {
-        guard statsStopped else { return false }
-        statsQueueLock.lock()
-        statsInFlight.removeAll()
-        statsQueueLock.unlock()
-        return true
+        statsStopped
     }
 
     /// Only 429, request timeout and 5xx are worth retrying; other 4xx are permanent rejections.

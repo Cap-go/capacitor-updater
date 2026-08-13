@@ -2756,6 +2756,10 @@ public class CapgoUpdater {
         final Map<String, String> metadata,
         final Runnable onSent
     ) {
+        if (statsStopped.get()) {
+            return;
+        }
+
         if (this.previewSession) {
             if (logger != null) {
                 logger.debug("Skipping sendStats during preview session.");
@@ -3045,9 +3049,6 @@ public class CapgoUpdater {
     private boolean abandonStoppedStatsFlush() {
         if (!statsStopped.get()) {
             return false;
-        }
-        synchronized (statsQueue) {
-            statsInFlight.clear();
         }
         statsFlushInFlight.set(false);
         return true;
