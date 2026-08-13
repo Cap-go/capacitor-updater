@@ -119,7 +119,8 @@ public class CapgoUpdater {
     private static String rateLimitBlockedError = "too_many_requests";
     private static String rateLimitBlockedMessage = "Too many requests";
 
-    // Flag to track if we've already sent the rate limit statistic - prevents infinite loop
+    // Flag to track if we've already sent the rate limit statistic - prevents infinite loop.
+    // Released again when the send fails, so a later 429 can retry it.
     private static boolean rateLimitStatisticSent = false;
 
     // Upper bound for a client-side 429 block, so a bogus Retry-After cannot block the app for days.
@@ -2055,6 +2056,15 @@ public class CapgoUpdater {
         }
     }
 
+    /**
+     * Give the claim back when the statistic never made it out, so a later 429 can retry it.
+     */
+    private static void releaseRateLimitStatisticClaim() {
+        synchronized (rateLimitStateLock) {
+            rateLimitStatisticSent = false;
+        }
+    }
+
     private boolean isRemoteBlocked() {
         synchronized (rateLimitStateLock) {
             if (rateLimitBlockedUntilMs <= 0L) {
@@ -2081,6 +2091,7 @@ public class CapgoUpdater {
     private void sendRateLimitStatistic() {
         String statsUrl = this.statsUrl;
         if (statsUrl == null || statsUrl.isEmpty()) {
+            releaseRateLimitStatisticClaim();
             return;
         }
 
@@ -2101,6 +2112,7 @@ public class CapgoUpdater {
                 new okhttp3.Callback() {
                     @Override
                     public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                        releaseRateLimitStatisticClaim();
                         logger.error("Failed to send rate limit statistic");
                         logger.debug("Error: " + e.getMessage());
                     }
@@ -2111,6 +2123,7 @@ public class CapgoUpdater {
                             if (response.isSuccessful()) {
                                 logger.info("Rate limit statistic sent");
                             } else {
+                                releaseRateLimitStatisticClaim();
                                 logger.error("Error sending rate limit statistic");
                                 logger.debug("Response code: " + response.code());
                             }
@@ -2119,6 +2132,7 @@ public class CapgoUpdater {
                 }
             );
         } catch (final Exception e) {
+            releaseRateLimitStatisticClaim();
             logger.error("Failed to send rate limit statistic");
             logger.debug("Error: " + e.getMessage());
         }

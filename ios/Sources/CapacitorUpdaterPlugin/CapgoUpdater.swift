@@ -56,7 +56,8 @@ import UIKit
     private static var rateLimitBlockedError: String = "too_many_requests"
     private static var rateLimitBlockedMessage: String = "Too many requests"
 
-    // Flag to track if we've already sent the rate limit statistic - prevents infinite loop
+    // Flag to track if we've already sent the rate limit statistic - prevents infinite loop.
+    // Released again when the send fails, so a later 429 can retry it.
     private static var rateLimitStatisticSent = false
 
     // Upper bound for a client-side 429 block, so a bogus Retry-After cannot block the app for days.
@@ -501,6 +502,13 @@ import UIKit
         return true
     }
 
+    /// Gives the claim back when the statistic never made it out, so a later 429 can retry it.
+    private static func releaseRateLimitStatisticClaim() {
+        rateLimitStateLock.lock()
+        defer { rateLimitStateLock.unlock() }
+        rateLimitStatisticSent = false
+    }
+
     private func parseRemoteError(from data: Data?) -> (error: String, message: String) {
         guard let data = data,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -571,6 +579,7 @@ import UIKit
      */
     private func sendRateLimitStatistic() {
         guard !statsUrl.isEmpty else {
+            CapgoUpdater.releaseRateLimitStatisticClaim()
             return
         }
 
@@ -589,10 +598,16 @@ import UIKit
             encoding: JSONEncoding.default,
             requestModifier: { $0.timeoutInterval = self.timeout }
         ).responseData { response in
+            let statusCode = response.response?.statusCode
             switch response.result {
-            case .success:
+            case .success where (200...299).contains(statusCode ?? 0):
                 self.logger.info("Rate limit statistic sent")
+            case .success:
+                CapgoUpdater.releaseRateLimitStatisticClaim()
+                self.logger.error("Error sending rate limit statistic")
+                self.logger.debug("Response code: \(statusCode.map(String.init) ?? "nil")")
             case let .failure(error):
+                CapgoUpdater.releaseRateLimitStatisticClaim()
                 self.logger.error("Error sending rate limit statistic")
                 self.logger.debug("Error: \(error.localizedDescription)")
             }
