@@ -394,7 +394,7 @@ public class CapgoUpdater {
         io.execute(() -> cacheBundleFiles(id));
     }
 
-    private void cacheBundleFiles(final String id) {
+    void cacheBundleFiles(final String id) {
         if (this.activity == null) {
             logger.debug("Skip delta cache population: activity is null");
             return;
@@ -416,13 +416,25 @@ public class CapgoUpdater {
             return;
         }
 
+        final File builtinFolder = new File(this.activity.getFilesDir(), "public");
+
         final List<File> files = new ArrayList<>();
         collectFiles(bundleDir, files);
+        final int bundlePrefixLength = bundleDir.getAbsolutePath().length() + 1;
         for (File file : files) {
             final String checksum = CryptoCipher.calcChecksum(file);
             if (checksum.isEmpty()) {
                 continue;
             }
+
+            // Builtin is already a permanent reuse source (see isManifestEntryAvailableLocally),
+            // so there's no need to also duplicate a byte-identical file into the delta cache.
+            final String relativePath = file.getAbsolutePath().substring(bundlePrefixLength);
+            final File builtinFile = new File(builtinFolder, relativePath);
+            if (verifyChecksum(builtinFile, checksum)) {
+                continue;
+            }
+
             final String cacheName = checksum + "_" + file.getName();
             final File cacheFile = new File(cacheDir, cacheName);
             if (cacheFile.exists()) {

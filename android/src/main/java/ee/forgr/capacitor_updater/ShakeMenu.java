@@ -793,8 +793,20 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
 
                                 String latestUrl = getString(latestRes, "url");
 
-                                // Check if there's an actual update available
-                                if ("up_to_date".equals(latestKind) || latestUrl == null || latestUrl.isEmpty()) {
+                                Object manifestObj = latestRes.get("manifest");
+                                JSONArray manifestArray = null;
+                                if (manifestObj instanceof JSONArray) {
+                                    manifestArray = (JSONArray) manifestObj;
+                                } else if (manifestObj instanceof List) {
+                                    manifestArray = new JSONArray((List<?>) manifestObj);
+                                }
+                                final boolean hasManifest = manifestArray != null && manifestArray.length() > 0;
+
+                                // Check if there's an actual update available. A manifest-only
+                                // response legitimately has no URL (the files come from the
+                                // manifest, not a zip), so only report "already on latest" when
+                                // the URL is empty AND there is no manifest to download from.
+                                if ("up_to_date".equals(latestKind) || ((latestUrl == null || latestUrl.isEmpty()) && !hasManifest)) {
                                     activity.runOnUiThread(() -> {
                                         progressDialog.dismiss();
                                         showSuccess("Channel set to " + channelName + ". Already on latest version.");
@@ -817,25 +829,18 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
 
                                 String sessionKey = getString(latestRes, "sessionKey");
                                 String checksum = getString(latestRes, "checksum");
-                                Object manifestObj = latestRes.get("manifest");
+
+                                // A manifest-only response has no zip URL; downloadManifest
+                                // tolerates the placeholder URL the plugin already uses.
+                                final String downloadUrl =
+                                    latestUrl == null || latestUrl.isEmpty() ? "https://404.capgo.app/no.zip" : latestUrl;
 
                                 // Download the update
                                 try {
                                     BundleInfo bundle;
-                                    if (manifestObj != null) {
-                                        JSONArray manifestArray = null;
-                                        if (manifestObj instanceof JSONArray) {
-                                            manifestArray = (JSONArray) manifestObj;
-                                        } else if (manifestObj instanceof List) {
-                                            manifestArray = new JSONArray((List<?>) manifestObj);
-                                        }
-
-                                        if (manifestArray == null) {
-                                            throw new IllegalArgumentException("Invalid manifest format");
-                                        }
-
+                                    if (hasManifest) {
                                         bundle = updater.downloadManifest(
-                                            latestUrl,
+                                            downloadUrl,
                                             versionForUi,
                                             sessionKey != null ? sessionKey : "",
                                             checksum != null ? checksum : "",
@@ -843,7 +848,7 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
                                         );
                                     } else {
                                         bundle = updater.download(
-                                            latestUrl,
+                                            downloadUrl,
                                             versionForUi,
                                             sessionKey != null ? sessionKey : "",
                                             checksum != null ? checksum : ""

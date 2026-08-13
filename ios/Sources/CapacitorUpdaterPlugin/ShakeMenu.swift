@@ -726,8 +726,12 @@ extension UIWindow {
                             return
                         }
 
-                        // Check if there's an actual update available
-                        if latestKind == "up_to_date" || latest.url.isEmpty {
+                        // Check if there's an actual update available. A manifest-only
+                        // response legitimately has no URL (the files come from the
+                        // manifest, not a zip), so only report "already on latest" when
+                        // the URL is empty AND there is no manifest to download from.
+                        let hasManifest = !(latest.manifest?.isEmpty ?? true)
+                        if latestKind == "up_to_date" || (latest.url.isEmpty && !hasManifest) {
                             DispatchQueue.main.async {
                                 progressAlert.dismiss(animated: true) {
                                     self.showSuccess(message: "Channel set to \(name). Already on latest version.", plugin: plugin)

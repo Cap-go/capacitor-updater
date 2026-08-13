@@ -146,7 +146,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     static final int APPLICATION_EXIT_REASON_USER_REQUESTED = 10;
     static final int APPLICATION_EXIT_REASON_DEPENDENCY_DIED = 12;
 
-    private final String pluginVersion = "8.51.3";
+    private final String pluginVersion = "8.51.4";
     private static final String DELAY_CONDITION_PREFERENCES = "";
 
     private SharedPreferences.Editor editor;
@@ -3990,7 +3990,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
                 new AlertDialog.Builder(getActivity())
                     .setTitle("Preview started")
-                    .setMessage("Shake your device anytime to reload or leave the test app.")
+                    .setMessage("shake".equals(this.shakeMenuGesture) ? "Shake to open menu." : "Three-finger pinch to open menu.")
                     .setPositiveButton("Got it", (dialog, which) -> dialog.dismiss())
                     .show();
             } catch (final Exception e) {

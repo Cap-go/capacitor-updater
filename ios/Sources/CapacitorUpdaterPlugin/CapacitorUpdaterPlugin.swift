@@ -92,7 +92,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "completeFlexibleUpdate", returnType: CAPPluginReturnPromise)
     ]
     public var implementation = CapgoUpdater()
-    private let pluginVersion: String = "8.51.3"
+    private let pluginVersion: String = "8.51.4"
     private let launchStartedAtMs = Int64(Date().timeIntervalSince1970 * 1000)
     static let updateUrlDefault = "https://plugin.capgo.app/updates"
     static let statsUrlDefault = "https://plugin.capgo.app/stats"
@@ -2754,7 +2754,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
             let alert = UIAlertController(
                 title: "Preview started",
-                message: "Shake your device anytime to reload or leave the test app.",
+                message: self.shakeMenuGesture == Self.shakeMenuGestureThreeFingerPinch ? "Three-finger pinch to open menu." : "Shake to open menu.",
                 preferredStyle: .alert
             )
             alert.addAction(UIAlertAction(title: "Got it", style: .default))
