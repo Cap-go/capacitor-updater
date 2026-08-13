@@ -68,6 +68,8 @@ import UIKit
     private let statsQueueLock = NSLock()
     private var statsFlushTimer: Timer?
     private static let statsFlushInterval: TimeInterval = 1.0
+    private static let maxPendingStats = 200
+    private let pendingStatsFileName = "capgo_pending_stats.json"
 
     private struct QueuedStatsEvent {
         let event: StatsEvent
@@ -334,8 +336,7 @@ import UIKit
         // Invalidate the stats timer to prevent memory leaks
         statsFlushTimer?.invalidate()
         statsFlushTimer = nil
-
-        // Flush any remaining stats before deallocation
+        persistStatsQueue()
         flushStatsQueue()
     }
 
@@ -2936,10 +2937,65 @@ import UIKit
         )
 
         statsQueueLock.lock()
+        if statsQueue.count >= CapgoUpdater.maxPendingStats {
+            statsQueue.removeFirst(statsQueue.count - CapgoUpdater.maxPendingStats + 1)
+        }
         statsQueue.append(QueuedStatsEvent(event: event, onSent: onSent))
         statsQueueLock.unlock()
 
         ensureStatsTimerStarted()
+    }
+
+    func restorePendingStats() {
+        let fileURL = pendingStatsFileURL()
+        guard FileManager.default.fileExists(atPath: fileURL.path),
+              let data = try? Data(contentsOf: fileURL),
+              let events = try? JSONDecoder().decode([StatsEvent].self, from: data) else {
+            return
+        }
+
+        statsQueueLock.lock()
+        for event in events {
+            if statsQueue.count >= CapgoUpdater.maxPendingStats {
+                break
+            }
+            statsQueue.append(QueuedStatsEvent(event: event, onSent: nil))
+        }
+        let restoredCount = statsQueue.count
+        statsQueueLock.unlock()
+
+        if restoredCount > 0 {
+            logger.info("Restored \(restoredCount) pending stats events")
+            ensureStatsTimerStarted()
+        }
+    }
+
+    func persistPendingStats() {
+        persistStatsQueue()
+    }
+
+    private func pendingStatsFileURL() -> URL {
+        libraryDir.appendingPathComponent(pendingStatsFileName)
+    }
+
+    private func persistStatsQueue() {
+        statsQueueLock.lock()
+        let events = statsQueue.map(\.event)
+        statsQueueLock.unlock()
+
+        let fileURL = pendingStatsFileURL()
+        if events.isEmpty {
+            try? FileManager.default.removeItem(at: fileURL)
+            return
+        }
+
+        do {
+            let data = try JSONEncoder().encode(events)
+            try data.write(to: fileURL, options: .atomic)
+        } catch {
+            logger.error("Failed to persist stats queue")
+            logger.debug("Error: \(error.localizedDescription)")
+        }
     }
 
     private func ensureStatsTimerStarted() {
@@ -2986,7 +3042,6 @@ import UIKit
                 encoder: JSONParameterEncoder.default,
                 requestModifier: { $0.timeoutInterval = self.timeout }
             ).responseData { response in
-                // Check for 429 rate limit — requeue so events are not lost.
                 if self.checkAndHandleRateLimitResponse(statusCode: response.response?.statusCode, data: response.data, response: response.response).blocked {
                     self.requeueStatsEvents(queuedEvents)
                     semaphore.signal()
@@ -2999,7 +3054,6 @@ import UIKit
                         self.logger.error("Error sending stats batch")
                         self.logger.debug("Retrying later, response code: \(statusCode)")
                     } else {
-                        // Permanent rejection: retrying would loop forever and block the queue.
                         self.logger.error("Dropping stats batch after permanent error")
                         self.logger.debug("Response code: \(statusCode)")
                     }
@@ -3020,6 +3074,7 @@ import UIKit
                 semaphore.signal()
             }
             semaphore.wait()
+            self.persistStatsQueue()
         }
         operationQueue.addOperation(operation)
     }
@@ -3040,6 +3095,7 @@ import UIKit
         statsQueueLock.lock()
         statsQueue.insert(contentsOf: events, at: 0)
         statsQueueLock.unlock()
+        persistStatsQueue()
         ensureStatsTimerStarted()
     }
 

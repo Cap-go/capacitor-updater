@@ -218,6 +218,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
     // Used for activity-based foreground/background detection on Android < 14
     private Boolean isPreviousMainActivity = true;
 
+    private boolean isProcessLifecycleObserverActive() {
+        return this.appLifecycleObserver != null && this.appLifecycleObserver.isRegistered();
+    }
+
     private volatile Thread backgroundDownloadTask;
     private volatile Thread appReadyCheck;
     // When true, sendReadyToJs should wait for notifyAppReady before hiding splash.
@@ -838,6 +842,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.implementation.versionOs = Build.VERSION.RELEASE;
         // Use DeviceIdHelper to get or create device ID that persists across reinstalls
         this.implementation.deviceID = DeviceIdHelper.getOrCreateDeviceId(this.getContext(), this.prefs);
+        this.implementation.restorePendingStats();
 
         // Update User-Agent for shared OkHttpClient with OS version
         DownloadService.updateUserAgent(this.implementation.appId, this.pluginVersion, this.implementation.versionOs);
@@ -945,8 +950,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 },
                 logger
             );
-            this.appLifecycleObserver.register();
-            logger.info("Using ProcessLifecycleOwner for foreground/background detection (Android 14+)");
+            this.appLifecycleObserver.register(this.getContext());
+            if (!this.appLifecycleObserver.isRegistered()) {
+                logger.warn("ProcessLifecycleOwner unavailable; using activity lifecycle callbacks");
+            } else {
+                logger.info("Using ProcessLifecycleOwner for foreground/background detection (Android 14+)");
+            }
         } else {
             logger.info("Using activity lifecycle callbacks for foreground/background detection (Android <14)");
         }
@@ -4735,8 +4744,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final String messageUpdate = initialDirectUpdateAllowed
             ? "Update will occur now."
             : this.shouldAutoSetNextBundle()
-                ? "Update will occur next time app moves to background."
-                : "Update will be downloaded and made available.";
+              ? "Update will occur next time app moves to background."
+              : "Update will be downloaded and made available.";
         Thread newTask = startNewThread(() -> {
             // Wait for cleanup to complete before starting download
             waitForCleanupIfNeeded();
@@ -5250,6 +5259,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
         // Do other background work after splashscreen is shown
         CapacitorUpdaterPlugin.this.implementation.sendStats("app_moved_to_background", current.getVersionName());
+        CapacitorUpdaterPlugin.this.implementation.persistPendingStats();
         logger.info("Checking for pending update");
 
         try {
@@ -5325,9 +5335,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
             // On Android < 14, use activity lifecycle for foreground detection
             // On Android 14+, ProcessLifecycleOwner handles this via AppLifecycleObserver
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                if (isPreviousMainActivity) {
-                    logger.info("handleOnStart: appMovedToForeground (Android <14 path)");
+            if (!this.isProcessLifecycleObserverActive()) {
+                if (isPreviousMainActivity || Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    logger.info("handleOnStart: appMovedToForeground");
                     this.appMovedToForeground();
                 }
                 isPreviousMainActivity = true;
@@ -5346,11 +5356,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
             // On Android < 14, use activity lifecycle for background detection
             // On Android 14+, ProcessLifecycleOwner handles this via AppLifecycleObserver
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                isPreviousMainActivity = isMainActivity();
-                if (isPreviousMainActivity) {
-                    logger.info("handleOnStop: appMovedToBackground (Android <14 path)");
+            if (!this.isProcessLifecycleObserverActive()) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    logger.info("handleOnStop: appMovedToBackground");
                     this.appMovedToBackground();
+                } else {
+                    isPreviousMainActivity = isMainActivity();
+                    if (isPreviousMainActivity) {
+                        logger.info("handleOnStop: appMovedToBackground (Android <14 path)");
+                        this.appMovedToBackground();
+                    }
                 }
             }
         } catch (Exception e) {

@@ -35,6 +35,8 @@ import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Date;
@@ -54,6 +56,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import okhttp3.*;
@@ -130,7 +133,10 @@ public class CapgoUpdater {
     private final List<QueuedStatsEvent> statsQueue = new CopyOnWriteArrayList<>();
     private final ScheduledExecutorService statsScheduler = Executors.newSingleThreadScheduledExecutor();
     private ScheduledFuture<?> statsFlushTask = null;
+    private final AtomicBoolean statsFlushInFlight = new AtomicBoolean(false);
     private static final long STATS_FLUSH_INTERVAL_MS = 1000;
+    private static final String PENDING_STATS_FILE = "capgo_pending_stats.json";
+    private static final int MAX_PENDING_STATS = 200;
 
     private static final class QueuedStatsEvent {
 
@@ -2772,16 +2778,96 @@ public class CapgoUpdater {
                 json.put("metadata", new JSONObject(metadata));
             }
         } catch (JSONException e) {
-            logger.error("Error preparing stats");
-            logger.debug("JSONException: " + e.getMessage());
+            if (logger != null) {
+                logger.error("Error preparing stats");
+                logger.debug("JSONException: " + e.getMessage());
+            }
             return;
         }
 
-        // Same lock as the flush transaction, so an event added mid-flush is never dropped.
         synchronized (statsQueue) {
+            while (statsQueue.size() >= MAX_PENDING_STATS) {
+                statsQueue.remove(0);
+            }
             statsQueue.add(new QueuedStatsEvent(json, onSent));
         }
         ensureStatsTimerStarted();
+    }
+
+    public void restorePendingStats() {
+        File file = pendingStatsFile();
+        if (file == null || !file.exists()) {
+            return;
+        }
+        try {
+            String raw = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+            JSONArray arr = new JSONArray(raw);
+            synchronized (statsQueue) {
+                for (int i = 0; i < arr.length(); i++) {
+                    if (statsQueue.size() >= MAX_PENDING_STATS) {
+                        break;
+                    }
+                    statsQueue.add(new QueuedStatsEvent(arr.getJSONObject(i), null));
+                }
+            }
+            if (!statsQueue.isEmpty()) {
+                if (logger != null) {
+                    logger.info("Restored " + statsQueue.size() + " pending stats events");
+                }
+                ensureStatsTimerStarted();
+            }
+        } catch (Exception e) {
+            if (logger != null) {
+                logger.error("Failed to restore pending stats");
+                logger.debug("Error: " + e.getMessage());
+            }
+        }
+    }
+
+    int pendingStatsCount() {
+        return statsQueue.size();
+    }
+
+    public void persistPendingStats() {
+        persistStatsQueue();
+    }
+
+    private File pendingStatsFile() {
+        if (this.documentsDir == null) {
+            return null;
+        }
+        return new File(this.documentsDir, PENDING_STATS_FILE);
+    }
+
+    private void persistStatsQueue() {
+        File file = pendingStatsFile();
+        if (file == null) {
+            return;
+        }
+        JSONArray arr = new JSONArray();
+        synchronized (statsQueue) {
+            for (QueuedStatsEvent queuedEvent : statsQueue) {
+                arr.put(queuedEvent.event);
+            }
+        }
+        try {
+            if (arr.length() == 0) {
+                Files.deleteIfExists(file.toPath());
+                return;
+            }
+            File tmp = new File(file.getAbsolutePath() + ".tmp");
+            Files.write(tmp.toPath(), arr.toString().getBytes(StandardCharsets.UTF_8));
+            try {
+                Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+                Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (Exception e) {
+            if (logger != null) {
+                logger.error("Failed to persist stats queue");
+                logger.debug("Error: " + e.getMessage());
+            }
+        }
     }
 
     private synchronized void ensureStatsTimerStarted() {
@@ -2811,13 +2897,18 @@ public class CapgoUpdater {
             synchronized (statsQueue) {
                 statsQueue.clear();
             }
+            persistStatsQueue();
             return;
         }
 
-        // Copy and clear the queue atomically using synchronized block
-        List<QueuedStatsEvent> eventsToSend;
+        if (!statsFlushInFlight.compareAndSet(false, true)) {
+            return;
+        }
+
+        final List<QueuedStatsEvent> eventsToSend;
         synchronized (statsQueue) {
             if (statsQueue.isEmpty()) {
+                statsFlushInFlight.set(false);
                 return;
             }
             eventsToSend = new ArrayList<>(statsQueue);
@@ -2839,10 +2930,12 @@ public class CapgoUpdater {
             new okhttp3.Callback() {
                 @Override
                 public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                    // Keep events for a later flush attempt.
                     requeueStatsEvents(eventsToSend);
-                    logger.error("Failed to send stats batch");
-                    logger.debug("Error: " + e.getMessage());
+                    if (logger != null) {
+                        logger.error("Failed to send stats batch");
+                        logger.debug("Error: " + e.getMessage());
+                    }
+                    statsFlushInFlight.set(false);
                 }
 
                 @Override
@@ -2855,18 +2948,27 @@ public class CapgoUpdater {
                         }
 
                         if (response.isSuccessful()) {
-                            logger.info("Stats batch sent successfully");
-                            logger.debug("Sent " + eventCount + " events");
+                            persistStatsQueue();
+                            if (logger != null) {
+                                logger.info("Stats batch sent successfully");
+                                logger.debug("Sent " + eventCount + " events");
+                            }
                             runStatsCallbacks(eventsToSend);
                         } else if (isTransientStatsFailure(response.code())) {
                             requeueStatsEvents(eventsToSend);
-                            logger.error("Error sending stats batch");
-                            logger.debug("Retrying later, response code: " + response.code());
+                            if (logger != null) {
+                                logger.error("Error sending stats batch");
+                                logger.debug("Retrying later, response code: " + response.code());
+                            }
                         } else {
-                            // Permanent rejection: retrying would loop forever and block the queue.
-                            logger.error("Dropping stats batch after permanent error");
-                            logger.debug("Response code: " + response.code());
+                            persistStatsQueue();
+                            if (logger != null) {
+                                logger.error("Dropping stats batch after permanent error");
+                                logger.debug("Response code: " + response.code());
+                            }
                         }
+                    } finally {
+                        statsFlushInFlight.set(false);
                     }
                 }
             }
@@ -2887,6 +2989,7 @@ public class CapgoUpdater {
         synchronized (statsQueue) {
             statsQueue.addAll(0, events);
         }
+        persistStatsQueue();
         ensureStatsTimerStarted();
     }
 
@@ -3083,7 +3186,8 @@ public class CapgoUpdater {
             statsFlushTask = null;
         }
 
-        // Flush any remaining stats before shutdown
+        // Keep unsent events on disk in case destroy races the async flush.
+        persistStatsQueue();
         flushStatsQueue();
 
         // Shutdown the scheduler

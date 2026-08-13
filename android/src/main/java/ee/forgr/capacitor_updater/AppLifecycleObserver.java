@@ -6,10 +6,13 @@
 
 package ee.forgr.capacitor_updater;
 
+import android.content.Context;
 import androidx.annotation.NonNull;
 import androidx.lifecycle.DefaultLifecycleObserver;
 import androidx.lifecycle.LifecycleOwner;
+import androidx.lifecycle.ProcessLifecycleInitializer;
 import androidx.lifecycle.ProcessLifecycleOwner;
+import androidx.startup.AppInitializer;
 
 /**
  * Observes app-level lifecycle events using ProcessLifecycleOwner.
@@ -41,16 +44,40 @@ public class AppLifecycleObserver implements DefaultLifecycleObserver {
         this.logger = logger;
     }
 
-    public void register() {
+    public boolean isRegistered() {
+        return isRegistered;
+    }
+
+    public void register(Context context) {
         if (isRegistered) {
             return;
         }
+        if (addObserver()) {
+            return;
+        }
+        // Apps that remove androidx.startup's InitializationProvider (common with custom
+        // WorkManager init) never create ProcessLifecycleOwner. Initialize it ourselves.
+        if (context != null) {
+            try {
+                AppInitializer.getInstance(context.getApplicationContext()).initializeComponent(ProcessLifecycleInitializer.class);
+            } catch (Exception e) {
+                logger.error("Failed to initialize ProcessLifecycleOwner: " + e.getMessage());
+            }
+        }
+        if (!addObserver()) {
+            logger.error("Failed to register AppLifecycleObserver with ProcessLifecycleOwner");
+        }
+    }
+
+    private boolean addObserver() {
         try {
             ProcessLifecycleOwner.get().getLifecycle().addObserver(this);
             isRegistered = true;
             logger.info("AppLifecycleObserver registered with ProcessLifecycleOwner");
+            return true;
         } catch (Exception e) {
-            logger.error("Failed to register AppLifecycleObserver: " + e.getMessage());
+            logger.error("Failed to add AppLifecycleObserver: " + e.getMessage());
+            return false;
         }
     }
 
