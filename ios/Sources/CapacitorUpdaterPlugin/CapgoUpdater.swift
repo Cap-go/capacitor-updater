@@ -50,12 +50,17 @@ import UIKit
     private var cachedKeyId: String?
 
     // Temporary 429 block until this epoch ms (Retry-After / rateLimitResetAt). No sticky latch.
+    // Guarded by rateLimitStateLock so concurrent 429s cannot shorten the window or mix metadata.
+    private static let rateLimitStateLock = NSLock()
     private static var rateLimitBlockedUntilMs: Double = 0
     private static var rateLimitBlockedError: String = "too_many_requests"
     private static var rateLimitBlockedMessage: String = "Too many requests"
 
     // Flag to track if we've already sent the rate limit statistic - prevents infinite loop
     private static var rateLimitStatisticSent = false
+
+    // Upper bound for a client-side 429 block, so a bogus Retry-After cannot block the app for days.
+    private static let maxRateLimitWindowMs: Double = 24 * 60 * 60 * 1000
 
     // Stats batching - queue events and send max once per second
     private var statsQueue: [QueuedStatsEvent] = []
@@ -447,28 +452,53 @@ import UIKit
         let message = parsed.message.isEmpty ? "Too many requests" : parsed.message
 
         let retryUntilMs = resolveRateLimitBlockedUntilMs(data: data, response: response)
-        if retryUntilMs > CapgoUpdater.rateLimitBlockedUntilMs {
-            CapgoUpdater.rateLimitBlockedUntilMs = retryUntilMs
-            CapgoUpdater.rateLimitBlockedError = errorCode
-            CapgoUpdater.rateLimitBlockedMessage = message
-        } else if CapgoUpdater.rateLimitBlockedUntilMs <= 0 {
-            CapgoUpdater.rateLimitBlockedError = errorCode
-            CapgoUpdater.rateLimitBlockedMessage = message
-        }
+        CapgoUpdater.recordRateLimitBlock(untilMs: retryUntilMs, error: errorCode, message: message)
 
-        if errorCode == "too_many_requests" {
-            if !previewSession && !CapgoUpdater.rateLimitStatisticSent {
-                CapgoUpdater.rateLimitStatisticSent = true
-                DispatchQueue.global(qos: .utility).async {
-                    self.sendRateLimitStatistic()
-                }
+        if errorCode == "too_many_requests" && !previewSession && CapgoUpdater.claimRateLimitStatistic() {
+            DispatchQueue.global(qos: .utility).async {
+                self.sendRateLimitStatistic()
             }
         }
 
         let nowMs = Date().timeIntervalSince1970 * 1000
-        let retryAfter = max(0, Int(ceil((max(retryUntilMs, nowMs) - nowMs) / 1000)))
+        let retryAfter = CapgoUpdater.retryAfterSecondsForLog(untilMs: retryUntilMs, nowMs: nowMs)
         logger.warn("Received 429 (\(errorCode)). Honouring Retry-After: \(retryAfter)s.")
         return RemoteBlockResult(blocked: true, error: errorCode, message: message)
+    }
+
+    /// Stores the block deadline and its metadata together, keeping the longest deadline
+    /// so a concurrent 429 with a shorter window cannot cut the block short.
+    private static func recordRateLimitBlock(untilMs: Double, error: String, message: String) {
+        rateLimitStateLock.lock()
+        defer { rateLimitStateLock.unlock() }
+        if untilMs > rateLimitBlockedUntilMs {
+            rateLimitBlockedUntilMs = untilMs
+            rateLimitBlockedError = error
+            rateLimitBlockedMessage = message
+        } else if rateLimitBlockedUntilMs <= 0 {
+            rateLimitBlockedError = error
+            rateLimitBlockedMessage = message
+        }
+    }
+
+    /// Seconds left in the block, clamped and finite so the Int conversion can never trap.
+    private static func retryAfterSecondsForLog(untilMs: Double, nowMs: Double) -> Int {
+        let seconds = ((untilMs - nowMs) / 1000).rounded(.up)
+        guard seconds.isFinite, seconds > 0 else {
+            return 0
+        }
+        return Int(min(seconds, maxRateLimitWindowMs / 1000))
+    }
+
+    /// Returns true for the first 429 only, so the rate-limit statistic is sent once.
+    private static func claimRateLimitStatistic() -> Bool {
+        rateLimitStateLock.lock()
+        defer { rateLimitStateLock.unlock() }
+        if rateLimitStatisticSent {
+            return false
+        }
+        rateLimitStatisticSent = true
+        return true
     }
 
     private func parseRemoteError(from data: Data?) -> (error: String, message: String) {
@@ -483,7 +513,15 @@ import UIKit
 
     private func resolveRateLimitBlockedUntilMs(data: Data?, response: HTTPURLResponse?) -> Double {
         let nowMs = Date().timeIntervalSince1970 * 1000
+        let candidate = rawRateLimitDeadlineMs(data: data, response: response, nowMs: nowMs)
+        // NaN and past deadlines mean "no client-side block"; anything further out is capped.
+        guard candidate > nowMs else {
+            return 0
+        }
+        return min(candidate, nowMs + CapgoUpdater.maxRateLimitWindowMs)
+    }
 
+    private func rawRateLimitDeadlineMs(data: Data?, response: HTTPURLResponse?, nowMs: Double) -> Double {
         if let header = response?.value(forHTTPHeaderField: "Retry-After")?.trimmingCharacters(in: .whitespacesAndNewlines),
            let seconds = Double(header), seconds >= 0 {
             return nowMs + seconds * 1000
@@ -498,8 +536,7 @@ import UIKit
                 return nowMs + retryAfter * 1000
             }
             if let resetAt = (moreInfo?["rateLimitResetAt"] as? NSNumber)?.doubleValue
-                ?? (json["rateLimitResetAt"] as? NSNumber)?.doubleValue,
-               resetAt > nowMs {
+                ?? (json["rateLimitResetAt"] as? NSNumber)?.doubleValue {
                 return resetAt
             }
         }
@@ -509,12 +546,12 @@ import UIKit
     }
 
     private func isRemoteBlocked() -> Bool {
-        let until = CapgoUpdater.rateLimitBlockedUntilMs
-        if until <= 0 {
+        CapgoUpdater.rateLimitStateLock.lock()
+        defer { CapgoUpdater.rateLimitStateLock.unlock() }
+        if CapgoUpdater.rateLimitBlockedUntilMs <= 0 {
             return false
         }
-        let nowMs = Date().timeIntervalSince1970 * 1000
-        if nowMs >= until {
+        if Date().timeIntervalSince1970 * 1000 >= CapgoUpdater.rateLimitBlockedUntilMs {
             CapgoUpdater.rateLimitBlockedUntilMs = 0
             return false
         }
@@ -522,6 +559,8 @@ import UIKit
     }
 
     private func remoteBlockedClientError() -> (error: String, message: String) {
+        CapgoUpdater.rateLimitStateLock.lock()
+        defer { CapgoUpdater.rateLimitStateLock.unlock() }
         return (CapgoUpdater.rateLimitBlockedError, CapgoUpdater.rateLimitBlockedMessage)
     }
 
@@ -2937,9 +2976,15 @@ import UIKit
                 }
 
                 if let statusCode = response.response?.statusCode, !(200...299).contains(statusCode) {
-                    self.requeueStatsEvents(queuedEvents)
-                    self.logger.error("Error sending stats batch")
-                    self.logger.debug("Response code: \(statusCode)")
+                    if CapgoUpdater.isTransientStatsFailure(statusCode) {
+                        self.requeueStatsEvents(queuedEvents)
+                        self.logger.error("Error sending stats batch")
+                        self.logger.debug("Retrying later, response code: \(statusCode)")
+                    } else {
+                        // Permanent rejection: retrying would loop forever and block the queue.
+                        self.logger.error("Dropping stats batch after permanent error")
+                        self.logger.debug("Response code: \(statusCode)")
+                    }
                     semaphore.signal()
                     return
                 }
@@ -2959,6 +3004,11 @@ import UIKit
             semaphore.wait()
         }
         operationQueue.addOperation(operation)
+    }
+
+    /// Only 429, request timeout and 5xx are worth retrying; other 4xx are permanent rejections.
+    private static func isTransientStatsFailure(_ statusCode: Int) -> Bool {
+        return statusCode == 429 || statusCode == 408 || statusCode >= 500
     }
 
     private func requeueStatsEvents(_ events: [QueuedStatsEvent]) {
