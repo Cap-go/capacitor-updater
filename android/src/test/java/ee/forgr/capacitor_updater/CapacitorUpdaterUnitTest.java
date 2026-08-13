@@ -3525,4 +3525,26 @@ public class CapacitorUpdaterUnitTest {
         final File cacheFile = new File(new File(cacheDir, "capgo_downloads"), checksum + "_new.js");
         assertTrue("Non-builtin file must be copied into the delta cache", cacheFile.exists());
     }
+
+    @Test
+    public void testPendingStatsSurviveNewUpdaterInstance() throws Exception {
+        final Path tempDir = Files.createTempDirectory("capgo-pending-stats");
+        final File queueFile = tempDir.resolve("capgo_pending_stats.json").toFile();
+        Files.write(queueFile.toPath(), "[{\"action\":\"app_moved_to_background\",\"timestamp\":1}]".getBytes(StandardCharsets.UTF_8));
+
+        final CapgoUpdater crashed = new CapgoUpdater(mock(Logger.class));
+        crashed.documentsDir = tempDir.toFile();
+        crashed.restorePendingStats();
+
+        assertEquals(1, crashed.pendingStatsCount());
+        assertTrue(queueFile.exists());
+
+        final CapgoUpdater relaunched = new CapgoUpdater(mock(Logger.class));
+        relaunched.documentsDir = tempDir.toFile();
+        relaunched.restorePendingStats();
+
+        assertEquals(1, relaunched.pendingStatsCount());
+        relaunched.shutdown();
+        crashed.shutdown();
+    }
 }

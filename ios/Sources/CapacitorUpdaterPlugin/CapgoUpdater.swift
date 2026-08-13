@@ -65,9 +65,14 @@ import UIKit
 
     // Stats batching - queue events and send max once per second
     private var statsQueue: [QueuedStatsEvent] = []
+    private var statsInFlight: [QueuedStatsEvent] = []
     private let statsQueueLock = NSLock()
+    private let statsPersistLock = NSLock()
     private var statsFlushTimer: Timer?
+    private var statsStopped = false
     private static let statsFlushInterval: TimeInterval = 1.0
+    private static let maxPendingStats = 200
+    private let pendingStatsFileName = "capgo_pending_stats.json"
 
     private struct QueuedStatsEvent {
         let event: StatsEvent
@@ -331,12 +336,16 @@ import UIKit
     }
 
     deinit {
-        // Invalidate the stats timer to prevent memory leaks
+        shutdown()
+    }
+
+    public func shutdown() {
+        statsPersistLock.lock()
+        statsStopped = true
+        statsPersistLock.unlock()
         statsFlushTimer?.invalidate()
         statsFlushTimer = nil
-
-        // Flush any remaining stats before deallocation
-        flushStatsQueue()
+        persistStatsQueue(force: true)
     }
 
     private func calcTotalPercent(percent: Int, min: Int, max: Int) -> Int {
@@ -2901,6 +2910,10 @@ import UIKit
         metadata: [String: String]?,
         onSent: (() -> Void)?
     ) {
+        if statsStopped {
+            return
+        }
+
         if previewSession {
             logger.debug("Skipping sendStats during preview session.")
             return
@@ -2936,15 +2949,90 @@ import UIKit
         )
 
         statsQueueLock.lock()
+        if statsStopped {
+            statsQueueLock.unlock()
+            return
+        }
+        if statsQueue.count >= CapgoUpdater.maxPendingStats {
+            statsQueue.removeFirst(statsQueue.count - CapgoUpdater.maxPendingStats + 1)
+        }
         statsQueue.append(QueuedStatsEvent(event: event, onSent: onSent))
         statsQueueLock.unlock()
 
         ensureStatsTimerStarted()
     }
 
+    func restorePendingStats() {
+        let fileURL = pendingStatsFileURL()
+        guard FileManager.default.fileExists(atPath: fileURL.path),
+              let data = try? Data(contentsOf: fileURL),
+              let events = try? JSONDecoder().decode([StatsEvent].self, from: data) else {
+            return
+        }
+
+        statsQueueLock.lock()
+        for event in events {
+            if statsQueue.count >= CapgoUpdater.maxPendingStats {
+                break
+            }
+            statsQueue.append(QueuedStatsEvent(event: event, onSent: nil))
+        }
+        let restoredCount = statsQueue.count
+        statsQueueLock.unlock()
+
+        if restoredCount > 0 {
+            logger.info("Restored \(restoredCount) pending stats events")
+            ensureStatsTimerStarted()
+        }
+    }
+
+    func persistPendingStats() {
+        persistStatsQueue()
+    }
+
+    private func pendingStatsFileURL() -> URL {
+        libraryDir.appendingPathComponent(pendingStatsFileName)
+    }
+
+    private func persistStatsQueue(force: Bool = false) {
+        statsPersistLock.lock()
+        defer { statsPersistLock.unlock() }
+        if statsStopped && !force {
+            return
+        }
+
+        statsQueueLock.lock()
+        var events = statsInFlight.map(\.event) + statsQueue.map(\.event)
+        statsQueueLock.unlock()
+        if events.count > CapgoUpdater.maxPendingStats {
+            events = Array(events.suffix(CapgoUpdater.maxPendingStats))
+        }
+
+        let fileURL = pendingStatsFileURL()
+        if events.isEmpty {
+            try? FileManager.default.removeItem(at: fileURL)
+            return
+        }
+
+        do {
+            let data = try JSONEncoder().encode(events)
+            try data.write(to: fileURL, options: .atomic)
+            var resourceURL = fileURL
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            try resourceURL.setResourceValues(values)
+        } catch {
+            logger.error("Failed to persist stats queue")
+            logger.debug("Error: \(error.localizedDescription)")
+        }
+    }
+
     private func ensureStatsTimerStarted() {
+        if statsStopped {
+            return
+        }
         DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
+            guard let self = self, !self.statsStopped else { return }
             if self.statsFlushTimer == nil || !self.statsFlushTimer!.isValid {
                 // Use closure-based timer to avoid strong reference cycle
                 self.statsFlushTimer = Timer.scheduledTimer(
@@ -2958,6 +3046,9 @@ import UIKit
     }
 
     private func flushStatsQueue() {
+        if statsStopped {
+            return
+        }
         // While Retry-After is active, keep stats queued and skip the network call.
         if isRemoteBlocked() {
             logger.debug("Deferring stats flush until Retry-After expires.")
@@ -2965,13 +3056,15 @@ import UIKit
         }
 
         statsQueueLock.lock()
-        guard !statsQueue.isEmpty else {
+        guard statsInFlight.isEmpty, !statsQueue.isEmpty else {
             statsQueueLock.unlock()
             return
         }
         let queuedEvents = statsQueue
         statsQueue.removeAll()
+        statsInFlight = queuedEvents
         statsQueueLock.unlock()
+        persistStatsQueue()
 
         let eventsToSend = queuedEvents.map(\.event)
 
@@ -2986,7 +3079,10 @@ import UIKit
                 encoder: JSONParameterEncoder.default,
                 requestModifier: { $0.timeoutInterval = self.timeout }
             ).responseData { response in
-                // Check for 429 rate limit — requeue so events are not lost.
+                if self.abandonStoppedStatsFlush() {
+                    semaphore.signal()
+                    return
+                }
                 if self.checkAndHandleRateLimitResponse(statusCode: response.response?.statusCode, data: response.data, response: response.response).blocked {
                     self.requeueStatsEvents(queuedEvents)
                     semaphore.signal()
@@ -2999,7 +3095,7 @@ import UIKit
                         self.logger.error("Error sending stats batch")
                         self.logger.debug("Retrying later, response code: \(statusCode)")
                     } else {
-                        // Permanent rejection: retrying would loop forever and block the queue.
+                        self.clearStatsInFlight()
                         self.logger.error("Dropping stats batch after permanent error")
                         self.logger.debug("Response code: \(statusCode)")
                     }
@@ -3009,6 +3105,7 @@ import UIKit
 
                 switch response.result {
                 case .success:
+                    self.clearStatsInFlight()
                     self.logger.info("Stats batch sent successfully")
                     self.logger.debug("Sent \(eventsToSend.count) events")
                     self.runStatsCallbacks(queuedEvents)
@@ -3020,8 +3117,15 @@ import UIKit
                 semaphore.signal()
             }
             semaphore.wait()
+            if !self.statsStopped {
+                self.persistStatsQueue()
+            }
         }
         operationQueue.addOperation(operation)
+    }
+
+    private func abandonStoppedStatsFlush() -> Bool {
+        statsStopped
     }
 
     /// Only 429, request timeout and 5xx are worth retrying; other 4xx are permanent rejections.
@@ -3036,11 +3140,22 @@ import UIKit
     }
 
     private func requeueStatsEvents(_ events: [QueuedStatsEvent]) {
-        guard !events.isEmpty else { return }
+        guard !statsStopped, !events.isEmpty else { return }
         statsQueueLock.lock()
+        statsInFlight.removeAll()
         statsQueue.insert(contentsOf: events, at: 0)
+        if statsQueue.count > CapgoUpdater.maxPendingStats {
+            statsQueue.removeFirst(statsQueue.count - CapgoUpdater.maxPendingStats)
+        }
         statsQueueLock.unlock()
+        persistStatsQueue()
         ensureStatsTimerStarted()
+    }
+
+    private func clearStatsInFlight() {
+        statsQueueLock.lock()
+        statsInFlight.removeAll()
+        statsQueueLock.unlock()
     }
 
     public func getBundleInfo(id: String?) -> BundleInfo {

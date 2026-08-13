@@ -92,6 +92,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "completeFlexibleUpdate", returnType: CAPPluginReturnPromise)
     ]
     public var implementation = CapgoUpdater()
+
+    deinit {
+        implementation.shutdown()
+    }
     private let pluginVersion: String = "8.51.5"
     private let launchStartedAtMs = Int64(Date().timeIntervalSince1970 * 1000)
     static let updateUrlDefault = "https://plugin.capgo.app/updates"
@@ -353,6 +357,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 logger.info("Loaded persisted channelUrl")
             }
         }
+        implementation.restorePendingStats()
 
         let nativeBuildVersionChanged = self.hasNativeBuildVersionChanged()
         let defaultChannelPersistenceDisabled = !persistDefaultChannelOnReinstall
@@ -4616,6 +4621,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         let current: BundleInfo = self.implementation.getCurrentBundle()
         self.implementation.sendStats(action: "app_moved_to_background", versionName: current.getVersionName())
+        self.implementation.persistPendingStats()
         logger.info("Check for pending update")
 
         // Show splashscreen only if autoSplashscreen is enabled AND autoUpdate is enabled AND directUpdate would be used
