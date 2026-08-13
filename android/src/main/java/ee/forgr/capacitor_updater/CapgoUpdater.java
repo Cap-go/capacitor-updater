@@ -2127,7 +2127,8 @@ public class CapgoUpdater {
 
                     @Override
                     public void onResponse(@NonNull Call call, @NonNull Response response) {
-                        try (ResponseBody responseBody = response.body()) {
+                        // The body is unused here; closing the Response closes it.
+                        try (response) {
                             if (response.isSuccessful()) {
                                 logger.info("Rate limit statistic sent");
                             } else {
