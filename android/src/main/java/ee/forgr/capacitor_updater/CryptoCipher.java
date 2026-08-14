@@ -199,14 +199,7 @@ public class CryptoCipher {
         if (from.renameTo(to)) {
             return;
         }
-        if (to.exists() && !to.delete()) {
-            from.delete();
-            throw new IOException("Failed to replace file: " + to.getAbsolutePath());
-        }
-        if (!from.renameTo(to)) {
-            from.delete();
-            throw new IOException("Failed to replace file: " + to.getAbsolutePath());
-        }
+        throw new IOException("Failed to replace file: " + to.getAbsolutePath());
     }
 
     private static byte[] hexStringToByteArray(String s) {

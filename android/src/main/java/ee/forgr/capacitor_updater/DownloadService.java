@@ -650,7 +650,7 @@ public class DownloadService extends Worker {
             throw new IOException("Failed to create parent directory: " + parent.getAbsolutePath());
         }
 
-        final File tempFile = new File(parent, dest.getName() + ".capgo_tmp");
+        final File tempFile = File.createTempFile("capgo-", ".tmp", parent);
         try (
             FileInputStream inStream = new FileInputStream(source);
             FileOutputStream outStream = new FileOutputStream(tempFile);

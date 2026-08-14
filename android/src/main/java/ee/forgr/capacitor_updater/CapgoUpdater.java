@@ -1209,7 +1209,7 @@ public class CapgoUpdater {
             throw new IOException("Failed to create parent directory: " + parent.getAbsolutePath());
         }
 
-        final File tempFile = new File(parent, dest.getName() + ".capgo_tmp");
+        final File tempFile = File.createTempFile("capgo-", ".tmp", parent);
         try (final FileInputStream input = new FileInputStream(source); final FileOutputStream output = new FileOutputStream(tempFile)) {
             final byte[] buffer = new byte[CryptoCipher.copyBufferBytes()];
             int length;
@@ -1218,11 +1218,13 @@ public class CapgoUpdater {
             }
         }
 
-        if (!tempFile.renameTo(dest)) {
-            if (!dest.delete() || !tempFile.renameTo(dest)) {
+        try {
+            CryptoCipher.replaceFile(tempFile, dest);
+        } catch (IOException e) {
+            if (tempFile.exists()) {
                 tempFile.delete();
-                throw new IOException("Failed to replace file: " + dest.getAbsolutePath());
             }
+            throw e;
         }
     }
 
