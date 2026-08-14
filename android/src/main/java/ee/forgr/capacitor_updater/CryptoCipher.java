@@ -315,7 +315,7 @@ public class CryptoCipher {
     }
 
     public static String calcChecksum(InputStream inputStream) {
-        final int BUFFER_SIZE = 1024 * 1024 * 5; // 5 MB buffer size
+        final int BUFFER_SIZE = 64 * 1024;
         MessageDigest digest;
         try {
             digest = MessageDigest.getInstance("SHA-256");
