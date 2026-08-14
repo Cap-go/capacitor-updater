@@ -27,6 +27,7 @@ import UIKit
     private let TEMP_UNZIP_PREFIX: String = "capgo_unzip_"
     /// Cap concurrent manifest file work. 32–64 OOMs low-RAM devices.
     private static let manifestMaxConcurrentFiles = 4
+    private static let emptySha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     private let deletePaceSeconds: TimeInterval = 0.075
     private let deleteLock = NSLock()
 
@@ -1194,29 +1195,49 @@ import UIKit
         let fileNameWithoutPath = (fileName as NSString).lastPathComponent
         let isBrotli = fileName.hasSuffix(".br")
         let cacheBaseName = isBrotli ? String(fileNameWithoutPath.dropLast(3)) : fileNameWithoutPath
-        let cacheFilePath = cacheFolder.appendingPathComponent("\(fileHash)_\(cacheBaseName)")
-        // Cache files are named `{hash}_{filename}` and were checksum-verified
-        // when written. Re-hashing every hit re-reads the whole bundle and
-        // OOMs/janks low-RAM devices during getMissing / delta apply.
-        if isReusableCacheFile(cacheFilePath) {
-            return true
-        }
-
-        if isBrotli {
-            let legacyCacheFilePath = cacheFolder.appendingPathComponent("\(fileHash)_\(fileNameWithoutPath)")
-            if isReusableCacheFile(legacyCacheFilePath) {
+        if Self.isSafeCacheHash(fileHash) {
+            let cacheFilePath = cacheFolder.appendingPathComponent("\(fileHash)_\(cacheBaseName)")
+            // Cache files are named `{hash}_{filename}` and were checksum-verified
+            // when written. Re-hashing every hit re-reads the whole bundle and
+            // OOMs/janks low-RAM devices during getMissing / delta apply.
+            if isReusableCacheFile(cacheFilePath, expectedHash: fileHash) {
                 return true
+            }
+
+            if isBrotli {
+                let legacyCacheFilePath = cacheFolder.appendingPathComponent("\(fileHash)_\(fileNameWithoutPath)")
+                if isReusableCacheFile(legacyCacheFilePath, expectedHash: fileHash) {
+                    return true
+                }
             }
         }
 
         return false
     }
 
-    /// Hash-named cache files were verified when written. Existence + size
-    /// is enough; re-hashing re-reads every reused file on low-RAM devices.
-    private func isReusableCacheFile(_ url: URL) -> Bool {
-        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-        return size > 0
+    /// Hash-named cache files were verified when written. Existence is enough
+    /// for non-empty files; empty files are reused only for the empty SHA-256.
+    private func isReusableCacheFile(_ url: URL, expectedHash: String) -> Bool {
+        guard Self.isSafeCacheHash(expectedHash) else {
+            return false
+        }
+        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1
+        if size > 0 {
+            return true
+        }
+        return size == 0 && expectedHash.lowercased() == Self.emptySha256
+    }
+
+    static func isSafeCacheHash(_ hash: String) -> Bool {
+        let count = hash.count
+        guard count == 64 || count == 8 else {
+            return false
+        }
+        return hash.unicodeScalars.allSatisfy { scalar in
+            (0x30...0x39).contains(scalar.value) ||
+                (0x41...0x46).contains(scalar.value) ||
+                (0x61...0x66).contains(scalar.value)
+        }
     }
 
     public func getMissingBundleFiles(manifest: [ManifestEntry], sessionKey: String) -> [ManifestEntry] {
@@ -1400,8 +1421,12 @@ import UIKit
             let fileNameWithoutPath = (fileName as NSString).lastPathComponent
             let isBrotli = fileName.hasSuffix(".br")
             let cacheBaseName = isBrotli ? String(fileNameWithoutPath.dropLast(3)) : fileNameWithoutPath
-            let cacheFilePath = cacheFolder.appendingPathComponent("\(finalFileHash)_\(cacheBaseName)")
-            let legacyCacheFilePath: URL? = isBrotli ? cacheFolder.appendingPathComponent("\(finalFileHash)_\(fileNameWithoutPath)") : nil
+            let cacheFilePath: URL? = Self.isSafeCacheHash(finalFileHash)
+                ? cacheFolder.appendingPathComponent("\(finalFileHash)_\(cacheBaseName)")
+                : nil
+            let legacyCacheFilePath: URL? = isBrotli && cacheFilePath != nil
+                ? cacheFolder.appendingPathComponent("\(finalFileHash)_\(fileNameWithoutPath)")
+                : nil
 
             let destFileName = isBrotli ? String(fileName.dropLast(3)) : fileName
             let destFilePath: URL
@@ -1436,8 +1461,8 @@ import UIKit
                     }
                     // Try cache
                     else if
-                        self.tryCopyFromCache(from: cacheFilePath, to: destFilePath) ||
-                            (legacyCacheFilePath != nil && self.tryCopyFromCache(from: legacyCacheFilePath!, to: destFilePath)) {
+                        (cacheFilePath != nil && self.tryCopyFromCache(from: cacheFilePath!, to: destFilePath, expectedHash: finalFileHash)) ||
+                            (legacyCacheFilePath != nil && self.tryCopyFromCache(from: legacyCacheFilePath!, to: destFilePath, expectedHash: finalFileHash)) {
                         self.logger.info("downloadManifest \(fileName) copy from cache \(id)")
                     }
                     // Download
@@ -1507,7 +1532,7 @@ import UIKit
     private func downloadManifestFile(
         downloadUrl: String,
         destFilePath: URL,
-        cacheFilePath: URL,
+        cacheFilePath: URL?,
         fileHash: String,
         fileName: String,
         destFileName: String,
@@ -1533,6 +1558,11 @@ import UIKit
         }
 
         let result = performDownloadRequest(request, label: "downloadManifestFile \(fileName)")
+        defer {
+            if let fileURL = result.fileURL {
+                try? FileManager.default.removeItem(at: fileURL)
+            }
+        }
 
         if result.timedOut {
             self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
@@ -1563,9 +1593,6 @@ import UIKit
                 code: 3,
                 userInfo: [NSLocalizedDescriptionKey: "Manifest file response was empty for \(fileName) at url \(downloadUrl)"]
             )
-        }
-        defer {
-            try? FileManager.default.removeItem(at: downloadedFileURL)
         }
 
         do {
@@ -1601,7 +1628,9 @@ import UIKit
             }
 
             // Save to cache (replace stale cache entries from partial or concurrent downloads)
-            try copyItemReplacing(from: destFilePath, to: cacheFilePath)
+            if let cacheFilePath {
+                try copyItemAtomically(from: destFilePath, to: cacheFilePath)
+            }
 
             self.logger.info("Manifest file downloaded and cached")
             self.logger.debug("Bundle: \(bundleId), File: \(fileName), Brotli: \(isBrotli), Encrypted: \(!self.publicKey.isEmpty && !sessionKey.isEmpty)")
@@ -1627,18 +1656,34 @@ import UIKit
         try fileManager.copyItem(at: source, to: destination)
     }
 
+    /// Copy via a unique temp name then rename, so a crash cannot leave a
+    /// non-empty partial file that `isReusableCacheFile` would trust.
+    private func copyItemAtomically(from source: URL, to destination: URL) throws {
+        let fileManager = FileManager.default
+        try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
+        let tempURL = destination.deletingLastPathComponent().appendingPathComponent("\(destination.lastPathComponent).\(UUID().uuidString).tmp")
+        defer {
+            try? fileManager.removeItem(at: tempURL)
+        }
+        try fileManager.copyItem(at: source, to: tempURL)
+        if fileManager.fileExists(atPath: destination.path) {
+            try fileManager.removeItem(at: destination)
+        }
+        try fileManager.moveItem(at: tempURL, to: destination)
+    }
+
     /// Atomically try to copy a file from cache - returns true if successful, false if file doesn't exist or copy failed
     /// This handles the race condition where OS can delete cache files between exists() check and copy
-    private func tryCopyFromCache(from source: URL, to destination: URL) -> Bool {
+    private func tryCopyFromCache(from source: URL, to destination: URL, expectedHash: String) -> Bool {
         // First quick check - if file doesn't exist or was truncated, don't bother
-        guard isReusableCacheFile(source) else {
+        guard isReusableCacheFile(source, expectedHash: expectedHash) else {
             return false
         }
 
         // Hash is in the cache file name and was verified when written.
         // Re-hashing here would re-read every reused file on low-RAM devices.
         do {
-            try copyItemReplacing(from: source, to: destination)
+            try copyItemAtomically(from: source, to: destination)
             return true
         } catch {
             // File was deleted between check and copy, or other IO error - caller should download instead

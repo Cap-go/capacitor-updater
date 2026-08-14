@@ -3535,7 +3535,7 @@ public class CapacitorUpdaterUnitTest {
         Files.createDirectories(filesDir.toPath().resolve("public"));
         final File downloads = new File(cacheDir, "capgo_downloads");
         assertTrue(downloads.mkdirs());
-        final String hash = "abc123cachedhash";
+        final String hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
         // Content does not need to match the hash: the filename is the trust source
         // (checksum was verified when the cache entry was written).
         Files.write(new File(downloads, hash + "_app.js").toPath(), "not-the-hashed-bytes".getBytes(StandardCharsets.UTF_8));
@@ -3560,7 +3560,7 @@ public class CapacitorUpdaterUnitTest {
         Files.createDirectories(filesDir.toPath().resolve("public"));
         final File downloads = new File(cacheDir, "capgo_downloads");
         assertTrue(downloads.mkdirs());
-        final String hash = "abc123emptyhash";
+        final String hash = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
         Files.write(new File(downloads, hash + "_app.js").toPath(), new byte[0]);
 
         final CapgoUpdater updater = newDeltaCacheUpdater(docsDir, filesDir, cacheDir);
@@ -3573,6 +3573,52 @@ public class CapacitorUpdaterUnitTest {
         final JSONArray missing = updater.getMissingBundleFiles(manifest, "");
         assertEquals(1, missing.length());
         assertEquals("app.js", missing.getJSONObject(0).getString("file_name"));
+    }
+
+    @Test
+    public void getMissingBundleFilesReusesEmptyFileForEmptySha256() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path docsDir = Files.createTempDirectory("capgo-missing-empty-sha-docs");
+        final File filesDir = Files.createTempDirectory("capgo-missing-empty-sha-files").toFile();
+        final File cacheDir = Files.createTempDirectory("capgo-missing-empty-sha-cache").toFile();
+        Files.createDirectories(filesDir.toPath().resolve("public"));
+        final File downloads = new File(cacheDir, "capgo_downloads");
+        assertTrue(downloads.mkdirs());
+        final String hash = CapgoUpdater.EMPTY_SHA256;
+        Files.write(new File(downloads, hash + "_empty.txt").toPath(), new byte[0]);
+
+        final CapgoUpdater updater = newDeltaCacheUpdater(docsDir, filesDir, cacheDir);
+        final JSONArray manifest = new JSONArray();
+        final JSONObject entry = new JSONObject();
+        entry.put("file_name", "empty.txt");
+        entry.put("file_hash", hash);
+        manifest.put(entry);
+
+        final JSONArray missing = updater.getMissingBundleFiles(manifest, "");
+        assertEquals(0, missing.length());
+    }
+
+    @Test
+    public void getMissingBundleFilesRejectsUnsafeCacheHash() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path docsDir = Files.createTempDirectory("capgo-missing-unsafe-docs");
+        final File filesDir = Files.createTempDirectory("capgo-missing-unsafe-files").toFile();
+        final File cacheDir = Files.createTempDirectory("capgo-missing-unsafe-cache").toFile();
+        Files.createDirectories(filesDir.toPath().resolve("public"));
+        final File downloads = new File(cacheDir, "capgo_downloads");
+        assertTrue(downloads.mkdirs());
+        final String hash = "../evil";
+        Files.write(new File(downloads, hash + "_app.js").toPath(), "payload".getBytes(StandardCharsets.UTF_8));
+
+        final CapgoUpdater updater = newDeltaCacheUpdater(docsDir, filesDir, cacheDir);
+        final JSONArray manifest = new JSONArray();
+        final JSONObject entry = new JSONObject();
+        entry.put("file_name", "app.js");
+        entry.put("file_hash", hash);
+        manifest.put(entry);
+
+        final JSONArray missing = updater.getMissingBundleFiles(manifest, "");
+        assertEquals(1, missing.length());
     }
 
     @Test

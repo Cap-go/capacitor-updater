@@ -363,8 +363,11 @@ public class DownloadService extends Worker {
                     continue;
                 }
                 String cacheBaseName = new File(isBrotli ? targetFileName : fileName).getName();
-                File cacheFile = new File(cacheFolder, finalFileHash + "_" + cacheBaseName);
-                final File legacyCacheFile = isBrotli ? new File(cacheFolder, finalFileHash + "_" + new File(fileName).getName()) : null;
+                final File cacheFile = CapgoUpdater.isSafeCacheHash(finalFileHash)
+                    ? new File(cacheFolder, finalFileHash + "_" + cacheBaseName)
+                    : null;
+                final File legacyCacheFile =
+                    isBrotli && cacheFile != null ? new File(cacheFolder, finalFileHash + "_" + new File(fileName).getName()) : null;
 
                 // Ensure parent directories of the target file exist
                 if (!Objects.requireNonNull(targetFile.getParentFile()).exists() && !targetFile.getParentFile().mkdirs()) {
@@ -380,8 +383,8 @@ public class DownloadService extends Worker {
                             copyFile(builtinFile, targetFile);
                             logger.debug("using builtin file " + fileName);
                         } else if (
-                            tryCopyFromCache(cacheFile, targetFile) ||
-                            (legacyCacheFile != null && tryCopyFromCache(legacyCacheFile, targetFile))
+                            tryCopyFromCache(cacheFile, targetFile, finalFileHash) ||
+                            (legacyCacheFile != null && tryCopyFromCache(legacyCacheFile, targetFile, finalFileHash))
                         ) {
                             logger.debug("already cached " + fileName);
                         } else {
@@ -623,9 +626,9 @@ public class DownloadService extends Worker {
      * Atomically try to copy a file from cache - returns true if successful, false if file doesn't exist or copy failed.
      * This handles the race condition where OS can delete cache files between exists() check and copy.
      */
-    private boolean tryCopyFromCache(File source, File dest) {
+    private boolean tryCopyFromCache(File source, File dest, String expectedHash) {
         // First quick check - if file doesn't exist or was truncated, don't bother
-        if (!isReusableCacheFile(source)) {
+        if (!CapgoUpdater.isReusableCacheFile(source, expectedHash)) {
             return false;
         }
 
@@ -639,10 +642,6 @@ public class DownloadService extends Worker {
             logger.debug("Cache copy failed (likely OS eviction): " + e.getMessage());
             return false;
         }
-    }
-
-    private static boolean isReusableCacheFile(final File file) {
-        return file != null && file.isFile() && file.length() > 0;
     }
 
     private void copyFile(File source, File dest) throws IOException {
@@ -760,8 +759,10 @@ public class DownloadService extends Worker {
                 // Verify checksum
                 if (calculatedHash.equalsIgnoreCase(expectedHash)) {
                     // Only cache if checksum is correct - use atomic copy
-                    try (FileInputStream fis = new FileInputStream(finalTargetFile)) {
-                        writeFileAtomic(cacheFile, fis, null);
+                    if (cacheFile != null) {
+                        try (FileInputStream fis = new FileInputStream(finalTargetFile)) {
+                            writeFileAtomic(cacheFile, fis, null);
+                        }
                     }
                 } else {
                     finalTargetFile.delete();

@@ -523,27 +523,57 @@ public class CapgoUpdater {
         final boolean isBrotli = fileName.endsWith(".br");
         final String fileNameWithoutPath = new File(fileName).getName();
         final String cacheBaseName = isBrotli ? fileNameWithoutPath.substring(0, fileNameWithoutPath.length() - 3) : fileNameWithoutPath;
-        final File cacheFolder = new File(this.activity.getCacheDir(), "capgo_downloads");
-        final File cacheFile = new File(cacheFolder, fileHash + "_" + cacheBaseName);
-        // Cache files are named `{hash}_{filename}` and were checksum-verified
-        // when written. Re-hashing every hit re-reads the whole bundle and
-        // OOMs/janks low-RAM devices during getMissing / delta apply.
-        if (isReusableCacheFile(cacheFile)) {
-            return true;
-        }
+        if (isSafeCacheHash(fileHash)) {
+            final File cacheFolder = new File(this.activity.getCacheDir(), "capgo_downloads");
+            final File cacheFile = new File(cacheFolder, fileHash + "_" + cacheBaseName);
+            // Cache files are named `{hash}_{filename}` and were checksum-verified
+            // when written. Re-hashing every hit re-reads the whole bundle and
+            // OOMs/janks low-RAM devices during getMissing / delta apply.
+            if (isReusableCacheFile(cacheFile, fileHash)) {
+                return true;
+            }
 
-        if (isBrotli) {
-            final File legacyCacheFile = new File(cacheFolder, fileHash + "_" + fileNameWithoutPath);
-            return isReusableCacheFile(legacyCacheFile);
+            if (isBrotli) {
+                final File legacyCacheFile = new File(cacheFolder, fileHash + "_" + fileNameWithoutPath);
+                return isReusableCacheFile(legacyCacheFile, fileHash);
+            }
         }
 
         return false;
     }
 
-    // Hash-named cache files were verified when written. Existence + size
-    // is enough; re-hashing re-reads every reused file on low-RAM devices.
-    private static boolean isReusableCacheFile(final File file) {
-        return file != null && file.isFile() && file.length() > 0;
+    static final String EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+    static boolean isSafeCacheHash(final String hash) {
+        if (hash == null) {
+            return false;
+        }
+        final int len = hash.length();
+        if (len != 64 && len != 8) {
+            return false;
+        }
+        for (int i = 0; i < len; i++) {
+            final char c = hash.charAt(i);
+            if (
+                !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))
+            ) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // Hash-named cache files were verified when written. Existence is enough
+    // for non-empty files; empty files are reused only for the empty SHA-256.
+    static boolean isReusableCacheFile(final File file, final String expectedHash) {
+        if (file == null || !file.isFile() || !isSafeCacheHash(expectedHash)) {
+            return false;
+        }
+        final long length = file.length();
+        if (length > 0) {
+            return true;
+        }
+        return length == 0 && EMPTY_SHA256.equalsIgnoreCase(expectedHash);
     }
 
     public JSONArray getMissingBundleFiles(final JSONArray manifest, final String sessionKey) throws JSONException {

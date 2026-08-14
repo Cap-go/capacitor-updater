@@ -238,7 +238,7 @@ final class PopulateDeltaCacheTests: XCTestCase {
     // MARK: - getMissingBundleFiles: trust hash-named cache without re-reading
 
     func testGetMissingBundleFilesTreatsHashNamedCacheAsReusable() throws {
-        let hash = "abc123cachedhash"
+        let hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         let cacheFile = expectedCacheFile(hash: hash, name: "app.js")
         try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true)
         // Content does not need to match the hash: the filename is the trust source
@@ -254,7 +254,7 @@ final class PopulateDeltaCacheTests: XCTestCase {
     }
 
     func testGetMissingBundleFilesIgnoresEmptyHashNamedCache() throws {
-        let hash = "abc123emptyhash"
+        let hash = "abc123emptyhashabc123emptyhashabc123emptyhashabc123emptyhashab"
         let cacheFile = expectedCacheFile(hash: hash, name: "app.js")
         try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true)
         try Data().write(to: cacheFile)
@@ -266,5 +266,33 @@ final class PopulateDeltaCacheTests: XCTestCase {
 
         XCTAssertEqual(missing.count, 1)
         XCTAssertEqual(missing.first?.file_name, "app.js")
+    }
+
+    func testGetMissingBundleFilesReusesEmptyFileForEmptySha256() throws {
+        let hash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        let cacheFile = expectedCacheFile(hash: hash, name: "empty.txt")
+        try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true)
+        try Data().write(to: cacheFile)
+        let manifest = [
+            ManifestEntry(file_name: "empty.txt", file_hash: hash, download_url: nil)
+        ]
+
+        let missing = implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "")
+
+        XCTAssertTrue(missing.isEmpty)
+    }
+
+    func testGetMissingBundleFilesRejectsUnsafeCacheHash() throws {
+        let hash = "../evil"
+        let cacheFile = expectedCacheFile(hash: hash, name: "app.js")
+        try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true)
+        try "payload".write(to: cacheFile, atomically: true, encoding: .utf8)
+        let manifest = [
+            ManifestEntry(file_name: "app.js", file_hash: hash, download_url: nil)
+        ]
+
+        let missing = implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "")
+
+        XCTAssertEqual(missing.count, 1)
     }
 }
