@@ -25,7 +25,6 @@ import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -82,8 +81,6 @@ public class DownloadService extends Worker {
     public static final String IS_EMULATOR = "is_emulator";
     // Match HTTP dispatcher so 64 workers actually fetch in parallel (HTTP/2 multiplexes).
     private static final int MANIFEST_MAX_CONCURRENT_FILES = 64;
-    // Decrypt/brotli still load whole files. Bound that, not HTTP.
-    private static final Semaphore MANIFEST_DECODE_PERMITS = new Semaphore(4);
     private static final String UPDATE_FILE = "update.dat";
 
     // Shared OkHttpClient to prevent resource leaks
@@ -714,55 +711,25 @@ public class DownloadService extends Worker {
                 // Use OkIO for atomic write
                 writeFileAtomic(compressedFile, responseBody.byteStream(), null);
 
-                boolean needsDecode =
-                    isBrotli || (publicKey != null && !publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty());
-                if (needsDecode) {
-                    MANIFEST_DECODE_PERMITS.acquire();
+                if (publicKey != null && !publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
+                    logger.debug("Decrypting file " + targetFile.getName());
+                    CryptoCipher.decryptFile(compressedFile, publicKey, sessionKey);
                 }
-                try {
-                    if (publicKey != null && !publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
-                        logger.debug("Decrypting file " + targetFile.getName());
-                        CryptoCipher.decryptFile(compressedFile, publicKey, sessionKey);
-                    }
 
-                    // Only decompress if file has .br extension
-                    if (isBrotli) {
-                        // Use new decompression method with atomic write
-                        try (FileInputStream fis = new FileInputStream(compressedFile)) {
-                            byte[] compressedData = new byte[(int) compressedFile.length()];
-                            int offset = 0;
-                            int bytesRead;
-                            while (
-                                offset < compressedData.length &&
-                                (bytesRead = fis.read(compressedData, offset, compressedData.length - offset)) != -1
-                            ) {
-                                offset += bytesRead;
-                            }
-                            byte[] decompressedData;
-                            try {
-                                decompressedData = decompressBrotli(compressedData, targetFile.getName());
-                            } catch (IOException e) {
-                                sendStatsAsync(
-                                    "download_manifest_brotli_fail",
-                                    getInputData().getString(VERSION) + ":" + finalTargetFile.getName()
-                                );
-                                throw e;
-                            }
-
-                            // Write decompressed data atomically
-                            try (java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(decompressedData)) {
-                                writeFileAtomic(finalTargetFile, bais, null);
-                            }
-                        }
-                    } else {
-                        // Just copy the file without decompression using atomic operation
-                        try (FileInputStream fis = new FileInputStream(compressedFile)) {
-                            writeFileAtomic(finalTargetFile, fis, null);
-                        }
+                // Only decompress if file has .br extension
+                if (isBrotli) {
+                    try {
+                        decompressBrotli(compressedFile, finalTargetFile, targetFile.getName());
+                    } catch (IOException e) {
+                        sendStatsAsync(
+                            "download_manifest_brotli_fail",
+                            getInputData().getString(VERSION) + ":" + finalTargetFile.getName()
+                        );
+                        throw e;
                     }
-                } finally {
-                    if (needsDecode) {
-                        MANIFEST_DECODE_PERMITS.release();
+                } else {
+                    try (FileInputStream fis = new FileInputStream(compressedFile)) {
+                        writeFileAtomic(finalTargetFile, fis, null);
                     }
                 }
 
@@ -834,69 +801,107 @@ public class DownloadService extends Worker {
         return sb.toString();
     }
 
-    private byte[] decompressBrotli(byte[] data, String fileName) throws IOException {
-        // Validate input
-        if (data == null) {
-            logger.error("Error: Null data received for " + fileName);
-            throw new IOException("Null data received");
+    static void decompressBrotli(File input, File output, String fileName) throws IOException {
+        File parent = output.getParentFile();
+        if (parent != null) {
+            parent.mkdirs();
+        }
+        long length = input.length();
+        if (length == 0) {
+            writeFileAtomic(output, new ByteArrayInputStream(new byte[0]), null);
+            return;
         }
 
-        // Handle empty files
-        if (data.length == 0) {
-            return new byte[0];
-        }
-
-        // Handle the special EMPTY_BROTLI_STREAM case
-        if (data.length == 3 && data[0] == 0x1B && data[1] == 0x00 && data[2] == 0x06) {
-            return new byte[0];
-        }
-
-        // For small files, check if it's a minimal Brotli wrapper
-        if (data.length > 3) {
-            try {
-                // Handle our minimal wrapper pattern
-                if (data[0] == 0x1B && data[1] == 0x00 && data[2] == 0x06 && data[data.length - 1] == 0x03) {
-                    return Arrays.copyOfRange(data, 3, data.length - 1);
-                }
-
-                // Handle brotli.compress minimal wrapper (quality 0)
-                if (data[0] == 0x0b && data[1] == 0x02 && data[2] == (byte) 0x80 && data[data.length - 1] == 0x03) {
-                    return Arrays.copyOfRange(data, 3, data.length - 1);
-                }
-            } catch (ArrayIndexOutOfBoundsException e) {
-                logger.error("Error: Malformed data for " + fileName);
-                throw new IOException("Malformed data structure");
+        byte[] head = new byte[(int) Math.min(3, length)];
+        byte last = 0;
+        try (RandomAccessFile raf = new RandomAccessFile(input, "r")) {
+            raf.readFully(head);
+            if (length >= 1) {
+                raf.seek(length - 1);
+                last = raf.readByte();
             }
         }
 
-        // For all other cases, try standard decompression
-        try (
-            ByteArrayInputStream bis = new ByteArrayInputStream(data);
-            BrotliInputStream brotliInputStream = new BrotliInputStream(bis);
-            ByteArrayOutputStream bos = new ByteArrayOutputStream()
-        ) {
-            byte[] buffer = new byte[8192];
-            int len;
-            while ((len = brotliInputStream.read(buffer)) != -1) {
-                bos.write(buffer, 0, len);
+        if (length == 3 && head[0] == 0x1B && head[1] == 0x00 && head[2] == 0x06) {
+            writeFileAtomic(output, new ByteArrayInputStream(new byte[0]), null);
+            return;
+        }
+
+        if (length > 3 && last == 0x03) {
+            boolean emptyWrapper = head[0] == 0x1B && head[1] == 0x00 && head[2] == 0x06;
+            boolean qualityZeroWrapper = head[0] == 0x0b && head[1] == 0x02 && head[2] == (byte) 0x80;
+            if (emptyWrapper || qualityZeroWrapper) {
+                try (FileInputStream fis = new FileInputStream(input)) {
+                    long skipped = 0;
+                    while (skipped < 3) {
+                        long n = fis.skip(3 - skipped);
+                        if (n <= 0) {
+                            break;
+                        }
+                        skipped += n;
+                    }
+                    writeFileAtomic(output, new BoundedInputStream(fis, length - 4), null);
+                }
+                return;
             }
-            return bos.toByteArray();
+        }
+
+        try (FileInputStream fis = new FileInputStream(input); BrotliInputStream brotliInputStream = new BrotliInputStream(fis)) {
+            writeFileAtomic(output, brotliInputStream, null);
         } catch (IOException e) {
             logger.error("Error: Brotli process failed for " + fileName + ". Status: " + e.getMessage());
-            // Add hex dump for debugging
             StringBuilder hexDump = new StringBuilder();
-            for (int i = 0; i < Math.min(32, data.length); i++) {
-                hexDump.append(String.format("%02x ", data[i]));
+            try (FileInputStream peek = new FileInputStream(input)) {
+                byte[] prefix = new byte[(int) Math.min(32, length)];
+                int n = peek.read(prefix);
+                for (int i = 0; i < n; i++) {
+                    hexDump.append(String.format("%02x ", prefix[i]));
+                }
             }
-            logger.error("Error: Raw data (" + fileName + "): " + hexDump.toString());
+            logger.error("Error: Raw data (" + fileName + "): " + hexDump);
             throw e;
+        }
+    }
+
+    private static final class BoundedInputStream extends FilterInputStream {
+
+        private long remaining;
+
+        BoundedInputStream(InputStream in, long remaining) {
+            super(in);
+            this.remaining = remaining;
+        }
+
+        @Override
+        public int read() throws IOException {
+            if (remaining <= 0) {
+                return -1;
+            }
+            int value = super.read();
+            if (value >= 0) {
+                remaining--;
+            }
+            return value;
+        }
+
+        @Override
+        public int read(byte[] b, int off, int len) throws IOException {
+            if (remaining <= 0) {
+                return -1;
+            }
+            int capped = (int) Math.min(len, remaining);
+            int n = super.read(b, off, capped);
+            if (n > 0) {
+                remaining -= n;
+            }
+            return n;
         }
     }
 
     /**
      * Atomically write data to a file using OkIO
      */
-    private void writeFileAtomic(File targetFile, InputStream inputStream, String expectedChecksum) throws IOException {
+    static void writeFileAtomic(File targetFile, InputStream inputStream, String expectedChecksum) throws IOException {
         File tempFile = File.createTempFile("capgo-", ".tmp", targetFile.getParentFile());
 
         try {

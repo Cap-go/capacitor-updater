@@ -337,3 +337,49 @@ final class IoBufferSizeTests: XCTestCase {
         }
     }
 }
+
+final class StreamDecodeTests: XCTestCase {
+    private var updater: CapgoUpdater!
+
+    override func setUp() {
+        super.setUp()
+        updater = CapgoUpdater()
+        updater.setLogger(Logger(withTag: "StreamDecodeTests", options: Logger.Options(level: .silent)))
+        CryptoCipher.setLogger(Logger(withTag: "StreamDecodeTests", options: Logger.Options(level: .silent)))
+    }
+
+    func testDecompressBrotliStreamsEmptyWrapperAndRealPayload() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("capgo-brotli-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        let emptyIn = dir.appendingPathComponent("empty.br")
+        let emptyOut = dir.appendingPathComponent("empty.txt")
+        try Data([0x1B, 0x00, 0x06]).write(to: emptyIn)
+        try updater.decompressBrotli(from: emptyIn, to: emptyOut, fileName: "empty.br")
+        XCTAssertEqual(try Data(contentsOf: emptyOut).count, 0)
+
+        let wrappedIn = dir.appendingPathComponent("hello.br")
+        let wrappedOut = dir.appendingPathComponent("hello.txt")
+        try Data([0x0b, 0x02, 0x80, 0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x03]).write(to: wrappedIn)
+        try updater.decompressBrotli(from: wrappedIn, to: wrappedOut, fileName: "hello.br")
+        XCTAssertEqual(try String(contentsOf: wrappedOut, encoding: .utf8), "hello")
+
+        let realIn = dir.appendingPathComponent("payload.br")
+        let realOut = dir.appendingPathComponent("payload.txt")
+        try dataFromHex("1ba702f88d94abed6831a46e4b75213df69d8b08871d5db158a9b062f007672bc101c92bf781d73386bfc50a00").write(to: realIn)
+        try updater.decompressBrotli(from: realIn, to: realOut, fileName: "payload.br")
+        let expected = String(repeating: "Capgo stream brotli test payload. ", count: 20)
+        XCTAssertEqual(try String(contentsOf: realOut, encoding: .utf8), expected)
+    }
+
+    private func dataFromHex(_ hex: String) -> Data {
+        var data = Data()
+        var index = hex.startIndex
+        while index < hex.endIndex {
+            let next = hex.index(index, offsetBy: 2)
+            data.append(UInt8(hex[index..<next], radix: 16)!)
+            index = next
+        }
+        return data
+    }
+}

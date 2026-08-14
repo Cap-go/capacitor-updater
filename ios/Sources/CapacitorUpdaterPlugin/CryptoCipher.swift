@@ -278,41 +278,13 @@ public struct CryptoCipher {
 
             let aesPrivateKey = AES128Key(iv: ivData, aes128Key: sessionKeyDataDecrypted, logger: logger)
 
-            let encryptedData: Data
-            do {
-                encryptedData = try Data(contentsOf: filePath)
-            } catch {
-                logger.error("Failed to read encrypted data")
-                logger.debug("Error: \(error)")
-                throw NSError(domain: "Failed to read encrypted data", code: 3, userInfo: nil)
-            }
-
-            if encryptedData.isEmpty {
+            let encryptedSize = (try FileManager.default.attributesOfItem(atPath: filePath.path)[.size] as? NSNumber)?.uint64Value ?? 0
+            if encryptedSize == 0 {
                 logger.error("Encrypted file data is empty")
                 throw NSError(domain: "Empty encrypted data", code: 6, userInfo: nil)
             }
 
-            guard let decryptedData = aesPrivateKey.decrypt(data: encryptedData) else {
-                logger.error("Failed to decrypt data")
-                throw NSError(domain: "Failed to decrypt data", code: 4, userInfo: nil)
-            }
-
-            if decryptedData.isEmpty {
-                logger.error("Decrypted data is empty")
-                throw NSError(domain: "Empty decrypted data", code: 7, userInfo: nil)
-            }
-
-            do {
-                try decryptedData.write(to: filePath, options: .atomic)
-                if !FileManager.default.fileExists(atPath: filePath.path) {
-                    logger.error("File was not created after write")
-                    throw NSError(domain: "File write failed", code: 8, userInfo: nil)
-                }
-            } catch {
-                logger.error("Error writing decrypted file")
-                logger.debug("Error: \(error)")
-                throw error
-            }
+            try aesPrivateKey.decrypt(from: filePath, to: filePath)
 
         } catch {
             logger.error("File decryption failed")

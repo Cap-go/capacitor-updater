@@ -27,8 +27,6 @@ import UIKit
     private let TEMP_UNZIP_PREFIX: String = "capgo_unzip_"
     /// Match URLSession per-host limit so 64 workers actually fetch in parallel.
     private static let manifestMaxConcurrentFiles = 64
-    /// Decrypt/brotli still load whole files. Bound that, not HTTP.
-    private static let manifestDecodeSemaphore = DispatchSemaphore(value: 4)
     private static let emptySha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     private let deletePaceSeconds: TimeInterval = 0.075
     private let deleteLock = NSLock()
@@ -1595,37 +1593,25 @@ import UIKit
         }
 
         do {
-            let needsDecode = isBrotli || (!self.publicKey.isEmpty && !sessionKey.isEmpty)
-            if needsDecode {
-                Self.manifestDecodeSemaphore.wait()
+            // Decrypt in place when a session key is present — streamed, not a whole-file copy.
+            if !self.publicKey.isEmpty && !sessionKey.isEmpty {
+                do {
+                    try CryptoCipher.decryptFile(filePath: downloadedFileURL, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
+                } catch {
+                    self.sendStats(action: "decrypt_fail", versionName: version)
+                    throw error
+                }
             }
-            do {
-                defer {
-                    if needsDecode {
-                        Self.manifestDecodeSemaphore.signal()
-                    }
-                }
 
-                // Decrypt in place when a session key is present — avoids a second in-memory copy.
-                if !self.publicKey.isEmpty && !sessionKey.isEmpty {
-                    do {
-                        try CryptoCipher.decryptFile(filePath: downloadedFileURL, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
-                    } catch {
-                        self.sendStats(action: "decrypt_fail", versionName: version)
-                        throw error
-                    }
+            if isBrotli {
+                do {
+                    try decompressBrotli(from: downloadedFileURL, to: destFilePath, fileName: fileName)
+                } catch {
+                    self.sendStats(action: "download_manifest_brotli_fail", versionName: "\(version):\(destFileName)")
+                    throw error
                 }
-
-                if isBrotli {
-                    let compressedData = try Data(contentsOf: downloadedFileURL)
-                    guard let decompressedData = self.decompressBrotli(data: compressedData, fileName: fileName) else {
-                        self.sendStats(action: "download_manifest_brotli_fail", versionName: "\(version):\(destFileName)")
-                        throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data for file \(fileName) at url \(downloadUrl)"])
-                    }
-                    try writeDataAtomically(decompressedData, to: destFilePath)
-                } else {
-                    try copyItemReplacing(from: downloadedFileURL, to: destFilePath)
-                }
+            } else {
+                try copyItemReplacing(from: downloadedFileURL, to: destFilePath)
             }
 
             // Always verify checksum when file_hash is present
@@ -1650,11 +1636,6 @@ import UIKit
             self.logger.debug("Bundle: \(bundleId), File: \(fileName), Error: \(error.localizedDescription)")
             throw error
         }
-    }
-
-    /// Atomically write data to a file, replacing any existing file at the destination.
-    private func writeDataAtomically(_ data: Data, to destination: URL) throws {
-        try data.write(to: destination, options: .atomic)
     }
 
     /// Copy a file to the destination, replacing any existing file.
@@ -1703,120 +1684,161 @@ import UIKit
         }
     }
 
-    private func decompressBrotli(data: Data, fileName: String) -> Data? {
-        // Handle empty files
-        if data.count == 0 {
-            return data
+    /// Stream Brotli from disk to disk. Peek only the 3-byte header and last byte
+    /// for the empty/wrapper special cases; never load the whole file.
+    func decompressBrotli(from source: URL, to dest: URL, fileName: String) throws {
+        let fileManager = FileManager.default
+        try fileManager.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
+        let length = (try fileManager.attributesOfItem(atPath: source.path)[.size] as? NSNumber)?.uint64Value ?? 0
+        if length == 0 {
+            try Data().write(to: dest, options: .atomic)
+            return
         }
 
-        // Handle the special EMPTY_BROTLI_STREAM case
-        if data.count == 3 && data[0] == 0x1B && data[1] == 0x00 && data[2] == 0x06 {
-            return Data()
+        let handle = try FileHandle(forReadingFrom: source)
+        defer {
+            try? handle.close()
         }
 
-        // For small files, check if it's a minimal Brotli wrapper
-        if data.count > 3 {
-            // Handle our minimal wrapper pattern
-            if data[0] == 0x1B && data[1] == 0x00 && data[2] == 0x06 && data.last == 0x03 {
-                let range = data.index(data.startIndex, offsetBy: 3)..<data.index(data.endIndex, offsetBy: -1)
-                return data[range]
+        let head = try handle.read(upToCount: 3) ?? Data()
+        var last: UInt8 = 0
+        if length >= 1 {
+            try handle.seek(toOffset: length - 1)
+            last = try handle.read(upToCount: 1)?.first ?? 0
+        }
+
+        if length == 3 && head.count == 3 && head[0] == 0x1B && head[1] == 0x00 && head[2] == 0x06 {
+            try Data().write(to: dest, options: .atomic)
+            return
+        }
+
+        if length > 3 && head.count == 3 && last == 0x03 {
+            let isEmptyWrapper = head[0] == 0x1B && head[1] == 0x00 && head[2] == 0x06
+            let isQualityZeroWrapper = head[0] == 0x0b && head[1] == 0x02 && head[2] == 0x80
+            if isEmptyWrapper || isQualityZeroWrapper {
+                try handle.seek(toOffset: 3)
+                try streamCopy(from: handle, count: length - 4, to: dest)
+                return
             }
-
-            // Handle brotli.compress minimal wrapper (quality 0)
-            if data[0] == 0x0b && data[1] == 0x02 && data[2] == 0x80 && data.last == 0x03 {
-                let range = data.index(data.startIndex, offsetBy: 3)..<data.index(data.endIndex, offsetBy: -1)
-                return data[range]
-            }
         }
 
-        // For all other cases, try standard decompression
-        let outputBufferSize = 65536
-        var outputBuffer = [UInt8](repeating: 0, count: outputBufferSize)
-        var decompressedData = Data()
+        try handle.seek(toOffset: 0)
+        try streamBrotliDecode(from: handle, to: dest, fileName: fileName)
+    }
+
+    private func streamCopy(from handle: FileHandle, count: UInt64, to dest: URL) throws {
+        let fileManager = FileManager.default
+        let tempURL = dest.deletingLastPathComponent().appendingPathComponent("capgo-br-\(UUID().uuidString).tmp")
+        fileManager.createFile(atPath: tempURL.path, contents: nil)
+        let output = try FileHandle(forWritingTo: tempURL)
+        defer {
+            try? output.close()
+            try? fileManager.removeItem(at: tempURL)
+        }
+
+        var remaining = count
+        let chunkSize = CryptoCipher.ioBufferBytes()
+        while remaining > 0 {
+            let readCount: Int = try autoreleasepool {
+                let toRead = Int(min(UInt64(chunkSize), remaining))
+                let chunk = try handle.read(upToCount: toRead) ?? Data()
+                if !chunk.isEmpty {
+                    output.write(chunk)
+                }
+                return chunk.count
+            }
+            if readCount == 0 {
+                break
+            }
+            remaining -= UInt64(readCount)
+        }
+        try output.close()
+        if fileManager.fileExists(atPath: dest.path) {
+            try fileManager.removeItem(at: dest)
+        }
+        try fileManager.moveItem(at: tempURL, to: dest)
+    }
+
+    private func streamBrotliDecode(from handle: FileHandle, to dest: URL, fileName: String) throws {
+        let fileManager = FileManager.default
+        let tempURL = dest.deletingLastPathComponent().appendingPathComponent("capgo-br-\(UUID().uuidString).tmp")
+        fileManager.createFile(atPath: tempURL.path, contents: nil)
+        let output = try FileHandle(forWritingTo: tempURL)
+        defer {
+            try? output.close()
+            try? fileManager.removeItem(at: tempURL)
+        }
+
+        let chunkSize = max(CryptoCipher.ioBufferBytes(), 65536)
+        var inputBuffer = [UInt8](repeating: 0, count: chunkSize)
+        var outputBuffer = [UInt8](repeating: 0, count: chunkSize)
 
         let streamPointer = UnsafeMutablePointer<compression_stream>.allocate(capacity: 1)
         var status = compression_stream_init(streamPointer, COMPRESSION_STREAM_DECODE, COMPRESSION_BROTLI)
-
         guard status != COMPRESSION_STATUS_ERROR else {
             logger.error("Failed to initialize Brotli stream")
             logger.debug("File: \(fileName), Status: \(status)")
-            return nil
+            throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to initialize Brotli stream for \(fileName)"])
         }
-
         defer {
             compression_stream_destroy(streamPointer)
             streamPointer.deallocate()
         }
 
-        streamPointer.pointee.src_size = 0
-        streamPointer.pointee.dst_ptr = UnsafeMutablePointer<UInt8>(&outputBuffer)
-        streamPointer.pointee.dst_size = outputBufferSize
+        try inputBuffer.withUnsafeMutableBufferPointer { inBuf in
+            try outputBuffer.withUnsafeMutableBufferPointer { outBuf in
+                guard let inBase = inBuf.baseAddress, let outBase = outBuf.baseAddress else {
+                    throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to get buffer address for \(fileName)"])
+                }
+                streamPointer.pointee.src_size = 0
+                streamPointer.pointee.dst_ptr = outBase
+                streamPointer.pointee.dst_size = chunkSize
 
-        let input = data
+                var flags: Int32 = 0
+                var inputExhausted = false
+                while true {
+                    if streamPointer.pointee.src_size == 0 && !inputExhausted {
+                        let chunk = try handle.read(upToCount: chunkSize) ?? Data()
+                        if chunk.isEmpty {
+                            inputExhausted = true
+                            flags = COMPRESSION_STREAM_FINALIZE
+                        } else {
+                            chunk.copyBytes(to: inBase, count: chunk.count)
+                            streamPointer.pointee.src_ptr = UnsafePointer(inBase)
+                            streamPointer.pointee.src_size = chunk.count
+                        }
+                    }
 
-        while true {
-            if streamPointer.pointee.src_size == 0 {
-                streamPointer.pointee.src_size = input.count
-                input.withUnsafeBytes { rawBufferPointer in
-                    if let baseAddress = rawBufferPointer.baseAddress {
-                        streamPointer.pointee.src_ptr = baseAddress.assumingMemoryBound(to: UInt8.self)
-                    } else {
-                        logger.error("Failed to get base address for Brotli decompression")
+                    status = compression_stream_process(streamPointer, flags)
+                    let have = chunkSize - streamPointer.pointee.dst_size
+                    if have > 0 {
+                        output.write(Data(bytes: outBase, count: have))
+                    }
+                    streamPointer.pointee.dst_ptr = outBase
+                    streamPointer.pointee.dst_size = chunkSize
+
+                    if status == COMPRESSION_STATUS_END {
+                        break
+                    }
+                    if status == COMPRESSION_STATUS_ERROR {
+                        logger.error("Brotli process failed")
+                        logger.debug("File: \(fileName), Status: \(status)")
+                        throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data for file \(fileName)"])
+                    }
+                    if inputExhausted && streamPointer.pointee.src_size == 0 && have == 0 {
+                        logger.error("Brotli decompression stalled")
                         logger.debug("File: \(fileName)")
-                        status = COMPRESSION_STATUS_ERROR
-                        return
+                        throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data for file \(fileName)"])
                     }
                 }
-            }
-
-            if status == COMPRESSION_STATUS_ERROR {
-                let maxBytes = min(32, data.count)
-                let hexDump = data.prefix(maxBytes).map { String(format: "%02x", $0) }.joined(separator: " ")
-                logger.error("Brotli decompression failed")
-                logger.debug("File: \(fileName), First \(maxBytes) bytes: \(hexDump)")
-                break
-            }
-
-            status = compression_stream_process(streamPointer, 0)
-
-            let have = outputBufferSize - streamPointer.pointee.dst_size
-            if have > 0 {
-                decompressedData.append(outputBuffer, count: have)
-            }
-
-            if status == COMPRESSION_STATUS_END {
-                break
-            } else if status == COMPRESSION_STATUS_ERROR {
-                logger.error("Brotli process failed")
-                logger.debug("File: \(fileName), Status: \(status)")
-                if let text = String(data: data, encoding: .utf8) {
-                    let asciiCount = text.unicodeScalars.filter { $0.isASCII }.count
-                    let totalCount = text.unicodeScalars.count
-                    if totalCount > 0 && Double(asciiCount) / Double(totalCount) >= 0.8 {
-                        logger.debug("Input appears to be plain text: \(text)")
-                    }
-                }
-
-                let maxBytes = min(32, data.count)
-                let hexDump = data.prefix(maxBytes).map { String(format: "%02x", $0) }.joined(separator: " ")
-                logger.debug("Raw data: \(hexDump)")
-
-                return nil
-            }
-
-            if streamPointer.pointee.dst_size == 0 {
-                streamPointer.pointee.dst_ptr = UnsafeMutablePointer<UInt8>(&outputBuffer)
-                streamPointer.pointee.dst_size = outputBufferSize
-            }
-
-            if input.count == 0 {
-                logger.error("Zero input size for Brotli decompression")
-                logger.debug("File: \(fileName)")
-                break
             }
         }
 
-        return status == COMPRESSION_STATUS_END ? decompressedData : nil
+        try output.close()
+        if fileManager.fileExists(atPath: dest.path) {
+            try fileManager.removeItem(at: dest)
+        }
+        try fileManager.moveItem(at: tempURL, to: dest)
     }
 
     public func download(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {

@@ -83,4 +83,98 @@ public struct AES128Key {
             return nil
         }
     }
+
+    /// AES-CBC file-to-file. Never holds the whole ciphertext in RAM.
+    func decrypt(from source: URL, to destination: URL) throws {
+        var cryptor: CCCryptorRef?
+        let createStatus: CCCryptorStatus = aes128Key.withUnsafeBytes { keyBytes in
+            initVector.withUnsafeBytes { ivBytes in
+                guard let keyPtr = keyBytes.baseAddress, let ivPtr = ivBytes.baseAddress else {
+                    return CCCryptorStatus(kCCParamError)
+                }
+                return CCCryptorCreate(
+                    CCOperation(kCCDecrypt),
+                    AESConstants.aesAlgorithm,
+                    AESConstants.aesOptions,
+                    keyPtr,
+                    keyBytes.count,
+                    ivPtr,
+                    &cryptor
+                )
+            }
+        }
+        guard createStatus == kCCSuccess, let cryptor else {
+            logger.error("Failed to create AES cryptor")
+            throw NSError(domain: "AESDecryptError", code: Int(createStatus), userInfo: nil)
+        }
+        defer {
+            CCCryptorRelease(cryptor)
+        }
+
+        let input = try FileHandle(forReadingFrom: source)
+        defer {
+            try? input.close()
+        }
+
+        let tempURL = destination.deletingLastPathComponent().appendingPathComponent("capgo-aes-\(UUID().uuidString).tmp")
+        let fileManager = FileManager.default
+        fileManager.createFile(atPath: tempURL.path, contents: nil)
+        let output = try FileHandle(forWritingTo: tempURL)
+        defer {
+            try? output.close()
+            try? fileManager.removeItem(at: tempURL)
+        }
+
+        let bufferSize = CryptoCipher.ioBufferBytes()
+        let outBufSize = bufferSize + kCCBlockSizeAES128
+        var outBuf = [UInt8](repeating: 0, count: outBufSize)
+
+        while true {
+            let chunk = try autoreleasepool { () -> Data in
+                try input.read(upToCount: bufferSize) ?? Data()
+            }
+            if chunk.isEmpty {
+                break
+            }
+            var moved: size_t = 0
+            let status: CCCryptorStatus = outBuf.withUnsafeMutableBytes { outRaw in
+                chunk.withUnsafeBytes { inRaw in
+                    CCCryptorUpdate(
+                        cryptor,
+                        inRaw.baseAddress,
+                        chunk.count,
+                        outRaw.baseAddress,
+                        outBufSize,
+                        &moved
+                    )
+                }
+            }
+            guard status == kCCSuccess else {
+                logger.error("AES stream update failed")
+                throw NSError(domain: "AESDecryptError", code: Int(status), userInfo: nil)
+            }
+            if moved > 0 {
+                output.write(Data(outBuf[0..<moved]))
+            }
+        }
+
+        var moved: size_t = 0
+        let finalStatus: CCCryptorStatus = outBuf.withUnsafeMutableBytes { outRaw in
+            CCCryptorFinal(cryptor, outRaw.baseAddress, outBufSize, &moved)
+        }
+        guard finalStatus == kCCSuccess else {
+            logger.error("AES stream finalize failed")
+            throw NSError(domain: "AESDecryptError", code: Int(finalStatus), userInfo: nil)
+        }
+        if moved > 0 {
+            output.write(Data(outBuf[0..<moved]))
+        }
+        try output.close()
+        try input.close()
+
+        if fileManager.fileExists(atPath: destination.path) {
+            try fileManager.removeItem(at: destination)
+        }
+        try fileManager.moveItem(at: tempURL, to: destination)
+    }
 }

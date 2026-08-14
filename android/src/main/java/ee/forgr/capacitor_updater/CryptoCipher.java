@@ -12,14 +12,14 @@ package ee.forgr.capacitor_updater;
  * references: http://stackoverflow.com/questions/12471999/rsa-encryption-decryption-in-android
  */
 import android.util.Base64;
-import java.io.BufferedInputStream;
 import java.io.BufferedReader;
-import java.io.DataInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.security.GeneralSecurityException;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
@@ -159,25 +159,42 @@ public class CryptoCipher {
             byte[] decryptedSessionKey = CryptoCipher.decryptRSA(sessionKey, pKey);
 
             SecretKey sKey = CryptoCipher.byteToSessionKey(decryptedSessionKey);
-            byte[] content = new byte[(int) file.length()];
-
-            try (
-                final FileInputStream fis = new FileInputStream(file);
-                final BufferedInputStream bis = new BufferedInputStream(fis);
-                final DataInputStream dis = new DataInputStream(bis)
-            ) {
-                dis.readFully(content);
-                dis.close();
-                byte[] decrypted = CryptoCipher.decryptAES(content, sKey, iv);
-                // write the decrypted string to the file
-                try (final FileOutputStream fos = new FileOutputStream(file.getAbsolutePath())) {
-                    fos.write(decrypted);
-                }
-            }
+            decryptAesFile(file, sKey, iv);
         } catch (GeneralSecurityException e) {
             logger.info("decryptFile fail");
             e.printStackTrace();
             throw new IOException("GeneralSecurityException");
+        }
+    }
+
+    static void decryptAesFile(File file, SecretKey key, byte[] iv) throws IOException, GeneralSecurityException {
+        if (file.length() == 0) {
+            throw new IOException("Empty encrypted data");
+        }
+        Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+        cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(key.getEncoded(), "AES"), new IvParameterSpec(iv));
+        File tempFile = File.createTempFile("capgo-aes-", ".tmp", file.getParentFile());
+        try {
+            byte[] inBuf = new byte[ioBufferBytes()];
+            try (FileInputStream fis = new FileInputStream(file); FileOutputStream fos = new FileOutputStream(tempFile)) {
+                int n;
+                while ((n = fis.read(inBuf)) != -1) {
+                    byte[] out = cipher.update(inBuf, 0, n);
+                    if (out != null && out.length > 0) {
+                        fos.write(out);
+                    }
+                }
+                byte[] last = cipher.doFinal();
+                if (last != null && last.length > 0) {
+                    fos.write(last);
+                }
+            }
+            Files.move(tempFile.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            tempFile = null;
+        } finally {
+            if (tempFile != null && tempFile.exists()) {
+                tempFile.delete();
+            }
         }
     }
 
