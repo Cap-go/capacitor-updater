@@ -142,7 +142,9 @@ public struct CryptoCipher {
     }
 
     public static func calcChecksum(filePath: URL) -> String {
-        let bufferSize = 1024 * 1024 * 5 // 5 MB
+        // 64KB: SHA-256 does not benefit from 5MB reads, and manifest
+        // downloads hash several files at once on low-RAM devices.
+        let bufferSize = 64 * 1024
         var sha256 = SHA256()
 
         do {

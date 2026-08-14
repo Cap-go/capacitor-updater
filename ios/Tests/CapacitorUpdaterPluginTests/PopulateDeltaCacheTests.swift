@@ -234,4 +234,37 @@ final class PopulateDeltaCacheTests: XCTestCase {
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: cacheFile.path))
     }
+
+    // MARK: - getMissingBundleFiles: trust hash-named cache without re-reading
+
+    func testGetMissingBundleFilesTreatsHashNamedCacheAsReusable() throws {
+        let hash = "abc123cachedhash"
+        let cacheFile = expectedCacheFile(hash: hash, name: "app.js")
+        try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true)
+        // Content does not need to match the hash: the filename is the trust source
+        // (checksum was verified when the cache entry was written).
+        try "not-the-hashed-bytes".write(to: cacheFile, atomically: true, encoding: .utf8)
+        let manifest = [
+            ManifestEntry(file_name: "app.js", file_hash: hash, download_url: nil)
+        ]
+
+        let missing = implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "")
+
+        XCTAssertTrue(missing.isEmpty)
+    }
+
+    func testGetMissingBundleFilesIgnoresEmptyHashNamedCache() throws {
+        let hash = "abc123emptyhash"
+        let cacheFile = expectedCacheFile(hash: hash, name: "app.js")
+        try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true)
+        try Data().write(to: cacheFile)
+        let manifest = [
+            ManifestEntry(file_name: "app.js", file_hash: hash, download_url: nil)
+        ]
+
+        let missing = implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "")
+
+        XCTAssertEqual(missing.count, 1)
+        XCTAssertEqual(missing.first?.file_name, "app.js")
+    }
 }

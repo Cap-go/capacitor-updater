@@ -78,6 +78,8 @@ public class DownloadService extends Worker {
     public static final String DEFAULT_CHANNEL = "default_channel";
     public static final String IS_PROD = "is_prod";
     public static final String IS_EMULATOR = "is_emulator";
+    // Cap concurrent manifest file work. 32-64 OOMs low-RAM devices.
+    private static final int MANIFEST_MAX_CONCURRENT_FILES = 4;
     private static final String UPDATE_FILE = "update.dat";
 
     // Shared OkHttpClient to prevent resource leaks
@@ -203,7 +205,7 @@ public class DownloadService extends Worker {
             if (isManifest) {
                 JSONArray manifest = DataManager.getInstance().getAndClearManifest();
                 if (manifest != null) {
-                    handleManifestDownload(id, documentsDir, dest, version, sessionKey, publicKey, manifest.toString());
+                    handleManifestDownload(id, documentsDir, dest, version, sessionKey, publicKey, manifest);
                     return createSuccessResult(dest, version, sessionKey, checksum, true);
                 } else {
                     logger.error("Manifest is null");
@@ -291,7 +293,7 @@ public class DownloadService extends Worker {
         String version,
         String sessionKey,
         String publicKey,
-        String manifestString
+        JSONArray manifest
     ) {
         try {
             logger.debug("handleManifestDownload");
@@ -299,7 +301,6 @@ public class DownloadService extends Worker {
             // Send stats for manifest download start
             sendStatsAsync("download_manifest_start", version);
 
-            JSONArray manifest = new JSONArray(manifestString);
             File destFolder = new File(documentsDir, dest);
             File cacheFolder = new File(getApplicationContext().getCacheDir(), "capgo_downloads");
             File builtinFolder = new File(getApplicationContext().getFilesDir(), "public");
@@ -316,9 +317,10 @@ public class DownloadService extends Worker {
             final AtomicLong completedFiles = new AtomicLong(0);
             final AtomicBoolean hasError = new AtomicBoolean(false);
 
-            // Use more threads for I/O-bound operations
-            int threadCount = Math.min(64, Math.max(32, totalFiles));
-            ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+            // 4 concurrent: 32–64 threads hold ~1MB stacks each plus file
+            // bodies and checksum buffers — that OOMs low-RAM phones. 4 also
+            // matches typical per-host HTTP limits, so extra threads mostly wait.
+            ExecutorService executor = Executors.newFixedThreadPool(MANIFEST_MAX_CONCURRENT_FILES);
             List<Future<?>> futures = new ArrayList<>();
 
             for (int i = 0; i < totalFiles; i++) {
@@ -378,8 +380,8 @@ public class DownloadService extends Worker {
                             copyFile(builtinFile, targetFile);
                             logger.debug("using builtin file " + fileName);
                         } else if (
-                            tryCopyFromCache(cacheFile, targetFile, finalFileHash) ||
-                            (legacyCacheFile != null && tryCopyFromCache(legacyCacheFile, targetFile, finalFileHash))
+                            tryCopyFromCache(cacheFile, targetFile) ||
+                            (legacyCacheFile != null && tryCopyFromCache(legacyCacheFile, targetFile))
                         ) {
                             logger.debug("already cached " + fileName);
                         } else {
@@ -621,18 +623,14 @@ public class DownloadService extends Worker {
      * Atomically try to copy a file from cache - returns true if successful, false if file doesn't exist or copy failed.
      * This handles the race condition where OS can delete cache files between exists() check and copy.
      */
-    private boolean tryCopyFromCache(File source, File dest, String expectedHash) {
-        // First quick check - if file doesn't exist, don't bother
-        if (!source.exists()) {
+    private boolean tryCopyFromCache(File source, File dest) {
+        // First quick check - if file doesn't exist or was truncated, don't bother
+        if (!isReusableCacheFile(source)) {
             return false;
         }
 
-        // Verify checksum before copy
-        if (!verifyChecksum(source, expectedHash)) {
-            return false;
-        }
-
-        // Try to copy - if it fails (file deleted by OS between check and copy), return false
+        // Hash is in the cache file name and was verified when written.
+        // Re-hashing here would re-read every reused file on low-RAM devices.
         try {
             copyFile(source, dest);
             return true;
@@ -641,6 +639,10 @@ public class DownloadService extends Worker {
             logger.debug("Cache copy failed (likely OS eviction): " + e.getMessage());
             return false;
         }
+    }
+
+    private static boolean isReusableCacheFile(final File file) {
+        return file != null && file.isFile() && file.length() > 0;
     }
 
     private void copyFile(File source, File dest) throws IOException {
@@ -759,7 +761,7 @@ public class DownloadService extends Worker {
                 if (calculatedHash.equalsIgnoreCase(expectedHash)) {
                     // Only cache if checksum is correct - use atomic copy
                     try (FileInputStream fis = new FileInputStream(finalTargetFile)) {
-                        writeFileAtomic(cacheFile, fis, expectedHash);
+                        writeFileAtomic(cacheFile, fis, null);
                     }
                 } else {
                     finalTargetFile.delete();

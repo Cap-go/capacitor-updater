@@ -3527,6 +3527,55 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void getMissingBundleFilesTreatsHashNamedCacheAsReusable() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path docsDir = Files.createTempDirectory("capgo-missing-docs");
+        final File filesDir = Files.createTempDirectory("capgo-missing-files").toFile();
+        final File cacheDir = Files.createTempDirectory("capgo-missing-cache").toFile();
+        Files.createDirectories(filesDir.toPath().resolve("public"));
+        final File downloads = new File(cacheDir, "capgo_downloads");
+        assertTrue(downloads.mkdirs());
+        final String hash = "abc123cachedhash";
+        // Content does not need to match the hash: the filename is the trust source
+        // (checksum was verified when the cache entry was written).
+        Files.write(new File(downloads, hash + "_app.js").toPath(), "not-the-hashed-bytes".getBytes(StandardCharsets.UTF_8));
+
+        final CapgoUpdater updater = newDeltaCacheUpdater(docsDir, filesDir, cacheDir);
+        final JSONArray manifest = new JSONArray();
+        final JSONObject entry = new JSONObject();
+        entry.put("file_name", "app.js");
+        entry.put("file_hash", hash);
+        manifest.put(entry);
+
+        final JSONArray missing = updater.getMissingBundleFiles(manifest, "");
+        assertEquals(0, missing.length());
+    }
+
+    @Test
+    public void getMissingBundleFilesIgnoresEmptyHashNamedCache() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path docsDir = Files.createTempDirectory("capgo-missing-empty-docs");
+        final File filesDir = Files.createTempDirectory("capgo-missing-empty-files").toFile();
+        final File cacheDir = Files.createTempDirectory("capgo-missing-empty-cache").toFile();
+        Files.createDirectories(filesDir.toPath().resolve("public"));
+        final File downloads = new File(cacheDir, "capgo_downloads");
+        assertTrue(downloads.mkdirs());
+        final String hash = "abc123emptyhash";
+        Files.write(new File(downloads, hash + "_app.js").toPath(), new byte[0]);
+
+        final CapgoUpdater updater = newDeltaCacheUpdater(docsDir, filesDir, cacheDir);
+        final JSONArray manifest = new JSONArray();
+        final JSONObject entry = new JSONObject();
+        entry.put("file_name", "app.js");
+        entry.put("file_hash", hash);
+        manifest.put(entry);
+
+        final JSONArray missing = updater.getMissingBundleFiles(manifest, "");
+        assertEquals(1, missing.length());
+        assertEquals("app.js", missing.getJSONObject(0).getString("file_name"));
+    }
+
+    @Test
     public void testPendingStatsSurviveNewUpdaterInstance() throws Exception {
         final Path tempDir = Files.createTempDirectory("capgo-pending-stats");
         final File queueFile = tempDir.resolve("capgo_pending_stats.json").toFile();

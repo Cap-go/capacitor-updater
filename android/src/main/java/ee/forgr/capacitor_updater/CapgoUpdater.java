@@ -475,7 +475,7 @@ public class CapgoUpdater {
 
     private void copyFile(final File source, final File dest) throws IOException {
         try (final FileInputStream input = new FileInputStream(source); final FileOutputStream output = new FileOutputStream(dest)) {
-            final byte[] buffer = new byte[1024 * 1024];
+            final byte[] buffer = new byte[64 * 1024];
             int length;
             while ((length = input.read(buffer)) != -1) {
                 output.write(buffer, 0, length);
@@ -525,16 +525,25 @@ public class CapgoUpdater {
         final String cacheBaseName = isBrotli ? fileNameWithoutPath.substring(0, fileNameWithoutPath.length() - 3) : fileNameWithoutPath;
         final File cacheFolder = new File(this.activity.getCacheDir(), "capgo_downloads");
         final File cacheFile = new File(cacheFolder, fileHash + "_" + cacheBaseName);
-        if (verifyChecksum(cacheFile, fileHash)) {
+        // Cache files are named `{hash}_{filename}` and were checksum-verified
+        // when written. Re-hashing every hit re-reads the whole bundle and
+        // OOMs/janks low-RAM devices during getMissing / delta apply.
+        if (isReusableCacheFile(cacheFile)) {
             return true;
         }
 
         if (isBrotli) {
             final File legacyCacheFile = new File(cacheFolder, fileHash + "_" + fileNameWithoutPath);
-            return verifyChecksum(legacyCacheFile, fileHash);
+            return isReusableCacheFile(legacyCacheFile);
         }
 
         return false;
+    }
+
+    // Hash-named cache files were verified when written. Existence + size
+    // is enough; re-hashing re-reads every reused file on low-RAM devices.
+    private static boolean isReusableCacheFile(final File file) {
+        return file != null && file.isFile() && file.length() > 0;
     }
 
     public JSONArray getMissingBundleFiles(final JSONArray manifest, final String sessionKey) throws JSONException {
@@ -1173,7 +1182,7 @@ public class CapgoUpdater {
 
         final File tempFile = new File(parent, dest.getName() + ".capgo_tmp");
         try (final FileInputStream input = new FileInputStream(source); final FileOutputStream output = new FileOutputStream(tempFile)) {
-            final byte[] buffer = new byte[1024 * 1024];
+            final byte[] buffer = new byte[64 * 1024];
             int length;
             while ((length = input.read(buffer)) != -1) {
                 output.write(buffer, 0, length);

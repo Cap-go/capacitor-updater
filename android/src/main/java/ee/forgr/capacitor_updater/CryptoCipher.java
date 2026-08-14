@@ -304,7 +304,9 @@ public class CryptoCipher {
     }
 
     public static String calcChecksum(File file) {
-        final int BUFFER_SIZE = 1024 * 1024 * 5; // 5 MB buffer size
+        // 64KB: SHA-256 does not benefit from 5MB reads, and manifest
+        // downloads hash several files at once on low-RAM devices.
+        final int BUFFER_SIZE = 64 * 1024;
         MessageDigest digest;
         try {
             digest = MessageDigest.getInstance("SHA-256");

@@ -25,6 +25,8 @@ import UIKit
     private let PENDING_DELETE_IDS: String = "pendingDeleteIds"
     private var unzipPercent = 0
     private let TEMP_UNZIP_PREFIX: String = "capgo_unzip_"
+    /// Cap concurrent manifest file work. 32–64 OOMs low-RAM devices.
+    private static let manifestMaxConcurrentFiles = 4
     private let deletePaceSeconds: TimeInterval = 0.075
     private let deleteLock = NSLock()
 
@@ -300,11 +302,29 @@ import UIKit
     private func storeDownloadedFile(_ downloadedFileURL: URL, at tempPath: URL, existingBytes: Int64, response: HTTPURLResponse?) throws {
         let fileManager = FileManager.default
         if existingBytes > 0 && (response?.statusCode == 206 || response == nil) {
-            let resumedData = try Data(contentsOf: downloadedFileURL)
             let fileHandle = try FileHandle(forWritingTo: tempPath)
+            defer {
+                try? fileHandle.close()
+            }
             fileHandle.seek(toFileOffset: UInt64(existingBytes))
-            fileHandle.write(resumedData)
-            try fileHandle.close()
+            let input = try FileHandle(forReadingFrom: downloadedFileURL)
+            defer {
+                try? input.close()
+            }
+            let chunkSize = 64 * 1024
+            while true {
+                let done: Bool = try autoreleasepool {
+                    let chunk = try input.read(upToCount: chunkSize) ?? Data()
+                    if chunk.isEmpty {
+                        return true
+                    }
+                    fileHandle.write(chunk)
+                    return false
+                }
+                if done {
+                    break
+                }
+            }
             try? fileManager.removeItem(at: downloadedFileURL)
             return
         }
@@ -1175,18 +1195,28 @@ import UIKit
         let isBrotli = fileName.hasSuffix(".br")
         let cacheBaseName = isBrotli ? String(fileNameWithoutPath.dropLast(3)) : fileNameWithoutPath
         let cacheFilePath = cacheFolder.appendingPathComponent("\(fileHash)_\(cacheBaseName)")
-        if FileManager.default.fileExists(atPath: cacheFilePath.path) && verifyChecksum(file: cacheFilePath, expectedHash: fileHash) {
+        // Cache files are named `{hash}_{filename}` and were checksum-verified
+        // when written. Re-hashing every hit re-reads the whole bundle and
+        // OOMs/janks low-RAM devices during getMissing / delta apply.
+        if isReusableCacheFile(cacheFilePath) {
             return true
         }
 
         if isBrotli {
             let legacyCacheFilePath = cacheFolder.appendingPathComponent("\(fileHash)_\(fileNameWithoutPath)")
-            if FileManager.default.fileExists(atPath: legacyCacheFilePath.path) && verifyChecksum(file: legacyCacheFilePath, expectedHash: fileHash) {
+            if isReusableCacheFile(legacyCacheFilePath) {
                 return true
             }
         }
 
         return false
+    }
+
+    /// Hash-named cache files were verified when written. Existence + size
+    /// is enough; re-hashing re-reads every reused file on low-RAM devices.
+    private func isReusableCacheFile(_ url: URL) -> Bool {
+        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        return size > 0
     }
 
     public func getMissingBundleFiles(manifest: [ManifestEntry], sessionKey: String) -> [ManifestEntry] {
@@ -1299,8 +1329,10 @@ import UIKit
 
         let totalFiles = manifest.count
 
-        // Configure concurrent operation count similar to Android: min(64, max(32, totalFiles))
-        manifestDownloadQueue.maxConcurrentOperationCount = min(64, max(32, totalFiles))
+        // 4 concurrent: 32–64 holds full HTTP bodies, checksum buffers, and
+        // ~1MB thread stacks each — that OOMs low-RAM phones. 4 also matches
+        // typical per-host HTTP limits, so extra threads mostly wait.
+        manifestDownloadQueue.maxConcurrentOperationCount = Self.manifestMaxConcurrentFiles
 
         // Thread-safe counters for concurrent operations
         let completedFiles = AtomicCounter()
@@ -1404,8 +1436,8 @@ import UIKit
                     }
                     // Try cache
                     else if
-                        self.tryCopyFromCache(from: cacheFilePath, to: destFilePath, expectedHash: finalFileHash) ||
-                            (legacyCacheFilePath != nil && self.tryCopyFromCache(from: legacyCacheFilePath!, to: destFilePath, expectedHash: finalFileHash)) {
+                        self.tryCopyFromCache(from: cacheFilePath, to: destFilePath) ||
+                            (legacyCacheFilePath != nil && self.tryCopyFromCache(from: legacyCacheFilePath!, to: destFilePath)) {
                         self.logger.info("downloadManifest \(fileName) copy from cache \(id)")
                     }
                     // Download
@@ -1465,8 +1497,6 @@ import UIKit
         // Send stats for manifest download complete
         self.sendStats(action: "download_manifest_complete", versionName: version)
 
-        self.populateDeltaCacheAsync(for: id, manifest: manifest, sessionKey: sessionKey)
-
         self.notifyDownload(id: id, percent: 100, bundle: updatedBundle)
         logger.info("downloadManifest done \(id)")
         return updatedBundle
@@ -1502,7 +1532,7 @@ import UIKit
             )
         }
 
-        let result = performRequest(request, label: "downloadManifestFile \(fileName)")
+        let result = performDownloadRequest(request, label: "downloadManifestFile \(fileName)")
 
         if result.timedOut {
             self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
@@ -1520,7 +1550,13 @@ import UIKit
             throw error
         }
 
-        guard let data = result.data else {
+        let statusCode = result.response?.statusCode ?? 200
+        if statusCode < 200 || statusCode >= 300 {
+            self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
+            throw NSError(domain: "StatusCodeError", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid for file \(fileName) at url \(downloadUrl)"])
+        }
+
+        guard let downloadedFileURL = result.fileURL, FileManager.default.fileExists(atPath: downloadedFileURL.path) else {
             self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
             throw NSError(
                 domain: "ManifestDownloadError",
@@ -1528,44 +1564,31 @@ import UIKit
                 userInfo: [NSLocalizedDescriptionKey: "Manifest file response was empty for \(fileName) at url \(downloadUrl)"]
             )
         }
-
-        let statusCode = result.response?.statusCode ?? 200
-        if statusCode < 200 || statusCode >= 300 {
-            self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
-            if let stringData = String(data: data, encoding: .utf8) {
-                throw NSError(domain: "StatusCodeError", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid. Data: \(stringData) for file \(fileName) at url \(downloadUrl)"])
-            } else {
-                throw NSError(domain: "StatusCodeError", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid for file \(fileName) at url \(downloadUrl)"])
-            }
+        defer {
+            try? FileManager.default.removeItem(at: downloadedFileURL)
         }
 
         do {
-            // Add decryption step if public key is set and sessionKey is provided
-            var finalData = data
+            // Decrypt in place when a session key is present — avoids a second in-memory copy.
             if !self.publicKey.isEmpty && !sessionKey.isEmpty {
-                let tempFile = self.cacheFolder.appendingPathComponent("temp_\(UUID().uuidString)")
-                try finalData.write(to: tempFile)
                 do {
-                    try CryptoCipher.decryptFile(filePath: tempFile, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
+                    try CryptoCipher.decryptFile(filePath: downloadedFileURL, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
                 } catch {
                     self.sendStats(action: "decrypt_fail", versionName: version)
                     throw error
                 }
-                finalData = try Data(contentsOf: tempFile)
-                try FileManager.default.removeItem(at: tempFile)
             }
 
-            // Decompress Brotli if needed
             if isBrotli {
-                guard let decompressedData = self.decompressBrotli(data: finalData, fileName: fileName) else {
+                let compressedData = try Data(contentsOf: downloadedFileURL)
+                guard let decompressedData = self.decompressBrotli(data: compressedData, fileName: fileName) else {
                     self.sendStats(action: "download_manifest_brotli_fail", versionName: "\(version):\(destFileName)")
                     throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data for file \(fileName) at url \(downloadUrl)"])
                 }
-                finalData = decompressedData
+                try writeDataAtomically(decompressedData, to: destFilePath)
+            } else {
+                try copyItemReplacing(from: downloadedFileURL, to: destFilePath)
             }
-
-            // Write to destination (replace if leftover from a previous failed download)
-            try writeDataAtomically(finalData, to: destFilePath)
 
             // Always verify checksum when file_hash is present
             let calculatedChecksum = CryptoCipher.calcChecksum(filePath: destFilePath)
@@ -1578,7 +1601,7 @@ import UIKit
             }
 
             // Save to cache (replace stale cache entries from partial or concurrent downloads)
-            try writeDataAtomically(finalData, to: cacheFilePath)
+            try copyItemReplacing(from: destFilePath, to: cacheFilePath)
 
             self.logger.info("Manifest file downloaded and cached")
             self.logger.debug("Bundle: \(bundleId), File: \(fileName), Brotli: \(isBrotli), Encrypted: \(!self.publicKey.isEmpty && !sessionKey.isEmpty)")
@@ -1591,22 +1614,13 @@ import UIKit
 
     /// Atomically write data to a file, replacing any existing file at the destination.
     private func writeDataAtomically(_ data: Data, to destination: URL) throws {
-        let fileManager = FileManager.default
-        let tempURL = destination.deletingLastPathComponent().appendingPathComponent("\(destination.lastPathComponent).\(UUID().uuidString).tmp")
-        defer {
-            try? fileManager.removeItem(at: tempURL)
-        }
-
-        try data.write(to: tempURL, options: .atomic)
-        if fileManager.fileExists(atPath: destination.path) {
-            try fileManager.removeItem(at: destination)
-        }
-        try fileManager.moveItem(at: tempURL, to: destination)
+        try data.write(to: destination, options: .atomic)
     }
 
     /// Copy a file to the destination, replacing any existing file.
     private func copyItemReplacing(from source: URL, to destination: URL) throws {
         let fileManager = FileManager.default
+        try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
         if fileManager.fileExists(atPath: destination.path) {
             try fileManager.removeItem(at: destination)
         }
@@ -1615,19 +1629,16 @@ import UIKit
 
     /// Atomically try to copy a file from cache - returns true if successful, false if file doesn't exist or copy failed
     /// This handles the race condition where OS can delete cache files between exists() check and copy
-    private func tryCopyFromCache(from source: URL, to destination: URL, expectedHash: String) -> Bool {
+    private func tryCopyFromCache(from source: URL, to destination: URL) -> Bool {
         let fileManager = FileManager.default
 
-        // First quick check - if file doesn't exist, don't bother
-        guard fileManager.fileExists(atPath: source.path) else {
+        // First quick check - if file doesn't exist or was truncated, don't bother
+        guard isReusableCacheFile(source) else {
             return false
         }
 
-        // Verify checksum before copy; remove stale cache entries that would block re-download
-        guard verifyChecksum(file: source, expectedHash: expectedHash) else {
-            try? fileManager.removeItem(at: source)
-            return false
-        }
+        // Hash is in the cache file name and was verified when written.
+        // Re-hashing here would re-read every reused file on low-RAM devices.
 
         // Try to copy - if it fails (file deleted by OS between check and copy), return false
         do {
@@ -1653,8 +1664,6 @@ import UIKit
 
         // For small files, check if it's a minimal Brotli wrapper
         if data.count > 3 {
-            let maxBytes = min(32, data.count)
-            let hexDump = data.prefix(maxBytes).map { String(format: "%02x", $0) }.joined(separator: " ")
             // Handle our minimal wrapper pattern
             if data[0] == 0x1B && data[1] == 0x00 && data[2] == 0x06 && data.last == 0x03 {
                 let range = data.index(data.startIndex, offsetBy: 3)..<data.index(data.endIndex, offsetBy: -1)
