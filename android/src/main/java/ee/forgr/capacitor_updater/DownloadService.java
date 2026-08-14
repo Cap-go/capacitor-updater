@@ -897,7 +897,7 @@ public class DownloadService extends Worker {
      * Atomically write data to a file using OkIO
      */
     private void writeFileAtomic(File targetFile, InputStream inputStream, String expectedChecksum) throws IOException {
-        File tempFile = new File(targetFile.getParent(), targetFile.getName() + "." + java.util.UUID.randomUUID() + ".tmp");
+        File tempFile = File.createTempFile("capgo-", ".tmp", targetFile.getParentFile());
 
         try {
             // Write to temp file first using OkIO
