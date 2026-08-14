@@ -554,9 +554,7 @@ public class CapgoUpdater {
         }
         for (int i = 0; i < len; i++) {
             final char c = hash.charAt(i);
-            if (
-                !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))
-            ) {
+            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) {
                 return false;
             }
         }
