@@ -561,10 +561,11 @@ public class CapgoUpdater {
         return true;
     }
 
-    // Hash-named cache files were verified when written. Existence is enough
-    // for non-empty files; empty files are reused only for the empty SHA-256.
+    // SHA-256 hash-named cache files were verified when written. Existence is
+    // enough for non-empty files; empty files are reused only for the empty SHA-256.
+    // CRC32 (8 hex) is too collision-prone to trust without a re-read.
     static boolean isReusableCacheFile(final File file, final String expectedHash) {
-        if (file == null || !file.isFile() || !isSafeCacheHash(expectedHash)) {
+        if (file == null || !file.isFile() || !isSafeCacheHash(expectedHash) || expectedHash.length() != 64) {
             return false;
         }
         final long length = file.length();

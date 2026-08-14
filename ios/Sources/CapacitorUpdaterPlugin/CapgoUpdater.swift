@@ -27,6 +27,8 @@ import UIKit
     private let TEMP_UNZIP_PREFIX: String = "capgo_unzip_"
     /// Match URLSession per-host limit so 64 workers actually fetch in parallel.
     private static let manifestMaxConcurrentFiles = 64
+    /// Decrypt/brotli still load whole files. Bound that, not HTTP.
+    private static let manifestDecodeSemaphore = DispatchSemaphore(value: 4)
     private static let emptySha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     private let deletePaceSeconds: TimeInterval = 0.075
     private let deleteLock = NSLock()
@@ -1216,10 +1218,11 @@ import UIKit
         return false
     }
 
-    /// Hash-named cache files were verified when written. Existence is enough
-    /// for non-empty files; empty files are reused only for the empty SHA-256.
+    /// SHA-256 hash-named cache files were verified when written. Existence is
+    /// enough for non-empty files; empty files are reused only for the empty SHA-256.
+    /// CRC32 (8 hex) is too collision-prone to trust without a re-read.
     private func isReusableCacheFile(_ url: URL, expectedHash: String) -> Bool {
-        guard Self.isSafeCacheHash(expectedHash) else {
+        guard Self.isSafeCacheHash(expectedHash), expectedHash.count == 64 else {
             return false
         }
         let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1
@@ -1350,8 +1353,6 @@ import UIKit
         self.notifyDownload(id: id, percent: 0, ignoreMultipleOfTen: true)
 
         let totalFiles = manifest.count
-
-        manifestDownloadQueue.maxConcurrentOperationCount = min(Self.manifestMaxConcurrentFiles, max(1, totalFiles))
 
         // Thread-safe counters for concurrent operations
         let completedFiles = AtomicCounter()
@@ -1594,25 +1595,37 @@ import UIKit
         }
 
         do {
-            // Decrypt in place when a session key is present — avoids a second in-memory copy.
-            if !self.publicKey.isEmpty && !sessionKey.isEmpty {
-                do {
-                    try CryptoCipher.decryptFile(filePath: downloadedFileURL, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
-                } catch {
-                    self.sendStats(action: "decrypt_fail", versionName: version)
-                    throw error
-                }
+            let needsDecode = isBrotli || (!self.publicKey.isEmpty && !sessionKey.isEmpty)
+            if needsDecode {
+                Self.manifestDecodeSemaphore.wait()
             }
-
-            if isBrotli {
-                let compressedData = try Data(contentsOf: downloadedFileURL)
-                guard let decompressedData = self.decompressBrotli(data: compressedData, fileName: fileName) else {
-                    self.sendStats(action: "download_manifest_brotli_fail", versionName: "\(version):\(destFileName)")
-                    throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data for file \(fileName) at url \(downloadUrl)"])
+            do {
+                defer {
+                    if needsDecode {
+                        Self.manifestDecodeSemaphore.signal()
+                    }
                 }
-                try writeDataAtomically(decompressedData, to: destFilePath)
-            } else {
-                try copyItemReplacing(from: downloadedFileURL, to: destFilePath)
+
+                // Decrypt in place when a session key is present — avoids a second in-memory copy.
+                if !self.publicKey.isEmpty && !sessionKey.isEmpty {
+                    do {
+                        try CryptoCipher.decryptFile(filePath: downloadedFileURL, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
+                    } catch {
+                        self.sendStats(action: "decrypt_fail", versionName: version)
+                        throw error
+                    }
+                }
+
+                if isBrotli {
+                    let compressedData = try Data(contentsOf: downloadedFileURL)
+                    guard let decompressedData = self.decompressBrotli(data: compressedData, fileName: fileName) else {
+                        self.sendStats(action: "download_manifest_brotli_fail", versionName: "\(version):\(destFileName)")
+                        throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data for file \(fileName) at url \(downloadUrl)"])
+                    }
+                    try writeDataAtomically(decompressedData, to: destFilePath)
+                } else {
+                    try copyItemReplacing(from: downloadedFileURL, to: destFilePath)
+                }
             }
 
             // Always verify checksum when file_hash is present
@@ -2936,6 +2949,7 @@ import UIKit
         let queue = OperationQueue()
         queue.name = "com.capgo.manifestDownload"
         queue.qualityOfService = .userInitiated
+        queue.maxConcurrentOperationCount = CapgoUpdater.manifestMaxConcurrentFiles
         return queue
     }()
 

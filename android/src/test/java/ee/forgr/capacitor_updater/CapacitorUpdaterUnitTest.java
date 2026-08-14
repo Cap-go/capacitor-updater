@@ -3622,6 +3622,29 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void getMissingBundleFilesDoesNotTrustCrc32CacheHash() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path docsDir = Files.createTempDirectory("capgo-missing-crc-docs");
+        final File filesDir = Files.createTempDirectory("capgo-missing-crc-files").toFile();
+        final File cacheDir = Files.createTempDirectory("capgo-missing-crc-cache").toFile();
+        Files.createDirectories(filesDir.toPath().resolve("public"));
+        final File downloads = new File(cacheDir, "capgo_downloads");
+        assertTrue(downloads.mkdirs());
+        final String hash = "deadbeef";
+        Files.write(new File(downloads, hash + "_app.js").toPath(), "payload".getBytes(StandardCharsets.UTF_8));
+
+        final CapgoUpdater updater = newDeltaCacheUpdater(docsDir, filesDir, cacheDir);
+        final JSONArray manifest = new JSONArray();
+        final JSONObject entry = new JSONObject();
+        entry.put("file_name", "app.js");
+        entry.put("file_hash", hash);
+        manifest.put(entry);
+
+        final JSONArray missing = updater.getMissingBundleFiles(manifest, "");
+        assertEquals(1, missing.length());
+    }
+
+    @Test
     public void testPendingStatsSurviveNewUpdaterInstance() throws Exception {
         final Path tempDir = Files.createTempDirectory("capgo-pending-stats");
         final File queueFile = tempDir.resolve("capgo_pending_stats.json").toFile();

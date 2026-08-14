@@ -25,6 +25,7 @@ import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -81,6 +82,8 @@ public class DownloadService extends Worker {
     public static final String IS_EMULATOR = "is_emulator";
     // Match HTTP dispatcher so 64 workers actually fetch in parallel (HTTP/2 multiplexes).
     private static final int MANIFEST_MAX_CONCURRENT_FILES = 64;
+    // Decrypt/brotli still load whole files. Bound that, not HTTP.
+    private static final Semaphore MANIFEST_DECODE_PERMITS = new Semaphore(4);
     private static final String UPDATE_FILE = "update.dat";
 
     // Shared OkHttpClient to prevent resource leaks
@@ -322,8 +325,7 @@ public class DownloadService extends Worker {
             final AtomicLong completedFiles = new AtomicLong(0);
             final AtomicBoolean hasError = new AtomicBoolean(false);
 
-            int maxConcurrent = Math.min(MANIFEST_MAX_CONCURRENT_FILES, Math.max(1, totalFiles));
-            ExecutorService executor = Executors.newFixedThreadPool(maxConcurrent);
+            ExecutorService executor = Executors.newFixedThreadPool(Math.min(MANIFEST_MAX_CONCURRENT_FILES, Math.max(1, totalFiles)));
             List<Future<?>> futures = new ArrayList<>();
 
             for (int i = 0; i < totalFiles; i++) {
@@ -712,44 +714,55 @@ public class DownloadService extends Worker {
                 // Use OkIO for atomic write
                 writeFileAtomic(compressedFile, responseBody.byteStream(), null);
 
-                if (publicKey != null && !publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
-                    logger.debug("Decrypting file " + targetFile.getName());
-                    CryptoCipher.decryptFile(compressedFile, publicKey, sessionKey);
+                boolean needsDecode =
+                    isBrotli || (publicKey != null && !publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty());
+                if (needsDecode) {
+                    MANIFEST_DECODE_PERMITS.acquire();
                 }
+                try {
+                    if (publicKey != null && !publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
+                        logger.debug("Decrypting file " + targetFile.getName());
+                        CryptoCipher.decryptFile(compressedFile, publicKey, sessionKey);
+                    }
 
-                // Only decompress if file has .br extension
-                if (isBrotli) {
-                    // Use new decompression method with atomic write
-                    try (FileInputStream fis = new FileInputStream(compressedFile)) {
-                        byte[] compressedData = new byte[(int) compressedFile.length()];
-                        int offset = 0;
-                        int bytesRead;
-                        while (
-                            offset < compressedData.length &&
-                            (bytesRead = fis.read(compressedData, offset, compressedData.length - offset)) != -1
-                        ) {
-                            offset += bytesRead;
-                        }
-                        byte[] decompressedData;
-                        try {
-                            decompressedData = decompressBrotli(compressedData, targetFile.getName());
-                        } catch (IOException e) {
-                            sendStatsAsync(
-                                "download_manifest_brotli_fail",
-                                getInputData().getString(VERSION) + ":" + finalTargetFile.getName()
-                            );
-                            throw e;
-                        }
+                    // Only decompress if file has .br extension
+                    if (isBrotli) {
+                        // Use new decompression method with atomic write
+                        try (FileInputStream fis = new FileInputStream(compressedFile)) {
+                            byte[] compressedData = new byte[(int) compressedFile.length()];
+                            int offset = 0;
+                            int bytesRead;
+                            while (
+                                offset < compressedData.length &&
+                                (bytesRead = fis.read(compressedData, offset, compressedData.length - offset)) != -1
+                            ) {
+                                offset += bytesRead;
+                            }
+                            byte[] decompressedData;
+                            try {
+                                decompressedData = decompressBrotli(compressedData, targetFile.getName());
+                            } catch (IOException e) {
+                                sendStatsAsync(
+                                    "download_manifest_brotli_fail",
+                                    getInputData().getString(VERSION) + ":" + finalTargetFile.getName()
+                                );
+                                throw e;
+                            }
 
-                        // Write decompressed data atomically
-                        try (java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(decompressedData)) {
-                            writeFileAtomic(finalTargetFile, bais, null);
+                            // Write decompressed data atomically
+                            try (java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(decompressedData)) {
+                                writeFileAtomic(finalTargetFile, bais, null);
+                            }
+                        }
+                    } else {
+                        // Just copy the file without decompression using atomic operation
+                        try (FileInputStream fis = new FileInputStream(compressedFile)) {
+                            writeFileAtomic(finalTargetFile, fis, null);
                         }
                     }
-                } else {
-                    // Just copy the file without decompression using atomic operation
-                    try (FileInputStream fis = new FileInputStream(compressedFile)) {
-                        writeFileAtomic(finalTargetFile, fis, null);
+                } finally {
+                    if (needsDecode) {
+                        MANIFEST_DECODE_PERMITS.release();
                     }
                 }
 

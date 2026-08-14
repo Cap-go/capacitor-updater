@@ -254,7 +254,7 @@ final class PopulateDeltaCacheTests: XCTestCase {
     }
 
     func testGetMissingBundleFilesIgnoresEmptyHashNamedCache() throws {
-        let hash = "abc123emptyhashabc123emptyhashabc123emptyhashabc123emptyhashab"
+        let hash = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
         let cacheFile = expectedCacheFile(hash: hash, name: "app.js")
         try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true)
         try Data().write(to: cacheFile)
@@ -284,6 +284,20 @@ final class PopulateDeltaCacheTests: XCTestCase {
 
     func testGetMissingBundleFilesRejectsUnsafeCacheHash() throws {
         let hash = "../evil"
+        let cacheFile = expectedCacheFile(hash: hash, name: "app.js")
+        try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true)
+        try "payload".write(to: cacheFile, atomically: true, encoding: .utf8)
+        let manifest = [
+            ManifestEntry(file_name: "app.js", file_hash: hash, download_url: nil)
+        ]
+
+        let missing = implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "")
+
+        XCTAssertEqual(missing.count, 1)
+    }
+
+    func testGetMissingBundleFilesDoesNotTrustCrc32CacheHash() throws {
+        let hash = "deadbeef"
         let cacheFile = expectedCacheFile(hash: hash, name: "app.js")
         try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true)
         try "payload".write(to: cacheFile, atomically: true, encoding: .utf8)
