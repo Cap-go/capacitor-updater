@@ -144,12 +144,12 @@ public struct CryptoCipher {
     private static let fourGiB: UInt64 = 4 * 1024 * 1024 * 1024
     private static let sixGiB: UInt64 = 6 * 1024 * 1024 * 1024
 
-    /// <4GB: 64KB so 64-wide hashing cannot OOM. 4–6GB: 1MB. Else original 5MB.
+    /// <4GB: 64KB so 64-wide hashing cannot OOM. 4–6GB inclusive: 1MB. Else original 5MB.
     static func checksumBufferBytes(_ physicalRamBytes: UInt64 = ProcessInfo.processInfo.physicalMemory) -> Int {
         if physicalRamBytes > 0 && physicalRamBytes < fourGiB {
             return 64 * 1024
         }
-        if physicalRamBytes > 0 && physicalRamBytes < sixGiB {
+        if physicalRamBytes > 0 && physicalRamBytes <= sixGiB {
             return 1024 * 1024
         }
         return 5 * 1024 * 1024

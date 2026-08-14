@@ -329,6 +329,7 @@ final class IoBufferSizeTests: XCTestCase {
     func testChecksumBufferStaysSmallOnLowRamAndFullOnFlagship() {
         XCTAssertEqual(CryptoCipher.checksumBufferBytes(3 * 1024 * 1024 * 1024), 64 * 1024)
         XCTAssertEqual(CryptoCipher.checksumBufferBytes(4 * 1024 * 1024 * 1024), 1024 * 1024)
+        XCTAssertEqual(CryptoCipher.checksumBufferBytes(6 * 1024 * 1024 * 1024), 1024 * 1024)
         XCTAssertEqual(CryptoCipher.checksumBufferBytes(8 * 1024 * 1024 * 1024), 5 * 1024 * 1024)
         XCTAssertEqual(CryptoCipher.checksumBufferBytes(0), 5 * 1024 * 1024)
     }
@@ -336,6 +337,8 @@ final class IoBufferSizeTests: XCTestCase {
     func testCopyBufferStaysSmallOnLowRamAndFullOnFlagship() {
         XCTAssertEqual(CryptoCipher.copyBufferBytes(3 * 1024 * 1024 * 1024), 64 * 1024)
         XCTAssertEqual(CryptoCipher.copyBufferBytes(4 * 1024 * 1024 * 1024), 1024 * 1024)
+        XCTAssertEqual(CryptoCipher.copyBufferBytes(6 * 1024 * 1024 * 1024), 1024 * 1024)
+        XCTAssertEqual(CryptoCipher.copyBufferBytes(8 * 1024 * 1024 * 1024), 1024 * 1024)
         XCTAssertEqual(CryptoCipher.copyBufferBytes(0), 1024 * 1024)
     }
 }

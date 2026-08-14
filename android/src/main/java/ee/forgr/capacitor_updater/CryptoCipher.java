@@ -309,12 +309,12 @@ public class CryptoCipher {
     private static final long SIX_GIB = 6L * 1024 * 1024 * 1024;
     private static volatile long cachedPhysicalRamBytes = -1;
 
-    // <4GB: 64KB so 64-wide hashing cannot OOM. 4–6GB: 1MB. Else original 5MB.
+    // <4GB: 64KB so 64-wide hashing cannot OOM. 4–6GB inclusive: 1MB. Else original 5MB.
     static int checksumBufferBytes(long physicalRamBytes) {
         if (physicalRamBytes > 0 && physicalRamBytes < FOUR_GIB) {
             return 64 * 1024;
         }
-        if (physicalRamBytes > 0 && physicalRamBytes < SIX_GIB) {
+        if (physicalRamBytes > 0 && physicalRamBytes <= SIX_GIB) {
             return 1024 * 1024;
         }
         return 5 * 1024 * 1024;
