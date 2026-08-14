@@ -658,7 +658,15 @@ public class DownloadService extends Worker {
                 FileChannel inChannel = inStream.getChannel();
                 FileChannel outChannel = outStream.getChannel()
             ) {
-                inChannel.transferTo(0, inChannel.size(), outChannel);
+                long size = inChannel.size();
+                long pos = 0;
+                while (pos < size) {
+                    long transferred = inChannel.transferTo(pos, size - pos, outChannel);
+                    if (transferred <= 0) {
+                        throw new IOException("Failed to copy file: " + source.getAbsolutePath());
+                    }
+                    pos += transferred;
+                }
             }
             CryptoCipher.replaceFile(tempFile, dest);
         } finally {
