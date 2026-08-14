@@ -1211,7 +1211,10 @@ public class CapgoUpdater {
 
         final File tempFile = File.createTempFile("capgo-", ".tmp", parent);
         try {
-            try (final FileInputStream input = new FileInputStream(source); final FileOutputStream output = new FileOutputStream(tempFile)) {
+            try (
+                final FileInputStream input = new FileInputStream(source);
+                final FileOutputStream output = new FileOutputStream(tempFile)
+            ) {
                 final byte[] buffer = new byte[CryptoCipher.copyBufferBytes()];
                 int length;
                 while ((length = input.read(buffer)) != -1) {
