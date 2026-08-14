@@ -154,7 +154,7 @@ public struct AES128Key {
                 throw NSError(domain: "AESDecryptError", code: Int(status), userInfo: nil)
             }
             if moved > 0 {
-                output.write(Data(outBuf[0..<moved]))
+                try output.write(contentsOf: Data(outBuf[0..<moved]))
             }
         }
 
@@ -167,7 +167,7 @@ public struct AES128Key {
             throw NSError(domain: "AESDecryptError", code: Int(finalStatus), userInfo: nil)
         }
         if moved > 0 {
-            output.write(Data(outBuf[0..<moved]))
+            try output.write(contentsOf: Data(outBuf[0..<moved]))
         }
         try output.close()
         try input.close()

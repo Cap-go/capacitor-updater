@@ -1210,21 +1210,19 @@ public class CapgoUpdater {
         }
 
         final File tempFile = File.createTempFile("capgo-", ".tmp", parent);
-        try (final FileInputStream input = new FileInputStream(source); final FileOutputStream output = new FileOutputStream(tempFile)) {
-            final byte[] buffer = new byte[CryptoCipher.copyBufferBytes()];
-            int length;
-            while ((length = input.read(buffer)) != -1) {
-                output.write(buffer, 0, length);
-            }
-        }
-
         try {
+            try (final FileInputStream input = new FileInputStream(source); final FileOutputStream output = new FileOutputStream(tempFile)) {
+                final byte[] buffer = new byte[CryptoCipher.copyBufferBytes()];
+                int length;
+                while ((length = input.read(buffer)) != -1) {
+                    output.write(buffer, 0, length);
+                }
+            }
             CryptoCipher.replaceFile(tempFile, dest);
-        } catch (IOException e) {
+        } finally {
             if (tempFile.exists()) {
                 tempFile.delete();
             }
-            throw e;
         }
     }
 

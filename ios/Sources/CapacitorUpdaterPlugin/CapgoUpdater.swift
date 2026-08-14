@@ -1754,7 +1754,7 @@ import UIKit
                 let toRead = Int(min(UInt64(chunkSize), remaining))
                 let chunk = try handle.read(upToCount: toRead) ?? Data()
                 if !chunk.isEmpty {
-                    output.write(chunk)
+                    try output.write(contentsOf: chunk)
                 }
                 return chunk.count
             }
@@ -1820,7 +1820,7 @@ import UIKit
                     status = compression_stream_process(streamPointer, flags)
                     let have = chunkSize - streamPointer.pointee.dst_size
                     if have > 0 {
-                        output.write(Data(bytes: outBase, count: have))
+                        try output.write(contentsOf: Data(bytes: outBase, count: have))
                     }
                     streamPointer.pointee.dst_ptr = outBase
                     streamPointer.pointee.dst_size = chunkSize

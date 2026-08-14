@@ -651,22 +651,20 @@ public class DownloadService extends Worker {
         }
 
         final File tempFile = File.createTempFile("capgo-", ".tmp", parent);
-        try (
-            FileInputStream inStream = new FileInputStream(source);
-            FileOutputStream outStream = new FileOutputStream(tempFile);
-            FileChannel inChannel = inStream.getChannel();
-            FileChannel outChannel = outStream.getChannel()
-        ) {
-            inChannel.transferTo(0, inChannel.size(), outChannel);
-        }
-
         try {
+            try (
+                FileInputStream inStream = new FileInputStream(source);
+                FileOutputStream outStream = new FileOutputStream(tempFile);
+                FileChannel inChannel = inStream.getChannel();
+                FileChannel outChannel = outStream.getChannel()
+            ) {
+                inChannel.transferTo(0, inChannel.size(), outChannel);
+            }
             CryptoCipher.replaceFile(tempFile, dest);
-        } catch (IOException e) {
+        } finally {
             if (tempFile.exists()) {
                 tempFile.delete();
             }
-            throw e;
         }
     }
 
