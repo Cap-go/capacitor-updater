@@ -309,4 +309,18 @@ final class PopulateDeltaCacheTests: XCTestCase {
 
         XCTAssertEqual(missing.count, 1)
     }
+
+    func testGetMissingBundleFilesTreatsLegacyBrotliCacheNameAsReusable() throws {
+        let hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        let cacheFile = expectedCacheFile(hash: hash, name: "app.js.br")
+        try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true)
+        try "legacy-brotli-cache".write(to: cacheFile, atomically: true, encoding: .utf8)
+        let manifest = [
+            ManifestEntry(file_name: "app.js.br", file_hash: hash, download_url: nil)
+        ]
+
+        let missing = implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "")
+
+        XCTAssertTrue(missing.isEmpty)
+    }
 }
