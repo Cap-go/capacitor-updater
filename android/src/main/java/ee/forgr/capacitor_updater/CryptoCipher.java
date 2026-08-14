@@ -305,34 +305,48 @@ public class CryptoCipher {
         }
     }
 
+    private static final long TWO_GIB = 2L * 1024 * 1024 * 1024;
+    private static final long THREE_GIB = 3L * 1024 * 1024 * 1024;
     private static final long FOUR_GIB = 4L * 1024 * 1024 * 1024;
-    private static final long SIX_GIB = 6L * 1024 * 1024 * 1024;
+    private static final long EIGHT_GIB = 8L * 1024 * 1024 * 1024;
+    private static final int FLAGSHIP_IO_BUFFER_BYTES = 5 * 1024 * 1024;
     private static volatile long cachedPhysicalRamBytes = -1;
 
-    // <4GB: 64KB so 64-wide hashing cannot OOM. 4–6GB inclusive: 1MB. Else original 5MB.
-    static int checksumBufferBytes(long physicalRamBytes) {
-        if (physicalRamBytes > 0 && physicalRamBytes < FOUR_GIB) {
+    // Checksum and copy share one ladder. 64-wide peak RAM = 64 * buffer.
+    // <2GB: 64KB. <3GB: 256KB. <4GB: 512KB. <8GB: 1MB. Else 5MB (flagship / unknown).
+    static int ioBufferBytes(long physicalRamBytes) {
+        if (physicalRamBytes <= 0) {
+            return FLAGSHIP_IO_BUFFER_BYTES;
+        }
+        if (physicalRamBytes < TWO_GIB) {
             return 64 * 1024;
         }
-        if (physicalRamBytes > 0 && physicalRamBytes <= SIX_GIB) {
+        if (physicalRamBytes < THREE_GIB) {
+            return 256 * 1024;
+        }
+        if (physicalRamBytes < FOUR_GIB) {
+            return 512 * 1024;
+        }
+        if (physicalRamBytes < EIGHT_GIB) {
             return 1024 * 1024;
         }
-        return 5 * 1024 * 1024;
+        return FLAGSHIP_IO_BUFFER_BYTES;
+    }
+
+    static int checksumBufferBytes(long physicalRamBytes) {
+        return ioBufferBytes(physicalRamBytes);
     }
 
     static int copyBufferBytes(long physicalRamBytes) {
-        if (physicalRamBytes > 0 && physicalRamBytes < FOUR_GIB) {
-            return 64 * 1024;
-        }
-        return 1024 * 1024;
+        return ioBufferBytes(physicalRamBytes);
     }
 
     static int checksumBufferBytes() {
-        return checksumBufferBytes(physicalRamBytes());
+        return ioBufferBytes(physicalRamBytes());
     }
 
     static int copyBufferBytes() {
-        return copyBufferBytes(physicalRamBytes());
+        return ioBufferBytes(physicalRamBytes());
     }
 
     static long physicalRamBytes() {

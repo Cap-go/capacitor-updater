@@ -3690,20 +3690,14 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
-    public void checksumBufferStaysSmallOnLowRamAndFullOnFlagship() {
-        assertEquals(64 * 1024, CryptoCipher.checksumBufferBytes(3L * 1024 * 1024 * 1024));
-        assertEquals(1024 * 1024, CryptoCipher.checksumBufferBytes(4L * 1024 * 1024 * 1024));
-        assertEquals(1024 * 1024, CryptoCipher.checksumBufferBytes(6L * 1024 * 1024 * 1024));
-        assertEquals(5 * 1024 * 1024, CryptoCipher.checksumBufferBytes(8L * 1024 * 1024 * 1024));
-        assertEquals(5 * 1024 * 1024, CryptoCipher.checksumBufferBytes(0));
-    }
-
-    @Test
-    public void copyBufferStaysSmallOnLowRamAndFullOnFlagship() {
-        assertEquals(64 * 1024, CryptoCipher.copyBufferBytes(3L * 1024 * 1024 * 1024));
-        assertEquals(1024 * 1024, CryptoCipher.copyBufferBytes(4L * 1024 * 1024 * 1024));
-        assertEquals(1024 * 1024, CryptoCipher.copyBufferBytes(6L * 1024 * 1024 * 1024));
-        assertEquals(1024 * 1024, CryptoCipher.copyBufferBytes(8L * 1024 * 1024 * 1024));
-        assertEquals(1024 * 1024, CryptoCipher.copyBufferBytes(0));
+    public void ioBuffersFollowFiveRamTiersAndMatchForChecksumAndCopy() {
+        final long gib = 1024L * 1024 * 1024;
+        final long[] ramBytes = { gib, 2 * gib, 3 * gib, 4 * gib, 6 * gib, 8 * gib, 0 };
+        final int[] expected = { 64 * 1024, 256 * 1024, 512 * 1024, 1024 * 1024, 1024 * 1024, 5 * 1024 * 1024, 5 * 1024 * 1024 };
+        for (int i = 0; i < ramBytes.length; i++) {
+            assertEquals(expected[i], CryptoCipher.ioBufferBytes(ramBytes[i]));
+            assertEquals(expected[i], CryptoCipher.checksumBufferBytes(ramBytes[i]));
+            assertEquals(expected[i], CryptoCipher.copyBufferBytes(ramBytes[i]));
+        }
     }
 }

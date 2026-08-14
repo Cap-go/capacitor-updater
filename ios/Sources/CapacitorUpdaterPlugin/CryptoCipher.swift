@@ -141,25 +141,39 @@ public struct CryptoCipher {
         }
     }
 
+    private static let twoGiB: UInt64 = 2 * 1024 * 1024 * 1024
+    private static let threeGiB: UInt64 = 3 * 1024 * 1024 * 1024
     private static let fourGiB: UInt64 = 4 * 1024 * 1024 * 1024
-    private static let sixGiB: UInt64 = 6 * 1024 * 1024 * 1024
+    private static let eightGiB: UInt64 = 8 * 1024 * 1024 * 1024
+    private static let flagshipIoBufferBytes = 5 * 1024 * 1024
 
-    /// <4GB: 64KB so 64-wide hashing cannot OOM. 4–6GB inclusive: 1MB. Else original 5MB.
-    static func checksumBufferBytes(_ physicalRamBytes: UInt64 = ProcessInfo.processInfo.physicalMemory) -> Int {
-        if physicalRamBytes > 0 && physicalRamBytes < fourGiB {
+    /// Checksum and copy share one ladder. 64-wide peak RAM = 64 * buffer.
+    /// <2GB: 64KB. <3GB: 256KB. <4GB: 512KB. <8GB: 1MB. Else 5MB (flagship / unknown).
+    static func ioBufferBytes(_ physicalRamBytes: UInt64 = ProcessInfo.processInfo.physicalMemory) -> Int {
+        if physicalRamBytes == 0 {
+            return flagshipIoBufferBytes
+        }
+        if physicalRamBytes < twoGiB {
             return 64 * 1024
         }
-        if physicalRamBytes > 0 && physicalRamBytes <= sixGiB {
+        if physicalRamBytes < threeGiB {
+            return 256 * 1024
+        }
+        if physicalRamBytes < fourGiB {
+            return 512 * 1024
+        }
+        if physicalRamBytes < eightGiB {
             return 1024 * 1024
         }
-        return 5 * 1024 * 1024
+        return flagshipIoBufferBytes
+    }
+
+    static func checksumBufferBytes(_ physicalRamBytes: UInt64 = ProcessInfo.processInfo.physicalMemory) -> Int {
+        return ioBufferBytes(physicalRamBytes)
     }
 
     static func copyBufferBytes(_ physicalRamBytes: UInt64 = ProcessInfo.processInfo.physicalMemory) -> Int {
-        if physicalRamBytes > 0 && physicalRamBytes < fourGiB {
-            return 64 * 1024
-        }
-        return 1024 * 1024
+        return ioBufferBytes(physicalRamBytes)
     }
 
     public static func calcChecksum(filePath: URL) -> String {

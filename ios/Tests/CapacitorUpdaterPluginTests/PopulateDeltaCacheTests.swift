@@ -326,19 +326,14 @@ final class PopulateDeltaCacheTests: XCTestCase {
 }
 
 final class IoBufferSizeTests: XCTestCase {
-    func testChecksumBufferStaysSmallOnLowRamAndFullOnFlagship() {
-        XCTAssertEqual(CryptoCipher.checksumBufferBytes(3 * 1024 * 1024 * 1024), 64 * 1024)
-        XCTAssertEqual(CryptoCipher.checksumBufferBytes(4 * 1024 * 1024 * 1024), 1024 * 1024)
-        XCTAssertEqual(CryptoCipher.checksumBufferBytes(6 * 1024 * 1024 * 1024), 1024 * 1024)
-        XCTAssertEqual(CryptoCipher.checksumBufferBytes(8 * 1024 * 1024 * 1024), 5 * 1024 * 1024)
-        XCTAssertEqual(CryptoCipher.checksumBufferBytes(0), 5 * 1024 * 1024)
-    }
-
-    func testCopyBufferStaysSmallOnLowRamAndFullOnFlagship() {
-        XCTAssertEqual(CryptoCipher.copyBufferBytes(3 * 1024 * 1024 * 1024), 64 * 1024)
-        XCTAssertEqual(CryptoCipher.copyBufferBytes(4 * 1024 * 1024 * 1024), 1024 * 1024)
-        XCTAssertEqual(CryptoCipher.copyBufferBytes(6 * 1024 * 1024 * 1024), 1024 * 1024)
-        XCTAssertEqual(CryptoCipher.copyBufferBytes(8 * 1024 * 1024 * 1024), 1024 * 1024)
-        XCTAssertEqual(CryptoCipher.copyBufferBytes(0), 1024 * 1024)
+    func testIoBuffersFollowFiveRamTiersAndMatchForChecksumAndCopy() {
+        let gib: UInt64 = 1024 * 1024 * 1024
+        let ramBytes: [UInt64] = [gib, 2 * gib, 3 * gib, 4 * gib, 6 * gib, 8 * gib, 0]
+        let expected = [64 * 1024, 256 * 1024, 512 * 1024, 1024 * 1024, 1024 * 1024, 5 * 1024 * 1024, 5 * 1024 * 1024]
+        for i in ramBytes.indices {
+            XCTAssertEqual(CryptoCipher.ioBufferBytes(ramBytes[i]), expected[i])
+            XCTAssertEqual(CryptoCipher.checksumBufferBytes(ramBytes[i]), expected[i])
+            XCTAssertEqual(CryptoCipher.copyBufferBytes(ramBytes[i]), expected[i])
+        }
     }
 }
