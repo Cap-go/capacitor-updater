@@ -3716,7 +3716,7 @@ public class CapacitorUpdaterUnitTest {
         byte[] wrapped = new byte[] { 0x0b, 0x02, (byte) 0x80, 'h', 'e', 'l', 'l', 'o', 0x03 };
         Files.write(wrappedIn.toPath(), wrapped);
         DownloadService.decompressBrotli(wrappedIn, wrappedOut, "hello.br");
-        assertEquals("hello", Files.readString(wrappedOut.toPath()));
+        assertEquals("hello", new String(Files.readAllBytes(wrappedOut.toPath()), StandardCharsets.UTF_8));
 
         File realIn = dir.resolve("payload.br").toFile();
         File realOut = dir.resolve("payload.txt").toFile();
@@ -3726,7 +3726,7 @@ public class CapacitorUpdaterUnitTest {
         );
         DownloadService.decompressBrotli(realIn, realOut, "payload.br");
         String expected = "Capgo stream brotli test payload. ".repeat(20);
-        assertEquals(expected, Files.readString(realOut.toPath()));
+        assertEquals(expected, new String(Files.readAllBytes(realOut.toPath()), StandardCharsets.UTF_8));
     }
 
     @Test
