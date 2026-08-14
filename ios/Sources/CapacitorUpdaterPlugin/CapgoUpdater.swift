@@ -965,7 +965,7 @@ import UIKit
             }
 
             do {
-                try fileManager.copyItem(at: fileURL, to: cacheFile)
+                try copyItemAtomically(from: fileURL, to: cacheFile)
             } catch {
                 logger.debug("Delta cache copy failed: \(fileURL.path)")
             }
@@ -1658,10 +1658,21 @@ import UIKit
             try? fileManager.removeItem(at: tempURL)
         }
         try fileManager.copyItem(at: source, to: tempURL)
-        if fileManager.fileExists(atPath: destination.path) {
-            try fileManager.removeItem(at: destination)
+        try replaceItemAtomically(at: destination, withItemAt: tempURL)
+    }
+
+    /// One-step replace when dest exists, move when it does not. Avoids the
+    /// fileExists/removeItem race that can fail a verified install.
+    private func replaceItemAtomically(at destination: URL, withItemAt tempURL: URL) throws {
+        let fileManager = FileManager.default
+        do {
+            _ = try fileManager.replaceItemAt(destination, withItemAt: tempURL)
+        } catch {
+            if fileManager.fileExists(atPath: destination.path) {
+                throw error
+            }
+            try fileManager.moveItem(at: tempURL, to: destination)
         }
-        try fileManager.moveItem(at: tempURL, to: destination)
     }
 
     /// Atomically try to copy a file from cache - returns true if successful, false if file doesn't exist or copy failed
@@ -1753,10 +1764,7 @@ import UIKit
             remaining -= UInt64(readCount)
         }
         try output.close()
-        if fileManager.fileExists(atPath: dest.path) {
-            try fileManager.removeItem(at: dest)
-        }
-        try fileManager.moveItem(at: tempURL, to: dest)
+        try replaceItemAtomically(at: dest, withItemAt: tempURL)
     }
 
     private func streamBrotliDecode(from handle: FileHandle, to dest: URL, fileName: String) throws {
@@ -1801,7 +1809,7 @@ import UIKit
                         let chunk = try handle.read(upToCount: chunkSize) ?? Data()
                         if chunk.isEmpty {
                             inputExhausted = true
-                            flags = COMPRESSION_STREAM_FINALIZE.rawValue
+                            flags = Int32(bitPattern: COMPRESSION_STREAM_FINALIZE.rawValue)
                         } else {
                             chunk.copyBytes(to: inBase, count: chunk.count)
                             streamPointer.pointee.src_ptr = UnsafePointer(inBase)
@@ -1835,10 +1843,7 @@ import UIKit
         }
 
         try output.close()
-        if fileManager.fileExists(atPath: dest.path) {
-            try fileManager.removeItem(at: dest)
-        }
-        try fileManager.moveItem(at: tempURL, to: dest)
+        try replaceItemAtomically(at: dest, withItemAt: tempURL)
     }
 
     public func download(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {

@@ -449,7 +449,7 @@ public class CapgoUpdater {
                 continue;
             }
             try {
-                copyFile(file, cacheFile);
+                copyFileAtomically(file, cacheFile);
             } catch (IOException e) {
                 logger.debug("Delta cache copy failed: " + file.getPath());
             }

@@ -3740,7 +3740,7 @@ public class CapacitorUpdaterUnitTest {
             keyBytes[i] = (byte) (31 - i);
         }
         javax.crypto.SecretKey key = new javax.crypto.spec.SecretKeySpec(keyBytes, "AES");
-        byte[] plain = new byte[120_000];
+        byte[] plain = new byte[CryptoCipher.ioBufferBytes() * 2 + 1];
         for (int i = 0; i < plain.length; i++) {
             plain[i] = (byte) (i * 31);
         }

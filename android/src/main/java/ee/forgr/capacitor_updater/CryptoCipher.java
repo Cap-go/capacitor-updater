@@ -18,8 +18,6 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
 import java.security.GeneralSecurityException;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
@@ -162,8 +160,7 @@ public class CryptoCipher {
             decryptAesFile(file, sKey, iv);
         } catch (GeneralSecurityException e) {
             logger.info("decryptFile fail");
-            e.printStackTrace();
-            throw new IOException("GeneralSecurityException");
+            throw new IOException("GeneralSecurityException", e);
         }
     }
 
@@ -189,12 +186,26 @@ public class CryptoCipher {
                     fos.write(last);
                 }
             }
-            Files.move(tempFile.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            replaceFile(tempFile, file);
             tempFile = null;
         } finally {
             if (tempFile != null && tempFile.exists()) {
                 tempFile.delete();
             }
+        }
+    }
+
+    static void replaceFile(File from, File to) throws IOException {
+        if (from.renameTo(to)) {
+            return;
+        }
+        if (to.exists() && !to.delete()) {
+            from.delete();
+            throw new IOException("Failed to replace file: " + to.getAbsolutePath());
+        }
+        if (!from.renameTo(to)) {
+            from.delete();
+            throw new IOException("Failed to replace file: " + to.getAbsolutePath());
         }
     }
 

@@ -15,8 +15,6 @@ import java.io.FileInputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.channels.FileChannel;
-import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -663,7 +661,7 @@ public class DownloadService extends Worker {
         }
 
         try {
-            Files.move(tempFile.toPath(), dest.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            CryptoCipher.replaceFile(tempFile, dest);
         } catch (IOException e) {
             if (tempFile.exists()) {
                 tempFile.delete();
@@ -919,8 +917,8 @@ public class DownloadService extends Worker {
                 }
             }
 
-            // Atomic rename (on same filesystem)
-            Files.move(tempFile.toPath(), targetFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            // Atomic rename (on same filesystem). renameTo works on API 24; Files.move does not.
+            CryptoCipher.replaceFile(tempFile, targetFile);
         } catch (Exception e) {
             // Clean up temp file on error
             if (tempFile.exists()) {

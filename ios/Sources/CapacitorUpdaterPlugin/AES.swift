@@ -172,9 +172,13 @@ public struct AES128Key {
         try output.close()
         try input.close()
 
-        if fileManager.fileExists(atPath: destination.path) {
-            try fileManager.removeItem(at: destination)
+        do {
+            _ = try fileManager.replaceItemAt(destination, withItemAt: tempURL)
+        } catch {
+            if fileManager.fileExists(atPath: destination.path) {
+                throw error
+            }
+            try fileManager.moveItem(at: tempURL, to: destination)
         }
-        try fileManager.moveItem(at: tempURL, to: destination)
     }
 }

@@ -285,6 +285,11 @@ public struct CryptoCipher {
             }
 
             try aesPrivateKey.decrypt(from: filePath, to: filePath)
+            let decryptedSize = (try FileManager.default.attributesOfItem(atPath: filePath.path)[.size] as? NSNumber)?.uint64Value ?? 0
+            if decryptedSize == 0 {
+                logger.error("Decrypted data is empty")
+                throw NSError(domain: "Empty decrypted data", code: 7, userInfo: nil)
+            }
 
         } catch {
             logger.error("File decryption failed")

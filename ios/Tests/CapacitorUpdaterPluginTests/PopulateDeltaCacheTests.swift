@@ -340,17 +340,26 @@ final class IoBufferSizeTests: XCTestCase {
 
 final class StreamDecodeTests: XCTestCase {
     private var updater: CapgoUpdater!
+    private var tempDir: URL!
 
     override func setUp() {
         super.setUp()
         updater = CapgoUpdater()
         updater.setLogger(Logger(withTag: "StreamDecodeTests", options: Logger.Options(level: .silent)))
         CryptoCipher.setLogger(Logger(withTag: "StreamDecodeTests", options: Logger.Options(level: .silent)))
+        tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("capgo-brotli-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    }
+
+    override func tearDown() {
+        if let tempDir {
+            try? FileManager.default.removeItem(at: tempDir)
+        }
+        super.tearDown()
     }
 
     func testDecompressBrotliStreamsEmptyWrapperAndRealPayload() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("capgo-brotli-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let dir = tempDir!
 
         let emptyIn = dir.appendingPathComponent("empty.br")
         let emptyOut = dir.appendingPathComponent("empty.txt")
