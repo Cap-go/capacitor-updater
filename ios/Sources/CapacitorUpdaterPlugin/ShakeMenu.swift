@@ -92,18 +92,24 @@ final class ThreeFingerPinchGestureRecognizer: UIGestureRecognizer {
 }
 
 extension UIApplication {
-    // swiftlint:disable:next line_length
-    public class func topViewController(_ base: UIViewController? = UIApplication.shared.windows.first?.rootViewController) -> UIViewController? {
-        if let nav = base as? UINavigationController {
+    public class func topViewController(_ base: UIViewController? = nil) -> UIViewController? {
+        let resolvedBase = base ?? keyWindowRootViewController
+        if let nav = resolvedBase as? UINavigationController {
             return topViewController(nav.visibleViewController)
         }
-        if let tab = base as? UITabBarController, let selected = tab.selectedViewController {
+        if let tab = resolvedBase as? UITabBarController, let selected = tab.selectedViewController {
             return topViewController(selected)
         }
-        if let presented = base?.presentedViewController {
+        if let presented = resolvedBase?.presentedViewController {
             return topViewController(presented)
         }
-        return base
+        return resolvedBase
+    }
+
+    private static var keyWindowRootViewController: UIViewController? {
+        let scenes = shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let window = scenes.flatMap(\.windows).first(where: \.isKeyWindow) ?? scenes.first?.windows.first
+        return window?.rootViewController
     }
 }
 
