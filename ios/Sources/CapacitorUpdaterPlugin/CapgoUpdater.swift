@@ -1801,7 +1801,7 @@ import UIKit
                         let chunk = try handle.read(upToCount: chunkSize) ?? Data()
                         if chunk.isEmpty {
                             inputExhausted = true
-                            flags = COMPRESSION_STREAM_FINALIZE
+                            flags = COMPRESSION_STREAM_FINALIZE.rawValue
                         } else {
                             chunk.copyBytes(to: inBase, count: chunk.count)
                             streamPointer.pointee.src_ptr = UnsafePointer(inBase)
