@@ -315,7 +315,7 @@ import UIKit
             defer {
                 try? input.close()
             }
-            let chunkSize = 64 * 1024
+            let chunkSize = CryptoCipher.copyBufferBytes()
             while true {
                 let done: Bool = try autoreleasepool {
                     let chunk = try input.read(upToCount: chunkSize) ?? Data()

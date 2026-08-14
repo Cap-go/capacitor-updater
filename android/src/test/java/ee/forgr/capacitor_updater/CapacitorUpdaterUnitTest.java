@@ -3688,4 +3688,19 @@ public class CapacitorUpdaterUnitTest {
         relaunched.shutdown();
         crashed.shutdown();
     }
+
+    @Test
+    public void checksumBufferStaysSmallOnLowRamAndFullOnFlagship() {
+        assertEquals(64 * 1024, CryptoCipher.checksumBufferBytes(3L * 1024 * 1024 * 1024));
+        assertEquals(1024 * 1024, CryptoCipher.checksumBufferBytes(4L * 1024 * 1024 * 1024));
+        assertEquals(5 * 1024 * 1024, CryptoCipher.checksumBufferBytes(8L * 1024 * 1024 * 1024));
+        assertEquals(5 * 1024 * 1024, CryptoCipher.checksumBufferBytes(0));
+    }
+
+    @Test
+    public void copyBufferStaysSmallOnLowRamAndFullOnFlagship() {
+        assertEquals(64 * 1024, CryptoCipher.copyBufferBytes(3L * 1024 * 1024 * 1024));
+        assertEquals(1024 * 1024, CryptoCipher.copyBufferBytes(4L * 1024 * 1024 * 1024));
+        assertEquals(1024 * 1024, CryptoCipher.copyBufferBytes(0));
+    }
 }

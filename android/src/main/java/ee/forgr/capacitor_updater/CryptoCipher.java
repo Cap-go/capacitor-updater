@@ -13,10 +13,12 @@ package ee.forgr.capacitor_updater;
  */
 import android.util.Base64;
 import java.io.BufferedInputStream;
+import java.io.BufferedReader;
 import java.io.DataInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.FileReader;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.security.InvalidAlgorithmParameterException;
@@ -303,10 +305,59 @@ public class CryptoCipher {
         }
     }
 
+    private static final long FOUR_GIB = 4L * 1024 * 1024 * 1024;
+    private static final long SIX_GIB = 6L * 1024 * 1024 * 1024;
+    private static volatile long cachedPhysicalRamBytes = -1;
+
+    // <4GB: 64KB so 64-wide hashing cannot OOM. 4–6GB: 1MB. Else original 5MB.
+    static int checksumBufferBytes(long physicalRamBytes) {
+        if (physicalRamBytes > 0 && physicalRamBytes < FOUR_GIB) {
+            return 64 * 1024;
+        }
+        if (physicalRamBytes > 0 && physicalRamBytes < SIX_GIB) {
+            return 1024 * 1024;
+        }
+        return 5 * 1024 * 1024;
+    }
+
+    static int copyBufferBytes(long physicalRamBytes) {
+        if (physicalRamBytes > 0 && physicalRamBytes < FOUR_GIB) {
+            return 64 * 1024;
+        }
+        return 1024 * 1024;
+    }
+
+    static int checksumBufferBytes() {
+        return checksumBufferBytes(physicalRamBytes());
+    }
+
+    static int copyBufferBytes() {
+        return copyBufferBytes(physicalRamBytes());
+    }
+
+    static long physicalRamBytes() {
+        long cached = cachedPhysicalRamBytes;
+        if (cached >= 0) {
+            return cached;
+        }
+        long parsed = 0;
+        try (BufferedReader reader = new BufferedReader(new FileReader("/proc/meminfo"))) {
+            String line = reader.readLine();
+            if (line != null && line.startsWith("MemTotal:")) {
+                String[] parts = line.split("\\s+");
+                if (parts.length >= 2) {
+                    parsed = Long.parseLong(parts[1]) * 1024L;
+                }
+            }
+        } catch (Exception ignored) {
+            parsed = 0;
+        }
+        cachedPhysicalRamBytes = parsed;
+        return parsed;
+    }
+
     public static String calcChecksum(File file) {
-        // 64KB: SHA-256 does not benefit from 5MB reads, and manifest
-        // downloads hash several files at once on low-RAM devices.
-        final int BUFFER_SIZE = 64 * 1024;
+        final int BUFFER_SIZE = checksumBufferBytes();
         MessageDigest digest;
         try {
             digest = MessageDigest.getInstance("SHA-256");

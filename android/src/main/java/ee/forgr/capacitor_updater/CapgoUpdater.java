@@ -475,7 +475,7 @@ public class CapgoUpdater {
 
     private void copyFile(final File source, final File dest) throws IOException {
         try (final FileInputStream input = new FileInputStream(source); final FileOutputStream output = new FileOutputStream(dest)) {
-            final byte[] buffer = new byte[64 * 1024];
+            final byte[] buffer = new byte[CryptoCipher.copyBufferBytes()];
             int length;
             while ((length = input.read(buffer)) != -1) {
                 output.write(buffer, 0, length);
@@ -1211,7 +1211,7 @@ public class CapgoUpdater {
 
         final File tempFile = new File(parent, dest.getName() + ".capgo_tmp");
         try (final FileInputStream input = new FileInputStream(source); final FileOutputStream output = new FileOutputStream(tempFile)) {
-            final byte[] buffer = new byte[64 * 1024];
+            final byte[] buffer = new byte[CryptoCipher.copyBufferBytes()];
             int length;
             while ((length = input.read(buffer)) != -1) {
                 output.write(buffer, 0, length);
