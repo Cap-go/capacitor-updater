@@ -242,7 +242,7 @@ extension UIWindow {
     @discardableResult
     private func showDefaultMenu(plugin: CapacitorUpdaterPlugin, bridge: CAPBridgeProtocol) -> Bool {
         // Prevent multiple alerts from showing
-        guard let topVC = menuHostViewController else {
+        guard let topVC = self.menuHostViewController else {
             return false
         }
         if topVC.isKind(of: UIAlertController.self) {
@@ -377,7 +377,7 @@ extension UIWindow {
         })
 
         DispatchQueue.main.async {
-            if let topVC = menuHostViewController {
+            if let topVC = self.menuHostViewController {
                 topVC.present(alertShake, animated: true)
             }
         }
@@ -400,7 +400,7 @@ extension UIWindow {
     }
 
     private func showPreviewSelector(plugin: CapacitorUpdaterPlugin) {
-        guard let topVC = menuHostViewController else {
+        guard let topVC = self.menuHostViewController else {
             return
         }
         if topVC.isKind(of: UIAlertController.self) {
@@ -468,7 +468,7 @@ extension UIWindow {
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
 
         DispatchQueue.main.async {
-            if let topVC = menuHostViewController {
+            if let topVC = self.menuHostViewController {
                 topVC.present(alert, animated: true)
             }
         }
@@ -491,7 +491,7 @@ extension UIWindow {
         }
 
         DispatchQueue.main.async {
-            if let topVC = menuHostViewController {
+            if let topVC = self.menuHostViewController {
                 topVC.present(alert, animated: true)
             }
         }
@@ -510,7 +510,7 @@ extension UIWindow {
     @discardableResult
     private func showChannelSelector(plugin: CapacitorUpdaterPlugin, bridge: CAPBridgeProtocol) -> Bool {
         // Prevent multiple alerts from showing
-        guard let topVC = menuHostViewController else {
+        guard let topVC = self.menuHostViewController else {
             return false
         }
         if topVC.isKind(of: UIAlertController.self) {
@@ -594,7 +594,7 @@ extension UIWindow {
         }
 
         DispatchQueue.main.async {
-            if let topVC = menuHostViewController {
+            if let topVC = self.menuHostViewController {
                 topVC.present(alert, animated: true)
             }
         }
@@ -639,7 +639,7 @@ extension UIWindow {
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
 
         DispatchQueue.main.async {
-            if let topVC = menuHostViewController {
+            if let topVC = self.menuHostViewController {
                 topVC.present(alert, animated: true)
             }
         }
@@ -661,7 +661,7 @@ extension UIWindow {
         ])
 
         DispatchQueue.main.async {
-            if let topVC = menuHostViewController {
+            if let topVC = self.menuHostViewController {
                 topVC.present(progressAlert, animated: true) {
                     DispatchQueue.global(qos: .userInitiated).async {
                         // Set the channel - respect plugin's allowSetDefaultChannel config
@@ -818,7 +818,7 @@ extension UIWindow {
         alert.addAction(UIAlertAction(title: "OK", style: .default))
 
         DispatchQueue.main.async {
-            if let topVC = menuHostViewController {
+            if let topVC = self.menuHostViewController {
                 topVC.present(alert, animated: true)
             }
         }
@@ -830,7 +830,7 @@ extension UIWindow {
         alert.addAction(UIAlertAction(title: "OK", style: .default))
 
         DispatchQueue.main.async {
-            if let topVC = menuHostViewController {
+            if let topVC = self.menuHostViewController {
                 topVC.present(alert, animated: true)
             }
         }
@@ -856,7 +856,7 @@ extension UIWindow {
         })
 
         DispatchQueue.main.async {
-            if let topVC = menuHostViewController {
+            if let topVC = self.menuHostViewController {
                 topVC.present(alert, animated: true)
             }
         }
