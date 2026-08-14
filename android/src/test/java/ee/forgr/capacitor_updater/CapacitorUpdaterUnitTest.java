@@ -18,6 +18,7 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginConfig;
 import com.getcapacitor.PluginHandle;
 import io.github.g00fy2.versioncompare.Version;
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
@@ -3154,6 +3155,46 @@ public class CapacitorUpdaterUnitTest {
         } finally {
             Files.deleteIfExists(builtinFolder);
         }
+    }
+
+    @Test
+    public void testBuiltinAssetPathUsesApkPublicFolderAndStripsBrotli() throws Exception {
+        assertEquals("public/background-runner.js", DownloadService.resolveBuiltinAssetPath("background-runner.js.br"));
+        assertEquals("public/assets/app.js", DownloadService.resolveBuiltinAssetPath("assets/app.js.br"));
+        assertEquals("public/index.html", DownloadService.resolveBuiltinAssetPath("index.html"));
+    }
+
+    @Test
+    public void testBuiltinAssetPathRejectsPathTraversal() {
+        assertThrows(IOException.class, () -> DownloadService.resolveBuiltinAssetPath("../secret.js"));
+        assertThrows(IOException.class, () -> DownloadService.resolveBuiltinAssetPath("assets/../../secret.js"));
+    }
+
+    @Test
+    public void testCopyStreamIfChecksumMatchesReusesMatchingBuiltinBytes() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path destDir = Files.createTempDirectory("capgo-builtin-copy");
+        destDir.toFile().deleteOnExit();
+        final File dest = destDir.resolve("index.js").toFile();
+        final byte[] content = "store builtin js".getBytes(StandardCharsets.UTF_8);
+        final File hashSource = destDir.resolve("source.js").toFile();
+        Files.write(hashSource.toPath(), content);
+        final String hash = CryptoCipher.calcChecksum(hashSource);
+
+        assertTrue(DownloadService.copyStreamIfChecksumMatches(new ByteArrayInputStream(content), dest, hash));
+        assertEquals("store builtin js", new String(Files.readAllBytes(dest.toPath()), StandardCharsets.UTF_8));
+    }
+
+    @Test
+    public void testCopyStreamIfChecksumMatchesDeletesMismatchedFile() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path destDir = Files.createTempDirectory("capgo-builtin-mismatch");
+        destDir.toFile().deleteOnExit();
+        final File dest = destDir.resolve("index.js").toFile();
+        final byte[] content = "store builtin js".getBytes(StandardCharsets.UTF_8);
+
+        assertFalse(DownloadService.copyStreamIfChecksumMatches(new ByteArrayInputStream(content), dest, "deadbeef"));
+        assertFalse(dest.exists());
     }
 
     @Test

@@ -18,6 +18,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.security.GeneralSecurityException;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
@@ -304,6 +305,16 @@ public class CryptoCipher {
     }
 
     public static String calcChecksum(File file) {
+        try (FileInputStream fis = new FileInputStream(file)) {
+            return calcChecksum(fis);
+        } catch (IOException e) {
+            logger.error("Cannot calculate checksum");
+            logger.debug("Path: " + file.getPath() + ", Error: " + e.getMessage());
+            return "";
+        }
+    }
+
+    public static String calcChecksum(InputStream inputStream) {
         final int BUFFER_SIZE = 1024 * 1024 * 5; // 5 MB buffer size
         MessageDigest digest;
         try {
@@ -313,10 +324,10 @@ public class CryptoCipher {
             return "";
         }
 
-        try (FileInputStream fis = new FileInputStream(file)) {
+        try {
             byte[] buffer = new byte[BUFFER_SIZE];
             int length;
-            while ((length = fis.read(buffer)) != -1) {
+            while ((length = inputStream.read(buffer)) != -1) {
                 digest.update(buffer, 0, length);
             }
             byte[] hash = digest.digest();
@@ -329,7 +340,7 @@ public class CryptoCipher {
             return hexString.toString();
         } catch (IOException e) {
             logger.error("Cannot calculate checksum");
-            logger.debug("Path: " + file.getPath() + ", Error: " + e.getMessage());
+            logger.debug("Error: " + e.getMessage());
             return "";
         }
     }

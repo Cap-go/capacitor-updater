@@ -6,6 +6,7 @@
 package ee.forgr.capacitor_updater;
 
 import android.content.Context;
+import android.content.res.AssetManager;
 import androidx.annotation.NonNull;
 import androidx.work.Data;
 import androidx.work.Worker;
@@ -14,7 +15,6 @@ import java.io.*;
 import java.io.FileInputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
@@ -179,6 +179,59 @@ public class DownloadService extends Worker {
         return CapgoUpdater.resolvePathInsideDirectory(builtinFolder, resolvedName);
     }
 
+    /** APK web assets live in assets/public/; strip .br so store files match. */
+    static String resolveBuiltinAssetPath(final String fileName) throws IOException {
+        final File base = new File("/capgo-builtin-assets");
+        final File resolved = resolveManifestBuiltinFile(base, fileName);
+        final String basePath = base.getCanonicalPath();
+        final String resolvedPath = resolved.getCanonicalPath();
+        final String normalizedBasePath = basePath.endsWith(File.separator) ? basePath : basePath + File.separator;
+        if (!resolvedPath.startsWith(normalizedBasePath)) {
+            throw new IOException("Invalid manifest file path: " + fileName);
+        }
+        return "public/" + resolvedPath.substring(normalizedBasePath.length()).replace(File.separatorChar, '/');
+    }
+
+    static boolean copyStreamIfChecksumMatches(final InputStream input, final File dest, final String expectedHash) throws IOException {
+        copyStreamToFile(input, dest);
+        final String actualHash = CryptoCipher.calcChecksum(dest);
+        if (expectedHash == null || expectedHash.isEmpty() || !expectedHash.equalsIgnoreCase(actualHash)) {
+            if (dest.exists() && !dest.delete()) {
+                dest.deleteOnExit();
+            }
+            return false;
+        }
+        return true;
+    }
+
+    static boolean tryCopyBuiltinAsset(final AssetManager assets, final String fileName, final File dest, final String expectedHash) {
+        if (assets == null || fileName == null || dest == null) {
+            return false;
+        }
+        try {
+            final String assetPath = resolveBuiltinAssetPath(fileName);
+            try (InputStream in = assets.open(assetPath)) {
+                return copyStreamIfChecksumMatches(in, dest, expectedHash);
+            }
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    static boolean builtinAssetMatches(final AssetManager assets, final String fileName, final String expectedHash) {
+        if (assets == null || fileName == null || expectedHash == null || expectedHash.isEmpty()) {
+            return false;
+        }
+        try {
+            final String assetPath = resolveBuiltinAssetPath(fileName);
+            try (InputStream in = assets.open(assetPath)) {
+                return expectedHash.equalsIgnoreCase(CryptoCipher.calcChecksum(in));
+            }
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
     private String getInputString(String key, String fallback) {
         String value = getInputData().getString(key);
         return value != null ? value : fallback;
@@ -303,6 +356,7 @@ public class DownloadService extends Worker {
             File destFolder = new File(documentsDir, dest);
             File cacheFolder = new File(getApplicationContext().getCacheDir(), "capgo_downloads");
             File builtinFolder = new File(getApplicationContext().getFilesDir(), "public");
+            AssetManager assets = getApplicationContext().getAssets();
 
             // Ensure directories are created
             if (!destFolder.exists() && !destFolder.mkdirs()) {
@@ -374,7 +428,9 @@ public class DownloadService extends Worker {
                 final boolean finalIsBrotli = isBrotli;
                 Future<?> future = executor.submit(() -> {
                     try {
-                        if (builtinFile.exists() && verifyChecksum(builtinFile, finalFileHash)) {
+                        if (tryCopyBuiltinAsset(assets, fileName, targetFile, finalFileHash)) {
+                            logger.debug("using builtin asset " + fileName);
+                        } else if (builtinFile.exists() && verifyChecksum(builtinFile, finalFileHash)) {
                             copyFile(builtinFile, targetFile);
                             logger.debug("using builtin file " + fileName);
                         } else if (
@@ -644,19 +700,32 @@ public class DownloadService extends Worker {
     }
 
     private void copyFile(File source, File dest) throws IOException {
+        try (FileInputStream inStream = new FileInputStream(source)) {
+            copyStreamToFile(inStream, dest);
+        }
+    }
+
+    static void copyStreamToFile(InputStream source, File dest) throws IOException {
         final File parent = dest.getParentFile();
-        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+        if (parent == null) {
+            throw new IOException("Destination has no parent: " + dest.getAbsolutePath());
+        }
+        if (!parent.exists() && !parent.mkdirs()) {
             throw new IOException("Failed to create parent directory: " + parent.getAbsolutePath());
         }
 
         final File tempFile = new File(parent, dest.getName() + ".capgo_tmp");
-        try (
-            FileInputStream inStream = new FileInputStream(source);
-            FileOutputStream outStream = new FileOutputStream(tempFile);
-            FileChannel inChannel = inStream.getChannel();
-            FileChannel outChannel = outStream.getChannel()
-        ) {
-            inChannel.transferTo(0, inChannel.size(), outChannel);
+        try (FileOutputStream outStream = new FileOutputStream(tempFile)) {
+            final byte[] buffer = new byte[1024 * 1024];
+            int length;
+            while ((length = source.read(buffer)) != -1) {
+                outStream.write(buffer, 0, length);
+            }
+        } catch (IOException e) {
+            if (tempFile.exists()) {
+                tempFile.delete();
+            }
+            throw e;
         }
 
         try {
