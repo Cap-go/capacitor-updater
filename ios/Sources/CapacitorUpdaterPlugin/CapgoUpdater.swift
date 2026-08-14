@@ -1630,8 +1630,6 @@ import UIKit
     /// Atomically try to copy a file from cache - returns true if successful, false if file doesn't exist or copy failed
     /// This handles the race condition where OS can delete cache files between exists() check and copy
     private func tryCopyFromCache(from source: URL, to destination: URL) -> Bool {
-        let fileManager = FileManager.default
-
         // First quick check - if file doesn't exist or was truncated, don't bother
         guard isReusableCacheFile(source) else {
             return false
@@ -1639,8 +1637,6 @@ import UIKit
 
         // Hash is in the cache file name and was verified when written.
         // Re-hashing here would re-read every reused file on low-RAM devices.
-
-        // Try to copy - if it fails (file deleted by OS between check and copy), return false
         do {
             try copyItemReplacing(from: source, to: destination)
             return true
