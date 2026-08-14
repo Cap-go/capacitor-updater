@@ -358,6 +358,10 @@ public class CryptoCipher {
         return ioBufferBytes(physicalRamBytes);
     }
 
+    static int ioBufferBytes() {
+        return ioBufferBytes(physicalRamBytes());
+    }
+
     static int checksumBufferBytes() {
         return ioBufferBytes(physicalRamBytes());
     }
