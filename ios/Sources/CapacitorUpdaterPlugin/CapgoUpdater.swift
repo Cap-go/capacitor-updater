@@ -25,8 +25,8 @@ import UIKit
     private let PENDING_DELETE_IDS: String = "pendingDeleteIds"
     private var unzipPercent = 0
     private let TEMP_UNZIP_PREFIX: String = "capgo_unzip_"
-    /// Cap concurrent manifest file work. 32–64 OOMs low-RAM devices.
-    private static let manifestMaxConcurrentFiles = 4
+    /// Match URLSession per-host limit so 64 workers actually fetch in parallel.
+    private static let manifestMaxConcurrentFiles = 64
     private static let emptySha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     private let deletePaceSeconds: TimeInterval = 0.075
     private let deleteLock = NSLock()
@@ -175,6 +175,7 @@ import UIKit
         configuration.httpShouldSetCookies = false
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.urlCache = nil
+        configuration.httpMaximumConnectionsPerHost = Self.manifestMaxConcurrentFiles
         return Session(configuration: configuration)
     }()
     private let networkResponseQueue = DispatchQueue(label: "ee.forgr.capacitor-updater.network-response", qos: .utility)
@@ -1350,10 +1351,7 @@ import UIKit
 
         let totalFiles = manifest.count
 
-        // 4 concurrent: 32–64 holds full HTTP bodies, checksum buffers, and
-        // ~1MB thread stacks each — that OOMs low-RAM phones. 4 also matches
-        // typical per-host HTTP limits, so extra threads mostly wait.
-        manifestDownloadQueue.maxConcurrentOperationCount = Self.manifestMaxConcurrentFiles
+        manifestDownloadQueue.maxConcurrentOperationCount = min(Self.manifestMaxConcurrentFiles, max(1, totalFiles))
 
         // Thread-safe counters for concurrent operations
         let completedFiles = AtomicCounter()

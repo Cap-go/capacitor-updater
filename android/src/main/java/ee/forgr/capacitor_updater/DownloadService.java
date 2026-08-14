@@ -30,6 +30,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import okhttp3.Call;
 import okhttp3.Callback;
+import okhttp3.Dispatcher;
 import okhttp3.Interceptor;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -78,8 +79,8 @@ public class DownloadService extends Worker {
     public static final String DEFAULT_CHANNEL = "default_channel";
     public static final String IS_PROD = "is_prod";
     public static final String IS_EMULATOR = "is_emulator";
-    // Cap concurrent manifest file work. 32-64 OOMs low-RAM devices.
-    private static final int MANIFEST_MAX_CONCURRENT_FILES = 4;
+    // Match HTTP dispatcher so 64 workers actually fetch in parallel (HTTP/2 multiplexes).
+    private static final int MANIFEST_MAX_CONCURRENT_FILES = 64;
     private static final String UPDATE_FILE = "update.dat";
 
     // Shared OkHttpClient to prevent resource leaks
@@ -90,7 +91,11 @@ public class DownloadService extends Worker {
 
     // Initialize shared client with User-Agent interceptor
     static {
+        Dispatcher dispatcher = new Dispatcher();
+        dispatcher.setMaxRequests(MANIFEST_MAX_CONCURRENT_FILES);
+        dispatcher.setMaxRequestsPerHost(MANIFEST_MAX_CONCURRENT_FILES);
         sharedClient = new OkHttpClient.Builder()
+            .dispatcher(dispatcher)
             .protocols(Arrays.asList(Protocol.HTTP_2, Protocol.HTTP_1_1))
             .addInterceptor((chain) -> {
                 Request originalRequest = chain.request();
@@ -317,10 +322,8 @@ public class DownloadService extends Worker {
             final AtomicLong completedFiles = new AtomicLong(0);
             final AtomicBoolean hasError = new AtomicBoolean(false);
 
-            // 4 concurrent: 32–64 threads hold ~1MB stacks each plus file
-            // bodies and checksum buffers — that OOMs low-RAM phones. 4 also
-            // matches typical per-host HTTP limits, so extra threads mostly wait.
-            ExecutorService executor = Executors.newFixedThreadPool(MANIFEST_MAX_CONCURRENT_FILES);
+            int maxConcurrent = Math.min(MANIFEST_MAX_CONCURRENT_FILES, Math.max(1, totalFiles));
+            ExecutorService executor = Executors.newFixedThreadPool(maxConcurrent);
             List<Future<?>> futures = new ArrayList<>();
 
             for (int i = 0; i < totalFiles; i++) {
