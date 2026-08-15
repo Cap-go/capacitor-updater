@@ -326,7 +326,8 @@ public class CryptoCipher {
         }
     }
 
-    // 256 KiB: one size for checksum, copy, and decode. 64 workers * 256 KiB = 16 MiB peak.
+    // 256 KiB: one size for checksum, copy, and decode.
+    // 64 workers * 256 KiB = 16 MiB for one buffer; AES/Brotli hold two (~32 MiB).
     static final int IO_BUFFER_BYTES = 256 * 1024;
 
     static int ioBufferBytes() {
