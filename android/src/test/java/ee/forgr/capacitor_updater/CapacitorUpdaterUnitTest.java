@@ -3690,15 +3690,10 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
-    public void ioBuffersFollowFiveRamTiersAndMatchForChecksumAndCopy() {
-        final long gib = 1024L * 1024 * 1024;
-        final long[] ramBytes = { gib, 2 * gib, 3 * gib, 4 * gib, 6 * gib, 8 * gib, 0 };
-        final int[] expected = { 64 * 1024, 256 * 1024, 512 * 1024, 1024 * 1024, 1024 * 1024, 5 * 1024 * 1024, 5 * 1024 * 1024 };
-        for (int i = 0; i < ramBytes.length; i++) {
-            assertEquals(expected[i], CryptoCipher.ioBufferBytes(ramBytes[i]));
-            assertEquals(expected[i], CryptoCipher.checksumBufferBytes(ramBytes[i]));
-            assertEquals(expected[i], CryptoCipher.copyBufferBytes(ramBytes[i]));
-        }
+    public void ioBuffersAre256KiBForChecksumAndCopy() {
+        assertEquals(256 * 1024, CryptoCipher.ioBufferBytes());
+        assertEquals(256 * 1024, CryptoCipher.checksumBufferBytes());
+        assertEquals(256 * 1024, CryptoCipher.copyBufferBytes());
     }
 
     @Test

@@ -141,39 +141,19 @@ public struct CryptoCipher {
         }
     }
 
-    private static let twoGiB: UInt64 = 2 * 1024 * 1024 * 1024
-    private static let threeGiB: UInt64 = 3 * 1024 * 1024 * 1024
-    private static let fourGiB: UInt64 = 4 * 1024 * 1024 * 1024
-    private static let eightGiB: UInt64 = 8 * 1024 * 1024 * 1024
-    private static let flagshipIoBufferBytes = 5 * 1024 * 1024
+    /// 256KB: Go io.Copy / common sequential-IO default. 64 workers * 256KB = 16MB peak.
+    static let ioBufferBytesValue = 256 * 1024
 
-    /// Checksum and copy share one ladder. 64-wide peak RAM = 64 * buffer.
-    /// <2GB: 64KB. <3GB: 256KB. <4GB: 512KB. <8GB: 1MB. Else 5MB (flagship / unknown).
-    static func ioBufferBytes(_ physicalRamBytes: UInt64 = ProcessInfo.processInfo.physicalMemory) -> Int {
-        if physicalRamBytes == 0 {
-            return flagshipIoBufferBytes
-        }
-        if physicalRamBytes < twoGiB {
-            return 64 * 1024
-        }
-        if physicalRamBytes < threeGiB {
-            return 256 * 1024
-        }
-        if physicalRamBytes < fourGiB {
-            return 512 * 1024
-        }
-        if physicalRamBytes < eightGiB {
-            return 1024 * 1024
-        }
-        return flagshipIoBufferBytes
+    static func ioBufferBytes() -> Int {
+        return ioBufferBytesValue
     }
 
-    static func checksumBufferBytes(_ physicalRamBytes: UInt64 = ProcessInfo.processInfo.physicalMemory) -> Int {
-        return ioBufferBytes(physicalRamBytes)
+    static func checksumBufferBytes() -> Int {
+        return ioBufferBytesValue
     }
 
-    static func copyBufferBytes(_ physicalRamBytes: UInt64 = ProcessInfo.processInfo.physicalMemory) -> Int {
-        return ioBufferBytes(physicalRamBytes)
+    static func copyBufferBytes() -> Int {
+        return ioBufferBytesValue
     }
 
     public static func calcChecksum(filePath: URL) -> String {
