@@ -437,6 +437,7 @@ public class DownloadService extends Worker {
             if (!destFolder.exists() && !destFolder.mkdirs()) {
                 throw new IOException("Failed to create destination directory: " + destFolder.getAbsolutePath());
             }
+            cleanupOrphanedAssetTemps(destFolder);
             if (!cacheFolder.exists() && !cacheFolder.mkdirs()) {
                 throw new IOException("Failed to create cache directory: " + cacheFolder.getAbsolutePath());
             }
@@ -1072,6 +1073,29 @@ public class DownloadService extends Worker {
                 if (tempFile.lastModified() < oneHourAgo) {
                     tempFile.delete();
                 }
+            }
+        }
+    }
+
+    private void cleanupOrphanedAssetTemps(final File directory) {
+        if (directory == null || !directory.isDirectory()) {
+            return;
+        }
+        final File[] children = directory.listFiles();
+        if (children == null) {
+            return;
+        }
+        final long oneHourAgo = System.currentTimeMillis() - 3600000;
+        for (final File child : children) {
+            if (child.isDirectory()) {
+                cleanupOrphanedAssetTemps(child);
+                continue;
+            }
+            final String name = child.getName();
+            final boolean orphanedAssetTemp = name.startsWith("capgo_asset_") && name.endsWith(".tmp");
+            final boolean orphanedBackup = name.startsWith(".capgo_bak_");
+            if ((orphanedAssetTemp || orphanedBackup) && child.lastModified() < oneHourAgo) {
+                child.delete();
             }
         }
     }
