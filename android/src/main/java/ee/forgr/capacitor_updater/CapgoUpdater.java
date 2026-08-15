@@ -515,9 +515,17 @@ public class CapgoUpdater {
             return false;
         }
 
-        final File builtinFile = new File(this.activity.getFilesDir(), "public/" + fileName);
-        if (verifyChecksum(builtinFile, fileHash)) {
+        if (DownloadService.builtinAssetMatches(this.activity.getAssets(), fileName, fileHash)) {
             return true;
+        }
+
+        try {
+            final File builtinFile = DownloadService.resolveManifestBuiltinFile(new File(this.activity.getFilesDir(), "public"), fileName);
+            if (verifyChecksum(builtinFile, fileHash)) {
+                return true;
+            }
+        } catch (IOException ignored) {
+            // Invalid path; fall through to cache lookup.
         }
 
         final boolean isBrotli = fileName.endsWith(".br");

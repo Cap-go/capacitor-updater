@@ -6,6 +6,7 @@
 package ee.forgr.capacitor_updater;
 
 import android.content.Context;
+import android.content.res.AssetManager;
 import androidx.annotation.NonNull;
 import androidx.work.Data;
 import androidx.work.Worker;
@@ -18,8 +19,11 @@ import java.nio.channels.FileChannel;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -179,6 +183,131 @@ public class DownloadService extends Worker {
         return CapgoUpdater.resolvePathInsideDirectory(builtinFolder, resolvedName);
     }
 
+    /** APK web assets live in assets/public/; strip .br so store files match. */
+    static String resolveBuiltinAssetPath(final String fileName) throws IOException {
+        final File base = new File("/capgo-builtin-assets");
+        final File resolved = resolveManifestBuiltinFile(base, fileName);
+        final String basePath = base.getCanonicalPath();
+        final String resolvedPath = resolved.getCanonicalPath();
+        final String normalizedBasePath = basePath.endsWith(File.separator) ? basePath : basePath + File.separator;
+        if (!resolvedPath.startsWith(normalizedBasePath)) {
+            throw new IOException("Invalid manifest file path: " + fileName);
+        }
+        return "public/" + resolvedPath.substring(normalizedBasePath.length()).replace(File.separatorChar, '/');
+    }
+
+    static boolean copyStreamIfChecksumMatches(final InputStream input, final File dest, final String expectedHash) throws IOException {
+        if (expectedHash == null || expectedHash.isEmpty()) {
+            return false;
+        }
+        final File parent = dest.getParentFile();
+        if (parent == null) {
+            throw new IOException("Destination has no parent: " + dest.getAbsolutePath());
+        }
+        if (!parent.exists() && !parent.mkdirs()) {
+            throw new IOException("Failed to create parent directory: " + parent.getAbsolutePath());
+        }
+
+        final MessageDigest digest;
+        try {
+            digest = MessageDigest.getInstance("SHA-256");
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IOException("SHA-256 algorithm not available", e);
+        }
+
+        final File tempFile = File.createTempFile("capgo_asset_", ".tmp", parent);
+        try {
+            try (FileOutputStream outStream = new FileOutputStream(tempFile)) {
+                final byte[] buffer = new byte[CryptoCipher.ioBufferBytes()];
+                int length;
+                while ((length = input.read(buffer)) != -1) {
+                    digest.update(buffer, 0, length);
+                    outStream.write(buffer, 0, length);
+                }
+            }
+            if (!expectedHash.equalsIgnoreCase(sha256Hex(digest))) {
+                return false;
+            }
+            return replaceFile(tempFile, dest);
+        } finally {
+            deleteQuietly(tempFile);
+        }
+    }
+
+    private static String sha256Hex(final MessageDigest digest) {
+        final byte[] hash = digest.digest();
+        final StringBuilder hexString = new StringBuilder(hash.length * 2);
+        for (final byte b : hash) {
+            final String hex = Integer.toHexString(0xff & b);
+            if (hex.length() == 1) {
+                hexString.append('0');
+            }
+            hexString.append(hex);
+        }
+        return hexString.toString();
+    }
+
+    private static void deleteQuietly(final File file) {
+        if (file.exists() && !file.delete()) {
+            file.deleteOnExit();
+        }
+    }
+
+    static boolean replaceFile(final File tempFile, final File dest) {
+        if (tempFile.renameTo(dest)) {
+            return true;
+        }
+        final File parent = dest.getParentFile();
+        if (parent == null) {
+            return false;
+        }
+        final File backup = new File(parent, ".capgo_bak_" + UUID.randomUUID());
+        deleteQuietly(backup);
+        if (dest.exists() && !dest.renameTo(backup)) {
+            return false;
+        }
+        if (!tempFile.renameTo(dest)) {
+            if (backup.exists()) {
+                backup.renameTo(dest);
+            }
+            return false;
+        }
+        deleteQuietly(backup);
+        return true;
+    }
+
+    static boolean rememberManifestTarget(final Set<String> seenTargets, final File targetFile) throws IOException {
+        return seenTargets.add(targetFile.getCanonicalPath());
+    }
+
+    static boolean tryCopyBuiltinAsset(final AssetManager assets, final String fileName, final File dest, final String expectedHash) {
+        if (assets == null || fileName == null || dest == null) {
+            return false;
+        }
+        try {
+            final String assetPath = resolveBuiltinAssetPath(fileName);
+            try (InputStream in = assets.open(assetPath)) {
+                return copyStreamIfChecksumMatches(in, dest, expectedHash);
+            }
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    static boolean builtinAssetMatches(final AssetManager assets, final String fileName, final String expectedHash) {
+        if (assets == null || fileName == null || expectedHash == null || expectedHash.isEmpty()) {
+            return false;
+        }
+        try {
+            final String assetPath = resolveBuiltinAssetPath(fileName);
+            try (InputStream in = assets.open(assetPath)) {
+                return expectedHash.equalsIgnoreCase(CryptoCipher.calcChecksum(in));
+            }
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
     private String getInputString(String key, String fallback) {
         String value = getInputData().getString(key);
         return value != null ? value : fallback;
@@ -302,11 +431,13 @@ public class DownloadService extends Worker {
             File destFolder = new File(documentsDir, dest);
             File cacheFolder = new File(getApplicationContext().getCacheDir(), "capgo_downloads");
             File builtinFolder = new File(getApplicationContext().getFilesDir(), "public");
+            AssetManager assets = getApplicationContext().getAssets();
 
             // Ensure directories are created
             if (!destFolder.exists() && !destFolder.mkdirs()) {
                 throw new IOException("Failed to create destination directory: " + destFolder.getAbsolutePath());
             }
+            cleanupOrphanedAssetTemps(destFolder);
             if (!cacheFolder.exists() && !cacheFolder.mkdirs()) {
                 throw new IOException("Failed to create cache directory: " + cacheFolder.getAbsolutePath());
             }
@@ -317,6 +448,7 @@ public class DownloadService extends Worker {
 
             ExecutorService executor = Executors.newFixedThreadPool(Math.min(MANIFEST_MAX_CONCURRENT_FILES, Math.max(1, totalFiles)));
             List<Future<?>> futures = new ArrayList<>();
+            final Set<String> seenTargets = new HashSet<>();
 
             for (int i = 0; i < totalFiles; i++) {
                 JSONObject entry = manifest.getJSONObject(i);
@@ -351,6 +483,12 @@ public class DownloadService extends Worker {
                 try {
                     targetFile = resolveManifestTargetFile(destFolder, fileName);
                     builtinFile = resolveManifestBuiltinFile(builtinFolder, fileName);
+                    if (!rememberManifestTarget(seenTargets, targetFile)) {
+                        logger.error("Duplicate manifest target path: " + fileName);
+                        sendStatsAsync("manifest_path_fail", version + ":" + fileName);
+                        hasError.set(true);
+                        continue;
+                    }
                 } catch (IOException e) {
                     logger.error("Invalid manifest file path: " + fileName);
                     sendStatsAsync("manifest_path_fail", version + ":" + fileName);
@@ -374,7 +512,9 @@ public class DownloadService extends Worker {
                 final boolean finalIsBrotli = isBrotli;
                 Future<?> future = executor.submit(() -> {
                     try {
-                        if (builtinFile.exists() && verifyChecksum(builtinFile, finalFileHash)) {
+                        if (tryCopyBuiltinAsset(assets, fileName, targetFile, finalFileHash)) {
+                            logger.debug("using builtin asset " + fileName);
+                        } else if (builtinFile.exists() && verifyChecksum(builtinFile, finalFileHash)) {
                             copyFile(builtinFile, targetFile);
                             logger.debug("using builtin file " + fileName);
                         } else if (
@@ -949,6 +1089,29 @@ public class DownloadService extends Worker {
                 if (tempFile.lastModified() < oneHourAgo) {
                     tempFile.delete();
                 }
+            }
+        }
+    }
+
+    private void cleanupOrphanedAssetTemps(final File directory) {
+        if (directory == null || !directory.isDirectory()) {
+            return;
+        }
+        final File[] children = directory.listFiles();
+        if (children == null) {
+            return;
+        }
+        final long oneHourAgo = System.currentTimeMillis() - 3600000;
+        for (final File child : children) {
+            if (child.isDirectory()) {
+                cleanupOrphanedAssetTemps(child);
+                continue;
+            }
+            final String name = child.getName();
+            final boolean orphanedAssetTemp = name.startsWith("capgo_asset_") && name.endsWith(".tmp");
+            final boolean orphanedBackup = name.startsWith(".capgo_bak_");
+            if ((orphanedAssetTemp || orphanedBackup) && child.lastModified() < oneHourAgo) {
+                child.delete();
             }
         }
     }

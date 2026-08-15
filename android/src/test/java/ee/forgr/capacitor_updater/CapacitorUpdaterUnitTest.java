@@ -18,6 +18,7 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginConfig;
 import com.getcapacitor.PluginHandle;
 import io.github.g00fy2.versioncompare.Version;
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
@@ -29,6 +30,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -3157,6 +3159,91 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testBuiltinAssetPathUsesApkPublicFolderAndStripsBrotli() throws Exception {
+        assertEquals("public/background-runner.js", DownloadService.resolveBuiltinAssetPath("background-runner.js.br"));
+        assertEquals("public/assets/app.js", DownloadService.resolveBuiltinAssetPath("assets/app.js.br"));
+        assertEquals("public/index.html", DownloadService.resolveBuiltinAssetPath("index.html"));
+    }
+
+    @Test
+    public void testBuiltinAssetPathRejectsPathTraversal() {
+        assertThrows(IOException.class, () -> DownloadService.resolveBuiltinAssetPath("../secret.js"));
+        assertThrows(IOException.class, () -> DownloadService.resolveBuiltinAssetPath("assets/../../secret.js"));
+    }
+
+    @Test
+    public void testCopyStreamIfChecksumMatchesReusesMatchingBuiltinBytes() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path destDir = Files.createTempDirectory("capgo-builtin-copy");
+        destDir.toFile().deleteOnExit();
+        final File dest = destDir.resolve("index.js").toFile();
+        final byte[] content = "store builtin js".getBytes(StandardCharsets.UTF_8);
+        final File hashSource = destDir.resolve("source.js").toFile();
+        Files.write(hashSource.toPath(), content);
+        final String hash = CryptoCipher.calcChecksum(hashSource);
+
+        assertTrue(DownloadService.copyStreamIfChecksumMatches(new ByteArrayInputStream(content), dest, hash));
+        assertEquals("store builtin js", new String(Files.readAllBytes(dest.toPath()), StandardCharsets.UTF_8));
+        assertEquals(0, leftoverAssetTemps(dest));
+    }
+
+    @Test
+    public void testCopyStreamIfChecksumMatchesAcceptsOneCharacterDestName() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path destDir = Files.createTempDirectory("capgo-builtin-short");
+        destDir.toFile().deleteOnExit();
+        final File dest = destDir.resolve("a").toFile();
+        final byte[] content = "short name".getBytes(StandardCharsets.UTF_8);
+        final File hashSource = destDir.resolve("source").toFile();
+        Files.write(hashSource.toPath(), content);
+        final String hash = CryptoCipher.calcChecksum(hashSource);
+
+        assertTrue(DownloadService.copyStreamIfChecksumMatches(new ByteArrayInputStream(content), dest, hash));
+        assertEquals("short name", new String(Files.readAllBytes(dest.toPath()), StandardCharsets.UTF_8));
+        assertEquals(0, leftoverAssetTemps(dest));
+    }
+
+    @Test
+    public void testCopyStreamIfChecksumMatchesLeavesMissingDestOnMismatch() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path destDir = Files.createTempDirectory("capgo-builtin-mismatch");
+        destDir.toFile().deleteOnExit();
+        final File dest = destDir.resolve("index.js").toFile();
+        final byte[] content = "store builtin js".getBytes(StandardCharsets.UTF_8);
+
+        assertFalse(DownloadService.copyStreamIfChecksumMatches(new ByteArrayInputStream(content), dest, "deadbeef"));
+        assertFalse(dest.exists());
+        assertEquals(0, leftoverAssetTemps(dest));
+    }
+
+    @Test
+    public void testCopyStreamIfChecksumMatchesKeepsExistingDestOnMismatch() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path destDir = Files.createTempDirectory("capgo-builtin-keep");
+        destDir.toFile().deleteOnExit();
+        final File dest = destDir.resolve("index.js").toFile();
+        Files.write(dest.toPath(), "already downloaded".getBytes(StandardCharsets.UTF_8));
+        final byte[] content = "store builtin js".getBytes(StandardCharsets.UTF_8);
+
+        assertFalse(DownloadService.copyStreamIfChecksumMatches(new ByteArrayInputStream(content), dest, "deadbeef"));
+        assertEquals("already downloaded", new String(Files.readAllBytes(dest.toPath()), StandardCharsets.UTF_8));
+        assertEquals(0, leftoverAssetTemps(dest));
+    }
+
+    @Test
+    public void testManifestRejectsPlainAndBrotliTargetCollision() throws Exception {
+        final Path destFolder = Files.createTempDirectory("capgo-manifest-dup");
+        destFolder.toFile().deleteOnExit();
+        final HashSet<String> seen = new HashSet<>();
+        final File plain = DownloadService.resolveManifestTargetFile(destFolder.toFile(), "assets/app.js");
+        final File brotli = DownloadService.resolveManifestTargetFile(destFolder.toFile(), "assets/app.js.br");
+
+        assertEquals(plain.getCanonicalFile(), brotli.getCanonicalFile());
+        assertTrue(DownloadService.rememberManifestTarget(seen, plain));
+        assertFalse(DownloadService.rememberManifestTarget(seen, brotli));
+    }
+
+    @Test
     public void testManifestTargetRejectsPathTraversalAfterBrotliSuffixIsRemoved() throws Exception {
         final Path documentsDir = Files.createTempDirectory("capgo-manifest-path");
         documentsDir.toFile().deleteOnExit();
@@ -3757,5 +3844,10 @@ public class CapacitorUpdaterUnitTest {
             out[i] = (byte) Integer.parseInt(hex.substring(i * 2, i * 2 + 2), 16);
         }
         return out;
+    }
+
+    private static int leftoverAssetTemps(final File dest) {
+        final File[] leftovers = dest.getParentFile().listFiles((dir, name) -> name.startsWith("capgo_asset_") && name.endsWith(".tmp"));
+        return leftovers == null ? 0 : leftovers.length;
     }
 }
