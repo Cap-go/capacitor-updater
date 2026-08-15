@@ -24,6 +24,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -259,7 +260,7 @@ public class DownloadService extends Worker {
         if (parent == null) {
             return false;
         }
-        final File backup = new File(parent, dest.getName() + ".capgo_bak");
+        final File backup = new File(parent, ".capgo_bak_" + UUID.randomUUID());
         deleteQuietly(backup);
         if (dest.exists() && !dest.renameTo(backup)) {
             return false;
@@ -436,7 +437,6 @@ public class DownloadService extends Worker {
             if (!destFolder.exists() && !destFolder.mkdirs()) {
                 throw new IOException("Failed to create destination directory: " + destFolder.getAbsolutePath());
             }
-            cleanupOldTempFiles(destFolder);
             if (!cacheFolder.exists() && !cacheFolder.mkdirs()) {
                 throw new IOException("Failed to create cache directory: " + cacheFolder.getAbsolutePath());
             }
